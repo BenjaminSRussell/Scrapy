@@ -9,13 +9,17 @@
 # 5. URL deduplication by hash
 # 6. DiscoveryItem output format
 
+import os
+import tempfile
+from pathlib import Path
+from typing import List
+
 import pytest
 from unittest.mock import Mock, patch, mock_open
-import tempfile
-import os
-from pathlib import Path
+
 from stage1.discovery_spider import DiscoverySpider
 from common.schemas import DiscoveryItem
+from samples import html_response, build_discovery_item
 
 
 def test_discovery_spider_initialization():
@@ -68,39 +72,35 @@ def test_discovery_spider_handles_missing_seed_file(mock_exists):
     assert len(requests) == 0
 
 
-def test_discovery_spider_extracts_links():
+@pytest.mark.parametrize(
+    "html_snippet,expected_count",
+    [
+        (
+            """
+            <html><body>
+                <a href=\"https://uconn.edu/page1\">Page 1</a>
+                <a href=\"https://admissions.uconn.edu/page2\">Admissions</a>
+                <a href=\"https://uconn.edu/assets/image.png\">Skip Image</a>
+                <a href=\"/relative\">Relative</a>
+            </body></html>
+            """,
+            3,
+        ),
+        (
+            """
+            <html><body>
+                <a href=\"https://uconn.edu/page3\">P3</a>
+                <a href=\"mailto:test@uconn.edu\">Email</a>
+            </body></html>
+            """,
+            1,
+        ),
+    ],
+)
+def test_discovery_spider_extracts_links(html_snippet, expected_count):
     """Test link extraction from HTML responses"""
-    from scrapy.http import HtmlResponse
-
     spider = DiscoverySpider(max_depth=2)
-
-    # Create real HtmlResponse with UConn links
-    html_content = b'''
-    <html>
-        <body>
-            <h1>UConn Test Page</h1>
-            <a href="https://uconn.edu/page1">Page 1</a>
-            <a href="https://admissions.uconn.edu/page2">Admissions</a>
-            <a href="https://external.com/page">External Link</a>
-            <a href="/relative-page">Relative Link</a>
-            <a href="mailto:test@uconn.edu">Email Link</a>
-        </body>
-    </html>
-    '''
-
-    # Create real HtmlResponse (exercises actual Scrapy parsing)
-    response = HtmlResponse(
-        url="https://uconn.edu/test",
-        body=html_content,
-        encoding='utf-8'
-    )
-
-    # Add required meta data
-    response.meta.update({
-        'source_url': 'https://uconn.edu/test',
-        'depth': 0,
-        'first_seen': '2023-01-01T00:00:00'
-    })
+    response = html_response("https://uconn.edu/test", html_snippet, depth=0)
 
     # Process the response (exercises real link extraction)
     results = list(spider.parse(response))
@@ -110,7 +110,7 @@ def test_discovery_spider_extracts_links():
     new_requests = [r for r in results if hasattr(r, 'url') and not isinstance(r, DiscoveryItem)]
 
     # Verify we found some links (exact count depends on LinkExtractor filtering)
-    assert len(discovery_items) >= 1
+    assert len(discovery_items) == expected_count
 
     # Verify discovery items have required fields
     for item in discovery_items:
@@ -132,33 +132,19 @@ def test_discovery_spider_extracts_links():
 
 def test_discovery_spider_respects_depth_limit():
     """Test spider stops crawling at max_depth"""
-    from scrapy.http import HtmlResponse
-
     spider = DiscoverySpider(max_depth=1)
 
     # Create real HtmlResponse at max depth
-    html_content = b'''
-    <html>
-        <body>
-            <h1>At Max Depth</h1>
-            <a href="https://uconn.edu/page1">Should Not Follow</a>
-            <a href="https://uconn.edu/page2">Should Not Follow</a>
-        </body>
-    </html>
-    '''
-
-    response = HtmlResponse(
-        url="https://uconn.edu/test",
-        body=html_content,
-        encoding='utf-8'
+    response = html_response(
+        "https://uconn.edu/test",
+        """
+        <html><body>
+            <a href='https://uconn.edu/page1'>Should Not Follow</a>
+            <a href='https://uconn.edu/page2'>Should Not Follow</a>
+        </body></html>
+        """,
+        depth=1,
     )
-
-    # Set meta to max depth
-    response.meta.update({
-        'source_url': 'https://uconn.edu/test',
-        'depth': 1,  # At max depth
-        'first_seen': '2023-01-01T00:00:00'
-    })
 
     results = list(spider.parse(response))
 
@@ -167,38 +153,26 @@ def test_discovery_spider_respects_depth_limit():
     new_requests = [r for r in results if hasattr(r, 'url') and not isinstance(r, DiscoveryItem)]
 
     # Should have discovery items but no new requests (depth limit reached)
-    assert len(discovery_items) >= 0  # May still record discovered URLs
-    assert len(new_requests) == 0  # No new requests at max depth
+    assert len(discovery_items) == 2  # Still records discovered URLs
+    assert len(new_requests) == 0
 
 
 def test_discovery_spider_deduplicates_urls():
     """Test URL deduplication by hash"""
-    from scrapy.http import HtmlResponse
-
     spider = DiscoverySpider()
 
     # Create real HtmlResponse with duplicate links
-    html_content = b'''
-    <html>
-        <body>
-            <a href="https://uconn.edu/page1">Page 1 First</a>
-            <a href="https://uconn.edu/page1">Page 1 Duplicate</a>
-            <a href="https://uconn.edu/page2">Page 2</a>
-        </body>
-    </html>
-    '''
-
-    response = HtmlResponse(
-        url="https://uconn.edu/test",
-        body=html_content,
-        encoding='utf-8'
+    response = html_response(
+        "https://uconn.edu/test",
+        """
+        <html><body>
+            <a href='https://uconn.edu/page1'>Page 1</a>
+            <a href='https://uconn.edu/page1'>Duplicate Page 1</a>
+            <a href='https://uconn.edu/page2'>Page 2</a>
+        </body></html>
+        """,
+        depth=0,
     )
-
-    response.meta.update({
-        'source_url': 'https://uconn.edu/test',
-        'depth': 0,
-        'first_seen': '2023-01-01T00:00:00'
-    })
 
     # First parse
     results1 = list(spider.parse(response))
@@ -216,3 +190,21 @@ def test_discovery_spider_deduplicates_urls():
 
     # Second parse should yield fewer (or zero) new discovery items
     assert len(discovery_items2) <= len(discovery_items1)
+
+def test_discovery_spider_start_requests_real_seed_file():
+    """Ensure start_requests processes the real seed CSV without modification."""
+    seed_path = Path(__file__).parent.parent / "data" / "raw" / "uconn_urls.csv"
+    if not seed_path.exists():
+        pytest.skip("Real seed CSV not available")
+
+    spider = DiscoverySpider()
+    requests = list(spider.start_requests())
+
+    with seed_path.open("r", encoding="utf-8") as handle:
+        expected_urls = [line.strip() for line in handle if line.strip()]
+
+    assert len(requests) == len(expected_urls)
+    if expected_urls:
+        first_request = requests[0]
+        assert first_request.url.startswith("https://")
+        assert first_request.meta["depth"] == 0

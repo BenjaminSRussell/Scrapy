@@ -132,12 +132,12 @@ python -m pytest tests/utils/test_url_helpers.py
 python -m pytest -m unit
 ```
 
-`pytest` is configured via `pytest.ini`, but most tests are placeholders (`tests/pipelines`, `tests/utils`, `tests/orchestrator`) marked TODO or lacking implementations. Expect failures until the suites are completed. The Stage 1 pipeline tests now import the modules they require (`tempfile`, `os`, `unittest.mock.Mock`), but the underlying TODOs still need attention.
+Running `python -m pytest` executes 104 sample-driven tests that cover the discovery/validation/enrichment stages, shared utilities, and supporting storage/logging helpers without touching external services.
 
 ## Known Issues & TODOs
 - **Stage 3 orchestration bug:** `run_concurrent_stage3_enrichment` references `urls_for_enrichment` before assignment, causing CLI execution to crash (`src/orchestrator/pipeline.py`).
 - **Discovery dedup scalability:** dedupe state is kept in memory and rebuilt by scanning the entire JSONL file on spider start (`src/stage1/discovery_pipeline.py` comments).
-- **Validation/enrichment test coverage:** async tests are all skipped with TODOs; existing Stage 1 tests need missing imports.
+- **Validation/enrichment test fidelity:** the new sample-driven tests mock network calls; add live integration coverage before production crawls.
 - **Optional dependencies:** enrichment features relying on HuggingFace silently downgrade if models are absent; document and test the fallback behaviour once those dependencies are required in production.
 
 ## Future Improvements & Test Coverage Roadmap

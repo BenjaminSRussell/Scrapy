@@ -1,4 +1,3 @@
-import json
 import os
 import sys
 import tempfile
@@ -6,12 +5,16 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
 
+import json
+import pytest
+
 # Add src to Python path for imports
 src_dir = Path(__file__).parent.parent.parent / 'src'
 sys.path.insert(0, str(src_dir))
 
-from common.schemas import DiscoveryItem
 from stage1.discovery_pipeline import Stage1Pipeline
+from common.schemas import DiscoveryItem
+from common.urls import canonicalize_and_hash
 
 
 def test_stage1_pipeline_writes_first_1000(tmp_path, first_1000_urls):
@@ -21,13 +24,13 @@ def test_stage1_pipeline_writes_first_1000(tmp_path, first_1000_urls):
 
     pipeline.open_spider(SimpleNamespace(name='test_spider'))
 
-    for url, url_hash in first_1000_urls:
+    for index, (url, url_hash) in enumerate(first_1000_urls):
         item = DiscoveryItem(
             source_url=url,
             discovered_url=url,
-            first_seen="2024-01-01T00:00:00",
+            first_seen=f"2024-01-01T00:00:{index:02d}",
             url_hash=url_hash,
-            discovery_depth=0,
+            discovery_depth=index % 4,
         )
         pipeline.process_item(item, None)
 
@@ -35,19 +38,14 @@ def test_stage1_pipeline_writes_first_1000(tmp_path, first_1000_urls):
 
     assert output_file.exists()
     lines = [json.loads(line) for line in output_file.read_text(encoding='utf-8').strip().splitlines()]
-    assert len(lines) == 1000
+    expected_hashes = {h for _, h in first_1000_urls}
+    assert len(lines) == len(expected_hashes)
 
     hashes = {entry['url_hash'] for entry in lines}
-    assert len(hashes) == 1000
+    assert hashes == expected_hashes
 
-
-# TODO: Add more Stage 1 pipeline tests:
-# 1. Test deduplication behavior with duplicate items
-# 2. Test pipeline resume with existing JSONL file
-# 3. Test error handling with malformed items
-# 4. Test pipeline statistics and logging
-
-def test_stage1_pipeline_deduplication():
+@pytest.mark.parametrize("duplicate_depth", [0, 2, 5])
+def test_stage1_pipeline_deduplication(duplicate_depth):
     """Test that pipeline handles duplicate URL hashes correctly"""
     with tempfile.NamedTemporaryFile(mode='w', suffix='.jsonl', delete=False) as f:
         temp_path = f.name
@@ -64,21 +62,21 @@ def test_stage1_pipeline_deduplication():
         pipeline.open_spider(mock_spider)
 
         # Create two items with same URL hash
-        from itemadapter import ItemAdapter
-        from common.schemas import DiscoveryItem
-
+        _, dup_hash = canonicalize_and_hash("https://uconn.edu/page1")
         item1 = DiscoveryItem(
             source_url="https://uconn.edu/source",
             discovered_url="https://uconn.edu/page1",
-            url_hash="test_hash_123",
-            discovery_depth=1
+            first_seen="2024-01-01T00:00:00",
+            url_hash=dup_hash,
+            discovery_depth=duplicate_depth,
         )
 
         item2 = DiscoveryItem(
             source_url="https://uconn.edu/source2",
             discovered_url="https://uconn.edu/page1",
-            url_hash="test_hash_123",  # Same hash - should be deduplicated
-            discovery_depth=1
+            first_seen="2024-01-01T00:05:00",
+            url_hash=dup_hash,
+            discovery_depth=duplicate_depth,
         )
 
         # Process both items
@@ -90,7 +88,7 @@ def test_stage1_pipeline_deduplication():
 
         # Verify only one item was written (second should be deduplicated)
         assert pipeline.url_count == 1
-        assert "test_hash_123" in pipeline.seen_hashes
+        assert dup_hash in pipeline.seen_hashes
 
         # Read the file to verify content
         with open(temp_path, 'r') as f:
@@ -108,15 +106,15 @@ def test_stage1_pipeline_resume_from_existing():
     with tempfile.NamedTemporaryFile(mode='w', suffix='.jsonl', delete=False) as f:
         temp_path = f.name
         # Pre-populate file with existing data
-        existing_data = {
-            "source_url": "https://uconn.edu/existing",
-            "discovered_url": "https://uconn.edu/existing_page",
-            "url_hash": "existing_hash_123",
-            "discovery_depth": 1,
-            "first_seen": "2023-01-01T00:00:00"
-        }
-        import json
-        f.write(json.dumps(existing_data) + '\n')
+        _, existing_hash = canonicalize_and_hash("https://uconn.edu/existing_page")
+        existing_item = DiscoveryItem(
+            source_url="https://uconn.edu/existing",
+            discovered_url="https://uconn.edu/existing_page",
+            first_seen="2023-01-01T00:00:00",
+            url_hash=existing_hash,
+            discovery_depth=1,
+        )
+        f.write(json.dumps(existing_item.__dict__) + '\n')
 
     try:
         # Create pipeline that should load existing hashes
@@ -130,17 +128,16 @@ def test_stage1_pipeline_resume_from_existing():
         pipeline.open_spider(mock_spider)
 
         # Verify existing hash was loaded
-        assert "existing_hash_123" in pipeline.seen_hashes
+        assert existing_hash in pipeline.seen_hashes
         assert len(pipeline.seen_hashes) == 1
 
         # Try to add item with same hash (should be skipped)
-        from common.schemas import DiscoveryItem
-
         duplicate_item = DiscoveryItem(
             source_url="https://uconn.edu/new_source",
             discovered_url="https://uconn.edu/existing_page",
-            url_hash="existing_hash_123",  # Same hash as existing
-            discovery_depth=2
+            first_seen="2023-01-01T00:05:00",
+            url_hash=existing_hash,
+            discovery_depth=2,
         )
 
         pipeline.process_item(duplicate_item, mock_spider)
@@ -156,7 +153,20 @@ def test_stage1_pipeline_resume_from_existing():
             os.unlink(temp_path)
 
 
-def test_stage1_pipeline_error_handling():
+@pytest.mark.parametrize(
+    "missing_field",
+    [
+        "url_hash",
+        pytest.param(
+            "discovered_url",
+            marks=pytest.mark.xfail(
+                reason="Stage1 pipeline currently writes items lacking discovered_url",
+                strict=True,
+            ),
+        ),
+    ],
+)
+def test_stage1_pipeline_error_handling(missing_field):
     """Test pipeline handles malformed items gracefully"""
     with tempfile.NamedTemporaryFile(mode='w', suffix='.jsonl', delete=False) as f:
         temp_path = f.name
@@ -173,23 +183,31 @@ def test_stage1_pipeline_error_handling():
         pipeline.open_spider(mock_spider)
 
         # Create item with missing url_hash (should be handled gracefully)
-        from common.schemas import DiscoveryItem
+        _, base_hash = canonicalize_and_hash("https://uconn.edu/page1")
+        discovered_url = "https://uconn.edu/page1" if missing_field != "discovered_url" else None
+        url_hash = base_hash if missing_field != "url_hash" else None
 
         malformed_item = DiscoveryItem(
             source_url="https://uconn.edu/source",
-            discovered_url="https://uconn.edu/page1",
-            url_hash=None,  # Missing hash
-            discovery_depth=1
+            discovered_url=discovered_url,
+            first_seen="2024-01-01T00:00:00",
+            url_hash=url_hash,
+            discovery_depth=1,
         )
 
         # Should not crash when processing malformed item
         result = pipeline.process_item(malformed_item, mock_spider)
         assert result is not None  # Item should still be returned
 
-        # url_count should not increment for malformed items
+        # Items missing required identifiers should not be counted or persisted
         assert pipeline.url_count == 0
 
         pipeline.close_spider(mock_spider)
+
+        with open(temp_path, 'r', encoding='utf-8') as f:
+            persisted = [line for line in f if line.strip()]
+
+        assert persisted == []
 
     finally:
         # Clean up
