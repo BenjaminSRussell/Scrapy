@@ -13,6 +13,6 @@ src_dir = Path(__file__).parent / 'src'
 sys.path.insert(0, str(src_dir))
 
 if __name__ == "__main__":
-    from orchestrator.main import main
+    from src.orchestrator.main import main
     import asyncio
     sys.exit(asyncio.run(main()))
