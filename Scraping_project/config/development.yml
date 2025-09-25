@@ -1,0 +1,108 @@
+environment: development
+
+# Scrapy settings
+scrapy:
+  concurrent_requests: 32
+  concurrent_requests_per_domain: 16
+  concurrent_requests_per_ip: 16
+  download_delay: 0.1
+  download_timeout: 10
+  dns_timeout: 5
+  retry_enabled: true
+  retry_times: 2
+  robotstxt_obey: false
+  user_agent: "UConn-Discovery-Crawler/1.0 (development)"
+  log_level: "INFO"
+
+# Stage-specific settings
+stages:
+  discovery:
+    max_depth: 3
+    batch_size: 1000
+    output_file: "data/processed/stage01/new_urls.jsonl"
+
+  validation:
+    max_workers: 16
+    timeout: 15
+    output_file: "data/processed/stage02/validated_urls.jsonl"
+
+  enrichment:
+    nlp_enabled: true
+    max_text_length: 20000
+    top_keywords: 15
+    output_file: "data/processed/stage03/enriched_data.jsonl"
+
+# Data paths
+data:
+  raw_dir: "data/raw"
+  processed_dir: "data/processed"
+  catalog_dir: "data/catalog"
+  cache_dir: "data/cache"
+  exports_dir: "data/exports"
+  logs_dir: "data/logs"
+
+# NLP settings
+nlp:
+  model: "en_core_web_sm"
+  max_text_length: 20000
+  top_keywords: 15
+
+# Content filtering
+content:
+  predefined_tags:
+    - "admissions"
+    - "about"
+    - "research"
+    - "students"
+    - "faculty"
+    - "staff"
+    - "alumni"
+    - "athletics"
+    - "covid"
+    - "graduate"
+    - "undergraduate"
+    - "catalog"
+    - "courses"
+    - "registrar"
+    - "financial-aid"
+    - "scholarships"
+    - "library"
+    - "majors"
+    - "minors"
+    - "housing"
+    - "dining"
+    - "parking"
+    - "sustainability"
+    - "environment"
+    - "international"
+    - "global"
+    - "diversity"
+    - "inclusion"
+    - "policy"
+    - "news"
+    - "events"
+    - "calendar"
+    - "maps"
+    - "careers"
+    - "jobs"
+    - "wellness"
+    - "health"
+    - "engineering"
+    - "law"
+    - "medicine"
+    - "business"
+    - "nursing"
+    - "education"
+    - "pharmacy"
+    - "fine-arts"
+    - "humanities"
+    - "psychology"
+    - "biology"
+    - "chemistry"
+    - "physics"
+    - "geosciences"
+    - "data"
+    - "ai"
+    - "robotics"
+    - "institute"
+    - "center"

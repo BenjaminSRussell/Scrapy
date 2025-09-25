@@ -1,0 +1,10 @@
+scrapy>=2.5.0
+spacy>=3.4.0
+w3lib>=1.22.0
+PyYAML>=6.0.0
+aiohttp>=3.8.0
+
+# Optional HuggingFace dependencies for advanced link scoring
+transformers>=4.20.0
+huggingface-hub>=0.10.0
+sentence-transformers>=2.2.0

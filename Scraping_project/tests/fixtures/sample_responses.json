@@ -1,0 +1,25 @@
+[
+    {
+        "url": "https://uconn.edu/",
+        "status_code": 200,
+        "content_type": "text/html; charset=utf-8",
+        "title": "University of Connecticut",
+        "text_content": "Welcome to the University of Connecticut. UConn is a world-class research university.",
+        "links": [
+            "https://uconn.edu/about/",
+            "https://uconn.edu/admissions/",
+            "https://research.uconn.edu/"
+        ]
+    },
+    {
+        "url": "https://uconn.edu/about/",
+        "status_code": 200,
+        "content_type": "text/html; charset=utf-8",
+        "title": "About UConn",
+        "text_content": "Learn about the University of Connecticut, our history, mission, and values.",
+        "links": [
+            "https://uconn.edu/about/history/",
+            "https://uconn.edu/about/leadership/"
+        ]
+    }
+]
