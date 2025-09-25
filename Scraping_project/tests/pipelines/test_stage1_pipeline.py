@@ -1,7 +1,10 @@
 import json
+import os
 import sys
+import tempfile
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import Mock
 
 # Add src to Python path for imports
 src_dir = Path(__file__).parent.parent.parent / 'src'
