@@ -46,7 +46,7 @@ def test_stage1_pipeline_writes_first_1000(tmp_path, first_1000_urls):
 
 @pytest.mark.parametrize("duplicate_depth", [0, 2, 5])
 def test_stage1_pipeline_deduplication(duplicate_depth):
-    """Test that pipeline handles duplicate URL hashes correctly"""
+    """Ensure duplicates are skipped regardless of the depth they appear at."""
     with tempfile.NamedTemporaryFile(mode='w', suffix='.jsonl', delete=False) as f:
         temp_path = f.name
 
@@ -157,17 +157,11 @@ def test_stage1_pipeline_resume_from_existing():
     "missing_field",
     [
         "url_hash",
-        pytest.param(
-            "discovered_url",
-            marks=pytest.mark.xfail(
-                reason="Stage1 pipeline currently writes items lacking discovered_url",
-                strict=True,
-            ),
-        ),
+        "discovered_url",
     ],
 )
 def test_stage1_pipeline_error_handling(missing_field):
-    """Test pipeline handles malformed items gracefully"""
+    """Pipeline should ignore items missing required identifiers."""
     with tempfile.NamedTemporaryFile(mode='w', suffix='.jsonl', delete=False) as f:
         temp_path = f.name
 

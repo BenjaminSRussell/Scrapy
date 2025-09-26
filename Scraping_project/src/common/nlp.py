@@ -1,150 +1,340 @@
+import logging
 import re
-from collections import Counter
+from collections import Counter, OrderedDict
+from dataclasses import dataclass, field
 from typing import List, Tuple, Set, Optional
 
-# Global variables for lazy loading
-NLP = None
-ENTITY_LABELS = None
+logger = logging.getLogger(__name__)
 
 MAX_TEXT_LENGTH = 20_000
 TOP_KEYWORDS = 15
 
-# Audio file pattern matching
-AUDIO_RE = re.compile(r"\.(mp3|wav|ogg|flac)(\?.*)?$", re.I)
+# Audio file pattern matching (allow optional querystrings)
+AUDIO_RE = re.compile(r"\.(mp3|wav|ogg|flac)(?:\?.*)?$", re.I)
 
 
-def load_nlp_model() -> bool:
-    """Load spaCy model lazily"""
-    global NLP, ENTITY_LABELS
+@dataclass
+class NLPSettings:
+    """Runtime configuration for NLP pipelines."""
 
-    if NLP is None:
+    spacy_model: str = "en_core_web_sm"
+    transformer_model: Optional[str] = "dslim/bert-base-NER"
+    preferred_device: Optional[str] = None
+    additional_stop_words: Set[str] = field(default_factory=set)
+    stop_word_overrides: Set[str] = field(default_factory=set)
+
+
+class NLPRegistry:
+    """Centralised manager for spaCy and transformer pipelines."""
+
+    def __init__(self, settings: NLPSettings) -> None:
+        self.settings = settings
+        self.device = select_device(settings.preferred_device)
+        self.spacy_nlp = self._load_spacy(settings.spacy_model)
+        self.entity_labels = self._resolve_entity_labels()
+        self.stop_words = self._build_stop_words(
+            settings.additional_stop_words, settings.stop_word_overrides
+        )
+        self.transformer_pipeline = self._load_transformer(settings.transformer_model)
+
+    def _load_spacy(self, model_name: str):
         try:
             import spacy
-            NLP = spacy.load("en_core_web_sm", disable=["lemmatizer", "parser"])
-            ENTITY_LABELS = set(NLP.pipe_labels["ner"])
-            return True
-        except (ImportError, OSError):
-            # spaCy or model not available
-            NLP = None
-            ENTITY_LABELS = set()
-            return False
+        except ImportError as exc:  # pragma: no cover - configuration issue
+            raise RuntimeError("spaCy is required but not installed") from exc
 
-    return True
+        try:
+            nlp = spacy.load(model_name)
+        except Exception as exc:  # pragma: no cover - configuration issue
+            raise RuntimeError(f"Unable to load spaCy model '{model_name}': {exc}")
+
+        # Ensure lemmatiser is available for keyword extraction
+        if "lemmatizer" not in nlp.pipe_names:
+            try:
+                nlp.add_pipe("lemmatizer", config={"mode": "rule"}, after="tagger")
+            except Exception as lemmatizer_exc:
+                logger.debug(
+                    "Failed adding lemmatiser to spaCy pipeline: %s", lemmatizer_exc
+                )
+
+        return nlp
+
+    def _resolve_entity_labels(self) -> Set[str]:
+        if not self.spacy_nlp:
+            return set()
+        pipe_labels = getattr(self.spacy_nlp, "pipe_labels", {})
+        return set(pipe_labels.get("ner", []))
+
+    def _build_stop_words(
+        self, additions: Set[str], overrides: Set[str]
+    ) -> Set[str]:
+        base = set()
+        if self.spacy_nlp and hasattr(self.spacy_nlp, "Defaults"):
+            base = set(getattr(self.spacy_nlp.Defaults, "stop_words", set()))
+        stop_words = (base | additions) - overrides
+        return {word.lower() for word in stop_words}
+
+    def _load_transformer(self, model_name: Optional[str]):
+        if not model_name:
+            return None
+
+        try:
+            from transformers import pipeline
+        except ImportError:
+            logger.warning(
+                "transformers package not available; transformer pipeline disabled"
+            )
+            return None
+
+        device_arg = self._transformer_device_argument()
+
+        try:
+            return pipeline(
+                "token-classification",
+                model=model_name,
+                tokenizer=model_name,
+                aggregation_strategy="simple",
+                device=device_arg,
+            )
+        except Exception as exc:
+            logger.warning(
+                "Failed to load transformer model '%s' on device '%s': %s",
+                model_name,
+                device_arg,
+                exc,
+            )
+            return None
+
+    def _transformer_device_argument(self):
+        if self.device == "cuda":
+            return 0
+
+        if self.device == "mps":
+            try:
+                import torch
+
+                return torch.device("mps")
+            except ImportError:
+                logger.warning("PyTorch missing for MPS device; using CPU instead")
+
+        # Current HuggingFace pipeline does not understand MLX directly;
+        # treat it as CPU execution for now.
+        return -1
+
+    def extract_with_spacy(
+        self, text: str, top_k: int
+    ) -> Tuple[List[str], List[str]]:
+        doc = self.spacy_nlp(text)
+        entities = []
+        seen = OrderedDict()
+
+        for ent in doc.ents:
+            if self.entity_labels and ent.label_ not in self.entity_labels:
+                continue
+
+            cleaned = ent.text.strip()
+            if not cleaned or cleaned in seen:
+                continue
+            seen[cleaned] = None
+            entities.append(cleaned)
+
+        keywords = self._keywords_from_doc(doc, top_k)
+        return entities, keywords
+
+    def extract_entities_with_transformer(self, text: str) -> List[str]:
+        if not self.transformer_pipeline:
+            raise RuntimeError("Transformer pipeline is not initialised")
+
+        raw_entities = self.transformer_pipeline(text)
+        entities: List[str] = []
+        seen = OrderedDict()
+
+        for item in raw_entities:
+            label_text = item.get("word") or item.get("entity")
+            if not label_text:
+                continue
+            cleaned = label_text.strip()
+            if not cleaned or cleaned in seen:
+                continue
+            seen[cleaned] = None
+            entities.append(cleaned)
+
+        return entities
+
+    def _keywords_from_doc(self, doc, top_k: int) -> List[str]:
+        candidates: List[str] = []
+
+        for token in doc:
+            if not token.is_alpha:
+                continue
+
+            lemma = (token.lemma_ or token.text).lower().strip()
+            if not lemma:
+                continue
+            if lemma in self.stop_words:
+                continue
+            candidates.append(lemma)
+
+        counter = Counter(candidates)
+        return [word for word, _ in counter.most_common(top_k)]
 
 
-def extract_entities_and_keywords(text: str, max_length: int = MAX_TEXT_LENGTH, top_k: int = TOP_KEYWORDS) -> Tuple[List[str], List[str]]:
-    """Extract entities and keywords from text using spaCy"""
-    if not text or not load_nlp_model():
+NLP_REGISTRY: Optional[NLPRegistry] = None
+
+
+def initialize_nlp(settings: Optional[NLPSettings] = None) -> None:
+    """Initialise the global NLP registry."""
+
+    global NLP_REGISTRY
+    NLP_REGISTRY = NLPRegistry(settings or NLPSettings())
+
+
+def get_registry() -> NLPRegistry:
+    global NLP_REGISTRY
+    if NLP_REGISTRY is None:
+        initialize_nlp()
+    return NLP_REGISTRY
+
+
+def extract_entities_and_keywords(
+    text: str,
+    max_length: int = MAX_TEXT_LENGTH,
+    top_k: int = TOP_KEYWORDS,
+    backend: str = "spacy",
+) -> Tuple[List[str], List[str]]:
+    """Extract entities/keywords using the configured NLP backend."""
+
+    if not text:
         return [], []
 
-    try:
-        # Truncate text if too long
-        if len(text) > max_length:
-            text = text[:max_length]
+    registry = get_registry()
+    truncated = text[:max_length]
 
-        doc = NLP(text)
+    if backend == "transformer":
+        entities = registry.extract_entities_with_transformer(truncated)
+        # Keywords still leverage spaCy for richer linguistic signals
+        _, keywords = registry.extract_with_spacy(truncated, top_k)
+        return entities, keywords
 
-        # Extract named entities
-        entities = {e.text.strip() for e in doc.ents if e.label_ in ENTITY_LABELS}
-
-        # Extract keywords (lemmatized tokens, excluding stop words)
-        lemmas = [
-            t.lemma_.lower()
-            for t in doc
-            if t.is_alpha and not t.is_stop and len(t.lemma_) > 2
-        ]
-
-        # Get most common keywords
-        keywords = [word for word, _ in Counter(lemmas).most_common(top_k)]
-
-        return sorted(entities), keywords
-
-    except Exception as e:
-        # Log error but don't fail the entire process
-        import logging
-        logger = logging.getLogger(__name__)
-        logger.error(f"NLP processing failed: {e}")
-        return [], []
+    entities, keywords = registry.extract_with_spacy(truncated, top_k)
+    return entities, keywords
 
 
 def extract_content_tags(url_path: str, predefined_tags: Set[str]) -> List[str]:
-    """Extract content tags from URL path based on predefined tag set"""
+    """Extract content tags from a URL path while preserving order."""
+
     if not url_path or not predefined_tags:
         return []
 
-    # Split path and clean components
-    path_parts = [
-        part.lower().strip()
-        for part in url_path.split('/')
-        if part and part.lower().strip()
-    ]
+    cleaned_tags: List[str] = []
+    seen: Set[str] = set()
 
-    # Find matches with predefined tags
-    tags = [part for part in path_parts if part in predefined_tags]
+    for part in url_path.split("/"):
+        candidate = part.lower().strip()
+        if not candidate or candidate not in predefined_tags:
+            continue
+        if candidate in seen:
+            continue
+        seen.add(candidate)
+        cleaned_tags.append(candidate)
 
-    return sorted(set(tags))  # Remove duplicates and sort
+    return cleaned_tags
 
 
 def has_audio_links(links: List[str]) -> bool:
-    """Check if any links point to audio files"""
+    """Check if any links point to audio-capable resources."""
+
     if not links:
         return False
 
-    return any(AUDIO_RE.search(link) for link in links)
+    return any(AUDIO_RE.search(link or "") for link in links)
 
 
 def clean_text(text: str) -> str:
-    """Clean and normalize text content"""
+    """Clean and normalize text content without destroying contractions."""
+
     if not text:
         return ""
 
-    # Remove extra whitespace
-    text = re.sub(r'\s+', ' ', text.strip())
-
-    # Remove special characters but keep basic punctuation
-    text = re.sub(r'[^\w\s.,!?;:()\-"]', '', text)
-
+    text = re.sub(r"\s+", " ", text.strip())
+    text = re.sub(r"[^\w\s.,!?;:'()\-\"]", "", text)
     return text
 
 
-def extract_keywords_simple(text: str, top_k: int = TOP_KEYWORDS) -> List[str]:
-    """Extract keywords using simple word frequency (fallback when spaCy unavailable)"""
+def extract_keywords_simple(
+    text: str,
+    top_k: int = TOP_KEYWORDS,
+    stop_words: Optional[Set[str]] = None,
+) -> List[str]:
+    """Extract keywords via simple frequency analysis."""
+
     if not text:
         return []
 
-    # Simple tokenization
-    words = re.findall(r'\b[a-zA-Z]{3,}\b', text.lower())
-
-    # Basic stop words
-    stop_words = {
-        'the', 'and', 'are', 'for', 'with', 'this', 'that', 'from', 'they',
-        'have', 'has', 'will', 'can', 'been', 'was', 'were', 'you', 'your',
-        'our', 'all', 'any', 'may', 'also', 'more', 'than', 'not', 'but'
-    }
-
-    # Filter stop words and count frequency
-    filtered_words = [word for word in words if word not in stop_words]
+    effective_stop_words = {word.lower() for word in (stop_words or set())}
+    words = re.findall(r"[a-zA-Z']{3,}", text.lower())
+    filtered_words = [word for word in words if word not in effective_stop_words]
     word_counts = Counter(filtered_words)
-
     return [word for word, _ in word_counts.most_common(top_k)]
 
 
 def get_text_stats(text: str) -> dict:
-    """Get basic statistics about text content"""
+    """Return basic statistics for the supplied text."""
+
     if not text:
         return {
-            'word_count': 0,
-            'char_count': 0,
-            'sentence_count': 0,
-            'avg_word_length': 0
+            "word_count": 0,
+            "char_count": 0,
+            "sentence_count": 0,
+            "avg_word_length": 0,
         }
 
-    words = text.split()
-    sentences = re.split(r'[.!?]+', text)
+    tokens = re.findall(r"[A-Za-z']+", text)
+    char_count = len(text)
+    sentences = [segment for segment in re.split(r"[.!?]+", text) if segment.strip()]
+
+    avg_word_length = (
+        sum(len(token) for token in tokens) / len(tokens)
+        if tokens
+        else 0
+    )
 
     return {
-        'word_count': len(words),
-        'char_count': len(text),
-        'sentence_count': len([s for s in sentences if s.strip()]),
-        'avg_word_length': sum(len(word) for word in words) / len(words) if words else 0
+        "word_count": len(tokens),
+        "char_count": char_count,
+        "sentence_count": len(sentences),
+        "avg_word_length": avg_word_length,
     }
+
+
+def select_device(preferred: Optional[str] = None) -> str:
+    """Determine the best execution device available."""
+
+    if preferred:
+        return preferred
+
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            return "cuda"
+
+        mps_backend = getattr(torch.backends, "mps", None)
+        if mps_backend and mps_backend.is_available():
+            return "mps"
+    except ImportError:
+        logger.debug("PyTorch not installed; skipping CUDA/MPS detection")
+
+    try:  # pragma: no cover - MLX availability can vary widely
+        import mlx.core as mx
+
+        if hasattr(mx, "gpu_count") and mx.gpu_count() > 0:
+            return "mlx"
+        default_device = getattr(mx, "default_device", None)
+        if default_device and hasattr(default_device(), "type"):
+            if default_device().type == "gpu":
+                return "mlx"
+    except Exception:
+        logger.debug("MLX not available; defaulting to CPU")
+
+    return "cpu"

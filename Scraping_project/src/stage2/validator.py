@@ -31,50 +31,37 @@ class URLValidator:
         self.session_timeout = aiohttp.ClientTimeout(total=self.timeout)
 
     async def validate_url(self, session: aiohttp.ClientSession, url: str, url_hash: str) -> ValidationResult:
-        """Validate a single URL using HEAD request, fallback to GET if needed"""
+        """Validate a single URL using a straightforward GET request."""
+
         start_time = datetime.now()
 
         try:
-            # Try HEAD request first (faster)
-            async with session.head(url, allow_redirects=True) as response:
+            async with session.get(url, allow_redirects=True) as response:
+                body_bytes = await response.read()
+
                 content_type = response.headers.get('Content-Type', '')
+                status_code = response.status
 
-                # CRITICAL FIX: Safe Content-Length parsing
-                # int(response.headers.get('Content-Length', 0)) raises ValueError
-                # when header is blank/non-numeric, causing spurious failures
                 try:
-                    content_length = int(response.headers.get('Content-Length', '0'))
-                except (ValueError, TypeError):
-                    content_length = 0
-
-                # If HEAD doesn't provide enough info, try GET with partial content
-                if content_length == 0 or not content_type:
-                    async with session.get(url, allow_redirects=True) as get_response:
-                        content_type = get_response.headers.get('Content-Type', content_type)
-
-                        # CRITICAL FIX: Safe Content-Length parsing on GET fallback
-                        try:
-                            content_length_header = get_response.headers.get('Content-Length', '')
-                            content_length = int(content_length_header) if content_length_header else len(await get_response.read())
-                        except (ValueError, TypeError):
-                            # Fallback to actual content length if header is malformed
-                            content_length = len(await get_response.read())
-
-                        status_code = get_response.status
-                else:
-                    status_code = response.status
+                    header_length = response.headers.get('Content-Length')
+                    content_length = int(header_length) if header_length is not None else len(body_bytes)
+                except (TypeError, ValueError):
+                    content_length = len(body_bytes)
 
                 response_time = (datetime.now() - start_time).total_seconds()
 
+                is_html = 'text/html' in content_type.lower()
+                is_valid = 200 <= status_code < 400 and is_html
+
                 return ValidationResult(
-                    url=str(response.url),  # Final URL after redirects
+                    url=str(response.url),
                     url_hash=url_hash,
                     status_code=status_code,
                     content_type=content_type,
                     content_length=content_length,
                     response_time=response_time,
-                    is_valid=200 <= status_code < 400 and 'text/html' in content_type.lower(),
-                    error_message=None,
+                    is_valid=is_valid,
+                    error_message=None if is_valid else 'Invalid response',
                     validated_at=datetime.now().isoformat()
                 )
 
@@ -92,7 +79,7 @@ class URLValidator:
                 validated_at=datetime.now().isoformat()
             )
 
-        except Exception as e:
+        except aiohttp.ClientError as exc:
             response_time = (datetime.now() - start_time).total_seconds()
             return ValidationResult(
                 url=url,
@@ -102,7 +89,7 @@ class URLValidator:
                 content_length=0,
                 response_time=response_time,
                 is_valid=False,
-                error_message=str(e),
+                error_message=str(exc),
                 validated_at=datetime.now().isoformat()
             )
 
@@ -127,10 +114,7 @@ class URLValidator:
         ) as session:
 
             # Create validation tasks
-            tasks = [
-                self.validate_url(session, item.url, item.url_hash)
-                for item in batch
-            ]
+            tasks = [self.validate_url(session, item.url, item.url_hash) for item in batch]
 
             # Run validations concurrently
             results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -157,36 +141,38 @@ class URLValidator:
 
         logger.info(f"Starting validation from {input_file}")
 
-        # Load URLs from file
-        urls_to_validate = []
+        batch_size = self.max_workers
+        processed_count = 0
+        batch: List[BatchQueueItem] = []
+
         with open(input_file, 'r', encoding='utf-8') as f:
             for line_no, line in enumerate(f, 1):
                 try:
                     data = json.loads(line.strip())
-                    item = BatchQueueItem(
+                except json.JSONDecodeError as exc:
+                    logger.error(f"Failed to parse JSON at line {line_no}: {exc}")
+                    continue
+
+                batch.append(
+                    BatchQueueItem(
                         url=data.get('discovered_url', ''),
                         url_hash=data.get('url_hash', ''),
                         source_stage='stage1',
-                        data=data
+                        data=data,
                     )
-                    urls_to_validate.append(item)
+                )
 
-                except json.JSONDecodeError as e:
-                    logger.error(f"Failed to parse JSON at line {line_no}: {e}")
+                if len(batch) == batch_size:
+                    await self.validate_batch(batch)
+                    processed_count += len(batch)
+                    batch = []
 
-        logger.info(f"Loaded {len(urls_to_validate)} URLs for validation")
+                    if processed_count % 1000 == 0:
+                        logger.info(f"Validated {processed_count} URLs")
 
-        # Process in batches
-        batch_size = self.max_workers
-        processed_count = 0
-
-        for i in range(0, len(urls_to_validate), batch_size):
-            batch = urls_to_validate[i:i + batch_size]
+        if batch:
             await self.validate_batch(batch)
             processed_count += len(batch)
-
-            if processed_count % 1000 == 0:
-                logger.info(f"Validated {processed_count}/{len(urls_to_validate)} URLs")
 
         logger.info(f"Validation completed: {processed_count} URLs processed")
         return processed_count

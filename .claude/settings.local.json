@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -m pytest tests/utils/test_url_helpers.py::test_canonicalize_path_traversal_protection -v)",
+      "Bash(python -m pytest tests/utils/test_url_helpers.py::test_url_canonicalization_edge_cases -v)",
+      "Bash(python -m pytest tests/utils/test_url_helpers.py::test_canonicalization_normalization -v)",
+      "Bash(python3:*)",
+      "Bash(python -m pytest tests/utils/test_url_helpers.py -v)",
+      "Bash(python -m pytest tests/utils/test_url_helpers.py::test_canonicalization_normalization tests/utils/test_url_helpers.py::test_canonicalize_path_traversal_protection tests/utils/test_url_helpers.py::test_url_canonicalization_edge_cases -v)",
+      "Bash(python -m pytest tests/utils/test_url_helpers.py -x)",
+      "Bash(python -m pytest tests/utils/test_url_helpers.py --tb=no -q)",
+      "Bash(python -m pytest tests/utils/test_url_helpers.py::test_canonicalize_and_hash_variants::test_url_hash_collision_resistance --tb=line)",
+      "Bash(python -m pytest tests/utils/test_url_helpers.py::test_url_hash_collision_resistance --tb=short)",
+      "Bash(python -m pytest tests/utils/test_url_helpers.py::test_url_hash_collision_resistance -v)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

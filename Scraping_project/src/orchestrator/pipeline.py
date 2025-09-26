@@ -318,33 +318,45 @@ class PipelineOrchestrator:
         # Wait for population to complete and collect URLs
         await asyncio.gather(population_task, collect_urls_from_queue())
 
-        if not urls_for_enrichment:
+        if not validation_items_for_enrichment:
             logger.warning("No URLs available for Stage 3 enrichment")
             return
 
-        # Run Scrapy in executor to avoid blocking the event loop
-        def run_scrapy_process():
-            """Run Scrapy process in separate thread"""
-            try:
-                # Install reactor if not already done
-                try:
-                    asyncioreactor.install()
-                except Exception:
-                    pass  # Reactor already installed
+        # Run Scrapy in subprocess to avoid reactor conflicts
+        import subprocess
+        import tempfile
+        import json
 
-                # Configure Scrapy process
-                process = CrawlerProcess(scrapy_settings)
+        # Create temporary file with URLs for the spider
+        urls_for_spider = [item.get('url', '') for item in validation_items_for_enrichment if item.get('url')]
 
-                # Pass URLs to spider
-                process.crawl(enricher.__class__, urls_list=urls_for_enrichment)
-                process.start()
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            json.dump(urls_for_spider, f)
+            urls_file = f.name
 
-            except Exception as e:
-                logger.error(f"Scrapy process failed: {e}")
+        try:
+            # Run Scrapy spider in subprocess to avoid reactor conflicts
+            cmd = [
+                'scrapy', 'crawl', enricher.name,
+                '-s', f'STAGE3_OUTPUT_FILE={scrapy_settings.get("STAGE3_OUTPUT_FILE", "")}',
+                '-s', f'LOG_LEVEL={scrapy_settings.get("LOG_LEVEL", "INFO")}',
+                '-a', f'urls_file={urls_file}'
+            ]
 
-        # Run Scrapy in thread executor
-        loop = asyncio.get_event_loop()
-        with ThreadPoolExecutor(max_workers=1) as executor:
-            await loop.run_in_executor(executor, run_scrapy_process)
+            logger.info(f"Running Scrapy command: {' '.join(cmd)}")
+            result = subprocess.run(cmd, capture_output=True, text=True, cwd=str(Path(__file__).parent.parent.parent))
+
+            if result.returncode == 0:
+                logger.info("Scrapy enrichment completed successfully")
+            else:
+                logger.error(f"Scrapy process failed with return code {result.returncode}")
+                logger.error(f"STDOUT: {result.stdout}")
+                logger.error(f"STDERR: {result.stderr}")
+
+        finally:
+            # Clean up temporary file
+            import os
+            if os.path.exists(urls_file):
+                os.unlink(urls_file)
 
         logger.info("Stage 3 enrichment completed")

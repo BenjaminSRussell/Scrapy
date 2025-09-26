@@ -6,10 +6,11 @@ from typing import Dict, Any
 
 class Config:
     """Configuration manager that reads env + stage YAML files"""
+    config_dir = Path(__file__).parent.parent.parent / 'config'
 
     def __init__(self, env: str = 'development'):
         self.env = env
-        self.config_dir = Path(__file__).parent.parent.parent / 'config'
+        self.config_dir = self.config_dir
         self._config = self._load_config()
 
     def _load_config(self) -> Dict[str, Any]:

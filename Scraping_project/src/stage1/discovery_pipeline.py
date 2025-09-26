@@ -64,8 +64,9 @@ class Stage1Pipeline:
         """Process each discovered URL item"""
         adapter = ItemAdapter(item)
         url_hash = adapter.get("url_hash")
+        discovered_url = adapter.get("discovered_url")
 
-        if url_hash and url_hash not in self.seen_hashes:
+        if url_hash and discovered_url and url_hash not in self.seen_hashes:
             # Write the discovery data
             discovery_data = {
                 "source_url": adapter.get("source_url"),

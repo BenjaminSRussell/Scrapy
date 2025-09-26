@@ -26,6 +26,7 @@ SAMPLE_RESPONSES = json.loads(FIXTURE_PATH.read_text(encoding="utf-8"))
 
 @pytest.mark.parametrize("count", [1, 2])
 def test_stage3_pipeline_writes_items(tmp_path, count):
+    """Pipeline should persist every enriched item while preserving unique hashes."""
     output = tmp_path / "enriched.jsonl"
     pipeline = Stage3Pipeline(output_file=str(output))
     pipeline.open_spider(DummySpider())
@@ -62,6 +63,7 @@ def test_stage3_pipeline_writes_items(tmp_path, count):
 
 
 def test_stage3_pipeline_directory_creation(tmp_path):
+    """Pipeline must create the output directory hierarchy on open."""
     output = tmp_path / "nested" / "enriched.jsonl"
     pipeline = Stage3Pipeline(output_file=str(output))
     pipeline.open_spider(DummySpider())
@@ -70,6 +72,7 @@ def test_stage3_pipeline_directory_creation(tmp_path):
 
 
 def test_stage3_pipeline_returns_original_item(tmp_path):
+    """process_item should never mutate or replace the original item instance."""
     pipeline = Stage3Pipeline(output_file=str(tmp_path / "enriched.jsonl"))
     pipeline.open_spider(DummySpider())
     sample_item = EnrichmentItem(
@@ -92,8 +95,8 @@ def test_stage3_pipeline_returns_original_item(tmp_path):
     pipeline.close_spider(DummySpider())
 
 
-@pytest.mark.xfail(reason="Stage3 pipeline drops original enrichment metadata", strict=True)
 def test_stage3_pipeline_preserves_metadata(tmp_path):
+    """Written payload should retain enrichment metadata supplied by the item."""
     output = tmp_path / "enriched.jsonl"
     pipeline = Stage3Pipeline(output_file=str(output))
     pipeline.open_spider(DummySpider())

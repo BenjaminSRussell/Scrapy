@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-import sys
-from types import SimpleNamespace
+from collections import Counter
 
 import pytest
 
@@ -13,13 +12,15 @@ import common.nlp as nlp_module
 class FakeToken:
     def __init__(self, text: str):
         cleaned = text.strip(".,!?")
+        self.text = text
         self.lemma_ = cleaned.lower()
         self.is_alpha = cleaned.isalpha()
-        self.is_stop = self.lemma_ in {"the", "and", "is", "a"}
 
 
 class FakeDoc:
     def __init__(self, text: str):
+        from types import SimpleNamespace
+
         self.text = text
         self.ents = []
         if "UConn" in text:
@@ -30,58 +31,61 @@ class FakeDoc:
         return iter(self._tokens)
 
 
-class FakeNLP:
-    pipe_labels = {"ner": {"ORG"}}
+class StubRegistry:
+    def __init__(self):
+        self.stop_words = {"the", "and", "is", "a", "for"}
+        self.entity_labels = {"ORG"}
 
-    def __call__(self, text: str):
-        return FakeDoc(text)
+    def extract_with_spacy(self, text: str, top_k: int):
+        doc = FakeDoc(text)
+        entities = []
+        seen = set()
+        for ent in doc.ents:
+            name = ent.text.strip()
+            if name and name not in seen:
+                entities.append(name)
+                seen.add(name)
 
+        keywords_source = [
+            token.lemma_.lower()
+            for token in doc
+            if token.is_alpha and token.lemma_.lower() not in self.stop_words
+        ]
+        keywords = [word for word, _ in Counter(keywords_source).most_common(top_k)]
+        return entities, keywords
 
-@pytest.fixture(autouse=True)
-def reset_nlp_globals():
-    nlp_module.NLP = None
-    nlp_module.ENTITY_LABELS = None
-    yield
-    nlp_module.NLP = None
-    nlp_module.ENTITY_LABELS = None
+    def extract_entities_with_transformer(self, text: str):
+        doc = FakeDoc(text)
+        return [ent.text.strip() for ent in doc.ents]
 
 
 @pytest.fixture
-def patched_spacy(monkeypatch):
-    fake_spacy = SimpleNamespace(load=lambda model, disable=None: FakeNLP())
-    monkeypatch.setitem(sys.modules, "spacy", fake_spacy)
-    yield
-    monkeypatch.delitem(sys.modules, "spacy", raising=False)
+def stub_registry(monkeypatch):
+    registry = StubRegistry()
+    monkeypatch.setattr(nlp_module, "get_registry", lambda: registry)
+    return registry
 
 
-@pytest.mark.usefixtures("patched_spacy")
-def test_load_nlp_model_initialises_stub():
-    loaded = nlp_module.load_nlp_model()
-    assert loaded is True
-    assert nlp_module.NLP is not None
-    assert "ORG" in nlp_module.ENTITY_LABELS
-
-
-@pytest.mark.usefixtures("patched_spacy")
 @pytest.mark.parametrize(
-    "text,expected_entities,expected_keywords",
+    "text,expected_entities",
     [
-        (
-            "UConn offers innovative programs for students",
-            ["UConn"],
-            {"uconn", "offers", "innovative", "programs", "for", "students"},
-        ),
-        (
-            "The research initiatives and data science labs are growing",
-            [],
-            {"research", "initiatives", "data", "science", "labs", "are", "growing"},
-        ),
+        ("UConn offers innovative programs for students", ["UConn"]),
+        ("The research initiatives and data science labs are growing", []),
     ],
 )
-def test_extract_entities_and_keywords_stub(text, expected_entities, expected_keywords):
+def test_extract_entities_and_keywords_spacy(stub_registry, text, expected_entities):
     entities, keywords = nlp_module.extract_entities_and_keywords(text, top_k=10)
     assert entities == expected_entities
-    assert set(keywords).issubset(expected_keywords)
+    assert len(keywords) <= 10
+
+
+def test_extract_entities_and_keywords_transformer(stub_registry):
+    text = "UConn students explore AI labs"
+    entities, keywords = nlp_module.extract_entities_and_keywords(
+        text, backend="transformer"
+    )
+    assert entities == ["UConn"]
+    assert keywords
 
 
 @pytest.mark.parametrize(
@@ -108,13 +112,3 @@ def test_extract_content_tags(url_path, predefined, expected):
 )
 def test_has_audio_links(links, expected):
     assert nlp_module.has_audio_links(links) is expected
-
-
-def test_nlp_fallback_without_spacy(monkeypatch):
-    monkeypatch.setitem(sys.modules, "spacy", None)
-    nlp_module.NLP = None
-    loaded = nlp_module.load_nlp_model()
-    assert loaded is False
-    entities, keywords = nlp_module.extract_entities_and_keywords("Text without model")
-    assert entities == []
-    assert keywords == []

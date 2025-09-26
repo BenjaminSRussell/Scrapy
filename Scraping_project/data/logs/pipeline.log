@@ -1,0 +1,357 @@
+2025-09-26 11:36:45 [src.orchestrator.main:155] INFO: Starting pipeline orchestrator
+2025-09-26 11:36:45 [src.orchestrator.main:156] INFO: Environment: development
+2025-09-26 11:36:45 [src.orchestrator.main:157] INFO: Stage(s): all
+2025-09-26 11:36:47 [src.orchestrator.main:34] INFO: ============================================================
+2025-09-26 11:36:47 [src.orchestrator.main:35] INFO: STAGE 1: DISCOVERY
+2025-09-26 11:36:47 [src.orchestrator.main:36] INFO: ============================================================
+2025-09-26 11:36:47 [scrapy.utils.log:173] INFO: Scrapy 2.13.3 started (bot: scrapybot)
+2025-09-26 11:36:47 [scrapy.utils.log:181] INFO: Versions:
+{'lxml': '6.0.2',
+ 'libxml2': '2.14.6',
+ 'cssselect': '1.3.0',
+ 'parsel': '1.10.0',
+ 'w3lib': '2.3.1',
+ 'Twisted': '25.5.0',
+ 'Python': '3.9.6 (default, Aug  8 2025, 19:06:38) - [Clang 17.0.0 '
+           '(clang-1700.3.19.1)]',
+ 'pyOpenSSL': '25.3.0 (OpenSSL 3.5.3 16 Sep 2025)',
+ 'cryptography': '46.0.1',
+ 'Platform': 'macOS-26.0-arm64-arm-64bit'}
+2025-09-26 11:36:47 [discovery:44] INFO: Discovery spider initialized with max_depth=3
+2025-09-26 11:36:47 [scrapy.addons:49] INFO: Enabled addons:
+[]
+2025-09-26 11:36:47 [scrapy.extensions.telnet:57] INFO: Telnet Password: 9fccea6cbdcb5d68
+2025-09-26 11:36:47 [scrapy.middleware:101] INFO: Enabled extensions:
+['scrapy.extensions.corestats.CoreStats',
+ 'scrapy.extensions.telnet.TelnetConsole',
+ 'scrapy.extensions.memusage.MemoryUsage',
+ 'scrapy.extensions.logstats.LogStats']
+2025-09-26 11:36:47 [scrapy.crawler:135] INFO: Overridden settings:
+{'CONCURRENT_REQUESTS': 32,
+ 'CONCURRENT_REQUESTS_PER_DOMAIN': 16,
+ 'CONCURRENT_REQUESTS_PER_IP': 16,
+ 'DNS_TIMEOUT': 5,
+ 'DOWNLOAD_DELAY': 0.1,
+ 'DOWNLOAD_TIMEOUT': 10,
+ 'LOG_LEVEL': 'INFO',
+ 'USER_AGENT': 'UConn-Discovery-Crawler/1.0 (development)'}
+2025-09-26 11:36:47 [py.warnings:109] WARNING: /Users/benjaminrussell/Desktop/Github/.venv/lib/python3.9/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+
+2025-09-26 11:36:48 [scrapy.middleware:101] INFO: Enabled downloader middlewares:
+['scrapy.downloadermiddlewares.offsite.OffsiteMiddleware',
+ 'scrapy.downloadermiddlewares.httpauth.HttpAuthMiddleware',
+ 'scrapy.downloadermiddlewares.downloadtimeout.DownloadTimeoutMiddleware',
+ 'scrapy.downloadermiddlewares.defaultheaders.DefaultHeadersMiddleware',
+ 'scrapy.downloadermiddlewares.useragent.UserAgentMiddleware',
+ 'scrapy.downloadermiddlewares.retry.RetryMiddleware',
+ 'scrapy.downloadermiddlewares.redirect.MetaRefreshMiddleware',
+ 'scrapy.downloadermiddlewares.httpcompression.HttpCompressionMiddleware',
+ 'scrapy.downloadermiddlewares.redirect.RedirectMiddleware',
+ 'scrapy.downloadermiddlewares.cookies.CookiesMiddleware',
+ 'scrapy.downloadermiddlewares.httpproxy.HttpProxyMiddleware',
+ 'scrapy.downloadermiddlewares.stats.DownloaderStats']
+2025-09-26 11:36:48 [scrapy.middleware:101] INFO: Enabled spider middlewares:
+['scrapy.spidermiddlewares.start.StartSpiderMiddleware',
+ 'scrapy.spidermiddlewares.httperror.HttpErrorMiddleware',
+ 'scrapy.spidermiddlewares.referer.RefererMiddleware',
+ 'scrapy.spidermiddlewares.urllength.UrlLengthMiddleware',
+ 'scrapy.spidermiddlewares.depth.DepthMiddleware']
+2025-09-26 11:36:49 [scrapy.middleware:101] INFO: Enabled item pipelines:
+['stage1.discovery_pipeline.Stage1Pipeline']
+2025-09-26 11:36:49 [scrapy.core.engine:438] INFO: Spider opened
+2025-09-26 11:36:49 [twisted:147] CRITICAL: While calling system event trigger handler
+Traceback (most recent call last):
+  File "/Users/benjaminrussell/Desktop/Github/.venv/lib/python3.9/site-packages/twisted/internet/base.py", line 518, in _continueFiring
+    callable(*args, **kwargs)
+  File "/Users/benjaminrussell/Desktop/Github/.venv/lib/python3.9/site-packages/twisted/internet/base.py", line 951, in _reallyStartRunning
+    self._signals.install()
+  File "/Users/benjaminrussell/Desktop/Github/.venv/lib/python3.9/site-packages/twisted/internet/_signals.py", line 190, in install
+    d.install()
+  File "/Users/benjaminrussell/Desktop/Github/.venv/lib/python3.9/site-packages/twisted/internet/_signals.py", line 149, in install
+    signal.signal(signal.SIGINT, self._sigInt)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/signal.py", line 47, in signal
+    handler = _signal.signal(_enum_to_int(signalnum), _enum_to_int(handler))
+ValueError: signal only works in main thread of the main interpreter
+2025-09-26 11:36:49 [twisted:147] CRITICAL: While calling system event trigger handler
+Traceback (most recent call last):
+  File "/Users/benjaminrussell/Desktop/Github/.venv/lib/python3.9/site-packages/twisted/internet/base.py", line 518, in _continueFiring
+    callable(*args, **kwargs)
+  File "/Users/benjaminrussell/Desktop/Github/.venv/lib/python3.9/site-packages/scrapy/utils/ossignal.py", line 29, in install_shutdown_handlers
+    signal.signal(signal.SIGTERM, function)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/signal.py", line 47, in signal
+    handler = _signal.signal(_enum_to_int(signalnum), _enum_to_int(handler))
+ValueError: signal only works in main thread of the main interpreter
+2025-09-26 11:36:49 [py.warnings:109] WARNING: /Users/benjaminrussell/Desktop/Github/.venv/lib/python3.9/site-packages/scrapy/core/spidermw.py:433: ScrapyDeprecationWarning: stage1.discovery_spider.DiscoverySpider defines the deprecated start_requests() method. start_requests() has been deprecated in favor of a new method, start(), to support asynchronous code execution. start_requests() will stop being called in a future version of Scrapy. If you use Scrapy 2.13 or higher only, replace start_requests() with start(); note that start() is a coroutine (async def). If you need to maintain compatibility with lower Scrapy versions, when overriding start_requests() in a spider class, override start() as well; you can use super() to reuse the inherited start() implementation without copy-pasting. See the release notes of Scrapy 2.13 for details: https://docs.scrapy.org/en/2.13/news.html
+  warn(
+
+2025-09-26 11:36:49 [stage1.discovery_pipeline:55] INFO: [Stage1Pipeline] Loaded 0 existing URL hashes
+2025-09-26 11:36:49 [stage1.discovery_pipeline:56] INFO: [Stage1Pipeline] Writing to data/processed/stage01/new_urls.jsonl
+2025-09-26 11:36:49 [scrapy.extensions.logstats:65] INFO: Crawled 0 pages (at 0 pages/min), scraped 0 items (at 0 items/min)
+2025-09-26 11:36:49 [src.orchestrator.main:189] ERROR: Pipeline failed: This event loop is already running
+Traceback (most recent call last):
+  File "/Users/benjaminrussell/Desktop/Github/Scraping_project/src/orchestrator/main.py", line 174, in main
+    await run_stage1_discovery(config)
+  File "/Users/benjaminrussell/Desktop/Github/Scraping_project/src/orchestrator/main.py", line 60, in run_stage1_discovery
+    await asyncio.get_event_loop().run_in_executor(None, process.start)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/concurrent/futures/thread.py", line 52, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/Users/benjaminrussell/Desktop/Github/.venv/lib/python3.9/site-packages/scrapy/crawler.py", line 502, in start
+    reactor.run(installSignalHandlers=install_signal_handlers)  # blocking call
+  File "/Users/benjaminrussell/Desktop/Github/.venv/lib/python3.9/site-packages/twisted/internet/asyncioreactor.py", line 253, in run
+    self._asyncioEventloop.run_forever()
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/asyncio/base_events.py", line 586, in run_forever
+    self._check_running()
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/asyncio/base_events.py", line 578, in _check_running
+    raise RuntimeError('This event loop is already running')
+RuntimeError: This event loop is already running
+2025-09-26 11:36:49 [scrapy.extensions.telnet:69] INFO: Telnet console listening on 127.0.0.1:6023
+2025-09-26 11:36:49 [discovery:54] INFO: Loading seed URLs from data/raw/uconn_urls.csv
+2025-09-26 11:36:49 [twisted:147] CRITICAL: Unhandled error in Deferred:
+2025-09-26 11:36:49 [twisted:147] CRITICAL: 
+Traceback (most recent call last):
+  File "/Users/benjaminrussell/Desktop/Github/.venv/lib/python3.9/site-packages/scrapy/core/engine.py", line 145, in start
+    await maybe_deferred_to_future(self._closewait)
+asyncio.exceptions.CancelledError
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/benjaminrussell/Desktop/Github/.venv/lib/python3.9/site-packages/twisted/internet/defer.py", line 1853, in _inlineCallbacks
+    result = context.run(
+  File "/Users/benjaminrussell/Desktop/Github/.venv/lib/python3.9/site-packages/twisted/python/failure.py", line 467, in throwExceptionIntoGenerator
+    return g.throw(self.value.with_traceback(self.tb))
+  File "/Users/benjaminrussell/Desktop/Github/.venv/lib/python3.9/site-packages/scrapy/crawler.py", line 158, in crawl
+    yield self.engine.start()
+  File "/Users/benjaminrussell/Desktop/Github/.venv/lib/python3.9/site-packages/twisted/internet/defer.py", line 1257, in adapt
+    extracted: _SelfResultT | Failure = result.result()
+asyncio.exceptions.CancelledError
+2025-09-26 11:37:11 [src.orchestrator.main:155] INFO: Starting pipeline orchestrator
+2025-09-26 11:37:11 [src.orchestrator.main:156] INFO: Environment: development
+2025-09-26 11:37:11 [src.orchestrator.main:157] INFO: Stage(s): all
+2025-09-26 11:37:11 [src.orchestrator.main:34] INFO: ============================================================
+2025-09-26 11:37:11 [src.orchestrator.main:35] INFO: STAGE 1: DISCOVERY
+2025-09-26 11:37:11 [src.orchestrator.main:36] INFO: ============================================================
+2025-09-26 11:37:11 [scrapy.utils.log:173] INFO: Scrapy 2.13.3 started (bot: scrapybot)
+2025-09-26 11:37:11 [scrapy.utils.log:181] INFO: Versions:
+{'lxml': '6.0.2',
+ 'libxml2': '2.14.6',
+ 'cssselect': '1.3.0',
+ 'parsel': '1.10.0',
+ 'w3lib': '2.3.1',
+ 'Twisted': '25.5.0',
+ 'Python': '3.9.6 (default, Aug  8 2025, 19:06:38) - [Clang 17.0.0 '
+           '(clang-1700.3.19.1)]',
+ 'pyOpenSSL': '25.3.0 (OpenSSL 3.5.3 16 Sep 2025)',
+ 'cryptography': '46.0.1',
+ 'Platform': 'macOS-26.0-arm64-arm-64bit'}
+2025-09-26 11:37:11 [discovery:44] INFO: Discovery spider initialized with max_depth=3
+2025-09-26 11:37:11 [scrapy.addons:49] INFO: Enabled addons:
+[]
+2025-09-26 11:37:11 [scrapy.extensions.telnet:57] INFO: Telnet Password: 5700895aa5a77068
+2025-09-26 11:37:11 [scrapy.middleware:101] INFO: Enabled extensions:
+['scrapy.extensions.corestats.CoreStats',
+ 'scrapy.extensions.telnet.TelnetConsole',
+ 'scrapy.extensions.memusage.MemoryUsage',
+ 'scrapy.extensions.logstats.LogStats']
+2025-09-26 11:37:11 [scrapy.crawler:135] INFO: Overridden settings:
+{'CONCURRENT_REQUESTS': 32,
+ 'CONCURRENT_REQUESTS_PER_DOMAIN': 16,
+ 'CONCURRENT_REQUESTS_PER_IP': 16,
+ 'DNS_TIMEOUT': 5,
+ 'DOWNLOAD_DELAY': 0.1,
+ 'DOWNLOAD_TIMEOUT': 10,
+ 'LOG_LEVEL': 'INFO',
+ 'USER_AGENT': 'UConn-Discovery-Crawler/1.0 (development)'}
+2025-09-26 11:37:11 [py.warnings:109] WARNING: /Users/benjaminrussell/Desktop/Github/.venv/lib/python3.9/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+
+2025-09-26 11:37:11 [scrapy.middleware:101] INFO: Enabled downloader middlewares:
+['scrapy.downloadermiddlewares.offsite.OffsiteMiddleware',
+ 'scrapy.downloadermiddlewares.httpauth.HttpAuthMiddleware',
+ 'scrapy.downloadermiddlewares.downloadtimeout.DownloadTimeoutMiddleware',
+ 'scrapy.downloadermiddlewares.defaultheaders.DefaultHeadersMiddleware',
+ 'scrapy.downloadermiddlewares.useragent.UserAgentMiddleware',
+ 'scrapy.downloadermiddlewares.retry.RetryMiddleware',
+ 'scrapy.downloadermiddlewares.redirect.MetaRefreshMiddleware',
+ 'scrapy.downloadermiddlewares.httpcompression.HttpCompressionMiddleware',
+ 'scrapy.downloadermiddlewares.redirect.RedirectMiddleware',
+ 'scrapy.downloadermiddlewares.cookies.CookiesMiddleware',
+ 'scrapy.downloadermiddlewares.httpproxy.HttpProxyMiddleware',
+ 'scrapy.downloadermiddlewares.stats.DownloaderStats']
+2025-09-26 11:37:11 [scrapy.middleware:101] INFO: Enabled spider middlewares:
+['scrapy.spidermiddlewares.start.StartSpiderMiddleware',
+ 'scrapy.spidermiddlewares.httperror.HttpErrorMiddleware',
+ 'scrapy.spidermiddlewares.referer.RefererMiddleware',
+ 'scrapy.spidermiddlewares.urllength.UrlLengthMiddleware',
+ 'scrapy.spidermiddlewares.depth.DepthMiddleware']
+2025-09-26 11:37:11 [scrapy.middleware:101] INFO: Enabled item pipelines:
+['stage1.discovery_pipeline.Stage1Pipeline']
+2025-09-26 11:37:11 [scrapy.core.engine:438] INFO: Spider opened
+2025-09-26 11:37:11 [twisted:147] CRITICAL: While calling system event trigger handler
+Traceback (most recent call last):
+  File "/Users/benjaminrussell/Desktop/Github/.venv/lib/python3.9/site-packages/twisted/internet/base.py", line 518, in _continueFiring
+    callable(*args, **kwargs)
+  File "/Users/benjaminrussell/Desktop/Github/.venv/lib/python3.9/site-packages/twisted/internet/base.py", line 951, in _reallyStartRunning
+    self._signals.install()
+  File "/Users/benjaminrussell/Desktop/Github/.venv/lib/python3.9/site-packages/twisted/internet/_signals.py", line 190, in install
+    d.install()
+  File "/Users/benjaminrussell/Desktop/Github/.venv/lib/python3.9/site-packages/twisted/internet/_signals.py", line 149, in install
+    signal.signal(signal.SIGINT, self._sigInt)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/signal.py", line 47, in signal
+    handler = _signal.signal(_enum_to_int(signalnum), _enum_to_int(handler))
+ValueError: signal only works in main thread of the main interpreter
+2025-09-26 11:37:11 [twisted:147] CRITICAL: While calling system event trigger handler
+Traceback (most recent call last):
+  File "/Users/benjaminrussell/Desktop/Github/.venv/lib/python3.9/site-packages/twisted/internet/base.py", line 518, in _continueFiring
+    callable(*args, **kwargs)
+  File "/Users/benjaminrussell/Desktop/Github/.venv/lib/python3.9/site-packages/scrapy/utils/ossignal.py", line 29, in install_shutdown_handlers
+    signal.signal(signal.SIGTERM, function)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/signal.py", line 47, in signal
+    handler = _signal.signal(_enum_to_int(signalnum), _enum_to_int(handler))
+ValueError: signal only works in main thread of the main interpreter
+2025-09-26 11:37:11 [py.warnings:109] WARNING: /Users/benjaminrussell/Desktop/Github/.venv/lib/python3.9/site-packages/scrapy/core/spidermw.py:433: ScrapyDeprecationWarning: stage1.discovery_spider.DiscoverySpider defines the deprecated start_requests() method. start_requests() has been deprecated in favor of a new method, start(), to support asynchronous code execution. start_requests() will stop being called in a future version of Scrapy. If you use Scrapy 2.13 or higher only, replace start_requests() with start(); note that start() is a coroutine (async def). If you need to maintain compatibility with lower Scrapy versions, when overriding start_requests() in a spider class, override start() as well; you can use super() to reuse the inherited start() implementation without copy-pasting. See the release notes of Scrapy 2.13 for details: https://docs.scrapy.org/en/2.13/news.html
+  warn(
+
+2025-09-26 11:37:11 [stage1.discovery_pipeline:55] INFO: [Stage1Pipeline] Loaded 0 existing URL hashes
+2025-09-26 11:37:11 [stage1.discovery_pipeline:56] INFO: [Stage1Pipeline] Writing to data/processed/stage01/new_urls.jsonl
+2025-09-26 11:37:11 [scrapy.extensions.logstats:65] INFO: Crawled 0 pages (at 0 pages/min), scraped 0 items (at 0 items/min)
+2025-09-26 11:37:11 [src.orchestrator.main:189] ERROR: Pipeline failed: This event loop is already running
+Traceback (most recent call last):
+  File "/Users/benjaminrussell/Desktop/Github/Scraping_project/src/orchestrator/main.py", line 174, in main
+    await run_stage1_discovery(config)
+  File "/Users/benjaminrussell/Desktop/Github/Scraping_project/src/orchestrator/main.py", line 60, in run_stage1_discovery
+    await asyncio.get_event_loop().run_in_executor(None, process.start)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/concurrent/futures/thread.py", line 52, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/Users/benjaminrussell/Desktop/Github/.venv/lib/python3.9/site-packages/scrapy/crawler.py", line 502, in start
+    reactor.run(installSignalHandlers=install_signal_handlers)  # blocking call
+  File "/Users/benjaminrussell/Desktop/Github/.venv/lib/python3.9/site-packages/twisted/internet/asyncioreactor.py", line 253, in run
+    self._asyncioEventloop.run_forever()
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/asyncio/base_events.py", line 586, in run_forever
+    self._check_running()
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/asyncio/base_events.py", line 578, in _check_running
+    raise RuntimeError('This event loop is already running')
+RuntimeError: This event loop is already running
+2025-09-26 11:37:11 [scrapy.extensions.telnet:69] INFO: Telnet console listening on 127.0.0.1:6023
+2025-09-26 11:37:11 [discovery:54] INFO: Loading seed URLs from data/raw/uconn_urls.csv
+2025-09-26 11:37:11 [twisted:147] CRITICAL: Unhandled error in Deferred:
+2025-09-26 11:37:11 [twisted:147] CRITICAL: 
+Traceback (most recent call last):
+  File "/Users/benjaminrussell/Desktop/Github/.venv/lib/python3.9/site-packages/scrapy/core/engine.py", line 145, in start
+    await maybe_deferred_to_future(self._closewait)
+asyncio.exceptions.CancelledError
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/benjaminrussell/Desktop/Github/.venv/lib/python3.9/site-packages/twisted/internet/defer.py", line 1853, in _inlineCallbacks
+    result = context.run(
+  File "/Users/benjaminrussell/Desktop/Github/.venv/lib/python3.9/site-packages/twisted/python/failure.py", line 467, in throwExceptionIntoGenerator
+    return g.throw(self.value.with_traceback(self.tb))
+  File "/Users/benjaminrussell/Desktop/Github/.venv/lib/python3.9/site-packages/scrapy/crawler.py", line 158, in crawl
+    yield self.engine.start()
+  File "/Users/benjaminrussell/Desktop/Github/.venv/lib/python3.9/site-packages/twisted/internet/defer.py", line 1257, in adapt
+    extracted: _SelfResultT | Failure = result.result()
+asyncio.exceptions.CancelledError
+2025-09-26 11:43:42 [src.orchestrator.main:154] INFO: Starting pipeline orchestrator
+2025-09-26 11:43:42 [src.orchestrator.main:155] INFO: Environment: development
+2025-09-26 11:43:42 [src.orchestrator.main:156] INFO: Stage(s): all
+2025-09-26 11:43:42 [src.orchestrator.main:34] INFO: ============================================================
+2025-09-26 11:43:42 [src.orchestrator.main:35] INFO: STAGE 1: DISCOVERY
+2025-09-26 11:43:42 [src.orchestrator.main:36] INFO: ============================================================
+2025-09-26 11:43:42 [scrapy.utils.log:173] INFO: Scrapy 2.13.3 started (bot: scrapybot)
+2025-09-26 11:43:42 [scrapy.utils.log:181] INFO: Versions:
+{'lxml': '6.0.2',
+ 'libxml2': '2.14.6',
+ 'cssselect': '1.3.0',
+ 'parsel': '1.10.0',
+ 'w3lib': '2.3.1',
+ 'Twisted': '25.5.0',
+ 'Python': '3.9.6 (default, Aug  8 2025, 19:06:38) - [Clang 17.0.0 '
+           '(clang-1700.3.19.1)]',
+ 'pyOpenSSL': '25.3.0 (OpenSSL 3.5.3 16 Sep 2025)',
+ 'cryptography': '46.0.1',
+ 'Platform': 'macOS-26.0-arm64-arm-64bit'}
+2025-09-26 11:43:42 [discovery:44] INFO: Discovery spider initialized with max_depth=3
+2025-09-26 11:43:42 [scrapy.addons:49] INFO: Enabled addons:
+[]
+2025-09-26 11:43:42 [scrapy.extensions.telnet:57] INFO: Telnet Password: af856232fe3cae14
+2025-09-26 11:43:42 [scrapy.middleware:101] INFO: Enabled extensions:
+['scrapy.extensions.corestats.CoreStats',
+ 'scrapy.extensions.telnet.TelnetConsole',
+ 'scrapy.extensions.memusage.MemoryUsage',
+ 'scrapy.extensions.logstats.LogStats']
+2025-09-26 11:43:42 [scrapy.crawler:135] INFO: Overridden settings:
+{'CONCURRENT_REQUESTS': 32,
+ 'CONCURRENT_REQUESTS_PER_DOMAIN': 16,
+ 'CONCURRENT_REQUESTS_PER_IP': 16,
+ 'DNS_TIMEOUT': 5,
+ 'DOWNLOAD_DELAY': 0.1,
+ 'DOWNLOAD_TIMEOUT': 10,
+ 'LOG_LEVEL': 'INFO',
+ 'USER_AGENT': 'UConn-Discovery-Crawler/1.0 (development)'}
+2025-09-26 11:43:42 [py.warnings:109] WARNING: /Users/benjaminrussell/Desktop/Github/.venv/lib/python3.9/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+
+2025-09-26 11:43:42 [scrapy.middleware:101] INFO: Enabled downloader middlewares:
+['scrapy.downloadermiddlewares.offsite.OffsiteMiddleware',
+ 'scrapy.downloadermiddlewares.httpauth.HttpAuthMiddleware',
+ 'scrapy.downloadermiddlewares.downloadtimeout.DownloadTimeoutMiddleware',
+ 'scrapy.downloadermiddlewares.defaultheaders.DefaultHeadersMiddleware',
+ 'scrapy.downloadermiddlewares.useragent.UserAgentMiddleware',
+ 'scrapy.downloadermiddlewares.retry.RetryMiddleware',
+ 'scrapy.downloadermiddlewares.redirect.MetaRefreshMiddleware',
+ 'scrapy.downloadermiddlewares.httpcompression.HttpCompressionMiddleware',
+ 'scrapy.downloadermiddlewares.redirect.RedirectMiddleware',
+ 'scrapy.downloadermiddlewares.cookies.CookiesMiddleware',
+ 'scrapy.downloadermiddlewares.httpproxy.HttpProxyMiddleware',
+ 'scrapy.downloadermiddlewares.stats.DownloaderStats']
+2025-09-26 11:43:42 [scrapy.middleware:101] INFO: Enabled spider middlewares:
+['scrapy.spidermiddlewares.start.StartSpiderMiddleware',
+ 'scrapy.spidermiddlewares.httperror.HttpErrorMiddleware',
+ 'scrapy.spidermiddlewares.referer.RefererMiddleware',
+ 'scrapy.spidermiddlewares.urllength.UrlLengthMiddleware',
+ 'scrapy.spidermiddlewares.depth.DepthMiddleware']
+2025-09-26 11:43:42 [scrapy.middleware:101] INFO: Enabled item pipelines:
+['stage1.discovery_pipeline.Stage1Pipeline']
+2025-09-26 11:43:42 [src.orchestrator.main:188] ERROR: Pipeline failed: This event loop is already running
+Traceback (most recent call last):
+  File "/Users/benjaminrussell/Desktop/Github/Scraping_project/src/orchestrator/main.py", line 173, in main
+    await run_stage1_discovery(config)
+  File "/Users/benjaminrussell/Desktop/Github/Scraping_project/src/orchestrator/main.py", line 59, in run_stage1_discovery
+    process.start(stop_after_crawl=False, install_signal_handlers=False)
+  File "/Users/benjaminrussell/Desktop/Github/.venv/lib/python3.9/site-packages/scrapy/crawler.py", line 502, in start
+    reactor.run(installSignalHandlers=install_signal_handlers)  # blocking call
+  File "/Users/benjaminrussell/Desktop/Github/.venv/lib/python3.9/site-packages/twisted/internet/asyncioreactor.py", line 253, in run
+    self._asyncioEventloop.run_forever()
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/asyncio/base_events.py", line 586, in run_forever
+    self._check_running()
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/asyncio/base_events.py", line 578, in _check_running
+    raise RuntimeError('This event loop is already running')
+RuntimeError: This event loop is already running
+2025-09-26 11:43:42 [scrapy.core.engine:438] INFO: Spider opened
+2025-09-26 11:43:42 [py.warnings:109] WARNING: /Users/benjaminrussell/Desktop/Github/.venv/lib/python3.9/site-packages/scrapy/core/spidermw.py:433: ScrapyDeprecationWarning: stage1.discovery_spider.DiscoverySpider defines the deprecated start_requests() method. start_requests() has been deprecated in favor of a new method, start(), to support asynchronous code execution. start_requests() will stop being called in a future version of Scrapy. If you use Scrapy 2.13 or higher only, replace start_requests() with start(); note that start() is a coroutine (async def). If you need to maintain compatibility with lower Scrapy versions, when overriding start_requests() in a spider class, override start() as well; you can use super() to reuse the inherited start() implementation without copy-pasting. See the release notes of Scrapy 2.13 for details: https://docs.scrapy.org/en/2.13/news.html
+  warn(
+
+2025-09-26 11:43:42 [stage1.discovery_pipeline:55] INFO: [Stage1Pipeline] Loaded 0 existing URL hashes
+2025-09-26 11:43:42 [stage1.discovery_pipeline:56] INFO: [Stage1Pipeline] Writing to data/processed/stage01/new_urls.jsonl
+2025-09-26 11:43:42 [scrapy.extensions.logstats:65] INFO: Crawled 0 pages (at 0 pages/min), scraped 0 items (at 0 items/min)
+2025-09-26 11:43:42 [scrapy.extensions.telnet:69] INFO: Telnet console listening on 127.0.0.1:6023
+2025-09-26 11:43:42 [discovery:54] INFO: Loading seed URLs from data/raw/uconn_urls.csv
+2025-09-26 11:43:43 [twisted:147] CRITICAL: Unhandled Error
+Traceback (most recent call last):
+  File "/Users/benjaminrussell/Desktop/Github/.venv/lib/python3.9/site-packages/twisted/_threads/_team.py", line 192, in doWork
+    task()
+  File "/Users/benjaminrussell/Desktop/Github/.venv/lib/python3.9/site-packages/twisted/python/threadpool.py", line 277, in inContext
+    inContext.onResult(ok, result)  # type: ignore[attr-defined]
+  File "/Users/benjaminrussell/Desktop/Github/.venv/lib/python3.9/site-packages/twisted/internet/threads.py", line 59, in onResult
+    reactor.callFromThread(d.callback, result)
+  File "/Users/benjaminrussell/Desktop/Github/.venv/lib/python3.9/site-packages/twisted/internet/asyncioreactor.py", line 294, in callFromThread
+    self._asyncioEventloop.call_soon_threadsafe(g)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/asyncio/base_events.py", line 791, in call_soon_threadsafe
+    self._check_closed()
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/asyncio/base_events.py", line 510, in _check_closed
+    raise RuntimeError('Event loop is closed')
+builtins.RuntimeError: Event loop is closed
+

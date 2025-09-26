@@ -55,9 +55,8 @@ async def run_stage1_discovery(config: Config):
         max_depth=stage1_config['max_depth']
     )
 
-    # Scrapy's process.start() is blocking, so we run it in a separate process
-    # to maintain async compatibility
-    await asyncio.get_event_loop().run_in_executor(None, process.start)
+    # Run Scrapy on main thread with signal handlers disabled to avoid conflicts
+    process.start(stop_after_crawl=False, install_signal_handlers=False)
 
     logger.info("Stage 1 discovery completed")
 

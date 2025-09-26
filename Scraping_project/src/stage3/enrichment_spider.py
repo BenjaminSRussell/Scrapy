@@ -18,11 +18,22 @@ class EnrichmentSpider(scrapy.Spider):
     name = "enrichment"
     allowed_domains = ["uconn.edu"]
 
-    def __init__(self, predefined_tags: List[str] = None, urls_list: List[str] = None, *args, **kwargs):
+    def __init__(self, predefined_tags: List[str] = None, urls_list: List[str] = None, urls_file: str = None, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.predefined_tags = set(predefined_tags or [])
         self.urls_list = urls_list or []
+        self.urls_file = urls_file
         self.processed_count = 0
+
+        # Load URLs from file if provided
+        if self.urls_file and Path(self.urls_file).exists():
+            try:
+                with open(self.urls_file, 'r') as f:
+                    file_urls = json.load(f)
+                    self.urls_list.extend(file_urls)
+                    self.logger.info(f"Loaded {len(file_urls)} URLs from {self.urls_file}")
+            except Exception as e:
+                self.logger.error(f"Failed to load URLs from file {self.urls_file}: {e}")
 
         # Initialize HuggingFace model for link scoring (lazy loading for latency)
         self.embedding_model = None

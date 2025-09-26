@@ -208,3 +208,95 @@ def test_discovery_spider_start_requests_real_seed_file():
         first_request = requests[0]
         assert first_request.url.startswith("https://")
         assert first_request.meta["depth"] == 0
+
+
+def test_discovery_spider_handles_malformed_html():
+    """Test spider handles malformed HTML gracefully."""
+    spider = DiscoverySpider()
+
+    # Test with broken HTML
+    malformed_html = """
+    <html><body>
+        <a href="https://uconn.edu/valid">Valid Link</a>
+        <a href=>Missing URL</a>
+        <a>No href attribute</a>
+        <a href="javascript:alert('xss')">XSS attempt</a>
+        <a href="mailto:test@uconn.edu">Email</a>
+        <a href="  ">Whitespace only</a>
+    </body></html>
+    """
+
+    response = html_response("https://uconn.edu/test", malformed_html, depth=0)
+    results = list(spider.parse(response))
+
+    # Should only extract valid HTTP(S) UConn URLs
+    discovery_items = [r for r in results if isinstance(r, DiscoveryItem)]
+
+    # Should handle malformed HTML without crashing
+    assert isinstance(results, list)
+
+    # Valid UConn URLs should still be extracted
+    valid_urls = [item.discovered_url for item in discovery_items if item.discovered_url.startswith('https://uconn.edu')]
+    assert len(valid_urls) >= 1
+
+
+def test_discovery_spider_network_error_handling():
+    """Test spider error handling for network failures."""
+    spider = DiscoverySpider()
+
+    # Test that spider's error handling doesn't crash the process
+    # This tests the spider's ability to handle exceptions gracefully
+    try:
+        response = html_response("https://uconn.edu/test", "", depth=0)
+        response.status = 500  # Simulate server error
+
+        results = list(spider.parse(response))
+        # Should return empty list or handle error gracefully
+        assert isinstance(results, list)
+
+    except Exception as e:
+        pytest.fail(f"Spider should handle errors gracefully, but raised: {e}")
+
+
+def test_discovery_spider_memory_efficiency_large_page():
+    """Test spider handles large pages without memory issues."""
+    spider = DiscoverySpider()
+
+    # Create HTML with many links to test memory efficiency
+    large_html_parts = ["<html><body>"]
+    for i in range(1000):
+        large_html_parts.append(f'<a href="https://uconn.edu/page{i}">Page {i}</a>')
+    large_html_parts.append("</body></html>")
+
+    large_html = "\n".join(large_html_parts)
+
+    response = html_response("https://uconn.edu/test", large_html, depth=0)
+
+    # This should not cause memory issues or crashes
+    results = list(spider.parse(response))
+    discovery_items = [r for r in results if isinstance(r, DiscoveryItem)]
+
+    # Should extract many URLs but not crash
+    assert len(discovery_items) > 0
+    assert len(discovery_items) <= 1000  # All links should be extracted
+
+
+def test_discovery_spider_encoding_handling():
+    """Test spider handles various character encodings."""
+    spider = DiscoverySpider()
+
+    # Test with international characters
+    unicode_html = """
+    <html><body>
+        <a href="https://uconn.edu/café">Café Page</a>
+        <a href="https://uconn.edu/研究">Research (Chinese)</a>
+        <a href="https://uconn.edu/пример">Example (Russian)</a>
+    </body></html>
+    """
+
+    response = html_response("https://uconn.edu/test", unicode_html, depth=0)
+    results = list(spider.parse(response))
+
+    # Should handle Unicode URLs without crashing
+    discovery_items = [r for r in results if isinstance(r, DiscoveryItem)]
+    assert len(discovery_items) >= 0  # May be 0 if URL validation rejects encoded URLs

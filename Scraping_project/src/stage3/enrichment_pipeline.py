@@ -39,7 +39,7 @@ class Stage3Pipeline:
         """Process each enriched content item"""
         adapter = ItemAdapter(item)
 
-        # Build enrichment data
+        # Build enrichment data preserving original metadata
         enrichment_data = {
             "url": adapter.get("url"),
             "url_hash": adapter.get("url_hash"),
@@ -51,6 +51,9 @@ class Stage3Pipeline:
             "content_tags": adapter.get("content_tags", []),
             "has_pdf_links": adapter.get("has_pdf_links", False),
             "has_audio_links": adapter.get("has_audio_links", False),
+            "status_code": adapter.get("status_code"),
+            "content_type": adapter.get("content_type"),
+            "enriched_at": adapter.get("enriched_at"),
             "processed_at": datetime.now().isoformat()
         }
 
