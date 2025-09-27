@@ -1,0 +1,2522 @@
+{
+  "summary": {
+    "total_tests": 250,
+    "total_duration": 22.396880081000024,
+    "total_operations": 250,
+    "avg_ops_per_second": 2121.1061846925654,
+    "fastest_test": {
+      "name": "test_validation_result_with_error",
+      "duration": 0.00016383300000200052
+    },
+    "slowest_test": {
+      "name": "test_spacy_model_loading_and_initialization",
+      "duration": 18.123588416
+    },
+    "most_efficient_test": {
+      "name": "test_validation_result_with_error",
+      "ops_per_second": 6103.776406388147
+    }
+  },
+  "detailed_metrics": {
+    "test_setup_logging_creates_logfile[INFO]": {
+      "start_time": 3.610355958,
+      "start_memory": 75038720,
+      "start_cpu": 0.0,
+      "duration": 0.001961291999999837,
+      "operations": 1,
+      "ops_per_second": 509.8679849813711,
+      "memory_delta": 98304,
+      "memory_delta_mb": 0.09375
+    },
+    "test_setup_logging_creates_logfile[DEBUG]": {
+      "start_time": 3.612537416,
+      "start_memory": 75137024,
+      "start_cpu": 0.0,
+      "duration": 0.0009623750000002929,
+      "operations": 1,
+      "ops_per_second": 1039.095986491436,
+      "memory_delta": 16384,
+      "memory_delta_mb": 0.015625
+    },
+    "test_setup_logging_creates_logfile[WARNING]": {
+      "start_time": 3.613761666,
+      "start_memory": 75153408,
+      "start_cpu": 0.0,
+      "duration": 0.0009436670000000369,
+      "operations": 1,
+      "ops_per_second": 1059.6958460982114,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_get_logger_returns_named_logger": {
+      "start_time": 3.614984375,
+      "start_memory": 75153408,
+      "start_cpu": 0.0,
+      "duration": 0.00022866599999993298,
+      "operations": 1,
+      "ops_per_second": 4373.190592393679,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_spacy_model_loading_and_initialization": {
+      "start_time": 3.615497125,
+      "start_memory": 75153408,
+      "start_cpu": 0.0,
+      "duration": 18.123588416,
+      "operations": 1,
+      "ops_per_second": 0.055176710982752876,
+      "memory_delta": 194723840,
+      "memory_delta_mb": 185.703125
+    },
+    "test_spacy_entity_extraction_functionality": {
+      "start_time": 21.741838375,
+      "start_memory": 269910016,
+      "start_cpu": 0.0,
+      "duration": 0.001256874999999269,
+      "operations": 1,
+      "ops_per_second": 795.6240676285084,
+      "memory_delta": 16384,
+      "memory_delta_mb": 0.015625
+    },
+    "test_transformer_model_loading_and_functionality": {
+      "start_time": 21.74336775,
+      "start_memory": 269926400,
+      "start_cpu": 0.0,
+      "duration": 0.03436712499999928,
+      "operations": 1,
+      "ops_per_second": 29.097575080837313,
+      "memory_delta": 5701632,
+      "memory_delta_mb": 5.4375
+    },
+    "test_device_selection_functionality": {
+      "start_time": 21.778177916,
+      "start_memory": 275628032,
+      "start_cpu": 0.0,
+      "duration": 0.018118125000000873,
+      "operations": 1,
+      "ops_per_second": 55.19334920141857,
+      "memory_delta": 327680,
+      "memory_delta_mb": 0.3125
+    },
+    "test_stop_words_handling_comprehensive": {
+      "start_time": 21.796641333,
+      "start_memory": 275955712,
+      "start_cpu": 0.0,
+      "duration": 0.0011627919999988023,
+      "operations": 1,
+      "ops_per_second": 859.9990368019646,
+      "memory_delta": 16384,
+      "memory_delta_mb": 0.015625
+    },
+    "test_lemmatization_functionality": {
+      "start_time": 21.798016916,
+      "start_memory": 275972096,
+      "start_cpu": 0.0,
+      "duration": 0.0010090839999996604,
+      "operations": 1,
+      "ops_per_second": 990.9977762013237,
+      "memory_delta": 16384,
+      "memory_delta_mb": 0.015625
+    },
+    "test_global_registry_management": {
+      "start_time": 21.799214333,
+      "start_memory": 275988480,
+      "start_cpu": 0.0,
+      "duration": 0.048699958000000265,
+      "operations": 1,
+      "ops_per_second": 20.53389861239705,
+      "memory_delta": 278528,
+      "memory_delta_mb": 0.265625
+    },
+    "test_extract_entities_and_keywords_integration": {
+      "start_time": 21.848313791,
+      "start_memory": 276267008,
+      "start_cpu": 0.0,
+      "duration": 0.001041667000002633,
+      "operations": 1,
+      "ops_per_second": 959.9996927976719,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_text_length_truncation": {
+      "start_time": 21.849558208,
+      "start_memory": 276267008,
+      "start_cpu": 0.0,
+      "duration": 0.0010726669999989724,
+      "operations": 1,
+      "ops_per_second": 932.2557699649174,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_empty_and_none_text_handling": {
+      "start_time": 21.850872166,
+      "start_memory": 276267008,
+      "start_cpu": 0.0,
+      "duration": 0.01921341700000312,
+      "operations": 1,
+      "ops_per_second": 52.046962807283975,
+      "memory_delta": -131072,
+      "memory_delta_mb": -0.125
+    },
+    "test_content_tags_extraction_functionality": {
+      "start_time": 21.870473458,
+      "start_memory": 276135936,
+      "start_cpu": 0.0,
+      "duration": 0.00021612500000145474,
+      "operations": 1,
+      "ops_per_second": 4626.951995341904,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_audio_links_detection": {
+      "start_time": 21.870901583,
+      "start_memory": 276135936,
+      "start_cpu": 0.0,
+      "duration": 0.0001890420000023596,
+      "operations": 1,
+      "ops_per_second": 5289.829773211869,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_text_cleaning_functionality": {
+      "start_time": 21.871264833,
+      "start_memory": 276135936,
+      "start_cpu": 0.0,
+      "duration": 0.003840291999999579,
+      "operations": 1,
+      "ops_per_second": 260.39686565503604,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_simple_keyword_extraction": {
+      "start_time": 21.875386541,
+      "start_memory": 276135936,
+      "start_cpu": 0.0,
+      "duration": 0.000346749999998508,
+      "operations": 1,
+      "ops_per_second": 2883.9221341147886,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_text_statistics_accuracy": {
+      "start_time": 21.875946958,
+      "start_memory": 276135936,
+      "start_cpu": 0.0,
+      "duration": 0.0032732919999993726,
+      "operations": 1,
+      "ops_per_second": 305.5028393434474,
+      "memory_delta": 16384,
+      "memory_delta_mb": 0.015625
+    },
+    "test_entity_extraction_performance": {
+      "start_time": 21.879470375,
+      "start_memory": 276152320,
+      "start_cpu": 0.0,
+      "duration": 0.0012592910000002178,
+      "operations": 1,
+      "ops_per_second": 794.0976311272193,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_bulk_text_processing_performance": {
+      "start_time": 21.880946958,
+      "start_memory": 276152320,
+      "start_cpu": 0.0,
+      "duration": 0.0010176669999992782,
+      "operations": 1,
+      "ops_per_second": 982.6397043440627,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_missing_spacy_model_handling": {
+      "start_time": 21.882149916,
+      "start_memory": 276152320,
+      "start_cpu": 0.0,
+      "duration": 0.0009705000000010955,
+      "operations": 1,
+      "ops_per_second": 1030.3967027293882,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_missing_transformers_handling": {
+      "start_time": 21.883308125,
+      "start_memory": 276152320,
+      "start_cpu": 0.0,
+      "duration": 0.022639541000000207,
+      "operations": 1,
+      "ops_per_second": 44.17050681371989,
+      "memory_delta": 1998848,
+      "memory_delta_mb": 1.90625
+    },
+    "test_device_fallback_handling": {
+      "start_time": 21.906338041,
+      "start_memory": 278151168,
+      "start_cpu": 0.0,
+      "duration": 0.02242620899999892,
+      "operations": 1,
+      "ops_per_second": 44.59068405186307,
+      "memory_delta": 344064,
+      "memory_delta_mb": 0.328125
+    },
+    "test_corrupted_text_handling": {
+      "start_time": 21.929166541,
+      "start_memory": 278511616,
+      "start_cpu": 0.0,
+      "duration": 0.00357291699999962,
+      "operations": 1,
+      "ops_per_second": 279.8833558126613,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_memory_handling_with_large_text": {
+      "start_time": 21.932949083,
+      "start_memory": 278511616,
+      "start_cpu": 0.0,
+      "duration": 0.0009247079999994412,
+      "operations": 1,
+      "ops_per_second": 1081.4224598474375,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_spacy_model_actual_entities": {
+      "start_time": 21.934122541,
+      "start_memory": 278511616,
+      "start_cpu": 0.0,
+      "duration": 0.0010607090000007702,
+      "operations": 1,
+      "ops_per_second": 942.7656407169864,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_model_consistency_across_runs": {
+      "start_time": 21.935379333,
+      "start_memory": 278511616,
+      "start_cpu": 0.0,
+      "duration": 0.0008984169999983749,
+      "operations": 1,
+      "ops_per_second": 1113.068875590966,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_discovery_item_creation": {
+      "start_time": 21.936556208,
+      "start_memory": 278511616,
+      "start_cpu": 0.0,
+      "duration": 0.0001924580000007836,
+      "operations": 1,
+      "ops_per_second": 5195.938854170408,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_discovery_item_required_fields": {
+      "start_time": 21.936920125,
+      "start_memory": 278511616,
+      "start_cpu": 0.0,
+      "duration": 0.0001788329999996563,
+      "operations": 1,
+      "ops_per_second": 5591.809118014695,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_validation_result_creation": {
+      "start_time": 21.937283333,
+      "start_memory": 278511616,
+      "start_cpu": 0.0,
+      "duration": 0.00017304200000012315,
+      "operations": 1,
+      "ops_per_second": 5778.943840219647,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_validation_result_with_error": {
+      "start_time": 21.937618833,
+      "start_memory": 278511616,
+      "start_cpu": 0.0,
+      "duration": 0.00016383300000200052,
+      "operations": 1,
+      "ops_per_second": 6103.776406388147,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_enrichment_item_creation": {
+      "start_time": 21.937948708,
+      "start_memory": 278511616,
+      "start_cpu": 0.0,
+      "duration": 0.00016512499999876695,
+      "operations": 1,
+      "ops_per_second": 6056.018168099727,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_enrichment_item_word_count_validation[0-]": {
+      "start_time": 21.938282833,
+      "start_memory": 278511616,
+      "start_cpu": 0.0,
+      "duration": 0.00022350000000059822,
+      "operations": 1,
+      "ops_per_second": 4474.272930636794,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_enrichment_item_word_count_validation[1-word]": {
+      "start_time": 21.938670375,
+      "start_memory": 278528000,
+      "start_cpu": 0.0,
+      "duration": 0.00020133299999969267,
+      "operations": 1,
+      "ops_per_second": 4966.895640563278,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_enrichment_item_word_count_validation[5-this is five words total]": {
+      "start_time": 21.939031541,
+      "start_memory": 278528000,
+      "start_cpu": 0.0,
+      "duration": 0.00021741700000177389,
+      "operations": 1,
+      "ops_per_second": 4599.456344222582,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_enrichment_item_word_count_validation[100-word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word]": {
+      "start_time": 21.939413041,
+      "start_memory": 278528000,
+      "start_cpu": 0.0,
+      "duration": 0.00022329199999759908,
+      "operations": 1,
+      "ops_per_second": 4478.440786104081,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_schema_url_formats[https://uconn.edu/]": {
+      "start_time": 21.939882125,
+      "start_memory": 278528000,
+      "start_cpu": 0.0,
+      "duration": 0.00022050000000106706,
+      "operations": 1,
+      "ops_per_second": 4535.147392268303,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_schema_url_formats[https://admissions.uconn.edu/apply]": {
+      "start_time": 21.94029125,
+      "start_memory": 278528000,
+      "start_cpu": 0.0,
+      "duration": 0.0002003749999985871,
+      "operations": 1,
+      "ops_per_second": 4990.642545262888,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_schema_url_formats[http://research.uconn.edu/projects/123]": {
+      "start_time": 21.940663083,
+      "start_memory": 278528000,
+      "start_cpu": 0.0,
+      "duration": 0.00018812500000109367,
+      "operations": 1,
+      "ops_per_second": 5315.614617909297,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_jsonl_storage_append_and_read[1]": {
+      "start_time": 21.941108541,
+      "start_memory": 278528000,
+      "start_cpu": 0.0,
+      "duration": 0.0006873750000018219,
+      "operations": 1,
+      "ops_per_second": 1454.8099654444072,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_jsonl_storage_append_and_read[5]": {
+      "start_time": 21.941970875,
+      "start_memory": 278528000,
+      "start_cpu": 0.0,
+      "duration": 0.0005780830000006176,
+      "operations": 1,
+      "ops_per_second": 1729.85540138515,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_jsonl_storage_append_and_read[20]": {
+      "start_time": 21.942734541,
+      "start_memory": 278528000,
+      "start_cpu": 0.0,
+      "duration": 0.0005867500000000803,
+      "operations": 1,
+      "ops_per_second": 1704.3033659989146,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_jsonl_storage_append_batch[batch_sizes0]": {
+      "start_time": 21.943505875,
+      "start_memory": 278528000,
+      "start_cpu": 0.0,
+      "duration": 0.0005462909999991439,
+      "operations": 1,
+      "ops_per_second": 1830.5262213757267,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_jsonl_storage_append_batch[batch_sizes1]": {
+      "start_time": 21.944233875,
+      "start_memory": 278528000,
+      "start_cpu": 0.0,
+      "duration": 0.0005995000000034167,
+      "operations": 1,
+      "ops_per_second": 1668.0567139187667,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_jsonl_storage_append_batch[batch_sizes2]": {
+      "start_time": 21.945054083,
+      "start_memory": 278528000,
+      "start_cpu": 0.0,
+      "duration": 0.0005745420000025092,
+      "operations": 1,
+      "ops_per_second": 1740.5167942389462,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_jsonl_storage_exists": {
+      "start_time": 21.945814875,
+      "start_memory": 278528000,
+      "start_cpu": 0.0,
+      "duration": 0.0005327910000012537,
+      "operations": 1,
+      "ops_per_second": 1876.9085814093087,
+      "memory_delta": 16384,
+      "memory_delta_mb": 0.015625
+    },
+    "test_url_cache_add_and_get": {
+      "start_time": 21.9465395,
+      "start_memory": 278544384,
+      "start_cpu": 0.0,
+      "duration": 0.0020283329999983835,
+      "operations": 1,
+      "ops_per_second": 493.01569318292263,
+      "memory_delta": 180224,
+      "memory_delta_mb": 0.171875
+    },
+    "test_url_cache_validation_and_enrichment": {
+      "start_time": 21.948801958,
+      "start_memory": 278724608,
+      "start_cpu": 0.0,
+      "duration": 0.002631000000000938,
+      "operations": 1,
+      "ops_per_second": 380.0836183959116,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_url_cache_filters[True]": {
+      "start_time": 21.951693125,
+      "start_memory": 278724608,
+      "start_cpu": 0.0,
+      "duration": 0.0022157080000013707,
+      "operations": 1,
+      "ops_per_second": 451.323008266153,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_url_cache_filters[False]": {
+      "start_time": 21.954119916,
+      "start_memory": 278724608,
+      "start_cpu": 0.0,
+      "duration": 0.0021258340000009923,
+      "operations": 1,
+      "ops_per_second": 470.4036157101322,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_url_cache_stats": {
+      "start_time": 21.956450291,
+      "start_memory": 278724608,
+      "start_cpu": 0.0,
+      "duration": 0.0028399169999993035,
+      "operations": 1,
+      "ops_per_second": 352.12296697412114,
+      "memory_delta": 16384,
+      "memory_delta_mb": 0.015625
+    },
+    "test_configurable_storage_selects_backend[jsonl-JSONLStorage]": {
+      "start_time": 21.959550583,
+      "start_memory": 278740992,
+      "start_cpu": 0.0,
+      "duration": 0.00046425000000027694,
+      "operations": 1,
+      "ops_per_second": 2154.011847063874,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_configurable_storage_selects_backend[sqlite-URLCache]": {
+      "start_time": 21.960195166,
+      "start_memory": 278740992,
+      "start_cpu": 0.0,
+      "duration": 0.0012687090000014223,
+      "operations": 1,
+      "ops_per_second": 788.2028108879806,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_url_cache_database_integrity": {
+      "start_time": 21.961648875,
+      "start_memory": 278740992,
+      "start_cpu": 0.0,
+      "duration": 0.0014238749999968547,
+      "operations": 1,
+      "ops_per_second": 702.3088403140788,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_configurable_storage_invalid_backend": {
+      "start_time": 21.96328425,
+      "start_memory": 278740992,
+      "start_cpu": 0.0,
+      "duration": 0.0004253749999989509,
+      "operations": 1,
+      "ops_per_second": 2350.8668821685956,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_path_traversal_resolution_comprehensive": {
+      "start_time": 21.96398425,
+      "start_memory": 278740992,
+      "start_cpu": 0.0,
+      "duration": 0.00036870799999988435,
+      "operations": 1,
+      "ops_per_second": 2712.1733187246105,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_case_insensitive_hash_collision": {
+      "start_time": 21.964541541,
+      "start_memory": 278740992,
+      "start_cpu": 0.0,
+      "duration": 0.00030683399999986705,
+      "operations": 1,
+      "ops_per_second": 3259.0912350014446,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_default_port_normalization": {
+      "start_time": 21.965064083,
+      "start_memory": 278740992,
+      "start_cpu": 0.0,
+      "duration": 0.0002955829999997661,
+      "operations": 1,
+      "ops_per_second": 3383.144497487309,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_fragment_preservation_for_hash_collision_resistance": {
+      "start_time": 21.965548875,
+      "start_memory": 278740992,
+      "start_cpu": 0.0,
+      "duration": 0.00027854100000013204,
+      "operations": 1,
+      "ops_per_second": 3590.135743030742,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_trailing_slash_semantics": {
+      "start_time": 21.96601025,
+      "start_memory": 278740992,
+      "start_cpu": 0.0,
+      "duration": 0.0003372500000011769,
+      "operations": 1,
+      "ops_per_second": 2965.159377306183,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_query_parameter_normalization": {
+      "start_time": 21.966535833,
+      "start_memory": 278740992,
+      "start_cpu": 0.0,
+      "duration": 0.00043041700000046035,
+      "operations": 1,
+      "ops_per_second": 2323.3283071972774,
+      "memory_delta": 16384,
+      "memory_delta_mb": 0.015625
+    },
+    "test_hash_collision_resistance_comprehensive": {
+      "start_time": 21.967154916,
+      "start_memory": 278757376,
+      "start_cpu": 0.0,
+      "duration": 0.00032162500000154637,
+      "operations": 1,
+      "ops_per_second": 3109.2110376842347,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_normalization_idempotency": {
+      "start_time": 21.967657291,
+      "start_memory": 278757376,
+      "start_cpu": 0.0,
+      "duration": 0.002727375000002752,
+      "operations": 1,
+      "ops_per_second": 366.65291718190235,
+      "memory_delta": 16384,
+      "memory_delta_mb": 0.015625
+    },
+    "test_domain_validation_regression": {
+      "start_time": 21.9705975,
+      "start_memory": 278773760,
+      "start_cpu": 0.0,
+      "duration": 0.0005652910000009115,
+      "operations": 1,
+      "ops_per_second": 1769.0003909462341,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_domain_extraction_accuracy": {
+      "start_time": 21.971354583,
+      "start_memory": 278773760,
+      "start_cpu": 0.0,
+      "duration": 0.00026429200000066544,
+      "operations": 1,
+      "ops_per_second": 3783.693793219175,
+      "memory_delta": 16384,
+      "memory_delta_mb": 0.015625
+    },
+    "test_canonicalization_performance_regression": {
+      "start_time": 21.971805583,
+      "start_memory": 278790144,
+      "start_cpu": 0.0,
+      "duration": 0.002963167000000766,
+      "operations": 1,
+      "ops_per_second": 337.4767605064924,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_unicode_handling_safety": {
+      "start_time": 21.974958458,
+      "start_memory": 278790144,
+      "start_cpu": 0.0,
+      "duration": 0.000267416999999881,
+      "operations": 1,
+      "ops_per_second": 3739.4780436563306,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_normalize_for_hash_consistency": {
+      "start_time": 21.975409541,
+      "start_memory": 278790144,
+      "start_cpu": 0.0,
+      "duration": 0.000256541999998916,
+      "operations": 1,
+      "ops_per_second": 3897.9972090504684,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_normalize_url_components_edge_cases": {
+      "start_time": 21.975856041,
+      "start_memory": 278790144,
+      "start_cpu": 0.0,
+      "duration": 0.00043212499999967235,
+      "operations": 1,
+      "ops_per_second": 2314.145212613846,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_sha1_hash_function_integrity": {
+      "start_time": 21.97647275,
+      "start_memory": 278790144,
+      "start_cpu": 0.0,
+      "duration": 0.0025749160000003712,
+      "operations": 1,
+      "ops_per_second": 388.3621834653464,
+      "memory_delta": 16384,
+      "memory_delta_mb": 0.015625
+    },
+    "test_bulk_canonicalization_performance": {
+      "start_time": 21.979270625,
+      "start_memory": 278806528,
+      "start_cpu": 0.0,
+      "duration": 0.0103383749999999,
+      "operations": 1,
+      "ops_per_second": 96.72700013300056,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_full_pipeline_end_to_end": {
+      "start_time": 21.989988583,
+      "start_memory": 278806528,
+      "start_cpu": 0.0,
+      "duration": 0.002521292000000841,
+      "operations": 1,
+      "ops_per_second": 396.6220493301317,
+      "memory_delta": 131072,
+      "memory_delta_mb": 0.125
+    },
+    "test_pipeline_memory_efficiency": {
+      "start_time": 21.992713125,
+      "start_memory": 278937600,
+      "start_cpu": 0.0,
+      "duration": 0.00736033299999761,
+      "operations": 1,
+      "ops_per_second": 135.86341813615292,
+      "memory_delta": 245760,
+      "memory_delta_mb": 0.234375
+    },
+    "test_pipeline_scalability_simulation": {
+      "start_time": 22.000318041,
+      "start_memory": 279183360,
+      "start_cpu": 0.0,
+      "duration": 0.004855875000000509,
+      "operations": 1,
+      "ops_per_second": 205.93610832237138,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_pipeline_endurance": {
+      "start_time": 22.005465333,
+      "start_memory": 279183360,
+      "start_cpu": 0.0,
+      "duration": 0.0007769999999993615,
+      "operations": 1,
+      "ops_per_second": 1287.0012870023445,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_config_loads_yaml_file": {
+      "start_time": 22.006547083,
+      "start_memory": 279183360,
+      "start_cpu": 0.0,
+      "duration": 0.0024923329999992916,
+      "operations": 1,
+      "ops_per_second": 401.23049367812575,
+      "memory_delta": 32768,
+      "memory_delta_mb": 0.03125
+    },
+    "test_config_missing_file_raises_error": {
+      "start_time": 22.0093595,
+      "start_memory": 279216128,
+      "start_cpu": 0.0,
+      "duration": 0.0005139580000026456,
+      "operations": 1,
+      "ops_per_second": 1945.6842776936103,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_config_get_method_with_defaults": {
+      "start_time": 22.0100705,
+      "start_memory": 279216128,
+      "start_cpu": 0.0,
+      "duration": 0.0029800409999971578,
+      "operations": 1,
+      "ops_per_second": 335.56585295334986,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_config_environment_variable_overrides": {
+      "start_time": 22.013298166,
+      "start_memory": 279216128,
+      "start_cpu": 0.0,
+      "duration": 0.002388500000002125,
+      "operations": 1,
+      "ops_per_second": 418.6728072007998,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_config_get_scrapy_settings": {
+      "start_time": 22.015883875,
+      "start_memory": 279216128,
+      "start_cpu": 0.0,
+      "duration": 0.0021416659999999865,
+      "operations": 1,
+      "ops_per_second": 466.9262153855953,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_config_get_stage_configs": {
+      "start_time": 22.018262041,
+      "start_memory": 279216128,
+      "start_cpu": 0.0,
+      "duration": 0.0032770000000006405,
+      "operations": 1,
+      "ops_per_second": 305.15715593524703,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_config_get_logging_config": {
+      "start_time": 22.02186725,
+      "start_memory": 279216128,
+      "start_cpu": 0.0,
+      "duration": 0.00232224999999886,
+      "operations": 1,
+      "ops_per_second": 430.6168586502275,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_config_get_data_paths": {
+      "start_time": 22.024389416,
+      "start_memory": 279216128,
+      "start_cpu": 0.0,
+      "duration": 0.002124874999999804,
+      "operations": 1,
+      "ops_per_second": 470.6159185834895,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_config_environment_property": {
+      "start_time": 22.026738458,
+      "start_memory": 279216128,
+      "start_cpu": 0.0,
+      "duration": 0.0024488329999989844,
+      "operations": 1,
+      "ops_per_second": 408.3577769494346,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_config_env_override_type_conversion[100-int-100]": {
+      "start_time": 22.029425416,
+      "start_memory": 279216128,
+      "start_cpu": 0.0,
+      "duration": 0.0024443339999997704,
+      "operations": 1,
+      "ops_per_second": 409.10939339717646,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_config_env_override_type_conversion[1.5-float-1.5]": {
+      "start_time": 22.032061208,
+      "start_memory": 279216128,
+      "start_cpu": 0.0,
+      "duration": 0.002492125000003398,
+      "operations": 1,
+      "ops_per_second": 401.26398154130976,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_config_env_override_type_conversion[string_value-str-string_value]": {
+      "start_time": 22.034765541,
+      "start_memory": 279216128,
+      "start_cpu": 0.0,
+      "duration": 0.0025852090000029193,
+      "operations": 1,
+      "ops_per_second": 386.81592087868745,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_config_env_override_type_conversion[true-str-true]": {
+      "start_time": 22.037594541,
+      "start_memory": 279216128,
+      "start_cpu": 0.0,
+      "duration": 0.0027069590000010635,
+      "operations": 1,
+      "ops_per_second": 369.4182290901366,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_config_nested_key_navigation": {
+      "start_time": 22.040539958,
+      "start_memory": 279216128,
+      "start_cpu": 0.0,
+      "duration": 0.0027217919999991125,
+      "operations": 1,
+      "ops_per_second": 367.40500376234706,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_run_stage1_discovery": {
+      "start_time": 22.043577083,
+      "start_memory": 279232512,
+      "start_cpu": 0.0,
+      "duration": 0.0022846250000014834,
+      "operations": 1,
+      "ops_per_second": 437.70859550226,
+      "memory_delta": 49152,
+      "memory_delta_mb": 0.046875
+    },
+    "test_run_stage2_validation": {
+      "start_time": 22.046125791,
+      "start_memory": 279281664,
+      "start_cpu": 0.0,
+      "duration": 0.0010201670000000718,
+      "operations": 1,
+      "ops_per_second": 980.2316679523349,
+      "memory_delta": 16384,
+      "memory_delta_mb": 0.015625
+    },
+    "test_run_stage3_enrichment": {
+      "start_time": 22.047357166,
+      "start_memory": 279298048,
+      "start_cpu": 0.0,
+      "duration": 0.0010291249999987429,
+      "operations": 1,
+      "ops_per_second": 971.699259080502,
+      "memory_delta": 32768,
+      "memory_delta_mb": 0.03125
+    },
+    "test_main_config_only": {
+      "start_time": 22.048630666,
+      "start_memory": 279330816,
+      "start_cpu": 0.0,
+      "duration": 0.0012710419999990563,
+      "operations": 1,
+      "ops_per_second": 786.7560631361847,
+      "memory_delta": 16384,
+      "memory_delta_mb": 0.015625
+    },
+    "test_main_stage_selection": {
+      "start_time": 22.050118541,
+      "start_memory": 279347200,
+      "start_cpu": 0.0,
+      "duration": 0.0026695419999995806,
+      "operations": 1,
+      "ops_per_second": 374.59609176411425,
+      "memory_delta": 49152,
+      "memory_delta_mb": 0.046875
+    },
+    "test_main_all_stages": {
+      "start_time": 22.053010958,
+      "start_memory": 279396352,
+      "start_cpu": 0.0,
+      "duration": 0.002180291999998474,
+      "operations": 1,
+      "ops_per_second": 458.65416191991716,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_main_keyboard_interrupt": {
+      "start_time": 22.055422083,
+      "start_memory": 279396352,
+      "start_cpu": 0.0,
+      "duration": 0.0009565420000008373,
+      "operations": 1,
+      "ops_per_second": 1045.4324012945847,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_main_exception_handling": {
+      "start_time": 22.056584583,
+      "start_memory": 279396352,
+      "start_cpu": 0.0,
+      "duration": 0.0008135829999993405,
+      "operations": 1,
+      "ops_per_second": 1229.1308938372738,
+      "memory_delta": 16384,
+      "memory_delta_mb": 0.015625
+    },
+    "test_main_directory_creation": {
+      "start_time": 22.057573708,
+      "start_memory": 279412736,
+      "start_cpu": 0.0,
+      "duration": 0.0015930829999994955,
+      "operations": 1,
+      "ops_per_second": 627.7136847234681,
+      "memory_delta": 49152,
+      "memory_delta_mb": 0.046875
+    },
+    "test_main_log_level_parameter[DEBUG]": {
+      "start_time": 22.059433291,
+      "start_memory": 279461888,
+      "start_cpu": 0.0,
+      "duration": 0.0011527499999992585,
+      "operations": 1,
+      "ops_per_second": 867.4907829109895,
+      "memory_delta": 16384,
+      "memory_delta_mb": 0.015625
+    },
+    "test_main_log_level_parameter[INFO]": {
+      "start_time": 22.060780708,
+      "start_memory": 279478272,
+      "start_cpu": 0.0,
+      "duration": 0.0010481670000004328,
+      "operations": 1,
+      "ops_per_second": 954.0464448886361,
+      "memory_delta": 16384,
+      "memory_delta_mb": 0.015625
+    },
+    "test_main_log_level_parameter[WARNING]": {
+      "start_time": 22.062013291,
+      "start_memory": 279494656,
+      "start_cpu": 0.0,
+      "duration": 0.0009607920000007653,
+      "operations": 1,
+      "ops_per_second": 1040.8080000657828,
+      "memory_delta": 16384,
+      "memory_delta_mb": 0.015625
+    },
+    "test_main_log_level_parameter[ERROR]": {
+      "start_time": 22.063151,
+      "start_memory": 279511040,
+      "start_cpu": 0.0,
+      "duration": 0.0016320829999969533,
+      "operations": 1,
+      "ops_per_second": 612.7139367310773,
+      "memory_delta": 16384,
+      "memory_delta_mb": 0.015625
+    },
+    "test_batch_queue_operations": {
+      "start_time": 22.065134875,
+      "start_memory": 279527424,
+      "start_cpu": 0.0,
+      "duration": 0.0003892500000013399,
+      "operations": 1,
+      "ops_per_second": 2569.043031461934,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_batch_queue_backpressure": {
+      "start_time": 22.065743375,
+      "start_memory": 279527424,
+      "start_cpu": 0.0,
+      "duration": 0.0005640830000004371,
+      "operations": 1,
+      "ops_per_second": 1772.7887562632186,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_pipeline_orchestrator_stage_loading": {
+      "start_time": 22.066521,
+      "start_memory": 279527424,
+      "start_cpu": 0.0,
+      "duration": 0.0009142909999972915,
+      "operations": 1,
+      "ops_per_second": 1093.7436767976087,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_pipeline_orchestrator_queue_management": {
+      "start_time": 22.067623125,
+      "start_memory": 279527424,
+      "start_cpu": 0.0,
+      "duration": 0.0004358330000009403,
+      "operations": 1,
+      "ops_per_second": 2294.4568217593496,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_concurrent_producer_consumer": {
+      "start_time": 22.068238416,
+      "start_memory": 279527424,
+      "start_cpu": 0.0,
+      "duration": 2.0023687499999987,
+      "operations": 1,
+      "ops_per_second": 0.4994085130423658,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_stage1_pipeline_writes_first_1000": {
+      "start_time": 24.07126675,
+      "start_memory": 279527424,
+      "start_cpu": 0.0,
+      "duration": 0.05811366600000056,
+      "operations": 1,
+      "ops_per_second": 17.20765645726068,
+      "memory_delta": 81920,
+      "memory_delta_mb": 0.078125
+    },
+    "test_stage1_pipeline_deduplication[0]": {
+      "start_time": 24.130170291,
+      "start_memory": 279609344,
+      "start_cpu": 0.0,
+      "duration": 0.0009238750000015727,
+      "operations": 1,
+      "ops_per_second": 1082.3975104838833,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_stage1_pipeline_deduplication[2]": {
+      "start_time": 24.131360291,
+      "start_memory": 279609344,
+      "start_cpu": 0.0,
+      "duration": 0.0006245840000005387,
+      "operations": 1,
+      "ops_per_second": 1601.0656693081114,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_stage1_pipeline_deduplication[5]": {
+      "start_time": 24.132406375,
+      "start_memory": 279609344,
+      "start_cpu": 0.0,
+      "duration": 0.0008670410000028994,
+      "operations": 1,
+      "ops_per_second": 1153.3479962270019,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_stage1_pipeline_resume_from_existing": {
+      "start_time": 24.1336105,
+      "start_memory": 279609344,
+      "start_cpu": 0.0,
+      "duration": 0.0013890409999994802,
+      "operations": 1,
+      "ops_per_second": 719.9211542354576,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_stage1_pipeline_error_handling[url_hash]": {
+      "start_time": 24.135327041,
+      "start_memory": 279609344,
+      "start_cpu": 0.0,
+      "duration": 0.0008944590000012909,
+      "operations": 1,
+      "ops_per_second": 1117.9942289121768,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_stage1_pipeline_error_handling[discovered_url]": {
+      "start_time": 24.1365925,
+      "start_memory": 279609344,
+      "start_cpu": 0.0,
+      "duration": 0.0006142080000017813,
+      "operations": 1,
+      "ops_per_second": 1628.1129519594335,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_url_validator_initialization": {
+      "start_time": 24.137523416,
+      "start_memory": 279609344,
+      "start_cpu": 0.0,
+      "duration": 0.0006417919999996968,
+      "operations": 1,
+      "ops_per_second": 1558.137215796508,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_validate_single_url": {
+      "start_time": 24.138409791,
+      "start_memory": 279609344,
+      "start_cpu": 0.0,
+      "duration": 0.0005154589999989412,
+      "operations": 1,
+      "ops_per_second": 1940.0185077805493,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_head_fallback_to_get": {
+      "start_time": 24.139151541,
+      "start_memory": 279609344,
+      "start_cpu": 0.0,
+      "duration": 0.0006582500000007485,
+      "operations": 1,
+      "ops_per_second": 1519.1796429910564,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_validation_timeout_handling": {
+      "start_time": 24.140226875,
+      "start_memory": 279609344,
+      "start_cpu": 0.0,
+      "duration": 0.0007970410000019967,
+      "operations": 1,
+      "ops_per_second": 1254.640601923232,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_validate_batch_writes_results": {
+      "start_time": 24.141530541,
+      "start_memory": 279609344,
+      "start_cpu": 0.0,
+      "duration": 0.0019074999999979525,
+      "operations": 1,
+      "ops_per_second": 524.2463958065915,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_discovery_spider_initialization": {
+      "start_time": 24.144127083,
+      "start_memory": 279609344,
+      "start_cpu": 0.0,
+      "duration": 0.0003773329999994246,
+      "operations": 1,
+      "ops_per_second": 2650.1790195968147,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_discovery_spider_loads_seed_urls": {
+      "start_time": 24.144924083,
+      "start_memory": 279609344,
+      "start_cpu": 0.0,
+      "duration": 0.001870625000002235,
+      "operations": 1,
+      "ops_per_second": 534.5806882719974,
+      "memory_delta": 163840,
+      "memory_delta_mb": 0.15625
+    },
+    "test_discovery_spider_handles_missing_seed_file": {
+      "start_time": 24.147224625,
+      "start_memory": 279773184,
+      "start_cpu": 0.0,
+      "duration": 0.0005697080000004462,
+      "operations": 1,
+      "ops_per_second": 1755.2851636263083,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_discovery_spider_extracts_links[\\n            <html><body>\\n                <a href=\"https://uconn.edu/page1\">Page 1</a>\\n                <a href=\"https://admissions.uconn.edu/page2\">Admissions</a>\\n                <a href=\"https://uconn.edu/assets/image.png\">Skip Image</a>\\n                <a href=\"/relative\">Relative</a>\\n            </body></html>\\n            -3]": {
+      "start_time": 24.14803975,
+      "start_memory": 279773184,
+      "start_cpu": 0.0,
+      "duration": 0.0009832080000009569,
+      "operations": 1,
+      "ops_per_second": 1017.0787869901657,
+      "memory_delta": 360448,
+      "memory_delta_mb": 0.34375
+    },
+    "test_discovery_spider_extracts_links[\\n            <html><body>\\n                <a href=\"https://uconn.edu/page3\">P3</a>\\n                <a href=\"mailto:test@uconn.edu\">Email</a>\\n            </body></html>\\n            -1]": {
+      "start_time": 24.149320416,
+      "start_memory": 280133632,
+      "start_cpu": 0.0,
+      "duration": 0.0004824170000006234,
+      "operations": 1,
+      "ops_per_second": 2072.8954410783776,
+      "memory_delta": 16384,
+      "memory_delta_mb": 0.015625
+    },
+    "test_discovery_spider_respects_depth_limit": {
+      "start_time": 24.150000083,
+      "start_memory": 280150016,
+      "start_cpu": 0.0,
+      "duration": 0.0003800420000033,
+      "operations": 1,
+      "ops_per_second": 2631.2881207638015,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_discovery_spider_deduplicates_urls": {
+      "start_time": 24.150569958,
+      "start_memory": 280150016,
+      "start_cpu": 0.0,
+      "duration": 0.0006240830000017183,
+      "operations": 1,
+      "ops_per_second": 1602.350969337807,
+      "memory_delta": 16384,
+      "memory_delta_mb": 0.015625
+    },
+    "test_discovery_spider_start_requests_real_seed_file": {
+      "start_time": 24.151387291,
+      "start_memory": 280166400,
+      "start_cpu": 0.0,
+      "duration": 0.0002732920000028116,
+      "operations": 1,
+      "ops_per_second": 3659.0899111196522,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_discovery_spider_handles_malformed_html": {
+      "start_time": 24.151850541,
+      "start_memory": 280166400,
+      "start_cpu": 0.0,
+      "duration": 0.0006802499999984946,
+      "operations": 1,
+      "ops_per_second": 1470.0477765559913,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_discovery_spider_network_error_handling": {
+      "start_time": 24.152988583,
+      "start_memory": 280166400,
+      "start_cpu": 0.0,
+      "duration": 0.0004135830000002727,
+      "operations": 1,
+      "ops_per_second": 2417.8943525225664,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_discovery_spider_memory_efficiency_large_page": {
+      "start_time": 24.153747708,
+      "start_memory": 280166400,
+      "start_cpu": 0.0,
+      "duration": 0.051047499999999246,
+      "operations": 1,
+      "ops_per_second": 19.58959792350291,
+      "memory_delta": 688128,
+      "memory_delta_mb": 0.65625
+    },
+    "test_discovery_spider_encoding_handling": {
+      "start_time": 24.205218625,
+      "start_memory": 280854528,
+      "start_cpu": 0.0,
+      "duration": 0.0006599579999999605,
+      "operations": 1,
+      "ops_per_second": 1515.2479400205161,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_successful_validation_complete_flow": {
+      "start_time": 24.206223875,
+      "start_memory": 280854528,
+      "start_cpu": 0.0,
+      "duration": 0.0009240830000010192,
+      "operations": 1,
+      "ops_per_second": 1082.1538757870203,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_http_error_status_codes": {
+      "start_time": 24.207401,
+      "start_memory": 280854528,
+      "start_cpu": 0.0,
+      "duration": 0.0012165829999979394,
+      "operations": 1,
+      "ops_per_second": 821.974333030869,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_non_html_content_type_rejection": {
+      "start_time": 24.208938583,
+      "start_memory": 280854528,
+      "start_cpu": 0.0,
+      "duration": 0.0017099580000028425,
+      "operations": 1,
+      "ops_per_second": 584.8096853831133,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_timeout_handling": {
+      "start_time": 24.211028125,
+      "start_memory": 280854528,
+      "start_cpu": 0.0,
+      "duration": 0.0008608750000007603,
+      "operations": 1,
+      "ops_per_second": 1161.6088282260687,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_client_error_handling": {
+      "start_time": 24.212096833,
+      "start_memory": 280854528,
+      "start_cpu": 0.0,
+      "duration": 0.011793499999999568,
+      "operations": 1,
+      "ops_per_second": 84.79247042862904,
+      "memory_delta": 32768,
+      "memory_delta_mb": 0.03125
+    },
+    "test_redirect_handling": {
+      "start_time": 24.224372333,
+      "start_memory": 280887296,
+      "start_cpu": 0.0,
+      "duration": 0.0010160419999998282,
+      "operations": 1,
+      "ops_per_second": 984.2112826046256,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_content_length_handling": {
+      "start_time": 24.225741333,
+      "start_memory": 280887296,
+      "start_cpu": 0.0,
+      "duration": 0.005996333000002352,
+      "operations": 1,
+      "ops_per_second": 166.768590069899,
+      "memory_delta": 16384,
+      "memory_delta_mb": 0.015625
+    },
+    "test_batch_validation_comprehensive": {
+      "start_time": 24.232294208,
+      "start_memory": 280903680,
+      "start_cpu": 0.0,
+      "duration": 0.002259417000001207,
+      "operations": 1,
+      "ops_per_second": 442.5920491876735,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_validate_from_file_comprehensive": {
+      "start_time": 24.235030916,
+      "start_memory": 280903680,
+      "start_cpu": 0.0,
+      "duration": 0.0026252500000012446,
+      "operations": 1,
+      "ops_per_second": 380.9161032280834,
+      "memory_delta": 16384,
+      "memory_delta_mb": 0.015625
+    },
+    "test_session_configuration_and_limits": {
+      "start_time": 24.238038708,
+      "start_memory": 280920064,
+      "start_cpu": 0.0,
+      "duration": 0.0016259579999982066,
+      "operations": 1,
+      "ops_per_second": 615.0220362402368,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_concurrent_validation_performance": {
+      "start_time": 24.239981958,
+      "start_memory": 280920064,
+      "start_cpu": 0.0,
+      "duration": 0.0060056250000002365,
+      "operations": 1,
+      "ops_per_second": 166.51056301383463,
+      "memory_delta": 327680,
+      "memory_delta_mb": 0.3125
+    },
+    "test_real_aiohttp_session_behavior": {
+      "start_time": 24.246432375,
+      "start_memory": 281247744,
+      "start_cpu": 0.0,
+      "duration": 1.0079276660000005,
+      "operations": 1,
+      "ops_per_second": 0.9921346875699307,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_stage3_pipeline_writes_items[1]": {
+      "start_time": 25.256422416,
+      "start_memory": 281247744,
+      "start_cpu": 0.0,
+      "duration": 0.0032081670000003726,
+      "operations": 1,
+      "ops_per_second": 311.7044717434859,
+      "memory_delta": 16384,
+      "memory_delta_mb": 0.015625
+    },
+    "test_stage3_pipeline_writes_items[2]": {
+      "start_time": 25.26074475,
+      "start_memory": 281264128,
+      "start_cpu": 0.0,
+      "duration": 0.0022797079999996583,
+      "operations": 1,
+      "ops_per_second": 438.6526695524821,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_stage3_pipeline_directory_creation": {
+      "start_time": 25.263605083,
+      "start_memory": 281264128,
+      "start_cpu": 0.0,
+      "duration": 0.0013097079999973005,
+      "operations": 1,
+      "ops_per_second": 763.5289698177465,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_stage3_pipeline_returns_original_item": {
+      "start_time": 25.26551075,
+      "start_memory": 281264128,
+      "start_cpu": 0.0,
+      "duration": 0.0015330829999982143,
+      "operations": 1,
+      "ops_per_second": 652.2804049103439,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_stage3_pipeline_preserves_metadata": {
+      "start_time": 25.267583416,
+      "start_memory": 281264128,
+      "start_cpu": 0.0,
+      "duration": 0.0013346249999983684,
+      "operations": 1,
+      "ops_per_second": 749.274140677136,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_extract_entities_and_keywords_spacy[UConn offers innovative programs for students-expected_entities0]": {
+      "start_time": 25.26975325,
+      "start_memory": 281264128,
+      "start_cpu": 0.0,
+      "duration": 0.0005780410000006952,
+      "operations": 1,
+      "ops_per_second": 1729.9810913045912,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_extract_entities_and_keywords_spacy[The research initiatives and data science labs are growing-expected_entities1]": {
+      "start_time": 25.270683708,
+      "start_memory": 281264128,
+      "start_cpu": 0.0,
+      "duration": 0.0005290829999999858,
+      "operations": 1,
+      "ops_per_second": 1890.0626177745778,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_extract_entities_and_keywords_transformer": {
+      "start_time": 25.271556583,
+      "start_memory": 281264128,
+      "start_cpu": 0.0,
+      "duration": 0.00046037499999940223,
+      "operations": 1,
+      "ops_per_second": 2172.142275321854,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_extract_content_tags[/admissions/undergraduate/apply-predefined0-expected0]": {
+      "start_time": 25.27242375,
+      "start_memory": 281264128,
+      "start_cpu": 0.0,
+      "duration": 0.00048374999999722945,
+      "operations": 1,
+      "ops_per_second": 2067.183462544139,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_extract_content_tags[/research/ai/labs-predefined1-expected1]": {
+      "start_time": 25.273252125,
+      "start_memory": 281264128,
+      "start_cpu": 0.0,
+      "duration": 0.0004562499999991587,
+      "operations": 1,
+      "ops_per_second": 2191.7808219218496,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_extract_content_tags[/students/life-predefined2-expected2]": {
+      "start_time": 25.273992,
+      "start_memory": 281264128,
+      "start_cpu": 0.0,
+      "duration": 0.0003559160000001782,
+      "operations": 1,
+      "ops_per_second": 2809.6517155719307,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_has_audio_links[links0-True]": {
+      "start_time": 25.274613583,
+      "start_memory": 281264128,
+      "start_cpu": 0.0,
+      "duration": 0.00034370799999905444,
+      "operations": 1,
+      "ops_per_second": 2909.446390548812,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_has_audio_links[links1-False]": {
+      "start_time": 25.275223166,
+      "start_memory": 281264128,
+      "start_cpu": 0.0,
+      "duration": 0.0003262500000005275,
+      "operations": 1,
+      "ops_per_second": 3065.1340996119025,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_has_audio_links[links2-True]": {
+      "start_time": 25.27584375,
+      "start_memory": 281264128,
+      "start_cpu": 0.0,
+      "duration": 0.0003323749999992742,
+      "operations": 1,
+      "ops_per_second": 3008.649868378138,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_has_audio_links[links3-False]": {
+      "start_time": 25.276438041,
+      "start_memory": 281264128,
+      "start_cpu": 0.0,
+      "duration": 0.000340167000000946,
+      "operations": 1,
+      "ops_per_second": 2939.73254312505,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_sha1_hash_consistency[https://uconn.edu/test]": {
+      "start_time": 25.277201041,
+      "start_memory": 281264128,
+      "start_cpu": 0.0,
+      "duration": 0.0004490839999995444,
+      "operations": 1,
+      "ops_per_second": 2226.754905543316,
+      "memory_delta": 16384,
+      "memory_delta_mb": 0.015625
+    },
+    "test_sha1_hash_consistency[https://uconn.edu/test?query=1]": {
+      "start_time": 25.277926333,
+      "start_memory": 281280512,
+      "start_cpu": 0.0,
+      "duration": 0.0003036670000007291,
+      "operations": 1,
+      "ops_per_second": 3293.080907696915,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_sha1_hash_consistency[https://uconn.edu/test#fragment]": {
+      "start_time": 25.278507541,
+      "start_memory": 281280512,
+      "start_cpu": 0.0,
+      "duration": 0.00033970899999857807,
+      "operations": 1,
+      "ops_per_second": 2943.6959279977445,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_sha1_hash_consistency[https://admissions.uconn.edu/path]": {
+      "start_time": 25.279127083,
+      "start_memory": 281280512,
+      "start_cpu": 0.0,
+      "duration": 0.00031295800000208374,
+      "operations": 1,
+      "ops_per_second": 3195.3169434663496,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_sha1_hash_consistency[https://research.uconn.edu/reports/2024]": {
+      "start_time": 25.279722,
+      "start_memory": 281280512,
+      "start_cpu": 0.0,
+      "duration": 0.0003316250000011678,
+      "operations": 1,
+      "ops_per_second": 3015.4542027786765,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_canonicalize_and_hash_variants[https://UCONN.edu/Test/../page]": {
+      "start_time": 25.280404125,
+      "start_memory": 281280512,
+      "start_cpu": 0.0,
+      "duration": 0.00442954100000037,
+      "operations": 1,
+      "ops_per_second": 225.7570253892935,
+      "memory_delta": 32768,
+      "memory_delta_mb": 0.03125
+    },
+    "test_canonicalize_and_hash_variants[https://uconn.edu/page?utm_source=test]": {
+      "start_time": 25.285242375,
+      "start_memory": 281313280,
+      "start_cpu": 0.0,
+      "duration": 0.000472666000000288,
+      "operations": 1,
+      "ops_per_second": 2115.6588373172403,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_canonicalize_and_hash_variants[http://uconn.edu]": {
+      "start_time": 25.286015375,
+      "start_memory": 281313280,
+      "start_cpu": 0.0,
+      "duration": 0.004348790999998187,
+      "operations": 1,
+      "ops_per_second": 229.94896742575511,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_canonicalize_and_hash_variants[https://uconn.edu:443/page]": {
+      "start_time": 25.290719041,
+      "start_memory": 281313280,
+      "start_cpu": 0.0,
+      "duration": 0.00380804199999929,
+      "operations": 1,
+      "ops_per_second": 262.6021456696608,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_canonicalize_and_hash_variants[https://uconn.edu/page#section]": {
+      "start_time": 25.294810416,
+      "start_memory": 281313280,
+      "start_cpu": 0.0,
+      "duration": 0.0003589169999997921,
+      "operations": 1,
+      "ops_per_second": 2786.159474197598,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_is_valid_uconn_url_behaviour[https://uconn.edu-True]": {
+      "start_time": 25.295420666,
+      "start_memory": 281313280,
+      "start_cpu": 0.0,
+      "duration": 0.00034812500000214186,
+      "operations": 1,
+      "ops_per_second": 2872.5314182947145,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_is_valid_uconn_url_behaviour[https://www.uconn.edu-True]": {
+      "start_time": 25.296014625,
+      "start_memory": 281313280,
+      "start_cpu": 0.0,
+      "duration": 0.00035091599999859113,
+      "operations": 1,
+      "ops_per_second": 2849.6848248698116,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_is_valid_uconn_url_behaviour[https://admissions.uconn.edu-True]": {
+      "start_time": 25.2966095,
+      "start_memory": 281313280,
+      "start_cpu": 0.0,
+      "duration": 0.00034624999999977035,
+      "operations": 1,
+      "ops_per_second": 2888.0866426011935,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_is_valid_uconn_url_behaviour[https://catalog.uconn.edu/path-True]": {
+      "start_time": 25.297198541,
+      "start_memory": 281313280,
+      "start_cpu": 0.0,
+      "duration": 0.0004642920000001993,
+      "operations": 1,
+      "ops_per_second": 2153.8169944766887,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_is_valid_uconn_url_behaviour[http://events.uconn.edu-True]": {
+      "start_time": 25.297933958,
+      "start_memory": 281313280,
+      "start_cpu": 0.0,
+      "duration": 0.0003548329999993882,
+      "operations": 1,
+      "ops_per_second": 2818.227166023803,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_is_valid_uconn_url_behaviour[https://global.uconn.edu/study-abroad-True]": {
+      "start_time": 25.298540541,
+      "start_memory": 281313280,
+      "start_cpu": 0.0,
+      "duration": 0.0003649589999987768,
+      "operations": 1,
+      "ops_per_second": 2740.0338120264237,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_is_valid_uconn_url_behaviour[https://fake-uconn.edu-False]": {
+      "start_time": 25.299160375,
+      "start_memory": 281313280,
+      "start_cpu": 0.0,
+      "duration": 0.00033487500000006776,
+      "operations": 1,
+      "ops_per_second": 2986.188876445831,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_is_valid_uconn_url_behaviour[https://google.com-False]": {
+      "start_time": 25.299727458,
+      "start_memory": 281313280,
+      "start_cpu": 0.0,
+      "duration": 0.0003262500000005275,
+      "operations": 1,
+      "ops_per_second": 3065.1340996119025,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_is_valid_uconn_url_behaviour[https://uconn.com-False]": {
+      "start_time": 25.300277291,
+      "start_memory": 281313280,
+      "start_cpu": 0.0,
+      "duration": 0.0003277500000002931,
+      "operations": 1,
+      "ops_per_second": 3051.106025931673,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_is_valid_uconn_url_behaviour[https://example.edu/uconn.com-False]": {
+      "start_time": 25.300844208,
+      "start_memory": 281313280,
+      "start_cpu": 0.0,
+      "duration": 0.0003377079999999921,
+      "operations": 1,
+      "ops_per_second": 2961.13802456567,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_is_valid_uconn_url_behaviour[ftp://uconn.edu/resource-False]": {
+      "start_time": 25.301416875,
+      "start_memory": 281313280,
+      "start_cpu": 0.0,
+      "duration": 0.0003240829999988648,
+      "operations": 1,
+      "ops_per_second": 3085.629298678125,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_is_valid_uconn_url_behaviour[not-a-url-False]": {
+      "start_time": 25.301961375,
+      "start_memory": 281313280,
+      "start_cpu": 0.0,
+      "duration": 0.00031424999999885017,
+      "operations": 1,
+      "ops_per_second": 3182.179793169957,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_is_valid_uconn_url_behaviour[-False]": {
+      "start_time": 25.302494333,
+      "start_memory": 281313280,
+      "start_cpu": 0.0,
+      "duration": 0.00031520799999995575,
+      "operations": 1,
+      "ops_per_second": 3172.5083119722226,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_is_valid_uconn_url_none": {
+      "start_time": 25.30303525,
+      "start_memory": 281313280,
+      "start_cpu": 0.0,
+      "duration": 0.00025241599999858977,
+      "operations": 1,
+      "ops_per_second": 3961.7139959653387,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_canonicalize_hash_uniqueness[https://uconn.edu/page-]": {
+      "start_time": 25.303513416,
+      "start_memory": 281313280,
+      "start_cpu": 0.0,
+      "duration": 0.0003218339999975228,
+      "operations": 1,
+      "ops_per_second": 3107.1919064104386,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_canonicalize_hash_uniqueness[https://uconn.edu/page-?a=1]": {
+      "start_time": 25.304324083,
+      "start_memory": 281313280,
+      "start_cpu": 0.0,
+      "duration": 0.0004898329999996065,
+      "operations": 1,
+      "ops_per_second": 2041.5121071891917,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_canonicalize_hash_uniqueness[https://uconn.edu/page-?utm_campaign=test]": {
+      "start_time": 25.305080583,
+      "start_memory": 281313280,
+      "start_cpu": 0.0,
+      "duration": 0.00035054199999962066,
+      "operations": 1,
+      "ops_per_second": 2852.7252083946637,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_canonicalize_handles_malformed_inputs[not-a-url-False]": {
+      "start_time": 25.305661541,
+      "start_memory": 281313280,
+      "start_cpu": 0.0,
+      "duration": 0.0003037090000006515,
+      "operations": 1,
+      "ops_per_second": 3292.625506645687,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_canonicalize_handles_malformed_inputs[ftp://uconn.edu-False]": {
+      "start_time": 25.306189875,
+      "start_memory": 281313280,
+      "start_cpu": 0.0,
+      "duration": 0.00030170799999851283,
+      "operations": 1,
+      "ops_per_second": 3314.462990722583,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_canonicalize_handles_malformed_inputs[https://-False]": {
+      "start_time": 25.306716666,
+      "start_memory": 281313280,
+      "start_cpu": 0.0,
+      "duration": 0.00029895899999843323,
+      "operations": 1,
+      "ops_per_second": 3344.9402761089004,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_canonicalize_handles_malformed_inputs[https://uconn.edu with spaces-False]": {
+      "start_time": 25.307236125,
+      "start_memory": 281313280,
+      "start_cpu": 0.0,
+      "duration": 0.0002859999999991203,
+      "operations": 1,
+      "ops_per_second": 3496.5034965142513,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_canonicalize_handles_malformed_inputs[javascript:alert('xss')-False]": {
+      "start_time": 25.307735625,
+      "start_memory": 281313280,
+      "start_cpu": 0.0,
+      "duration": 0.00028312499999927354,
+      "operations": 1,
+      "ops_per_second": 3532.0088300311377,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_canonicalize_handles_malformed_inputs[-False]": {
+      "start_time": 25.308229958,
+      "start_memory": 281313280,
+      "start_cpu": 0.0,
+      "duration": 0.00027554200000068363,
+      "operations": 1,
+      "ops_per_second": 3629.2107918122065,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_canonicalize_handles_malformed_inputs[None-True]": {
+      "start_time": 25.308719458,
+      "start_memory": 281313280,
+      "start_cpu": 0.0,
+      "duration": 0.0003109580000000278,
+      "operations": 1,
+      "ops_per_second": 3215.868380938617,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_sha1_long_urls[10]": {
+      "start_time": 25.309241958,
+      "start_memory": 281313280,
+      "start_cpu": 0.0,
+      "duration": 0.00024325000000047226,
+      "operations": 1,
+      "ops_per_second": 4110.996916744331,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_sha1_long_urls[100]": {
+      "start_time": 25.309693916,
+      "start_memory": 281313280,
+      "start_cpu": 0.0,
+      "duration": 0.00023887500000085993,
+      "operations": 1,
+      "ops_per_second": 4186.289900560545,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_sha1_long_urls[500]": {
+      "start_time": 25.310138458,
+      "start_memory": 281313280,
+      "start_cpu": 0.0,
+      "duration": 0.00023854199999817638,
+      "operations": 1,
+      "ops_per_second": 4192.13388001964,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_sha1_long_urls[1000]": {
+      "start_time": 25.310582416,
+      "start_memory": 281313280,
+      "start_cpu": 0.0,
+      "duration": 0.00024795899999929816,
+      "operations": 1,
+      "ops_per_second": 4032.924798062706,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_sha1_long_urls[2000]": {
+      "start_time": 25.311039291,
+      "start_memory": 281313280,
+      "start_cpu": 0.0,
+      "duration": 0.00024145900000149823,
+      "operations": 1,
+      "ops_per_second": 4141.489859536381,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_canonicalize_and_hash_idempotency[/]": {
+      "start_time": 25.311482708,
+      "start_memory": 281313280,
+      "start_cpu": 0.0,
+      "duration": 0.0002746249999994177,
+      "operations": 1,
+      "ops_per_second": 3641.3290851237884,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_canonicalize_and_hash_idempotency[/about]": {
+      "start_time": 25.311966833,
+      "start_memory": 281313280,
+      "start_cpu": 0.0,
+      "duration": 0.0003276250000006087,
+      "operations": 1,
+      "ops_per_second": 3052.270125900472,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_canonicalize_and_hash_idempotency[/academics/programs]": {
+      "start_time": 25.312503666,
+      "start_memory": 281313280,
+      "start_cpu": 0.0,
+      "duration": 0.0002807499999981644,
+      "operations": 1,
+      "ops_per_second": 3561.887800557571,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_canonicalize_and_hash_idempotency[/research/publications]": {
+      "start_time": 25.312993708,
+      "start_memory": 281313280,
+      "start_cpu": 0.0,
+      "duration": 0.00027720799999997325,
+      "operations": 1,
+      "ops_per_second": 3607.399497850338,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_canonicalize_and_hash_idempotency[/students/services]": {
+      "start_time": 25.313472791,
+      "start_memory": 281313280,
+      "start_cpu": 0.0,
+      "duration": 0.00026829200000122455,
+      "operations": 1,
+      "ops_per_second": 3727.282214883171,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_extract_domain_functionality[https://uconn.edu-uconn.edu]": {
+      "start_time": 25.314028916,
+      "start_memory": 281313280,
+      "start_cpu": 0.0,
+      "duration": 0.0003796669999971414,
+      "operations": 1,
+      "ops_per_second": 2633.887064210293,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_extract_domain_functionality[https://www.uconn.edu-www.uconn.edu]": {
+      "start_time": 25.314653916,
+      "start_memory": 281313280,
+      "start_cpu": 0.0,
+      "duration": 0.0002869590000003086,
+      "operations": 1,
+      "ops_per_second": 3484.8183886859256,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_extract_domain_functionality[https://admissions.uconn.edu/apply-admissions.uconn.edu]": {
+      "start_time": 25.315287875,
+      "start_memory": 281313280,
+      "start_cpu": 0.0,
+      "duration": 0.0003484580000012727,
+      "operations": 1,
+      "ops_per_second": 2869.786315700451,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_extract_domain_functionality[http://research.uconn.edu:80/projects-research.uconn.edu]": {
+      "start_time": 25.315885125,
+      "start_memory": 281313280,
+      "start_cpu": 0.0,
+      "duration": 0.0003138329999998746,
+      "operations": 1,
+      "ops_per_second": 3186.40805778997,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_extract_domain_functionality[https://catalog.uconn.edu:443/-catalog.uconn.edu]": {
+      "start_time": 25.316417875,
+      "start_memory": 281313280,
+      "start_cpu": 0.0,
+      "duration": 0.00028841600000006906,
+      "operations": 1,
+      "ops_per_second": 3467.214024186455,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_canonicalize_path_traversal_protection[https://uconn.edu/../../../etc/passwd]": {
+      "start_time": 25.316911583,
+      "start_memory": 281313280,
+      "start_cpu": 0.0,
+      "duration": 0.00026958300000146096,
+      "operations": 1,
+      "ops_per_second": 3709.43271643457,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_canonicalize_path_traversal_protection[https://uconn.edu/./././admin]": {
+      "start_time": 25.3173875,
+      "start_memory": 281313280,
+      "start_cpu": 0.0,
+      "duration": 0.0002688329999998018,
+      "operations": 1,
+      "ops_per_second": 3719.7814256461716,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_canonicalize_path_traversal_protection[https://uconn.edu/normal/../admin/secret]": {
+      "start_time": 25.317863166,
+      "start_memory": 281313280,
+      "start_cpu": 0.0,
+      "duration": 0.0002670000000009054,
+      "operations": 1,
+      "ops_per_second": 3745.318352047225,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_canonicalize_path_traversal_protection[https://uconn.edu/path/./file.html]": {
+      "start_time": 25.318672708,
+      "start_memory": 281313280,
+      "start_cpu": 0.0,
+      "duration": 0.0003488750000002483,
+      "operations": 1,
+      "ops_per_second": 2866.3561447489456,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_url_canonicalization_edge_cases[https://uconn.edu/page-https://uconn.edu/page/-False]": {
+      "start_time": 25.319237666,
+      "start_memory": 281313280,
+      "start_cpu": 0.0,
+      "duration": 0.0003209169999998096,
+      "operations": 1,
+      "ops_per_second": 3116.070510445359,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_url_canonicalization_edge_cases[https://uconn.edu/PAGE-https://uconn.edu/page-True]": {
+      "start_time": 25.319757791,
+      "start_memory": 281313280,
+      "start_cpu": 0.0,
+      "duration": 0.00030270899999962353,
+      "operations": 1,
+      "ops_per_second": 3303.5027039210718,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_url_canonicalization_edge_cases[https://UCONN.EDU/page-https://uconn.edu/page-True]": {
+      "start_time": 25.320260083,
+      "start_memory": 281313280,
+      "start_cpu": 0.0,
+      "duration": 0.00031520799999995575,
+      "operations": 1,
+      "ops_per_second": 3172.5083119722226,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_url_canonicalization_edge_cases[http://uconn.edu/page-https://uconn.edu/page-False]": {
+      "start_time": 25.320779208,
+      "start_memory": 281313280,
+      "start_cpu": 0.0,
+      "duration": 0.0003132919999977446,
+      "operations": 1,
+      "ops_per_second": 3191.9104222488895,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_url_canonicalization_edge_cases[https://uconn.edu:443/page-https://uconn.edu/page-True]": {
+      "start_time": 25.321287583,
+      "start_memory": 281313280,
+      "start_cpu": 0.0,
+      "duration": 0.000299749999999932,
+      "operations": 1,
+      "ops_per_second": 3336.1134278573036,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_url_canonicalization_edge_cases[https://uconn.edu/page?a=1&b=2-https://uconn.edu/page?b=2&a=1-True]": {
+      "start_time": 25.321834208,
+      "start_memory": 281313280,
+      "start_cpu": 0.0,
+      "duration": 0.00033291700000148694,
+      "operations": 1,
+      "ops_per_second": 3003.7516858422177,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_is_valid_uconn_url_comprehensive[https://uconn.edu-True]": {
+      "start_time": 25.322360416,
+      "start_memory": 281313280,
+      "start_cpu": 0.0,
+      "duration": 0.000295709000003086,
+      "operations": 1,
+      "ops_per_second": 3381.7029579402865,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_is_valid_uconn_url_comprehensive[https://www.uconn.edu-True]": {
+      "start_time": 25.322852708,
+      "start_memory": 281313280,
+      "start_cpu": 0.0,
+      "duration": 0.0002750000000020236,
+      "operations": 1,
+      "ops_per_second": 3636.363636336878,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_is_valid_uconn_url_comprehensive[https://admissions.uconn.edu-True]": {
+      "start_time": 25.323315458,
+      "start_memory": 281313280,
+      "start_cpu": 0.0,
+      "duration": 0.00027754199999918683,
+      "operations": 1,
+      "ops_per_second": 3603.0582758751107,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_is_valid_uconn_url_comprehensive[http://events.uconn.edu-True]": {
+      "start_time": 25.323793666,
+      "start_memory": 281313280,
+      "start_cpu": 0.0,
+      "duration": 0.00028512500000132945,
+      "operations": 1,
+      "ops_per_second": 3507.2336694268733,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_is_valid_uconn_url_comprehensive[https://uconn-fake.edu-False]": {
+      "start_time": 25.324362041,
+      "start_memory": 281313280,
+      "start_cpu": 0.0,
+      "duration": 0.00028354199999824914,
+      "operations": 1,
+      "ops_per_second": 3526.814369674246,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_is_valid_uconn_url_comprehensive[https://fake-uconn.edu-False]": {
+      "start_time": 25.32483675,
+      "start_memory": 281313280,
+      "start_cpu": 0.0,
+      "duration": 0.0002760409999993385,
+      "operations": 1,
+      "ops_per_second": 3622.650258484777,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_is_valid_uconn_url_comprehensive[https://uconn.edu.evil.com-False]": {
+      "start_time": 25.325305541,
+      "start_memory": 281313280,
+      "start_cpu": 0.0,
+      "duration": 0.00027562500000044565,
+      "operations": 1,
+      "ops_per_second": 3628.1179138263333,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_is_valid_uconn_url_comprehensive[https://subdomain.uconn.edu.evil.com-False]": {
+      "start_time": 25.32577075,
+      "start_memory": 281313280,
+      "start_cpu": 0.0,
+      "duration": 0.0002720409999987794,
+      "operations": 1,
+      "ops_per_second": 3675.916497897327,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_is_valid_uconn_url_comprehensive[ftp://uconn.edu-False]": {
+      "start_time": 25.32623275,
+      "start_memory": 281313280,
+      "start_cpu": 0.0,
+      "duration": 0.0002724580000013077,
+      "operations": 1,
+      "ops_per_second": 3670.2904667699254,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_is_valid_uconn_url_comprehensive[javascript:alert('xss')-False]": {
+      "start_time": 25.326698416,
+      "start_memory": 281313280,
+      "start_cpu": 0.0,
+      "duration": 0.0002830419999995115,
+      "operations": 1,
+      "ops_per_second": 3533.0445658302506,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_is_valid_uconn_url_comprehensive[data:text/html,<script>alert(1)</script>-False]": {
+      "start_time": 25.327172291,
+      "start_memory": 281313280,
+      "start_cpu": 0.0,
+      "duration": 0.0002983340000000112,
+      "operations": 1,
+      "ops_per_second": 3351.947816876261,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_is_valid_uconn_url_comprehensive[https://-False]": {
+      "start_time": 25.327662833,
+      "start_memory": 281313280,
+      "start_cpu": 0.0,
+      "duration": 0.0003125829999994778,
+      "operations": 1,
+      "ops_per_second": 3199.150305684156,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_is_valid_uconn_url_comprehensive[-False]": {
+      "start_time": 25.328165083,
+      "start_memory": 281313280,
+      "start_cpu": 0.0,
+      "duration": 0.00026641700000240576,
+      "operations": 1,
+      "ops_per_second": 3753.5142276617858,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_is_valid_uconn_url_comprehensive[not-a-url-False]": {
+      "start_time": 25.328619125,
+      "start_memory": 281313280,
+      "start_cpu": 0.0,
+      "duration": 0.0002740830000007577,
+      "operations": 1,
+      "ops_per_second": 3648.5298248969675,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_is_valid_uconn_url_comprehensive[https://uconn-False]": {
+      "start_time": 25.329079666,
+      "start_memory": 281313280,
+      "start_cpu": 0.0,
+      "duration": 0.0002637920000019278,
+      "operations": 1,
+      "ops_per_second": 3790.865530390201,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_url_hash_collision_resistance": {
+      "start_time": 25.329524583,
+      "start_memory": 281313280,
+      "start_cpu": 0.0,
+      "duration": 0.0002778329999983953,
+      "operations": 1,
+      "ops_per_second": 3599.284462269694,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_url_canonicalization_extreme_cases[https://uconn.edu/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa]": {
+      "start_time": 25.329987541,
+      "start_memory": 281313280,
+      "start_cpu": 0.0,
+      "duration": 0.00024608400000047936,
+      "operations": 1,
+      "ops_per_second": 4063.6530615483007,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_url_canonicalization_extreme_cases[https://uconn.edu/?param0=value0&param1=value1&param2=value2&param3=value3&param4=value4&param5=value5&param6=value6&param7=value7&param8=value8&param9=value9&param10=value10&param11=value11&param12=value12&param13=value13&param14=value14&param15=value15&param16=value16&param17=value17&param18=value18&param19=value19&param20=value20&param21=value21&param22=value22&param23=value23&param24=value24&param25=value25&param26=value26&param27=value27&param28=value28&param29=value29&param30=value30&param31=value31&param32=value32&param33=value33&param34=value34&param35=value35&param36=value36&param37=value37&param38=value38&param39=value39&param40=value40&param41=value41&param42=value42&param43=value43&param44=value44&param45=value45&param46=value46&param47=value47&param48=value48&param49=value49&param50=value50&param51=value51&param52=value52&param53=value53&param54=value54&param55=value55&param56=value56&param57=value57&param58=value58&param59=value59&param60=value60&param61=value61&param62=value62&param63=value63&param64=value64&param65=value65&param66=value66&param67=value67&param68=value68&param69=value69&param70=value70&param71=value71&param72=value72&param73=value73&param74=value74&param75=value75&param76=value76&param77=value77&param78=value78&param79=value79&param80=value80&param81=value81&param82=value82&param83=value83&param84=value84&param85=value85&param86=value86&param87=value87&param88=value88&param89=value89&param90=value90&param91=value91&param92=value92&param93=value93&param94=value94&param95=value95&param96=value96&param97=value97&param98=value98&param99=value99]": {
+      "start_time": 25.330418083,
+      "start_memory": 281313280,
+      "start_cpu": 0.0,
+      "duration": 0.0005777499999979341,
+      "operations": 1,
+      "ops_per_second": 1730.8524448352675,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_url_canonicalization_extreme_cases[https://uconn.edu/path with spaces and special chars !@#$%^&*()]": {
+      "start_time": 25.3312605,
+      "start_memory": 281313280,
+      "start_cpu": 0.0,
+      "duration": 0.00028804100000101585,
+      "operations": 1,
+      "ops_per_second": 3471.727983156819,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_url_hash_deterministic": {
+      "start_time": 25.331753,
+      "start_memory": 281313280,
+      "start_cpu": 0.0,
+      "duration": 0.0003069579999994687,
+      "operations": 1,
+      "ops_per_second": 3257.7746792777216,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_canonicalization_normalization[https://uconn.edu-https://uconn.edu]": {
+      "start_time": 25.332252541,
+      "start_memory": 281313280,
+      "start_cpu": 0.0,
+      "duration": 0.00025733400000049755,
+      "operations": 1,
+      "ops_per_second": 3886.000295328509,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_canonicalization_normalization[https://uconn.edu/-https://uconn.edu/]": {
+      "start_time": 25.332697333,
+      "start_memory": 281313280,
+      "start_cpu": 0.0,
+      "duration": 0.00026612499999956185,
+      "operations": 1,
+      "ops_per_second": 3757.6326914106016,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_canonicalization_normalization[https://uconn.edu/path/../other-https://uconn.edu/other]": {
+      "start_time": 25.333155208,
+      "start_memory": 281313280,
+      "start_cpu": 0.0,
+      "duration": 0.0002584169999977348,
+      "operations": 1,
+      "ops_per_second": 3869.7144538043767,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_canonicalization_normalization[https://uconn.edu/./path-https://uconn.edu/path]": {
+      "start_time": 25.333614791,
+      "start_memory": 281313280,
+      "start_cpu": 0.0,
+      "duration": 0.00025225000000261844,
+      "operations": 1,
+      "ops_per_second": 3964.32110996876,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_canonicalization_normalization[https://uconn.edu:443/secure-https://uconn.edu/secure]": {
+      "start_time": 25.334047333,
+      "start_memory": 281313280,
+      "start_cpu": 0.0,
+      "duration": 0.0002554999999979657,
+      "operations": 1,
+      "ops_per_second": 3913.8943248843916,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_canonicalization_normalization[http://uconn.edu:80/normal-http://uconn.edu/normal]": {
+      "start_time": 25.334487583,
+      "start_memory": 281313280,
+      "start_cpu": 0.0,
+      "duration": 0.0002501669999972478,
+      "operations": 1,
+      "ops_per_second": 3997.329783748462,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_unicode_url_handling": {
+      "start_time": 25.334916875,
+      "start_memory": 281313280,
+      "start_cpu": 0.0,
+      "duration": 0.0002518750000000125,
+      "operations": 1,
+      "ops_per_second": 3970.223325061838,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_malformed_url_handling": {
+      "start_time": 25.335349875,
+      "start_memory": 281313280,
+      "start_cpu": 0.0,
+      "duration": 0.0002679160000020886,
+      "operations": 1,
+      "ops_per_second": 3732.513175742413,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_url_processing_batch_performance[1]": {
+      "start_time": 25.335806125,
+      "start_memory": 281313280,
+      "start_cpu": 0.0,
+      "duration": 0.18180929100000043,
+      "operations": 1,
+      "ops_per_second": 5.500268960402016,
+      "memory_delta": 32768,
+      "memory_delta_mb": 0.03125
+    },
+    "test_url_processing_batch_performance[10]": {
+      "start_time": 25.517913208,
+      "start_memory": 281346048,
+      "start_cpu": 0.0,
+      "duration": 0.17645212500000085,
+      "operations": 1,
+      "ops_per_second": 5.667259603702677,
+      "memory_delta": 16384,
+      "memory_delta_mb": 0.015625
+    },
+    "test_url_processing_batch_performance[100]": {
+      "start_time": 25.694641333,
+      "start_memory": 281362432,
+      "start_cpu": 0.0,
+      "duration": 0.19746937500000072,
+      "operations": 1,
+      "ops_per_second": 5.064076391592349,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    },
+    "test_url_processing_batch_performance[1000]": {
+      "start_time": 25.892396583,
+      "start_memory": 281362432,
+      "start_cpu": 0.0,
+      "duration": 0.1853015830000011,
+      "operations": 1,
+      "ops_per_second": 5.3966079717732045,
+      "memory_delta": 0,
+      "memory_delta_mb": 0.0
+    }
+  }
+}

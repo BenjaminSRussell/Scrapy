@@ -1,7 +1,8 @@
 import csv
 from datetime import datetime
 from pathlib import Path
-from typing import Iterator
+from typing import Iterator, Optional, Tuple
+from urllib.parse import urlparse
 
 import scrapy
 from scrapy.linkextractors import LinkExtractor
@@ -40,6 +41,8 @@ class DiscoverySpider(scrapy.Spider):
         self.depth_yields = {i: 0 for i in range(self.max_depth + 1)}
         self.referring_pages = {}  # source_url -> count
         self.seed_count = 0
+        self.malformed_seed_skipped = 0
+        self.sanitized_seed_count = 0
 
         self.logger.info(f"Discovery spider initialized with max_depth={self.max_depth}")
 
@@ -57,25 +60,38 @@ class DiscoverySpider(scrapy.Spider):
             reader = csv.reader(f)
             for row_num, row in enumerate(reader, 1):
                 if row and row[0].strip():
-                    url = row[0].strip()
-                    if url.startswith('http'):
-                        try:
-                            canonical_url, url_hash = canonicalize_and_hash(url)
+                    raw_url = row[0].strip()
+                    cleaned_url, sanitized = self._clean_seed_url(raw_url, row_num)
 
-                            if url_hash not in self.url_hashes:
-                                self.url_hashes.add(url_hash)
-                                self.seed_count += 1
-                                yield scrapy.Request(
-                                    url=canonical_url,
-                                    callback=self.parse,
-                                    meta={
-                                        'source_url': canonical_url,
-                                        'depth': 0,
-                                        'first_seen': datetime.now().isoformat()
-                                    }
-                                )
-                        except Exception as e:
-                            self.logger.error(f"Error processing seed URL at line {row_num}: {url} - {e}")
+                    if cleaned_url is None:
+                        self.malformed_seed_skipped += 1
+                        continue
+
+                    if sanitized:
+                        self.sanitized_seed_count += 1
+                        self.logger.debug(
+                            f"Sanitized seed URL at line {row_num}: {raw_url} -> {cleaned_url}"
+                        )
+
+                    try:
+                        canonical_url, url_hash = canonicalize_and_hash(cleaned_url)
+
+                        if url_hash not in self.url_hashes:
+                            self.url_hashes.add(url_hash)
+                            self.seed_count += 1
+                            yield scrapy.Request(
+                                url=canonical_url,
+                                callback=self.parse,
+                                meta={
+                                    'source_url': canonical_url,
+                                    'depth': 0,
+                                    'first_seen': datetime.now().isoformat()
+                                }
+                            )
+                    except Exception as e:
+                        self.logger.error(
+                            f"Error processing seed URL at line {row_num}: {cleaned_url} - {e}"
+                        )
 
         # Log seed statistics at startup to detect when seeds go stale
         self.logger.info(f"Loaded {self.seed_count} unique seed URLs (know when seeds go stale)")
@@ -175,6 +191,8 @@ class DiscoverySpider(scrapy.Spider):
         self.logger.info(f"Unique URLs found: {self.unique_hashes_found:,}")
         self.logger.info(f"Duplicates skipped: {self.duplicates_skipped:,}")
         self.logger.info(f"Seed URLs loaded: {self.seed_count:,}")
+        self.logger.info(f"Sanitized seed URLs recovered: {self.sanitized_seed_count:,}")
+        self.logger.info(f"Malformed seeds skipped: {self.malformed_seed_skipped:,}")
 
         # Depth histogram for coverage analysis
         self.logger.info("-" * 40)
@@ -199,4 +217,69 @@ class DiscoverySpider(scrapy.Spider):
         self.logger.info(f"Duplicate rate: {duplicate_rate:.1f}% (lower is better)")
         self.logger.info(f"Discovery rate: {self.unique_hashes_found / max(1, self.total_urls_parsed):.1f} URLs/page")
 
-        self.logger.info("=" * 80)
+    def _clean_seed_url(self, raw_url: str, line_number: int) -> Tuple[Optional[str], bool]:
+        """Attempt to clean malformed seed URLs while preserving usable entries."""
+
+        url = raw_url.strip()
+        if not url:
+            return None, False
+
+        sanitized = False
+        lower_url = url.lower()
+
+        # Remove stray wrapping quotes left over from CSV escapes.
+        trimmed = url.strip("\"'")
+        if trimmed != url:
+            url = trimmed
+            lower_url = url.lower()
+            sanitized = True
+
+        # Strip trailing backslashes accidentally captured in some exports.
+        if url.endswith('\\'):
+            url = url.rstrip('\\')
+            lower_url = url.lower()
+            sanitized = True
+
+        # Recover when a scheme is duplicated (e.g. "https:https://...").
+        for scheme in ("https://", "http://"):
+            idx = lower_url.find(scheme)
+            if idx > 0:
+                url = url[idx:]
+                sanitized = True
+                lower_url = url.lower()
+                break
+
+        # Extract final URL from Windows cache paths captured in the CSV.
+        if "\\" in url:
+            parts = [segment for segment in url.split("\\") if segment]
+            recovered = None
+            for segment in reversed(parts):
+                candidate = segment.strip().split()[0]
+                if candidate.lower().endswith(".uconn.edu"):
+                    recovered = f"https://{candidate}"
+                    break
+
+            if recovered is None:
+                self.logger.warning(
+                    f"Skipping malformed seed URL at line {line_number}: {raw_url}"
+                )
+                return None, sanitized
+
+            url = recovered
+            lower_url = url.lower()
+            sanitized = True
+
+        # Default to https when scheme missing.
+        parsed = urlparse(url)
+        if not parsed.scheme:
+            url = f"https://{url.lstrip('/') }"
+            parsed = urlparse(url)
+            sanitized = True
+
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            self.logger.warning(
+                f"Skipping malformed seed URL at line {line_number}: {raw_url}"
+            )
+            return None, sanitized
+
+        return url, sanitized

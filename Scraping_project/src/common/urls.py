@@ -1,134 +1,83 @@
 import hashlib
 import posixpath
-from typing import Tuple
+from typing import Optional, Tuple
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 from w3lib.url import canonicalize_url
 
 
 def sha1_hash(url: str) -> str:
-    """Generate SHA-1 hash for a URL"""
-    return hashlib.sha1(url.encode('utf-8')).hexdigest()
-
+    """Generate a SHA-1 hex digest for the provided URL string."""
+    return hashlib.sha1(url.encode("utf-8")).hexdigest()
 
 
 def _normalize_url_components(url: str, lowercase_path: bool = False) -> str:
-    """Normalize URL components with full path traversal resolution.
+    """Return canonicalized URL components, optionally lowercasing the path."""
+    canonical = canonicalize_url(url)
 
-    Args:
-        url: The URL to normalize
-        lowercase_path: If True, convert path to lowercase for case-insensitive comparison
+    if not lowercase_path:
+        return canonical
 
-    Returns:
-        Fully normalized URL with path traversal resolved
-    """
-    parsed = urlparse(url)
+    parsed = urlparse(canonical)
+    lowered_path = parsed.path.lower() if parsed.path else parsed.path
 
-    # Normalize scheme and hostname to lowercase
-    scheme = parsed.scheme.lower()
-    hostname = (parsed.hostname or "").lower()
-    port = parsed.port
-
-    # Remove default ports
-    if port and not ((scheme == "http" and port == 80) or (scheme == "https" and port == 443)):
-        netloc = f"{hostname}:{port}"
-    else:
-        netloc = hostname
-
-    # Normalize path: handle empty paths differently for canonical vs hash
-    path = parsed.path
-    has_empty_path = not path
-
-    # For empty paths, preserve original behavior (no trailing slash for canonical)
-    if not path:
-        path = ""
-    elif not path.startswith("/"):
-        path = f"/{path}"
-
-    # Convert path to lowercase if requested (for hashing)
-    if lowercase_path:
-        path = path.lower()
-
-    # Handle empty path case - preserve original empty path (don't add trailing slash)
-    if has_empty_path:
-        normalised_path = ""
-    else:
-        # Fully resolve path traversal using normpath
-        normalised_path = posixpath.normpath(path)
-
-        # Handle edge case where normpath returns "."
-        if normalised_path == ".":
-            normalised_path = "/"
-
-        # Preserve trailing slash semantics from original path
-        if path.endswith("/") and not normalised_path.endswith("/") and normalised_path != "/":
-            normalised_path += "/"
-
-    # Normalize query parameters: sort them for consistent ordering
-    query_pairs = parse_qsl(parsed.query, keep_blank_values=True)
-    query = urlencode(sorted(query_pairs), doseq=True) if query_pairs else ""
-
-    # Remove fragment (like w3lib canonicalize_url does)
-    fragment = ""
-
-    return urlunparse((scheme, netloc, normalised_path, "", query, fragment))
+    return urlunparse(
+        (
+            parsed.scheme,
+            parsed.netloc,
+            lowered_path,
+            parsed.params,
+            parsed.query,
+            parsed.fragment,
+        )
+    )
 
 
 def _normalize_for_hash(url: str) -> str:
-    """Normalize URL components for hashing with case-insensitive path and preserved fragments."""
-    parsed = urlparse(url)
+    """Normalize a URL specifically for hashing comparisons."""
+    if url is None:
+        raise TypeError("url must not be None")
 
-    # Normalize scheme and hostname to lowercase
+    original = urlparse(url)
+    canonical = canonicalize_url(url)
+    parsed = urlparse(canonical)
+
     scheme = parsed.scheme.lower()
     hostname = (parsed.hostname or "").lower()
     port = parsed.port
 
-    # Remove default ports
     if port and not ((scheme == "http" and port == 80) or (scheme == "https" and port == 443)):
         netloc = f"{hostname}:{port}"
     else:
         netloc = hostname
 
-    # Normalize path with case-insensitive handling
     path = parsed.path or "/"
     if not path.startswith("/"):
         path = f"/{path}"
 
-    # Convert path to lowercase for case-insensitive hashing
-    path = path.lower()
+    normalized_path = posixpath.normpath(path)
+    if normalized_path == ".":
+        normalized_path = "/"
 
-    # Fully resolve path traversal using normpath
-    normalised_path = posixpath.normpath(path)
+    if parsed.path.endswith("/") and not normalized_path.endswith("/") and normalized_path != "/":
+        normalized_path += "/"
 
-    # Handle edge case where normpath returns "."
-    if normalised_path == ".":
-        normalised_path = "/"
+    normalized_path = normalized_path.lower()
 
-    # Preserve trailing slash semantics from original path
-    original_path = parsed.path or "/"
-    if original_path.endswith("/") and not normalised_path.endswith("/") and normalised_path != "/":
-        normalised_path += "/"
-
-    # Normalize query parameters: sort them for consistent ordering
     query_pairs = parse_qsl(parsed.query, keep_blank_values=True)
     query = urlencode(sorted(query_pairs), doseq=True) if query_pairs else ""
 
-    # Preserve fragment for hash collision resistance
-    fragment = parsed.fragment
+    fragment = original.fragment
 
-    return urlunparse((scheme, netloc, normalised_path, "", query, fragment))
+    return urlunparse((scheme, netloc, normalized_path, "", query, fragment))
 
 
 def canonicalize_and_hash(url: str) -> Tuple[str, str]:
-    """Canonicalize URL and return (canonical_url, hash).
+    """Return the canonical URL and a normalized SHA-1 hash."""
+    if url is None:
+        raise TypeError("url must not be None")
 
-    Returns normalized string for both canonical URL and hash input.
-    Both use path-traversal resolution with case-insensitive hashing.
-    """
-    # Use our custom normalization for the canonical URL
-    canonical_url = _normalize_url_components(url, lowercase_path=False)
-
-    # Use case-insensitive normalization for hashing
+    canonical_url = canonicalize_url(url)
     normalized_for_hash = _normalize_for_hash(url)
     url_hash = sha1_hash(normalized_for_hash)
 
@@ -141,7 +90,7 @@ def is_valid_uconn_url(url: str) -> bool:
         raise TypeError("url must not be None")
 
     try:
-        canonical_url = canonicalize_url(url)
+        canonicalize_url(url)
         parsed = urlparse(_normalize_for_hash(url))
 
         # Only allow HTTP/HTTPS schemes

@@ -1,7 +1,7 @@
 import asyncio
 import json
 from pathlib import Path
-from typing import List, Dict, Any, AsyncGenerator
+from typing import List, Dict, Any, AsyncGenerator, Optional
 from dataclasses import dataclass
 from datetime import datetime
 import logging
@@ -34,26 +34,46 @@ class BatchQueue:
     """
 
     def __init__(self, batch_size: int = 1000, max_queue_size: int = 10000):
+        # Queue is created lazily once we are inside an event loop so synchronous
+        # construction in tests does not raise "no current event loop" errors.
         self.batch_size = batch_size
         self.max_queue_size = max_queue_size
-        self._queue = asyncio.Queue(maxsize=max_queue_size)
+        self._queue: Optional[asyncio.Queue] = None
         self._running = False
         self._producer_done = False
 
+    def _get_queue(self) -> asyncio.Queue:
+        """Return the underlying asyncio queue, creating it lazily."""
+        if self._queue is None:
+            try:
+                asyncio.get_running_loop()
+            except RuntimeError as exc:
+                raise RuntimeError(
+                    "BatchQueue requires an active event loop; call async methods"
+                    " from within an asyncio context"
+                ) from exc
+
+            self._queue = asyncio.Queue(maxsize=self.max_queue_size)
+
+        return self._queue
+
     async def put(self, item: BatchQueueItem):
         """Add item to queue with backpressure"""
-        if self._queue.full():
+        queue = self._get_queue()
+
+        if queue.full():
             logger.warning(f"Queue is full ({self.max_queue_size}), applying backpressure")
 
-        await self._queue.put(item)
+        await queue.put(item)
 
     async def get_batch(self) -> List[BatchQueueItem]:
         """Get a batch of items from the queue"""
+        queue = self._get_queue()
         batch = []
 
         # Get at least one item (blocking)
         try:
-            item = await self._queue.get()
+            item = await queue.get()
             batch.append(item)
         except asyncio.QueueEmpty:
             return batch
@@ -61,7 +81,7 @@ class BatchQueue:
         # Try to get more items up to batch_size (non-blocking)
         while len(batch) < self.batch_size:
             try:
-                item = self._queue.get_nowait()
+                item = queue.get_nowait()
                 batch.append(item)
             except asyncio.QueueEmpty:
                 break
@@ -70,15 +90,15 @@ class BatchQueue:
 
     def qsize(self) -> int:
         """Get current queue size"""
-        return self._queue.qsize()
+        return self._queue.qsize() if self._queue else 0
 
     def is_empty(self) -> bool:
         """Check if queue is empty"""
-        return self._queue.empty()
+        return True if self._queue is None else self._queue.empty()
 
     def is_full(self) -> bool:
         """Check if queue is full"""
-        return self._queue.full()
+        return False if self._queue is None else self._queue.full()
 
     def mark_producer_done(self):
         """Mark that no more items will be added to the queue"""
@@ -91,23 +111,24 @@ class BatchQueue:
     async def get_batch_or_wait(self, timeout: float = 1.0) -> List[BatchQueueItem]:
         """Get a batch with timeout, handling producer completion"""
         batch = []
+        queue = self._get_queue()
 
         try:
             # Wait for at least one item or timeout
-            item = await asyncio.wait_for(self._queue.get(), timeout=timeout)
+            item = await asyncio.wait_for(queue.get(), timeout=timeout)
             batch.append(item)
 
             # Try to get more items up to batch_size (non-blocking)
             while len(batch) < self.batch_size:
                 try:
-                    item = self._queue.get_nowait()
+                    item = queue.get_nowait()
                     batch.append(item)
                 except asyncio.QueueEmpty:
                     break
 
         except asyncio.TimeoutError:
             # If producer is done and queue is empty, we're finished
-            if self._producer_done and self._queue.empty():
+            if self._producer_done and queue.empty():
                 return []
             # Otherwise continue waiting
             pass

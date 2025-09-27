@@ -186,6 +186,8 @@ def initialize_nlp(settings: Optional[NLPSettings] = None) -> None:
     """Initialise the global NLP registry."""
 
     global NLP_REGISTRY
+    # TODO: Add graceful skipping for missing spaCy/transformer models so
+    # integration tests can gate on availability without raising RuntimeError.
     NLP_REGISTRY = NLPRegistry(settings or NLPSettings())
 
 

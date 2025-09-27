@@ -53,7 +53,7 @@ def run_test_profile(profile: str, extra_args: List[str] = None) -> Dict[str, An
         raise ValueError(f"Unknown profile: {profile}. Available: {list(profiles.keys())}")
 
     # Base pytest command
-    cmd = ["python", "-m", "pytest"] + profiles[profile] + extra_args
+    cmd = ["python3", "-m", "pytest"] + profiles[profile] + extra_args
 
     print(f"🚀 Running {profile} test profile...")
     print(f"📋 Command: {' '.join(cmd)}")
@@ -162,7 +162,10 @@ def generate_test_report(results: List[Dict[str, Any]]) -> Dict[str, Any]:
 
     # Production readiness assessment
     try:
-        from tests.test_config import ProductionReadinessChecker, get_system_resources
+        from tests.production_readiness import (
+            ProductionReadinessChecker,
+            get_system_resources,
+        )
 
         checker = ProductionReadinessChecker()
 

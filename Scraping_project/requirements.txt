@@ -2,6 +2,7 @@
 scrapy>=2.5.0
 w3lib>=1.22.0
 aiohttp>=3.8.0
+Twisted>=22.10.0
 
 # Configuration and data handling
 PyYAML>=6.0.0

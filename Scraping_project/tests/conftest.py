@@ -263,8 +263,8 @@ def sample_config():
 
 @pytest.fixture
 def random_100_urls() -> List[Tuple[str, str]]:
-    """Return 100 random URLs from uconn_urls.csv with hashes for robust testing."""
-    urls = _random_seed_urls(count=100, seed=42)
+    """Return a broad random sample of UConn URLs with canonical hashes."""
+    urls = _random_seed_urls(count=1000, seed=42)
 
     pairs: List[Tuple[str, str]] = []
     for url in urls:

@@ -23,47 +23,76 @@ from orchestrator.config import Config
 from orchestrator.pipeline import PipelineOrchestrator
 from common.logging import setup_logging
 
+# TODO: Promote Scrapy orchestrator dependencies to module-level exports and
+# ensure logger/config-only handling matches the approved CLI end state.
+
+try:  # pragma: no cover - optional dependency for tests
+    from scrapy.crawler import CrawlerProcess as _CrawlerProcess
+except ImportError:  # pragma: no cover - tests patch the attribute
+    _CrawlerProcess = None
+
+try:  # pragma: no cover - optional dependency for tests
+    from stage2.validator import URLValidator as _URLValidator
+except ImportError:  # pragma: no cover
+    _URLValidator = None
+
+try:  # pragma: no cover - optional dependency for tests
+    from stage3.enrichment_spider import EnrichmentSpider as _EnrichmentSpider
+except ImportError:  # pragma: no cover
+    _EnrichmentSpider = None
+
+# Expose patchable symbols for tests; fall back to lazy imports at runtime
+CrawlerProcess = _CrawlerProcess
+URLValidator = _URLValidator
+EnrichmentSpider = _EnrichmentSpider
+
 
 async def run_stage1_discovery(config: Config):
     """Run Stage 1: Discovery phase using Scrapy"""
-    from scrapy.crawler import CrawlerProcess
-    from scrapy.utils.project import get_project_settings
-    from stage1.discovery_spider import DiscoverySpider
-
     logger = logging.getLogger(__name__)
     logger.info("=" * 60)
     logger.info("STAGE 1: DISCOVERY")
     logger.info("=" * 60)
 
-    # Configure Scrapy settings from YAML config
+    process_class = CrawlerProcess
+    if process_class is None:  # Lazy import when Scrapy is installed
+        from scrapy.crawler import CrawlerProcess as process_class
+
+    from scrapy.utils.project import get_project_settings
+    from stage1.discovery_spider import DiscoverySpider
+
     settings = get_project_settings()
     settings.update(config.get_scrapy_settings())
 
-    # Add stage-specific settings
     stage1_config = config.get_stage1_config()
     settings.update({
         'STAGE1_OUTPUT_FILE': stage1_config['output_file'],
         'ITEM_PIPELINES': {
             'stage1.discovery_pipeline.Stage1Pipeline': 300,
-        }
+        },
+        'TELNETCONSOLE_ENABLED': False,
     })
 
-    # Run the discovery crawler
-    process = CrawlerProcess(settings)
+    process = process_class(settings)
     process.crawl(
         DiscoverySpider,
         max_depth=stage1_config['max_depth']
     )
 
-    # Run Scrapy on main thread with signal handlers disabled to avoid conflicts
-    process.start(stop_after_crawl=False, install_signal_handlers=False)
+    loop = asyncio.get_event_loop()
+    try:
+        await loop.run_in_executor(None, process.start)
+    finally:
+        process.stop()
 
     logger.info("Stage 1 discovery completed")
 
 
 async def run_stage2_validation(config: Config, orchestrator: PipelineOrchestrator):
     """Run Stage 2: Validation phase"""
-    from stage2.validator import URLValidator
+    validator_class = URLValidator
+    if validator_class is None:  # Lazy import in production
+        from stage2.validator import URLValidator as validator_class
 
     logger = logging.getLogger(__name__)
     logger.info("=" * 60)
@@ -75,7 +104,7 @@ async def run_stage2_validation(config: Config, orchestrator: PipelineOrchestrat
     # Problem: With >10k items, this blocks at maxsize=10000 because nothing consumes
     # until populate_stage2_queue() returns, causing deadlock in real crawls
 
-    validator = URLValidator(config)
+    validator = validator_class(config)
 
     # Use the concurrent processing method that prevents deadlock
     await orchestrator.run_concurrent_stage2_validation(validator)
@@ -83,7 +112,9 @@ async def run_stage2_validation(config: Config, orchestrator: PipelineOrchestrat
 
 async def run_stage3_enrichment(config: Config, orchestrator: PipelineOrchestrator):
     """Run Stage 3: Enrichment phase"""
-    from stage3.enrichment_spider import EnrichmentSpider
+    spider_class = EnrichmentSpider
+    if spider_class is None:  # Lazy import in production
+        from stage3.enrichment_spider import EnrichmentSpider as spider_class
 
     logger = logging.getLogger(__name__)
     logger.info("=" * 60)
@@ -105,7 +136,7 @@ async def run_stage3_enrichment(config: Config, orchestrator: PipelineOrchestrat
     }
 
     # Create enrichment spider instance
-    enricher = EnrichmentSpider()
+    enricher = spider_class()
 
     # Run concurrent queue population and enrichment processing
     await orchestrator.run_concurrent_stage3_enrichment(enricher, scrapy_settings)
@@ -139,6 +170,8 @@ async def main():
 
     args = parser.parse_args()
 
+    logger = logging.getLogger(__name__)
+
     try:
         # Load configuration
         config = Config(args.env)
@@ -150,15 +183,13 @@ async def main():
             log_dir=data_paths['logs_dir']
         )
 
-        logger = logging.getLogger(__name__)
         logger.info(f"Starting pipeline orchestrator")
         logger.info(f"Environment: {args.env}")
         logger.info(f"Stage(s): {args.stage}")
 
         if args.config_only:
             import yaml
-            print("Configuration:")
-            print(yaml.dump(config._config, default_flow_style=False))
+            print("Configuration:\n" + yaml.dump(config._config, default_flow_style=False))
             return 0
 
         # Create necessary directories
