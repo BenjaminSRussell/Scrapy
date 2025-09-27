@@ -8,7 +8,6 @@ class DiscoveryItem:
     source_url: str
     discovered_url: str
     first_seen: str
-    url_hash: str
     discovery_depth: int
 
 
@@ -16,7 +15,6 @@ class DiscoveryItem:
 class ValidationResult:
     """Result from Stage 2 URL Validation"""
     url: str
-    url_hash: str
     status_code: int
     content_type: str
     content_length: int
@@ -24,13 +22,13 @@ class ValidationResult:
     is_valid: bool
     error_message: Optional[str]
     validated_at: str
+    learned_optimizations: Optional[List[str]] = None
 
 
 @dataclass
 class EnrichmentItem:
     """Item returned by Stage 3 Enrichment Spider"""
     url: str
-    url_hash: str
     title: str
     text_content: str
     word_count: int
@@ -48,7 +46,6 @@ class EnrichmentItem:
 class URLRecord:
     """Complete record combining all stages"""
     url: str
-    url_hash: str
 
     # Discovery info
     source_url: Optional[str] = None

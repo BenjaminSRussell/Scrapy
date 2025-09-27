@@ -11,7 +11,8 @@
       "Bash(python -m pytest tests/utils/test_url_helpers.py --tb=no -q)",
       "Bash(python -m pytest tests/utils/test_url_helpers.py::test_canonicalize_and_hash_variants::test_url_hash_collision_resistance --tb=line)",
       "Bash(python -m pytest tests/utils/test_url_helpers.py::test_url_hash_collision_resistance --tb=short)",
-      "Bash(python -m pytest tests/utils/test_url_helpers.py::test_url_hash_collision_resistance -v)"
+      "Bash(python -m pytest tests/utils/test_url_helpers.py::test_url_hash_collision_resistance -v)",
+      "Bash(chmod:*)"
     ],
     "deny": [],
     "ask": []

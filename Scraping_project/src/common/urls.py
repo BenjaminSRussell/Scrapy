@@ -1,19 +1,87 @@
-import hashlib
 import posixpath
-from typing import Optional, Tuple
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 from w3lib.url import canonicalize_url
 
 
-def sha1_hash(url: str) -> str:
-    """Generate a SHA-1 hex digest for the provided URL string."""
-    return hashlib.sha1(url.encode("utf-8")).hexdigest()
+def _sanitize_path(path: str) -> str:
+    """Resolve dot segments while preserving leading/trailing slash semantics."""
+    if not path:
+        return ""
+
+    has_trailing = path.endswith("/")
+    candidate = path if path.startswith("/") else f"/{path}"
+
+    normalized = posixpath.normpath(candidate)
+    if normalized == ".":
+        normalized = "/"
+
+    if has_trailing and normalized != "/" and not normalized.endswith("/"):
+        normalized += "/"
+
+    if not normalized.startswith("/"):
+        normalized = f"/{normalized}"
+
+    return normalized
+
+
+def normalize_url(url: str) -> str:
+    """Canonicalize a URL with path traversal resolution."""
+    if url is None:
+        raise TypeError("url must not be None")
+
+    parsed = urlparse(url)
+    sanitized_path = _sanitize_path(parsed.path)
+
+    sanitized = urlunparse(
+        (
+            parsed.scheme.lower(),
+            parsed.netloc,
+            sanitized_path,
+            parsed.params,
+            parsed.query,
+            parsed.fragment,
+        )
+    )
+
+    canonical_temp = canonicalize_url(sanitized)
+    parsed_canonical = urlparse(canonical_temp)
+
+    netloc = parsed_canonical.netloc
+    default_ports = {"http": 80, "https": 443}
+    scheme_lower = parsed_canonical.scheme.lower()
+
+    if parsed_canonical.port and default_ports.get(scheme_lower) == parsed_canonical.port:
+        userinfo = ""
+        if parsed_canonical.username:
+            userinfo = parsed_canonical.username
+            if parsed_canonical.password:
+                userinfo += f":{parsed_canonical.password}"
+            userinfo += "@"
+
+        host = parsed_canonical.hostname or ""
+        netloc = f"{userinfo}{host}"
+
+    canonical = urlunparse(
+        (
+            parsed_canonical.scheme,
+            netloc,
+            parsed_canonical.path,
+            parsed_canonical.params,
+            parsed_canonical.query,
+            parsed_canonical.fragment,
+        )
+    )
+
+    if not parsed.path and canonical.endswith("/"):
+        canonical = canonical[:-1]
+
+    return canonical
 
 
 def _normalize_url_components(url: str, lowercase_path: bool = False) -> str:
     """Return canonicalized URL components, optionally lowercasing the path."""
-    canonical = canonicalize_url(url)
+    canonical = normalize_url(url)
 
     if not lowercase_path:
         return canonical
@@ -33,55 +101,9 @@ def _normalize_url_components(url: str, lowercase_path: bool = False) -> str:
     )
 
 
-def _normalize_for_hash(url: str) -> str:
-    """Normalize a URL specifically for hashing comparisons."""
-    if url is None:
-        raise TypeError("url must not be None")
-
-    original = urlparse(url)
-    canonical = canonicalize_url(url)
-    parsed = urlparse(canonical)
-
-    scheme = parsed.scheme.lower()
-    hostname = (parsed.hostname or "").lower()
-    port = parsed.port
-
-    if port and not ((scheme == "http" and port == 80) or (scheme == "https" and port == 443)):
-        netloc = f"{hostname}:{port}"
-    else:
-        netloc = hostname
-
-    path = parsed.path or "/"
-    if not path.startswith("/"):
-        path = f"/{path}"
-
-    normalized_path = posixpath.normpath(path)
-    if normalized_path == ".":
-        normalized_path = "/"
-
-    if parsed.path.endswith("/") and not normalized_path.endswith("/") and normalized_path != "/":
-        normalized_path += "/"
-
-    normalized_path = normalized_path.lower()
-
-    query_pairs = parse_qsl(parsed.query, keep_blank_values=True)
-    query = urlencode(sorted(query_pairs), doseq=True) if query_pairs else ""
-
-    fragment = original.fragment
-
-    return urlunparse((scheme, netloc, normalized_path, "", query, fragment))
-
-
-def canonicalize_and_hash(url: str) -> Tuple[str, str]:
-    """Return the canonical URL and a normalized SHA-1 hash."""
-    if url is None:
-        raise TypeError("url must not be None")
-
-    canonical_url = canonicalize_url(url)
-    normalized_for_hash = _normalize_for_hash(url)
-    url_hash = sha1_hash(normalized_for_hash)
-
-    return canonical_url, url_hash
+def canonicalize_url_simple(url: str) -> str:
+    """Return just the canonical URL without hashing."""
+    return normalize_url(url)
 
 
 def is_valid_uconn_url(url: str) -> bool:
@@ -91,7 +113,7 @@ def is_valid_uconn_url(url: str) -> bool:
 
     try:
         canonicalize_url(url)
-        parsed = urlparse(_normalize_for_hash(url))
+        parsed = urlparse(normalize_url(url))
 
         # Only allow HTTP/HTTPS schemes
         if parsed.scheme not in ('http', 'https'):
@@ -107,12 +129,7 @@ def is_valid_uconn_url(url: str) -> bool:
         return False
 
 
-def normalize_url(url: str) -> str:
-    """Normalize URL for consistent processing"""
-    return canonicalize_url(url)
-
-
 def extract_domain(url: str) -> str:
     """Extract domain from URL"""
-    parsed = urlparse(_normalize_for_hash(url))
+    parsed = urlparse(normalize_url(url))
     return (parsed.hostname or "").lower()

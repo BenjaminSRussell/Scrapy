@@ -18,7 +18,7 @@ REPO_ROOT = Path(__file__).parent.parent
 SRC_DIR = REPO_ROOT / "src"
 sys.path.insert(0, str(SRC_DIR))
 
-from common.urls import canonicalize_and_hash
+from common.urls import canonicalize_url_simple
 
 
 # Performance tracking
@@ -32,13 +32,20 @@ class PerformanceTracker:
     def start_test(self, test_name: str):
         """Start tracking a test"""
         self.start_times[test_name] = time.perf_counter()
+        start_memory = 0
+        start_cpu = 0.0
 
-        # Get baseline metrics
-        process = psutil.Process(os.getpid())
+        try:
+            process = psutil.Process(os.getpid())
+            start_memory = process.memory_info().rss
+            start_cpu = process.cpu_percent()
+        except (psutil.Error, PermissionError, SystemError):
+            pass
+
         self.metrics[test_name] = {
             "start_time": self.start_times[test_name],
-            "start_memory": process.memory_info().rss,
-            "start_cpu": process.cpu_percent()
+            "start_memory": start_memory,
+            "start_cpu": start_cpu,
         }
 
     def end_test(self, test_name: str, operations: int = 1):
@@ -49,11 +56,14 @@ class PerformanceTracker:
         end_time = time.perf_counter()
         duration = end_time - self.start_times[test_name]
 
-        # Get final metrics
-        process = psutil.Process(os.getpid())
-        end_memory = process.memory_info().rss
-
         metrics = self.metrics[test_name]
+        end_memory = metrics.get("start_memory", 0)
+
+        try:
+            process = psutil.Process(os.getpid())
+            end_memory = process.memory_info().rss
+        except (psutil.Error, PermissionError, SystemError):
+            pass
         metrics.update({
             "duration": duration,
             "operations": operations,
