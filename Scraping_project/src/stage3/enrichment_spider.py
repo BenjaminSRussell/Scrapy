@@ -9,7 +9,7 @@ from scrapy.http import Response
 
 from common.schemas import EnrichmentItem
 from common.nlp import extract_entities_and_keywords, extract_content_tags, has_audio_links
-from common.urls import canonicalize_and_hash
+from common.urls import canonicalize_url_simple
 
 
 class EnrichmentSpider(scrapy.Spider):

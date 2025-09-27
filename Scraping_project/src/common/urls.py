@@ -1,5 +1,5 @@
 import posixpath
-from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
+from urllib.parse import urlparse, urlunparse
 
 from w3lib.url import canonicalize_url
 
@@ -79,26 +79,6 @@ def normalize_url(url: str) -> str:
     return canonical
 
 
-def _normalize_url_components(url: str, lowercase_path: bool = False) -> str:
-    """Return canonicalized URL components, optionally lowercasing the path."""
-    canonical = normalize_url(url)
-
-    if not lowercase_path:
-        return canonical
-
-    parsed = urlparse(canonical)
-    lowered_path = parsed.path.lower() if parsed.path else parsed.path
-
-    return urlunparse(
-        (
-            parsed.scheme,
-            parsed.netloc,
-            lowered_path,
-            parsed.params,
-            parsed.query,
-            parsed.fragment,
-        )
-    )
 
 
 def canonicalize_url_simple(url: str) -> str:
