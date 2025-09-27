@@ -1,14 +1,5 @@
 """Tests for Stage 1 Discovery Spider"""
 
-# TODO: Implement discovery spider tests
-# Need to test:
-# 1. Spider initialization with max_depth parameter
-# 2. Seed URL loading from CSV
-# 3. Link extraction and canonicalization
-# 4. Depth limiting behavior
-# 5. URL deduplication by hash
-# 6. DiscoveryItem output format
-
 import os
 import tempfile
 from pathlib import Path

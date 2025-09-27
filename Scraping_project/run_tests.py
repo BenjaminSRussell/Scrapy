@@ -136,7 +136,7 @@ def parse_pytest_output(output: str) -> Dict[str, Any]:
 
         # Parse slowest tests
         if "slowest durations" in line.lower():
-            # TODO: Parse slowest test information
+            # Placeholder for optional slow-test parsing; metrics stay focused on pass/fail counts for now.
             pass
 
     metrics["tests_run"] = metrics["passed"] + metrics["failed"] + metrics["skipped"] + metrics["errors"]

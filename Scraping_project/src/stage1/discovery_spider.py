@@ -42,6 +42,10 @@ class DiscoverySpider(scrapy.Spider):
         """Load seed URLs and start crawling"""
         seed_file = Path("data/raw/uconn_urls.csv")
 
+        # TODO[stage1-hidden-seeds]: Add lightweight sitemap + robots.txt discovery to
+        # bootstrap hidden academic/program URLs without expanding CSV maintenance.
+        # Parse only top-level XML endpoints to keep the extra code path minimal.
+
         if not seed_file.exists():
             self.logger.error(f"Seed file not found: {seed_file}")
             return
@@ -129,6 +133,10 @@ class DiscoverySpider(scrapy.Spider):
                 try:
                     discovered_url = canonicalize_url_simple(link.url)
 
+                    # TODO[stage1-hidden-navigation]: Inspect inline JSON nav menus (minimal
+                    # regex search) and enqueue URLs that the LinkExtractor misses, e.g.
+                    # mega-menus, accordion content, or SPA route maps.
+
                     if discovered_url not in self.seen_urls:
                         self.seen_urls.add(discovered_url)
                         self.unique_urls_found += 1  # Observability: track unique URLs
@@ -165,10 +173,18 @@ class DiscoverySpider(scrapy.Spider):
                         self.duplicates_skipped += 1  # Observability: track duplicate URLs
 
                 except Exception as e:
-                    self.logger.error(f"Error processing link {link.url}: {e}")
+                        self.logger.error(f"Error processing link {link.url}: {e}")
 
         except Exception as e:
             self.logger.error(f"Error extracting links from {response.url}: {e}")
+
+        # TODO[stage1-hidden-forms]: Collect minimal POST/GET form actions (just action
+        # attribute + query defaults) so we can launch low-effort searches for calendars,
+        # course listings, and policy repositories that are otherwise unlinked.
+
+        # TODO[stage1-hidden-media]: Scan response.text for embedded PDF/media URLs
+        # referenced inside scripts or data-* attributes; reuse LinkExtractor per-match to
+        # avoid custom parsers.
 
     def closed(self, reason):
         """Called when spider closes - report comprehensive crawl summary"""
