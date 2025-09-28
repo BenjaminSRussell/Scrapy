@@ -196,5 +196,203 @@
     "failed": 10,
     "changed": 0,
     "avg_processing_time": 0.11487479989999994
+  },
+  {
+    "stage": "validation",
+    "timestamp": "2025-09-28T15:07:22.812952",
+    "total_processed": 2,
+    "successful": 0,
+    "failed": 2,
+    "changed": 0,
+    "avg_processing_time": 0.5368714584999998
+  },
+  {
+    "stage": "validation",
+    "timestamp": "2025-09-28T15:07:23.236436",
+    "total_processed": 3,
+    "successful": 0,
+    "failed": 3,
+    "changed": 0,
+    "avg_processing_time": 0.2871730833333334
+  },
+  {
+    "stage": "validation",
+    "timestamp": "2025-09-28T15:07:24.044576",
+    "total_processed": 2,
+    "successful": 0,
+    "failed": 2,
+    "changed": 0,
+    "avg_processing_time": 0.5725756665000001
+  },
+  {
+    "stage": "validation",
+    "timestamp": "2025-09-28T15:07:24.709310",
+    "total_processed": 1,
+    "successful": 0,
+    "failed": 1,
+    "changed": 0,
+    "avg_processing_time": 0.6457590419999995
+  },
+  {
+    "stage": "validation",
+    "timestamp": "2025-09-28T15:07:25.157385",
+    "total_processed": 10,
+    "successful": 0,
+    "failed": 10,
+    "changed": 0,
+    "avg_processing_time": 0.31162818739999987
+  },
+  {
+    "stage": "validation",
+    "timestamp": "2025-09-28T15:07:25.651809",
+    "total_processed": 1,
+    "successful": 0,
+    "failed": 1,
+    "changed": 0,
+    "avg_processing_time": 0.47877812499999983
+  },
+  {
+    "stage": "enrichment",
+    "timestamp": "2025-09-28T15:07:26.152588",
+    "total_processed": 1,
+    "successful": 1,
+    "failed": 0,
+    "changed": 1,
+    "avg_processing_time": 0.48002374999999997
+  },
+  {
+    "stage": "enrichment",
+    "timestamp": "2025-09-28T15:07:26.849776",
+    "total_processed": 1,
+    "successful": 1,
+    "failed": 0,
+    "changed": 1,
+    "avg_processing_time": 0.6753633749999999
+  },
+  {
+    "stage": "validation",
+    "timestamp": "2025-09-28T15:07:27.414540",
+    "total_processed": 1,
+    "successful": 0,
+    "failed": 1,
+    "changed": 0,
+    "avg_processing_time": 0.46788479199999955
+  },
+  {
+    "stage": "enrichment",
+    "timestamp": "2025-09-28T15:07:27.672602",
+    "total_processed": 1,
+    "successful": 1,
+    "failed": 0,
+    "changed": 1,
+    "avg_processing_time": 0.25410008400000006
+  },
+  {
+    "stage": "validation",
+    "timestamp": "2025-09-28T15:07:28.338579",
+    "total_processed": 10,
+    "successful": 0,
+    "failed": 10,
+    "changed": 0,
+    "avg_processing_time": 0.12310847910000025
+  },
+  {
+    "stage": "validation",
+    "timestamp": "2025-09-28T15:11:48.406692",
+    "total_processed": 2,
+    "successful": 0,
+    "failed": 2,
+    "changed": 0,
+    "avg_processing_time": 3.645920646
+  },
+  {
+    "stage": "validation",
+    "timestamp": "2025-09-28T15:11:52.606678",
+    "total_processed": 3,
+    "successful": 0,
+    "failed": 3,
+    "changed": 0,
+    "avg_processing_time": 3.507426736333334
+  },
+  {
+    "stage": "validation",
+    "timestamp": "2025-09-28T15:11:56.397274",
+    "total_processed": 2,
+    "successful": 0,
+    "failed": 2,
+    "changed": 0,
+    "avg_processing_time": 3.5358930835000004
+  },
+  {
+    "stage": "validation",
+    "timestamp": "2025-09-28T15:11:59.476119",
+    "total_processed": 1,
+    "successful": 0,
+    "failed": 1,
+    "changed": 0,
+    "avg_processing_time": 3.066213458000002
+  },
+  {
+    "stage": "validation",
+    "timestamp": "2025-09-28T15:12:03.938687",
+    "total_processed": 10,
+    "successful": 0,
+    "failed": 10,
+    "changed": 0,
+    "avg_processing_time": 3.3252265458000005
+  },
+  {
+    "stage": "validation",
+    "timestamp": "2025-09-28T15:12:06.578451",
+    "total_processed": 1,
+    "successful": 0,
+    "failed": 1,
+    "changed": 0,
+    "avg_processing_time": 2.6251697909999976
+  },
+  {
+    "stage": "enrichment",
+    "timestamp": "2025-09-28T15:12:09.728888",
+    "total_processed": 1,
+    "successful": 1,
+    "failed": 0,
+    "changed": 1,
+    "avg_processing_time": 3.1393503329999994
+  },
+  {
+    "stage": "enrichment",
+    "timestamp": "2025-09-28T15:12:12.373362",
+    "total_processed": 1,
+    "successful": 1,
+    "failed": 0,
+    "changed": 1,
+    "avg_processing_time": 2.6297957079999996
+  },
+  {
+    "stage": "validation",
+    "timestamp": "2025-09-28T15:12:14.127879",
+    "total_processed": 1,
+    "successful": 0,
+    "failed": 1,
+    "changed": 0,
+    "avg_processing_time": 1.6608334589999991
+  },
+  {
+    "stage": "enrichment",
+    "timestamp": "2025-09-28T15:12:15.125760",
+    "total_processed": 1,
+    "successful": 1,
+    "failed": 0,
+    "changed": 1,
+    "avg_processing_time": 0.9955913750000036
+  },
+  {
+    "stage": "validation",
+    "timestamp": "2025-09-28T15:12:19.512714",
+    "total_processed": 10,
+    "successful": 0,
+    "failed": 10,
+    "changed": 0,
+    "avg_processing_time": 0.8651382913999995
   }
 ]
