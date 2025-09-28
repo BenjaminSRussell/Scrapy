@@ -8,9 +8,10 @@ class DiscoveryItem:
     source_url: str
     discovered_url: str
     first_seen: str
+    url_hash: str
     discovery_depth: int
-    discovery_source: str  # how was this URL found: 'html_link', 'ajax_endpoint', 'json_blob', 'pagination', 'sitemap'
-    confidence: float  # 0.0-1.0 confidence score for dynamic discoveries
+    discovery_source: str = "html_link"  # html link by default unless specified
+    confidence: float = 1.0  # 0.0-1.0 confidence score for dynamic discoveries
 
 
 @dataclass
@@ -32,6 +33,7 @@ class ValidationResult:
 class EnrichmentItem:
     """Item returned by Stage 3 Enrichment Spider"""
     url: str
+    url_hash: str
     title: str
     text_content: str
     word_count: int

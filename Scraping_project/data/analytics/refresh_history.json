@@ -97,5 +97,104 @@
     "failed": 10,
     "changed": 0,
     "avg_processing_time": 0.1272618082999994
+  },
+  {
+    "stage": "validation",
+    "timestamp": "2025-09-28T15:05:39.215395",
+    "total_processed": 2,
+    "successful": 0,
+    "failed": 2,
+    "changed": 0,
+    "avg_processing_time": 0.6315447915000001
+  },
+  {
+    "stage": "validation",
+    "timestamp": "2025-09-28T15:05:39.682211",
+    "total_processed": 3,
+    "successful": 0,
+    "failed": 3,
+    "changed": 0,
+    "avg_processing_time": 0.3488693333333333
+  },
+  {
+    "stage": "validation",
+    "timestamp": "2025-09-28T15:05:40.606441",
+    "total_processed": 2,
+    "successful": 0,
+    "failed": 2,
+    "changed": 0,
+    "avg_processing_time": 0.6870044789999998
+  },
+  {
+    "stage": "validation",
+    "timestamp": "2025-09-28T15:05:41.153255",
+    "total_processed": 1,
+    "successful": 0,
+    "failed": 1,
+    "changed": 0,
+    "avg_processing_time": 0.5384207499999993
+  },
+  {
+    "stage": "validation",
+    "timestamp": "2025-09-28T15:05:41.576199",
+    "total_processed": 10,
+    "successful": 0,
+    "failed": 10,
+    "changed": 0,
+    "avg_processing_time": 0.3151139958
+  },
+  {
+    "stage": "validation",
+    "timestamp": "2025-09-28T15:05:42.135427",
+    "total_processed": 1,
+    "successful": 0,
+    "failed": 1,
+    "changed": 0,
+    "avg_processing_time": 0.5515486250000006
+  },
+  {
+    "stage": "enrichment",
+    "timestamp": "2025-09-28T15:05:42.610947",
+    "total_processed": 1,
+    "successful": 1,
+    "failed": 0,
+    "changed": 1,
+    "avg_processing_time": 0.46614733300000033
+  },
+  {
+    "stage": "enrichment",
+    "timestamp": "2025-09-28T15:05:43.703029",
+    "total_processed": 1,
+    "successful": 1,
+    "failed": 0,
+    "changed": 1,
+    "avg_processing_time": 1.0757130420000003
+  },
+  {
+    "stage": "validation",
+    "timestamp": "2025-09-28T15:05:44.553526",
+    "total_processed": 1,
+    "successful": 0,
+    "failed": 1,
+    "changed": 0,
+    "avg_processing_time": 0.7941614589999997
+  },
+  {
+    "stage": "enrichment",
+    "timestamp": "2025-09-28T15:05:44.781527",
+    "total_processed": 1,
+    "successful": 1,
+    "failed": 0,
+    "changed": 1,
+    "avg_processing_time": 0.22566520800000056
+  },
+  {
+    "stage": "validation",
+    "timestamp": "2025-09-28T15:05:45.395969",
+    "total_processed": 10,
+    "successful": 0,
+    "failed": 10,
+    "changed": 0,
+    "avg_processing_time": 0.11487479989999994
   }
 ]

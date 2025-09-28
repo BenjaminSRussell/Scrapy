@@ -1,5 +1,7 @@
 import csv
+import hashlib
 import json
+import logging
 import re
 from datetime import datetime
 from pathlib import Path
@@ -10,8 +12,11 @@ import scrapy
 from scrapy.linkextractors import LinkExtractor
 from scrapy.http import Response
 
-from common.urls import canonicalize_url_simple
 from common.schemas import DiscoveryItem
+from common.urls import canonicalize_url_simple
+
+
+logger = logging.getLogger(__name__)
 
 
 DYNAMIC_SCRIPT_HINTS = (
@@ -42,6 +47,7 @@ class DiscoverySpider(scrapy.Spider):
 
         # url dedup with a set because fancy databases are overkill
         self.seen_urls = set()
+        self.url_hashes = set()
 
         # counters because apparently we need metrics for everything
         self.total_urls_parsed = 0
@@ -55,7 +61,7 @@ class DiscoverySpider(scrapy.Spider):
         self.dynamic_urls_found = 0
         self.api_endpoints_found = 0
 
-        self.logger.info(f"Discovery spider initialized with max_depth={self.max_depth}")
+        logger.info(f"Discovery spider initialized with max_depth={self.max_depth}")
 
     def start_requests(self) -> Iterator[scrapy.Request]:
         """Load seed URLs and start crawling"""
@@ -65,10 +71,10 @@ class DiscoverySpider(scrapy.Spider):
         yield from self._generate_sitemap_requests()
 
         if not seed_file.exists():
-            self.logger.error(f"Seed file not found: {seed_file}")
+            logger.error(f"Seed file not found: {seed_file}")
             return
 
-        self.logger.info(f"Loading seed URLs from {seed_file}")
+        logger.info(f"Loading seed URLs from {seed_file}")
 
         with open(seed_file, 'r', encoding='utf-8') as f:
             reader = csv.reader(f)
@@ -83,7 +89,7 @@ class DiscoverySpider(scrapy.Spider):
 
                     if sanitized:
                         self.sanitized_seed_count += 1
-                        self.logger.debug(
+                        logger.debug(
                             f"Sanitized seed URL at line {row_num}: {raw_url} -> {cleaned_url}"
                         )
 
@@ -103,12 +109,12 @@ class DiscoverySpider(scrapy.Spider):
                                 }
                             )
                     except Exception as e:
-                        self.logger.error(
+                        logger.error(
                             f"Error processing seed URL at line {row_num}: {cleaned_url} - {e}"
                         )
 
         # log stats so we know when our CSV gets outdated
-        self.logger.info(f"Loaded {self.seed_count} unique seed URLs")
+        logger.info(f"Loaded {self.seed_count} unique seed URLs")
 
     def parse(self, response: Response) -> Iterator[DiscoveryItem]:
         """Parse response and extract links"""
@@ -140,11 +146,11 @@ class DiscoverySpider(scrapy.Spider):
 
             # spam logs every 100 pages because micromanagement
             if self.total_urls_parsed % 100 == 0:
-                self.logger.info(f"Crawl Progress: {self.total_urls_parsed} pages parsed, "
+                logger.info(f"Crawl Progress: {self.total_urls_parsed} pages parsed, "
                                f"{self.unique_urls_found} unique URLs, "
                                f"{self.duplicates_skipped} duplicates skipped")
 
-            self.logger.debug(f"Extracted {len(links)} links from {response.url}")
+            logger.debug(f"Extracted {len(links)} links from {response.url}")
 
             for link in links:
                 try:
@@ -153,15 +159,15 @@ class DiscoverySpider(scrapy.Spider):
                     ):
                         yield output
                 except Exception as e:
-                    self.logger.error(f"Error processing link {link.url}: {e}")
+                    logger.error(f"Error processing link {link.url}: {e}")
 
         except Exception as e:
-            self.logger.error(f"Error extracting links from {response.url}: {e}")
+            logger.error(f"Error extracting links from {response.url}: {e}")
 
         try:
             yield from self._discover_dynamic_sources(response, current_depth)
         except Exception as e:
-            self.logger.error(f"Error discovering dynamic URLs from {response.url}: {e}")
+            logger.error(f"Error discovering dynamic URLs from {response.url}: {e}")
 
     def _discover_dynamic_sources(self, response: Response, current_depth: int) -> Iterator[DiscoveryItem]:
         """Identify dynamic/AJAX URLs and hidden API endpoints embedded in the page."""
@@ -177,7 +183,7 @@ class DiscoverySpider(scrapy.Spider):
 
         # arbitrary limit to keep things sane
         if self._dynamic_discovery_count > 1000:
-            self.logger.debug(f"Skipping dynamic discovery for {source_url} - hit rate limit")
+            logger.debug(f"Skipping dynamic discovery for {source_url} - hit rate limit")
             return
 
         # track candidates by source for proper provenance
@@ -270,14 +276,22 @@ class DiscoverySpider(scrapy.Spider):
         try:
             canonical_url = canonicalize_url_simple(candidate_url)
         except Exception as exc:
-            self.logger.debug(f"Failed to canonicalize candidate {candidate_url}: {exc}")
+            logger.debug(f"Failed to canonicalize candidate {candidate_url}: {exc}")
             return []
 
-        if canonical_url in self.seen_urls:
+        parsed = urlparse(canonical_url)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            logger.debug(f"Ignoring invalid candidate URL {candidate_url}")
+            return []
+
+        url_hash = hashlib.sha256(canonical_url.encode("utf-8")).hexdigest()
+
+        if url_hash in self.url_hashes or canonical_url in self.seen_urls:
             self.duplicates_skipped += 1
             return []
 
         self.seen_urls.add(canonical_url)
+        self.url_hashes.add(url_hash)
         self.unique_urls_found += 1
 
         next_depth = current_depth + 1
@@ -291,6 +305,7 @@ class DiscoverySpider(scrapy.Spider):
                 source_url=source_url,
                 discovered_url=canonical_url,
                 first_seen=discovery_time,
+                url_hash=url_hash,
                 discovery_depth=next_depth,
                 discovery_source=discovery_source,
                 confidence=confidence
@@ -305,7 +320,8 @@ class DiscoverySpider(scrapy.Spider):
                     meta={
                         'source_url': canonical_url,
                         'depth': next_depth,
-                        'first_seen': discovery_time
+                        'first_seen': discovery_time,
+                        'url_hash': url_hash
                     }
                 )
             )
@@ -397,43 +413,43 @@ class DiscoverySpider(scrapy.Spider):
 
     def closed(self, reason):
         """Called when spider closes - report comprehensive crawl summary"""
-        self.logger.info("=" * 80)
-        self.logger.info("DISCOVERY SPIDER CRAWL SUMMARY")
-        self.logger.info("=" * 80)
+        logger.info("=" * 80)
+        logger.info("DISCOVERY SPIDER CRAWL SUMMARY")
+        logger.info("=" * 80)
 
         # Overall statistics
-        self.logger.info(f"Crawl completed: {reason}")
-        self.logger.info(f"Total pages parsed: {self.total_urls_parsed:,}")
-        self.logger.info(f"Unique URLs found: {self.unique_urls_found:,}")
-        self.logger.info(f"Duplicates skipped: {self.duplicates_skipped:,}")
-        self.logger.info(f"Seed URLs loaded: {self.seed_count:,}")
-        self.logger.info(f"Sanitized seed URLs recovered: {self.sanitized_seed_count:,}")
-        self.logger.info(f"Malformed seeds skipped: {self.malformed_seed_skipped:,}")
-        self.logger.info(f"Dynamic/AJAX URLs discovered: {self.dynamic_urls_found:,}")
-        self.logger.info(f"Hidden API endpoints discovered: {self.api_endpoints_found:,}")
+        logger.info(f"Crawl completed: {reason}")
+        logger.info(f"Total pages parsed: {self.total_urls_parsed:,}")
+        logger.info(f"Unique URLs found: {self.unique_urls_found:,}")
+        logger.info(f"Duplicates skipped: {self.duplicates_skipped:,}")
+        logger.info(f"Seed URLs loaded: {self.seed_count:,}")
+        logger.info(f"Sanitized seed URLs recovered: {self.sanitized_seed_count:,}")
+        logger.info(f"Malformed seeds skipped: {self.malformed_seed_skipped:,}")
+        logger.info(f"Dynamic/AJAX URLs discovered: {self.dynamic_urls_found:,}")
+        logger.info(f"Hidden API endpoints discovered: {self.api_endpoints_found:,}")
 
         # Depth histogram for coverage analysis
-        self.logger.info("-" * 40)
-        self.logger.info("DEPTH DISTRIBUTION:")
+        logger.info("-" * 40)
+        logger.info("DEPTH DISTRIBUTION:")
         total_discovered = sum(self.depth_yields.values())
         for depth in sorted(self.depth_yields.keys()):
             count = self.depth_yields[depth]
             percentage = (count / total_discovered * 100) if total_discovered > 0 else 0
-            self.logger.info(f"  Depth {depth}: {count:,} URLs ({percentage:.1f}%)")
+            logger.info(f"  Depth {depth}: {count:,} URLs ({percentage:.1f}%)")
 
         # Top referring pages (helps prune noisy seeds)
-        self.logger.info("-" * 40)
-        self.logger.info("TOP REFERRING PAGES (for pruning noisy seeds):")
+        logger.info("-" * 40)
+        logger.info("TOP REFERRING PAGES (for pruning noisy seeds):")
         sorted_referrers = sorted(self.referring_pages.items(), key=lambda x: x[1], reverse=True)
         for i, (source_url, link_count) in enumerate(sorted_referrers[:10], 1):
-            self.logger.info(f"  {i}. {link_count:,} links from {source_url}")
+            logger.info(f"  {i}. {link_count:,} links from {source_url}")
 
         # Efficiency metrics
         duplicate_rate = (self.duplicates_skipped / max(1, self.unique_urls_found + self.duplicates_skipped)) * 100
-        self.logger.info("-" * 40)
-        self.logger.info("EFFICIENCY METRICS:")
-        self.logger.info(f"Duplicate rate: {duplicate_rate:.1f}% (lower is better)")
-        self.logger.info(f"Discovery rate: {self.unique_urls_found / max(1, self.total_urls_parsed):.1f} URLs/page")
+        logger.info("-" * 40)
+        logger.info("EFFICIENCY METRICS:")
+        logger.info(f"Duplicate rate: {duplicate_rate:.1f}% (lower is better)")
+        logger.info(f"Discovery rate: {self.unique_urls_found / max(1, self.total_urls_parsed):.1f} URLs/page")
 
     def _clean_seed_url(self, raw_url: str, line_number: int) -> Tuple[Optional[str], bool]:
         """Attempt to clean malformed seed URLs while preserving usable entries."""
@@ -478,7 +494,7 @@ class DiscoverySpider(scrapy.Spider):
                     break
 
             if recovered is None:
-                self.logger.warning(
+                logger.warning(
                     f"Skipping malformed seed URL at line {line_number}: {raw_url}"
                 )
                 return None, sanitized
@@ -495,7 +511,7 @@ class DiscoverySpider(scrapy.Spider):
             sanitized = True
 
         if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-            self.logger.warning(
+            logger.warning(
                 f"Skipping malformed seed URL at line {line_number}: {raw_url}"
             )
             return None, sanitized
@@ -574,19 +590,25 @@ class DiscoverySpider(scrapy.Spider):
             try:
                 canonical_url = canonicalize_url_simple(url)
                 if canonical_url not in self.seen_urls:
+                    url_hash = hashlib.sha256(canonical_url.encode("utf-8")).hexdigest()
+                    if url_hash in self.url_hashes:
+                        continue
+
                     self.seen_urls.add(canonical_url)
+                    self.url_hashes.add(url_hash)
                     self.unique_urls_found += 1
 
                     yield DiscoveryItem(
                         source_url=source_url,
                         discovered_url=canonical_url,
                         first_seen=datetime.now().isoformat(),
+                        url_hash=url_hash,
                         discovery_depth=0,
                         discovery_source="sitemap",
                         confidence=0.95
                     )
             except Exception as e:
-                self.logger.debug(f"Failed to process sitemap URL {url}: {e}")
+                logger.debug(f"Failed to process sitemap URL {url}: {e}")
 
     def _generate_pagination_urls(self, base_url: str) -> set:
         """Generate common pagination patterns for API endpoints"""
