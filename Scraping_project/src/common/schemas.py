@@ -9,6 +9,8 @@ class DiscoveryItem:
     discovered_url: str
     first_seen: str
     discovery_depth: int
+    discovery_source: str  # how was this URL found: 'html_link', 'ajax_endpoint', 'json_blob', 'pagination', 'sitemap'
+    confidence: float  # 0.0-1.0 confidence score for dynamic discoveries
 
 
 @dataclass

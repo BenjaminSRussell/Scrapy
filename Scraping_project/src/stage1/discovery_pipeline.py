@@ -98,13 +98,15 @@ class Stage1Pipeline:
         discovered_url = adapter.get("discovered_url")
 
         if url_hash and discovered_url and url_hash not in self.seen_hashes:
-            # Write the discovery data
+            # Write the discovery data with provenance flags for troubleshooting
             discovery_data = {
                 "source_url": adapter.get("source_url"),
                 "discovered_url": adapter.get("discovered_url"),
                 "first_seen": adapter.get("first_seen", datetime.now().isoformat()),
                 "url_hash": url_hash,
-                "discovery_depth": adapter.get("discovery_depth", 0)
+                "discovery_depth": adapter.get("discovery_depth", 0),
+                "discovery_source": adapter.get("discovery_source", "unknown"),
+                "confidence": adapter.get("confidence", 0.0)
             }
 
             try:

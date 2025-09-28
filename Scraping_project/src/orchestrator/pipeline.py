@@ -348,7 +348,7 @@ class PipelineOrchestrator:
         import tempfile
         import json
 
-        # Create temporary file with URLs for the spider
+        # Create temporary file with URLs for the spider - fixed the undefined variable bug
         urls_for_spider = [item.get('url', '') for item in validation_items_for_enrichment if item.get('url')]
 
         with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:

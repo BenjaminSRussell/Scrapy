@@ -8,7 +8,23 @@
 
 ## Phased Roadmap
 
-### Phase 0 – Stabilisation (blocking defects)
+### Phase 0 – Stabilisation
+### Phase 0.1 – Immediate fixes
+- Generate and attach `url_hash` for every discovery (canonical SHA-1 over normalised URL).
+- Persist `discovery_source` (`seed_csv`, `sitemap`, `data_attr`, `inline_json`, etc.) and `discovery_confidence` with each JSONL row.
+- Align counters/tests: rename `unique_hashes_found` expectations or provide alias in spider.
+- Replace ad-hoc JSONL rewind with persistent hash index (SQLite/Bloom filter) and checkpoint manifest per batch.
+- Ensure Stage 1 outputs match config (`enriched_data.jsonl` path parity).
+- Document optional dependency policy (transformers/torch) and move non-essential stacks into extras to keep default installs lean.
+
+### Phase 3b – Validation handoff alignment
+- Confirm Stage 2 writes `url_hash`, `discovery_source`, and provenance to JSONL for Stage 3 consumption.
+- Add smoke tests across Stage 1→3 verifying schema compatibility and queue execution without subprocess hacks.
+
+### Phase 4b – Observability upgrades
+- Emit structured log events for `URL_DISCOVERED`, `DYNAMIC_ENDPOINT_FOUND`, and `FACULTY_PROFILE_DISCOVERED`.
+- Track heuristic-specific counters and surface dashboards for success/error rates.
+ (blocking defects)
 - Patch `common.schemas.ValidationResult` to include `url_hash` so Stage 2 output aligns with code expectations.
 - Fix `PipelineOrchestrator.run_concurrent_stage3_enrichment` (`urls_for_enrichment`) to restore CLI Stage 3 runs.
 - Add `run_tests.py --smoke` mode that exercises `--stage 1|2|all` without external dependencies.

@@ -148,7 +148,9 @@ class DiscoverySpider(scrapy.Spider):
 
             for link in links:
                 try:
-                    for output in self._process_candidate_url(link.url, source_url, current_depth):
+                    for output in self._process_candidate_url(
+                        link.url, source_url, current_depth, "html_link", 1.0
+                    ):
                         yield output
                 except Exception as e:
                     self.logger.error(f"Error processing link {link.url}: {e}")
@@ -178,6 +180,10 @@ class DiscoverySpider(scrapy.Spider):
             self.logger.debug(f"Skipping dynamic discovery for {source_url} - hit rate limit")
             return
 
+        # track candidates by source for proper provenance
+        sourced_candidates = {}  # candidate_url -> (source_type, confidence)
+
+        # data attributes - medium confidence since they're intentional
         for attr in DATA_ATTRIBUTE_CANDIDATES:
             raw_values = response.xpath(f'//*[@{attr}]/@{attr}').getall()
             for raw_value in raw_values:
@@ -188,20 +194,22 @@ class DiscoverySpider(scrapy.Spider):
                     continue
 
                 if raw_value.startswith('{') or raw_value.startswith('['):
-                    dynamic_candidates.update(self._extract_urls_from_json_text(raw_value, response))
+                    json_urls = self._extract_urls_from_json_text(raw_value, response)
+                    for url in json_urls:
+                        sourced_candidates[url] = ("ajax_endpoint", 0.7)
                     continue
 
                 normalized = self._normalize_candidate(raw_value, response)
                 if normalized:
-                    dynamic_candidates.add(normalized)
+                    sourced_candidates[normalized] = ("ajax_endpoint", 0.8)
 
-        # grab form actions because forms hide APIs sometimes
+        # form actions - high confidence since they're explicit endpoints
         for raw_action in response.xpath('//form[@action]/@action').getall():
             normalized = self._normalize_candidate(raw_action, response)
             if normalized:
-                dynamic_candidates.add(normalized)
+                sourced_candidates[normalized] = ("ajax_endpoint", 0.9)
 
-        # dig through JS for fetch calls
+        # javascript patterns - lower confidence since they might be templates
         script_texts = response.xpath('//script[not(@src)]/text()').getall()
         for script in script_texts:
             if not script:
@@ -214,21 +222,31 @@ class DiscoverySpider(scrapy.Spider):
                 raw_candidate = match.group('url')
                 normalized = self._normalize_candidate(raw_candidate, response)
                 if normalized:
-                    dynamic_candidates.add(normalized)
+                    sourced_candidates[normalized] = ("ajax_endpoint", 0.6)
 
-        # hunt for URLs buried in JSON blobs
+        # json script blocks - medium confidence
         json_scripts = response.xpath('//script[contains(@type, "json")]/text()').getall()
         for raw_json in json_scripts:
-            dynamic_candidates.update(self._extract_urls_from_json_text(raw_json, response))
+            json_urls = self._extract_urls_from_json_text(raw_json, response)
+            for url in json_urls:
+                sourced_candidates[url] = ("json_blob", 0.7)
 
-        # add basic pagination support because infinite scroll is everywhere
-        for candidate in list(dynamic_candidates):
+        # pagination generation - lower confidence since it's speculative
+        pagination_candidates = set()
+        for candidate in sourced_candidates.keys():
             if self._looks_like_api_endpoint(candidate):
-                pagination_candidates = self._generate_pagination_urls(candidate)
-                dynamic_candidates.update(pagination_candidates)
+                pagination_urls = self._generate_pagination_urls(candidate)
+                for pag_url in pagination_urls:
+                    pagination_candidates.add(pag_url)
 
-        for candidate in dynamic_candidates:
-            results = self._process_candidate_url(candidate, source_url, current_depth)
+        for pag_url in pagination_candidates:
+            sourced_candidates[pag_url] = ("pagination", 0.4)
+
+        # process all candidates with their provenance
+        for candidate, (source_type, confidence) in sourced_candidates.items():
+            results = self._process_candidate_url(
+                candidate, source_url, current_depth, source_type, confidence
+            )
             if not results:
                 continue
 
@@ -244,6 +262,8 @@ class DiscoverySpider(scrapy.Spider):
         candidate_url: str,
         source_url: str,
         current_depth: int,
+        discovery_source: str = "html_link",
+        confidence: float = 1.0,
     ) -> list:
         """process URLs and pretend we're being efficient"""
 
@@ -271,7 +291,9 @@ class DiscoverySpider(scrapy.Spider):
                 source_url=source_url,
                 discovered_url=canonical_url,
                 first_seen=discovery_time,
-                discovery_depth=next_depth
+                discovery_depth=next_depth,
+                discovery_source=discovery_source,
+                confidence=confidence
             )
         ]
 
@@ -559,7 +581,9 @@ class DiscoverySpider(scrapy.Spider):
                         source_url=source_url,
                         discovered_url=canonical_url,
                         first_seen=datetime.now().isoformat(),
-                        discovery_depth=0
+                        discovery_depth=0,
+                        discovery_source="sitemap",
+                        confidence=0.95
                     )
             except Exception as e:
                 self.logger.debug(f"Failed to process sitemap URL {url}: {e}")

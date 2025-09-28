@@ -16,7 +16,33 @@
 - No persistent checkpointing: queue consumers cannot resume mid-batch, and partial JSONL writes make it hard to know what was processed during crashes.
 - Test suite lacks coverage for stage-isolated execution, resumable workflows, and schema guarantees for the JSONL artefacts.
 
-## Ranked Roadmap (highest priority first)
+## Ranked Roadmap
+
+- **Stage 1 schema & dedupe corrections**
+  - Goal: ensure every discovery persists with a stable `url_hash`, provenance, and consistent metrics.
+  - Actions: compute/stash URL hashes inside `DiscoverySpider`, emit `discovery_source`/confidence, reconcile metric names (`unique_urls_found` vs. `unique_hashes_found`), and replace the hacked JSONL rewind with persistent dedupe state (SQLite/Bloom filter) and checkpoint manifests.
+  - Observability: forward the provenance flag and hash into Stage 2 so validation logs/reporting can trace dynamic heuristics versus seed links.
+
+- **Stage 2 schema alignment**
+  - Goal: unblock validation by aligning runtime data with `ValidationResult`.
+  - Actions: add `url_hash` (and any other fields emitted by the validator) to `common.schemas.ValidationResult`, update tests/fixtures, and ensure JSONL writes include the canonical hash.
+  - Observability: extend validator logging to include hash + discovery source so Stage 3 can reason about lineage.
+
+- **Stage 3 orchestration repair**
+  - Goal: restore CLI `--stage 3` by eliminating the brittle subprocess handoff.
+  - Actions: implement an internal queue consumer that feeds Scrapy without spawning a new process, persist enriched records under the configured path (`enriched_data.jsonl`), and add smoke tests that cover the end-to-end happy path.
+  - Observability: emit structured enrichment counters keyed by discovery source and validation status so operators can confirm coverage.
+
+- **Dependency hygiene**
+  - Goal: keep installs reproducible on Python 3.9+ and avoid shipping unused heavy stacks.
+  - Actions: split optional ML/cluster tooling into extras or docs, trim `requirements.txt` to essential dependencies, and document Python 3.10+ migration plan for transformer stacks.
+  - Observability: add CI jobs that recreate the venv from scratch and fail fast when requirements drift.
+
+- **Faculty data integration**
+  - Goal: deliver the RateMyProfessor plan documented in README.
+  - Actions: add Stage 1/3 pipelines that canonicalise faculty profiles, perform fuzzy matching against external data, and record provenance/opt-out flags.
+  - Observability: log `FACULTY_PROFILE_DISCOVERED` / `RMP_MATCHED` events and publish coverage dashboards by department.
+ (highest priority first)
 1. **Stabilise the current pipeline surface area**
    - Goal: remove the hard blockers that prevent today’s CLI stages from finishing successfully.
    - Actions: add `url_hash` to `common.schemas.ValidationResult`, repair the Stage 3 orchestrator bug (`urls_for_enrichment`), and backfill smoke tests to ensure the happy path (`--stage 1|2|all`) completes without exceptions before deeper changes begin.
