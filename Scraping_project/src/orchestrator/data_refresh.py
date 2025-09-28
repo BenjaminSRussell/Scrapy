@@ -74,7 +74,7 @@ class DataRefreshManager:
             await self.request_handler.__aexit__(exc_type, exc_val, exc_tb)
 
     def _get_content_length(self, content: str) -> int:
-        """Get content length for simple change detection"""
+        """count characters because content changed detection is hard"""
         return len(content) if content else 0
 
     def _load_existing_data(self, file_path: Path) -> Dict[str, Any]:
@@ -97,7 +97,7 @@ class DataRefreshManager:
         return data
 
     def _backup_file(self, file_path: Path):
-        """Create backup of existing file"""
+        """backup files because we're not savages"""
         if not file_path.exists():
             return
 
@@ -117,35 +117,35 @@ class DataRefreshManager:
         for url, data in existing_data.items():
             priority = 0
 
-            # Priority factors
+            # decide what needs fixing most
             domain = url.split('/')[2] if '//' in url else url
 
-            # High priority for configured domains
+            # important domains first
             if self.config.priority_domains and any(d in domain for d in self.config.priority_domains):
                 priority += 100
 
-            # High priority for previously failed requests
+            # failed stuff needs fixing
             if not data.get('is_valid', True) or data.get('error_message'):
                 priority += 50
 
-            # Medium priority for old data
+            # old data gets points too
             last_updated = data.get('validated_at') or data.get('enriched_at') or data.get('first_seen')
             if last_updated:
                 try:
                     update_time = datetime.fromisoformat(last_updated.replace('Z', '+00:00'))
                     hours_old = (datetime.now() - update_time.replace(tzinfo=None)).total_seconds() / 3600
                     if hours_old > self.config.refresh_interval_hours:
-                        priority += max(0, min(25, int(hours_old / 24)))  # Up to 25 points for age
+                        priority += max(0, min(25, int(hours_old / 24)))  # older = higher priority
                 except:
-                    priority += 10  # Unknown age gets medium priority
+                    priority += 10  # no idea when = maybe refresh
 
-            # Lower priority for successful, recent data
+            # working stuff gets lower priority
             if data.get('is_valid') and data.get('status_code', 0) == 200:
                 priority -= 10
 
             priorities.append((url, priority))
 
-        # Sort by priority (high to low)
+        # highest priority first
         return sorted(priorities, key=lambda x: x[1], reverse=True)
 
     async def refresh_validation_data(self, force_all: bool = False) -> Dict[str, Any]:
@@ -158,12 +158,12 @@ class DataRefreshManager:
         existing_data = self._load_existing_data(self.validation_file)
         logger.info(f"Loaded {len(existing_data)} existing validation records")
 
-        # Determine what needs refreshing
+        # figure out what's broken
         if force_all:
             urls_to_refresh = list(existing_data.keys())
         else:
             priorities = self._get_refresh_priorities(existing_data)
-            # Refresh high priority items (priority > 0) or failed items
+            # only refresh stuff that actually needs it
             urls_to_refresh = [url for url, priority in priorities if priority > 0 or not existing_data[url].get('is_valid', True)]
 
         logger.info(f"Refreshing {len(urls_to_refresh)} URLs out of {len(existing_data)}")

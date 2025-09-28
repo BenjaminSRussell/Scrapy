@@ -48,7 +48,7 @@ class NLPRegistry:
         except Exception as exc:  # pragma: no cover - configuration issue
             raise RuntimeError(f"Unable to load spaCy model '{model_name}': {exc}")
 
-        # Ensure lemmatiser is available for keyword extraction
+        # add lemmatizer or things get weird
         if "lemmatizer" not in nlp.pipe_names:
             try:
                 nlp.add_pipe("lemmatizer", config={"mode": "rule"}, after="tagger")
@@ -117,8 +117,7 @@ class NLPRegistry:
             except ImportError:
                 logger.warning("PyTorch missing for MPS device; using CPU instead")
 
-        # Current HuggingFace pipeline does not understand MLX directly;
-        # treat it as CPU execution for now.
+        # HuggingFace doesn't speak MLX yet so fake it
         return -1
 
     def extract_with_spacy(

@@ -22,7 +22,7 @@ class Stage1Pipeline:
 
     def open_spider(self, spider):
         """Initialize pipeline when spider opens"""
-        # Ensure output directory exists
+        # make sure the folder exists or things break
         self.output_file.parent.mkdir(parents=True, exist_ok=True)
 
         self.file = self.output_file.open("a", encoding="utf-8")
@@ -90,7 +90,7 @@ class Stage1Pipeline:
                 self.seen_hashes.add(url_hash)
                 self.url_count += 1
 
-                # Enhanced observability: INFO-level counters every 1000 URLs
+                # more spam logs every 1000 because why not
                 if self.url_count % 1000 == 0:
                     total_items_processed = len(self.seen_hashes)
                     duplicate_rate = ((total_items_processed - self.url_count) / max(1, total_items_processed)) * 100
