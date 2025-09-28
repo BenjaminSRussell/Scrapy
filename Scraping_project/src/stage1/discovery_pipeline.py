@@ -3,6 +3,7 @@ from datetime import datetime
 from pathlib import Path
 from itemadapter import ItemAdapter
 import logging
+import hashlib
 
 logger = logging.getLogger(__name__)
 
@@ -12,6 +13,8 @@ class Stage1Pipeline:
 
     def __init__(self, output_file: str = None):
         self.output_file = Path(output_file or "data/processed/stage01/new_urls.jsonl")
+        # persistent hash file to avoid the scale disaster
+        self.hash_file = self.output_file.with_suffix('.hashes')
 
     @classmethod
     def from_crawler(cls, crawler):
@@ -22,51 +25,71 @@ class Stage1Pipeline:
 
     def open_spider(self, spider):
         """Initialize pipeline when spider opens"""
-        # make sure the folder exists or things break
         self.output_file.parent.mkdir(parents=True, exist_ok=True)
-
         self.file = self.output_file.open("a", encoding="utf-8")
         self.seen_hashes = set()
         self.url_count = 0
 
-        # load existing hashes with some attempt at efficiency
-        # still loads everything because fixing this properly would require actual effort
-        if self.output_file.exists():
-            # at least limit memory usage by reading only the last N lines
-            max_lines_to_read = 100000  # arbitrary limit to prevent total meltdown
-            lines_read = 0
-
-            with self.output_file.open("r", encoding="utf-8") as f:
-                # seek to end and work backwards if file is huge
-                f.seek(0, 2)  # go to end
-                file_size = f.tell()
-
-                if file_size > 50 * 1024 * 1024:  # 50MB threshold
-                    # skip to last 10MB for huge files - sorry for the hack
-                    f.seek(max(0, file_size - 10 * 1024 * 1024))
-                    f.readline()  # skip partial line
-                else:
-                    f.seek(0)
-
-                for line in f:
-                    if lines_read >= max_lines_to_read:
-                        break
-                    try:
-                        data = json.loads(line)
-                        url_hash = data.get("url_hash")
-                        if url_hash:
-                            self.seen_hashes.add(url_hash)
-                        lines_read += 1
-                    except json.JSONDecodeError:
-                        continue
+        # load ALL existing hashes from persistent file - no more arbitrary limits
+        self._load_all_hashes()
 
         logger.info(f"[Stage1Pipeline] Loaded {len(self.seen_hashes):,} existing URL hashes")
         logger.info(f"[Stage1Pipeline] Writing to {self.output_file}")
 
+    def _load_all_hashes(self):
+        """Load all seen hashes from persistent storage - properly this time"""
+        if self.hash_file.exists():
+            try:
+                with self.hash_file.open("r", encoding="utf-8") as f:
+                    for line in f:
+                        hash_val = line.strip()
+                        if hash_val:
+                            self.seen_hashes.add(hash_val)
+            except Exception as e:
+                logger.warning(f"[Stage1Pipeline] Error loading hashes: {e}")
+                # fallback to old method if hash file is corrupted
+                self._migrate_from_jsonl()
+        else:
+            # first run or missing hash file - build from existing JSONL
+            self._migrate_from_jsonl()
+
+    def _migrate_from_jsonl(self):
+        """One-time migration from JSONL to hash file - all hashes, no limits"""
+        if not self.output_file.exists():
+            return
+
+        logger.info("[Stage1Pipeline] Building hash index from existing JSONL...")
+        with self.output_file.open("r", encoding="utf-8") as f:
+            for line_num, line in enumerate(f, 1):
+                try:
+                    data = json.loads(line)
+                    url_hash = data.get("url_hash")
+                    if url_hash:
+                        self.seen_hashes.add(url_hash)
+
+                    if line_num % 50000 == 0:
+                        logger.info(f"[Stage1Pipeline] Processed {line_num:,} lines, {len(self.seen_hashes):,} hashes")
+
+                except json.JSONDecodeError:
+                    continue
+
+        # write all hashes to persistent file
+        self._save_hashes()
+        logger.info(f"[Stage1Pipeline] Migration complete: {len(self.seen_hashes):,} hashes indexed")
+
+    def _save_hashes(self):
+        """Save all current hashes to persistent file"""
+        with self.hash_file.open("w", encoding="utf-8") as f:
+            for hash_val in self.seen_hashes:
+                f.write(f"{hash_val}\n")
+
     def close_spider(self, spider):
         """Clean up when spider closes"""
         self.file.close()
+        # save updated hash set for next run
+        self._save_hashes()
         logger.info(f"[Stage1Pipeline] Discovered {self.url_count:,} new URLs → {self.output_file}")
+        logger.info(f"[Stage1Pipeline] Hash index updated: {len(self.seen_hashes):,} total hashes")
 
     def process_item(self, item, spider):
         """Process each discovered URL item"""

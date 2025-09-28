@@ -27,7 +27,7 @@ def test_discovery_spider_initialization():
 
     # Test observability counters are initialized
     assert spider.total_urls_parsed == 0
-    assert spider.unique_hashes_found == 0
+    assert spider.unique_urls_found == 0
     assert spider.duplicates_skipped == 0
     assert spider.seed_count == 0
 

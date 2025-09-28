@@ -122,6 +122,9 @@ python -m pytest
 - **Stage 3 orchestration:** Fix the `urls_for_enrichment` reference and add smoke tests so CLI `--stage 3` once again works end-to-end.
 - **Model-ready outputs:** Enrichment schema already houses text, entities, and tags; consider adding summarisation and provenance fields before training loops consume the data.
 - **Operational playbooks:** See `docs/pipeline_improvement_plan.md` for prioritised roadmap tasks around batching, logging ergonomics, and schema validation.
+- **Logging & observability:** Emit structured JSON logs (`URL_DISCOVERED`, `DYNAMIC_ENDPOINT_FOUND`, checkpoint syncs) and expose per-heuristic counters so operators can trace throughput spikes.
+- **Efficiency measures:** Introduce adaptive crawl delays based on response latency, shared dedupe storage for parallel crawlers, and resumable checkpoints to minimise rework on restarts.
+- **Faculty coverage:** Map faculty profiles and cross-link external sources (RateMyProfessor) as part of Stage 1/3 enrichment; see the plan below.
 
 ## Requirements & Optional Extras
 
@@ -145,4 +148,28 @@ python -m pytest
 - Add smoke tests for `run_tests.py --smoke` once the stabilisation workstream lands.
 - Document schema versions and publish manifests under `data/catalog/` to keep downstream consumers aligned.
 - Consider splitting optional dependencies into extras (`pip install .[enrichment]`) once packaging is added.
+
+## Faculty & RateMyProfessor Data Plan
+
+1. **Faculty roster acquisition**
+   - Expand Stage 1 seeds with registrar, department, and lab directories to guarantee every profile URL is discoverable.
+   - Store canonical faculty records (`name`, `department`, `profile_url`, `discovery_source`) in JSONL/SQLite so later stages can reuse them without rescanning.
+   - Normalise naming conventions (e.g., `First M. Last`) to improve matching with external datasets.
+
+2. **Cross-linking sources**
+   - Extract structured attributes (email, phone, research areas) during Stage 3 enrichment to strengthen match confidence.
+   - Generate embeddings for biography text to cluster faculty by discipline and spot departments with missing coverage.
+
+3. **RateMyProfessor integration**
+   - Build a compliant fetcher that queries RateMyProfessor by university and faculty name (respecting ToS/rate limits).
+   - Apply fuzzy matching (Levenshtein similarity, e-mail, department cues) to associate RateMyProfessor entries with internal records.
+   - Persist aggregated ratings, tags, and comment summaries with provenance flags to keep downstream consumers aware of the data source.
+
+4. **Ethics & compliance**
+   - Honour RateMyProfessor access policies; prefer official exports or APIs when available.
+   - Maintain opt-out capabilities and flag sensitive matches for manual review.
+
+5. **Logging & monitoring**
+   - Emit dedicated log events (`FACULTY_PROFILE_DISCOVERED`, `RMP_MATCHED`) and track per-department coverage in dashboards.
+   - Publish summary reports comparing discovered faculty profiles with expected rosters to guide additional seed acquisition.
 

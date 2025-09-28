@@ -122,6 +122,15 @@ python -m pytest
 - **Stage 3 orchestration:** Fix the `urls_for_enrichment` reference and add smoke tests so CLI `--stage 3` once again works end-to-end.
 - **Model-ready outputs:** Enrichment schema already houses text, entities, and tags; consider adding summarisation and provenance fields before training loops consume the data.
 - **Operational playbooks:** See `docs/pipeline_improvement_plan.md` for prioritised roadmap tasks around batching, logging ergonomics, and schema validation.
+- **Logging & observability:** Emit structured JSON logs (`URL_DISCOVERED`, `DYNAMIC_ENDPOINT_FOUND`, checkpoint syncs) and expose per-heuristic counters so operators can trace throughput spikes.
+- **Efficiency measures:** Introduce adaptive crawl delays based on response latency, shared dedupe storage for parallel crawlers, and resumable checkpoints to minimise rework on restarts.
+- **Faculty coverage:** Map faculty profiles and cross-link external sources (RateMyProfessor) as part of Stage 1/3 enrichment; see the plan below.
+- **Logging & observability:** Plan to emit structured JSON logs (`URL_DISCOVERED`, `DYNAMIC_ENDPOINT_FOUND`, batch checkpoints) and expose per-heuristic counters so operators can trace throughput spikes.
+- **Efficiency measures:** Introduce adaptive crawl delays based on response latency, shared dedupe storage for parallel crawlers, and resumable checkpoints to minimise rework on restarts.
+- **Faculty coverage:** Upcoming work will map every faculty profile and cross-link with RateMyProfessor; see the new plan below.
+- **Logging & observability:** Plan to emit structured JSON logs (`URL_DISCOVERED`, `DYNAMIC_ENDPOINT_FOUND`, batch checkpoints) and expose per-heuristic counters so operators can trace throughput spikes.
+- **Efficiency measures:** Introduce adaptive crawl delays based on response latency, shared dedupe storage for parallel crawlers, and resumable checkpoints to minimise rework on restarts.
+- **Faculty coverage:** Upcoming Stage 1 work will map each faculty profile using registrar/department directories, then cross-link institutional data with third-party sources such as RateMyProfessor (summarised below).
 
 ## Requirements & Optional Extras
 
@@ -139,10 +148,57 @@ python -m pytest
 - **Stage 1 dedupe scalability** – JSONL rewind is O(n) on restarts; the roadmap tracks migration to a persistent hash index.
 - **Limited live validation coverage** – Tests primarily use mocked responses. Add opt-in integration runs before production crawls.
 
+## Faculty & RateMyProfessor Data Plan
+
+1. **Faculty roster acquisition**
+   - Expand Stage 1 seeds with registrar/department/lab directories so every profile URL is reachable.
+   - Store canonical faculty records (`name`, `department`, `profile_url`, `discovery_source`) in JSONL/SQLite for reuse across runs.
+   - Normalise name formats (e.g., `First M. Last`) to support external matching.
+
+2. **Cross-linking sources**
+   - Extract structured attributes from profile pages (email, phone, research areas) during Stage 3 enrichment to improve match confidence.
+   - Generate embeddings for biography text to cluster faculty by discipline and flag missing departments.
+
+3. **RateMyProfessor integration**
+   - Build a separate fetcher (respecting ToS) to query RateMyProfessor by university + faculty name.
+   - Use fuzzy matching (Levenshtein, e-mail, department cues) to associate RateMyProfessor entries with internal records.
+   - Persist aggregated ratings/tags/comments with provenance flags so downstream consumers know the source.
+
+4. **Ethics & compliance**
+   - Honour RateMyProfessor access rules; consider API partnerships or manual exports where automation is restricted.
+   - Provide opt-out mechanisms and flag sensitive data for manual review.
+
+5. **Logging & monitoring**
+   - Emit dedicated log events (`FACULTY_PROFILE_DISCOVERED`, `RMP_MATCHED`) and track per-department coverage in dashboards.
+   - Add summary reports comparing discovered faculty profiles vs expected counts from institutional rosters.
+
+## Faculty & RateMyProfessor Data Plan
+
+1. **Faculty roster acquisition**
+   - Stage 1 will expand seeds to include registrar, department, and lab directories, ensuring every faculty profile URL is discovered.
+   - Store faculty records with metadata (`name`, `department`, `profile_url`, `discovery_source`) in a dedicated JSONL/SQLite table for reuse.
+   - Normalise naming conventions (e.g., `First M. Last`) to support matching against external datasets.
+
+2. **Cross-linking sources**
+   - Extract email addresses, phone numbers, and research areas from faculty profiles to increase matching confidence.
+   - In Stage 3 enrichment, compute embeddings for biography text to cluster by discipline.
+
+3. **RateMyProfessor integration**
+   - Maintain a separate fetcher (outside the main crawl if ToS requires) that queries RateMyProfessor by university and faculty name.
+   - Use fuzzy matching (Levenshtein distance, email/department cues) to associate RateMyProfessor records with the internal faculty catalog.
+   - Store RateMyProfessor metadata (ratings, tags, comments summary) alongside institutional data with provenance flags.
+
+4. **Ethics & compliance**
+   - Review Terms of Service for RateMyProfessor and abide by access limits; consider manual or API-based exports where available.
+   - Provide opt-out support and flag sensitive data for manual review.
+
+5. **Ongoing logging**
+   - Add dedicated log events (`FACULTY_PROFILE_DISCOVERED`, `RMP_MATCHED`) with counts per department.
+   - Surface summary dashboards showing coverage (profiles discovered vs expected) and matching success rates.
+
 ## Contributing & Change Ideas
 
 - Use feature flags for new discovery heuristics to throttle high-churn areas without removing coverage.
 - Add smoke tests for `run_tests.py --smoke` once the stabilisation workstream lands.
 - Document schema versions and publish manifests under `data/catalog/` to keep downstream consumers aligned.
 - Consider splitting optional dependencies into extras (`pip install .[enrichment]`) once packaging is added.
-

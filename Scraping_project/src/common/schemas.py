@@ -15,6 +15,7 @@ class DiscoveryItem:
 class ValidationResult:
     """Result from Stage 2 URL Validation"""
     url: str
+    url_hash: str  # critical for stage linkage - without this everything breaks
     status_code: int
     content_type: str
     content_length: int

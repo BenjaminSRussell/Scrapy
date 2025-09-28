@@ -1,0 +1,230 @@
+# Development requirements - extends requirements.txt
+-r requirements.txt
+
+# Testing framework extensions
+pytest-benchmark>=4.0.0
+pytest-html>=3.1.0
+pytest-json-report>=1.5.0
+pytest-randomly>=3.12.0
+pytest-sugar>=0.9.0
+pytest-clarity>=1.0.0
+pytest-datadir>=1.4.0
+pytest-mock>=3.10.0
+pytest-freezegun>=0.4.0
+hypothesis>=6.50.0
+
+# Code quality and linting
+pre-commit>=2.20.0
+bandit>=1.7.0
+safety>=2.0.0
+vulture>=2.5.0
+radon>=5.1.0
+xenon>=0.9.0
+prospector>=1.7.0
+pylint>=2.15.0
+pydocstyle>=6.1.0
+pycodestyle>=2.9.0
+pyflakes>=2.5.0
+
+# Formatting and imports
+autoflake>=1.4.0
+autopep8>=1.7.0
+pyupgrade>=2.37.0
+
+# Documentation
+sphinx-autodoc-typehints>=1.19.0
+sphinx-copybutton>=0.5.0
+myst-parser>=0.18.0
+
+# Performance and profiling
+line-profiler>=4.0.0
+py-spy>=0.3.0
+scalene>=1.5.0
+pympler>=0.9.0
+
+# Development utilities
+notebook>=6.4.0
+jupyterlab>=3.4.0
+ipdb>=0.13.0
+pudb>=2022.1.0
+rich>=12.5.0
+
+# Debugging and introspection
+icecream>=2.1.0
+snoop>=0.4.0
+pysnooper>=1.1.0
+
+# Mock and test data generation
+factory-boy>=3.2.0
+faker>=15.0.0
+responses>=0.21.0
+vcrpy>=4.2.0
+betamax>=0.8.0
+
+# Type checking
+mypy-extensions>=0.4.0
+types-PyYAML>=6.0.0
+types-requests>=2.28.0
+types-urllib3>=1.26.0
+
+# API testing
+httpretty>=1.1.0
+requests-mock>=1.9.0
+
+# Load testing
+locust>=2.10.0
+
+# Static analysis
+semgrep>=0.110.0
+
+# Dependency analysis
+pipdeptree>=2.2.0
+pip-audit>=2.4.0
+
+# Environment management
+python-dotenv>=0.20.0
+
+# Build tools
+build>=0.8.0
+twine>=4.0.0
+wheel>=0.37.0
+
+# Git hooks and automation
+gitpython>=3.1.0
+
+# Configuration management
+dynaconf>=3.1.0
+
+# Database testing
+sqlalchemy-utils>=0.38.0
+
+# Time/date testing
+freezegun>=1.2.0
+delorean>=1.0.0
+
+# Network testing and mocking
+httpx>=0.24.0
+respx>=0.20.0
+
+# File system testing
+pyfakefs>=4.6.0
+
+# Process testing
+psutil>=5.9.0
+
+# Concurrency testing
+aioresponses>=0.7.0
+
+# Container testing
+testcontainers>=3.4.0
+
+# Browser automation (if needed for integration tests)
+selenium>=4.4.0
+playwright>=1.25.0
+
+# Visual testing
+percy>=2.0.0
+applitools-eyes>=5.10.0
+
+# Security testing
+bandit[toml]>=1.7.0
+
+# Performance monitoring
+py-spy>=0.3.0
+# austin>=3.4.0  # Optional: uncomment if needed
+
+# Memory leak detection
+objgraph>=3.5.0
+# tracemalloc (built into Python 3.4+) - no pip package needed
+
+# Chaos engineering
+# chaostoolkit>=1.12.0  # Optional: uncomment if doing chaos testing
+
+# API documentation
+apispec>=6.0.0
+flasgger>=0.9.0
+
+# OpenAPI/Swagger
+openapi-spec-validator>=0.5.0
+
+# GraphQL (if using GraphQL APIs)
+graphene>=3.1.0
+
+# Monitoring and metrics
+statsd>=4.0.0
+datadog>=0.44.0
+
+# Distributed tracing
+opentelemetry-api>=1.12.0
+jaeger-client>=4.8.0
+
+# Feature flags
+# flipper-client>=0.1.0  # Optional: specific to Flipper service
+
+# A/B testing
+# split-io>=8.3.0  # Optional: specific to Split.io service
+
+# Machine learning experiment tracking
+mlflow>=1.27.0
+wandb>=0.13.0
+
+# Model serving
+bentoml>=1.0.0
+
+# Data validation
+great-expectations>=0.15.0
+pandera>=0.12.0
+
+# ETL and data pipelines
+luigi>=3.1.0
+airflow>=2.4.0
+
+# Streaming data
+kafka-python>=2.0.0
+confluent-kafka>=1.9.0
+
+# Time series databases
+influxdb-client>=1.30.0
+
+# Search engines
+elasticsearch-dsl>=7.4.0
+
+# Graph databases
+py2neo>=2021.2.0
+
+# NoSQL databases
+pymongo>=4.2.0
+redis>=4.3.0
+
+# Cloud services
+boto3>=1.24.0
+google-cloud-storage>=2.5.0
+azure-storage-blob>=12.12.0
+
+# Infrastructure as code
+pulumi>=3.38.0
+# terraform-compliance>=1.3.0  # Optional: for Terraform testing
+
+# Container orchestration
+kubernetes>=24.2.0
+
+# Service mesh
+# istio>=1.15.0  # Optional: service mesh specific
+
+# Microservices
+nameko>=2.14.0
+celery>=5.2.0
+
+# Message brokers
+pika>=1.3.0
+kombu>=5.2.0
+
+# Event sourcing
+eventsourcing>=9.2.0
+
+# Architecture patterns (commented out - these are concepts, not specific packages)
+# axon-python>=0.1.0  # Framework-specific
+# domain-driven-design>=0.1.0  # Concept, not a package
+# clean-architecture>=0.1.0  # Concept, not a package
+# hexagonal-architecture>=0.1.0  # Concept, not a package
+# onion-architecture>=0.1.0  # Concept, not a package

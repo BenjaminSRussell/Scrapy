@@ -1,25 +1,49 @@
-# Core scraping and web crawling
-scrapy>=2.5.0
-w3lib>=1.22.0
-aiohttp>=3.8.0
-Twisted>=22.10.0
+# Core scraping and web crawling - actually needed
+scrapy>=2.5.0,<2.12.0
+w3lib>=1.22.0,<2.0.0
+aiohttp>=3.7.0,<4.0.0
+Twisted>=21.7.0,<23.0.0
+requests>=2.25.0,<3.0.0
 
-# Configuration and data handling
-PyYAML>=6.0.0
-itemadapter>=0.7.0
+# Configuration and data handling - essential
+PyYAML>=5.4.0,<7.0.0
+itemadapter>=0.6.0,<1.0.0
 
-# Testing and validation
-pytest>=7.0.0
-pytest-asyncio>=0.21.0
-pytest-timeout>=2.1.0
+# Testing framework - minimal set
+pytest>=6.2.0,<8.0.0
+pytest-asyncio>=0.18.0,<1.0.0
 
-# Performance monitoring and system metrics
-psutil>=5.9.0
+# Performance monitoring - basic only
+psutil>=5.8.0,<6.0.0
 
-# Natural language processing
-spacy>=3.4.0
+# Data processing - core libs
+pandas>=1.3.0,<2.0.0
+numpy>=1.20.0,<2.0.0
 
-# Optional HuggingFace dependencies for advanced link scoring
-transformers>=4.20.0
-huggingface-hub>=0.10.0
-sentence-transformers>=2.2.0
+# URL handling
+urllib3>=1.26.0,<2.0.0
+
+# File format support
+jsonlines>=2.0.0,<4.0.0
+
+# Rich text processing - essential for web scraping
+beautifulsoup4>=4.10.0,<5.0.0
+lxml>=4.6.0,<5.0.0
+
+# CLI utilities
+click>=8.0.0,<9.0.0
+
+# HTTP client alternatives
+httpx>=0.23.0,<1.0.0
+
+# Time handling
+python-dateutil>=2.8.0,<3.0.0
+
+# Async support
+aiofiles>=0.7.0,<1.0.0
+
+# Progress tracking
+tqdm>=4.62.0,<5.0.0
+
+# Type hints for older Python
+typing-extensions>=3.10.0,<5.0.0
