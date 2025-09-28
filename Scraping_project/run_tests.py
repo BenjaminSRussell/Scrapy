@@ -46,6 +46,12 @@ def run_test_profile(profile: str, extra_args: List[str] = None) -> Dict[str, An
             "-m", "load or slow",
             "--tb=line",
             "-s"
+        ],
+        "smoke": [
+            "-m", "smoke or critical",
+            "--maxfail=1",
+            "-x",
+            "-q"
         ]
     }
 
@@ -219,7 +225,7 @@ def main():
 
     parser = argparse.ArgumentParser(description="UConn Pipeline Test Runner")
     parser.add_argument("profile", nargs="?", default="quick",
-                      choices=["quick", "unit", "integration", "performance", "critical", "full", "load", "all"],
+                      choices=["quick", "unit", "integration", "performance", "critical", "full", "load", "smoke", "all"],
                       help="Test profile to run")
     parser.add_argument("--standalone", action="store_true",
                       help="Run standalone test runner instead of pytest")

@@ -1,49 +1,52 @@
-# Core scraping and web crawling - Python 3.12 compatible versions
+# Python 3.12 Optimized Requirements
+# Use this file for Python 3.12 installations for best performance and compatibility
+
+# Core scraping and web crawling - Python 3.12 optimized
 scrapy>=2.11.0,<3.0.0
 w3lib>=1.22.0,<2.0.0
 aiohttp>=3.9.0,<4.0.0
 Twisted>=23.8.0,<25.0.0
 requests>=2.25.0,<3.0.0
 
-# Configuration and data handling - essential
+# Configuration and data handling
 PyYAML>=5.4.0,<7.0.0
 itemadapter>=0.6.0,<1.0.0
 
 # Testing framework - Python 3.12 compatible
-pytest>=6.2.0,<8.0.0
+pytest>=7.0.0,<8.0.0
 pytest-asyncio>=0.21.0,<1.0.0
 
 # Performance monitoring - Python 3.12 compatible
 psutil>=5.9.5,<6.0.0
 
 # Data processing - Python 3.12 optimized versions
-pandas>=1.3.0,<3.0.0
+pandas>=2.0.0,<3.0.0
 numpy>=1.26.0,<2.0.0
 
 # URL handling
-urllib3>=1.26.0,<2.0.0
+urllib3>=1.26.0,<3.0.0
 
 # File format support
-jsonlines>=2.0.0,<4.0.0
+jsonlines>=3.0.0,<5.0.0
 
 # Rich text processing - Python 3.12 with pre-built wheels
-beautifulsoup4>=4.10.0,<5.0.0
+beautifulsoup4>=4.12.0,<5.0.0
 lxml>=5.0.0,<6.0.0
 
 # CLI utilities
-click>=8.0.0,<9.0.0
+click>=8.1.0,<9.0.0
 
 # HTTP client alternatives
-httpx>=0.23.0,<1.0.0
+httpx>=0.25.0,<1.0.0
 
 # Time handling
 python-dateutil>=2.8.0,<3.0.0
 
 # Async support
-aiofiles>=0.7.0,<1.0.0
+aiofiles>=22.1.0,<24.0.0
 
 # Progress tracking
-tqdm>=4.62.0,<5.0.0
+tqdm>=4.65.0,<5.0.0
 
-# Type hints - conditional for Python <3.12
-typing-extensions>=4.7.0,<5.0.0; python_version<"3.12"
+# Type hints - not needed for Python 3.12
+# typing-extensions is excluded as all features are in stdlib

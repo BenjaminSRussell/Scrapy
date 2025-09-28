@@ -1,7 +1,9 @@
+from __future__ import annotations
+
 import json
 import sqlite3
 from pathlib import Path
-from typing import Dict, List, Optional, Any, Iterator
+from typing import Any, Iterator
 from datetime import datetime
 import logging
 
@@ -15,18 +17,18 @@ class JSONLStorage:
         self.file_path = Path(file_path)
         self.file_path.parent.mkdir(parents=True, exist_ok=True)
 
-    def append(self, data: Dict[str, Any]):
+    def append(self, data: dict[str, Any]):
         """Append a single record to the JSONL file"""
         with open(self.file_path, 'a', encoding='utf-8') as f:
             f.write(json.dumps(data, ensure_ascii=False) + '\n')
 
-    def append_batch(self, data_list: List[Dict[str, Any]]):
+    def append_batch(self, data_list: list[dict[str, Any]]):
         """Append multiple records to the JSONL file"""
         with open(self.file_path, 'a', encoding='utf-8') as f:
             for data in data_list:
                 f.write(json.dumps(data, ensure_ascii=False) + '\n')
 
-    def read_all(self) -> Iterator[Dict[str, Any]]:
+    def read_all(self) -> Iterator[dict[str, Any]]:
         """Read all records from the JSONL file"""
         if not self.file_path.exists():
             return
@@ -117,7 +119,7 @@ class URLCache:
                 WHERE url_hash = ?
             """, (enriched_at, title, word_count, datetime.now().isoformat(), url_hash))
 
-    def get_url(self, url_hash: str) -> Optional[Dict[str, Any]]:
+    def get_url(self, url_hash: str) -> dict[str, Any] | None:
         """Get URL record by hash"""
         with sqlite3.connect(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
@@ -125,7 +127,7 @@ class URLCache:
             row = cursor.fetchone()
             return dict(row) if row else None
 
-    def get_urls_by_status(self, is_valid: bool = None, has_enrichment: bool = None) -> List[Dict[str, Any]]:
+    def get_urls_by_status(self, is_valid: bool = None, has_enrichment: bool = None) -> list[dict[str, Any]]:
         """Get URLs filtered by processing status"""
         conditions = []
         params = []
@@ -147,7 +149,7 @@ class URLCache:
             cursor = conn.execute(f"SELECT * FROM urls WHERE {where_clause}", params)
             return [dict(row) for row in cursor.fetchall()]
 
-    def get_stats(self) -> Dict[str, int]:
+    def get_stats(self) -> dict[str, int]:
         """Get cache statistics"""
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.execute("""

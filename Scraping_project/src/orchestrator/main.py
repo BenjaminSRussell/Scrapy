@@ -78,7 +78,8 @@ async def run_stage1_discovery(config: Config):
         max_depth=stage1_config['max_depth']
     )
 
-    loop = asyncio.get_event_loop()
+    # Use asyncio.get_running_loop() for Python 3.12 compatibility
+    loop = asyncio.get_running_loop()
     try:
         await loop.run_in_executor(None, process.start)
     finally:

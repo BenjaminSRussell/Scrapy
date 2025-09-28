@@ -1,10 +1,12 @@
 """
 Checkpoint system for resumable pipeline operations
 """
+from __future__ import annotations
+
 import json
 import hashlib
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Any
 from datetime import datetime
 import logging
 
@@ -19,7 +21,7 @@ class BatchCheckpoint:
         self.checkpoint_file.parent.mkdir(parents=True, exist_ok=True)
         self._data = self._load_checkpoint()
 
-    def _load_checkpoint(self) -> Dict[str, Any]:
+    def _load_checkpoint(self) -> dict[str, Any]:
         """Load existing checkpoint data"""
         if not self.checkpoint_file.exists():
             return {
@@ -41,7 +43,7 @@ class BatchCheckpoint:
             logger.warning(f"Failed to load checkpoint {self.checkpoint_file}: {e}")
             return self._create_empty_checkpoint()
 
-    def _create_empty_checkpoint(self) -> Dict[str, Any]:
+    def _create_empty_checkpoint(self) -> dict[str, Any]:
         """Create empty checkpoint structure"""
         return {
             'stage': None,
@@ -66,7 +68,7 @@ class BatchCheckpoint:
         except Exception as e:
             logger.error(f"Failed to save checkpoint {self.checkpoint_file}: {e}")
 
-    def start_batch(self, stage: str, batch_id: int, metadata: Dict[str, Any] = None):
+    def start_batch(self, stage: str, batch_id: int, metadata: dict[str, Any] = None):
         """Mark the start of a new batch"""
         self._data.update({
             'stage': stage,
@@ -106,7 +108,7 @@ class BatchCheckpoint:
         })
         self.save_checkpoint()
 
-    def get_resume_point(self) -> Dict[str, Any]:
+    def get_resume_point(self) -> dict[str, Any]:
         """Get information needed to resume processing"""
         return {
             'stage': self._data.get('stage'),
@@ -129,7 +131,7 @@ class BatchCheckpoint:
         """Check if checkpoint indicates failure"""
         return self._data.get('status') == 'failed'
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get checkpoint statistics"""
         return {
             'stage': self._data.get('stage'),
@@ -162,7 +164,7 @@ class CheckpointManager:
             self._checkpoints[stage] = BatchCheckpoint(checkpoint_file)
         return self._checkpoints[stage]
 
-    def get_all_stats(self) -> Dict[str, Dict[str, Any]]:
+    def get_all_stats(self) -> Dict[str, dict[str, Any]]:
         """Get stats for all stage checkpoints"""
         stats = {}
 

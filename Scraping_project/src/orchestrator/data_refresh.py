@@ -177,7 +177,7 @@ class DataRefreshManager:
 
         async def refresh_single_validation(url: str) -> RefreshResult:
             async with semaphore:
-                start_time = asyncio.get_event_loop().time()
+                start_time = asyncio.get_running_loop().time()
                 old_data = existing_data.get(url, {})
                 old_content_length = old_data.get('content_length', 0)
 
@@ -213,7 +213,7 @@ class DataRefreshManager:
                             success=True,
                             error_message=None,
                             refresh_timestamp=datetime.now().isoformat(),
-                            processing_time=asyncio.get_event_loop().time() - start_time
+                            processing_time=asyncio.get_running_loop().time() - start_time
                         )
 
                     else:
@@ -234,7 +234,7 @@ class DataRefreshManager:
                             success=False,
                             error_message=f"Request failed: {request_result.attempts[-1].error_message if request_result.attempts else 'Unknown error'}",
                             refresh_timestamp=datetime.now().isoformat(),
-                            processing_time=asyncio.get_event_loop().time() - start_time
+                            processing_time=asyncio.get_running_loop().time() - start_time
                         )
 
                 except Exception as e:
@@ -247,7 +247,7 @@ class DataRefreshManager:
                         success=False,
                         error_message=str(e),
                         refresh_timestamp=datetime.now().isoformat(),
-                        processing_time=asyncio.get_event_loop().time() - start_time
+                        processing_time=asyncio.get_running_loop().time() - start_time
                     )
 
         # run everything at once
@@ -383,7 +383,7 @@ class DataRefreshManager:
 
         async def refresh_single_enrichment(url: str) -> RefreshResult:
             async with semaphore:
-                start_time = asyncio.get_event_loop().time()
+                start_time = asyncio.get_running_loop().time()
                 old_data = existing_data.get(url, {})
                 old_content_length = old_data.get('content_length', 0)
 
@@ -413,7 +413,7 @@ class DataRefreshManager:
                             success=True,
                             error_message=None,
                             refresh_timestamp=datetime.now().isoformat(),
-                            processing_time=asyncio.get_event_loop().time() - start_time
+                            processing_time=asyncio.get_running_loop().time() - start_time
                         )
 
                     else:
@@ -432,7 +432,7 @@ class DataRefreshManager:
                             success=False,
                             error_message=f"Request failed: {request_result.attempts[-1].error_message if request_result.attempts else 'Unknown error'}",
                             refresh_timestamp=datetime.now().isoformat(),
-                            processing_time=asyncio.get_event_loop().time() - start_time
+                            processing_time=asyncio.get_running_loop().time() - start_time
                         )
 
                 except Exception as e:
@@ -445,7 +445,7 @@ class DataRefreshManager:
                         success=False,
                         error_message=str(e),
                         refresh_timestamp=datetime.now().isoformat(),
-                        processing_time=asyncio.get_event_loop().time() - start_time
+                        processing_time=asyncio.get_running_loop().time() - start_time
                     )
 
         tasks = [refresh_single_enrichment(url) for url in urls_to_refresh]

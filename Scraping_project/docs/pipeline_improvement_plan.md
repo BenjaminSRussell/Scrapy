@@ -8,75 +8,42 @@
 - Enrichment stack reuses shared NLP utilities, giving a head start on entity/keyword extraction and URL tagging.
 
 ## Key Risks and Gaps
-- Stage 1 deduplication reloads the entire JSONL output on every run; this limits restarts and will not scale past hundreds of thousands of rows.
-- Discovery currently treats all URLs equally: no keyword/section awareness, prioritisation, or provenance scoring to steer toward high-value academic content.
-- Two separate `data/` trees exist (project root and repo root), making it easy to lose artefacts or run in inconsistent states.
-- Stage 2 relies on `ValidationResult` but the dataclass lacks a `url_hash` field, so real runs crash once a validation result is instantiated with that attribute.
-- Stage 3 orchestration is broken (`urls_for_enrichment` bug) and enrichment output does not yet include summaries/classifications suitable for model training.
-- No persistent checkpointing: queue consumers cannot resume mid-batch, and partial JSONL writes make it hard to know what was processed during crashes.
-- Test suite lacks coverage for stage-isolated execution, resumable workflows, and schema guarantees for the JSONL artefacts.
+- Stage 1 never persists `url_hash` or provenance information, so dedupe, lineage, and downstream joins fail; the hacked JSONL rewind still replays large files on restart.
+- Stage 2 emits `url_hash` in practice but `ValidationResult` lacks the field, causing runtime `TypeError`s and blocking validation.
+- Stage 3 orchestration still shells out to Scrapy; CLI `--stage 3` remains broken and enrichment writes default to an outdated filename.
+- Discovery metrics/tests are out of sync (`unique_hashes_found` vs `unique_urls_found`), hiding crawl regressions.
+- Dynamic discovery heuristics lack throttles or provenance logging, making it hard to tune noisy sources.
+- Checkpointing/persistent queues are absent, so crashes or restarts replay work and risk duplicate output.
+- Test coverage does not gate schema compatibility or cross-stage smoke runs, leaving regressions undetected.
 
 ## Ranked Roadmap
 
-- **Stage 1 schema & dedupe corrections**
-  - Goal: ensure every discovery persists with a stable `url_hash`, provenance, and consistent metrics.
-  - Actions: compute/stash URL hashes inside `DiscoverySpider`, emit `discovery_source`/confidence, reconcile metric names (`unique_urls_found` vs. `unique_hashes_found`), and replace the hacked JSONL rewind with persistent dedupe state (SQLite/Bloom filter) and checkpoint manifests.
-  - Observability: forward the provenance flag and hash into Stage 2 so validation logs/reporting can trace dynamic heuristics versus seed links.
+## Ranked Roadmap (highest priority first)
 
-- **Stage 2 schema alignment**
-  - Goal: unblock validation by aligning runtime data with `ValidationResult`.
-  - Actions: add `url_hash` (and any other fields emitted by the validator) to `common.schemas.ValidationResult`, update tests/fixtures, and ensure JSONL writes include the canonical hash.
-  - Observability: extend validator logging to include hash + discovery source so Stage 3 can reason about lineage.
+1. **Align schema + lineage across stages**
+   - Add `url_hash` and provenance to Stage 1 output, propagate the field through `ValidationResult`, and ensure Stage 3 reads/writes the same schema.
+   - Fix the discovery metrics/test mismatch so regression tests actually validate crawler coverage.
+   - Deliver a `run_tests.py --smoke` profile that exercises `--stage 1|2|3` end-to-end.
 
-- **Stage 3 orchestration repair**
-  - Goal: restore CLI `--stage 3` by eliminating the brittle subprocess handoff.
-  - Actions: implement an internal queue consumer that feeds Scrapy without spawning a new process, persist enriched records under the configured path (`enriched_data.jsonl`), and add smoke tests that cover the end-to-end happy path.
-  - Observability: emit structured enrichment counters keyed by discovery source and validation status so operators can confirm coverage.
+2. **Repair Stage 3 orchestration**
+   - Replace the subprocess Scrapy call with an internal consumer and reinstate CLI `--stage 3`.
+   - Honour configured output paths (`enriched_data.jsonl`) and add structured enrichment counters/logs.
 
-- **Dependency hygiene**
-  - Goal: keep installs reproducible on Python 3.9+ and avoid shipping unused heavy stacks.
-  - Actions: split optional ML/cluster tooling into extras or docs, trim `requirements.txt` to essential dependencies, and document Python 3.10+ migration plan for transformer stacks.
-  - Observability: add CI jobs that recreate the venv from scratch and fail fast when requirements drift.
+3. **Persistent dedupe & restartability**
+   - Migrate Stage 1 dedupe to `URLCache`/SQLite or similar, introduce batch checkpoint manifests, and teach queues to resume without re-reading JSONL.
+   - Surface restart diagnostics and alerts when checkpoints fall behind.
 
-- **Faculty data integration**
-  - Goal: deliver the RateMyProfessor plan documented in README.
-  - Actions: add Stage 1/3 pipelines that canonicalise faculty profiles, perform fuzzy matching against external data, and record provenance/opt-out flags.
-  - Observability: log `FACULTY_PROFILE_DISCOVERED` / `RMP_MATCHED` events and publish coverage dashboards by department.
- (highest priority first)
-1. **Stabilise the current pipeline surface area**
-   - Goal: remove the hard blockers that prevent today’s CLI stages from finishing successfully.
-   - Actions: add `url_hash` to `common.schemas.ValidationResult`, repair the Stage 3 orchestrator bug (`urls_for_enrichment`), and backfill smoke tests to ensure the happy path (`--stage 1|2|all`) completes without exceptions before deeper changes begin.
-   - Observability: introduce a lightweight `run_tests.py --smoke` target that exercises each stage in isolation and fails fast when schema mismatches or orchestration regressions slip in.
+4. **Dynamic discovery observability**
+   - Track `discovery_source`, add heuristic-level throttles, and expose counters so noisy AJAX endpoints can be tuned or suppressed quickly.
 
-2. **Durable state, batching, and restartability across stages**
-   - Goal: guarantee that each stage can resume after interruption without data loss or duplicate work.
-   - Actions: wire `common.storage.URLCache` into every stage as the single source of truth, persist batch checkpoints (`stageN.checkpoint.json`) after each flush, and write idempotent consumers that skip URLs marked as completed. Implement batch-id metadata in JSONL lines plus a manifest file that records last successful batch.
-   - Observability: add restart diagnostics (`--dry-run` flag to list pending batches) and console warnings when checkpoints diverge from JSONL contents.
+5. **Model-ready enrichment**
+   - Once orchestration is stable, extend Stage 3 with summarisation/taxonomy tags and schema versioning documented in `docs/`.
 
-3. **Stage 1 discovery overhaul for targeted URL growth**
-   - Goal: optimise crawling toward university content slices (academics, research, services) while keeping discovery resumable and efficient.
-   - Actions: introduce keyword/topic weighting on the frontier (priority queue seeded by CSV metadata), capture referring context, and write shallow content fingerprints per URL. Replace in-memory hash set with persistent index (SQLite/Bloom filter) so restarts skip already-seen URLs without scanning the JSONL history.
-   - Observability: add console progress bars and structured counters (total/unique/keyword hits) emitted every N pages for standalone runs.
+6. **Faculty & RateMyProfessor data integration**
+   - Implement the cross-linking plan from README: canonical faculty roster ingestion, fuzzy matching against external sources, and opt-out/provenance logging.
 
-4. **Data architecture consolidation under `Scraping_project/`**
-   - Goal: eliminate ambiguity about where raw/processed/log data lives.
-   - Actions: migrate root-level `data/` and `logs/` into the project `data/` tree, update YAML configs + README, and add a bootstrap check that refuses to run if directories outside the project root still contain recent artefacts. Provide a migration script that copies legacy files once.
-   - Observability: add a startup audit log summarising active paths and last modified timestamps so operators can verify the job is using the intended storage.
-
-5. **Stage-scoped CLI + logging ergonomics**
-   - Goal: let operators run `--stage 1|2|3` with rich console output and without hidden dependencies on other stages.
-   - Actions: extend CLI to accept `--checkpoint`, `--resume`, and `--log-json` options; ensure `setup_logging` always attaches a console handler even when log_dir is missing. Provide per-stage log prefixes, and document run flows in README.
-   - Observability: introduce structured log events (JSONL or key=value) so tailing `pipeline.log` or stdout provides actionable status.
-
-6. **Model-ready JSONL schema and summarisation**
-   - Goal: produce enrichment artefacts that include concise summaries, content-type labels, and metadata required for downstream training with minimal manipulation.
-   - Actions: add summarisation step (extractive first, abstractive optional), capture page-level taxonomy labels (degree programs, research areas, services), attach provenance (source seed, discovery depth, validation outcomes) to each record, and version the schema (`schema_version` field). Document the schema in `docs/` and create fixtures that mirror the final format.
-   - Observability: add validators that check JSONL lines against the documented schema before batches are marked complete.
-
-7. **Test and monitoring expansion**
-   - Goal: continuously verify that each stage works in isolation, resumes cleanly, and emits the contractually-defined datasets.
-   - Actions: add unit tests for the new `URLCache` integration, queue checkpoint behaviour, and keyword-prioritised discovery ordering. Create snapshot tests for JSONL schemas, CLI smoke tests for `--stage` combinations, and integration tests that simulate crash/restart cycles. Wire in health metrics (counts, last processed timestamps) that can be surfaced via CLI or exported metrics.
-   - Observability: configure stage-level test fixtures to emit coverage reports and add monitoring hooks (e.g., simple Prometheus-compatible text files) for batch success/failure counts.
+7. **Expanded tests & monitoring**
+   - Add schema snapshot tests, queue stress tests, and health metrics (e.g., Prometheus scrapes or simple JSON stats) for each stage.
 
 ## Supporting Processes
 - **Operational playbooks:** document start/resume/abort flows per stage, including how to inspect checkpoints and how to rerun batches safely.

@@ -1,7 +1,9 @@
+from __future__ import annotations
+
 import asyncio
 import json
 from pathlib import Path
-from typing import List, Dict, Any, AsyncGenerator, Optional
+from typing import Any, AsyncGenerator
 from dataclasses import dataclass
 from datetime import datetime
 import logging
@@ -15,7 +17,7 @@ class BatchQueueItem:
     url: str
     url_hash: str
     source_stage: str
-    data: Dict[str, Any]
+    data: dict[str, Any]
     created_at: str = None
 
     def __post_init__(self):
@@ -38,7 +40,7 @@ class BatchQueue:
         # construction in tests does not raise "no current event loop" errors.
         self.batch_size = batch_size
         self.max_queue_size = max_queue_size
-        self._queue: Optional[asyncio.Queue] = None
+        self._queue: asyncio.Queue | None = None
         self._running = False
         self._producer_done = False
 
@@ -66,7 +68,7 @@ class BatchQueue:
 
         await queue.put(item)
 
-    async def get_batch(self) -> List[BatchQueueItem]:
+    async def get_batch(self) -> list[BatchQueueItem]:
         """Get a batch of items from the queue"""
         queue = self._get_queue()
         batch = []
@@ -108,7 +110,7 @@ class BatchQueue:
         """Check if producer is finished adding items"""
         return self._producer_done
 
-    async def get_batch_or_wait(self, timeout: float = 1.0) -> List[BatchQueueItem]:
+    async def get_batch_or_wait(self, timeout: float = 1.0) -> list[BatchQueueItem]:
         """Get a batch with timeout, handling producer completion"""
         batch = []
         queue = self._get_queue()
