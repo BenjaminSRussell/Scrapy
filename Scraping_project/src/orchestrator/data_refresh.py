@@ -348,12 +348,131 @@ class DataRefreshManager:
         validation_result = await self.refresh_validation_data(force_all=False)
         results['validation'] = validation_result
 
-        # TODO: Add enrichment data refresh if needed
-        # enrichment_result = await self.refresh_enrichment_data()
-        # results['enrichment'] = enrichment_result
+        # because apparently we needed this too
+        enrichment_result = await self.refresh_enrichment_data()
+        results['enrichment'] = enrichment_result
 
         logger.info("Full data refresh completed")
         return results
+
+    async def refresh_enrichment_data(self, force_all: bool = False) -> Dict[str, Any]:
+        """Refresh enrichment data because why wouldn't we need this"""
+        logger.info("Starting enrichment data refresh...")
+
+        if self.config.backup_existing:
+            self._backup_file(self.enrichment_file)
+
+        existing_data = self._load_existing_data(self.enrichment_file)
+        logger.info(f"Loaded {len(existing_data)} existing enrichment records")
+
+        # same drill, different file
+        if force_all:
+            urls_to_refresh = list(existing_data.keys())
+        else:
+            priorities = self._get_refresh_priorities(existing_data)
+            urls_to_refresh = [url for url, priority in priorities if priority > 0 or not existing_data[url].get('is_valid', True)]
+
+        logger.info(f"Refreshing {len(urls_to_refresh)} URLs out of {len(existing_data)}")
+
+        if not urls_to_refresh:
+            return {"message": "No enrichment URLs need refreshing", "refreshed": 0}
+
+        # just copy the validation logic because reinventing wheels is fun
+        results = []
+        semaphore = asyncio.Semaphore(self.config.max_concurrent)
+
+        async def refresh_single_enrichment(url: str) -> RefreshResult:
+            async with semaphore:
+                start_time = asyncio.get_event_loop().time()
+                old_data = existing_data.get(url, {})
+                old_content_length = old_data.get('content_length', 0)
+
+                try:
+                    request_result = await self.request_handler.fetch_with_learning(url)
+
+                    if request_result.success:
+                        new_content_length = self._get_content_length(request_result.content or "")
+                        changed = old_content_length != new_content_length
+
+                        # update enrichment data
+                        old_data.update({
+                            'url': url,
+                            'content_length': request_result.content_length,
+                            'response_time': request_result.total_time,
+                            'enriched_at': datetime.now().isoformat(),
+                            'is_valid': 200 <= (request_result.final_status_code or 0) < 400,
+                            'error_message': None
+                        })
+                        existing_data[url] = old_data
+
+                        return RefreshResult(
+                            url=url,
+                            old_content_length=old_content_length,
+                            new_content_length=new_content_length,
+                            changed=changed,
+                            success=True,
+                            error_message=None,
+                            refresh_timestamp=datetime.now().isoformat(),
+                            processing_time=asyncio.get_event_loop().time() - start_time
+                        )
+
+                    else:
+                        old_data.update({
+                            'is_valid': False,
+                            'error_message': f"Request failed: {request_result.attempts[-1].error_message if request_result.attempts else 'Unknown error'}",
+                            'enriched_at': datetime.now().isoformat()
+                        })
+                        existing_data[url] = old_data
+
+                        return RefreshResult(
+                            url=url,
+                            old_content_length=old_content_length,
+                            new_content_length=None,
+                            changed=False,
+                            success=False,
+                            error_message=f"Request failed: {request_result.attempts[-1].error_message if request_result.attempts else 'Unknown error'}",
+                            refresh_timestamp=datetime.now().isoformat(),
+                            processing_time=asyncio.get_event_loop().time() - start_time
+                        )
+
+                except Exception as e:
+                    logger.error(f"Error refreshing enrichment {url}: {e}")
+                    return RefreshResult(
+                        url=url,
+                        old_content_length=old_content_length,
+                        new_content_length=None,
+                        changed=False,
+                        success=False,
+                        error_message=str(e),
+                        refresh_timestamp=datetime.now().isoformat(),
+                        processing_time=asyncio.get_event_loop().time() - start_time
+                    )
+
+        tasks = [refresh_single_enrichment(url) for url in urls_to_refresh]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        valid_results = [r for r in results if isinstance(r, RefreshResult)]
+        successful_refreshes = [r for r in valid_results if r.success]
+        failed_refreshes = [r for r in valid_results if not r.success]
+        changed_items = [r for r in valid_results if r.changed]
+
+        logger.info(f"Enrichment refresh complete: {len(successful_refreshes)} successful, {len(failed_refreshes)} failed, {len(changed_items)} changed")
+
+        self._write_updated_data(self.enrichment_file, existing_data)
+
+        if self.config.create_incremental_files:
+            self._create_incremental_file(self.enrichment_file, changed_items, "enrichment")
+
+        self._save_refresh_history("enrichment", valid_results)
+
+        return {
+            "total_processed": len(valid_results),
+            "successful": len(successful_refreshes),
+            "failed": len(failed_refreshes),
+            "changed": len(changed_items),
+            "processing_time": sum(r.processing_time for r in valid_results),
+            "performance_summary": self.request_handler.get_performance_summary()
+        }
 
     def get_refresh_status(self) -> Dict[str, Any]:
         """Get current refresh status and recommendations"""

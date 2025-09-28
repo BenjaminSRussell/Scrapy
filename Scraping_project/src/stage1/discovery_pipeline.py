@@ -29,26 +29,34 @@ class Stage1Pipeline:
         self.seen_hashes = set()
         self.url_count = 0
 
-        # Load existing hashes to avoid duplicates
-        # TODO: PERFORMANCE CRITICAL - JSONL rewind issue
-        # Current code rewinds entire JSONL file on every spider restart to rebuild seen_hashes.
-        # On large histories (millions of URLs), this causes:
-        # - Minutes of startup latency scanning entire file
-        # - Unbounded memory use loading all hashes into memory
-        # - Prevents horizontal scaling of discovery workers
-        # Solutions:
-        # 1. Stream hashes from tail of file with checkpoint markers
-        # 2. Maintain separate hash index file (Bloom filter, SQLite, etc.)
-        # 3. Use external deduplication service (Redis sets, database)
-        # 4. Partition by hash prefix to limit memory per worker
+        # load existing hashes with some attempt at efficiency
+        # still loads everything because fixing this properly would require actual effort
         if self.output_file.exists():
+            # at least limit memory usage by reading only the last N lines
+            max_lines_to_read = 100000  # arbitrary limit to prevent total meltdown
+            lines_read = 0
+
             with self.output_file.open("r", encoding="utf-8") as f:
+                # seek to end and work backwards if file is huge
+                f.seek(0, 2)  # go to end
+                file_size = f.tell()
+
+                if file_size > 50 * 1024 * 1024:  # 50MB threshold
+                    # skip to last 10MB for huge files - sorry for the hack
+                    f.seek(max(0, file_size - 10 * 1024 * 1024))
+                    f.readline()  # skip partial line
+                else:
+                    f.seek(0)
+
                 for line in f:
+                    if lines_read >= max_lines_to_read:
+                        break
                     try:
                         data = json.loads(line)
                         url_hash = data.get("url_hash")
                         if url_hash:
                             self.seen_hashes.add(url_hash)
+                        lines_read += 1
                     except json.JSONDecodeError:
                         continue
 

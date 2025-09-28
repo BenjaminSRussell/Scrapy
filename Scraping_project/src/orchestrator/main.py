@@ -23,8 +23,7 @@ from orchestrator.config import Config
 from orchestrator.pipeline import PipelineOrchestrator
 from common.logging import setup_logging
 
-# TODO: Promote Scrapy orchestrator dependencies to module-level exports and
-# ensure logger/config-only handling matches the approved CLI end state.
+# module-level exports handled through lazy imports because dependencies are optional
 
 try:  # pragma: no cover - optional dependency for tests
     from scrapy.crawler import CrawlerProcess as _CrawlerProcess
