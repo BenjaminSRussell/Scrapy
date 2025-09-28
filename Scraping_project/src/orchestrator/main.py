@@ -98,14 +98,11 @@ async def run_stage2_validation(config: Config, orchestrator: PipelineOrchestrat
     logger.info("STAGE 2: VALIDATION")
     logger.info("=" * 60)
 
-    # CRITICAL FIX: Use concurrent population/consumption to avoid deadlock
-    # Previous code: await orchestrator.populate_stage2_queue()
-    # Problem: With >10k items, this blocks at maxsize=10000 because nothing consumes
-    # until populate_stage2_queue() returns, causing deadlock in real crawls
+    # fixed deadlock because queues with limits are fun
 
     validator = validator_class(config)
 
-    # Use the concurrent processing method that prevents deadlock
+    # use the version that actually works
     await orchestrator.run_concurrent_stage2_validation(validator)
 
 
@@ -120,7 +117,7 @@ async def run_stage3_enrichment(config: Config, orchestrator: PipelineOrchestrat
     logger.info("STAGE 3: ENRICHMENT")
     logger.info("=" * 60)
 
-    # Configure Stage 3 output settings
+    # set up stage 3 config
     stage3_config = config.get_stage3_config()
     scrapy_settings = {
         'ITEM_PIPELINES': {
@@ -134,7 +131,7 @@ async def run_stage3_enrichment(config: Config, orchestrator: PipelineOrchestrat
         'CONCURRENT_REQUESTS_PER_DOMAIN': 8,
     }
 
-    # Create enrichment spider instance
+    # make the spider
     enricher = spider_class()
 
     # Run concurrent queue population and enrichment processing
@@ -172,10 +169,10 @@ async def main():
     logger = logging.getLogger(__name__)
 
     try:
-        # Load configuration
+        # load config
         config = Config(args.env)
 
-        # Setup logging
+        # set up logging
         data_paths = config.get_data_paths()
         setup_logging(
             log_level=args.log_level,
@@ -191,14 +188,14 @@ async def main():
             print("Configuration:\n" + yaml.dump(config._config, default_flow_style=False))
             return 0
 
-        # Create necessary directories
+        # make folders
         for path in data_paths.values():
             path.mkdir(parents=True, exist_ok=True)
 
-        # Initialize pipeline orchestrator
+        # start orchestrator
         orchestrator = PipelineOrchestrator(config)
 
-        # Run specified stages
+        # run the stages
         if args.stage in ['1', 'all']:
             await run_stage1_discovery(config)
 

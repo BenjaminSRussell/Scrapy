@@ -171,7 +171,7 @@ class DataRefreshManager:
         if not urls_to_refresh:
             return {"message": "No URLs need refreshing", "refreshed": 0}
 
-        # Process in batches
+        # batch process because single requests are slow
         results = []
         semaphore = asyncio.Semaphore(self.config.max_concurrent)
 
@@ -182,14 +182,14 @@ class DataRefreshManager:
                 old_content_length = old_data.get('content_length', 0)
 
                 try:
-                    # Fetch with smart request handler
+                    # fetch with the fancy handler
                     request_result = await self.request_handler.fetch_with_learning(url)
 
                     if request_result.success:
                         new_content_length = self._get_content_length(request_result.content or "")
                         changed = old_content_length != new_content_length
 
-                        # Create updated validation result
+                        # build updated result
                         validation_result = ValidationResult(
                             url=url,
                             status_code=request_result.final_status_code,
@@ -202,7 +202,7 @@ class DataRefreshManager:
                             learned_optimizations=request_result.learned_optimizations
                         )
 
-                        # Update existing data
+                        # update the dict
                         existing_data[url] = asdict(validation_result)
 
                         return RefreshResult(
@@ -217,7 +217,7 @@ class DataRefreshManager:
                         )
 
                     else:
-                        # Update with failure information
+                        # mark it as broken
                         old_data.update({
                             'is_valid': False,
                             'error_message': f"Request failed: {request_result.attempts[-1].error_message if request_result.attempts else 'Unknown error'}",
@@ -250,7 +250,7 @@ class DataRefreshManager:
                         processing_time=asyncio.get_event_loop().time() - start_time
                     )
 
-        # Execute refreshes concurrently
+        # run everything at once
         tasks = [refresh_single_validation(url) for url in urls_to_refresh]
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
