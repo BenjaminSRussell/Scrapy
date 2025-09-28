@@ -17,7 +17,11 @@ Scraping_project/
 │   ├── stage2/                 # Async URL validator
 │   └── stage3/                 # Enrichment spider & pipeline
 ├── tests/                      # Unit, integration, regression suites
-└── requirements.txt            # Python dependencies (core + optional)
+├── migrate_data_paths.py       # Utility for migrating legacy data layouts
+├── requirements.txt            # Default deps (core stack, Python 3.12)
+├── requirements-dev.txt        # Dev/test extras
+├── requirements-py312.txt      # Alternate pin set for 3.12 audit
+└── PYTHON_312_*.md             # Migration audit and summary notes
 ```
 
 ## End-to-End Data Flow
