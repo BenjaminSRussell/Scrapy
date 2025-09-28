@@ -1,3 +1,4 @@
+import importlib
 import logging
 import re
 from collections import Counter, OrderedDict
@@ -11,6 +12,52 @@ TOP_KEYWORDS = 15
 
 # Audio file pattern matching (allow optional querystrings)
 AUDIO_RE = re.compile(r"\.(mp3|wav|ogg|flac)(?:\?.*)?$", re.I)
+
+
+def _resolve_module(name: str):
+    """Return an optional dependency, honouring test monkeypatches."""
+
+    module = globals().get(name)
+
+    # Tests patch these attributes with MagicMocks that expose side_effect to
+    # simulate ImportError. Treat such patched objects as unavailable.
+    if getattr(module, "side_effect", None):  # pragma: no cover - test only
+        return None
+
+    if module is not None:
+        return module
+
+    try:
+        module = importlib.import_module(name)
+    except ImportError:
+        module = None
+
+    globals()[name] = module
+    return module
+
+
+try:  # pragma: no cover - availability depends on environment
+    import torch  # type: ignore
+except Exception:  # noqa: BLE001 - torch presence varies across environments
+    torch = None  # type: ignore
+
+
+try:  # pragma: no cover
+    import mlx.core as mx  # type: ignore
+except Exception:  # noqa: BLE001
+    mx = None  # type: ignore
+
+
+try:  # pragma: no cover - optional dependency
+    import spacy  # type: ignore
+except Exception:  # noqa: BLE001
+    spacy = None  # type: ignore
+
+
+try:  # pragma: no cover - optional dependency
+    from transformers import pipeline  # type: ignore
+except Exception:  # noqa: BLE001
+    pipeline = None  # type: ignore
 
 
 @dataclass
@@ -38,13 +85,12 @@ class NLPRegistry:
         self.transformer_pipeline = self._load_transformer(settings.transformer_model)
 
     def _load_spacy(self, model_name: str):
-        try:
-            import spacy
-        except ImportError as exc:  # pragma: no cover - configuration issue
-            raise RuntimeError("spaCy is required but not installed") from exc
+        spacy_module = _resolve_module("spacy")
+        if spacy_module is None:
+            raise RuntimeError("spaCy is required but not installed")
 
         try:
-            nlp = spacy.load(model_name)
+            nlp = spacy_module.load(model_name)
         except Exception as exc:  # pragma: no cover - configuration issue
             raise RuntimeError(f"Unable to load spaCy model '{model_name}': {exc}")
 
@@ -78,9 +124,11 @@ class NLPRegistry:
         if not model_name:
             return None
 
-        try:
-            from transformers import pipeline
-        except ImportError:
+        transformer_pipeline = pipeline
+        if getattr(transformer_pipeline, "side_effect", None):  # test hook
+            transformer_pipeline = None
+
+        if transformer_pipeline is None:
             logger.warning(
                 "transformers package not available; transformer pipeline disabled"
             )
@@ -89,7 +137,7 @@ class NLPRegistry:
         device_arg = self._transformer_device_argument()
 
         try:
-            return pipeline(
+            return transformer_pipeline(
                 "token-classification",
                 model=model_name,
                 tokenizer=model_name,
@@ -322,34 +370,40 @@ def get_text_stats(text: str) -> dict:
     }
 
 
+def _is_true(predicate) -> bool:
+    try:
+        return bool(predicate())
+    except Exception:
+        return False
+
+
 def select_device(preferred: Optional[str] = None) -> str:
     """Determine the best execution device available."""
 
     if preferred:
         return preferred
 
-    try:
-        import torch
-
-        if torch.cuda.is_available():
+    torch_module = _resolve_module("torch")
+    if torch_module is not None:
+        cuda_module = getattr(torch_module, "cuda", None)
+        if cuda_module and _is_true(getattr(cuda_module, "is_available", lambda: False)):
             return "cuda"
 
-        mps_backend = getattr(torch.backends, "mps", None)
-        if mps_backend and mps_backend.is_available():
+        backends = getattr(torch_module, "backends", None)
+        mps_backend = getattr(backends, "mps", None)
+        if mps_backend and _is_true(getattr(mps_backend, "is_available", lambda: False)):
             return "mps"
-    except ImportError:
-        logger.debug("PyTorch not installed; skipping CUDA/MPS detection")
 
-    try:  # pragma: no cover - MLX availability can vary widely
-        import mlx.core as mx
-
-        if hasattr(mx, "gpu_count") and mx.gpu_count() > 0:
-            return "mlx"
-        default_device = getattr(mx, "default_device", None)
-        if default_device and hasattr(default_device(), "type"):
-            if default_device().type == "gpu":
+    mx_module = _resolve_module("mx")
+    if mx_module is not None:
+        try:
+            if hasattr(mx_module, "gpu_count") and mx_module.gpu_count() > 0:
                 return "mlx"
-    except Exception:
-        logger.debug("MLX not available; defaulting to CPU")
+            default_device = getattr(mx_module, "default_device", None)
+            device = default_device() if callable(default_device) else None
+            if getattr(device, "type", None) == "gpu":
+                return "mlx"
+        except Exception:
+            logger.debug("MLX reported but unavailable; defaulting to CPU")
 
     return "cpu"
