@@ -370,6 +370,144 @@ def get_text_stats(text: str) -> dict:
     }
 
 
+def calculate_content_quality_score(text: str, title: str = "") -> float:
+    """Calculate content quality score (0.0-1.0)."""
+
+    if not text:
+        return 0.0
+
+    score = 0.0
+
+    # Text length scoring (0-0.3 points)
+    text_length = len(text.strip())
+    if text_length > 1000:
+        score += 0.3
+    elif text_length > 500:
+        score += 0.2
+    elif text_length > 100:
+        score += 0.1
+
+    # Word variety scoring (0-0.2 points)
+    words = re.findall(r"[A-Za-z']+", text.lower())
+    unique_words = set(words)
+    if words:
+        variety_ratio = len(unique_words) / len(words)
+        score += min(0.2, variety_ratio * 0.4)
+
+    # Sentence structure (0-0.2 points)
+    sentences = [s for s in re.split(r"[.!?]+", text) if s.strip()]
+    if sentences:
+        avg_sentence_length = len(words) / len(sentences)
+        if 10 <= avg_sentence_length <= 25:  # Optimal range
+            score += 0.2
+        elif 5 <= avg_sentence_length < 10 or 25 < avg_sentence_length <= 35:
+            score += 0.1
+
+    # Academic indicators (0-0.2 points)
+    academic_terms = [
+        'research', 'study', 'analysis', 'department', 'faculty', 'course',
+        'program', 'degree', 'university', 'academic', 'education', 'learning'
+    ]
+    text_lower = text.lower()
+    academic_score = sum(1 for term in academic_terms if term in text_lower)
+    score += min(0.2, academic_score * 0.03)
+
+    # Title relevance (0-0.1 points)
+    if title and text:
+        title_words = set(re.findall(r"[A-Za-z']+", title.lower()))
+        text_words = set(re.findall(r"[A-Za-z']+", text.lower()))
+        if title_words:
+            overlap = len(title_words & text_words) / len(title_words)
+            score += min(0.1, overlap * 0.2)
+
+    return min(1.0, score)
+
+
+def detect_academic_relevance(text: str) -> float:
+    """Detect academic relevance score (0.0-1.0)."""
+
+    if not text:
+        return 0.0
+
+    text_lower = text.lower()
+
+    # Academic keywords with weights
+    academic_indicators = {
+        'research': 0.15,
+        'study': 0.10,
+        'analysis': 0.10,
+        'department': 0.12,
+        'faculty': 0.12,
+        'professor': 0.08,
+        'course': 0.08,
+        'curriculum': 0.08,
+        'degree': 0.10,
+        'graduate': 0.08,
+        'undergraduate': 0.06,
+        'academic': 0.10,
+        'scholarship': 0.08,
+        'dissertation': 0.10,
+        'publication': 0.08,
+        'conference': 0.06,
+        'journal': 0.08,
+        'university': 0.05,
+        'college': 0.05,
+        'education': 0.05
+    }
+
+    score = 0.0
+    for term, weight in academic_indicators.items():
+        if term in text_lower:
+            score += weight
+
+    # Bonus for multiple academic terms
+    term_count = sum(1 for term in academic_indicators.keys() if term in text_lower)
+    if term_count >= 5:
+        score += 0.1
+    elif term_count >= 3:
+        score += 0.05
+
+    return min(1.0, score)
+
+
+def identify_content_type(html: str, url: str = "") -> str:
+    """Identify content type from HTML and URL patterns."""
+
+    if not html:
+        return "unknown"
+
+    html_lower = html.lower()
+    url_lower = url.lower()
+
+    # Check URL patterns first
+    if any(pattern in url_lower for pattern in ['/admissions/', '/apply/', '/admission']):
+        return "admissions"
+    elif any(pattern in url_lower for pattern in ['/academics/', '/courses/', '/curriculum']):
+        return "academics"
+    elif any(pattern in url_lower for pattern in ['/research/', '/labs/', '/centers']):
+        return "research"
+    elif any(pattern in url_lower for pattern in ['/faculty/', '/staff/', '/directory']):
+        return "faculty"
+    elif any(pattern in url_lower for pattern in ['/news/', '/events/', '/announcements']):
+        return "news"
+    elif any(pattern in url_lower for pattern in ['/about/', '/history/', '/mission']):
+        return "about"
+
+    # Check HTML content patterns
+    if any(term in html_lower for term in ['application deadline', 'apply now', 'admission requirements']):
+        return "admissions"
+    elif any(term in html_lower for term in ['course description', 'syllabus', 'prerequisites']):
+        return "academics"
+    elif any(term in html_lower for term in ['research project', 'laboratory', 'publication']):
+        return "research"
+    elif any(term in html_lower for term in ['professor', 'dr.', 'ph.d.', 'faculty member']):
+        return "faculty"
+    elif any(term in html_lower for term in ['news', 'announcement', 'event', 'calendar']):
+        return "news"
+
+    return "general"
+
+
 def _is_true(predicate) -> bool:
     try:
         return bool(predicate())
