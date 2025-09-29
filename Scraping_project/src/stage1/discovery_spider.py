@@ -93,24 +93,19 @@ class DiscoverySpider(scrapy.Spider):
                             f"Sanitized seed URL at line {row_num}: {raw_url} -> {cleaned_url}"
                         )
 
-                    try:
-                        canonical_url = canonicalize_url_simple(cleaned_url)
+                    canonical_url = canonicalize_url_simple(cleaned_url)
 
-                        if canonical_url not in self.seen_urls:
-                            self.seen_urls.add(canonical_url)
-                            self.seed_count += 1
-                            yield scrapy.Request(
-                                url=canonical_url,
-                                callback=self.parse,
-                                meta={
-                                    'source_url': canonical_url,
-                                    'depth': 0,
-                                    'first_seen': datetime.now().isoformat()
-                                }
-                            )
-                    except Exception as e:
-                        logger.error(
-                            f"Error processing seed URL at line {row_num}: {cleaned_url} - {e}"
+                    if canonical_url not in self.seen_urls:
+                        self.seen_urls.add(canonical_url)
+                        self.seed_count += 1
+                        yield scrapy.Request(
+                            url=canonical_url,
+                            callback=self.parse,
+                            meta={
+                                'source_url': canonical_url,
+                                'depth': 0,
+                                'first_seen': datetime.now().isoformat()
+                            }
                         )
 
         # log stats so we know when our CSV gets outdated
@@ -135,39 +130,25 @@ class DiscoverySpider(scrapy.Spider):
             ]
         )
 
-        try:
-            links = le.extract_links(response)
-            self.total_urls_parsed += 1  # count stuff
+        links = le.extract_links(response)
+        self.total_urls_parsed += 1
 
-            # Track referring pages for summary
-            if source_url not in self.referring_pages:
-                self.referring_pages[source_url] = 0
-            self.referring_pages[source_url] += len(links)
+        if source_url not in self.referring_pages:
+            self.referring_pages[source_url] = 0
+        self.referring_pages[source_url] += len(links)
 
-            # spam logs every 100 pages because micromanagement
-            if self.total_urls_parsed % 100 == 0:
-                logger.info(f"Crawl Progress: {self.total_urls_parsed} pages parsed, "
-                               f"{self.unique_urls_found} unique URLs, "
-                               f"{self.duplicates_skipped} duplicates skipped")
+        if self.total_urls_parsed % 100 == 0:
+            logger.info(f"Progress: {self.total_urls_parsed} pages, {self.unique_urls_found} URLs, {self.duplicates_skipped} duplicates")
 
-            logger.debug(f"Extracted {len(links)} links from {response.url}")
+        logger.debug(f"Extracted {len(links)} links from {response.url}")
 
-            for link in links:
-                try:
-                    for output in self._process_candidate_url(
-                        link.url, source_url, current_depth, "html_link", 1.0
-                    ):
-                        yield output
-                except Exception as e:
-                    logger.error(f"Error processing link {link.url}: {e}")
+        for link in links:
+            for output in self._process_candidate_url(
+                link.url, source_url, current_depth, "html_link", 1.0
+            ):
+                yield output
 
-        except Exception as e:
-            logger.error(f"Error extracting links from {response.url}: {e}")
-
-        try:
-            yield from self._discover_dynamic_sources(response, current_depth)
-        except Exception as e:
-            logger.error(f"Error discovering dynamic URLs from {response.url}: {e}")
+        yield from self._discover_dynamic_sources(response, current_depth)
 
     def _discover_dynamic_sources(self, response: Response, current_depth: int) -> Iterator[DiscoveryItem]:
         """Identify dynamic/AJAX URLs and hidden API endpoints embedded in the page."""
@@ -273,11 +254,7 @@ class DiscoverySpider(scrapy.Spider):
     ) -> list:
         """process URLs and pretend we're being efficient"""
 
-        try:
-            canonical_url = canonicalize_url_simple(candidate_url)
-        except Exception as exc:
-            logger.debug(f"Failed to canonicalize candidate {candidate_url}: {exc}")
-            return []
+        canonical_url = canonicalize_url_simple(candidate_url)
 
         parsed = urlparse(canonical_url)
         if parsed.scheme not in {"http", "https"} or not parsed.netloc:
@@ -359,10 +336,7 @@ class DiscoverySpider(scrapy.Spider):
         if not stripped:
             return set()
 
-        try:
-            payload = json.loads(stripped)
-        except Exception:
-            return set()
+        payload = json.loads(stripped)
 
         return self._extract_urls_from_json(payload, response)
 
@@ -587,28 +561,25 @@ class DiscoverySpider(scrapy.Spider):
         # extract actual URLs
         for url_match in url_pattern.finditer(response.text):
             url = url_match.group(1)
-            try:
-                canonical_url = canonicalize_url_simple(url)
-                if canonical_url not in self.seen_urls:
-                    url_hash = hashlib.sha256(canonical_url.encode("utf-8")).hexdigest()
-                    if url_hash in self.url_hashes:
-                        continue
+            canonical_url = canonicalize_url_simple(url)
+            if canonical_url not in self.seen_urls:
+                url_hash = hashlib.sha256(canonical_url.encode("utf-8")).hexdigest()
+                if url_hash in self.url_hashes:
+                    continue
 
-                    self.seen_urls.add(canonical_url)
-                    self.url_hashes.add(url_hash)
-                    self.unique_urls_found += 1
+                self.seen_urls.add(canonical_url)
+                self.url_hashes.add(url_hash)
+                self.unique_urls_found += 1
 
-                    yield DiscoveryItem(
-                        source_url=source_url,
-                        discovered_url=canonical_url,
-                        first_seen=datetime.now().isoformat(),
-                        url_hash=url_hash,
-                        discovery_depth=0,
-                        discovery_source="sitemap",
-                        confidence=0.95
-                    )
-            except Exception as e:
-                logger.debug(f"Failed to process sitemap URL {url}: {e}")
+                yield DiscoveryItem(
+                    source_url=source_url,
+                    discovered_url=canonical_url,
+                    first_seen=datetime.now().isoformat(),
+                    url_hash=url_hash,
+                    discovery_depth=0,
+                    discovery_source="sitemap",
+                    confidence=0.95
+                )
 
     def _generate_pagination_urls(self, base_url: str) -> set:
         """Generate common pagination patterns for API endpoints"""
