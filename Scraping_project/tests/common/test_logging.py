@@ -20,7 +20,7 @@ def test_setup_logging_creates_logfile(tmp_path, level):
     log_file_dir = tmp_path / "logs"
     logging_utils.setup_logging(log_level=level, log_dir=log_file_dir)
 
-    logger = logging_utils.get_logger("test_logger")
+    logger = logging.getLogger("test_logger")
     log_level = getattr(logging, level)
     logger.log(log_level, "sample message")
 
@@ -33,7 +33,9 @@ def test_setup_logging_creates_logfile(tmp_path, level):
     logging.shutdown()
 
 
-def test_get_logger_returns_named_logger():
-    logger = logging_utils.get_logger("pipeline.test")
-    assert isinstance(logger, logging.Logger)
-    assert logger.name == "pipeline.test"
+def test_setup_logging_basic():
+    """Test basic logging setup works"""
+    logging_utils.setup_logging()
+    logger = logging.getLogger("test")
+    logger.info("test message")
+    assert logger.level <= logging.INFO

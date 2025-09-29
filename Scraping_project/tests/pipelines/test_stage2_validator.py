@@ -7,7 +7,6 @@ import json
 from dataclasses import asdict
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, Dict, List, Optional
 
 import pytest
 
@@ -21,14 +20,14 @@ class DummyConfig:
     def __init__(self, output_file: Path):
         self.output_file = output_file
 
-    def get_stage2_config(self) -> Dict[str, Any]:
+    def get_stage2_config(self):
         return {
             "max_workers": 4,
             "timeout": 2,
             "output_file": str(self.output_file),
         }
 
-    def get(self, *keys: str, default: Any = None) -> Any:
+    def get(self, *keys: str, default=None):
         if keys == ("scrapy", "user_agent"):
             return "TestValidator/1.0"
         return default
@@ -41,7 +40,7 @@ class StubResponse:
         self,
         *,
         status: int = 200,
-        headers: Optional[Dict[str, str]] = None,
+        headers: dict[str, str] | None = None,
         body: bytes | None = None,
         url: str = "https://uconn.edu/test",
     ):
@@ -71,8 +70,8 @@ class StubSession:
     ):
         self.head_response = head_response
         self.get_response = get_response or head_response
-        self.head_calls: List[str] = []
-        self.get_calls: List[str] = []
+        self.head_calls: list[str] = []
+        self.get_calls: list[str] = []
 
     async def __aenter__(self) -> "StubSession":
         return self
@@ -189,8 +188,8 @@ def test_validate_batch_writes_results(tmp_path, monkeypatch):
         assert line["url_hash"] == exp["url_hash"]
 
 
-def _read_jsonl(path: Path) -> List[Dict[str, Any]]:
-    content: List[Dict[str, Any]] = []
+def _read_jsonl(path: Path) -> list[dict[str, any]]:
+    content: list[dict[str, any]] = []
     with path.open("r", encoding="utf-8") as handle:
         for line in handle:
             content.append(json.loads(line))

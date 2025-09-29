@@ -6,7 +6,6 @@ import json
 from dataclasses import asdict
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Iterable, List, Dict, Any, Optional
 
 from scrapy.http import Request, HtmlResponse
 
@@ -20,7 +19,7 @@ def iso_timestamp(offset: int = 0) -> str:
     return (ISO_START + timedelta(seconds=offset)).isoformat()
 
 
-def build_discovery_item(**overrides: Any) -> DiscoveryItem:
+def build_discovery_item(**overrides) -> DiscoveryItem:
     """Create a DiscoveryItem with sensible defaults."""
     defaults = {
         "source_url": "https://uconn.edu/source",
@@ -33,7 +32,7 @@ def build_discovery_item(**overrides: Any) -> DiscoveryItem:
     return DiscoveryItem(**defaults)
 
 
-def build_validation_result(**overrides: Any) -> ValidationResult:
+def build_validation_result(**overrides) -> ValidationResult:
     """Create a ValidationResult with defaults."""
     defaults = {
         "url": "https://uconn.edu/page",
@@ -50,7 +49,7 @@ def build_validation_result(**overrides: Any) -> ValidationResult:
     return ValidationResult(**defaults)
 
 
-def build_enrichment_item(**overrides: Any) -> EnrichmentItem:
+def build_enrichment_item(**overrides) -> EnrichmentItem:
     """Create an EnrichmentItem for enrichment pipeline tests."""
     defaults = {
         "url": "https://uconn.edu/enriched",
@@ -76,8 +75,8 @@ def html_response(
     html: str,
     *,
     depth: int = 0,
-    first_seen: Optional[str] = None,
-    request_kwargs: Optional[Dict[str, Any]] = None,
+    first_seen: str | None = None,
+    request_kwargs: dict[str, any] | None = None,
 ) -> HtmlResponse:
     """Return HtmlResponse with Request carrying required meta data."""
     meta = {
@@ -89,7 +88,7 @@ def html_response(
     return HtmlResponse(url=url, body=html.encode("utf-8"), encoding="utf-8", request=request)
 
 
-def write_jsonl(path: Path, data: Iterable[Dict[str, Any]]) -> None:
+def write_jsonl(path: Path, data) -> None:
     """Helper to write iterable of dicts to JSONL for fixture setup."""
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as fp:
@@ -97,6 +96,6 @@ def write_jsonl(path: Path, data: Iterable[Dict[str, Any]]) -> None:
             fp.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
 
-def discovery_items_to_dicts(items: Iterable[DiscoveryItem]) -> List[Dict[str, Any]]:
+def discovery_items_to_dicts(items) -> list[dict[str, any]]:
     return [asdict(item) for item in items]
 

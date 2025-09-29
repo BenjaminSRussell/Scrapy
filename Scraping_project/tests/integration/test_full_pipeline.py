@@ -8,7 +8,6 @@ import tempfile
 import time
 from pathlib import Path
 from datetime import datetime
-from typing import Dict, Any
 
 import pytest
 
@@ -38,7 +37,7 @@ def test_full_pipeline_end_to_end(tmp_path):
     for i, url in enumerate(test_urls):
         # Simulate discovery item creation
         import hashlib
-        url_hash = hashlib.sha1(url.encode()).hexdigest()
+        url_hash = hashlib.sha256(url.encode()).hexdigest()
 
         item = {
             "source_url": "https://uconn.edu/",
@@ -172,7 +171,7 @@ def test_pipeline_memory_efficiency():
     for i in range(10000):
         import hashlib
         url = f"https://uconn.edu/test-{i}"
-        url_hash = hashlib.sha1(url.encode()).hexdigest()
+        url_hash = hashlib.sha256(url.encode()).hexdigest()
         url_hashes.add(url_hash)
 
     memory_after_hashes = process.memory_info().rss
@@ -183,7 +182,7 @@ def test_pipeline_memory_efficiency():
         url = f"https://uconn.edu/page-{i}?param={i}"
         # Simulate canonicalization
         canonical = url.lower().replace("?param=" + str(i), "")
-        hash_val = hashlib.sha1(canonical.encode()).hexdigest()
+        hash_val = hashlib.sha256(canonical.encode()).hexdigest()
         processed_urls.append((canonical, hash_val))
 
     final_memory = process.memory_info().rss
@@ -228,7 +227,7 @@ def test_pipeline_scalability_simulation():
 
             # Stage 1: Discovery (hash generation)
             import hashlib
-            url_hash = hashlib.sha1(url.encode()).hexdigest()
+            url_hash = hashlib.sha256(url.encode()).hexdigest()
 
             # Stage 2: Validation (mock HTTP check)
             is_valid = i % 10 != 0  # 90% success rate
@@ -289,36 +288,31 @@ def test_pipeline_endurance():
     for iteration in range(iterations):
         iteration_start = time.perf_counter()
 
-        try:
-            # Simulate one complete pipeline cycle
-            urls = [f"https://uconn.edu/endurance-{iteration}-{i}" for i in range(20)]
+        # Simulate one complete pipeline cycle
+        urls = [f"https://uconn.edu/endurance-{iteration}-{i}" for i in range(20)]
 
-            # Process URLs
-            processed = 0
-            for url in urls:
-                import hashlib
-                # Discovery
-                url_hash = hashlib.sha1(url.encode()).hexdigest()
+        # Process URLs
+        processed = 0
+        for url in urls:
+            import hashlib
+            # Discovery
+            url_hash = hashlib.sha256(url.encode()).hexdigest()
 
-                # Validation (simulate occasional failures)
-                if hash(url) % 20 != 0:  # 95% success rate
-                    # Enrichment
-                    content = f"Content for {url}"
-                    processed += 1
+            # Validation (simulate occasional failures)
+            if hash(url) % 20 != 0:  # 95% success rate
+                # Enrichment
+                content = f"Content for {url}"
+                processed += 1
 
-            iteration_duration = time.perf_counter() - iteration_start
-            throughput = processed / iteration_duration
+        iteration_duration = time.perf_counter() - iteration_start
+        throughput = processed / iteration_duration
 
-            performance_samples.append({
-                "iteration": iteration,
-                "duration": iteration_duration,
-                "processed": processed,
-                "throughput": throughput
-            })
-
-        except Exception as e:
-            error_count += 1
-            print(f"Error in iteration {iteration}: {e}")
+        performance_samples.append({
+            "iteration": iteration,
+            "duration": iteration_duration,
+            "processed": processed,
+            "throughput": throughput
+        })
 
     total_duration = time.perf_counter() - start_time
 
@@ -335,7 +329,6 @@ def test_pipeline_endurance():
     print(f"   ⏱️  Total Duration: {total_duration:.1f}s")
 
     # Stability assertions
-    assert error_count == 0, f"Pipeline had {error_count} errors during endurance test"
     assert stability_coefficient < 20, f"Performance too unstable: {stability_coefficient:.1f}% variance"
     assert avg_throughput > 100, f"Average throughput too low: {avg_throughput:.0f} URLs/s"
 

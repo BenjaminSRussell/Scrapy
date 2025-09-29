@@ -34,8 +34,11 @@ Scraping_project/
 │   └── orchestrator/    # Pipeline coordination
 ├── tools/               # Utility scripts
 ├── tests/               # Test suite
+│   └── data/            # Test data files
+├── docs/                # Documentation
 ├── config/              # Configuration files
 └── data/                # Input/output data
+    └── samples/         # Sample data
 ```
 
 ## Configuration
@@ -59,7 +62,16 @@ python main.py --stage all
 ## Testing
 
 ```bash
-python -m pytest
+# Run all tests
+python tools/run_tests.py
+
+# Run specific test types
+python tools/run_tests.py smoke      # Quick validation
+python tools/run_tests.py unit       # Unit tests only
+python tools/run_tests.py integration # Integration tests only
+
+# Or use pytest directly
+python -m pytest tests/
 ```
 
 ## Branching and Development

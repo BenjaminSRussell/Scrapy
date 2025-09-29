@@ -10,7 +10,7 @@ from unittest.mock import Mock, patch, mock_open
 
 from stage1.discovery_spider import DiscoverySpider
 from common.schemas import DiscoveryItem
-from samples import html_response, build_discovery_item
+from data.samples import html_response, build_discovery_item
 
 
 def test_discovery_spider_initialization():
@@ -184,7 +184,7 @@ def test_discovery_spider_deduplicates_urls():
 
 def test_discovery_spider_start_requests_real_seed_file():
     """Ensure start_requests processes the real seed CSV without modification."""
-    seed_path = Path(__file__).parent.parent / "data" / "raw" / "uconn_urls.csv"
+    seed_path = Path(__file__).parent.parent.parent / "data" / "raw" / "uconn_urls.csv"
     if not seed_path.exists():
         pytest.skip("Real seed CSV not available")
 
