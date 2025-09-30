@@ -1,28 +1,31 @@
 1️⃣ Orchestrator & Entry-Point Stability
 
-ORG-001 – Stage 3 Orchestrator NameError — src/orchestrator/pipeline.py
+ORG-001 – ✅ **FIXED**: Stage 3 Orchestrator NameError — Passed the correct validation output file path to `run_stage3_enrichment` in `src/orchestrator/pipeline.py`, resolving the `NameError`.
 
-ORG-002 – Brittle Stage-Level Error Handling — src/stage2/validator.py, Scrapy Spiders
+ORG-002 – ✅ **FIXED**: Brittle Stage-Level Error Handling — Wrapped the core logic in `src/stage2/validator.py` with a `try...except` block to catch and log critical errors, preventing silent crashes.
 
-ORG-003 – Unsafe Subprocess CWD — src/orchestrator/pipeline.py
+ORG-003 – ✅ **FIXED**: Unsafe Subprocess CWD — Removed the `cwd` parameter from the `asyncio.create_subprocess_exec` call in `src/orchestrator/pipeline.py` to prevent path-related side effects.
 
-ORG-004 – Unclean Scrapy Shutdown — src/orchestrator/main.py
+ORG-004 – ✅ **FIXED**: Unclean Scrapy Shutdown — Added a `try...finally` block in `src/orchestrator/main.py` to ensure the Scrapy subprocess is terminated if the main orchestrator is cancelled.
 
 ORG-005 – Blocking Scrapy Process in Async Orchestrator — src/orchestrator/main.py
+ORG-005 – ✅ **FIXED**: Blocking Scrapy Process in Async Orchestrator — Replaced the blocking `process.wait()` in `pipeline.py` with non-blocking, concurrent log streaming, keeping the event loop responsive.
 
 ORG-006 – Missing Graceful Shutdown Signal Handling — src/orchestrator/main.py (inferred)
+ORG-006 – ✅ **FIXED**: Missing Graceful Shutdown Signal Handling — Added `SIGINT` and `SIGTERM` signal handlers in `orchestrator/main.py` to enable graceful shutdown and task cancellation.
 
 ORG-007 – Lack of Formal Packaging — README.md
+ORG-007 – ✅ **FIXED**: Lack of Formal Packaging — Created a `pyproject.toml` file to establish modern Python packaging standards and centralize tool configuration like pytest.
 
 2️⃣ Data Flow & Memory Management
 
 ORG-008 – Incomplete Dynamic Discovery Throttling — src/stage1/discovery_spider.py
-
+ORG-008 – ✅ **FIXED**: Incomplete Dynamic Discovery Throttling — Added a `MAX_DYNAMIC_URLS_PER_PAGE` constant in `discovery_spider.py` to limit URL generation from noisy pages and prevent overwhelming the crawl.
 ORG-009 – Hardcoded Discovery Heuristics — src/stage1/discovery_spider.py
 
 ORG-010 – Inflexible Seed Input — src/stage1/discovery_spider.py
 
-ORG-011 – Lack of Persistent Deduplication — README.md, docs/stage1_master_plan.md
+ORG-011 – ✅ **FIXED**: Lack of Persistent Deduplication — Replaced the in-memory `seen_urls` set in `discovery_spider.py` with the SQLite-backed `URLCache` for persistent, memory-efficient deduplication across runs.
 
 ORG-012 – Missing data/temp Directory Cleanup — docs/code_reference.md
 
@@ -32,15 +35,15 @@ ORG-014 – Lack of Idempotency Guarantees — docs/stage1_master_plan.md
 
 ORG-015 – Lack of Detail on BatchQueue Deadlock Prevention — docs/code_reference.md
 
-ORG-039 – Inefficient Full Read of JSONL for Checkpointing — src/stage2/validator.py
+ORG-039 – ✅ **FIXED**: Inefficient Full Read of JSONL for Checkpointing — The validator in `src/stage2/validator.py` now seeks to the end of the output file to find the last processed URL, avoiding a full re-read on resume.
 
 ORG-040 – No Backpressure Handling for Queues — src/orchestrator/pipeline.py
 
-ORG-041 – Data Loss on Unclean Shutdown — All stages
+ORG-041 – ✅ **FIXED**: Data Loss on Unclean Shutdown — Implemented streaming writes in Stage 2 and persistent `URLCache` in Stage 1 to ensure data is saved progressively, minimizing loss on interruption.
 
 ORG-042 – In-Memory URL Canonicalization Cache Is Not Bounded — src/stage1/discovery_spider.py
 
-ORG-043 – Stage 2 Validator Does Not Stream Output — src/stage2/validator.py
+ORG-043 – ✅ **FIXED**: Stage 2 Validator Does Not Stream Output — Modified `src/stage2/validator.py` to open the output file in append mode and write results as they are completed, rather than all at once at the end.
 
 3️⃣ Configuration & Schema
 
@@ -128,9 +131,9 @@ ORG-063 – Hardcoded AJAX/API Endpoint Keywords — src/stage1/discovery_spider
 
 ORG-033 – Missing __init__.py in data/samples — docs/pipeline_improvement_plan.md
 
-ORG-064 – Inconsistent Commenting Style and Quality — All modules
+ORG-064 – Inconsistent Commenting Style and Quality — All modules_
 
-ORG-065 – Lack of a `main` Guard in Scripts — src/stage2/validator.py
+ORG-065 – ✅ **FIXED**: Lack of a `main` Guard in Scripts — Wrapped the `asyncio.run(main())` call in `src/stage2/validator.py` with an `if __name__ == "__main__":` block to prevent execution on import. This was already fixed.
 
 ORG-066 – Missing Docstrings for Public Functions/Classes — Multiple modules
 
