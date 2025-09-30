@@ -18,11 +18,11 @@ from pathlib import Path
 from typing import Any
 from dataclasses import dataclass, asdict
 
-from common.request_infrastructure import SmartRequestHandler, AdaptiveRequestConfig
-from common.schemas import DiscoveryItem, ValidationResult, EnrichmentItem
+from src.common.request_infrastructure import SmartRequestHandler, AdaptiveRequestConfig
+from src.common.schemas import DiscoveryItem, ValidationResult, EnrichmentItem
 
 try:  # pragma: no cover - compatibility shim for legacy tests
-    from common.nlp import _DummyNLPRegistry  # type: ignore
+    from src.common.nlp import _DummyNLPRegistry  # type: ignore
 except ImportError:  # pragma: no cover - fallback for minimal envs
     class _DummyNLPRegistry:  # noqa: D401 - simple stub used in tests
         """Minimal stand-in used by comprehensive tests."""

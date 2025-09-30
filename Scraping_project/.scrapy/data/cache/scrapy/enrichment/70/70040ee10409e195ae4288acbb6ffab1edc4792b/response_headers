@@ -1,0 +1,13 @@
+Content-Length: 24609
+Server: nginx
+Date: Tue, 30 Sep 2025 18:05:31 GMT
+Content-Type: text/html; charset=UTF-8
+Vary: X-Forwarded-Proto,Accept-Encoding,Cookie
+Last-Modified: Tue, 30 Sep 2025 17:42:03 GMT
+Etag: "6021-64008451cba71"
+Referrer-Policy: no-referrer-when-downgrade
+Content-Encoding: gzip
+X-Varnish: 22194959 22743290
+Age: 884
+Via: 1.1 varnish (Varnish/6.6)
+Accept-Ranges: bytes

@@ -9,8 +9,8 @@ from pathlib import Path
 from typing import List, Dict, Any, Optional
 from dataclasses import asdict
 
-from orchestrator.pipeline import BatchQueueItem
-from common.schemas import ValidationResult
+from src.orchestrator.pipeline import BatchQueueItem
+from src.common.schemas import ValidationResult
 
 logger = logging.getLogger(__name__)
 

@@ -7,9 +7,9 @@ from urllib.parse import urlparse
 import scrapy
 from scrapy.http import Response
 
-from common.schemas import EnrichmentItem
-from common.nlp import extract_entities_and_keywords, extract_content_tags, has_audio_links
-from common.urls import canonicalize_url_simple
+from src.common.schemas import EnrichmentItem
+from src.common.nlp import extract_entities_and_keywords, extract_content_tags, has_audio_links
+from src.common.urls import canonicalize_url_simple
 
 
 class EnrichmentSpider(scrapy.Spider):

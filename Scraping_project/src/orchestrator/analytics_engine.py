@@ -19,7 +19,7 @@ from collections import defaultdict, Counter
 from dataclasses import dataclass, asdict
 import statistics
 
-from common.request_infrastructure import RequestOutcome, RequestAttempt
+from src.common.request_infrastructure import RequestOutcome, RequestAttempt
 
 logger = logging.getLogger(__name__)
 

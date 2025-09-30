@@ -20,17 +20,17 @@ from pathlib import Path
 src_dir = Path(__file__).parent.parent
 sys.path.insert(0, str(src_dir))
 
-from orchestrator.config import Config
-from orchestrator.pipeline import PipelineOrchestrator
-from common.logging import setup_logging
+from src.orchestrator.config import Config
+from src.orchestrator.pipeline import PipelineOrchestrator
+from src.common.logging import setup_logging
 
 # module-level exports handled through lazy imports because dependencies are optional
 # and we love making things complicated
 
 # Import all the things we actually need
 from scrapy.crawler import CrawlerProcess
-from stage2.validator import URLValidator
-from stage3.enrichment_spider import EnrichmentSpider
+from src.stage2.validator import URLValidator
+from src.stage3.enrichment_spider import EnrichmentSpider
 
 
 async def run_stage1_discovery(config: Config):
@@ -42,7 +42,7 @@ async def run_stage1_discovery(config: Config):
 
 
     from scrapy.utils.project import get_project_settings
-    from stage1.discovery_spider import DiscoverySpider
+    from src.stage1.discovery_spider import DiscoverySpider
 
     # Get scrapy settings because configuration is always fun
     settings = get_project_settings()
@@ -53,7 +53,7 @@ async def run_stage1_discovery(config: Config):
     settings.update({
         'STAGE1_OUTPUT_FILE': stage1_config['output_file'],
         'ITEM_PIPELINES': {
-            'stage1.discovery_pipeline.Stage1Pipeline': 300,  # Magic number for pipeline priority
+            'src.stage1.discovery_pipeline.Stage1Pipeline': 300,  # Magic number for pipeline priority
         },
         'TELNETCONSOLE_ENABLED': False,  # Because nobody wants telnet in 2024
     })

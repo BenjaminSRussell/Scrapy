@@ -12,8 +12,8 @@ import scrapy
 from scrapy.linkextractors import LinkExtractor
 from scrapy.http import Response
 
-from common.schemas import DiscoveryItem
-from common.urls import canonicalize_url_simple
+from src.common.schemas import DiscoveryItem
+from src.common.urls import canonicalize_url_simple
 
 
 logger = logging.getLogger(__name__)  # Because we need to know what went wrong
