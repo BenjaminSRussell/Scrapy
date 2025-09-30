@@ -1,0 +1,14 @@
+Content-Length: 29628
+Server: nginx/1.20.1
+Date: Tue, 30 Sep 2025 18:58:15 GMT
+Content-Type: text/html; charset=UTF-8
+X-Powered-By: PHP/8.2.28
+Last-Modified: Tue, 30 Sep 2025 18:35:33 GMT
+Pragma: public
+Cache-Control: public, must-revalidate, proxy-revalidate
+Content-Encoding: gzip
+Vary: Accept-Encoding
+X-Varnish: 115998766 94070093
+Age: 1265
+Via: 1.1 varnish (Varnish/6.6)
+Accept-Ranges: bytes

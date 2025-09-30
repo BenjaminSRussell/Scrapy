@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 @dataclass
 class DiscoveryItem:
-    """Item returned by Stage 1 Discovery Spider"""
+    """Item returned by Stage 1 Discovery Spider with schema versioning"""
     source_url: str
     discovered_url: str
     first_seen: str
@@ -13,10 +13,14 @@ class DiscoveryItem:
     discovery_source: str = "html_link"  # html link by default unless specified
     confidence: float = 1.0  # 0.0-1.0 confidence score for dynamic discoveries
 
+    # Schema versioning and provenance
+    schema_version: str = "2.0"
+    discovery_metadata: dict[str, str] | None = None  # Additional discovery context
+
 
 @dataclass
 class ValidationResult:
-    """Result from Stage 2 URL Validation"""
+    """Result from Stage 2 URL Validation with enhanced metadata"""
     url: str
     url_hash: str  # critical for stage linkage - without this everything breaks
     status_code: int
@@ -28,10 +32,17 @@ class ValidationResult:
     validated_at: str
     learned_optimizations: list[str] | None = None
 
+    # Schema versioning and enhanced validation metadata
+    schema_version: str = "2.0"
+    validation_method: str | None = None  # HEAD, GET, etc.
+    redirect_chain: list[str] | None = None  # Track URL redirects
+    server_headers: dict[str, str] | None = None  # Relevant server headers
+    network_metadata: dict[str, str] | None = None  # DNS resolution time, etc.
+
 
 @dataclass
 class EnrichmentItem:
-    """Item returned by Stage 3 Enrichment Spider"""
+    """Item returned by Stage 3 Enrichment Spider with model-ready enhancements"""
     url: str
     url_hash: str
     title: str
@@ -45,6 +56,19 @@ class EnrichmentItem:
     status_code: int
     content_type: str
     enriched_at: str
+
+    # Model-ready enhancements
+    schema_version: str = "2.0"
+    content_summary: str | None = None  # AI-generated summary for training data
+    content_embedding: list[float] | None = None  # Vector embedding for similarity search
+    academic_relevance_score: float | None = None  # 0.0-1.0 relevance to academic content
+    content_quality_score: float | None = None  # 0.0-1.0 overall content quality
+
+    # Provenance and lineage tracking
+    processing_pipeline_version: str | None = None
+    source_discovery_method: str | None = None  # How this URL was discovered
+    processing_metadata: dict[str, str] | None = None  # Processing timestamps, versions, etc.
+    data_lineage: list[str] | None = None  # Chain of processing steps
 
 
 @dataclass
@@ -88,3 +112,69 @@ class PipelineStats:
     output_count: int = 0
     error_count: int = 0
     duration_seconds: float | None = None
+
+
+class SchemaRegistry:
+    """Registry for managing schema versions and compatibility"""
+
+    # Current schema versions
+    CURRENT_VERSIONS = {
+        "DiscoveryItem": "2.0",
+        "ValidationResult": "2.0",
+        "EnrichmentItem": "2.0",
+        "URLRecord": "1.0",
+        "PipelineStats": "1.0"
+    }
+
+    # Schema compatibility matrix - which versions can be read by current code
+    COMPATIBLE_VERSIONS = {
+        "DiscoveryItem": ["1.0", "2.0"],
+        "ValidationResult": ["1.0", "2.0"],
+        "EnrichmentItem": ["1.0", "2.0"],
+        "URLRecord": ["1.0"],
+        "PipelineStats": ["1.0"]
+    }
+
+    @classmethod
+    def is_compatible(cls, schema_name: str, version: str) -> bool:
+        """Check if a schema version is compatible with current code"""
+        return version in cls.COMPATIBLE_VERSIONS.get(schema_name, [])
+
+    @classmethod
+    def get_current_version(cls, schema_name: str) -> str:
+        """Get the current version for a schema"""
+        return cls.CURRENT_VERSIONS.get(schema_name, "1.0")
+
+    @classmethod
+    def upgrade_discovery_item(cls, data: dict[str, any]) -> dict[str, any]:
+        """Upgrade DiscoveryItem from v1.0 to v2.0"""
+        if data.get("schema_version", "1.0") == "1.0":
+            data["schema_version"] = "2.0"
+            data["discovery_metadata"] = None
+        return data
+
+    @classmethod
+    def upgrade_validation_result(cls, data: dict[str, any]) -> dict[str, any]:
+        """Upgrade ValidationResult from v1.0 to v2.0"""
+        if data.get("schema_version", "1.0") == "1.0":
+            data["schema_version"] = "2.0"
+            data["validation_method"] = None
+            data["redirect_chain"] = None
+            data["server_headers"] = None
+            data["network_metadata"] = None
+        return data
+
+    @classmethod
+    def upgrade_enrichment_item(cls, data: dict[str, any]) -> dict[str, any]:
+        """Upgrade EnrichmentItem from v1.0 to v2.0"""
+        if data.get("schema_version", "1.0") == "1.0":
+            data["schema_version"] = "2.0"
+            data["content_summary"] = None
+            data["content_embedding"] = None
+            data["academic_relevance_score"] = None
+            data["content_quality_score"] = None
+            data["processing_pipeline_version"] = None
+            data["source_discovery_method"] = None
+            data["processing_metadata"] = None
+            data["data_lineage"] = None
+        return data

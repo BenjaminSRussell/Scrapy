@@ -17137,3 +17137,37 @@ asyncio.exceptions.CancelledError
 2025-09-30 14:54:33,553 [INFO] Queued 3000 items for Stage 2
 2025-09-30 14:54:33,554 [INFO] Finished queuing 3515 items for Stage 2
 2025-09-30 14:54:33,554 [INFO] Validating batch of 16 URLs
+2025-09-30 14:56:14,289 [INFO] Starting pipeline orchestrator
+2025-09-30 14:56:14,295 [INFO] Environment: development
+2025-09-30 14:56:14,295 [INFO] Stage(s): 3
+2025-09-30 14:56:14,295 [INFO] ============================================================
+2025-09-30 14:56:14,295 [INFO] STAGE 3: ENRICHMENT
+2025-09-30 14:56:14,295 [INFO] ============================================================
+2025-09-30 14:56:14,295 [INFO] Enrichment spider initialized with 0 predefined tags
+2025-09-30 14:56:14,295 [INFO] Enrichment spider will process 0 URLs from orchestrator
+2025-09-30 14:56:14,295 [INFO] Starting concurrent Stage 3 enrichment
+2025-09-30 14:56:14,295 [INFO] Populating Stage 3 queue from Stage 2 results
+2025-09-30 14:56:14,295 [INFO] Loading Stage 2 results from data/processed/stage02/validated_urls.jsonl
+2025-09-30 14:56:14,296 [INFO] Finished queuing 31 items for Stage 3
+2025-09-30 14:56:16,297 [INFO] Finished collecting 31 URLs for enrichment
+2025-09-30 14:56:16,298 [INFO] Running Scrapy command: scrapy crawl enrichment -s STAGE3_OUTPUT_FILE=data/processed/stage03/enriched_data.jsonl -s LOG_LEVEL=INFO -a urls_file=/var/folders/54/jf5k53pd14v_vc6k92qqrk_00000gn/T/tmp5ddtp64r.json
+2025-09-30 14:57:27,717 [INFO] Scrapy enrichment completed successfully
+2025-09-30 14:57:27,718 [INFO] Stage 3 enrichment completed
+2025-09-30 14:57:27,718 [INFO] Pipeline orchestrator completed successfully
+2025-09-30 14:58:10,278 [INFO] Starting pipeline orchestrator
+2025-09-30 14:58:10,282 [INFO] Environment: development
+2025-09-30 14:58:10,282 [INFO] Stage(s): 3
+2025-09-30 14:58:10,282 [INFO] ============================================================
+2025-09-30 14:58:10,282 [INFO] STAGE 3: ENRICHMENT
+2025-09-30 14:58:10,282 [INFO] ============================================================
+2025-09-30 14:58:10,282 [INFO] Enrichment spider initialized with 0 predefined tags
+2025-09-30 14:58:10,282 [INFO] Enrichment spider will process 0 URLs from orchestrator
+2025-09-30 14:58:10,283 [INFO] Starting concurrent Stage 3 enrichment
+2025-09-30 14:58:10,283 [INFO] Populating Stage 3 queue from Stage 2 results
+2025-09-30 14:58:10,283 [INFO] Loading Stage 2 results from data/processed/stage02/validated_urls.jsonl
+2025-09-30 14:58:10,283 [INFO] Finished queuing 31 items for Stage 3
+2025-09-30 14:58:12,284 [INFO] Finished collecting 31 URLs for enrichment
+2025-09-30 14:58:12,285 [INFO] Running Scrapy command: scrapy crawl enrichment -s STAGE3_OUTPUT_FILE=data/processed/stage03/enriched_data.jsonl -s LOG_LEVEL=INFO -a urls_file=/var/folders/54/jf5k53pd14v_vc6k92qqrk_00000gn/T/tmpsrjtb_ba.json
+2025-09-30 15:00:16,763 [INFO] Starting pipeline orchestrator
+2025-09-30 15:00:16,764 [INFO] Environment: development
+2025-09-30 15:00:16,764 [INFO] Stage(s): all

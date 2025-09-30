@@ -1,4 +1,7 @@
 # UConn Web Scraping Pipeline Dependencies
+#
+# Quick Setup: Run ./setup.sh for automated installation
+# Manual Setup: pip install -r requirements.txt && python -m spacy download en_core_web_sm
 
 # Core scraping framework
 scrapy>=2.13.3
@@ -27,6 +30,10 @@ numpy>=1.26.0,<2.0.0
 
 # Natural language processing (core required)
 spacy>=3.7.4,<3.8
+
+# SpaCy language model (install separately)
+# Run: python -m spacy download en_core_web_sm
+# This downloads the English language model required for NLP processing
 
 # Natural language processing (optional - enhanced features)
 # Uncomment if you want advanced transformer-based NLP:

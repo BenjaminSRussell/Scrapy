@@ -42,6 +42,7 @@ data:
   cache_dir: "data/cache"
   exports_dir: "data/exports"
   logs_dir: "data/logs"
+  temp_dir: "data/temp"
 
 # Logging settings
 logging:

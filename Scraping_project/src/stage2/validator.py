@@ -11,6 +11,7 @@ from dataclasses import asdict
 
 from src.orchestrator.pipeline import BatchQueueItem
 from src.common.schemas import ValidationResult
+from src.common.checkpoints import CheckpointManager
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +48,11 @@ class URLValidator:
         self.max_workers = self.stage2_config['max_workers']
         self.timeout = self.stage2_config['timeout']
         self.output_file = Path(self.stage2_config['output_file'])
+
+        # Initialize checkpoint manager for resumable validation
+        checkpoint_dir = Path("data/checkpoints")
+        self.checkpoint_manager = CheckpointManager(checkpoint_dir)
+        self.checkpoint = self.checkpoint_manager.get_checkpoint("stage2_validation")
 
         # Ensure output directory exists
         self.output_file.parent.mkdir(parents=True, exist_ok=True)
@@ -91,12 +97,19 @@ class URLValidator:
         ) as managed_session:
             return await self._validate_with_session(managed_session, url, url_hash)
 
-    async def validate_batch(self, batch: List[BatchQueueItem]):
-        """Validate a batch of URLs concurrently"""
+    async def validate_batch(self, batch: List[BatchQueueItem], batch_id: int = 0):
+        """Validate a batch of URLs concurrently with checkpoint support"""
         if not batch:
             return
 
-        logger.info(f"Validating batch of {len(batch)} URLs")
+        logger.info(f"Validating batch {batch_id} of {len(batch)} URLs")
+
+        # Start checkpoint for this batch
+        self.checkpoint.start_batch(
+            stage="stage2_validation",
+            batch_id=batch_id,
+            metadata={"batch_size": len(batch), "output_file": str(self.output_file)}
+        )
 
         # Create SSL context that's more permissive for development
         ssl_context = ssl.create_default_context()
@@ -134,19 +147,32 @@ class URLValidator:
             # Run validations concurrently
             results = await asyncio.gather(*tasks, return_exceptions=True)
 
-            # Write results to output file
+            # Write results to output file with progress tracking
+            successful_validations = 0
             with open(self.output_file, 'a', encoding='utf-8') as f:
-                for result in results:
+                for i, result in enumerate(results):
                     if isinstance(result, Exception):
                         logger.error(f"Validation task failed: {result}")
+                        self.checkpoint.mark_failed(f"Task {i} failed: {result}")
                         continue
 
                     try:
                         f.write(json.dumps(asdict(result), ensure_ascii=False) + '\n')
+                        successful_validations += 1
+
+                        # Update checkpoint progress
+                        self.checkpoint.update_progress(
+                            processed_line=i + 1,
+                            url_hash=result.url_hash,
+                            total_processed=successful_validations
+                        )
                     except Exception as e:
                         logger.error(f"Error writing validation result: {e}")
 
-        logger.debug(f"Completed validation of {len(batch)} URLs")
+            # Mark batch as completed
+            self.checkpoint.complete_batch(successful_validations)
+
+        logger.debug(f"Completed validation of {len(batch)} URLs (batch {batch_id})")
 
     async def validate_from_file(self, input_file: Path) -> int:
         """Validate URLs from a Stage 1 discovery file"""
@@ -159,9 +185,20 @@ class URLValidator:
         batch_size = self.max_workers
         processed_count = 0
         batch: List[BatchQueueItem] = []
+        batch_id = 0
+
+        # Check for resume point from previous checkpoint
+        resume_point = self.checkpoint.get_resume_point()
+        if resume_point['status'] == 'processing':
+            logger.info(f"Resuming from batch {resume_point['batch_id']}, line {resume_point['last_processed_line']}")
+            batch_id = resume_point['batch_id']
 
         with open(input_file, 'r', encoding='utf-8') as f:
             for line_no, line in enumerate(f, 1):
+                # Skip lines we've already processed if resuming
+                if self.checkpoint.should_skip_to_line(line_no):
+                    continue
+
                 try:
                     data = json.loads(line.strip())
                 except json.JSONDecodeError as exc:
@@ -178,15 +215,16 @@ class URLValidator:
                 )
 
                 if len(batch) == batch_size:
-                    await self.validate_batch(batch)
+                    await self.validate_batch(batch, batch_id)
                     processed_count += len(batch)
                     batch = []
+                    batch_id += 1
 
                     if processed_count % 1000 == 0:
                         logger.info(f"Validated {processed_count} URLs")
 
         if batch:
-            await self.validate_batch(batch)
+            await self.validate_batch(batch, batch_id)
             processed_count += len(batch)
 
         logger.info(f"Validation completed: {processed_count} URLs processed")

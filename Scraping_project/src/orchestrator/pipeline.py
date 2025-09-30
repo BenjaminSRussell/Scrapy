@@ -347,15 +347,22 @@ class PipelineOrchestrator:
 
         # Run Scrapy in subprocess to avoid reactor conflicts
         import subprocess
-        import tempfile
         import json
+        from datetime import datetime
+        from pathlib import Path
+
+        # Create temporary file in configured data directory instead of system temp
+        data_paths = self.config.get_data_paths()
+        temp_dir = data_paths.get('temp_dir', Path("data/temp"))
+        temp_dir.mkdir(parents=True, exist_ok=True)
 
         # Create temporary file with URLs for the spider - fixed the undefined variable bug
         urls_for_enrichment = [item.get('url', '') for item in validation_items_for_enrichment if item.get('url')]
 
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+        urls_file = temp_dir / f"enrichment_urls_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        with open(urls_file, 'w') as f:
             json.dump(urls_for_enrichment, f)
-            urls_file = f.name
+        urls_file = str(urls_file)
 
         try:
             # Run Scrapy spider in subprocess to avoid reactor conflicts
@@ -377,9 +384,8 @@ class PipelineOrchestrator:
                 logger.error(f"STDERR: {result.stderr}")
 
         finally:
-            # Clean up temporary file
-            import os
-            if os.path.exists(urls_file):
-                os.unlink(urls_file)
+            # Clean up temporary file from project data directory
+            if Path(urls_file).exists():
+                Path(urls_file).unlink()
 
         logger.info("Stage 3 enrichment completed")

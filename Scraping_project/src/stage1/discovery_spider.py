@@ -162,16 +162,36 @@ class DiscoverySpider(scrapy.Spider):
         source_url = response.url
         dynamic_candidates = set()
 
-        # basic rate limiting to prevent dynamic discovery from going crazy
-        if hasattr(self, '_dynamic_discovery_count'):
-            self._dynamic_discovery_count += 1
-        else:
-            self._dynamic_discovery_count = 1
+        # Enhanced throttling for noisy heuristics
+        if not hasattr(self, '_dynamic_discovery_stats'):
+            self._dynamic_discovery_stats = {
+                'total_count': 0,
+                'low_quality_count': 0,
+                'domain_patterns': {},
+                'source_type_stats': {}
+            }
 
-        # arbitrary limit to keep things sane
-        if self._dynamic_discovery_count > 1000:
-            logger.debug(f"Skipping dynamic discovery for {source_url} - hit rate limit")
-            return
+        self._dynamic_discovery_stats['total_count'] += 1
+
+        # Progressive throttling based on discovery quality
+        total_discoveries = self._dynamic_discovery_stats['total_count']
+        low_quality_ratio = self._dynamic_discovery_stats['low_quality_count'] / max(1, total_discoveries)
+
+        # If we're finding too many low-quality URLs, throttle aggressively
+        if low_quality_ratio > 0.7 and total_discoveries > 50:
+            if total_discoveries % 10 != 0:  # Only process every 10th page
+                logger.debug(f"Throttling dynamic discovery due to low quality ratio: {low_quality_ratio:.2f}")
+                return
+
+        # Domain-specific throttling for known noisy patterns
+        domain = urlparse(source_url).netloc
+        if domain in self._dynamic_discovery_stats['domain_patterns']:
+            domain_count = self._dynamic_discovery_stats['domain_patterns'][domain]
+            if domain_count > 200:  # Per-domain limit
+                logger.debug(f"Domain {domain} hit discovery limit: {domain_count}")
+                return
+        else:
+            self._dynamic_discovery_stats['domain_patterns'][domain] = 0
 
         # track candidates by source for proper provenance
         sourced_candidates = {}  # candidate_url -> (source_type, confidence)
@@ -235,7 +255,8 @@ class DiscoverySpider(scrapy.Spider):
         for pag_url in pagination_candidates:
             sourced_candidates[pag_url] = ("pagination", 0.4)
 
-        # process all candidates with their provenance
+        # process all candidates with their provenance and quality tracking
+        quality_urls_found = 0
         for candidate, (source_type, confidence) in sourced_candidates.items():
             results = self._process_candidate_url(
                 candidate, source_url, current_depth, source_type, confidence
@@ -247,8 +268,23 @@ class DiscoverySpider(scrapy.Spider):
             if self._looks_like_api_endpoint(candidate):
                 self.api_endpoints_found += 1
 
+            # Track quality for throttling decisions
+            if confidence >= 0.6:
+                quality_urls_found += 1
+            else:
+                self._dynamic_discovery_stats['low_quality_count'] += 1
+
+            # Update source type statistics
+            if source_type not in self._dynamic_discovery_stats['source_type_stats']:
+                self._dynamic_discovery_stats['source_type_stats'][source_type] = 0
+            self._dynamic_discovery_stats['source_type_stats'][source_type] += 1
+
             for result in results:
                 yield result
+
+        # Update domain pattern tracking
+        domain = urlparse(source_url).netloc
+        self._dynamic_discovery_stats['domain_patterns'][domain] += len(sourced_candidates)
 
     def _process_candidate_url(
         self,
@@ -423,6 +459,30 @@ class DiscoverySpider(scrapy.Spider):
         sorted_referrers = sorted(self.referring_pages.items(), key=lambda x: x[1], reverse=True)
         for i, (source_url, link_count) in enumerate(sorted_referrers[:10], 1):
             logger.info(f"  {i}. {link_count:,} links from {source_url}")
+
+        # Dynamic discovery throttling statistics
+        if hasattr(self, '_dynamic_discovery_stats'):
+            stats = self._dynamic_discovery_stats
+            logger.info("-" * 40)
+            logger.info("DYNAMIC DISCOVERY THROTTLING STATS:")
+            logger.info(f"Total dynamic discoveries attempted: {stats['total_count']:,}")
+            logger.info(f"Low quality URLs found: {stats['low_quality_count']:,}")
+
+            if stats['total_count'] > 0:
+                quality_ratio = (stats['total_count'] - stats['low_quality_count']) / stats['total_count']
+                logger.info(f"Quality ratio: {quality_ratio:.2f} (higher is better)")
+
+            # Source type breakdown
+            if stats['source_type_stats']:
+                logger.info("Discovery sources:")
+                for source_type, count in sorted(stats['source_type_stats'].items(), key=lambda x: x[1], reverse=True):
+                    logger.info(f"  {source_type}: {count:,}")
+
+            # Top domains by discovery count
+            if stats['domain_patterns']:
+                logger.info("Top discovery domains:")
+                for domain, count in sorted(stats['domain_patterns'].items(), key=lambda x: x[1], reverse=True)[:5]:
+                    logger.info(f"  {domain}: {count:,} candidates")
 
         # Efficiency metrics
         duplicate_rate = (self.duplicates_skipped / max(1, self.unique_urls_found + self.duplicates_skipped)) * 100

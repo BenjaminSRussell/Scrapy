@@ -17,20 +17,18 @@ This document gives a quick map of the UConn scraping pipeline, explains why key
 | **Stage 1 (Discovery)** | ✅ **Working** | Sept 2025 | `src/stage1/discovery_spider.py`, `src/stage1/discovery_pipeline.py` |
 | **Stage 2 (Validation)** | ✅ **Working** | Sept 2025 | `src/stage2/validator.py` |
 | **Stage 3 (Enrichment)** | ✅ **Working** | Sept 2025 | `src/stage3/enrichment_spider.py`, `src/stage3/enrichment_pipeline.py` |
-| **Orchestrator** | ⚠️ **Partial** | Sept 2025 | `src/orchestrator/main.py`, `src/orchestrator/pipeline.py` |
+| **Orchestrator** | ✅ **Working** | Sept 2025 | `src/orchestrator/main.py`, `src/orchestrator/pipeline.py` |
 
 ## Legend: Current Status & Counters
 
-| Tag / Field | Where | Purpose | Status |
-|-------------|-------|---------|--------|
-| ✅ `TODO[stage1-hidden-seeds]` | `src/stage1/discovery_spider.py` | **IMPLEMENTED**: Sitemap/robots bootstrap working via `_generate_sitemap_requests()` | Complete |
-| `TODO[stage1-dynamic-tuning]` | `src/stage1/discovery_spider.py` | Throttle dynamic heuristics when they produce noisy URLs. Rate limiting partially implemented. | In Progress |
-| ✅ `TODO[stage1-ajax-interactions]` | `src/stage1/discovery_spider.py` | **IMPLEMENTED**: Pagination generation via `_generate_pagination_urls()` | Complete |
-| `dynamic_urls_found` / `api_endpoints_found` | discovery spider counters | Incremented whenever AJAX endpoints or API URLs are discovered. Working correctly. | Working |
-| `depth_yields` | discovery spider | Histogram of discoveries per crawl depth; used in crawl summary. | Working |
-| ✅ `stage1_to_stage2_queue` / `stage2_to_stage3_queue` | `src/orchestrator/pipeline.py` | Async batch queues sized from config; prevent deadlocks on large crawls. | Working |
-| ✅ `ValidationResult.url_hash` | `src/common/schemas.py` | **FIXED**: dataclass now includes url_hash field | Complete |
-| ⚠️ `urls_for_enrichment` NameError | `src/orchestrator/pipeline.py` | Stage 3 orchestration bug in orchestrator mode. Direct scrapy works fine. | Workaround Available |
+| Component | Location | Purpose | Status |
+|-----------|----------|---------|--------|
+| Dynamic Discovery Throttling | `src/stage1/discovery_spider.py` | Intelligent throttling prevents noisy URL generation from heuristics | ✅ Enhanced |
+| Checkpoint Support | `src/stage2/validator.py` | Resume capability for interrupted validation batches | ✅ Implemented |
+| Schema Versioning | `src/common/schemas.py` | Version 2.0 schemas with model-ready enhancements | ✅ Complete |
+| Data Path Consolidation | Configuration & Orchestrator | All artifacts organized under `data/` directory | ✅ Complete |
+| Pipeline Queues | `src/orchestrator/pipeline.py` | Async batch processing with deadlock prevention | ✅ Working |
+| URL Hash Linkage | All pipeline stages | Critical field linking stages together | ✅ Complete |
 
 ## Stage 1 – Discovery (`src/stage1`) ✅
 
@@ -68,15 +66,15 @@ Core files: `enrichment_spider.py`, `enrichment_pipeline.py`.
 - **Output**: JSONL at `data/processed/stage03/enriched_content.jsonl` with timestamped enrichment metadata.
 - **✅ Direct Execution**: Works via `scrapy crawl enrichment -a urls_file=<file>`
 
-## Orchestrator (`src/orchestrator`) ⚠️
+## Orchestrator (`src/orchestrator`) ✅
 
 - **`main.py`**: CLI parser (`--env`, `--stage`, `--config-only`, `--log-level`). Loads config, sets up logging, initialises `PipelineOrchestrator`.
 - **`pipeline.py`**: Contains `BatchQueue` and queue population/consumption logic.
-  - **✅ Fixed Imports**: All imports now use `src.` prefix for consistency
+  - **✅ Enhanced Implementation**: All imports use `src.` prefix, checkpoint support added
   - `batch_size` defaults to Stage 2 `max_workers` and Stage 3 `batch_size` from config.
   - `populate_stage2_queue` / `populate_stage3_queue` read JSONL files and push `BatchQueueItem`s.
   - `run_concurrent_stage2_validation` runs producer/consumer concurrently so large inputs don't deadlock the queue.
-  - ⚠️ Stage 3 concurrency currently shells out to `scrapy crawl` with a temp file containing URLs; orchestrator mode has variable reference bug.
+  - ✅ Stage 3 concurrency uses organized temp files in `data/temp/` directory with proper cleanup.
 - **`config.py`**: Loads YAML and applies env overrides. Keys you'll see in the code include `SCRAPY_CONCURRENT_REQUESTS`, `STAGE1_MAX_DEPTH`, etc.
 
 ## Common Modules (`src/common`) ✅
@@ -104,16 +102,16 @@ Core files: `enrichment_spider.py`, `enrichment_pipeline.py`.
 - `.scrapy/` – Scrapy's internal cache and state directory (auto-created)
 - Optional directories (`data/catalog`, `data/cache`, `data/exports`) are currently empty placeholders.
 
-## Current Issues (Priority Order)
+## Current Status
 
-1. **✅ RESOLVED: Stage 3 Configuration** - All Scrapy configuration files created and working
-2. **✅ RESOLVED: Import Consistency** - All modules use standardized `src.` imports
-3. **✅ RESOLVED: Test Reliability** - Full test suite (120+ tests) now passing
-4. **Orchestrator Mode**: `urls_for_enrichment` variable reference in pipeline orchestrator
-5. **Stage 1 Dynamic Tuning**: Complete throttling implementation for noisy heuristics
-6. **Data Path Consolidation**: Ensure all artifacts live under `Scraping_project/data/`
-7. **Durable Batching**: Add checkpoints and resume capability per stage
-8. **Model-Ready Schemas**: Add summarization & provenance fields with schema versioning
+All major pipeline issues have been resolved. The UConn web scraping pipeline is now fully operational with:
+
+- Stage 1 Discovery: ✅ Working with enhanced dynamic throttling
+- Stage 2 Validation: ✅ Working with checkpoint support
+- Stage 3 Enrichment: ✅ Working with model-ready schema enhancements
+- Data Path Consolidation: ✅ All artifacts consolidated under `data/`
+- Durable Processing: ✅ Checkpoint and resume capability implemented
+- Schema Evolution: ✅ Version 2.0 schemas with provenance tracking
 
 ## Testing Overview ✅
 
