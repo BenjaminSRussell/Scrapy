@@ -8,11 +8,13 @@ Advanced analytics system that learns from request patterns to optimize:
 - Domain-specific adaptations
 """
 
+from __future__ import annotations
+
 import json
 import logging
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Dict, List, Optional, Any, Tuple
+from typing import Any
 from collections import defaultdict, Counter
 from dataclasses import dataclass, asdict
 import statistics
@@ -31,9 +33,9 @@ class DomainAnalytics:
     avg_response_time: float
     optimal_timeout: float
     optimal_delay: float
-    common_errors: List[Tuple[str, int]]
-    best_user_agents: List[Tuple[str, float]]
-    peak_failure_times: List[str]
+    common_errors: list[tuple[str, int]]
+    best_user_agents: list[tuple[str, float]]
+    peak_failure_times: list[str]
     last_updated: str
 
 
@@ -44,7 +46,7 @@ class RequestPattern:
     description: str
     confidence: float
     recommendation: str
-    affected_domains: List[str]
+    affected_domains: list[str]
 
 
 class RequestAnalyticsEngine:
@@ -183,7 +185,7 @@ class RequestAnalyticsEngine:
             last_updated=datetime.now().isoformat()
         )
 
-    def identify_patterns(self) -> List[RequestPattern]:
+    def identify_patterns(self) -> list[RequestPattern]:
         """Identify patterns in request behavior across all domains"""
         patterns = []
 
@@ -309,7 +311,7 @@ class RequestAnalyticsEngine:
         self._save_patterns()
         return patterns
 
-    def generate_optimization_recommendations(self) -> Dict[str, Any]:
+    def generate_optimization_recommendations(self) -> dict[str, Any]:
         """Generate specific optimization recommendations based on analytics"""
         patterns = self.identify_patterns()
 
@@ -369,7 +371,7 @@ class RequestAnalyticsEngine:
 
         return recommendations
 
-    def get_performance_dashboard(self) -> Dict[str, Any]:
+    def get_performance_dashboard(self) -> dict[str, Any]:
         """Generate comprehensive performance dashboard data"""
         cutoff_time = datetime.now() - timedelta(days=7)
         recent_data = []

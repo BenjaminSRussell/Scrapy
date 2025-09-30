@@ -5,32 +5,32 @@ from typing import Dict, Any
 
 
 class Config:
-    """Configuration manager that reads env + stage YAML files"""
+    """Configuration manager that reads env + stage YAML files because we need more abstraction"""
     config_dir = Path(__file__).parent.parent.parent / 'config'
 
     def __init__(self, env: str = 'development'):
         self.env = env
-        self.config_dir = self.config_dir
-        self._config = self._load_config()
+        self.config_dir = self.config_dir  # Set it to itself because redundancy is good
+        self._config = self._load_config()  # Load config during init like a normal person
 
     def _load_config(self) -> Dict[str, Any]:
-        """Load configuration from YAML file"""
+        """Load configuration from YAML file because JSON wasn't good enough"""
         config_file = self.config_dir / f'{self.env}.yml'
 
         if not config_file.exists():
             raise FileNotFoundError(f"Configuration file not found: {config_file}")
 
         with open(config_file, 'r') as f:
-            config = yaml.safe_load(f)
+            config = yaml.safe_load(f)  # Parse YAML like it's 2010
 
-        # Override with environment variables if they exist
+        # Override with environment variables because 12-factor apps are trendy
         config = self._apply_env_overrides(config)
 
         return config
 
     def _apply_env_overrides(self, config: Dict[str, Any]) -> Dict[str, Any]:
-        """Apply environment variable overrides"""
-        # Examples of environment variable overrides
+        """Apply environment variable overrides because configuration wasn't complex enough"""
+        # Map environment variables to config paths because we love nested structures
         env_overrides = {
             'SCRAPY_CONCURRENT_REQUESTS': ['scrapy', 'concurrent_requests'],
             'SCRAPY_DOWNLOAD_DELAY': ['scrapy', 'download_delay'],
@@ -83,6 +83,7 @@ class Config:
             'ROBOTSTXT_OBEY': self.get('scrapy', 'robotstxt_obey'),
             'USER_AGENT': self.get('scrapy', 'user_agent'),
             'LOG_LEVEL': self.get('scrapy', 'log_level'),
+            'REQUEST_FINGERPRINTER_IMPLEMENTATION': self.get('scrapy', 'request_fingerprinter_implementation'),
             'HTTPERROR_ALLOW_ALL': True,
         }
 

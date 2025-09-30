@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """
-UConn Web Scraping Pipeline Orchestrator - Single Entry Point
+UConn Web Scraping Pipeline Orchestrator - The Master of All Web Scraping Dreams
 
-This is the main orchestrator that:
-- Sets up logging
-- Loads YAML configuration
-- Launches discovery crawler
-- Spawns validation/enrichment workers
+This is the main orchestrator that does all the heavy lifting because apparently
+we need one file to rule them all:
+- Sets up logging (because we love knowing what went wrong)
+- Loads YAML configuration (because JSON wasn't trendy enough)
+- Launches discovery crawler (to find URLs like it's a treasure hunt)
+- Spawns validation/enrichment workers (because parallel processing is fancy)
 """
 
 import sys
@@ -15,7 +16,7 @@ import argparse
 import logging
 from pathlib import Path
 
-# Add src to Python path
+# Add src to Python path because Python import system is a joy to work with
 src_dir = Path(__file__).parent.parent
 sys.path.insert(0, str(src_dir))
 
@@ -24,7 +25,9 @@ from orchestrator.pipeline import PipelineOrchestrator
 from common.logging import setup_logging
 
 # module-level exports handled through lazy imports because dependencies are optional
+# and we love making things complicated
 
+# Import all the things we actually need
 from scrapy.crawler import CrawlerProcess
 from stage2.validator import URLValidator
 from stage3.enrichment_spider import EnrichmentSpider
@@ -41,33 +44,37 @@ async def run_stage1_discovery(config: Config):
     from scrapy.utils.project import get_project_settings
     from stage1.discovery_spider import DiscoverySpider
 
+    # Get scrapy settings because configuration is always fun
     settings = get_project_settings()
     settings.update(config.get_scrapy_settings())
 
+    # Configure stage 1 because we need more configuration
     stage1_config = config.get_stage1_config()
     settings.update({
         'STAGE1_OUTPUT_FILE': stage1_config['output_file'],
         'ITEM_PIPELINES': {
-            'stage1.discovery_pipeline.Stage1Pipeline': 300,
+            'stage1.discovery_pipeline.Stage1Pipeline': 300,  # Magic number for pipeline priority
         },
-        'TELNETCONSOLE_ENABLED': False,
+        'TELNETCONSOLE_ENABLED': False,  # Because nobody wants telnet in 2024
     })
 
+    # Fire up the crawler because web scraping is what we do
     process = CrawlerProcess(settings)
     process.crawl(
         DiscoverySpider,
-        max_depth=stage1_config['max_depth']
+        max_depth=stage1_config['max_depth']  # Don't go too deep, we're not archaeologists
     )
 
+    # Run scrapy in an executor because async is trendy
     loop = asyncio.get_running_loop()
     await loop.run_in_executor(None, process.start)
-    process.stop()
+    process.stop()  # Always clean up after yourself
 
     logger.info("Stage 1 discovery completed")
 
 
 async def run_stage2_validation(config: Config, orchestrator: PipelineOrchestrator):
-    """Run Stage 2: Validation phase"""
+    """Run Stage 2: Validation phase - where we check if URLs actually work"""
 
     logger = logging.getLogger(__name__)
     logger.info("=" * 60)

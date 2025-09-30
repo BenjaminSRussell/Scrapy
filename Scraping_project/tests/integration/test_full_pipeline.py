@@ -155,7 +155,7 @@ def test_full_pipeline_end_to_end(tmp_path):
     print(f"   📈 Overall: {efficiency_metrics['overall_throughput']:.0f} URLs/s end-to-end")
     print(f"   🎯 Success Rate: {efficiency_metrics['end_to_end_success_rate']:.1f}%")
 
-    return efficiency_metrics
+    # Test passed successfully - no need to return anything
 
 
 def test_pipeline_memory_efficiency():
@@ -273,7 +273,7 @@ def test_pipeline_scalability_simulation():
     assert scalability_factor < 3.0, f"Poor scalability: {scalability_factor:.1f}x variation"
     assert min(throughputs) > 200, f"Minimum throughput too low: {min(throughputs):.0f} URLs/s"
 
-    return results
+    # Test passed successfully - no need to return anything
 
 
 @pytest.mark.slow
@@ -332,9 +332,4 @@ def test_pipeline_endurance():
     assert stability_coefficient < 20, f"Performance too unstable: {stability_coefficient:.1f}% variance"
     assert avg_throughput > 100, f"Average throughput too low: {avg_throughput:.0f} URLs/s"
 
-    return {
-        "avg_throughput": avg_throughput,
-        "stability_coefficient": stability_coefficient,
-        "error_rate": error_count / iterations * 100,
-        "total_duration": total_duration
-    }
+    # Test passed successfully - no need to return anything

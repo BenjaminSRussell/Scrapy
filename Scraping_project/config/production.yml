@@ -13,6 +13,7 @@ scrapy:
   robotstxt_obey: false
   user_agent: "UConn-Discovery-Crawler/1.0"
   log_level: "INFO"
+  request_fingerprinter_implementation: "2.7"
 
 # Stage-specific settings
 stages:

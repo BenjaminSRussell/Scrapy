@@ -8,12 +8,14 @@ Handles intelligent rechecking and updating of scraped data with:
 - Incremental file generation
 """
 
+from __future__ import annotations
+
 import asyncio
 import json
 import logging
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Tuple, Any
+from typing import Any
 from dataclasses import dataclass, asdict
 
 from common.request_infrastructure import SmartRequestHandler, AdaptiveRequestConfig
@@ -39,7 +41,7 @@ logger = logging.getLogger(__name__)
 class RefreshConfig:
     """Configuration for data refresh operations"""
     max_concurrent: int = 20
-    priority_domains: List[str] = None
+    priority_domains: list[str] = None
     refresh_interval_hours: int = 24
     force_refresh_failed: bool = True
     update_success_data: bool = False
@@ -51,11 +53,11 @@ class RefreshConfig:
 class RefreshResult:
     """Result of a data refresh operation"""
     url: str
-    old_content_length: Optional[int]
-    new_content_length: Optional[int]
+    old_content_length: int | None
+    new_content_length: int | None
     changed: bool
     success: bool
-    error_message: Optional[str]
+    error_message: str | None
     refresh_timestamp: str
     processing_time: float
 
@@ -90,7 +92,7 @@ class DataRefreshManager:
         """count characters because content changed detection is hard"""
         return len(content) if content else 0
 
-    def _load_existing_data(self, file_path: Path) -> Dict[str, Any]:
+    def _load_existing_data(self, file_path: Path) -> dict[str, Any]:
         """Load existing data from file"""
         if not file_path.exists():
             return {}
@@ -123,7 +125,7 @@ class DataRefreshManager:
         except Exception as e:
             logger.error(f"Failed to create backup: {e}")
 
-    def _get_refresh_priorities(self, existing_data: Dict[str, Any]) -> List[Tuple[str, int]]:
+    def _get_refresh_priorities(self, existing_data: dict[str, Any]) -> list[tuple[str, int]]:
         """Determine refresh priorities based on various factors"""
         priorities = []
 
@@ -161,7 +163,7 @@ class DataRefreshManager:
         # highest priority first
         return sorted(priorities, key=lambda x: x[1], reverse=True)
 
-    async def refresh_validation_data(self, force_all: bool = False) -> Dict[str, Any]:
+    async def refresh_validation_data(self, force_all: bool = False) -> dict[str, Any]:
         """Refresh validation data with intelligent prioritization"""
         logger.info("Starting validation data refresh...")
 
@@ -294,7 +296,7 @@ class DataRefreshManager:
             "performance_summary": self.request_handler.get_performance_summary()
         }
 
-    def _write_updated_data(self, file_path: Path, data: Dict[str, Any]):
+    def _write_updated_data(self, file_path: Path, data: dict[str, Any]):
         """Write updated data back to file"""
         try:
             with open(file_path, 'w', encoding='utf-8') as f:
@@ -304,7 +306,7 @@ class DataRefreshManager:
         except Exception as e:
             logger.error(f"Error writing updated data to {file_path}: {e}")
 
-    def _create_incremental_file(self, base_file: Path, changed_items: List[RefreshResult], stage_name: str):
+    def _create_incremental_file(self, base_file: Path, changed_items: list[RefreshResult], stage_name: str):
         """Create incremental update file with only changed items"""
         if not changed_items:
             return
@@ -324,7 +326,7 @@ class DataRefreshManager:
         except Exception as e:
             logger.error(f"Error creating incremental file: {e}")
 
-    def _save_refresh_history(self, stage: str, results: List[RefreshResult]):
+    def _save_refresh_history(self, stage: str, results: list[RefreshResult]):
         """Save refresh history for analytics"""
         try:
             history = []
@@ -351,7 +353,7 @@ class DataRefreshManager:
         except Exception as e:
             logger.error(f"Error saving refresh history: {e}")
 
-    async def full_data_refresh(self) -> Dict[str, Any]:
+    async def full_data_refresh(self) -> dict[str, Any]:
         """Perform full refresh of all data stages"""
         logger.info("Starting full data refresh...")
 
@@ -368,7 +370,7 @@ class DataRefreshManager:
         logger.info("Full data refresh completed")
         return results
 
-    async def refresh_enrichment_data(self, force_all: bool = False) -> Dict[str, Any]:
+    async def refresh_enrichment_data(self, force_all: bool = False) -> dict[str, Any]:
         """Refresh enrichment data because why wouldn't we need this"""
         logger.info("Starting enrichment data refresh...")
 
@@ -487,7 +489,7 @@ class DataRefreshManager:
             "performance_summary": self.request_handler.get_performance_summary()
         }
 
-    def get_refresh_status(self) -> Dict[str, Any]:
+    def get_refresh_status(self) -> dict[str, Any]:
         """Get current refresh status and recommendations"""
         existing_validation = self._load_existing_data(self.validation_file)
 

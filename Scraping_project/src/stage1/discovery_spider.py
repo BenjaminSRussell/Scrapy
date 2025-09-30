@@ -5,7 +5,7 @@ import logging
 import re
 from datetime import datetime
 from pathlib import Path
-from typing import Iterator, Optional, Tuple
+from typing import Iterator, Optional, Tuple, AsyncGenerator
 from urllib.parse import urlparse
 
 import scrapy
@@ -16,7 +16,7 @@ from common.schemas import DiscoveryItem
 from common.urls import canonicalize_url_simple
 
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)  # Because we need to know what went wrong
 
 
 DYNAMIC_SCRIPT_HINTS = (
@@ -64,15 +64,15 @@ class DiscoverySpider(scrapy.Spider):
         logger.info(f"Discovery spider initialized with max_depth={self.max_depth}")
 
     def start_requests(self) -> Iterator[scrapy.Request]:
-        """Load seed URLs and start crawling"""
+        """Load seed URLs and start crawling - legacy sync method for backward compatibility"""
         seed_file = Path("data/raw/uconn_urls.csv")
-
-        # attempt to grab some sitemap/robots data because manually updating CSVs is terrible
-        yield from self._generate_sitemap_requests()
 
         if not seed_file.exists():
             logger.error(f"Seed file not found: {seed_file}")
             return
+
+        # attempt to grab some sitemap/robots data because manually updating CSVs is terrible
+        yield from self._generate_sitemap_requests()
 
         logger.info(f"Loading seed URLs from {seed_file}")
 
@@ -110,6 +110,12 @@ class DiscoverySpider(scrapy.Spider):
 
         # log stats so we know when our CSV gets outdated
         logger.info(f"Loaded {self.seed_count} unique seed URLs")
+
+    async def start(self) -> AsyncGenerator[scrapy.Request, None]:
+        """New async start method to replace deprecated start_requests()"""
+        # Delegate to the sync method for now to maintain compatibility
+        for request in self.start_requests():
+            yield request
 
     def parse(self, response: Response) -> Iterator[DiscoveryItem]:
         """Parse response and extract links"""
@@ -502,7 +508,12 @@ class DiscoverySpider(scrapy.Spider):
             yield scrapy.Request(
                 url=robots_url,
                 callback=self._parse_robots,
-                meta={'domain': domain, 'depth': 0, 'source_url': robots_url},
+                meta={
+                    'domain': domain,
+                    'depth': 0,
+                    'source_url': robots_url,
+                    'first_seen': datetime.now().isoformat()
+                },
                 dont_filter=True
             )
 
@@ -513,7 +524,12 @@ class DiscoverySpider(scrapy.Spider):
                 yield scrapy.Request(
                     url=sitemap_url,
                     callback=self._parse_sitemap,
-                    meta={'domain': domain, 'depth': 0, 'source_url': sitemap_url},
+                    meta={
+                        'domain': domain,
+                        'depth': 0,
+                        'source_url': sitemap_url,
+                        'first_seen': datetime.now().isoformat()
+                    },
                     dont_filter=True
                 )
 
