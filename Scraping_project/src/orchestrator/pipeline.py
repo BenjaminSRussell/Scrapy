@@ -351,16 +351,16 @@ class PipelineOrchestrator:
         import json
 
         # Create temporary file with URLs for the spider - fixed the undefined variable bug
-        urls_for_spider = [item.get('url', '') for item in validation_items_for_enrichment if item.get('url')]
+        urls_for_enrichment = [item.get('url', '') for item in validation_items_for_enrichment if item.get('url')]
 
         with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
-            json.dump(urls_for_spider, f)
+            json.dump(urls_for_enrichment, f)
             urls_file = f.name
 
         try:
             # Run Scrapy spider in subprocess to avoid reactor conflicts
             cmd = [
-                'scrapy', 'crawl', enricher.name,
+                'scrapy', 'crawl', 'enrichment',  # Fixed: use spider name directly
                 '-s', f'STAGE3_OUTPUT_FILE={scrapy_settings.get("STAGE3_OUTPUT_FILE", "")}',
                 '-s', f'LOG_LEVEL={scrapy_settings.get("LOG_LEVEL", "INFO")}',
                 '-a', f'urls_file={urls_file}'

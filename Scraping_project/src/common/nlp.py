@@ -17,9 +17,15 @@ AUDIO_RE = re.compile(r"\.(mp3|wav|ogg|flac)(?:\?.*)?$", re.I)
 # Removed the over-engineered module resolution nonsense
 
 
-# Just import the damn things like a normal person
+# Import the things we need, with graceful fallback for optional dependencies
 import spacy
-from transformers import pipeline
+
+try:
+    from transformers import pipeline
+    HAS_TRANSFORMERS = True
+except ImportError:
+    HAS_TRANSFORMERS = False
+    pipeline = None
 
 
 @dataclass
@@ -81,6 +87,10 @@ class NLPRegistry:
         device_arg = self._transformer_device_argument()
 
         try:
+            if not HAS_TRANSFORMERS:
+                logger.warning("transformers library not available, skipping transformer model")
+                return None
+
             return pipeline(
                 "token-classification",
                 model=model_name,

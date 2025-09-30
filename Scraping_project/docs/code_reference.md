@@ -160,7 +160,5 @@ python -m src.orchestrator.main --env development
 
 ## Where to Look Next
 
-- `README.md` – high-level usage & testing summary.
-- `docs/pipeline_improvement_plan.md` – prioritised roadmap with recent updates.
-- `docs/stage1_master_plan.md` – comprehensive Stage 1 implementation details.
+- `README.md` – high-level project overview, setup, and usage instructions.
 - Individual stage directories (`src/stage1/`, `src/stage2/`, `src/stage3/`) for implementation details.

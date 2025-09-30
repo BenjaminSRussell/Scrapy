@@ -101,7 +101,7 @@ async def run_stage3_enrichment(config: Config, orchestrator: PipelineOrchestrat
     stage3_config = config.get_stage3_config()
     scrapy_settings = {
         'ITEM_PIPELINES': {
-            'stage3.enrichment_pipeline.Stage3Pipeline': 300,
+            'src.stage3.enrichment_pipeline.Stage3Pipeline': 300,
         },
         'STAGE3_OUTPUT_FILE': stage3_config['output_file'],
         'LOG_LEVEL': config.get_logging_config()['level'],
@@ -118,7 +118,8 @@ async def run_stage3_enrichment(config: Config, orchestrator: PipelineOrchestrat
     await orchestrator.run_concurrent_stage3_enrichment(enricher, scrapy_settings)
 
 
-async def main():
+def _setup_arg_parser() -> argparse.ArgumentParser:
+    """Sets up and returns the argument parser for the CLI."""
     parser = argparse.ArgumentParser(description='UConn Web Scraping Pipeline Orchestrator')
     parser.add_argument(
         '--env',
@@ -143,31 +144,29 @@ async def main():
         default='INFO',
         help='Set logging level'
     )
+    return parser
 
-    args = parser.parse_args()
+
+def _initialize_pipeline(args: argparse.Namespace) -> Config:
+    """Loads config, sets up logging, and creates data directories."""
+    config = Config(args.env)
+    data_paths = config.get_data_paths()
+    setup_logging(log_level=args.log_level, log_dir=data_paths['logs_dir'])
 
     logger = logging.getLogger(__name__)
-
-    config = Config(args.env)
-
-    data_paths = config.get_data_paths()
-    setup_logging(
-        log_level=args.log_level,
-        log_dir=data_paths['logs_dir']
-    )
-
-    logger.info(f"Starting pipeline orchestrator")
+    logger.info("Starting pipeline orchestrator")
     logger.info(f"Environment: {args.env}")
     logger.info(f"Stage(s): {args.stage}")
 
-    if args.config_only:
-        import yaml
-        print("Configuration:\n" + yaml.dump(config._config, default_flow_style=False))
-        return 0
-
+    # Create data directories if they don't exist
     for path in data_paths.values():
         path.mkdir(parents=True, exist_ok=True)
 
+    return config
+
+
+async def _run_pipeline_stages(args: argparse.Namespace, config: Config):
+    """Runs the selected pipeline stages."""
     orchestrator = PipelineOrchestrator(config)
 
     if args.stage in ['1', 'all']:
@@ -179,6 +178,22 @@ async def main():
     if args.stage in ['3', 'all']:
         await run_stage3_enrichment(config, orchestrator)
 
+
+async def main():
+    """The main entry point for the pipeline orchestrator."""
+    parser = _setup_arg_parser()
+    args = parser.parse_args()
+
+    config = _initialize_pipeline(args)
+
+    if args.config_only:
+        import yaml
+        print("Configuration:\n" + yaml.dump(config._config, default_flow_style=False))
+        return 0
+
+    await _run_pipeline_stages(args, config)
+
+    logger = logging.getLogger(__name__)
     logger.info("Pipeline orchestrator completed successfully")
     return 0
 

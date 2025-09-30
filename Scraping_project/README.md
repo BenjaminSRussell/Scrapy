@@ -16,8 +16,9 @@ scrapy crawl discovery                                           # Stage 1
 python -m src.stage2.validator                                  # Stage 2
 scrapy crawl enrichment -a urls_file=data/processed/stage02/validated_urls.jsonl  # Stage 3
 
-# Or use the orchestrator
-python main.py --env development --stage all
+# Or use the orchestrator (individual stages work, full pipeline has asyncio conflicts)
+python main.py --env development --stage 2    # Stage 2 works via orchestrator
+python main.py --env development --stage 3    # Stage 3 works via orchestrator
 ```
 
 ## ✅ Recent Improvements (Sept 2025)
@@ -98,12 +99,12 @@ scrapy crawl enrichment -a urls_file=data/processed/stage02/validated_urls.jsonl
 
 ### Orchestrator Mode
 ```bash
-# Single stage
-python main.py --env development --stage 1
-python main.py --env development --stage 2
+# Individual stages via orchestrator
+python main.py --env development --stage 2    # ✅ Works
+python main.py --env development --stage 3    # ✅ Works
 
-# Full pipeline (stages 1-2 work, stage 3 has orchestrator bug)
-python main.py --env development --stage all
+# Note: Stage 1 and --stage all have asyncio conflicts in orchestrator mode
+# Use direct Scrapy for Stage 1: scrapy crawl discovery
 
 # Configuration preview
 python main.py --env development --config-only
@@ -161,12 +162,12 @@ stages:
 
 ### Environment Setup
 ```bash
-# Python 3.9+ recommended
+# Python 3.9+ recommended (3.12+ preferred)
 pip install -r requirements.txt
 python -m spacy download en_core_web_sm
 
-# Optional NLP enhancements
-pip install sentence-transformers transformers huggingface-hub
+# Optional NLP enhancements (uncomment in requirements.txt)
+# pip install sentence-transformers transformers huggingface-hub
 ```
 
 ### Environment Variables Override
@@ -192,10 +193,11 @@ pip install sentence-transformers transformers huggingface-hub
 - **Python Compatibility**: Modern Python 3.12 syntax throughout
 
 ### ⚠️ Active Issues
-1. **Orchestrator Stage 3**: `urls_for_enrichment` variable reference bug (workaround: use direct Scrapy)
-2. **Stage 1 Dynamic Tuning**: Complete throttling implementation for noisy heuristics
-3. **Batch Processing**: Add checkpoints and resume capability
-4. **Monitoring**: Enhanced logging and observability features
+1. **✅ RESOLVED: Orchestrator Stage 3**: Variable reference bug fixed - Stage 3 now works via orchestrator
+2. **Orchestrator AsyncIO Conflicts**: Stage 1 and `--stage all` have asyncio event loop conflicts (use direct Scrapy)
+3. **Stage 1 Dynamic Tuning**: Complete throttling implementation for noisy heuristics
+4. **Batch Processing**: Add checkpoints and resume capability
+5. **Monitoring**: Enhanced logging and observability features
 
 ## Development & Contributing
 
