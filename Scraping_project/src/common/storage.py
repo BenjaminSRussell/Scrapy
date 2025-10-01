@@ -267,4 +267,6 @@ class ConfigurableStorage:
             self.storage = URLCache(file_path)
         else:
             raise ValueError(f"Unsupported storage type: {storage_type}")
+
+    def get_storage(self):
         return self.storage

@@ -31,10 +31,7 @@ def sample_config_data():
             'discovery': {
                 'max_depth': 3,
                 'batch_size': 100,
-'output_file': 'data/processed/stage01/discovery_output.jsonl'
-'output_file': 'data/processed/stage02/validation_output.jsonl'
-assert stage1_config['output_file'] == 'data/processed/stage01/discovery_output.jsonl'
-assert stage2_config['output_file'] == 'data/processed/stage02/validation_output.jsonl'
+                'output_file': 'data/processed/stage01/discovery_output.jsonl'
             },
             'validation': {
                 'max_workers': 10,
@@ -158,7 +155,7 @@ def test_config_get_stage_configs(temp_config_file):
     stage1_config = config.get_stage1_config()
     assert stage1_config['max_depth'] == 3
     assert stage1_config['batch_size'] == 100
-    assert stage1_config['output_file'] == 'data/processed/stage01/new_urls.jsonl'
+    assert stage1_config['output_file'] == 'data/processed/stage01/discovery_output.jsonl'
 
     # Stage 2 config
     stage2_config = config.get_stage2_config()

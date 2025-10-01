@@ -57,8 +57,10 @@ except Exception:  # noqa: BLE001
 
 try:  # pragma: no cover - optional dependency
     from transformers import pipeline  # type: ignore
+    HAS_TRANSFORMERS = True
 except Exception:  # noqa: BLE001
     pipeline = None  # type: ignore
+    HAS_TRANSFORMERS = False
 
 
 @dataclass
@@ -117,7 +119,9 @@ class NLPRegistry:
         return set(pipe_labels.get("ner", []))
 
     def _build_stop_words(
-        self, additions: Set[str], overrides: Set[str]
+        self,
+        additions: Set[str],
+        overrides: Set[str],
     ) -> Set[str]:
         base = set()
         if self.spacy_nlp and hasattr(self.spacy_nlp, "Defaults"):
@@ -210,7 +214,9 @@ class NLPRegistry:
         return -1
 
     def extract_with_spacy(
-        self, text: str, top_k: int
+        self,
+        text: str,
+        top_k: int
     ) -> Tuple[List[str], List[str]]:
         doc = self.spacy_nlp(text)
         entities = []
@@ -372,7 +378,6 @@ def has_audio_links(links: List[str]) -> bool:
 
     return any(AUDIO_RE.search(link or "") for link in links)
 
-
 def clean_text(text: str) -> str:
     """Clean and normalize text content without destroying contractions."""
 
@@ -380,7 +385,7 @@ def clean_text(text: str) -> str:
         return ""
 
     text = re.sub(r"\s+", " ", text.strip())
-    text = re.sub(r"[^\w\s.,!?;:'()\-\"]", "", text)
+    text = re.sub(r"[^\w\s.,!?;:'()\-"]", "", text)
     return text
 
 
@@ -399,7 +404,6 @@ def extract_keywords_simple(
     filtered_words = [word for word in words if word not in effective_stop_words]
     word_counts = Counter(filtered_words)
     return [word for word, _ in word_counts.most_common(top_k)]
-
 
 def get_text_stats(text: str) -> dict:
     """Return basic statistics for the supplied text."""
@@ -429,13 +433,11 @@ def get_text_stats(text: str) -> dict:
         "avg_word_length": avg_word_length,
     }
 
-
 def _is_true(predicate) -> bool:
     try:
         return bool(predicate())
     except Exception:
         return False
-
 
 def select_device(preferred: Optional[str] = None) -> str:
     """Determine the best execution device available."""

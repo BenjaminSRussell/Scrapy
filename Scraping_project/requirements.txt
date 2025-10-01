@@ -4,32 +4,32 @@
 # Manual Setup: pip install -r requirements.txt && python -m spacy download en_core_web_sm
 
 # Core scraping framework
-scrapy>=2.13.3
-aiohttp>=3.9.5
-requests>=2.32.3
-beautifulsoup4>=4.12.0,<5.0.0
-lxml>=5.0.0,<6.0.0
-w3lib>=2.3.1
-Twisted>=24.7.0
+scrapy
+aiohttp
+requests
+beautifulsoup4
+lxml
+w3lib
+Twisted
 
 # Configuration and data
-PyYAML>=6.0.2
-jsonlines>=3.0.0,<5.0.0
-itemadapter>=0.10.0
+PyYAML
+jsonlines
+itemadapter
 
 # Testing
-pytest>=8.3.2
-pytest-asyncio>=0.23.8
-pytest-html>=3.1.0
-pytest-mock>=3.10.0
-pytest-timeout>=2.3.1
+pytest
+pytest-asyncio
+pytest-html
+pytest-mock
+pytest-timeout
 
 # Data processing
-pandas>=2.0.0,<3.0.0
-numpy>=1.26.0,<2.0.0
+pandas
+numpy
 
 # Natural language processing (core required)
-spacy>=3.7.4,<3.8
+spacy
 
 # SpaCy language model (install separately)
 # Run: python -m spacy download en_core_web_sm
@@ -37,30 +37,30 @@ spacy>=3.7.4,<3.8
 
 # Natural language processing (optional - enhanced features)
 # Uncomment if you want advanced transformer-based NLP:
-transformers>=4.30.0
-sentence-transformers>=2.2.0
-torch>=2.0.0
+transformers
+sentence-transformers
+torch
 
 # Headless browser support (for JavaScript-rendered content)
 # Install with: pip install playwright && playwright install
-playwright>=1.40.0
+playwright
 # Alternative: selenium>=4.0.0
 
 # PDF and document processing
-PyPDF2>=3.0.0
-pdfplumber>=0.10.0
+PyPDF2
+pdfplumber
 
 # Image and media processing
-Pillow>=10.0.0
+Pillow
 
 # Utilities
-click>=8.1.0,<9.0.0
-tqdm>=4.65.0,<5.0.0
-psutil>=5.9.5,<6.0.0
-python-dateutil>=2.8.0,<3.0.0
+click
+tqdm
+psutil
+python-dateutil
 
 # Typing helpers
-typing-extensions>=4.12.2
+typing-extensions
 
 # Additional utilities found in codebase
-pydantic>=2.0.0,<3.0.0
+pydantic

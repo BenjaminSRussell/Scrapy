@@ -300,6 +300,12 @@ class DiscoveryStageConfig(BaseModel):
         le=10,
         description="Maximum crawl depth"
     )
+    batch_size: int = Field(
+        default=100,
+        ge=1,
+        le=10000,
+        description="Batch size for processing"
+    )
     output_file: str = Field(
         default="data/processed/stage01/discovery_output.jsonl",
         min_length=1,

@@ -5,6 +5,9 @@ set -e  # Exit on any error
 
 echo "🚀 Setting up UConn Web Scraping Pipeline..."
 
+# Change to the project directory
+cd Scraping_project
+
 # Check Python version
 python3_version=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
 echo "📍 Python version: $python3_version"

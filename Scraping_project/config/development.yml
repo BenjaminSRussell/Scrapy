@@ -224,7 +224,7 @@ content:
     - "ai"
     - "robotics"
     - "institute"
-    - "center"ter"
+    - "center"
 # Alerting configuration
 alerts:
   enabled: false  # Set to true to enable alerting

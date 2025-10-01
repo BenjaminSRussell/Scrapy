@@ -146,7 +146,7 @@ class TestREADMEExamples:
         from src.orchestrator.config import Config
 
         # Test that config class recognizes the documented env vars
-        config = Config()
+        config = Config(env="development")
 
         # These are the env vars mentioned in README
         env_vars = [
@@ -172,7 +172,7 @@ class TestREADMEExamples:
             source_url="https://test.com",
             discovered_url="https://test.com/page",
             first_seen="2025-01-01T00:00:00",
-            url_hash="testhash",
+            url_hash="a" * 64,
             discovery_depth=1
         )
 
@@ -183,7 +183,7 @@ class TestREADMEExamples:
         validation_fields = ['url', 'url_hash', 'status_code', 'content_type', 'is_valid', 'response_time']
         validation_result = ValidationResult(
             url="https://test.com",
-            url_hash="testhash",
+            url_hash="a" * 64,
             status_code=200,
             content_type="text/html",
             content_length=1000,
@@ -200,7 +200,7 @@ class TestREADMEExamples:
         enrichment_fields = ['url', 'title', 'text_content', 'entities', 'keywords', 'content_tags', 'enriched_at']
         enrichment_item = EnrichmentItem(
             url="https://test.com",
-            url_hash="testhash",
+            url_hash="a" * 64,
             title="Test Title",
             text_content="Test content",
             word_count=2,

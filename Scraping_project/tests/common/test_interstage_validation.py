@@ -51,7 +51,7 @@ class TestSchemaValidation:
             'source_url': 'https://example.com',
             'discovered_url': 'https://example.com/page',
             'first_seen': datetime.now().isoformat(),
-            'url_hash': 'invalid_hash_that_does_not_match',
+            'url_hash': 'a' * 64,
             'discovery_depth': 1
         }
 

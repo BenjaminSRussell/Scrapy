@@ -582,7 +582,7 @@ class DiscoverySpider(scrapy.Spider):
         lower_url = url.lower()
 
         # Remove stray wrapping quotes left over from CSV escapes.
-        trimmed = url.strip("\"'")
+        trimmed = url.strip("'")
         if trimmed != url:
             url = trimmed
             lower_url = url.lower()
@@ -774,10 +774,6 @@ class DiscoverySpider(scrapy.Spider):
                         parsed.scheme, parsed.netloc, parsed.path,
                         parsed.params, new_query, parsed.fragment
                     ))
-                    pagination_urls.add(new_url)
-
-        return pagination_urls
-          ))
                     pagination_urls.add(new_url)
 
         return pagination_urls
