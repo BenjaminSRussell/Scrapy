@@ -68,6 +68,7 @@ class NLPSettings:
     # TODO: The spaCy and transformer models are hardcoded. They should be configurable.
     spacy_model: str = "en_core_web_sm"
     transformer_model: Optional[str] = "dslim/bert-base-NER"
+    summarizer_model: Optional[str] = "sshleifer/distilbart-cnn-12-6"
     preferred_device: Optional[str] = None
     additional_stop_words: Set[str] = field(default_factory=set)
     stop_word_overrides: Set[str] = field(default_factory=set)
@@ -85,6 +86,7 @@ class NLPRegistry:
             settings.additional_stop_words, settings.stop_word_overrides
         )
         self.transformer_pipeline = self._load_transformer(settings.transformer_model)
+        self.summarizer_pipeline = self._load_summarizer(settings.summarizer_model)
 
     # TODO: This NLP pipeline is designed for English. It should be extended to support other languages.
     def _load_spacy(self, model_name: str):
@@ -158,6 +160,40 @@ class NLPRegistry:
             logger.warning("Transformer pipeline will be disabled")
             return None
 
+    def _load_summarizer(self, model_name: Optional[str]):
+        if not model_name:
+            return None
+
+        transformer_pipeline = pipeline
+        if getattr(transformer_pipeline, "side_effect", None):  # test hook
+            transformer_pipeline = None
+
+        if transformer_pipeline is None:
+            logger.warning(
+                "transformers package not available; summarizer pipeline disabled"
+            )
+            return None
+
+        device_arg = self._transformer_device_argument()
+
+        try:
+            return transformer_pipeline(
+                "summarization",
+                model=model_name,
+                tokenizer=model_name,
+                device=device_arg,
+            )
+        except Exception as exc:
+            logger.error(
+                "Failed to load summarizer model '%s' on device '%s': %s",
+                model_name,
+                device_arg,
+                exc,
+                exc_info=True
+            )
+            logger.warning("Summarizer pipeline will be disabled")
+            return None
+
     def _transformer_device_argument(self):
         if self.device == "cuda":
             return 0
@@ -213,6 +249,18 @@ class NLPRegistry:
 
         return entities
 
+    def summarize_text(self, text: str, max_length: int, min_length: int) -> str:
+        if not self.summarizer_pipeline:
+            raise RuntimeError("Summarizer pipeline is not initialised")
+
+        summary = self.summarizer_pipeline(
+            text,
+            max_length=max_length,
+            min_length=min_length,
+            do_sample=False
+        )
+        return summary[0]["summary_text"]
+
     def _keywords_from_doc(self, doc, top_k: int) -> List[str]:
         candidates: List[str] = []
 
@@ -239,6 +287,9 @@ class _DummyNLPRegistry:
 
     def extract_entities_with_transformer(self, text: str) -> List[str]:
         return []
+
+    def summarize_text(self, text: str, max_length: int, min_length: int) -> str:
+        return ""
 
 
 NLP_REGISTRY: Optional[NLPRegistry] = None
@@ -280,6 +331,16 @@ def extract_entities_and_keywords(
 
     entities, keywords = registry.extract_with_spacy(truncated, top_k)
     return entities, keywords
+
+
+def summarize(text: str, max_length: int = 150, min_length: int = 30) -> str:
+    """Summarize text using the configured NLP backend."""
+
+    if not text:
+        return ""
+
+    registry = get_registry()
+    return registry.summarize_text(text, max_length=max_length, min_length=min_length)
 
 
 def extract_content_tags(url_path: str, predefined_tags: Set[str]) -> List[str]:

@@ -209,6 +209,52 @@ class URLCache:
             return {row[0] for row in cursor.fetchall()}
 
 
+class PaginationCache:
+    """SQLite-based cache for pagination metadata to avoid redundant guessing"""
+
+    def __init__(self, db_path: Path):
+        self.db_path = Path(db_path)
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        self._init_db()
+
+    def _init_db(self):
+        """Initialize the SQLite database for pagination cache"""
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA synchronous=NORMAL")
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS pagination (
+                    pattern_hash TEXT PRIMARY KEY,
+                    base_url TEXT NOT NULL,
+                    last_valid_page INTEGER,
+                    updated_at TEXT
+                )
+            """)
+            conn.commit()
+
+    def get_last_valid_page(self, base_url: str) -> int:
+        """Get the last known valid page for a base URL"""
+        pattern_hash = self._hash_url(base_url)
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.execute("SELECT last_valid_page FROM pagination WHERE pattern_hash = ?", (pattern_hash,))
+            row = cursor.fetchone()
+            return row[0] if row else 0
+
+    def update_last_valid_page(self, base_url: str, last_valid_page: int):
+        """Update the last known valid page for a base URL"""
+        pattern_hash = self._hash_url(base_url)
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("""
+                INSERT OR REPLACE INTO pagination (pattern_hash, base_url, last_valid_page, updated_at)
+                VALUES (?, ?, ?, ?)
+            """, (pattern_hash, base_url, last_valid_page, datetime.now().isoformat()))
+            conn.commit()
+
+    def _hash_url(self, url: str) -> str:
+        """Generate a SHA256 hash for a URL pattern"""
+        return hashlib.sha256(url.encode('utf-8')).hexdigest()
+
+
 class ConfigurableStorage:
     """Configurable storage that can use JSONL or SQLite based on settings"""
 
@@ -221,7 +267,4 @@ class ConfigurableStorage:
             self.storage = URLCache(file_path)
         else:
             raise ValueError(f"Unsupported storage type: {storage_type}")
-
-    def get_storage(self):
-        """Get the underlying storage instance"""
         return self.storage

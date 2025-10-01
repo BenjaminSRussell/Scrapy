@@ -19,11 +19,26 @@ scrapy:
 stages:
   discovery:
     spider_name: "discovery"
+    allowed_domains:
+      - "uconn.edu"
     max_depth: 3
     output_file: "data/processed/stage01/discovery_output.jsonl"
     seed_file: "data/raw/uconn_urls.csv"
     use_persistent_dedup: true
     dedup_cache_path: "data/cache/url_cache.db"
+    # Headless browser for JavaScript-rendered content
+    headless_browser:
+      enabled: true
+      engine: "playwright"  # Options: playwright, selenium
+      browser_type: "chromium"  # Options: chromium, firefox, webkit
+      headless: true
+      timeout: 30000  # milliseconds
+      wait_for_selector: null  # Optional CSS selector to wait for
+      screenshot_on_error: false
+      user_agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
+      viewport:
+        width: 1920
+        height: 1080
     heuristics:
       dynamic_script_hints:
         - "fetch("
@@ -64,14 +79,60 @@ stages:
     max_workers: 16
     timeout: 15
     output_file: "data/processed/stage02/validated_urls.jsonl"
+    # Retry strategy configuration
+    retry:
+      max_attempts: 3  # Maximum retry attempts for most errors
+      base_delay: 1.0  # Base delay in seconds for exponential backoff
+      max_delay: 60.0  # Maximum delay in seconds
+      exponential_base: 2.0  # Exponential backoff base (delay = base * exponential_base^attempt)
+      jitter_factor: 0.1  # Jitter ±10% to prevent thundering herd
+      transient_max_attempts: 5  # More retries for transient network errors
+      rate_limit_max_attempts: 3  # Retries for 429/503 rate limit errors
+      rate_limit_base_delay: 5.0  # Longer initial delay for rate limits
+    # Circuit breaker configuration (per-domain)
+    circuit_breaker:
+      failure_threshold: 5  # Open circuit after N consecutive failures
+      success_threshold: 2  # Close circuit after N successes in half-open state
+      timeout: 60.0  # Seconds before attempting to close circuit
 
   enrichment:
     spider_name: "enrichment"
+    allowed_domains:
+      - "uconn.edu"
     nlp_enabled: true
     max_text_length: 20000
     top_keywords: 15
     batch_size: 1000
     output_file: "data/processed/stage03/enrichment_output.jsonl"
+    # Headless browser for JavaScript-rendered content
+    headless_browser:
+      enabled: true
+      engine: "playwright"
+      browser_type: "chromium"
+      headless: true
+      timeout: 30000
+      wait_for_selector: null
+      screenshot_on_error: false
+    # Content type handling
+    content_types:
+      enabled_types:
+        - "text/html"
+        - "application/pdf"
+        - "image/jpeg"
+        - "image/png"
+        - "image/gif"
+        - "video/mp4"
+        - "video/webm"
+        - "audio/mpeg"
+        - "audio/wav"
+      pdf:
+        extract_text: true
+        extract_metadata: true
+        max_pages: 100
+      media:
+        extract_metadata: true
+        download_thumbnails: false
+        thumbnail_dir: "data/processed/media/thumbnails"
 
 # Data paths
 data:

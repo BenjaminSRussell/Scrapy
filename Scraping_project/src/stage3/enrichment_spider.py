@@ -8,24 +8,52 @@ import scrapy
 from scrapy.http import Response
 
 from src.common.schemas import EnrichmentItem
-from src.common.nlp import extract_entities_and_keywords, extract_content_tags, has_audio_links
+from src.common.nlp import extract_entities_and_keywords, extract_content_tags, has_audio_links, summarize
 from src.common.urls import canonicalize_url_simple
 
 
 class EnrichmentSpider(scrapy.Spider):
     """Stage 3 Enrichment Spider - reads validated URLs, collects content/metadata"""
 
-    # TODO: The allowed domains are hardcoded. They should be configurable.
     name = "enrichment"
-    allowed_domains = ["uconn.edu"]
 
-    # TODO: The predefined_tags are hardcoded. They should be configurable.
-    def __init__(self, predefined_tags: List[str] = None, urls_list: List[str] = None, urls_file: str = None, *args, **kwargs):
+    def __init__(
+        self,
+        predefined_tags: List[str] = None,
+        urls_list: List[str] = None,
+        urls_file: str = None,
+        allowed_domains: list = None,
+        headless_browser_config: dict = None,
+        content_types_config: dict = None,
+        *args,
+        **kwargs
+    ):
         super().__init__(*args, **kwargs)
+
+        # Load allowed domains from configuration or use default
+        if allowed_domains:
+            if isinstance(allowed_domains, str):
+                # Handle comma-separated string
+                self.allowed_domains = [d.strip() for d in allowed_domains.split(',')]
+            else:
+                self.allowed_domains = allowed_domains
+        else:
+            self.allowed_domains = ["uconn.edu"]
+
         self.predefined_tags = set(predefined_tags or [])
         self.urls_list = urls_list or []
         self.urls_file = urls_file
         self.processed_count = 0
+
+        # Headless browser configuration
+        self.headless_browser_config = headless_browser_config or {}
+        self.headless_browser_enabled = self.headless_browser_config.get('enabled', False)
+
+        # Content types configuration
+        self.content_types_config = content_types_config or {}
+
+        self.logger.info(f"Allowed domains: {self.allowed_domains}")
+        self.logger.info(f"Headless browser enabled: {self.headless_browser_enabled}")
 
         # Load URLs from file if provided
         if self.urls_file and Path(self.urls_file).exists():
@@ -183,6 +211,7 @@ class EnrichmentSpider(scrapy.Spider):
 
             # Perform NLP analysis
             entities, keywords = extract_entities_and_keywords(text_content)
+            content_summary = summarize(text_content)
 
             # Extract content tags from URL path
             url_path = urlparse(response.url).path
@@ -213,7 +242,8 @@ class EnrichmentSpider(scrapy.Spider):
                 has_audio_links=has_audio,
                 status_code=response.status,
                 content_type=response.headers.get('Content-Type', b'').decode('utf-8'),
-                enriched_at=datetime.now().isoformat()
+                enriched_at=datetime.now().isoformat(),
+                content_summary=content_summary
             )
 
             self.processed_count += 1

@@ -332,8 +332,20 @@ class URLValidator:
             content_length = len(body_bytes)
             response_time = (datetime.now() - start_time).total_seconds()
 
-            is_html = 'text/html' in content_type.lower()
-            is_valid = 200 <= status_code < 400 and is_html
+            # Normalize content type
+            normalized_content_type = content_type.split(';')[0].strip().lower()
+
+            # Accept HTML, PDFs, and media files as valid
+            valid_content_types = [
+                'text/html',
+                'application/pdf',
+                'image/jpeg', 'image/png', 'image/gif', 'image/webp',
+                'video/mp4', 'video/webm',
+                'audio/mpeg', 'audio/wav'
+            ]
+
+            is_valid_content = any(normalized_content_type == ct for ct in valid_content_types)
+            is_valid = 200 <= status_code < 400 and is_valid_content
 
             return ValidationResult(
                 url=final_url,
@@ -343,7 +355,7 @@ class URLValidator:
                 content_length=content_length,
                 response_time=response_time,
                 is_valid=is_valid,
-                error_message=None if is_valid else 'Invalid response',
+                error_message=None if is_valid else f'Invalid response or unsupported content type: {normalized_content_type}',
                 validated_at=datetime.now().isoformat()
             )
 
@@ -359,7 +371,21 @@ class URLValidator:
         content_type = response.headers.get('Content-Type', '') or ''
         status_code = response.status
 
-        if not (200 <= status_code < 400 and 'text/html' in content_type.lower()):
+        # Normalize content type
+        normalized_content_type = content_type.split(';')[0].strip().lower()
+
+        # Accept HTML, PDFs, and media files
+        valid_content_types = [
+            'text/html',
+            'application/pdf',
+            'image/jpeg', 'image/png', 'image/gif', 'image/webp',
+            'video/mp4', 'video/webm',
+            'audio/mpeg', 'audio/wav'
+        ]
+
+        is_valid_content = any(normalized_content_type == ct for ct in valid_content_types)
+
+        if not (200 <= status_code < 400 and is_valid_content):
             return None
 
         content_length = self._parse_content_length(response.headers.get('Content-Length'))

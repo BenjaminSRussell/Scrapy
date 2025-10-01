@@ -14,7 +14,7 @@ from scrapy.http import Response
 
 from src.common.schemas import DiscoveryItem
 from src.common.urls import canonicalize_url_simple
-from src.common.storage import URLCache
+from src.common.storage import URLCache, PaginationCache
 
 
 logger = logging.getLogger(__name__)  # Because we need to know what went wrong
@@ -25,7 +25,10 @@ DYNAMIC_SCRIPT_HINTS = (
     'nexturl', 'next_url', 'load_more', 'apiurl', 'api_url', 'dispatch('
 )
 
-SCRIPT_URL_PATTERN = re.compile(r'["\'](?P<url>(?:https?:)?//[^"\']+|/[^\s"\']+)["\']', re.IGNORECASE)
+SCRIPT_URL_PATTERN = re.compile(
+    r'["\'](?P<url>(?:https?:)?//[\w\.-]+(?:/[\w\./\?-]*)?|/[\w\./\?-]+)["\']',
+    re.IGNORECASE
+)
 
 JSON_URL_KEY_HINTS = {'url', 'href', 'link', 'endpoint', 'action', 'download'}
 
@@ -39,14 +42,23 @@ DATA_ATTRIBUTE_CANDIDATES = (
 class DiscoverySpider(scrapy.Spider):
     """Stage 1 Discovery Spider - finds and catalogs new URLs"""
 
-    # TODO: The allowed domains are hardcoded. They should be configurable.
     name = "discovery"
-    allowed_domains = ["uconn.edu"]
 
-    # TODO: The max_depth is hardcoded. It should be configurable.
-    def __init__(self, max_depth: int = 3, *args, **kwargs):
+    def __init__(self, max_depth: int = 3, allowed_domains: list = None, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.max_depth = int(max_depth)
+
+        # Load allowed domains from configuration or use default
+        if allowed_domains:
+            if isinstance(allowed_domains, str):
+                # Handle comma-separated string
+                self.allowed_domains = [d.strip() for d in allowed_domains.split(',')]
+            else:
+                self.allowed_domains = allowed_domains
+        else:
+            self.allowed_domains = ["uconn.edu"]
+
+        logger.info(f"Allowed domains: {self.allowed_domains}")
 
         # Initialize persistent deduplication if enabled
         use_persistent_dedup = self.settings.getbool('USE_PERSISTENT_DEDUP', True)
@@ -63,6 +75,10 @@ class DiscoverySpider(scrapy.Spider):
             self.url_hashes = set()
             logger.info("Using in-memory deduplication")
 
+        # Initialize pagination cache
+        pagination_cache_path = self.settings.get('PAGINATION_CACHE_PATH', 'data/cache/pagination_cache.db')
+        self.pagination_cache = PaginationCache(Path(pagination_cache_path))
+
         # url dedup with a set for backward compatibility
         self.seen_urls = set()
 
@@ -77,6 +93,13 @@ class DiscoverySpider(scrapy.Spider):
         self.sanitized_seed_count = 0
         self.dynamic_urls_found = 0
         self.api_endpoints_found = 0
+
+        # Feature flags for heuristics
+        self.enable_data_attribute_discovery = self.settings.getbool('ENABLE_DATA_ATTRIBUTE_DISCOVERY', True)
+        self.enable_form_action_discovery = self.settings.getbool('ENABLE_FORM_ACTION_DISCOVERY', True)
+        self.enable_ajax_regex = self.settings.getbool('ENABLE_AJAX_REGEX', True)
+        self.enable_json_discovery = self.settings.getbool('ENABLE_JSON_DISCOVERY', True)
+        self.enable_pagination_guess = self.settings.getbool('ENABLE_PAGINATION_GUESS', True)
 
         logger.info(f"Discovery spider initialized with max_depth={self.max_depth}")
 
@@ -186,10 +209,18 @@ class DiscoverySpider(scrapy.Spider):
                 'total_count': 0,
                 'low_quality_count': 0,
                 'domain_patterns': {},
-                'source_type_stats': {}
+                'source_type_stats': {},
+                'source_url_quality': {},
+                'heuristic_quality': {}
             }
 
         self._dynamic_discovery_stats['total_count'] += 1
+
+        # Source-specific throttling
+        source_quality = self._dynamic_discovery_stats['source_url_quality']
+        if source_url in source_quality and source_quality[source_url] > 20:  # Threshold
+            logger.debug(f"Throttling noisy source URL: {source_url}")
+            return
 
         # Progressive throttling based on discovery quality
         total_discoveries = self._dynamic_discovery_stats['total_count']
@@ -213,65 +244,71 @@ class DiscoverySpider(scrapy.Spider):
 
         # track candidates by source for proper provenance
         sourced_candidates = {}  # candidate_url -> (source_type, confidence)
+        heuristic_quality = self._dynamic_discovery_stats['heuristic_quality']
 
         # data attributes - medium confidence since they're intentional
-        for attr in DATA_ATTRIBUTE_CANDIDATES:
-            raw_values = response.xpath(f'//*[@{attr}]/@{attr}').getall()
-            for raw_value in raw_values:
-                if not raw_value:
-                    continue
-                raw_value = raw_value.strip()
-                if not raw_value:
-                    continue
+        if self.enable_data_attribute_discovery and heuristic_quality.get('data_attribute', 0) < 100:
+            for attr in DATA_ATTRIBUTE_CANDIDATES:
+                raw_values = response.xpath(f'//*[@{attr}]/@{attr}').getall()
+                for raw_value in raw_values:
+                    if not raw_value:
+                        continue
+                    raw_value = raw_value.strip()
+                    if not raw_value:
+                        continue
 
-                if raw_value.startswith('{') or raw_value.startswith('['):
-                    json_urls = self._extract_urls_from_json_text(raw_value, response)
-                    for url in json_urls:
-                        sourced_candidates[url] = ("ajax_endpoint", 0.7)
-                    continue
+                    if raw_value.startswith('{') or raw_value.startswith('['):
+                        json_urls = self._extract_urls_from_json_text(raw_value, response)
+                        for url in json_urls:
+                            sourced_candidates[url] = ("ajax_endpoint", 0.7)
+                        continue
 
-                normalized = self._normalize_candidate(raw_value, response)
-                if normalized:
-                    sourced_candidates[normalized] = ("ajax_endpoint", 0.8)
+                    normalized = self._normalize_candidate(raw_value, response)
+                    if normalized:
+                        sourced_candidates[normalized] = ("ajax_endpoint", 0.8)
 
         # form actions - high confidence since they're explicit endpoints
-        for raw_action in response.xpath('//form[@action]/@action').getall():
-            normalized = self._normalize_candidate(raw_action, response)
-            if normalized:
-                sourced_candidates[normalized] = ("ajax_endpoint", 0.9)
+        if self.enable_form_action_discovery and heuristic_quality.get('form_action', 0) < 100:
+            for raw_action in response.xpath('//form[@action]/@action').getall():
+                normalized = self._normalize_candidate(raw_action, response)
+                if normalized:
+                    sourced_candidates[normalized] = ("ajax_endpoint", 0.9)
 
         # javascript patterns - lower confidence since they might be templates
-        script_texts = response.xpath('//script[not(@src)]/text()').getall()
-        for script in script_texts:
-            if not script:
-                continue
-            lowered = script.lower()
-            if not self._contains_dynamic_hint(lowered):
-                continue
+        if self.enable_ajax_regex and heuristic_quality.get('ajax_regex', 0) < 100:
+            script_texts = response.xpath('//script[not(@src)]/text()').getall()
+            for script in script_texts:
+                if not script:
+                    continue
+                lowered = script.lower()
+                if not self._contains_dynamic_hint(lowered):
+                    continue
 
-            for match in SCRIPT_URL_PATTERN.finditer(script):
-                raw_candidate = match.group('url')
-                normalized = self._normalize_candidate(raw_candidate, response)
-                if normalized:
-                    sourced_candidates[normalized] = ("ajax_endpoint", 0.6)
+                for match in SCRIPT_URL_PATTERN.finditer(script):
+                    raw_candidate = match.group('url')
+                    normalized = self._normalize_candidate(raw_candidate, response)
+                    if normalized:
+                        sourced_candidates[normalized] = ("ajax_endpoint", 0.6)
 
         # json script blocks - medium confidence
-        json_scripts = response.xpath('//script[contains(@type, "json")]/text()').getall()
-        for raw_json in json_scripts:
-            json_urls = self._extract_urls_from_json_text(raw_json, response)
-            for url in json_urls:
-                sourced_candidates[url] = ("json_blob", 0.7)
+        if self.enable_json_discovery and heuristic_quality.get('json_discovery', 0) < 100:
+            json_scripts = response.xpath('//script[contains(@type, "json")]/text()').getall()
+            for raw_json in json_scripts:
+                json_urls = self._extract_urls_from_json_text(raw_json, response)
+                for url in json_urls:
+                    sourced_candidates[url] = ("json_blob", 0.7)
 
         # pagination generation - lower confidence since it's speculative
-        pagination_candidates = set()
-        for candidate in sourced_candidates.keys():
-            if self._looks_like_api_endpoint(candidate):
-                pagination_urls = self._generate_pagination_urls(candidate)
-                for pag_url in pagination_urls:
-                    pagination_candidates.add(pag_url)
+        if self.enable_pagination_guess and heuristic_quality.get('pagination_guess', 0) < 100:
+            pagination_candidates = set()
+            for candidate in sourced_candidates.keys():
+                if self._looks_like_api_endpoint(candidate):
+                    pagination_urls = self._generate_pagination_urls(candidate)
+                    for pag_url in pagination_urls:
+                        pagination_candidates.add(pag_url)
 
-        for pag_url in pagination_candidates:
-            sourced_candidates[pag_url] = ("pagination", 0.4)
+            for pag_url in pagination_candidates:
+                sourced_candidates[pag_url] = ("pagination", 0.4)
 
         # process all candidates with their provenance and quality tracking
         quality_urls_found = 0
@@ -291,6 +328,14 @@ class DiscoverySpider(scrapy.Spider):
                 quality_urls_found += 1
             else:
                 self._dynamic_discovery_stats['low_quality_count'] += 1
+                if source_url not in source_quality:
+                    source_quality[source_url] = 0
+                source_quality[source_url] += 1
+
+                # Update heuristic quality stats
+                if source_type not in heuristic_quality:
+                    heuristic_quality[source_type] = 0
+                heuristic_quality[source_type] += 1
 
             # Update source type statistics
             if source_type not in self._dynamic_discovery_stats['source_type_stats']:
@@ -395,8 +440,11 @@ class DiscoverySpider(scrapy.Spider):
             return None
 
         hostname = (parsed.hostname or '').lower()
-        if hostname and not hostname.endswith('uconn.edu'):
-            return None
+        if hostname:
+            # Check if hostname matches any of the allowed domains
+            allowed = any(hostname.endswith(domain) for domain in self.allowed_domains)
+            if not allowed:
+                return None
 
         return absolute
 
@@ -422,7 +470,9 @@ class DiscoverySpider(scrapy.Spider):
                         continue
                     if key and key.lower() not in JSON_URL_KEY_HINTS and 'url' not in key.lower():
                         # Only attempt heuristics when keys imply a link.
-                        if 'uconn.edu' not in value and '/api/' not in value and '.json' not in value:
+                        # Check against allowed domains
+                        has_allowed_domain = any(domain in value for domain in self.allowed_domains)
+                        if not has_allowed_domain and '/api/' not in value and '.json' not in value:
                             continue
                     normalized = self._normalize_candidate(value, response)
                     if normalized:
@@ -590,7 +640,12 @@ class DiscoverySpider(scrapy.Spider):
 
     def _generate_sitemap_requests(self) -> Iterator[scrapy.Request]:
         """Generate requests for common sitemap/robots locations because automation beats manual updates"""
-        base_domains = ["uconn.edu", "www.uconn.edu"]
+        # Generate base domains from allowed domains
+        base_domains = []
+        for domain in self.allowed_domains:
+            base_domains.append(domain)
+            if not domain.startswith('www.'):
+                base_domains.append(f'www.{domain}')
 
         for domain in base_domains:
             # check robots.txt first
@@ -632,7 +687,9 @@ class DiscoverySpider(scrapy.Spider):
             line = line.strip()
             if line.lower().startswith('sitemap:'):
                 sitemap_url = line.split(':', 1)[1].strip()
-                if sitemap_url and 'uconn.edu' in sitemap_url:
+                # Check if sitemap_url contains any allowed domain
+                has_allowed_domain = any(domain in sitemap_url for domain in self.allowed_domains)
+                if sitemap_url and has_allowed_domain:
                     yield scrapy.Request(
                         url=sitemap_url,
                         callback=self._parse_sitemap,
@@ -656,7 +713,8 @@ class DiscoverySpider(scrapy.Spider):
         # check for nested sitemaps first
         for sitemap_match in sitemap_pattern.finditer(response.text):
             nested_sitemap_url = sitemap_match.group(1)
-            if 'uconn.edu' in nested_sitemap_url:
+            has_allowed_domain = any(domain in nested_sitemap_url for domain in self.allowed_domains)
+            if has_allowed_domain:
                 yield scrapy.Request(
                     url=nested_sitemap_url,
                     callback=self._parse_sitemap,
@@ -687,22 +745,23 @@ class DiscoverySpider(scrapy.Spider):
                     confidence=0.95
                 )
 
-    def _generate_pagination_urls(self, base_url: str) -> set:
-        """Generate common pagination patterns for API endpoints"""
+    def _generate_pagination_urls(self, base_url: str, limit: int = 10) -> set:
+        """Generate common pagination patterns for API endpoints with caching"""
         from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 
         pagination_urls = set()
+        last_valid_page = self.pagination_cache.get_last_valid_page(base_url)
+        start_page = last_valid_page + 1
+
         parsed = urlparse(base_url)
         query_params = parse_qs(parsed.query)
 
         # common pagination parameters to try
         pagination_patterns = [
-            {'page': ['2', '3']},
-            {'p': ['2', '3']},
-            {'offset': ['10', '20']},
-            {'start': ['10', '20']},
-            {'limit': ['20', '50']},
-            {'per_page': ['20', '50']}
+            {'page': [str(i) for i in range(start_page, start_page + limit)]},
+            {'p': [str(i) for i in range(start_page, start_page + limit)]},
+            {'offset': [str(i * 10) for i in range(start_page, start_page + limit)]},
+            {'start': [str(i * 10) for i in range(start_page, start_page + limit)]},
         ]
 
         for pattern in pagination_patterns:

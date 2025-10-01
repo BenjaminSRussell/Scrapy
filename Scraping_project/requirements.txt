@@ -37,9 +37,21 @@ spacy>=3.7.4,<3.8
 
 # Natural language processing (optional - enhanced features)
 # Uncomment if you want advanced transformer-based NLP:
-# transformers>=4.30.0
-# sentence-transformers>=2.2.0
-# torch>=2.0.0
+transformers>=4.30.0
+sentence-transformers>=2.2.0
+torch>=2.0.0
+
+# Headless browser support (for JavaScript-rendered content)
+# Install with: pip install playwright && playwright install
+playwright>=1.40.0
+# Alternative: selenium>=4.0.0
+
+# PDF and document processing
+PyPDF2>=3.0.0
+pdfplumber>=0.10.0
+
+# Image and media processing
+Pillow>=10.0.0
 
 # Utilities
 click>=8.1.0,<9.0.0
