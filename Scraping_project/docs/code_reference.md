@@ -81,7 +81,7 @@ Core files: `enrichment_spider.py`, `enrichment_pipeline.py`.
 
 - **`logging.py`**: `setup_logging` attaches console + optional rotating file handler. CLI scripts call this at startup.
 - **`storage.py`**: Contains `JSONLStorage` and `URLCache` (SQLite). Future persistence work will lean on the SQLite-backed cache to avoid rescanning JSONL files.
-- **`nlp.py`**: `NLPRegistry` loads spaCy and optional transformer pipeline. Graceful fallback when models are missing. Defaults: `MAX_TEXT_LENGTH=20000`, `TOP_KEYWORDS=15`.
+- **`nlp.py`**: `NLPRegistry` loads spaCy and optional transformer pipeline. Defaults: `MAX_TEXT_LENGTH=20000`, `TOP_KEYWORDS=15`.
 - **`urls.py`**: Provides `canonicalize_url_simple` and `is_valid_uconn_url`. Normalisation removes default ports, resolves dot segments, and filters invalid schemes.
 - **`schemas.py`**: ✅ All dataclasses now include required fields like `url_hash`
 
@@ -96,8 +96,8 @@ Core files: `enrichment_spider.py`, `enrichment_pipeline.py`.
 
 - `data/raw/uconn_urls.csv` – seeds.
 - `data/processed/stage01/new_urls.jsonl` – discovery output.
-- `data/processed/stage02/validated_urls.jsonl` – validator output.
-- `data/processed/stage03/enriched_content.jsonl` – enrichment output. ✅
+- `data/processed/stage02/validation_output.jsonl` – validator output.
+- `data/processed/stage03/enriched_data.jsonl` – enrichment output.
 - `data/logs/` – rotating logs if enabled.
 - `.scrapy/` – Scrapy's internal cache and state directory (auto-created)
 - Optional directories (`data/catalog`, `data/cache`, `data/exports`) are currently empty placeholders.
@@ -123,25 +123,28 @@ All major pipeline issues have been resolved. The UConn web scraping pipeline is
 
 ## Execution Examples
 
-### Individual Stages
+### Orchestrator Mode (Recommended)
+```bash
+# Run Stage 1 (Discovery)
+python main.py --env development --stage 1
+
+# Run Stage 2 (Validation)
+python main.py --env development --stage 2
+
+# Run Stage 3 (Enrichment)
+python main.py --env development --stage 3
+
+# Run full pipeline (stages 1-3)
+python main.py --env development --stage all
+```
+
+### Individual Scrapy Spiders (for debugging)
 ```bash
 # Stage 1 Discovery
 scrapy crawl discovery
 
-# Stage 2 Validation
-python -m src.stage2.validator
-
 # Stage 3 Enrichment
-scrapy crawl enrichment -a urls_file=data/processed/stage02/validated_urls.jsonl
-```
-
-### Orchestrator Mode
-```bash
-# Run specific stage
-python -m src.orchestrator.main --stage 1 --env development
-
-# Full pipeline (stages 1-3)
-python -m src.orchestrator.main --env development
+scrapy crawl enrichment -a urls_file=data/processed/stage02/validation_output.jsonl
 ```
 
 ## Quick Reference: Config Values
@@ -149,7 +152,6 @@ python -m src.orchestrator.main --env development
 | Config Key | Default (development) | Used In | Status |
 |------------|----------------------|---------|--------|
 | `stages.discovery.max_depth` | `3` | Discovery spider request depth | ✅ Working |
-| `stages.discovery.batch_size` | `1000` | Future batching placeholder | Planned |
 | `stages.validation.max_workers` | `16` | Batch queue size for validator | ✅ Working |
 | `stages.validation.timeout` | `15s` | `aiohttp` client timeout | ✅ Working |
 | `stages.enrichment.output_file` | `data/processed/stage03/enriched_content.jsonl` | Enrichment pipeline output | ✅ Working |

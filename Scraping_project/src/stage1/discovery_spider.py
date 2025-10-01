@@ -14,6 +14,7 @@ from scrapy.http import Response
 
 from src.common.schemas import DiscoveryItem
 from src.common.urls import canonicalize_url_simple
+from src.common.storage import URLCache
 
 
 logger = logging.getLogger(__name__)  # Because we need to know what went wrong
@@ -38,16 +39,32 @@ DATA_ATTRIBUTE_CANDIDATES = (
 class DiscoverySpider(scrapy.Spider):
     """Stage 1 Discovery Spider - finds and catalogs new URLs"""
 
+    # TODO: The allowed domains are hardcoded. They should be configurable.
     name = "discovery"
     allowed_domains = ["uconn.edu"]
 
+    # TODO: The max_depth is hardcoded. It should be configurable.
     def __init__(self, max_depth: int = 3, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.max_depth = int(max_depth)
 
-        # url dedup with a set because fancy databases are overkill
+        # Initialize persistent deduplication if enabled
+        use_persistent_dedup = self.settings.getbool('USE_PERSISTENT_DEDUP', True)
+        dedup_cache_path = self.settings.get('DEDUP_CACHE_PATH', 'data/cache/url_cache.db')
+
+        if use_persistent_dedup:
+            self.url_cache = URLCache(Path(dedup_cache_path))
+            logger.info(f"Using persistent deduplication with SQLite: {dedup_cache_path}")
+            # Load existing hashes for in-memory fallback
+            self.url_hashes = self.url_cache.get_all_hashes()
+            logger.info(f"Loaded {len(self.url_hashes)} existing URL hashes from cache")
+        else:
+            self.url_cache = None
+            self.url_hashes = set()
+            logger.info("Using in-memory deduplication")
+
+        # url dedup with a set for backward compatibility
         self.seen_urls = set()
-        self.url_hashes = set()
 
         # counters because apparently we need metrics for everything
         self.total_urls_parsed = 0
@@ -65,7 +82,7 @@ class DiscoverySpider(scrapy.Spider):
 
     def start_requests(self) -> Iterator[scrapy.Request]:
         """Load seed URLs and start crawling - legacy sync method for backward compatibility"""
-        seed_file = Path("data/raw/uconn_urls.csv")
+        seed_file = Path(self.seed_file)
 
         if not seed_file.exists():
             logger.error(f"Seed file not found: {seed_file}")
@@ -123,6 +140,7 @@ class DiscoverySpider(scrapy.Spider):
         current_depth = response.meta['depth']
 
         # Extract links from the current page
+        # TODO: The link extractor is not very flexible. It should be made more configurable, such as allowing the user to specify custom deny rules.
         le = LinkExtractor(
             allow_domains=self.allowed_domains,
             unique=True,
@@ -305,12 +323,24 @@ class DiscoverySpider(scrapy.Spider):
 
         url_hash = hashlib.sha256(canonical_url.encode("utf-8")).hexdigest()
 
-        if url_hash in self.url_hashes or canonical_url in self.seen_urls:
-            self.duplicates_skipped += 1
-            return []
+        # Use persistent cache if available, otherwise fallback to in-memory
+        if self.url_cache:
+            # Atomic check-and-insert with SQLite
+            is_new = self.url_cache.add_url_if_new(canonical_url, url_hash)
+            if not is_new:
+                self.duplicates_skipped += 1
+                return []
+            # Update in-memory sets for fast lookups
+            self.url_hashes.add(url_hash)
+            self.seen_urls.add(canonical_url)
+        else:
+            # In-memory deduplication
+            if url_hash in self.url_hashes or canonical_url in self.seen_urls:
+                self.duplicates_skipped += 1
+                return []
+            self.seen_urls.add(canonical_url)
+            self.url_hashes.add(url_hash)
 
-        self.seen_urls.add(canonical_url)
-        self.url_hashes.add(url_hash)
         self.unique_urls_found += 1
 
         next_depth = current_depth + 1
@@ -685,6 +715,10 @@ class DiscoverySpider(scrapy.Spider):
                         parsed.scheme, parsed.netloc, parsed.path,
                         parsed.params, new_query, parsed.fragment
                     ))
+                    pagination_urls.add(new_url)
+
+        return pagination_urls
+          ))
                     pagination_urls.add(new_url)
 
         return pagination_urls

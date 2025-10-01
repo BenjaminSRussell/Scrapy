@@ -1,3 +1,4 @@
+# TODO: Add support for running the pipeline in a distributed environment, such as using a task queue like Celery or RQ.
 #!/usr/bin/env python3
 """
 UConn Web Scraping Pipeline Orchestrator - The Master of All Web Scraping Dreams
@@ -14,6 +15,8 @@ import sys
 import asyncio
 import argparse
 import logging
+import shutil
+from datetime import datetime, timedelta
 from pathlib import Path
 
 # Add src to Python path because Python import system is a joy to work with
@@ -23,6 +26,7 @@ sys.path.insert(0, str(src_dir))
 from src.orchestrator.config import Config
 from src.orchestrator.pipeline import PipelineOrchestrator
 from src.common.logging import setup_logging
+from src.common import config_keys as keys
 
 # module-level exports handled through lazy imports because dependencies are optional
 # and we love making things complicated
@@ -51,7 +55,10 @@ async def run_stage1_discovery(config: Config):
     # Configure stage 1 because we need more configuration
     stage1_config = config.get_stage1_config()
     settings.update({
-        'STAGE1_OUTPUT_FILE': stage1_config['output_file'],
+        'STAGE1_OUTPUT_FILE': stage1_config[keys.DISCOVERY_OUTPUT_FILE],
+        'SEED_FILE': stage1_config[keys.DISCOVERY_SEED_FILE],
+        'USE_PERSISTENT_DEDUP': stage1_config.get(keys.DISCOVERY_USE_PERSISTENT_DEDUP, True),
+        'DEDUP_CACHE_PATH': stage1_config.get(keys.DISCOVERY_DEDUP_CACHE_PATH, 'data/cache/url_cache.db'),
         'ITEM_PIPELINES': {
             'src.stage1.discovery_pipeline.Stage1Pipeline': 300,  # Magic number for pipeline priority
         },
@@ -62,7 +69,7 @@ async def run_stage1_discovery(config: Config):
     process = CrawlerProcess(settings)
     process.crawl(
         DiscoverySpider,
-        max_depth=stage1_config['max_depth']  # Don't go too deep, we're not archaeologists
+        max_depth=stage1_config[keys.DISCOVERY_MAX_DEPTH]
     )
 
     # Run scrapy in an executor because async is trendy
@@ -103,8 +110,8 @@ async def run_stage3_enrichment(config: Config, orchestrator: PipelineOrchestrat
         'ITEM_PIPELINES': {
             'src.stage3.enrichment_pipeline.Stage3Pipeline': 300,
         },
-        'STAGE3_OUTPUT_FILE': stage3_config['output_file'],
-        'LOG_LEVEL': config.get_logging_config()['level'],
+        'STAGE3_OUTPUT_FILE': stage3_config[keys.ENRICHMENT_OUTPUT_FILE],
+        'LOG_LEVEL': config.get_logging_config()[keys.LOGGING_LEVEL],
         'ROBOTSTXT_OBEY': True,
         'DOWNLOAD_DELAY': 1,
         'CONCURRENT_REQUESTS': 16,
@@ -147,11 +154,53 @@ def _setup_arg_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _cleanup_temp_directory(temp_dir: Path, max_age_hours: int = 24):
+    """Clean up old temporary files from the temp directory.
+
+    Args:
+        temp_dir: Path to the temporary directory
+        max_age_hours: Maximum age of files to keep (default: 24 hours)
+    """
+    logger = logging.getLogger(__name__)
+
+    if not temp_dir.exists():
+        return
+
+    cutoff_time = datetime.now() - timedelta(hours=max_age_hours)
+    removed_count = 0
+    removed_size = 0
+
+    try:
+        for item in temp_dir.iterdir():
+            try:
+                # Get file modification time
+                mod_time = datetime.fromtimestamp(item.stat().st_mtime)
+
+                if mod_time < cutoff_time:
+                    if item.is_file():
+                        size = item.stat().st_size
+                        item.unlink()
+                        removed_count += 1
+                        removed_size += size
+                    elif item.is_dir():
+                        size = sum(f.stat().st_size for f in item.rglob('*') if f.is_file())
+                        shutil.rmtree(item)
+                        removed_count += 1
+                        removed_size += size
+            except Exception as e:
+                logger.warning(f"Failed to remove temp item {item}: {e}")
+
+        if removed_count > 0:
+            logger.info(f"Cleaned up {removed_count} temp items ({removed_size / 1024 / 1024:.2f} MB)")
+    except Exception as e:
+        logger.error(f"Failed to clean temp directory: {e}")
+
+
 def _initialize_pipeline(args: argparse.Namespace) -> Config:
     """Loads config, sets up logging, and creates data directories."""
     config = Config(args.env)
     data_paths = config.get_data_paths()
-    setup_logging(log_level=args.log_level, log_dir=data_paths['logs_dir'])
+    setup_logging(log_level=args.log_level, log_dir=data_paths[keys.LOGS_DIR])
 
     logger = logging.getLogger(__name__)
     logger.info("Starting pipeline orchestrator")
@@ -161,6 +210,9 @@ def _initialize_pipeline(args: argparse.Namespace) -> Config:
     # Create data directories if they don't exist
     for path in data_paths.values():
         path.mkdir(parents=True, exist_ok=True)
+
+    # Clean up old temporary files
+    _cleanup_temp_directory(data_paths[keys.TEMP_DIR])
 
     return config
 

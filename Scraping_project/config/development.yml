@@ -18,9 +18,47 @@ scrapy:
 # Stage-specific settings
 stages:
   discovery:
+    spider_name: "discovery"
     max_depth: 3
-    batch_size: 1000
-    output_file: "data/processed/stage01/new_urls.jsonl"
+    output_file: "data/processed/stage01/discovery_output.jsonl"
+    seed_file: "data/raw/uconn_urls.csv"
+    use_persistent_dedup: true
+    dedup_cache_path: "data/cache/url_cache.db"
+    heuristics:
+      dynamic_script_hints:
+        - "fetch("
+        - "xmlhttprequest"
+        - "axios"
+        - "$.get"
+        - "$.post"
+        - ".ajax"
+        - "loadmore"
+        - "nexturl"
+        - "next_url"
+        - "load_more"
+        - "apiurl"
+        - "api_url"
+        - "dispatch("
+      json_url_key_hints:
+        - "url"
+        - "href"
+        - "link"
+        - "endpoint"
+        - "action"
+        - "download"
+      data_attribute_candidates:
+        - "data-url"
+        - "data-src"
+        - "data-endpoint"
+        - "data-load"
+        - "data-load-url"
+        - "data-href"
+        - "data-link"
+        - "data-api"
+        - "data-request-url"
+        - "data-action"
+        - "data-next"
+        - "data-feed"
 
   validation:
     max_workers: 16
@@ -28,11 +66,12 @@ stages:
     output_file: "data/processed/stage02/validated_urls.jsonl"
 
   enrichment:
+    spider_name: "enrichment"
     nlp_enabled: true
     max_text_length: 20000
     top_keywords: 15
     batch_size: 1000
-    output_file: "data/processed/stage03/enriched_data.jsonl"
+    output_file: "data/processed/stage03/enrichment_output.jsonl"
 
 # Data paths
 data:
@@ -44,6 +83,13 @@ data:
   logs_dir: "data/logs"
   temp_dir: "data/temp"
 
+# Queue backpressure settings
+queue:
+  max_queue_size: 10000
+  batch_size: 1000
+  backpressure_warning_threshold: 0.8  # Warn when queue is 80% full
+  backpressure_critical_threshold: 0.95  # Critical when 95% full
+
 # Logging settings
 logging:
   level: "INFO"
@@ -51,6 +97,7 @@ logging:
   file: "data/logs/pipeline.log"
   max_bytes: 10485760
   backup_count: 3
+  structured: false  # Set to true for JSON structured logging
 
 # NLP settings
 nlp:
@@ -116,4 +163,30 @@ content:
     - "ai"
     - "robotics"
     - "institute"
-    - "center"
+    - "center"ter"
+# Alerting configuration
+alerts:
+  enabled: false  # Set to true to enable alerting
+  severity_threshold: "error"  # Minimum severity: info, warning, error, critical
+  alert_file: "data/logs/alerts.jsonl"
+  channels: []
+    # Example email channel:
+    # - type: email
+    #   smtp_host: smtp.gmail.com
+    #   smtp_port: 587
+    #   smtp_user: your-email@gmail.com
+    #   smtp_password: your-app-password
+    #   from_addr: your-email@gmail.com
+    #   to_addrs:
+    #     - recipient@example.com
+    #   use_tls: true
+    #
+    # Example webhook channel (Slack):
+    # - type: webhook
+    #   url: https://hooks.slack.com/services/YOUR/WEBHOOK/URL
+    #   format: slack
+    #
+    # Example file channel:
+    # - type: file
+    #   path: data/logs/alerts.log
+    #   format: text

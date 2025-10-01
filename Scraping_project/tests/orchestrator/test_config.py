@@ -31,7 +31,10 @@ def sample_config_data():
             'discovery': {
                 'max_depth': 3,
                 'batch_size': 100,
-                'output_file': 'data/processed/stage01/new_urls.jsonl'
+'output_file': 'data/processed/stage01/discovery_output.jsonl'
+'output_file': 'data/processed/stage02/validation_output.jsonl'
+assert stage1_config['output_file'] == 'data/processed/stage01/discovery_output.jsonl'
+assert stage2_config['output_file'] == 'data/processed/stage02/validation_output.jsonl'
             },
             'validation': {
                 'max_workers': 10,

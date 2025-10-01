@@ -1,3 +1,4 @@
+# TODO: Add support for exporting metrics to a time-series database, like Prometheus or InfluxDB, for better monitoring and alerting.
 """Simple metrics collection for pipeline monitoring."""
 
 import time
@@ -27,6 +28,7 @@ class StageMetrics:
             return time.time() - self.start_time
         return self.end_time - self.start_time
 
+    # TODO: Add more granular metrics, such as per-domain success rates and response times.
     @property
     def success_rate(self) -> float:
         """Get success rate as percentage."""
@@ -133,6 +135,7 @@ class MetricsCollector:
                 logger.info(f"  Errors: {stage_data['error_count']}")
 
 
+# TODO: This global metrics collector is not thread-safe. It should be made thread-safe if the pipeline is ever run in a multi-threaded environment.
 # Global metrics collector instance
 _metrics_collector: MetricsCollector | None = None
 

@@ -1,3 +1,4 @@
+# TODO: Add support for other storage backends, such as a database or a cloud storage service.
 from __future__ import annotations
 
 import json
@@ -17,6 +18,7 @@ class JSONLStorage:
         self.file_path = Path(file_path)
         self.file_path.parent.mkdir(parents=True, exist_ok=True)
 
+    # TODO: Add support for compressing the JSONL files to save disk space.
     def append(self, data: dict[str, Any]):
         """Append a single record to the JSONL file"""
         with open(self.file_path, 'a', encoding='utf-8') as f:
@@ -54,7 +56,7 @@ class JSONLStorage:
 
 
 class URLCache:
-    """SQLite-based cache for URL metadata and processing status"""
+    """SQLite-based cache for URL metadata and processing status with O(1) deduplication"""
 
     def __init__(self, db_path: Path):
         self.db_path = Path(db_path)
@@ -62,8 +64,12 @@ class URLCache:
         self._init_db()
 
     def _init_db(self):
-        """Initialize the SQLite database"""
+        """Initialize the SQLite database with optimized schema for deduplication"""
         with sqlite3.connect(self.db_path) as conn:
+            # Enable WAL mode for better concurrent access
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA synchronous=NORMAL")
+
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS urls (
                     url_hash TEXT PRIMARY KEY,
@@ -88,6 +94,9 @@ class URLCache:
             conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_is_valid ON urls(is_valid)
             """)
+
+            # Commit schema changes
+            conn.commit()
 
     def add_discovery(self, url: str, url_hash: str, discovered_at: str):
         """Add a discovered URL to the cache"""
@@ -167,6 +176,37 @@ class URLCache:
                 'enriched_urls': row[2],
                 'valid_urls': row[3]
             }
+
+    def has_url(self, url_hash: str) -> bool:
+        """Check if URL hash exists in cache - O(1) operation for deduplication"""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.execute("SELECT 1 FROM urls WHERE url_hash = ? LIMIT 1", (url_hash,))
+            return cursor.fetchone() is not None
+
+    def add_url_if_new(self, url: str, url_hash: str, discovered_at: str = None) -> bool:
+        """Add URL to cache if it doesn't exist. Returns True if new, False if duplicate.
+
+        This method provides atomic check-and-insert for O(1) deduplication.
+        """
+        if discovered_at is None:
+            discovered_at = datetime.now().isoformat()
+
+        with sqlite3.connect(self.db_path) as conn:
+            try:
+                conn.execute("""
+                    INSERT INTO urls (url_hash, url, discovered_at, updated_at)
+                    VALUES (?, ?, ?, ?)
+                """, (url_hash, url, discovered_at, datetime.now().isoformat()))
+                conn.commit()
+                return True  # New URL
+            except sqlite3.IntegrityError:
+                return False  # Duplicate URL
+
+    def get_all_hashes(self) -> set[str]:
+        """Get all URL hashes from cache. Useful for bulk operations."""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.execute("SELECT url_hash FROM urls")
+            return {row[0] for row in cursor.fetchall()}
 
 
 class ConfigurableStorage:

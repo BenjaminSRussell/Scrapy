@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from datetime import datetime
 import logging
 
+from src.common import config_keys as keys
+
 logger = logging.getLogger(__name__)
 
 
@@ -26,18 +28,9 @@ class BatchQueueItem:
 
 
 class BatchQueue:
-    """Manages batch processing with backpressure rules
-
-    DESIGN NOTE: Basic populate_*_queue methods fill completely before consumption starts,
-    which blocks pipeline for >10k items at max_queue_size (10k default).
-    SOLUTION: Use run_concurrent_stage*_* methods which implement concurrent
-    producer/consumer pattern to avoid blocking. Consider persistent queue
-    (Redis/SQLite) for very large datasets or distributed processing.
-    """
+    """Manages batch processing with backpressure rules"""
 
     def __init__(self, batch_size: int = 1000, max_queue_size: int = 10000):
-        # Queue is created lazily once we are inside an event loop so synchronous
-        # construction in tests does not raise "no current event loop" errors.
         self.batch_size = batch_size
         self.max_queue_size = max_queue_size
         self._queue: asyncio.Queue | None = None
@@ -60,11 +53,14 @@ class BatchQueue:
         return self._queue
 
     async def put(self, item: BatchQueueItem):
-        """Add item to queue with backpressure"""
+        """Add item to queue with backpressure monitoring"""
         queue = self._get_queue()
 
+        current_size = queue.qsize()
         if queue.full():
-            logger.warning(f"Queue is full ({self.max_queue_size}), applying backpressure")
+            logger.warning(f"Queue is full ({self.max_queue_size}), applying backpressure - producer blocked")
+        elif current_size > self.max_queue_size * 0.8:
+            logger.info(f"Queue backpressure: {current_size}/{self.max_queue_size} items ({current_size * 100 // self.max_queue_size}% full)")
 
         await queue.put(item)
 
@@ -73,14 +69,12 @@ class BatchQueue:
         queue = self._get_queue()
         batch = []
 
-        # Get at least one item (blocking)
         try:
             item = await queue.get()
             batch.append(item)
         except asyncio.QueueEmpty:
             return batch
 
-        # Try to get more items up to batch_size (non-blocking)
         while len(batch) < self.batch_size:
             try:
                 item = queue.get_nowait()
@@ -116,11 +110,9 @@ class BatchQueue:
         queue = self._get_queue()
 
         try:
-            # Wait for at least one item or timeout
             item = await asyncio.wait_for(queue.get(), timeout=timeout)
             batch.append(item)
 
-            # Try to get more items up to batch_size (non-blocking)
             while len(batch) < self.batch_size:
                 try:
                     item = queue.get_nowait()
@@ -129,10 +121,8 @@ class BatchQueue:
                     break
 
         except asyncio.TimeoutError:
-            # If producer is done and queue is empty, we're finished
             if self._producer_done and queue.empty():
                 return []
-            # Otherwise continue waiting
             pass
 
         return batch
@@ -144,16 +134,16 @@ class PipelineOrchestrator:
     def __init__(self, config):
         self.config = config
         self.stage1_to_stage2_queue = BatchQueue(
-            batch_size=config.get_stage2_config()['max_workers'] or 1000
+            batch_size=config.get_stage2_config()[keys.VALIDATION_MAX_WORKERS] or 1000
         )
         self.stage2_to_stage3_queue = BatchQueue(
-            batch_size=config.get_stage3_config().get('batch_size', 1000)
+            batch_size=config.get_stage3_config().get(keys.ENRICHMENT_BATCH_SIZE, 1000)
         )
 
     async def load_stage1_results(self) -> AsyncGenerator[BatchQueueItem, None]:
         """Load Stage 1 discovery results and yield as queue items"""
         stage1_config = self.config.get_stage1_config()
-        output_file = Path(stage1_config['output_file'])
+        output_file = Path(stage1_config[keys.DISCOVERY_OUTPUT_FILE])
 
         if not output_file.exists():
             logger.warning(f"Stage 1 output file not found: {output_file}")
@@ -182,7 +172,7 @@ class PipelineOrchestrator:
     async def load_stage2_results(self) -> AsyncGenerator[BatchQueueItem, None]:
         """Load Stage 2 validation results and yield as queue items"""
         stage2_config = self.config.get_stage2_config()
-        output_file = Path(stage2_config['output_file'])
+        output_file = Path(stage2_config[keys.VALIDATION_OUTPUT_FILE])
 
         if not output_file.exists():
             logger.warning(f"Stage 2 output file not found: {output_file}")
@@ -195,7 +185,6 @@ class PipelineOrchestrator:
                 try:
                     data = json.loads(line.strip())
 
-                    # Only process valid URLs
                     if not data.get('is_valid', False):
                         continue
 
@@ -213,12 +202,7 @@ class PipelineOrchestrator:
                     continue
 
     async def populate_stage2_queue(self):
-        """Populate the Stage 2 queue from Stage 1 results
-
-        DESIGN LIMITATION: This method fills the entire queue before consumption starts.
-        For >10k items, this blocks at max_queue_size (10k default).
-        SOLUTION: Use run_concurrent_stage2_validation() instead for large datasets.
-        """
+        """Populate the Stage 2 queue from Stage 1 results"""
         logger.info("Populating Stage 2 queue from Stage 1 results")
 
         count = 0
@@ -230,7 +214,6 @@ class PipelineOrchestrator:
                 if count % 1000 == 0:
                     logger.info(f"Queued {count} items for Stage 2")
         finally:
-            # Mark producer as done so consumers know to stop waiting
             self.stage1_to_stage2_queue.mark_producer_done()
             logger.info(f"Finished queuing {count} items for Stage 2")
 
@@ -247,7 +230,6 @@ class PipelineOrchestrator:
                 if count % 1000 == 0:
                     logger.info(f"Queued {count} items for Stage 3")
         finally:
-            # Mark producer as done so consumers know to stop waiting
             self.stage2_to_stage3_queue.mark_producer_done()
             logger.info(f"Finished queuing {count} items for Stage 3")
 
@@ -260,18 +242,12 @@ class PipelineOrchestrator:
         return self.stage2_to_stage3_queue
 
     async def run_concurrent_stage2_validation(self, validator):
-        """Run Stage 2 validation with concurrent population and consumption
-
-        This method demonstrates the fix for the >10k item bottleneck by
-        running producer and consumer concurrently instead of sequentially.
-        """
+        """Run Stage 2 validation with concurrent population and consumption"""
         logger.info("Starting concurrent Stage 2 validation")
 
-        # Start producer and consumer concurrently
         producer_task = asyncio.create_task(self.populate_stage2_queue())
         consumer_task = asyncio.create_task(self._consume_stage2_queue(validator))
 
-        # Wait for both to complete
         await asyncio.gather(producer_task, consumer_task)
 
     async def _consume_stage2_queue(self, validator):
@@ -280,11 +256,9 @@ class PipelineOrchestrator:
         processed_count = 0
 
         while True:
-            # Use the new timeout-aware batch getter
             batch = await queue.get_batch_or_wait(timeout=2.0)
 
             if not batch:
-                # No items and producer is done
                 break
 
             await validator.validate_batch(batch)
@@ -306,10 +280,8 @@ class PipelineOrchestrator:
 
         logger.info("Starting concurrent Stage 3 enrichment")
 
-        # Create queue population task
         population_task = asyncio.create_task(self.populate_stage3_queue())
 
-        # Prepare validation data from queue for spider
         validation_items_for_enrichment = []
 
         async def collect_urls_from_queue():
@@ -317,13 +289,11 @@ class PipelineOrchestrator:
             count = 0
             while True:
                 try:
-                    # Use timeout to avoid blocking forever
                     batch = await self.stage2_to_stage3_queue.get_batch_or_wait(timeout=2.0)
 
                     if not batch:
-                        break  # No more items and producer is done
+                        break
 
-                    # Extract validation data from batch items (preserve url_hash and metadata)
                     for item in batch:
                         validation_items_for_enrichment.append(item.data)
                         count += 1
@@ -338,25 +308,21 @@ class PipelineOrchestrator:
             logger.info(f"Finished collecting {count} URLs for enrichment")
             return count
 
-        # Wait for population to complete and collect URLs
         await asyncio.gather(population_task, collect_urls_from_queue())
 
         if not validation_items_for_enrichment:
             logger.warning("No URLs available for Stage 3 enrichment")
             return
 
-        # Run Scrapy in subprocess to avoid reactor conflicts
         import subprocess
         import json
         from datetime import datetime
         from pathlib import Path
 
-        # Create temporary file in configured data directory instead of system temp
         data_paths = self.config.get_data_paths()
-        temp_dir = data_paths.get('temp_dir', Path("data/temp"))
+        temp_dir = data_paths.get(keys.TEMP_DIR, Path("data/temp"))
         temp_dir.mkdir(parents=True, exist_ok=True)
 
-        # Create temporary file with URLs for the spider - fixed the undefined variable bug
         urls_for_enrichment = [item.get('url', '') for item in validation_items_for_enrichment if item.get('url')]
 
         urls_file = temp_dir / f"enrichment_urls_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
@@ -365,9 +331,11 @@ class PipelineOrchestrator:
         urls_file = str(urls_file)
 
         try:
-            # Run Scrapy spider in subprocess to avoid reactor conflicts
+            stage3_config = self.config.get_stage3_config()
+            spider_name = stage3_config.get(keys.ENRICHMENT_SPIDER_NAME, 'enrichment')
+
             cmd = [
-                'scrapy', 'crawl', 'enrichment',  # Fixed: use spider name directly
+                'scrapy', 'crawl', spider_name,
                 '-s', f'STAGE3_OUTPUT_FILE={scrapy_settings.get("STAGE3_OUTPUT_FILE", "")}',
                 '-s', f'LOG_LEVEL={scrapy_settings.get("LOG_LEVEL", "INFO")}',
                 '-a', f'urls_file={urls_file}'
@@ -384,7 +352,6 @@ class PipelineOrchestrator:
                 logger.error(f"STDERR: {result.stderr}")
 
         finally:
-            # Clean up temporary file from project data directory
             if Path(urls_file).exists():
                 Path(urls_file).unlink()
 

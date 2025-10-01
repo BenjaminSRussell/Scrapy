@@ -1,3 +1,4 @@
+# TODO: Add support for more flexible storage of the enriched content, such as using a database or a cloud storage service.
 import json
 from datetime import datetime
 from pathlib import Path
@@ -10,6 +11,7 @@ logger = logging.getLogger(__name__)
 class Stage3Pipeline:
     """Pipeline for Stage 3 Enrichment - writes enriched content to JSONL"""
 
+    # TODO: The output file is hardcoded. It should be configurable.
     def __init__(self, output_file: str = None):
         self.output_file = Path(output_file or "data/processed/stage03/enriched_content.jsonl")
 
@@ -35,6 +37,7 @@ class Stage3Pipeline:
         self.file.close()
         logger.info(f"[Stage3Pipeline] Processed {self.item_count:,} enriched items → {self.output_file}")
 
+    # TODO: This item processing is very basic. It should be extended to support more complex scenarios, such as handling different item types or enriching items with additional metadata.
     def process_item(self, item, spider):
         """Process each enriched content item"""
         adapter = ItemAdapter(item)

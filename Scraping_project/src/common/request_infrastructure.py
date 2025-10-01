@@ -1,3 +1,4 @@
+# TODO: Add support for proxies to allow for more robust and anonymous scraping.
 """
 Advanced Request Infrastructure with Learning and Adaptive Error Handling
 
@@ -79,6 +80,7 @@ class AdaptiveRequestConfig:
         self.base_delay = 1.0
         self.max_delay = 30.0
 
+        # TODO: The user agents are hardcoded. They should be configurable.
         # User agents pool (rotate to avoid detection)
         self.user_agents = [
             "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
@@ -93,6 +95,7 @@ class AdaptiveRequestConfig:
         self.error_patterns = defaultdict(list)
         self.success_patterns = defaultdict(list)
 
+        # TODO: The recent request history is not saved. It should be saved to a file to persist it across runs.
         # Recent request history for pattern analysis
         self.recent_requests = deque(maxlen=1000)
 

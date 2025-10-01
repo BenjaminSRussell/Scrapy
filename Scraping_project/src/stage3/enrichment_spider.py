@@ -15,9 +15,11 @@ from src.common.urls import canonicalize_url_simple
 class EnrichmentSpider(scrapy.Spider):
     """Stage 3 Enrichment Spider - reads validated URLs, collects content/metadata"""
 
+    # TODO: The allowed domains are hardcoded. They should be configurable.
     name = "enrichment"
     allowed_domains = ["uconn.edu"]
 
+    # TODO: The predefined_tags are hardcoded. They should be configurable.
     def __init__(self, predefined_tags: List[str] = None, urls_list: List[str] = None, urls_file: str = None, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.predefined_tags = set(predefined_tags or [])
@@ -54,7 +56,7 @@ class EnrichmentSpider(scrapy.Spider):
             return
 
         # Priority 2: Fallback to Stage 2 output file
-        stage2_output = Path("data/processed/stage02/validated_urls.jsonl")
+        stage2_output = Path("data/processed/stage02/validation_output.jsonl")
 
         if not stage2_output.exists():
             self.logger.warning(f"Stage 2 output file not found: {stage2_output}")
@@ -164,6 +166,7 @@ class EnrichmentSpider(scrapy.Spider):
             self.logger.warning(f"HuggingFace link scoring failed: {e}")
             return [0.0] * len(links)
 
+    # TODO: This content extraction is very basic. It should be extended to support more complex scenarios, such as extracting content from dynamic websites or handling different content types.
     def parse(self, response: Response) -> Iterator[EnrichmentItem]:
         """Parse response and extract content/metadata"""
         validation_data = response.meta.get('validation_data', {})

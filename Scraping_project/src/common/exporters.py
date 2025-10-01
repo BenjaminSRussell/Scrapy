@@ -1,3 +1,4 @@
+# TODO: Add support for other file formats, such as Parquet or Avro, which are more efficient for storing large datasets.
 """Data export utilities for various formats."""
 
 import csv
@@ -55,6 +56,7 @@ class CSVExporter:
 
     def _detect_fields(self, jsonl_file: Path) -> List[str]:
         """Detect fields from first few lines of JSONL file."""
+        # TODO: This field detection is based on the first few lines of the file. It should be made more robust by scanning the entire file or a larger sample.
         fields = set()
 
         with open(jsonl_file, 'r', encoding='utf-8') as f:
@@ -72,6 +74,7 @@ class CSVExporter:
 
     def _flatten_data(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """Flatten nested data for CSV export."""
+        # TODO: This flattening is very basic. It should be improved to handle nested dictionaries and lists of objects more gracefully.
         flattened = {}
 
         for key, value in data.items():

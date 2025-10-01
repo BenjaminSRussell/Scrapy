@@ -1,3 +1,4 @@
+# TODO: Add support for more flexible validation logic, such as allowing the user to specify custom validation rules.
 import asyncio
 import inspect
 import aiohttp
@@ -12,6 +13,7 @@ from dataclasses import asdict
 from src.orchestrator.pipeline import BatchQueueItem
 from src.common.schemas import ValidationResult
 from src.common.checkpoints import CheckpointManager
+from src.common import config_keys as keys
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +44,7 @@ if _client_ssl_error is not None:
 class URLValidator:
     """Stage 2 Validator - async client for URL validation using HEAD/GET checks"""
 
+    # TODO: The max_workers is hardcoded. It should be configurable.
     def __init__(self, config):
         self.config = config
         self.stage2_config = config.get_stage2_config()
@@ -60,6 +63,37 @@ class URLValidator:
         # Session configuration
         self.connector_limit = min(self.max_workers * 2, 100)
         self.session_timeout = aiohttp.ClientTimeout(total=self.timeout)
+
+        # Cache of processed URL hashes for idempotency
+        self._processed_hashes_cache = None
+
+    def _get_processed_url_hashes(self) -> set:
+        """Get set of already-processed URL hashes from output file for idempotency."""
+        if self._processed_hashes_cache is not None:
+            return self._processed_hashes_cache
+
+        processed_hashes = set()
+
+        if not self.output_file.exists():
+            self._processed_hashes_cache = processed_hashes
+            return processed_hashes
+
+        try:
+            with open(self.output_file, 'r', encoding='utf-8') as f:
+                for line in f:
+                    try:
+                        data = json.loads(line.strip())
+                        url_hash = data.get('url_hash')
+                        if url_hash:
+                            processed_hashes.add(url_hash)
+                    except json.JSONDecodeError:
+                        continue
+        except Exception as e:
+            logger.warning(f"Failed to read processed hashes: {e}")
+
+        self._processed_hashes_cache = processed_hashes
+        logger.info(f"Loaded {len(processed_hashes)} already-processed URL hashes")
+        return processed_hashes
 
     async def validate_url(self, session: Optional[aiohttp.ClientSession], url: str, url_hash: str) -> ValidationResult:
         """Validate a single URL using HEAD with GET fallback."""
@@ -103,6 +137,16 @@ class URLValidator:
             return
 
         logger.info(f"Validating batch {batch_id} of {len(batch)} URLs")
+
+        # Filter out already-processed URLs for idempotency
+        processed_hashes = self._get_processed_url_hashes()
+        batch = [item for item in batch if item.url_hash not in processed_hashes]
+
+        if not batch:
+            logger.info(f"Batch {batch_id}: All URLs already processed, skipping")
+            return
+
+        logger.info(f"Batch {batch_id}: {len(batch)} new URLs to validate after deduplication")
 
         # Start checkpoint for this batch
         self.checkpoint.start_batch(
@@ -234,6 +278,7 @@ class URLValidator:
         """Execute validation using the provided session with retry logic."""
         start_time = datetime.now()
 
+        # TODO: The retry logic is very basic. It should be made more flexible, such as allowing the user to specify different retry strategies for different error types.
         # Retry configuration
         max_retries = 3
         retry_delay = 1.0

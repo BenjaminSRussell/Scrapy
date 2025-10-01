@@ -1,3 +1,4 @@
+# TODO: Consider using a more robust storage for checkpoints, like a database, to avoid issues with file corruption and to make it easier to query the status of checkpoints.
 """
 Checkpoint system for resumable pipeline operations
 """
@@ -6,8 +7,8 @@ from __future__ import annotations
 import json
 import hashlib
 from pathlib import Path
-from typing import Any
-from datetime import datetime
+from typing import Any, Dict
+from datetime import datetime, timedelta
 import logging
 
 logger = logging.getLogger(__name__)
@@ -70,6 +71,7 @@ class BatchCheckpoint:
 
     def start_batch(self, stage: str, batch_id: int, metadata: dict[str, Any] = None):
         """Mark the start of a new batch"""
+        # TODO: Add more context to the checkpoint metadata, such as the input file being processed.
         self._data.update({
             'stage': stage,
             'batch_id': batch_id,
@@ -87,6 +89,7 @@ class BatchCheckpoint:
         if total_processed is not None:
             self._data['total_processed'] = total_processed
 
+        # TODO: The frequency of saving checkpoints is hardcoded to every 100 updates. This should be configurable.
         # save every 100 updates to avoid constant disk I/O
         if processed_line % 100 == 0:
             self.save_checkpoint()
@@ -130,6 +133,68 @@ class BatchCheckpoint:
     def is_failed(self) -> bool:
         """Check if checkpoint indicates failure"""
         return self._data.get('status') == 'failed'
+
+    def is_stale(self, max_age_hours: int = 24) -> bool:
+        """Check if checkpoint is stale based on last update time.
+
+        Args:
+            max_age_hours: Maximum age in hours before checkpoint is considered stale
+
+        Returns:
+            True if checkpoint is older than max_age_hours
+        """
+        updated_at_str = self._data.get('updated_at')
+        if not updated_at_str:
+            return False
+
+        try:
+            updated_at = datetime.fromisoformat(updated_at_str)
+            age = datetime.now() - updated_at
+            return age > timedelta(hours=max_age_hours)
+        except (ValueError, TypeError) as e:
+            logger.warning(f"Failed to parse checkpoint timestamp: {e}")
+            return False
+
+    def validate_checkpoint(self, input_file: Path = None, max_age_hours: int = 24) -> tuple[bool, str]:
+        """Validate checkpoint integrity and freshness.
+
+        Args:
+            input_file: Optional input file to verify checkpoint matches current data
+            max_age_hours: Maximum age in hours before checkpoint is considered stale
+
+        Returns:
+            Tuple of (is_valid, reason)
+        """
+        # Check if checkpoint is stale
+        if self.is_stale(max_age_hours):
+            return False, f"Checkpoint is stale (older than {max_age_hours} hours)"
+
+        # If checkpoint failed, it's invalid
+        if self.is_failed():
+            return False, f"Checkpoint marked as failed: {self._data.get('error_message', 'Unknown error')}"
+
+        # Validate input file if provided
+        if input_file and input_file.exists():
+            input_hash = self._data.get('metadata', {}).get('input_file_hash')
+            if input_hash:
+                current_hash = self._compute_file_hash(input_file)
+                if current_hash != input_hash:
+                    return False, "Input file has changed since checkpoint was created"
+
+        return True, "Checkpoint is valid"
+
+    @staticmethod
+    def _compute_file_hash(file_path: Path, chunk_size: int = 8192) -> str:
+        """Compute SHA256 hash of a file."""
+        sha256_hash = hashlib.sha256()
+        try:
+            with open(file_path, "rb") as f:
+                for chunk in iter(lambda: f.read(chunk_size), b""):
+                    sha256_hash.update(chunk)
+            return sha256_hash.hexdigest()
+        except Exception as e:
+            logger.error(f"Failed to compute file hash: {e}")
+            return ""
 
     def get_stats(self) -> dict[str, Any]:
         """Get checkpoint statistics"""

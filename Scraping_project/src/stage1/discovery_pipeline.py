@@ -1,3 +1,4 @@
+# TODO: Add support for more flexible storage of the seen hashes, such as using a database or a Bloom filter.
 import json
 from datetime import datetime
 from pathlib import Path
@@ -11,8 +12,9 @@ logger = logging.getLogger(__name__)
 class Stage1Pipeline:
     """Pipeline for Stage 1 Discovery - writes discovered URLs to JSONL"""
 
+    # TODO: The output file is hardcoded. It should be configurable.
     def __init__(self, output_file: str = None):
-        self.output_file = Path(output_file or "data/processed/stage01/new_urls.jsonl")
+        self.output_file = Path(output_file or "data/processed/stage01/discovery_output.jsonl")
         # persistent hash file to avoid the scale disaster
         self.hash_file = self.output_file.with_suffix('.hashes')
 
@@ -91,6 +93,7 @@ class Stage1Pipeline:
         logger.info(f"[Stage1Pipeline] Discovered {self.url_count:,} new URLs → {self.output_file}")
         logger.info(f"[Stage1Pipeline] Hash index updated: {len(self.seen_hashes):,} total hashes")
 
+    # TODO: This item processing is very basic. It should be extended to support more complex scenarios, such as handling different item types or enriching items with additional metadata.
     def process_item(self, item, spider):
         """Process each discovered URL item"""
         adapter = ItemAdapter(item)

@@ -1,3 +1,4 @@
+# TODO: Add more detailed schema validation, such as checking the types of the fields and ensuring that required fields are present.
 from __future__ import annotations
 from dataclasses import dataclass
 
@@ -10,9 +11,10 @@ class DiscoveryItem:
     first_seen: str
     url_hash: str
     discovery_depth: int
-    discovery_source: str = "html_link"  # html link by default unless specified
+    discovery_source: str = "html_link"
     confidence: float = 1.0  # 0.0-1.0 confidence score for dynamic discoveries
 
+    # TODO: This schema versioning is very basic. It should be improved to support more complex schema evolution scenarios, such as renaming fields or changing their types.
     # Schema versioning and provenance
     schema_version: str = "2.0"
     discovery_metadata: dict[str, str] | None = None  # Additional discovery context
@@ -114,6 +116,7 @@ class PipelineStats:
     duration_seconds: float | None = None
 
 
+# TODO: Add support for generating documentation from the schemas, such as a data dictionary or a JSON schema.
 class SchemaRegistry:
     """Registry for managing schema versions and compatibility"""
 
