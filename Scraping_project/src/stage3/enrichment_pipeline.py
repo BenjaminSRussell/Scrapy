@@ -4,6 +4,8 @@ from datetime import datetime
 from pathlib import Path
 from itemadapter import ItemAdapter
 import logging
+from src.common.qa_generation import generate_qa_pairs
+from src.common.keyword_expansion import expand_keywords
 
 logger = logging.getLogger(__name__)
 
@@ -41,16 +43,23 @@ class Stage3Pipeline:
     def process_item(self, item, spider):
         """Process each enriched content item"""
         adapter = ItemAdapter(item)
+        
+        text_content = adapter.get("text_content", "")
+        qa_pairs = generate_qa_pairs(text_content)
+        keywords = adapter.get("keywords", [])
+        expanded_keywords = expand_keywords(keywords)
 
         # Build enrichment data preserving original metadata
         enrichment_data = {
             "url": adapter.get("url"),
             "url_hash": adapter.get("url_hash"),
             "title": adapter.get("title", ""),
-            "text_content": adapter.get("text_content", ""),
+            "text_content": text_content,
             "word_count": adapter.get("word_count", 0),
             "entities": adapter.get("entities", []),
-            "keywords": adapter.get("keywords", []),
+            "keywords": keywords,
+            "expanded_keywords": expanded_keywords,
+            "qa_pairs": qa_pairs,
             "content_tags": adapter.get("content_tags", []),
             "has_pdf_links": adapter.get("has_pdf_links", False),
             "has_audio_links": adapter.get("has_audio_links", False),

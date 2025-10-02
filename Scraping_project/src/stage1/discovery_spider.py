@@ -1,7 +1,6 @@
 import csv
 import hashlib
 import json
-import logging
 import re
 from datetime import datetime
 from pathlib import Path
@@ -24,9 +23,10 @@ from src.common.urls import canonicalize_url_simple
 from src.common.storage import URLCache, PaginationCache
 from src.common.feedback import FeedbackStore
 from src.common.adaptive_depth import AdaptiveDepthManager
+from src.common.logging import get_structured_logger
 
 
-logger = logging.getLogger(__name__)  # Because we need to know what went wrong
+logger = get_structured_logger(__name__, component="discovery_spider", stage="stage1")
 
 
 DYNAMIC_SCRIPT_HINTS = (
@@ -68,7 +68,12 @@ class DiscoverySpider(scrapy.Spider):
         else:
             self.allowed_domains = ["uconn.edu"]
 
-        logger.info(f"Allowed domains: {self.allowed_domains}")
+        logger.log_with_context(
+            logging.INFO,
+            "Allowed domains configured",
+            allowed_domains=self.allowed_domains,
+            domain_count=len(self.allowed_domains)
+        )
 
         # Initialize persistent deduplication if enabled
         use_persistent_dedup = self.settings.getbool('USE_PERSISTENT_DEDUP', True)
@@ -76,14 +81,27 @@ class DiscoverySpider(scrapy.Spider):
 
         if use_persistent_dedup:
             self.url_cache = URLCache(Path(dedup_cache_path))
-            logger.info(f"Using persistent deduplication with SQLite: {dedup_cache_path}")
+            logger.log_with_context(
+                logging.INFO,
+                "Using persistent deduplication with SQLite",
+                cache_path=str(dedup_cache_path),
+                dedup_type="persistent"
+            )
             # Load existing hashes for in-memory fallback
             self.url_hashes = self.url_cache.get_all_hashes()
-            logger.info(f"Loaded {len(self.url_hashes)} existing URL hashes from cache")
+            logger.log_with_context(
+                logging.INFO,
+                "Loaded existing URL hashes from cache",
+                hash_count=len(self.url_hashes)
+            )
         else:
             self.url_cache = None
             self.url_hashes = set()
-            logger.info("Using in-memory deduplication")
+            logger.log_with_context(
+                logging.INFO,
+                "Using in-memory deduplication",
+                dedup_type="in_memory"
+            )
 
         # Initialize pagination cache
         pagination_cache_path = self.settings.get('PAGINATION_CACHE_PATH', 'data/cache/pagination_cache.db')
@@ -99,7 +117,12 @@ class DiscoverySpider(scrapy.Spider):
         for source in ['ajax_endpoint', 'json_blob', 'pagination', 'data_attribute', 'form_action', 'meta_refresh']:
             if self.feedback_store.should_throttle_source(source, min_samples=50, max_success_rate=0.3):
                 self.throttled_sources.add(source)
-                logger.warning(f"Discovery source '{source}' will be throttled due to low success rate")
+                logger.log_with_context(
+                    logging.WARNING,
+                    "Discovery source will be throttled due to low success rate",
+                    source=source,
+                    reason="low_success_rate"
+                )
 
         # Get low-quality URL patterns to avoid
         self.low_quality_patterns = set(self.feedback_store.get_low_quality_patterns(min_samples=10, max_success_rate=0.3))
@@ -242,7 +265,13 @@ class DiscoverySpider(scrapy.Spider):
         self.referring_pages[source_url] += len(links)
 
         if self.total_urls_parsed % 100 == 0:
-            logger.info(f"Progress: {self.total_urls_parsed} pages, {self.unique_urls_found} URLs, {self.duplicates_skipped} duplicates")
+            logger.log_with_context(
+                logging.INFO,
+                "Discovery progress checkpoint",
+                pages_parsed=self.total_urls_parsed,
+                unique_urls_found=self.unique_urls_found,
+                duplicates_skipped=self.duplicates_skipped
+            )
 
         logger.debug(f"Extracted {len(links)} links from {response.url}")
 

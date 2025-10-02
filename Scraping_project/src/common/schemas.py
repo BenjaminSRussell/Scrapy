@@ -1,6 +1,7 @@
 # TODO: Add more detailed schema validation, such as checking the types of the fields and ensuring that required fields are present.
 from __future__ import annotations
 from dataclasses import dataclass
+from typing import List, Dict
 
 
 @dataclass
@@ -52,12 +53,14 @@ class EnrichmentItem:
     word_count: int
     entities: list[str]
     keywords: list[str]
+    expanded_keywords: dict[str, list[str]] | None = None
     content_tags: list[str]
     has_pdf_links: bool
     has_audio_links: bool
     status_code: int
     content_type: str
     enriched_at: str
+    qa_pairs: list[dict[str, str]] | None = None
 
     # Model-ready enhancements
     schema_version: str = "2.0"

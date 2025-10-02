@@ -8,10 +8,10 @@ Supports multiple export modes:
 """
 
 import time
+import logging
 from pathlib import Path
 from typing import Dict, Optional, Any
 from datetime import datetime
-import logging
 
 try:
     from prometheus_client import (
@@ -30,8 +30,9 @@ except ImportError:
     PROMETHEUS_AVAILABLE = False
 
 from .enhanced_metrics import EnhancedMetricsCollector
+from .logging import get_structured_logger
 
-logger = logging.getLogger(__name__)
+logger = get_structured_logger(__name__, component="prometheus_exporter")
 
 
 class PrometheusExporter:
@@ -63,9 +64,10 @@ class PrometheusExporter:
             pushgateway_url: Pushgateway URL (e.g., 'localhost:9091')
         """
         if not PROMETHEUS_AVAILABLE:
-            logger.warning(
-                "prometheus_client not installed. "
-                "Install with: pip install prometheus-client"
+            logger.log_with_context(
+                logging.WARNING,
+                "prometheus_client not installed",
+                install_command="pip install prometheus-client"
             )
             self.enabled = False
             return
@@ -85,9 +87,19 @@ class PrometheusExporter:
         if enable_http_server:
             try:
                 start_http_server(http_port, registry=self.registry)
-                logger.info(f"Prometheus HTTP server started on port {http_port}")
+                logger.log_with_context(
+                    logging.INFO,
+                    "Prometheus HTTP server started",
+                    port=http_port,
+                    endpoint=f"http://localhost:{http_port}/metrics"
+                )
             except Exception as e:
-                logger.error(f"Failed to start Prometheus HTTP server: {e}")
+                logger.log_with_context(
+                    logging.ERROR,
+                    "Failed to start Prometheus HTTP server",
+                    port=http_port,
+                    error=str(e)
+                )
 
     def _init_metrics(self):
         """Initialize Prometheus metrics"""
@@ -236,6 +248,38 @@ class PrometheusExporter:
             registry=self.registry
         )
 
+        # Link Graph metrics
+        self.link_graph_total_nodes = Gauge(
+            f"{self.namespace}_link_graph_total_nodes",
+            "Total nodes in link graph",
+            registry=self.registry
+        )
+        self.link_graph_total_edges = Gauge(
+            f"{self.namespace}_link_graph_total_edges",
+            "Total edges in link graph",
+            registry=self.registry
+        )
+        self.link_graph_avg_degree = Gauge(
+            f"{self.namespace}_link_graph_avg_degree",
+            "Average degree (links per node)",
+            registry=self.registry
+        )
+        self.link_graph_max_degree = Gauge(
+            f"{self.namespace}_link_graph_max_degree",
+            "Maximum degree in graph",
+            registry=self.registry
+        )
+        self.link_graph_top_pagerank_score = Gauge(
+            f"{self.namespace}_link_graph_top_pagerank_score",
+            "Highest PageRank score",
+            registry=self.registry
+        )
+        self.link_graph_top_authority_score = Gauge(
+            f"{self.namespace}_link_graph_top_authority_score",
+            "Highest HITS authority score",
+            registry=self.registry
+        )
+
     def update_from_collector(self, collector: EnhancedMetricsCollector):
         """
         Update Prometheus metrics from EnhancedMetricsCollector.
@@ -342,6 +386,20 @@ class PrometheusExporter:
                     s3["nlp_statistics"]["total_keywords_extracted"]
                 )
 
+        # Link Graph statistics (if available)
+        if "link_graph" in summary:
+            lg = summary["link_graph"]
+            self.link_graph_total_nodes.set(lg.get("total_nodes", 0))
+            self.link_graph_total_edges.set(lg.get("total_edges", 0))
+            self.link_graph_avg_degree.set(lg.get("avg_degree", 0.0))
+            self.link_graph_max_degree.set(lg.get("max_degree", 0))
+
+            # Top scores
+            if lg.get("top_pagerank_score"):
+                self.link_graph_top_pagerank_score.set(lg["top_pagerank_score"])
+            if lg.get("top_authority_score"):
+                self.link_graph_top_authority_score.set(lg["top_authority_score"])
+
     def export_to_textfile(self, output_path: Path):
         """
         Export metrics to textfile for node_exporter textfile collector.
@@ -350,15 +408,29 @@ class PrometheusExporter:
             output_path: Path to write metrics file (e.g., /var/lib/node_exporter/scraping_pipeline.prom)
         """
         if not self.enabled:
-            logger.warning("Prometheus exporter not enabled")
+            logger.log_with_context(
+                logging.WARNING,
+                "Prometheus exporter not enabled",
+                operation="export_to_textfile"
+            )
             return
 
         try:
             output_path.parent.mkdir(parents=True, exist_ok=True)
             write_to_textfile(str(output_path), self.registry)
-            logger.info(f"Prometheus metrics exported to {output_path}")
+            logger.log_with_context(
+                logging.INFO,
+                "Prometheus metrics exported to textfile",
+                output_path=str(output_path),
+                export_mode="textfile"
+            )
         except Exception as e:
-            logger.error(f"Failed to export metrics to textfile: {e}")
+            logger.log_with_context(
+                logging.ERROR,
+                "Failed to export metrics to textfile",
+                output_path=str(output_path),
+                error=str(e)
+            )
 
     def push_to_gateway(self, pushgateway_url: Optional[str] = None):
         """
@@ -368,19 +440,38 @@ class PrometheusExporter:
             pushgateway_url: Pushgateway URL (default: use constructor value)
         """
         if not self.enabled:
-            logger.warning("Prometheus exporter not enabled")
+            logger.log_with_context(
+                logging.WARNING,
+                "Prometheus exporter not enabled",
+                operation="push_to_gateway"
+            )
             return
 
         url = pushgateway_url or self.pushgateway_url
         if not url:
-            logger.error("No pushgateway URL configured")
+            logger.log_with_context(
+                logging.ERROR,
+                "No pushgateway URL configured",
+                operation="push_to_gateway"
+            )
             return
 
         try:
             push_to_gateway(url, job=self.job_name, registry=self.registry)
-            logger.info(f"Metrics pushed to Pushgateway at {url}")
+            logger.log_with_context(
+                logging.INFO,
+                "Metrics pushed to Pushgateway",
+                pushgateway_url=url,
+                job_name=self.job_name,
+                export_mode="pushgateway"
+            )
         except Exception as e:
-            logger.error(f"Failed to push metrics to Pushgateway: {e}")
+            logger.log_with_context(
+                logging.ERROR,
+                "Failed to push metrics to Pushgateway",
+                pushgateway_url=url,
+                error=str(e)
+            )
 
     def get_text_metrics(self) -> str:
         """

@@ -41,6 +41,7 @@ spacy
 transformers
 sentence-transformers
 torch
+nltk
 
 # Headless browser support (for JavaScript-rendered content)
 # Install with: pip install playwright && playwright install

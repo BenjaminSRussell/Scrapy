@@ -15,6 +15,7 @@ from src.common.schemas import ValidationResult
 from src.common.checkpoints import CheckpointManager
 from src.common.feedback import FeedbackStore
 from src.common.adaptive_depth import AdaptiveDepthManager
+from src.common.link_graph import LinkGraphAnalyzer, PageImportance
 from src.common import config_keys as keys
 
 logger = logging.getLogger(__name__)
@@ -44,10 +45,10 @@ if _client_ssl_error is not None:
 
 
 class URLValidator:
-    """Stage 2 Validator - async client for URL validation using HEAD/GET checks"""
+    """Stage 2 Validator - async client for URL validation using HEAD/GET checks with link importance prioritization"""
 
     # TODO: The max_workers is hardcoded. It should be configurable.
-    def __init__(self, config):
+    def __init__(self, config, enable_link_graph: bool = True):
         self.config = config
         self.stage2_config = config.get_stage2_config()
         self.max_workers = self.stage2_config['max_workers']
@@ -66,6 +67,17 @@ class URLValidator:
         # Initialize adaptive depth manager for learning content quality
         adaptive_depth_file = Path("data/config/adaptive_depth.json")
         self.adaptive_depth = AdaptiveDepthManager(adaptive_depth_file)
+
+        # Initialize link graph for importance-based prioritization
+        self.enable_link_graph = enable_link_graph
+        self.link_graph: Optional[LinkGraphAnalyzer] = None
+        if enable_link_graph:
+            link_graph_db = Path("data/processed/link_graph.db")
+            if link_graph_db.exists():
+                self.link_graph = LinkGraphAnalyzer(link_graph_db)
+                logger.info(f"[Stage2] Link graph loaded for importance-based prioritization")
+            else:
+                logger.warning(f"[Stage2] Link graph database not found: {link_graph_db}")
 
         # Ensure output directory exists
         self.output_file.parent.mkdir(parents=True, exist_ok=True)
@@ -104,6 +116,41 @@ class URLValidator:
         self._processed_hashes_cache = processed_hashes
         logger.info(f"Loaded {len(processed_hashes)} already-processed URL hashes")
         return processed_hashes
+
+    def _prioritize_batch_by_importance(self, batch: List[BatchQueueItem]) -> List[BatchQueueItem]:
+        """
+        Prioritize URLs in batch by link importance scores (PageRank, HITS).
+        URLs with higher importance are validated first.
+        """
+        if not self.enable_link_graph or not self.link_graph:
+            return batch
+
+        # Get importance scores for each URL
+        url_scores = []
+        for item in batch:
+            importance = self.link_graph.get_page_importance(item.url)
+
+            # Calculate combined importance score
+            # Weight: PageRank (40%), Authority (40%), Inlinks (20%)
+            combined_score = (
+                importance.pagerank_score * 0.4 +
+                importance.authority_score * 0.4 +
+                min(importance.inlink_count / 100.0, 1.0) * 0.2
+            )
+
+            url_scores.append((item, combined_score))
+
+        # Sort by combined score (descending)
+        url_scores.sort(key=lambda x: x[1], reverse=True)
+
+        prioritized_batch = [item for item, score in url_scores]
+
+        # Log prioritization statistics
+        top_scores = [score for _, score in url_scores[:10]]
+        if top_scores:
+            logger.info(f"[Stage2] Prioritized batch by importance. Top 10 scores: {[f'{s:.4f}' for s in top_scores]}")
+
+        return prioritized_batch
 
     async def validate_url(self, session: Optional[aiohttp.ClientSession], url: str, url_hash: str) -> ValidationResult:
         """Validate a single URL using HEAD with GET fallback."""
@@ -157,6 +204,9 @@ class URLValidator:
             return
 
         logger.info(f"Batch {batch_id}: {len(batch)} new URLs to validate after deduplication")
+
+        # Prioritize URLs by link importance scores
+        batch = self._prioritize_batch_by_importance(batch)
 
         # Start checkpoint for this batch
         self.checkpoint.start_batch(
