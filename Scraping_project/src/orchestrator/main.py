@@ -19,6 +19,11 @@ import shutil
 from datetime import datetime, timedelta
 from pathlib import Path
 
+# Fix Windows ProactorEventLoop/Twisted reactor conflict
+# This must be done BEFORE any Twisted/Scrapy imports
+if sys.platform == 'win32':
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
 # Add src to Python path because Python import system is a joy to work with
 src_dir = Path(__file__).parent.parent
 sys.path.insert(0, str(src_dir))

@@ -129,6 +129,10 @@ class DiscoverySpider(scrapy.Spider):
             domain_count=len(self.allowed_domains)
         )
 
+        # Get seed file and output file from settings
+        self.seed_file = self.settings.get('SEED_FILE', 'data/raw/uconn_urls.csv')
+        self.output_file = self.settings.get('STAGE1_OUTPUT_FILE', 'data/processed/stage01/discovery_output.jsonl')
+
         # Initialize persistent deduplication if enabled
         use_persistent_dedup = self.settings.getbool('USE_PERSISTENT_DEDUP', True)
         dedup_cache_path = self.settings.get('DEDUP_CACHE_PATH', 'data/cache/url_cache.db')

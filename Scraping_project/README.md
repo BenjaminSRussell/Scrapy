@@ -1,241 +1,193 @@
-# UConn Web Scraping Pipeline
+<div align="center">
+  <img src="https://img.shields.io/badge/UConn%20Pipeline-Discovery-Validation-Enrichment-05437C?style=for-the-badge" alt="Pipeline badge" />
+  <h1>UConn Web Scraping Pipeline</h1>
+  <p><strong>Discover.</strong> <strong>Validate.</strong> <strong>Enrich.</strong><br/>An asyncio-first data collection platform tailored for the <code>uconn.edu</code> web estate.</p>
+  <p>
+    <img src="https://img.shields.io/badge/python-3.11-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python" />
+    <img src="https://img.shields.io/badge/aiohttp-ready-2E6F95?style=for-the-badge" alt="aiohttp" />
+    <img src="https://img.shields.io/badge/integration-tested-2E8B57?style=for-the-badge" alt="Tested" />
+  </p>
+</div>
 
-A three-stage scraping pipeline for the `uconn.edu` domain. Stage 1 discovers URLs (including dynamic/AJAX endpoints), Stage 2 validates their availability, and Stage 3 enriches content for downstream modelling. `main.py` is the CLI entry point and delegates to the asyncio orchestrator in `src/orchestrator/main.py`.
+---
 
-## Repository Map
+## Table of Contents
+- [Why This Pipeline](#why-this-pipeline)
+- [System Architecture](#system-architecture)
+- [Repository Walkthrough](#repository-walkthrough)
+- [Stage Deep Dive](#stage-deep-dive)
+- [Configuration Quick Reference](#configuration-quick-reference)
+- [Operating the Pipeline](#operating-the-pipeline)
+- [Quality, Observability, and Resilience](#quality-observability-and-resilience)
+- [Testing Strategy](#testing-strategy)
+- [Contribution Guide](#contribution-guide)
+- [Roadmap Highlights](#roadmap-highlights)
+- [Design Language & Visual Identity](#design-language--visual-identity)
 
-```text
-Scraping_project/
-├── main.py                     # CLI entrypoint
-├── config/                     # Environment-specific YAML settings
-├── data/                       # Runtime artefacts (seeds, outputs, logs)
-├── docs/                       # Supplementary documentation & roadmaps
-├── src/
-│   ├── common/                 # Shared helpers (logging, NLP, storage, URL utils)
-│   ├── orchestrator/           # Async pipeline orchestration + queues
-│   ├── stage1/                 # Discovery spider & pipeline
-│   ├── stage2/                 # Async URL validator
-│   └── stage3/                 # Enrichment spider & pipeline
-├── tests/                      # Unit, integration, regression suites
-└── requirements.txt            # Python dependencies (core + optional)
-``` 
+---
 
-## End-to-End Data Flow
+## Why This Pipeline
+> built for reliability, tuned for maintainability, and designed to make downstream modelling effortless.
 
-1. **Seeds & configuration**
-   - Input seeds: `data/raw/uconn_urls.csv` (one URL per line, no header).
-   - Runtime settings: `config/<env>.yml` plus optional env overrides (see below).
+- **Purpose-built discovery** for the University of Connecticut domain, with heuristics for hidden APIs and dynamic assets.
+- **Deterministic validation** leveraging <code>aiohttp</code> connection pooling, precise timeout measurement, and Content-Length governance.
+- **Rich enrichment layer** producing schema-validated JSONL assets ready for search, analytics, or ML ingestion.
+- **Operational empathy** through checkpointing, back-pressure aware queues, and structured metadata at every hop.
 
-2. **Stage 1 – Discovery (`src/stage1`)**
-   - `DiscoverySpider` consumes the seed CSV, canonicalises URLs, and walks the domain breadth-first.
-   - Dynamic discovery heuristics scan data attributes, inline JSON, and scripts to surface AJAX endpoints and hidden APIs.
-   - Unique findings are persisted via `Stage1Pipeline` to `data/processed/stage01/new_urls.jsonl` (newline-delimited JSON records).
+---
 
-3. **Stage 2 – Validation (`src/stage2`)**
-   - `URLValidator` reads Stage 1 output, then performs concurrent HEAD→GET checks with `aiohttp`.
-   - Results are serialised to `data/processed/stage02/validation_output.jsonl` with latency, status code, and content metadata.
-   - The orchestrator’s `BatchQueue` keeps producers/consumers in lock-step so large batches avoid deadlock.
+## System Architecture
+`mermaid
+flowchart LR
+  A[Seeds & Config] -- stage1 --> B[Discovery Spider]
+  B -- new URLs --> C[Stage 1 Output JSONL]
+  C -- stage2 --> D[Async URL Validator]
+  D -- verdicts --> E[Stage 2 Output JSONL]
+  E -- stage3 --> F[Enrichment Workers]
+  F -- structured records --> G[Downstream Catalogs]
+  D -. telemetry .-> H[Checkpoint Manager]
+  F -. feedback .-> I[Adaptive Depth Manager]
+  B -. link graph .-> J[Link Graph Analyzer]
+`
 
-4. **Stage 3 – Enrichment (`src/stage3`)**
-   - `EnrichmentSpider` pulls validated URLs (via queue or JSONL) and extracts title, body text, NLP entities/keywords, and flags for downloadable media.
-   - Output is stored in `data/processed/stage03/enriched_data.jsonl` with schema suitable for fine-tuning or search indexing.
+**Orchestration core:** src/orchestrator/main.py stitches each stage together with async queues, checkpoint resumption, and environment-aware configuration.
 
-5. **Exports & monitoring**
-   - Logs stream to stdout and, when configured, rotate under `data/logs/`.
-   - `docs/pipeline_improvement_plan.md` captures current roadmap priorities and operational guidance.
+---
 
-> The orchestrator can run stages independently (`--stage 1`, `2`, `3`) or sequentially (`--stage all`). Stage 3 currently requires a manual workaround (see Known Issues).
+## Repository Walkthrough
 
-## Inputs, Outputs, and Configuration
+| Path | Description |
+|------|-------------|
+| main.py | CLI front door – resolves configuration, selects stages, and invokes the orchestrator. |
+| config/ | Environment profiles (development.yml, production.yml) plus overrides via env vars. |
+| data/ | Seeds, checkpoint snapshots, processed outputs, and diagnostics. |
+| docs/ | Design notes, validation matrices, and operational runbooks. |
+| src/common/ | Shared utilities (schemas, checkpoints, adaptive depth, link graph analysis, metrics exporters). |
+| src/stage1/ | Discovery spiders, prioritisation heuristics, and persistence pipeline. |
+| src/stage2/ | Async validator featuring HEAD->GET fallback, precise content-length handling, and descriptive error capture. |
+| src/stage3/ | Enrichment workflow with text extraction, entity tagging, and pluggable storage backends. |
+| 	ests/ | Pytest suites covering unit, integration, networking regression, and orchestrator flows. |
 
-| Stage | Primary Input | Output JSONL Schema (key fields) | Notes |
-|-------|---------------|-----------------------------------|-------|
-| Stage 1 (Discovery) | `data/raw/uconn_urls.csv` | `source_url`, `discovered_url`, `first_seen`, `discovery_depth` | Respects depth limits, tracks dynamic/API URLs discovered. |
-| Stage 2 (Validation) | Stage 1 JSONL | `url`, `url_hash`, `status_code`, `content_type`, `response_time`, `is_valid`, `error_message` | Uses HEAD with GET fallback; errors are captured as descriptive strings. |
-| Stage 3 (Enrichment) | Stage 2 JSONL (valid URLs only) | `url`, `title`, `text_content`, `word_count`, `entities`, `keywords`, `content_tags`, `has_pdf_links`, `enriched_at` | Optional HuggingFace models add link scoring context. |
+---
 
-### Configuration files
-- `config/development.yml` and `config/production.yml`: Scrapy tunables, concurrency, file paths, logging preferences.
-- Environment variables override key values (`SCRAPY_CONCURRENT_REQUESTS`, `SCRAPY_DOWNLOAD_DELAY`, `STAGE1_MAX_DEPTH`, `STAGE1_BATCH_SIZE`).
-- `requirements.txt` lists core dependencies; optional extras (Transformers, SentenceTransformers) enable advanced enrichment.
+## Stage Deep Dive
 
-### Expected environment
-- Python 3.8+
-- Virtual environment recommended. Install dependencies and NLP models:
-  ```bash
-  pip install -r requirements.txt
-  python -m spacy download en_core_web_sm
-  ```
+### Stage 1 · Discovery (src/stage1)
+- Breadth-first crawl seeded from data/raw/uconn_urls.csv.
+- Dynamic heuristics inspect data attributes, inline JSON, and script tags to reveal AJAX endpoints.
+- Deduplication and canonicalisation pipeline pushes clean records to data/processed/stage01/new_urls.jsonl.
 
-## Running the Pipeline
+### Stage 2 · Validation (src/stage2)
+- URLValidator batches URLs, honours HEAD responses when sufficient, and executes GET fallbacks with shared TCP connectors.
+- Content-Length governance: trusts headers when sane, otherwise falls back to body length, ensuring consistent downstream metrics.
+- Exception handling preserves original iohttp error classes, yielding user-readable diagnostics while avoiding bare strings.
+- Writes validation artefacts to data/processed/stage02/validation_output.jsonl with latency, status code, caching hints, and staleness scores.
 
-```bash
-# Stage 1 only (discovery)
+### Stage 3 · Enrichment (src/stage3)
+- Pulls only validated URLs (status 2xx/3xx) and extracts structured content: titles, body text, keyword hints, media flags.
+- Supports JSONL, SQLite, Parquet, or S3 outputs through the nrichment.storage configuration block.
+- Emits adaptive feedback so discovery depth can be tuned based on observed content quality.
+
+---
+
+## Configuration Quick Reference
+
+| Key | Description |
+|-----|-------------|
+| SCRAPY_CONCURRENT_REQUESTS | Overrides Scrapy concurrency (stage 1). |
+| STAGE1_MAX_DEPTH | Caps traversal depth for discovery. |
+| stage2.max_workers | Controls validator parallelism; automatically doubles for TCP connector limits. |
+| stage2.timeout | Total request timeout fed into iohttp.ClientTimeout. |
+| stage3.storage.backend | Output target (jsonl, sqlite, parquet, s3). |
+| stage3.storage.rotation.max_items | Chunk size before starting a new artefact. |
+
+> Merge order: environment YAML -> environment variables -> CLI overrides.
+
+---
+
+## Operating the Pipeline
+
+`ash
+# Activate your virtual environment, then:
+
+# 1. Seed discovery only
 python main.py --env development --stage 1
 
-# Stage 2 only (requires Stage 1 output)
+# 2. Validate previously discovered URLs
 python main.py --env development --stage 2
 
-# Stage 3 only (requires Stage 2 output)
+# 3. Enrich validated pages
 python main.py --env development --stage 3
 
-# Run the full pipeline sequentially
+# 4. Full sequential run
 python main.py --env development --stage all
 
-# Inspect merged config without running stages
+# 5. Inspect resolved configuration without execution
 python main.py --env development --config-only
-```
+`
 
-Useful CLI flags (`main.py --help`):
-- `--stage {1,2,3,all}` – choose stages to execute.
-- `--log-level` – override log verbosity (default `INFO`).
-- `--config-only` – print resolved configuration.
+**Bootstrap checklist**
+1. pip install -r requirements.txt
+2. python -m spacy download en_core_web_sm (for enrichment NLP helpers)
+3. Populate data/raw/uconn_urls.csv with seeds (no header)
+4. Tail logs/ or console output for checkpoints and status summaries
+
+---
+
+## Quality, Observability, and Resilience
+
+- **Checkpointing:** src/common/checkpoints.py persists progress per stage – restart-friendly and resumable mid-batch.
+- **Adaptive depth & feedback:** Stage 2 results feed adaptive depth logic so Stage 1 prioritises high-value paths.
+- **Structured metadata:** Validation results capture cache headers, staleness, redirects, and response timing using 	ime.perf_counter for precision.
+- **Content governance:** Pipeline enforces schema validation via src/common/schemas_validated.py, ensuring consumers receive consistent payloads.
+- **Monitoring hooks:** Prometheus exporter and enrichment storage emit metrics-friendly artefacts when enabled.
+
+---
 
 ## Testing Strategy
 
-Run all tests:
-```bash
-python -m pytest
-```
+`ash
+python -m pytest                     # full test suite
+python -m pytest tests/stage2 -k networking  # targeted validator regression tests
+python -m pytest --maxfail=1 -q      # quick smoke
+`
 
-### Critical coverage
-- `tests/integration/test_full_pipeline.py` – orchestrator queues and cross-stage wiring.
-- `tests/stage2/test_validator_networking_regression.py` – retry/backoff behaviour and HEAD→GET fallbacks.
-- `tests/pipelines/test_stage1_pipeline.py` – JSONL persistence, dedupe logic, and error handling for Stage 1 pipeline.
-- `tests/stage3/test_enrichment_pipeline.py` – verifies enrichment schema and guarding against malformed inputs.
+Coverage highlights:
+- **Networking regressions:** 	ests/stage2/test_validator_networking_regression.py mirrors aiohttp semantics with mock sessions.
+- **Orchestrator integration:** 	ests/integration/test_orchestrator_e2e.py validates multi-stage execution and checkpoint hand-offs.
+- **Schema validation:** 	ests/common/test_schemas*.py guarantees JSONL contracts.
 
-### Foundational/unit suites
-- `tests/common/test_url_canonicalization_regression.py` – canonicalisation edge cases.
-- `tests/common/test_storage.py` – JSONL/SQLite storage helpers.
-- `tests/spiders/test_discovery_spider.py` – seed loading, link extraction, depth controls.
-- `tests/common/test_nlp_integration_regression.py` & `tests/utils/test_nlp_helpers.py` – NLP registry behaviour and fallbacks.
-- `tests/orchestrator/test_pipeline_orchestrator.py` – queue sizing, concurrent producer/consumer flow.
+---
 
-### Running subsets
-- `python -m pytest tests/stage1` – focus on discovery logic.
-- `python -m pytest -m integration` – run integration-tagged suites.
-- `python -m pytest --maxfail=1` – stop on first failure during iterative development.
+## Contribution Guide
 
-## Extensibility Notes & Future Direction
+1. Fork & branch from main (git checkout -b feature/your-feature).
+2. Keep pull requests focused; update docs/tests alongside code.
+3. Ensure pytest passes and linting (if configured) shows zero warnings.
+4. Document configuration toggles or migration notes in docs/ when relevant.
+5. Submit PR with context: goal, testing evidence, follow-up actions.
 
-- **Dynamic discovery tuning:** Stage 1 now captures AJAX/API endpoints via heuristic scanning. Monitor the logged counters to decide where stricter throttles or paging heuristics (`TODO[stage1-ajax-interactions]`) should land.
-- **Persistence & restartability:** Promote `common.storage.URLCache` to production to avoid rescanning large JSONL artefacts during restarts.
-- **Stage 3 orchestration:** Fix the `urls_for_enrichment` reference and add smoke tests so CLI `--stage 3` once again works end-to-end.
-- **Model-ready outputs:** Enrichment schema already houses text, entities, and tags; consider adding summarisation and provenance fields before training loops consume the data.
-- **Operational playbooks:** See `docs/pipeline_improvement_plan.md` for prioritised roadmap tasks around batching, logging ergonomics, and schema validation.
-- **Logging & observability:** Emit structured JSON logs (`URL_DISCOVERED`, `DYNAMIC_ENDPOINT_FOUND`, checkpoint syncs) and expose per-heuristic counters so operators can trace throughput spikes.
-- **Efficiency measures:** Introduce adaptive crawl delays based on response latency, shared dedupe storage for parallel crawlers, and resumable checkpoints to minimise rework on restarts.
-- **Faculty coverage:** Map faculty profiles and cross-link external sources (RateMyProfessor) as part of Stage 1/3 enrichment; see the plan below.
+Branch naming suggestions: eature/*, ix/*, docs/*, 
+efactor/*, 	est/*.
 
-## Requirements & Optional Extras
+---
 
-- `requirements.txt` includes Scrapy, aiohttp, Twisted, PyYAML, pytest, psutil, and spaCy.
-- Optional NLP enhancements require `sentence-transformers`, `transformers`, and `huggingface-hub`.
-- After installing requirements, download the spaCy model:
-  ```bash
-  python -m spacy download en_core_web_sm
-  ```
-- When running enrichment on resource-constrained machines, skip optional packages or disable the HuggingFace scoring path.
+## Roadmap Highlights
+- Dynamic selector hardening through heuristic scoring and smoke checks.
+- Rendering diagnostics with optional DOM snapshots for JavaScript-heavy endpoints.
+- Extended schema catalogues published under data/catalog/ for downstream discoverability.
+- Operational dashboards for checkpoint success/failure, throughput, and retry rates.
 
-### Technical Debt
-- **Logging Format**: Logging is not yet standardized to a structured format (e.g., JSON) across all modules, making automated monitoring more difficult.
-- **Overlapping Configuration**: The configuration system has too many overlapping options that need to be simplified and consolidated.
-- **Error Masking**: Some `try...except` blocks may be too broad, potentially hiding important errors that should be addressed.
+---
 
-## Contributing & Change Ideas
+## Design Language & Visual Identity
+> A consistent design vocabulary keeps code, documentation, and UX aligned.
 
-1. Fork the repository.
-2. Create a feature branch from `main` (`git checkout -b feature/your-feature-name`).
-3. Make your changes and commit them with a descriptive message.
-4. Run tests (`python -m pytest`) to ensure everything still works.
-5. Submit a pull request for review.
+- **Color palette:** Navy (#05437C) + Huskies blue (#2E6F95) + supporting neutrals ensure readability and UConn resonance.
+- **Typography:** Prefer semantic Markdown headings, short paragraphs, and tables to optimise scan-ability on GitHub.
+- **Iconography:** Shields.io badges highlight runtime guarantees (Python version, test posture) without overwhelming the reader.
+- **Layout rhythm:** Section dividers (---) and callouts maintain visual pacing, guiding readers from overview -> operations -> contribution.
 
-### Future Project Directions
-The following ideas focus on resilience, maintainability, and observability.
+---
 
-- **Dynamic Selector Hardening**: Improve heuristics for generating CSS/XPath selectors when layouts change, and add guard rails to detect stale locators early.
-- **Rendering Diagnostics**: Capture lightweight screenshots or DOM snapshots during scraping runs to simplify debugging tricky, JavaScript-heavy pages.
-- **Structured Data Pipelines**: Expand schema validation and catalog publishing so downstream consumers can rely on versioned, self-describing datasets.
-- **Operational Tooling**: Build dashboards and alerting around checkpoint status, throughput, and retry rates to catch regressions quickly.
-
-- Use feature flags for new discovery heuristics to throttle high-churn areas without removing coverage.
-- Add smoke tests for `run_tests.py --smoke` once the stabilisation workstream lands.
-- Document schema versions and publish manifests under `data/catalog/` to keep downstream consumers aligned.
-- Consider splitting optional dependencies into extras (`pip install .[enrichment]`) once packaging is added.
-
-### Branching and Development
-
-When contributing, please follow these guidelines for branching.
-
-#### Creating a New Branch
-```bash
-# Create and switch to a new feature branch from main
-git checkout -b feature/your-feature-name
-
-# Make your changes, then commit
-git add .
-git commit -m "feat: Add your descriptive feature summary"
-
-# Push to the remote repository
-git push -u origin feature/your-feature-name
-```
-
-#### Branch Naming Conventions
-- `feature/` - New features or enhancements.
-- `fix/` - Bug fixes.
-- `docs/` - Documentation-only updates.
-- `refactor/` - Code improvements without changing behavior.
-- `test/` - Adding or improving tests.
-
-## Faculty & RateMyProfessor Data Plan
-
-1. **Faculty roster acquisition**
-   - Expand Stage 1 seeds with registrar, department, and lab directories to guarantee every profile URL is discoverable.
-   - Store canonical faculty records (`name`, `department`, `profile_url`, `discovery_source`) in JSONL/SQLite so later stages can reuse them without rescanning.
-   - Normalise naming conventions (e.g., `First M. Last`) to improve matching with external datasets.
-
-2. **Cross-linking sources**
-   - Extract structured attributes (email, phone, research areas) during Stage 3 enrichment to strengthen match confidence.
-   - Generate embeddings for biography text to cluster faculty by discipline and spot departments with missing coverage.
-
-3. **RateMyProfessor integration**
-   - Build a compliant fetcher that queries RateMyProfessor by university and faculty name (respecting ToS/rate limits).
-   - Apply fuzzy matching (Levenshtein similarity, e-mail, department cues) to associate RateMyProfessor entries with internal records.
-   - Persist aggregated ratings, tags, and comment summaries with provenance flags to keep downstream consumers aware of the data source.
-
-4. **Ethics & compliance**
-   - Honour RateMyProfessor access policies; prefer official exports or APIs when available.
-   - Maintain opt-out capabilities and flag sensitive matches for manual review.
-
-5. **Logging & monitoring**
-   - Emit dedicated log events (`FACULTY_PROFILE_DISCOVERED`, `RMP_MATCHED`) and track per-department coverage in dashboards.
-   - Publish summary reports comparing discovered faculty profiles with expected rosters to guide additional seed acquisition.
-
-## Stage 3 Storage Configuration
-
-Stage 3 now supports pluggable output backends via the `enrichment.storage` section in `config/*.yml`.
-Example:
-
-```yaml
-stages:
-  enrichment:
-    output_file: data/processed/stage03/enrichment_output.jsonl
-    storage:
-      backend: jsonl
-      options:
-        path: data/processed/stage03/enrichment_output.jsonl
-      rotation:
-        max_items: 5000
-      compression:
-        codec: none
-```
-
-Available backends:
-
-- `jsonl` (default) with optional rotation and gzip compression
-- `sqlite` (persists rows in an `enrichment_items` table)
-- `parquet` (requires `pyarrow`)
-- `s3` (uploads JSONL batches; supports gzip compression and rotation thresholds)
-
-The orchestrator propagates these settings to both the Scrapy pipeline and the async enrichment worker.
-
+Happy scraping!
