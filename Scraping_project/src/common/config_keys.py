@@ -29,12 +29,14 @@ STAGE_ENRICHMENT = "enrichment"
 DISCOVERY_SPIDER_NAME = "spider_name"
 DISCOVERY_ALLOWED_DOMAINS = "allowed_domains"
 DISCOVERY_MAX_DEPTH = "max_depth"
+DISCOVERY_BATCH_SIZE = "batch_size"
 DISCOVERY_OUTPUT_FILE = "output_file"
 DISCOVERY_SEED_FILE = "seed_file"
 DISCOVERY_USE_PERSISTENT_DEDUP = "use_persistent_dedup"
 DISCOVERY_DEDUP_CACHE_PATH = "dedup_cache_path"
 DISCOVERY_DYNAMIC_SCRIPT_HINTS = "DISCOVERY_DYNAMIC_SCRIPT_HINTS"
 DISCOVERY_HEADLESS_BROWSER = "headless_browser"
+DISCOVERY_HEURISTICS = "heuristics"
 
 # Validation stage settings
 VALIDATION_MAX_WORKERS = "max_workers"
@@ -68,6 +70,18 @@ ENRICHMENT_BATCH_SIZE = "batch_size"
 ENRICHMENT_OUTPUT_FILE = "output_file"
 ENRICHMENT_HEADLESS_BROWSER = "headless_browser"
 ENRICHMENT_CONTENT_TYPES = "content_types"
+
+# NLP settings
+NLP = "nlp"
+NLP_SPACY_MODEL = "spacy_model"
+NLP_USE_TRANSFORMERS = "use_transformers"
+NLP_TRANSFORMER_NER_MODEL = "transformer_ner_model"
+NLP_SUMMARIZER_MODEL = "summarizer_model"
+NLP_MAX_TEXT_LENGTH = "max_text_length"
+NLP_TOP_KEYWORDS = "top_keywords"
+NLP_SUMMARY_MAX_LENGTH = "summary_max_length"
+NLP_SUMMARY_MIN_LENGTH = "summary_min_length"
+NLP_DEVICE = "device"
 
 # Logging settings
 LOGGING_LEVEL = "level"

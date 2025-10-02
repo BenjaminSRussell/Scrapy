@@ -258,6 +258,32 @@ class HeuristicsConfig(BaseModel):
     """Discovery heuristics configuration"""
     model_config = ConfigDict(extra='forbid')
 
+    # Feature flags to enable/disable specific heuristics
+    enable_json_discovery: bool = Field(
+        default=True,
+        description="Enable JSON blob parsing for URL discovery"
+    )
+    enable_ajax_regex: bool = Field(
+        default=True,
+        description="Enable AJAX endpoint regex pattern matching"
+    )
+    enable_pagination_guess: bool = Field(
+        default=True,
+        description="Enable automatic pagination URL generation"
+    )
+    enable_data_attributes: bool = Field(
+        default=True,
+        description="Enable parsing of HTML data attributes for URLs"
+    )
+    enable_form_actions: bool = Field(
+        default=True,
+        description="Enable extraction of form action URLs"
+    )
+    enable_meta_refresh: bool = Field(
+        default=True,
+        description="Enable extraction of meta refresh redirect URLs"
+    )
+
     dynamic_script_hints: List[str] = Field(
         default=[
             "fetch(", "xmlhttprequest", "axios", "$.get", "$.post",
@@ -277,6 +303,26 @@ class HeuristicsConfig(BaseModel):
             "data-request-url", "data-action", "data-next", "data-feed"
         ],
         description="HTML data attributes that may contain URLs"
+    )
+
+    # Throttling and quality control
+    min_confidence_threshold: float = Field(
+        default=0.5,
+        ge=0.0,
+        le=1.0,
+        description="Minimum confidence score for discovered URLs (0.0-1.0)"
+    )
+    max_low_quality_per_page: int = Field(
+        default=50,
+        ge=0,
+        le=1000,
+        description="Maximum low-quality URLs to accept per page"
+    )
+    pagination_max_pages: int = Field(
+        default=10,
+        ge=1,
+        le=100,
+        description="Maximum pagination pages to generate per endpoint"
     )
 
 
@@ -686,22 +732,65 @@ class NLPConfig(BaseModel):
     """NLP processing configuration"""
     model_config = ConfigDict(extra='forbid')
 
-    model: str = Field(
+    # spaCy configuration
+    spacy_model: str = Field(
         default="en_core_web_sm",
         min_length=1,
-        description="spaCy model name"
+        description="spaCy model name for basic NLP"
     )
+
+    # Transformer models configuration
+    use_transformers: bool = Field(
+        default=False,
+        description="Enable transformer-based models for advanced NLP"
+    )
+    transformer_ner_model: Optional[str] = Field(
+        default="dslim/bert-base-NER",
+        description="Transformer model for Named Entity Recognition"
+    )
+    summarizer_model: Optional[str] = Field(
+        default="sshleifer/distilbart-cnn-12-6",
+        description="Transformer model for text summarization"
+    )
+
+    # Processing settings
     max_text_length: int = Field(
         default=20000,
         ge=100,
         le=1000000,
-        description="Maximum text length"
+        description="Maximum text length to process"
     )
     top_keywords: int = Field(
         default=15,
         ge=1,
         le=100,
         description="Top keywords to extract"
+    )
+
+    # Summarization settings
+    summary_max_length: int = Field(
+        default=150,
+        ge=50,
+        le=500,
+        description="Maximum length of generated summary"
+    )
+    summary_min_length: int = Field(
+        default=30,
+        ge=10,
+        le=200,
+        description="Minimum length of generated summary"
+    )
+
+    # Device configuration
+    device: Optional[Literal["cpu", "cuda", "mps", "auto"]] = Field(
+        default="auto",
+        description="Device for transformer models (auto, cpu, cuda, mps)"
+    )
+
+    # Legacy compatibility
+    model: Optional[str] = Field(
+        default=None,
+        description="Deprecated: use spacy_model instead"
     )
 
 

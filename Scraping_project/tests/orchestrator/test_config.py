@@ -212,14 +212,11 @@ def test_config_environment_property(temp_config_file):
     assert config.environment == 'test'
 
 
-@pytest.mark.parametrize("env_value,expected_type,expected_value", [
-    ("100", int, 100),
-    ("1.5", float, 1.5),
-    ("string_value", str, "string_value"),
-    ("true", str, "true"),  # Boolean strings stay as strings
+@pytest.mark.parametrize("env_value, expected_value", [
+    ("100", 100),
 ])
-def test_config_env_override_type_conversion(temp_config_file, env_value, expected_type, expected_value):
-    """Test environment variable type conversion."""
+def test_config_env_override_type_conversion_valid(temp_config_file, env_value, expected_value):
+    """Test valid environment variable type conversion."""
     config_dir, config_file = temp_config_file
 
     with patch.dict(os.environ, {'SCRAPY_CONCURRENT_REQUESTS': env_value}):
@@ -227,8 +224,22 @@ def test_config_env_override_type_conversion(temp_config_file, env_value, expect
             config = Config(env='test')
 
     value = config.get('scrapy', 'concurrent_requests')
-    assert isinstance(value, expected_type)
+    assert isinstance(value, int)
     assert value == expected_value
+
+@pytest.mark.parametrize("env_value", [
+    "1.5",
+    "string_value",
+    "true",
+])
+def test_config_env_override_type_conversion_invalid(temp_config_file, env_value):
+    """Test that invalid environment variable type conversion raises an error."""
+    config_dir, config_file = temp_config_file
+
+    with patch.dict(os.environ, {'SCRAPY_CONCURRENT_REQUESTS': env_value}):
+        with patch.object(Config, 'config_dir', config_dir):
+            with pytest.raises(ConfigValidationError):
+                Config(env='test')
 
 
 def test_config_nested_key_navigation(temp_config_file):

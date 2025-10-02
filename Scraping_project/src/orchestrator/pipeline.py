@@ -9,6 +9,7 @@ from datetime import datetime
 import logging
 
 from src.common import config_keys as keys
+from src.orchestrator.orchestrator_validation import validate_stage_output
 
 logger = logging.getLogger(__name__)
 
@@ -149,6 +150,8 @@ class PipelineOrchestrator:
             logger.warning(f"Stage 1 output file not found: {output_file}")
             return
 
+        validate_stage_output(1, output_file)
+
         logger.info(f"Loading Stage 1 results from {output_file}")
 
         with open(output_file, 'r', encoding='utf-8') as f:
@@ -177,6 +180,8 @@ class PipelineOrchestrator:
         if not output_file.exists():
             logger.warning(f"Stage 2 output file not found: {output_file}")
             return
+
+        validate_stage_output(2, output_file)
 
         logger.info(f"Loading Stage 2 results from {output_file}")
 

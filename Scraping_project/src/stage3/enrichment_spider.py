@@ -8,8 +8,16 @@ import scrapy
 from scrapy.http import Response
 
 from src.common.schemas import EnrichmentItem
-from src.common.nlp import extract_entities_and_keywords, extract_content_tags, has_audio_links, summarize
+from src.common.nlp import (
+    extract_entities_and_keywords,
+    extract_content_tags,
+    has_audio_links,
+    summarize,
+    initialize_nlp,
+    NLPSettings
+)
 from src.common.urls import canonicalize_url_simple
+from src.common.content_handlers import ContentTypeRouter
 
 
 class EnrichmentSpider(scrapy.Spider):
@@ -25,10 +33,29 @@ class EnrichmentSpider(scrapy.Spider):
         allowed_domains: list = None,
         headless_browser_config: dict = None,
         content_types_config: dict = None,
+        nlp_config: dict = None,
         *args,
         **kwargs
     ):
         super().__init__(*args, **kwargs)
+
+        # Initialize NLP with configuration
+        if nlp_config:
+            nlp_settings = NLPSettings(
+                spacy_model=nlp_config.get('spacy_model', 'en_core_web_sm'),
+                transformer_model=nlp_config.get('transformer_ner_model') if nlp_config.get('use_transformers') else None,
+                summarizer_model=nlp_config.get('summarizer_model') if nlp_config.get('use_transformers') else None,
+                preferred_device=nlp_config.get('device', 'auto')
+            )
+            initialize_nlp(nlp_settings)
+            self.logger.info(f"NLP initialized with transformers: {nlp_config.get('use_transformers', False)}")
+            self.use_transformer_ner = nlp_config.get('use_transformers', False)
+            self.summary_max_length = nlp_config.get('summary_max_length', 150)
+            self.summary_min_length = nlp_config.get('summary_min_length', 30)
+        else:
+            self.use_transformer_ner = False
+            self.summary_max_length = 150
+            self.summary_min_length = 30
 
         # Load allowed domains from configuration or use default
         if allowed_domains:
@@ -51,6 +78,13 @@ class EnrichmentSpider(scrapy.Spider):
 
         # Content types configuration
         self.content_types_config = content_types_config or {}
+
+        # Initialize content type router for PDF/media handling
+        if self.content_types_config:
+            self.content_router = ContentTypeRouter(self.content_types_config)
+            self.logger.info(f"Content router enabled for types: {self.content_router.enabled_types}")
+        else:
+            self.content_router = None
 
         self.logger.info(f"Allowed domains: {self.allowed_domains}")
         self.logger.info(f"Headless browser enabled: {self.headless_browser_enabled}")
@@ -194,13 +228,48 @@ class EnrichmentSpider(scrapy.Spider):
             self.logger.warning(f"HuggingFace link scoring failed: {e}")
             return [0.0] * len(links)
 
-    # TODO: This content extraction is very basic. It should be extended to support more complex scenarios, such as extracting content from dynamic websites or handling different content types.
     def parse(self, response: Response) -> Iterator[EnrichmentItem]:
         """Parse response and extract content/metadata"""
         validation_data = response.meta.get('validation_data', {})
         url_hash = response.meta.get('url_hash', '')
 
+        # Get content type from response
+        content_type = response.headers.get('Content-Type', b'').decode('utf-8')
+        normalized_content_type = content_type.split(';')[0].strip().lower()
+
         try:
+            # Handle non-HTML content types (PDF, images, etc.)
+            if self.content_router and normalized_content_type != 'text/html':
+                if self.content_router.can_process(normalized_content_type):
+                    self.logger.info(f"Processing {normalized_content_type} content: {response.url}")
+                    content_data = self.content_router.process_content(
+                        response.body, response.url, url_hash, normalized_content_type
+                    )
+
+                    # Create enrichment item from content data
+                    yield EnrichmentItem(
+                        url=response.url,
+                        url_hash=url_hash,
+                        title=content_data.get('metadata', {}).get('title', ''),
+                        text_content=content_data.get('text_content', ''),
+                        content_summary=content_data.get('text_content', '')[:500] if content_data.get('text_content') else '',
+                        entities=[],
+                        keywords=[],
+                        content_tags=[],
+                        has_pdf_links=False,
+                        has_audio_links=False,
+                        link_scores=[],
+                        first_seen=validation_data.get('validated_at', datetime.now().isoformat()),
+                        content_type=content_type,
+                        word_count=content_data.get('word_count', 0),
+                        **{f'pdf_{k}': v for k, v in content_data.get('metadata', {}).items()}  # Prefix PDF metadata
+                    )
+                    return
+                else:
+                    self.logger.warning(f"Unsupported content type {normalized_content_type} for {response.url}")
+                    return
+
+            # HTML content processing (existing logic)
             # Extract text content from the page
             title = response.xpath('//title/text()').get(default='').strip()
 
@@ -209,9 +278,14 @@ class EnrichmentSpider(scrapy.Spider):
                 response.xpath('//body//text()[normalize-space() and not(ancestor::script) and not(ancestor::style)]').getall()
             ).strip()
 
-            # Perform NLP analysis
-            entities, keywords = extract_entities_and_keywords(text_content)
-            content_summary = summarize(text_content)
+            # Perform NLP analysis with configured backend
+            backend = "transformer" if self.use_transformer_ner else "spacy"
+            entities, keywords = extract_entities_and_keywords(text_content, backend=backend)
+            content_summary = summarize(
+                text_content,
+                max_length=self.summary_max_length,
+                min_length=self.summary_min_length
+            )
 
             # Extract content tags from URL path
             url_path = urlparse(response.url).path

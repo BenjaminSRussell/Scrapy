@@ -89,7 +89,7 @@ class TestREADMEExamples:
         """Test that test commands mentioned in README work"""
         # Test basic pytest command
         result = subprocess.run(
-            ["python", "-m", "pytest", "--version"],
+            [sys.executable, "-m", "pytest", "--version"],
             capture_output=True,
             text=True,
             cwd=Path(__file__).parent.parent.parent

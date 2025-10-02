@@ -12,6 +12,13 @@ import scrapy
 from scrapy.linkextractors import LinkExtractor
 from scrapy.http import Response
 
+try:
+    from scrapy_playwright.page import Page
+    PLAYWRIGHT_AVAILABLE = True
+except ImportError:
+    PLAYWRIGHT_AVAILABLE = False
+    Page = None  # type: ignore
+
 from src.common.schemas import DiscoveryItem
 from src.common.urls import canonicalize_url_simple
 from src.common.storage import URLCache, PaginationCache
@@ -100,8 +107,12 @@ class DiscoverySpider(scrapy.Spider):
         self.enable_ajax_regex = self.settings.getbool('ENABLE_AJAX_REGEX', True)
         self.enable_json_discovery = self.settings.getbool('ENABLE_JSON_DISCOVERY', True)
         self.enable_pagination_guess = self.settings.getbool('ENABLE_PAGINATION_GUESS', True)
+        self.enable_meta_refresh = self.settings.getbool('ENABLE_META_REFRESH_DISCOVERY', True)
 
         logger.info(f"Discovery spider initialized with max_depth={self.max_depth}")
+        logger.info(f"Heuristics: JSON={self.enable_json_discovery}, AJAX={self.enable_ajax_regex}, "
+                   f"Pagination={self.enable_pagination_guess}, DataAttrs={self.enable_data_attribute_discovery}, "
+                   f"Forms={self.enable_form_action_discovery}, MetaRefresh={self.enable_meta_refresh}")
 
     def start_requests(self) -> Iterator[scrapy.Request]:
         """Load seed URLs and start crawling - legacy sync method for backward compatibility"""
@@ -144,7 +155,8 @@ class DiscoverySpider(scrapy.Spider):
                             meta={
                                 'source_url': canonical_url,
                                 'depth': 0,
-                                'first_seen': datetime.now().isoformat()
+                                'first_seen': datetime.now().isoformat(),
+                                'playwright': True
                             }
                         )
 
@@ -297,6 +309,20 @@ class DiscoverySpider(scrapy.Spider):
                 json_urls = self._extract_urls_from_json_text(raw_json, response)
                 for url in json_urls:
                     sourced_candidates[url] = ("json_blob", 0.7)
+
+        # meta refresh redirects - high confidence since they're explicit
+        if self.enable_meta_refresh and heuristic_quality.get('meta_refresh', 0) < 100:
+            # Extract from <meta http-equiv="refresh" content="0; url=...">
+            meta_refresh = response.xpath('//meta[contains(@http-equiv, "refresh")]/@content').getall()
+            for content in meta_refresh:
+                # Parse content like "5; url=http://example.com"
+                if 'url=' in content.lower():
+                    parts = content.lower().split('url=')
+                    if len(parts) > 1:
+                        raw_url = parts[1].strip().strip('"').strip("'")
+                        normalized = self._normalize_candidate(raw_url, response)
+                        if normalized:
+                            sourced_candidates[normalized] = ("meta_refresh", 0.9)
 
         # pagination generation - lower confidence since it's speculative
         if self.enable_pagination_guess and heuristic_quality.get('pagination_guess', 0) < 100:
@@ -506,6 +532,59 @@ class DiscoverySpider(scrapy.Spider):
 
     def _contains_dynamic_hint(self, script_text: str) -> bool:
         return any(hint in script_text for hint in DYNAMIC_SCRIPT_HINTS)
+
+    async def _discover_with_headless_browser(self, url: str, current_depth: int) -> Iterator[DiscoveryItem]:
+        """
+        Use headless browser to discover URLs from JavaScript-rendered content.
+        This method captures network requests and extracts URLs from dynamic content.
+        """
+        try:
+            from src.common.headless_browser import HeadlessBrowser
+
+            # Get headless browser config from settings
+            browser_config = self.settings.get('HEADLESS_BROWSER_CONFIG', {})
+            if not browser_config.get('enabled', False):
+                logger.debug(f"Headless browser disabled, skipping: {url}")
+                return
+
+            logger.info(f"Using headless browser for JavaScript-heavy page: {url}")
+
+            # Initialize and start browser
+            browser = HeadlessBrowser(browser_config)
+            await browser.start()
+
+            try:
+                # Fetch page with browser and capture network requests
+                result = await browser.fetch(url)
+
+                # Extract discovered URLs from network activity
+                dynamic_urls = result.get('dynamic_urls', [])
+                logger.info(f"Headless browser discovered {len(dynamic_urls)} dynamic URLs from {url}")
+
+                # Also extract AJAX endpoints
+                ajax_endpoints = await browser.extract_ajax_endpoints(url)
+                logger.info(f"Headless browser discovered {len(ajax_endpoints)} AJAX endpoints from {url}")
+
+                # Combine all discovered URLs
+                all_urls = set(dynamic_urls + ajax_endpoints)
+
+                # Process discovered URLs
+                for discovered_url in all_urls:
+                    normalized = self._normalize_candidate(discovered_url, None)
+                    if normalized:
+                        results = self._process_candidate_url(
+                            normalized, url, current_depth, "headless_browser", 0.8
+                        )
+                        if results:
+                            yield results
+
+            finally:
+                await browser.stop()
+
+        except ImportError:
+            logger.warning("Headless browser module not available. Install playwright: pip install playwright")
+        except Exception as e:
+            logger.error(f"Headless browser discovery failed for {url}: {e}")
 
     def closed(self, reason):
         """Called when spider closes - report comprehensive crawl summary"""
@@ -770,10 +849,12 @@ class DiscoverySpider(scrapy.Spider):
                     new_params = query_params.copy()
                     new_params[param] = [value]
                     new_query = urlencode(new_params, doseq=True)
-                    new_url = urlunparse((
-                        parsed.scheme, parsed.netloc, parsed.path,
-                        parsed.params, new_query, parsed.fragment
-                    ))
+                    new_url = urlunparse(
+                        (
+                            parsed.scheme, parsed.netloc, parsed.path,
+                            parsed.params, new_query, parsed.fragment
+                        )
+                    )
                     pagination_urls.add(new_url)
 
         return pagination_urls

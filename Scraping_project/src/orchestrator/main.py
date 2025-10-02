@@ -54,11 +54,27 @@ async def run_stage1_discovery(config: Config):
 
     # Configure stage 1 because we need more configuration
     stage1_config = config.get_stage1_config()
+
+    # Get heuristics configuration
+    heuristics = stage1_config.get(keys.DISCOVERY_HEURISTICS, {})
+
+    # Get headless browser configuration
+    headless_browser_config = stage1_config.get(keys.DISCOVERY_HEADLESS_BROWSER, {})
+
     settings.update({
         'STAGE1_OUTPUT_FILE': stage1_config[keys.DISCOVERY_OUTPUT_FILE],
         'SEED_FILE': stage1_config[keys.DISCOVERY_SEED_FILE],
         'USE_PERSISTENT_DEDUP': stage1_config.get(keys.DISCOVERY_USE_PERSISTENT_DEDUP, True),
         'DEDUP_CACHE_PATH': stage1_config.get(keys.DISCOVERY_DEDUP_CACHE_PATH, 'data/cache/url_cache.db'),
+        # Heuristics feature flags
+        'ENABLE_JSON_DISCOVERY': heuristics.get('enable_json_discovery', True),
+        'ENABLE_AJAX_REGEX': heuristics.get('enable_ajax_regex', True),
+        'ENABLE_PAGINATION_GUESS': heuristics.get('enable_pagination_guess', True),
+        'ENABLE_DATA_ATTRIBUTE_DISCOVERY': heuristics.get('enable_data_attributes', True),
+        'ENABLE_FORM_ACTION_DISCOVERY': heuristics.get('enable_form_actions', True),
+        'ENABLE_META_REFRESH_DISCOVERY': heuristics.get('enable_meta_refresh', True),
+        # Headless browser config for JavaScript-rendered content
+        'HEADLESS_BROWSER_CONFIG': headless_browser_config,
         'ITEM_PIPELINES': {
             'src.stage1.discovery_pipeline.Stage1Pipeline': 300,  # Magic number for pipeline priority
         },
@@ -118,8 +134,14 @@ async def run_stage3_enrichment(config: Config, orchestrator: PipelineOrchestrat
         'CONCURRENT_REQUESTS_PER_DOMAIN': 8,
     }
 
-    # make the spider
-    enricher = EnrichmentSpider()
+    # Get NLP configuration
+    nlp_config = config.get_nlp_config()
+
+    # make the spider with content types and NLP configuration
+    enricher = EnrichmentSpider(
+        content_types_config=stage3_config.get(keys.ENRICHMENT_CONTENT_TYPES, {}),
+        nlp_config=nlp_config
+    )
 
     # Run concurrent queue population and enrichment processing
     await orchestrator.run_concurrent_stage3_enrichment(enricher, scrapy_settings)

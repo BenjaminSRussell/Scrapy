@@ -180,9 +180,11 @@ class Config:
         return {
             keys.DISCOVERY_ALLOWED_DOMAINS: self.get(keys.STAGES, keys.STAGE_DISCOVERY, keys.DISCOVERY_ALLOWED_DOMAINS, default=['uconn.edu']),
             keys.DISCOVERY_MAX_DEPTH: self.get(keys.STAGES, keys.STAGE_DISCOVERY, keys.DISCOVERY_MAX_DEPTH),
+            keys.DISCOVERY_BATCH_SIZE: self.get(keys.STAGES, keys.STAGE_DISCOVERY, keys.DISCOVERY_BATCH_SIZE, default=100),
             keys.DISCOVERY_OUTPUT_FILE: self.get(keys.STAGES, keys.STAGE_DISCOVERY, keys.DISCOVERY_OUTPUT_FILE),
             keys.DISCOVERY_SEED_FILE: self.get(keys.STAGES, keys.STAGE_DISCOVERY, keys.DISCOVERY_SEED_FILE),
             keys.DISCOVERY_HEADLESS_BROWSER: self.get(keys.STAGES, keys.STAGE_DISCOVERY, keys.DISCOVERY_HEADLESS_BROWSER, default={}),
+            keys.DISCOVERY_HEURISTICS: self.get(keys.STAGES, keys.STAGE_DISCOVERY, keys.DISCOVERY_HEURISTICS, default={}),
         }
 
     def get_stage2_config(self) -> Dict[str, Any]:
@@ -203,6 +205,20 @@ class Config:
             keys.ENRICHMENT_OUTPUT_FILE: self.get(keys.STAGES, keys.STAGE_ENRICHMENT, keys.ENRICHMENT_OUTPUT_FILE),
             keys.ENRICHMENT_HEADLESS_BROWSER: self.get(keys.STAGES, keys.STAGE_ENRICHMENT, keys.ENRICHMENT_HEADLESS_BROWSER, default={}),
             keys.ENRICHMENT_CONTENT_TYPES: self.get(keys.STAGES, keys.STAGE_ENRICHMENT, keys.ENRICHMENT_CONTENT_TYPES, default={}),
+        }
+
+    def get_nlp_config(self) -> Dict[str, Any]:
+        """Get NLP configuration"""
+        return {
+            keys.NLP_SPACY_MODEL: self.get(keys.NLP, keys.NLP_SPACY_MODEL, default='en_core_web_sm'),
+            keys.NLP_USE_TRANSFORMERS: self.get(keys.NLP, keys.NLP_USE_TRANSFORMERS, default=False),
+            keys.NLP_TRANSFORMER_NER_MODEL: self.get(keys.NLP, keys.NLP_TRANSFORMER_NER_MODEL, default='dslim/bert-base-NER'),
+            keys.NLP_SUMMARIZER_MODEL: self.get(keys.NLP, keys.NLP_SUMMARIZER_MODEL, default='sshleifer/distilbart-cnn-12-6'),
+            keys.NLP_MAX_TEXT_LENGTH: self.get(keys.NLP, keys.NLP_MAX_TEXT_LENGTH, default=20000),
+            keys.NLP_TOP_KEYWORDS: self.get(keys.NLP, keys.NLP_TOP_KEYWORDS, default=15),
+            keys.NLP_SUMMARY_MAX_LENGTH: self.get(keys.NLP, keys.NLP_SUMMARY_MAX_LENGTH, default=150),
+            keys.NLP_SUMMARY_MIN_LENGTH: self.get(keys.NLP, keys.NLP_SUMMARY_MIN_LENGTH, default=30),
+            keys.NLP_DEVICE: self.get(keys.NLP, keys.NLP_DEVICE, default='auto'),
         }
 
     def get_logging_config(self) -> Dict[str, Any]:
