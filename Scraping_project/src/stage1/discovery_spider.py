@@ -57,8 +57,10 @@ class DiscoverySpider(scrapy.Spider):
 
     def __init__(self, max_depth: int = 3, allowed_domains: list = None, settings: dict = None, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        if settings:
+        if settings and not isinstance(settings, scrapy.settings.Settings):
             self.settings = scrapy.settings.Settings(settings)
+        elif settings:
+            self.settings = settings
         self.max_depth = int(max_depth)
 
         # Set session ID for this crawl run
@@ -446,7 +448,7 @@ class DiscoverySpider(scrapy.Spider):
 
         # meta refresh redirects - high confidence since they're explicit
         if self.enable_meta_refresh and heuristic_quality.get('meta_refresh', 0) < 100:
-            # Extract from <meta http-equiv="refresh" content="0; url=...">
+            # Extract from <meta http-equiv="refresh" content="0; url=..." >
             meta_refresh = response.xpath('//meta[contains(@http-equiv, "refresh")]/@content').getall()
             for content in meta_refresh:
                 # Parse content like "5; url=http://example.com"

@@ -1,0 +1,23 @@
+{
+  "patterns": {},
+  "sources": {},
+  "session_history": [
+    {
+      "session_id": "session_20251002_151622",
+      "started_at": "2025-10-02T15:16:22.305255",
+      "completed_at": "2025-10-02T15:16:22.327603",
+      "total_discovered": 0,
+      "total_validated": 1,
+      "total_failed": 0,
+      "success_rate": 1.0,
+      "source_performance": {
+        "unknown": {
+          "validated": 1,
+          "failed": 0
+        }
+      }
+    }
+  ],
+  "last_updated": "2025-10-02T15:16:22.328104",
+  "total_sessions": 1
+}

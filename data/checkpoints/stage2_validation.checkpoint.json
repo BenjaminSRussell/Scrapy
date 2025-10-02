@@ -1,0 +1,14 @@
+{
+  "stage": "stage2_validation",
+  "batch_id": 1,
+  "last_processed_line": 50,
+  "last_url_hash": "hash_49",
+  "total_processed": 50,
+  "created_at": "2025-10-02T15:16:12.800537",
+  "updated_at": "2025-10-02T15:16:22.636510",
+  "status": "completed",
+  "metadata": {
+    "batch_size": 50,
+    "output_file": "test_validation_output.jsonl"
+  }
+}
