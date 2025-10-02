@@ -279,8 +279,17 @@ class PipelineOrchestrator:
         scrapy_settings,
         spider_kwargs: dict[str, Any] | None = None,
         crawler_process_factory=None,
+        use_async_processor: bool = False,
     ):
-        """Run Stage 3 enrichment with concurrent queue processing."""
+        """Run Stage 3 enrichment with concurrent queue processing.
+
+        Args:
+            spider_cls: Spider class (used for Scrapy mode)
+            scrapy_settings: Scrapy settings dict
+            spider_kwargs: Additional spider kwargs
+            crawler_process_factory: Factory for creating CrawlerProcess
+            use_async_processor: If True, use async processor instead of Scrapy
+        """
         logger.info("Starting concurrent Stage 3 enrichment")
 
         population_task = asyncio.create_task(self.populate_stage3_queue())
@@ -327,14 +336,72 @@ class PipelineOrchestrator:
                 seen_urls.add(url)
                 deduped_urls.append(url)
 
+        logger.info(f"Dispatching {len(deduped_urls)} URLs to Stage 3 enrichment")
+
+        # Use async processor if enabled
+        if use_async_processor:
+            await self._run_async_enrichment(deduped_urls, scrapy_settings, spider_kwargs)
+        else:
+            await self._run_scrapy_enrichment(
+                deduped_urls,
+                spider_cls,
+                scrapy_settings,
+                spider_kwargs,
+                validation_items_for_enrichment,
+                crawler_process_factory
+            )
+
+        logger.info("Stage 3 enrichment completed")
+
+    async def _run_async_enrichment(
+        self,
+        urls: list[str],
+        scrapy_settings: dict,
+        spider_kwargs: dict[str, Any] | None
+    ):
+        """Run enrichment using async processor (faster, concurrent)"""
+        from src.stage3.async_enrichment import run_async_enrichment
+
+        stage3_config = self.config.get_stage3_config()
+        nlp_config = self.config.get_nlp_config()
+        content_config = self.config.get(keys.CONTENT, default={})
+
+        output_file = stage3_config[keys.ENRICHMENT_OUTPUT_FILE]
+        content_types_config = stage3_config.get(keys.ENRICHMENT_CONTENT_TYPES, {})
+        predefined_tags = content_config.get('predefined_tags', [])
+        max_workers = stage3_config.get(keys.VALIDATION_MAX_WORKERS, 50)
+
+        logger.info(f"Using AsyncEnrichmentProcessor with max_concurrency={max_workers}")
+
+        await run_async_enrichment(
+            urls=urls,
+            output_file=output_file,
+            nlp_config=nlp_config,
+            content_types_config=content_types_config,
+            predefined_tags=predefined_tags,
+            max_concurrency=max_workers,
+            timeout=30,
+            batch_size=100
+        )
+
+    async def _run_scrapy_enrichment(
+        self,
+        urls: list[str],
+        spider_cls,
+        scrapy_settings: dict,
+        spider_kwargs: dict[str, Any] | None,
+        validation_items: list[dict[str, Any]],
+        crawler_process_factory
+    ):
+        """Run enrichment using Scrapy (traditional, single-threaded)"""
         spider_kwargs = dict(spider_kwargs or {})
 
         existing_urls = list(spider_kwargs.get('urls_list', []))
-        combined_urls = existing_urls + [url for url in deduped_urls if url not in existing_urls]
+        combined_urls = existing_urls + [url for url in urls if url not in existing_urls]
         spider_kwargs['urls_list'] = combined_urls
 
         existing_metadata = list(spider_kwargs.get('validation_metadata', []))
-        combined_metadata = existing_metadata + validation_items_for_enrichment
+        combined_metadata = existing_metadata + validation_items
         metadata_by_url: dict[str, Any] = {}
         for entry in combined_metadata:
             url = entry.get('url')
@@ -344,7 +411,6 @@ class PipelineOrchestrator:
 
         if crawler_process_factory is None:
             from scrapy.crawler import CrawlerProcess
-
             crawler_process_factory = CrawlerProcess
 
         process = crawler_process_factory(scrapy_settings)
@@ -362,8 +428,6 @@ class PipelineOrchestrator:
                         logger.debug("CrawlerProcess.stop raised", exc_info=True)
 
         loop = asyncio.get_running_loop()
-        logger.info(f"Dispatching {len(deduped_urls)} URLs to Stage 3 crawler")
+        logger.info(f"Using Scrapy enrichment (traditional mode)")
 
         await loop.run_in_executor(None, _run_crawler)
-
-        logger.info("Stage 3 enrichment completed")

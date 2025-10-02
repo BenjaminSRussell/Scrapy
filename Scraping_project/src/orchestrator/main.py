@@ -113,13 +113,22 @@ async def run_stage2_validation(config: Config, orchestrator: PipelineOrchestrat
     await orchestrator.run_concurrent_stage2_validation(validator)
 
 
-async def run_stage3_enrichment(config: Config, orchestrator: PipelineOrchestrator):
-    """Run Stage 3: Enrichment phase"""
+async def run_stage3_enrichment(config: Config, orchestrator: PipelineOrchestrator, use_async: bool = True):
+    """Run Stage 3: Enrichment phase
+
+    Args:
+        config: Configuration object
+        orchestrator: Pipeline orchestrator
+        use_async: If True, use async processor (faster); if False, use Scrapy (traditional)
+    """
 
     logger = logging.getLogger(__name__)
     logger.info("=" * 60)
     logger.info("STAGE 3: ENRICHMENT")
     logger.info("=" * 60)
+
+    if not use_async:
+        logger.info("Async enrichment flag disabled; falling back to synchronous crawler execution")
 
     # set up stage 3 config
     stage3_config = config.get_stage3_config()
@@ -138,14 +147,21 @@ async def run_stage3_enrichment(config: Config, orchestrator: PipelineOrchestrat
     # Get NLP configuration
     nlp_config = config.get_nlp_config()
 
-    # make the spider with content types and NLP configuration
-    enricher = EnrichmentSpider(
-        content_types_config=stage3_config.get(keys.ENRICHMENT_CONTENT_TYPES, {}),
-        nlp_config=nlp_config
-    )
+    spider_kwargs = {
+        'content_types_config': stage3_config.get(keys.ENRICHMENT_CONTENT_TYPES, {}),
+        'headless_browser_config': stage3_config.get(keys.ENRICHMENT_HEADLESS_BROWSER, {}),
+        'allowed_domains': stage3_config.get(keys.ENRICHMENT_ALLOWED_DOMAINS, ['uconn.edu']),
+    }
+    if stage3_config.get(keys.ENRICHMENT_NLP_ENABLED, True):
+        spider_kwargs['nlp_config'] = nlp_config
 
     # Run concurrent queue population and enrichment processing
-    await orchestrator.run_concurrent_stage3_enrichment(enricher, scrapy_settings)
+    await orchestrator.run_concurrent_stage3_enrichment(
+        EnrichmentSpider,
+        scrapy_settings,
+        spider_kwargs=spider_kwargs,
+        use_async_processor=use_async
+    )
 
 
 def _setup_arg_parser() -> argparse.ArgumentParser:
@@ -172,6 +188,18 @@ def _setup_arg_parser() -> argparse.ArgumentParser:
         '--validate-only',
         action='store_true',
         help='Only validate configuration and run health checks, do not run pipeline'
+    )
+    parser.add_argument(
+        '--async-enrichment',
+        action='store_true',
+        default=True,
+        help='Use async enrichment processor (faster, default)'
+    )
+    parser.add_argument(
+        '--no-async-enrichment',
+        action='store_false',
+        dest='async_enrichment',
+        help='Use traditional Scrapy enrichment (slower)'
     )
     parser.add_argument(
         '--log-level',
@@ -283,7 +311,7 @@ async def _run_pipeline_stages(args: argparse.Namespace, config: Config):
         await run_stage2_validation(config, orchestrator)
 
     if args.stage in ['3', 'all']:
-        await run_stage3_enrichment(config, orchestrator)
+        await run_stage3_enrichment(config, orchestrator, use_async=args.async_enrichment)
 
 
 async def main():

@@ -124,21 +124,19 @@ async def test_run_stage3_enrichment():
     orchestrator.run_concurrent_stage3_enrichment = AsyncMock()
 
     with patch('orchestrator.main.EnrichmentSpider') as mock_spider_class:
-        mock_spider = Mock()
-        mock_spider_class.return_value = mock_spider
-
         await run_stage3_enrichment(config, orchestrator)
 
-        # Verify enrichment spider was created
-        mock_spider_class.assert_called_once()
-
-        # Verify concurrent enrichment was called
         orchestrator.run_concurrent_stage3_enrichment.assert_called_once()
-        args = orchestrator.run_concurrent_stage3_enrichment.call_args
-        assert args[0][0] == mock_spider
-        scrapy_settings = args[0][1]
+        args, kwargs = orchestrator.run_concurrent_stage3_enrichment.call_args
+        assert args[0] is mock_spider_class
+        scrapy_settings = args[1]
         assert 'STAGE3_OUTPUT_FILE' in scrapy_settings
         assert scrapy_settings['LOG_LEVEL'] == 'INFO'
+        spider_kwargs = kwargs.get('spider_kwargs')
+        assert spider_kwargs is not None
+        assert spider_kwargs['allowed_domains'] == ['uconn.edu']
+        assert spider_kwargs['content_types_config'] == {}
+        mock_spider_class.assert_not_called()
 
 
 @pytest.mark.asyncio

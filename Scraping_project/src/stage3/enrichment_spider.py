@@ -1,7 +1,8 @@
 import json
+import hashlib
 from datetime import datetime
 from pathlib import Path
-from typing import Iterator, List
+from typing import Any, Dict, Iterator, List, Optional
 from urllib.parse import urlparse
 
 import scrapy
@@ -34,6 +35,7 @@ class EnrichmentSpider(scrapy.Spider):
         headless_browser_config: dict = None,
         content_types_config: dict = None,
         nlp_config: dict = None,
+        validation_metadata: Optional[List[Dict[str, Any]]] = None,
         *args,
         **kwargs
     ):
@@ -71,6 +73,14 @@ class EnrichmentSpider(scrapy.Spider):
         self.urls_list = urls_list or []
         self.urls_file = urls_file
         self.processed_count = 0
+        self.validation_lookup: Dict[str, Dict[str, Any]] = {}
+        if validation_metadata:
+            for entry in validation_metadata:
+                url = entry.get('url')
+                if url:
+                    self.validation_lookup[url] = entry
+        if self.validation_lookup:
+            self.logger.info(f'Loaded {len(self.validation_lookup)} validation metadata records')
 
         # Headless browser configuration
         self.headless_browser_config = headless_browser_config or {}
@@ -107,6 +117,17 @@ class EnrichmentSpider(scrapy.Spider):
         self.logger.info(f"Enrichment spider initialized with {len(self.predefined_tags)} predefined tags")
         self.logger.info(f"Enrichment spider will process {len(self.urls_list)} URLs from orchestrator")
 
+    def _build_request_meta(self, url: str) -> Dict[str, Any]:
+        """Build request metadata including stage 2 validation context if available."""
+        meta: Dict[str, Any] = {}
+        validation_data = self.validation_lookup.get(url)
+        if validation_data:
+            meta['validation_data'] = validation_data
+            url_hash = validation_data.get('url_hash')
+            if url_hash:
+                meta['url_hash'] = url_hash
+        return meta
+
     def start_requests(self) -> Iterator[scrapy.Request]:
         """Load validated URLs from orchestrator queue or Stage 2 file"""
 
@@ -114,7 +135,12 @@ class EnrichmentSpider(scrapy.Spider):
         if self.urls_list:
             self.logger.info(f"Loading {len(self.urls_list)} URLs from orchestrator queue")
             for url in self.urls_list:
-                yield scrapy.Request(url=url, callback=self.parse)
+                yield scrapy.Request(
+                    url=url,
+                    callback=self.parse,
+                    meta=self._build_request_meta(url),
+                    dont_filter=True,
+                )
             return
 
         # Priority 2: Fallback to Stage 2 output file
@@ -139,13 +165,13 @@ class EnrichmentSpider(scrapy.Spider):
 
                     url = data.get('url', '')
                     if url and url.startswith('http'):
+                        if url not in self.validation_lookup:
+                            self.validation_lookup[url] = data
                         yield scrapy.Request(
                             url=url,
                             callback=self.parse,
-                            meta={
-                                'validation_data': data,
-                                'url_hash': data.get('url_hash', '')
-                            }
+                            meta=self._build_request_meta(url),
+                            dont_filter=True,
                         )
 
                 except json.JSONDecodeError as e:
@@ -231,11 +257,16 @@ class EnrichmentSpider(scrapy.Spider):
     def parse(self, response: Response) -> Iterator[EnrichmentItem]:
         """Parse response and extract content/metadata"""
         validation_data = response.meta.get('validation_data', {})
-        url_hash = response.meta.get('url_hash', '')
+        url_hash = response.meta.get('url_hash') or validation_data.get('url_hash')
 
-        # Get content type from response
-        content_type = response.headers.get('Content-Type', b'').decode('utf-8')
+        if not url_hash:
+            normalized_url = canonicalize_url_simple(response.url)
+            url_hash = hashlib.sha256(normalized_url.encode('utf-8')).hexdigest()
+
+        response_content_type = response.headers.get('Content-Type', b'').decode('utf-8')
+        content_type = validation_data.get('content_type', response_content_type)
         normalized_content_type = content_type.split(';')[0].strip().lower()
+        status_code = validation_data.get('status_code', response.status)
 
         try:
             # Handle non-HTML content types (PDF, images, etc.)
@@ -260,6 +291,7 @@ class EnrichmentSpider(scrapy.Spider):
                         has_audio_links=False,
                         link_scores=[],
                         first_seen=validation_data.get('validated_at', datetime.now().isoformat()),
+                        status_code=status_code,
                         content_type=content_type,
                         word_count=content_data.get('word_count', 0),
                         **{f'pdf_{k}': v for k, v in content_data.get('metadata', {}).items()}  # Prefix PDF metadata
@@ -314,8 +346,8 @@ class EnrichmentSpider(scrapy.Spider):
                 content_tags=content_tags,
                 has_pdf_links=has_pdf_links,
                 has_audio_links=has_audio,
-                status_code=response.status,
-                content_type=response.headers.get('Content-Type', b'').decode('utf-8'),
+                status_code=status_code,
+                content_type=content_type,
                 enriched_at=datetime.now().isoformat(),
                 content_summary=content_summary
             )
