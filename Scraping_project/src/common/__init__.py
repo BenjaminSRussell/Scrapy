@@ -7,14 +7,7 @@ from typing import Dict
 
 
 def _patch_scrapy_response_meta() -> None:
-    """Allow assigning dictionaries to ``response.meta`` in tests.
-
-    Scrapy normally exposes ``Response.meta`` as a read-only proxy to the
-    underlying request metadata. Our test suite creates synthetic responses and
-    expects to assign a fresh dictionary directly. We provide a lightweight
-    setter that materialises a request when necessary and copies the provided
-    mapping so core Scrapy behaviour remains unchanged.
-    """
+ 
 
     try:
         from scrapy.http import Request, Response  # type: ignore

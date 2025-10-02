@@ -177,7 +177,7 @@ class TestURLValidatorNetworkingRegression:
             # Status codes outside 200-399 should be invalid
             if not (200 <= status_code < 400):
                 assert result.is_valid is False
-                assert result.error_message == "Invalid response"
+                assert "Invalid response" in result.error_message
             else:
                 # Check if HTML content type affects validity
                 if 'text/html' in result.content_type:

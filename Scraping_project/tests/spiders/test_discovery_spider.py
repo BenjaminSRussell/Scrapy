@@ -19,6 +19,7 @@ def mock_settings():
     settings = Mock()
     settings.getbool.return_value = True
     settings.get.return_value = 'data/cache/url_cache.db'
+    settings.getlist.return_value = ['uconn.edu']
     return settings
 
 
