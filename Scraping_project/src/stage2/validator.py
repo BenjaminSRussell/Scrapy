@@ -5,6 +5,7 @@ import aiohttp
 import json
 import logging
 import ssl
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Any, Optional
@@ -38,8 +39,14 @@ if _client_ssl_error is not None:
 
         if needs_patch:
             class _CompatClientSSLError(aiohttp.ClientError):  # pragma: no cover - compatibility shim
-                def __init__(self, message: str = "", os_error: Optional[BaseException] = None):
-                    super().__init__(message)
+                def __init__(self, *args, os_error: Optional[BaseException] = None, message: str = "", **kwargs):
+                    derived_message = message
+                    if not derived_message:
+                        for value in reversed(args):
+                            if isinstance(value, str):
+                                derived_message = value
+                                break
+                    super().__init__(derived_message)
                     self.os_error = os_error
 
             aiohttp.ClientSSLError = _CompatClientSSLError
@@ -55,6 +62,7 @@ class URLValidator:
         self.max_workers = self.stage2_config['max_workers']
         self.timeout = self.stage2_config['timeout']
         self.output_file = Path(self.stage2_config['output_file'])
+        self.user_agent = self.config.get(keys.SCRAPY_USER_AGENT, 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36')
 
         # Initialize checkpoint manager for resumable validation
         checkpoint_dir = Path("data/checkpoints")
@@ -179,7 +187,7 @@ class URLValidator:
 
         # Better headers for single URL validation
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'User-Agent': self.user_agent,
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
             'Accept-Language': 'en-US,en;q=0.5',
             'Accept-Encoding': 'gzip, deflate',
@@ -200,16 +208,6 @@ class URLValidator:
             return
 
         logger.info(f"Validating batch {batch_id} of {len(batch)} URLs")
-
-        # Filter out already-processed URLs for idempotency
-        processed_hashes = self._get_processed_url_hashes()
-        batch = [item for item in batch if item.url_hash not in processed_hashes]
-
-        if not batch:
-            logger.info(f"Batch {batch_id}: All URLs already processed, skipping")
-            return
-
-        logger.info(f"Batch {batch_id}: {len(batch)} new URLs to validate after deduplication")
 
         # Prioritize URLs by link importance scores
         batch = self._prioritize_batch_by_importance(batch)
@@ -237,7 +235,7 @@ class URLValidator:
 
         # Better headers to avoid blocking
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'User-Agent': self.user_agent,
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
             'Accept-Language': 'en-US,en;q=0.5',
             'Accept-Encoding': 'gzip, deflate',
@@ -336,10 +334,17 @@ class URLValidator:
 
         logger.info(f"Starting validation from {input_file}")
 
+        if not self.output_file.exists() or self.output_file.stat().st_size == 0:
+            logger.debug("Resetting checkpoint for new or empty output file")
+            self.checkpoint.reset()
+
         batch_size = self.max_workers
         processed_count = 0
         batch: List[BatchQueueItem] = []
         batch_id = 0
+
+        processed_hashes = self._get_processed_url_hashes()
+        pending_hashes = set()
 
         # Check for resume point from previous checkpoint
         resume_point = self.checkpoint.get_resume_point()
@@ -359,10 +364,18 @@ class URLValidator:
                     logger.error(f"Failed to parse JSON at line {line_no}: {exc}")
                     continue
 
+                url = data.get('discovered_url', '')
+                url_hash = data.get('url_hash', '')
+
+                if url_hash:
+                    if url_hash in processed_hashes or url_hash in pending_hashes:
+                        continue
+                    pending_hashes.add(url_hash)
+
                 batch.append(
                     BatchQueueItem(
-                        url=data.get('discovered_url', ''),
-                        url_hash=data.get('url_hash', ''),
+                        url=url,
+                        url_hash=url_hash,
                         source_stage='stage1',
                         data=data,
                     )
@@ -371,6 +384,9 @@ class URLValidator:
                 if len(batch) == batch_size:
                     await self.validate_batch(batch, batch_id)
                     processed_count += len(batch)
+                    if pending_hashes:
+                        processed_hashes.update(pending_hashes)
+                        pending_hashes.clear()
                     batch = []
                     batch_id += 1
 
@@ -380,6 +396,9 @@ class URLValidator:
         if batch:
             await self.validate_batch(batch, batch_id)
             processed_count += len(batch)
+            if pending_hashes:
+                processed_hashes.update(pending_hashes)
+                pending_hashes.clear()
 
         logger.info(f"Validation completed: {processed_count} URLs processed")
 
@@ -395,7 +414,7 @@ class URLValidator:
 
     async def _validate_with_session(self, session: aiohttp.ClientSession, url: str, url_hash: str) -> ValidationResult:
         """Execute validation using the provided session with retry logic."""
-        start_time = datetime.now()
+        start_time = time.perf_counter()
 
         # TODO: The retry logic is very basic. It should be made more flexible, such as allowing the user to specify different retry strategies for different error types.
         # Retry configuration
@@ -438,18 +457,28 @@ class URLValidator:
         session: aiohttp.ClientSession,
         url: str,
         url_hash: str,
-        start_time: datetime
+        start_time: float
     ) -> ValidationResult:
         """Perform GET request and build validation result."""
 
         async with session.get(url, allow_redirects=True) as response:
             body_bytes = await response.read()
 
+            header_length = response.headers.get('Content-Length')
             content_type = response.headers.get('Content-Type', '') or ''
             status_code = response.status
             final_url = self._stringify_url(response, url)
-            content_length = len(body_bytes)
-            response_time = (datetime.now() - start_time).total_seconds()
+            body_length = len(body_bytes)
+            content_length = body_length
+            if header_length is not None:
+                try:
+                    parsed_length = int(header_length)
+                    if parsed_length >= 0 and parsed_length <= body_length:
+                        content_length = parsed_length
+                except (TypeError, ValueError):
+                    pass
+
+            response_time = (time.perf_counter() - start_time)
 
             # Capture freshness headers
             last_modified = response.headers.get('Last-Modified')
@@ -502,7 +531,7 @@ class URLValidator:
         response: aiohttp.ClientResponse,
         url: str,
         url_hash: str,
-        start_time: datetime
+        start_time: float
     ) -> Optional[ValidationResult]:
         """Return a validation result if HEAD response is sufficient, else None."""
 
@@ -527,7 +556,7 @@ class URLValidator:
             return None
 
         content_length = self._parse_content_length(response.headers.get('Content-Length'))
-        response_time = (datetime.now() - start_time).total_seconds()
+        response_time = (time.perf_counter() - start_time)
         final_url = self._stringify_url(response, url)
 
         return ValidationResult(
@@ -542,8 +571,8 @@ class URLValidator:
             validated_at=datetime.now().isoformat()
         )
 
-    def _build_timeout_result(self, url: str, url_hash: str, start_time: datetime) -> ValidationResult:
-        response_time = (datetime.now() - start_time).total_seconds()
+    def _build_timeout_result(self, url: str, url_hash: str, start_time: float) -> ValidationResult:
+        response_time = (time.perf_counter() - start_time)
         return ValidationResult(
             url=url,
             url_hash=url_hash,
@@ -561,10 +590,13 @@ class URLValidator:
         url: str,
         url_hash: str,
         exc: Exception,
-        start_time: datetime
+        start_time: float
     ) -> ValidationResult:
-        response_time = (datetime.now() - start_time).total_seconds()
-        message = str(exc) or exc.__class__.__name__
+        response_time = (time.perf_counter() - start_time)
+        if isinstance(exc, aiohttp.ClientError):
+            message = f"{type(exc).__name__}: {exc}"
+        else:
+            message = str(exc) or exc.__class__.__name__
         return ValidationResult(
             url=url,
             url_hash=url_hash,

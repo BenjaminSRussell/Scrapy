@@ -15,9 +15,9 @@ from unittest.mock import AsyncMock, Mock, patch
 from datetime import datetime
 from typing import List, Dict, Any
 
-from stage2.validator import URLValidator
-from orchestrator.pipeline import BatchQueueItem
-from common.schemas import ValidationResult
+from src.stage2.validator import URLValidator
+from src.orchestrator.pipeline import BatchQueueItem
+from src.common.schemas import ValidationResult
 
 
 class MockResponse:
@@ -69,11 +69,13 @@ class MockSession:
 def mock_config():
     """Mock configuration for validator tests"""
     config = Mock()
-    config.get_stage2_config.return_value = {
+    # Use a single dict instance that can be modified by tests
+    stage2_config = {
         'max_workers': 10,
         'timeout': 30,
         'output_file': 'test_validation_output.jsonl'
     }
+    config.get_stage2_config.return_value = stage2_config
     config.get.return_value = 'UConn-Spider/1.0'
     return config
 
@@ -189,13 +191,13 @@ class TestURLValidatorNetworkingRegression:
         """Test that non-HTML content types are properly rejected"""
         validator = URLValidator(mock_config)
 
+        # Test cases for content types that should be rejected (excluding valid types like PDF, images, etc.)
         non_html_test_cases = [
             ("application/json", b'{"message": "API response"}'),
             ("text/plain", b"Plain text content"),
-            ("application/pdf", b"%PDF-1.4 fake pdf content"),
-            ("image/jpeg", b"\xff\xd8\xff\xe0 fake jpeg"),
             ("text/css", b"body { margin: 0; }"),
             ("application/javascript", b"console.log('test');"),
+            ("application/xml", b"<?xml version='1.0'?><root/>"),
         ]
 
         for content_type, content in non_html_test_cases:
@@ -218,7 +220,7 @@ class TestURLValidatorNetworkingRegression:
             assert result.status_code == 200
             assert result.content_type == content_type
             assert result.is_valid is False
-            assert result.error_message == "Invalid response"
+            assert result.error_message == f"Invalid response or unsupported content type: {content_type}"
 
     @pytest.mark.critical
     @pytest.mark.asyncio
@@ -263,7 +265,7 @@ class TestURLValidatorNetworkingRegression:
 
         client_errors = [
             aiohttp.ClientConnectionError("Connection failed"),
-            aiohttp.ClientTimeout("Request timeout"),
+            asyncio.TimeoutError("Request timeout"),  # ClientTimeout is not an exception, use TimeoutError
             aiohttp.ClientResponseError(
                 request_info=Mock(),
                 history=(),
@@ -271,7 +273,7 @@ class TestURLValidatorNetworkingRegression:
                 message="Response error"
             ),
             aiohttp.ClientPayloadError("Payload error"),
-            aiohttp.ClientSSLError("SSL verification failed"),
+            aiohttp.ClientSSLError(None, Mock(), "SSL verification failed") if aiohttp.ClientSSLError else Exception("SSL"),
         ]
 
         for error in client_errors:
@@ -344,7 +346,7 @@ class TestURLValidatorNetworkingRegression:
             {
                 "content": b"<html><body>No header</body></html>",
                 "header_length": None,
-                "expected_length": 34
+                "expected_length": 35
             },
             # Case 3: Content-Length header incorrect (should use actual length)
             {
@@ -592,12 +594,14 @@ class TestURLValidatorNetworkingRegression:
 
                 await validator.validate_batch(batch_items)
 
-                # Verify TCPConnector was called with correct parameters
-                mock_connector.assert_called_once_with(
-                    limit=20,  # connector_limit
-                    limit_per_host=10,
-                    ttl_dns_cache=300
-                )
+                # Verify TCPConnector was called with correct parameters (including ssl and enable_cleanup_closed)
+                mock_connector.assert_called_once()
+                call_kwargs = mock_connector.call_args.kwargs
+                assert call_kwargs['limit'] == 20  # connector_limit
+                assert call_kwargs['limit_per_host'] == 10
+                assert call_kwargs['ttl_dns_cache'] == 300
+                assert 'ssl' in call_kwargs
+                assert call_kwargs.get('enable_cleanup_closed') == True
 
                 # Verify ClientSession was called with proper config
                 mock_session_class.assert_called_once()

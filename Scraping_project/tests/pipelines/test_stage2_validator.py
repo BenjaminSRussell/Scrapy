@@ -10,7 +10,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from stage2.validator import URLValidator
+from src.stage2.validator import URLValidator
 from tests.samples import build_validation_result
 
 
@@ -175,8 +175,8 @@ def test_validate_batch_writes_results(tmp_path, monkeypatch):
         async def __aexit__(self, exc_type, exc, tb):
             return None
 
-    monkeypatch.setattr("stage2.validator.aiohttp.ClientSession", DummyClientSession)
-    monkeypatch.setattr("stage2.validator.aiohttp.TCPConnector", DummyConnector)
+    monkeypatch.setattr("src.stage2.validator.aiohttp.ClientSession", DummyClientSession)
+    monkeypatch.setattr("src.stage2.validator.aiohttp.TCPConnector", DummyConnector)
 
     asyncio.run(validator.validate_batch(batch_items))
 

@@ -8,17 +8,19 @@ from typing import List
 import pytest
 from unittest.mock import Mock, patch, mock_open
 
-from stage1.discovery_spider import DiscoverySpider
-from common.schemas import DiscoveryItem
+from src.stage1.discovery_spider import DiscoverySpider
+from src.common.schemas import DiscoveryItem
 from tests.samples import html_response, build_discovery_item
 
 
 @pytest.fixture
-def mock_settings():
-    """Mock Scrapy settings for spider initialization."""
+def mock_settings(tmp_path):
+    """Mock Scrapy settings for spider initialization with isolated cache."""
     settings = Mock()
     settings.getbool.return_value = True
-    settings.get.return_value = 'data/cache/url_cache.db'
+    # Use tmp_path for isolated cache per test
+    cache_path = tmp_path / "url_cache.db"
+    settings.get.return_value = str(cache_path)
     settings.getlist.return_value = ['uconn.edu']
     return settings
 

@@ -10,7 +10,7 @@ from typing import Iterable, List, Dict, Any, Optional
 
 from scrapy.http import Request, HtmlResponse
 
-from common.schemas import DiscoveryItem, ValidationResult, EnrichmentItem
+from src.common.schemas import DiscoveryItem, ValidationResult, EnrichmentItem
 
 
 ISO_START = datetime(2024, 1, 1, 12, 0, 0)

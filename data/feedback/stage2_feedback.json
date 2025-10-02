@@ -1,0 +1,98 @@
+{
+  "patterns": {},
+  "sources": {},
+  "session_history": [
+    {
+      "session_id": "session_20251002_185528",
+      "started_at": "2025-10-02T18:55:28.821910",
+      "completed_at": "2025-10-02T18:55:28.841711",
+      "total_discovered": 0,
+      "total_validated": 1,
+      "total_failed": 0,
+      "success_rate": 1.0,
+      "source_performance": {
+        "unknown": {
+          "validated": 1,
+          "failed": 0
+        }
+      }
+    },
+    {
+      "session_id": "session_20251002_185802",
+      "started_at": "2025-10-02T18:58:02.162356",
+      "completed_at": "2025-10-02T18:58:02.183701",
+      "total_discovered": 0,
+      "total_validated": 1,
+      "total_failed": 0,
+      "success_rate": 1.0,
+      "source_performance": {
+        "unknown": {
+          "validated": 1,
+          "failed": 0
+        }
+      }
+    },
+    {
+      "session_id": "session_20251002_185949",
+      "started_at": "2025-10-02T18:59:49.546320",
+      "completed_at": "2025-10-02T18:59:49.566696",
+      "total_discovered": 0,
+      "total_validated": 1,
+      "total_failed": 0,
+      "success_rate": 1.0,
+      "source_performance": {
+        "unknown": {
+          "validated": 1,
+          "failed": 0
+        }
+      }
+    },
+    {
+      "session_id": "session_20251002_190330",
+      "started_at": "2025-10-02T19:03:30.071470",
+      "completed_at": "2025-10-02T19:03:30.091592",
+      "total_discovered": 0,
+      "total_validated": 1,
+      "total_failed": 0,
+      "success_rate": 1.0,
+      "source_performance": {
+        "unknown": {
+          "validated": 1,
+          "failed": 0
+        }
+      }
+    },
+    {
+      "session_id": "session_20251002_190555",
+      "started_at": "2025-10-02T19:05:55.443546",
+      "completed_at": "2025-10-02T19:05:55.465941",
+      "total_discovered": 0,
+      "total_validated": 1,
+      "total_failed": 0,
+      "success_rate": 1.0,
+      "source_performance": {
+        "unknown": {
+          "validated": 1,
+          "failed": 0
+        }
+      }
+    },
+    {
+      "session_id": "session_20251002_191003",
+      "started_at": "2025-10-02T19:10:03.023131",
+      "completed_at": "2025-10-02T19:10:03.052629",
+      "total_discovered": 0,
+      "total_validated": 1,
+      "total_failed": 0,
+      "success_rate": 1.0,
+      "source_performance": {
+        "unknown": {
+          "validated": 1,
+          "failed": 0
+        }
+      }
+    }
+  ],
+  "last_updated": "2025-10-02T19:10:03.053294",
+  "total_sessions": 6
+}

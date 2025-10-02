@@ -198,6 +198,7 @@ class AsyncEnrichmentProcessor:
         compression_config: Optional[Dict[str, Any]] = None,
     ):
         self.output_path = Path(output_file) if output_file else Path("data/processed/stage03/enrichment_output.jsonl")
+        self.output_file = self.output_path  # Add alias for backward compatibility
         self.nlp_config = nlp_config or {}
         self.content_types_config = content_types_config or {}
         self.predefined_tags = set(predefined_tags or [])
@@ -227,12 +228,16 @@ class AsyncEnrichmentProcessor:
                 spacy_model=nlp_config.get('spacy_model', 'en_core_web_sm'),
                 transformer_model=nlp_config.get('transformer_ner_model') if nlp_config.get('use_transformers') else None,
                 summarizer_model=nlp_config.get('summarizer_model') if nlp_config.get('use_transformers') else None,
+                zero_shot_model=nlp_config.get('zero_shot_model') if nlp_config.get('use_transformers') else None,
                 preferred_device=nlp_config.get('device', 'auto')
             )
             initialize_nlp(nlp_settings)
             self.use_transformer_ner = nlp_config.get('use_transformers', False)
-            self.summary_max_length = nlp_config.get('summary_max_length', 150)
-            self.summary_min_length = nlp_config.get('summary_min_length', 30)
+            # Ensure lengths are integers for slicing operations
+            max_len = nlp_config.get('summary_max_length', 150)
+            min_len = nlp_config.get('summary_min_length', 30)
+            self.summary_max_length = int(max_len) if max_len is not None else 150
+            self.summary_min_length = int(min_len) if min_len is not None else 30
         else:
             self.use_transformer_ner = False
             self.summary_max_length = 150
@@ -510,7 +515,7 @@ class AsyncEnrichmentProcessor:
 
             # Extract title
             title_elements = tree.xpath('//title/text()')
-            title = title_elements[0].strip() if title_elements else ''
+            title = (title_elements[0].strip() if title_elements else '') or ''
 
             # Extract body text (excluding scripts, styles)
             text_elements = tree.xpath('//body//text()[normalize-space() and not(ancestor::script) and not(ancestor::style)]')
@@ -522,9 +527,7 @@ class AsyncEnrichmentProcessor:
 
             entities, keywords = await loop.run_in_executor(
                 None,
-                extract_entities_and_keywords,
-                text_content,
-                backend
+                lambda: extract_entities_and_keywords(text_content, backend=backend)
             )
 
             content_summary = await loop.run_in_executor(
@@ -563,7 +566,7 @@ class AsyncEnrichmentProcessor:
             )
 
         except Exception as e:
-            logger.error(f"Error processing response for {url}: {e}")
+            logger.error(f"Error processing response for {url}: {e}", exc_info=True)
             return EnrichmentResult(
                 url=url,
                 url_hash=url_hash,
@@ -645,8 +648,8 @@ class AsyncEnrichmentProcessor:
         async with aiohttp.ClientSession(connector=connector) as session:
             # Process in batches
             for i in range(0, len(urls), self.batch_size):
-                # Skip already processed batches if resuming
-                if self.checkpoint_tracker.should_skip(i):
+                # Skip already processed batches if resuming (only in recovering mode)
+                if resume_point['status'] == 'recovering' and self.checkpoint_tracker.should_skip(i):
                     continue
 
                 batch = urls[i:i + self.batch_size]

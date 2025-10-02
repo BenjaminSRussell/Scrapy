@@ -1,0 +1,4 @@
+line-length = 120
+target-version = "py311"
+select = ["E","F","I","UP","B"]
+ignore = ["E501"]  # we prefer 120-char lines; ignore strict line-length rule

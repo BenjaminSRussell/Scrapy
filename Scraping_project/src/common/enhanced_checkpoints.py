@@ -148,7 +148,12 @@ class EnhancedCheckpoint:
         self._lock = threading.Lock()
 
         # Load or create state
+        is_new = not self.checkpoint_file.exists()
         self.state = self._load_or_create_state()
+
+        # Save new checkpoint immediately if it was just created
+        if is_new:
+            self.save(force=True)
 
     def _load_or_create_state(self) -> CheckpointState:
         """Load existing checkpoint or create new one with recovery"""
@@ -242,6 +247,8 @@ class EnhancedCheckpoint:
         index: Optional[int] = None
     ):
         """Update progress metrics"""
+        force_save = False
+
         with self._lock:
             self.state.progress.processed_items += processed
             self.state.progress.successful_items += successful
@@ -254,13 +261,15 @@ class EnhancedCheckpoint:
 
             if index is not None:
                 self.state.last_processed_index = index
+                # Force save when index changes for crash recovery
+                force_save = True
 
             # Update estimated completion
             est = self.state.progress.estimate_completion()
             if est:
                 self.state.progress.estimated_completion_time = est
 
-        self.save()
+        self.save(force=force_save)
 
     def complete(self):
         """Mark checkpoint as completed"""
@@ -375,12 +384,25 @@ class EnhancedCheckpoint:
             return ""
 
     def reset(self):
-        """Reset checkpoint to initial state"""
+        """Reset checkpoint to initial state, restoring pending count"""
         with self._lock:
-            self.state = CheckpointState(stage=self.state.stage)
+            # Preserve total_items for requeue
+            total_items = self.state.progress.total_items
+            stage_name = self.state.stage
+
+            # Create new state with INITIALIZED status
+            self.state = CheckpointState(stage=stage_name)
+            self.state.status = CheckpointStatus.INITIALIZED
+
+            # Restore pending count (all items need to be reprocessed)
+            self.state.progress.total_items = total_items
+            self.state.progress.processed_items = 0
+            self.state.progress.successful_items = 0
+            self.state.progress.failed_items = 0
+            self.state.progress.skipped_items = 0
 
         self.save(force=True)
-        logger.info(f"Checkpoint reset: {self.state.stage}")
+        logger.info(f"Checkpoint reset: {self.state.stage} (pending items restored: {total_items})")
 
 
 class UnifiedCheckpointManager:

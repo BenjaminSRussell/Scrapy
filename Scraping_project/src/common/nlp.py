@@ -71,7 +71,8 @@ class NLPSettings:
     spacy_model: str = "en_core_web_sm"
     transformer_model: Optional[str] = "dslim/bert-base-NER"
     summarizer_model: Optional[str] = "sshleifer/distilbart-cnn-12-6"
-    zero_shot_model: Optional[str] = "facebook/bart-large-mnli"
+    # Use public zero-shot model to avoid HF auth requirements
+    zero_shot_model: Optional[str] = "MoritzLaurer/deberta-v3-base-zeroshot-v2.0"
     preferred_device: Optional[str] = None
     additional_stop_words: Set[str] = field(default_factory=set)
     stop_word_overrides: Set[str] = field(default_factory=set)
@@ -295,7 +296,8 @@ class NLPRegistry:
 
     def summarize_text(self, text: str, max_length: int, min_length: int) -> str:
         if not self.summarizer_pipeline:
-            raise RuntimeError("Summarizer pipeline is not initialised")
+            # Return empty string when summarizer is not available (e.g., use_transformers=False)
+            return ""
 
         summary = self.summarizer_pipeline(
             text,
@@ -307,7 +309,8 @@ class NLPRegistry:
 
     def classify_text(self, text: str, labels: List[str]) -> dict:
         if not self.zero_shot_pipeline:
-            raise RuntimeError("Zero-shot classification pipeline is not initialised")
+            # Return empty dict when zero-shot classifier is not available (e.g., use_transformers=False)
+            return {}
 
         results = self.zero_shot_pipeline(text, labels)
         return dict(zip(results["labels"], results["scores"]))
@@ -507,6 +510,15 @@ def select_device(preferred: Optional[str] = None) -> str:
     if torch_module is not None:
         cuda_module = getattr(torch_module, "cuda", None)
         if cuda_module and _is_true(getattr(cuda_module, "is_available", lambda: False)):
+            # Enable CUDA optimizations for RTX 4080 and similar GPUs
+            try:
+                # Set float32 matmul precision for better performance on modern GPUs
+                if hasattr(torch_module, 'set_float32_matmul_precision'):
+                    torch_module.set_float32_matmul_precision("high")
+                    logger.info("Enabled high precision float32 matmul for CUDA")
+            except Exception as e:
+                logger.debug(f"Could not set matmul precision: {e}")
+
             return "cuda"
 
         backends = getattr(torch_module, "backends", None)

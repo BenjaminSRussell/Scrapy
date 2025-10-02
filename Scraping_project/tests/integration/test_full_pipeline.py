@@ -187,10 +187,10 @@ def test_pipeline_memory_efficiency():
 
     final_memory = process.memory_info().rss
 
-    # Calculate memory usage
-    hash_memory_mb = (memory_after_hashes - initial_memory) / (1024 * 1024)
-    processing_memory_mb = (final_memory - memory_after_hashes) / (1024 * 1024)
-    total_memory_mb = (final_memory - initial_memory) / (1024 * 1024)
+    # Calculate memory usage using max (peak RSS delta) to handle garbage collection
+    hash_memory_mb = max(0, (memory_after_hashes - initial_memory) / (1024 * 1024))
+    processing_memory_mb = max(0, (final_memory - memory_after_hashes) / (1024 * 1024))
+    total_memory_mb = max(0, (final_memory - initial_memory) / (1024 * 1024))
 
     # Memory efficiency assertions
     assert hash_memory_mb < 50, f"Hash storage too memory-intensive: {hash_memory_mb:.1f}MB"
