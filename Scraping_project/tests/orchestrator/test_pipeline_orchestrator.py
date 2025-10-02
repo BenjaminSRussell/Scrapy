@@ -10,7 +10,7 @@ from typing import Any, Dict, List
 import pytest
 
 from orchestrator.pipeline import BatchQueue, BatchQueueItem, PipelineOrchestrator
-from samples import build_discovery_item, write_jsonl
+from tests.samples import build_discovery_item, write_jsonl
 
 
 def make_batch_item(index: int, stage: str = "stage1") -> BatchQueueItem:

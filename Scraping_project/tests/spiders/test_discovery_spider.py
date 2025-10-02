@@ -10,7 +10,7 @@ from unittest.mock import Mock, patch, mock_open
 
 from stage1.discovery_spider import DiscoverySpider
 from common.schemas import DiscoveryItem
-from data.samples import html_response, build_discovery_item
+from tests.samples import html_response, build_discovery_item
 
 
 def test_discovery_spider_initialization():

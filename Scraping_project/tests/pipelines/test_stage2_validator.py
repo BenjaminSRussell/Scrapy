@@ -11,7 +11,7 @@ from types import SimpleNamespace
 import pytest
 
 from stage2.validator import URLValidator
-from samples import build_validation_result
+from tests.samples import build_validation_result
 
 
 class DummyConfig:

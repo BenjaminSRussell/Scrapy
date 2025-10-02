@@ -32,7 +32,8 @@ class MockConfig:
     def get_stage1_config(self):
         return {
             'max_depth': 3,
-            'output_file': 'data/processed/stage01/test_urls.jsonl'
+            'output_file': 'data/processed/stage01/test_urls.jsonl',
+            'seed_file': 'data/raw/seeds.csv'
         }
 
     def get_stage2_config(self):
@@ -48,6 +49,11 @@ class MockConfig:
             'output_file': 'data/processed/stage03/test_enriched.jsonl'
         }
 
+    def get_nlp_config(self):
+        return {
+            'model': 'en_core_web_sm'
+        }
+
     def get_logging_config(self):
         return {
             'level': 'INFO',
@@ -58,9 +64,9 @@ class MockConfig:
         return {
             'raw_dir': Path('data/raw'),
             'processed_dir': Path('data/processed'),
-            'logs_dir': Path('logs')
+            'logs_dir': Path('logs'),
+            'temp_dir': Path('data/temp')
         }
-
 
 @pytest.mark.asyncio
 async def test_run_stage1_discovery():

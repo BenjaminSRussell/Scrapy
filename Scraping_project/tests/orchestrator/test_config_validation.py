@@ -227,7 +227,7 @@ class TestConfigValidation:
 
             error_msg = str(exc_info.value)
             assert 'maxDepth' in error_msg or 'Unknown' in error_msg or 'extra' in error_msg.lower()
-            assert 'typo' in error_msg.lower()
+            assert 'extra inputs are not permitted' in error_msg.lower()
         finally:
             Config.config_dir = original_config_dir
 
