@@ -27,6 +27,7 @@ from src.common.nlp import (
     NLPSettings
 )
 from src.common.content_handlers import ContentTypeRouter
+from src.common.checkpoint_middleware import AsyncCheckpointTracker
 
 logger = logging.getLogger(__name__)
 
@@ -243,6 +244,10 @@ class AsyncEnrichmentProcessor:
         self._output_file = None
         self._output_lock = asyncio.Lock()
 
+        # Checkpoint tracker
+        checkpoint_dir = Path("data/checkpoints")
+        self.checkpoint_tracker = AsyncCheckpointTracker(checkpoint_dir, "stage3_async_enrichment")
+
     async def __aenter__(self):
         """Async context manager entry"""
         # Ensure output directory exists
@@ -254,6 +259,9 @@ class AsyncEnrichmentProcessor:
         self.stats['start_time'] = time.time()
         logger.info(f"AsyncEnrichmentProcessor initialized, output: {self.output_file}")
 
+        # Initialize checkpoint tracker
+        await self.checkpoint_tracker.__aenter__()
+
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
@@ -263,6 +271,9 @@ class AsyncEnrichmentProcessor:
 
         self.stats['end_time'] = time.time()
         self._log_final_stats()
+
+        # Clean up checkpoint tracker
+        await self.checkpoint_tracker.__aexit__(exc_type, exc_val, exc_tb)
 
     async def _write_result(self, result: EnrichmentResult):
         """Write result to output file (thread-safe)"""
@@ -501,9 +512,19 @@ class AsyncEnrichmentProcessor:
                 self.stats['total_fetch_time_ms'] += result.fetch_duration_ms
                 self.stats['total_process_time_ms'] += result.process_duration_ms
 
+                # Update checkpoint
+                self.checkpoint_tracker.update(
+                    processed=1,
+                    successful=0 if result.error else 1,
+                    failed=1 if result.error else 0,
+                    last_item=result.url,
+                    index=self.stats['total_processed']
+                )
+
                 # Log progress
                 if self.stats['total_processed'] % 100 == 0:
                     self._log_progress()
+                    self.checkpoint_tracker.print_progress()
 
     async def process_urls(self, urls: List[str]):
         """Process list of URLs with batching and connection pooling"""
@@ -512,6 +533,14 @@ class AsyncEnrichmentProcessor:
             return
 
         logger.info(f"Processing {len(urls)} URLs with adaptive concurrency")
+
+        # Initialize checkpoint with total count
+        self.checkpoint_tracker.start(total_items=len(urls))
+
+        # Check if we should resume
+        resume_point = self.checkpoint_tracker.get_resume_point()
+        if resume_point['status'] == 'recovering':
+            logger.info(f"Resuming from {resume_point['processed_items']} items")
 
         # Create connection pool
         connector = aiohttp.TCPConnector(
@@ -523,6 +552,10 @@ class AsyncEnrichmentProcessor:
         async with aiohttp.ClientSession(connector=connector) as session:
             # Process in batches
             for i in range(0, len(urls), self.batch_size):
+                # Skip already processed batches if resuming
+                if self.checkpoint_tracker.should_skip(i):
+                    continue
+
                 batch = urls[i:i + self.batch_size]
                 await self.process_batch(session, batch)
 

@@ -46,12 +46,15 @@ class MockConfig:
     def get_stage3_config(self):
         return {
             'nlp_enabled': True,
-            'output_file': 'data/processed/stage03/test_enriched.jsonl'
+            'output_file': 'data/processed/stage03/test_enriched.jsonl',
+            'allowed_domains': ['uconn.edu'],
+            'content_types': {},
+            'headless_browser': {},
         }
-
     def get_nlp_config(self):
         return {
-            'model': 'en_core_web_sm'
+            'spacy_model': 'en_core_web_sm',
+            'use_transformers': False
         }
 
     def get_logging_config(self):
@@ -304,3 +307,4 @@ async def test_main_log_level_parameter(log_level):
                     mock_setup_logging.assert_called_once()
                     call_args = mock_setup_logging.call_args
                     assert call_args[1]['log_level'] == log_level
+

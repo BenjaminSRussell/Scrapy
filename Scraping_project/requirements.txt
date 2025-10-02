@@ -23,6 +23,7 @@ pytest-asyncio
 pytest-html
 pytest-mock
 pytest-timeout
+pytest-cov
 
 # Data processing
 pandas
