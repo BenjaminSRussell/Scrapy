@@ -1,0 +1,20 @@
+name: Feature request
+description: "New feature or improvement"
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / Use case
+      description: What problem are we solving?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What should we build? Include acceptance criteria.
+  - type: textarea
+    id: impact
+    attributes:
+      label: Impact / Risks

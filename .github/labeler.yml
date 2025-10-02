@@ -1,0 +1,15 @@
+area/stage1:
+  - "Scraping_project/src/stage1/**"
+area/stage2:
+  - "Scraping_project/src/stage2/**"
+area/stage3:
+  - "Scraping_project/src/stage3/**"
+area/common:
+  - "Scraping_project/src/common/**"
+area/integration:
+  - "Scraping_project/tests/integration/**"
+area/nlp:
+  - "Scraping_project/src/common/nlp.py"
+  - "Scraping_project/src/stage3/**"
+area/ci:
+  - ".github/**"

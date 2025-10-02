@@ -1,0 +1,32 @@
+name: Bug report
+description: "Something isn't working"
+labels: [bug]
+body:
+  - type: textarea
+    id: desc
+    attributes:
+      label: What happened?
+      description: Describe the bug and expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction steps
+      description: How can we reproduce it reliably?
+  - type: input
+    id: tests
+    attributes:
+      label: Failing test (if any)
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - area/stage1
+        - area/stage2
+        - area/stage3
+        - area/common
+        - area/integration
+        - area/nlp
+        - area/ci
