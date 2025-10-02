@@ -23,10 +23,11 @@ from pathlib import Path
 src_dir = Path(__file__).parent.parent
 sys.path.insert(0, str(src_dir))
 
-from src.orchestrator.config import Config
+from src.orchestrator.config import Config, ConfigValidationError
 from src.orchestrator.pipeline import PipelineOrchestrator
 from src.common.logging import setup_logging
 from src.common import config_keys as keys
+from src.common.config_validator import validate_config_health
 
 # module-level exports handled through lazy imports because dependencies are optional
 # and we love making things complicated
@@ -168,6 +169,11 @@ def _setup_arg_parser() -> argparse.ArgumentParser:
         help='Only load and display configuration, do not run pipeline'
     )
     parser.add_argument(
+        '--validate-only',
+        action='store_true',
+        help='Only validate configuration and run health checks, do not run pipeline'
+    )
+    parser.add_argument(
         '--log-level',
         choices=['DEBUG', 'INFO', 'WARNING', 'ERROR'],
         default='INFO',
@@ -220,7 +226,24 @@ def _cleanup_temp_directory(temp_dir: Path, max_age_hours: int = 24):
 
 def _initialize_pipeline(args: argparse.Namespace) -> Config:
     """Loads config, sets up logging, and creates data directories."""
-    config = Config(args.env)
+    try:
+        # Load and validate configuration
+        config = Config(args.env)
+    except ConfigValidationError as e:
+        # Configuration validation failed - print error and exit
+        print(f"\n{'=' * 80}")
+        print("❌ Configuration Validation Failed")
+        print(f"{'=' * 80}")
+        print(f"\n{e}\n")
+        print(f"{'=' * 80}\n")
+        sys.exit(1)
+    except FileNotFoundError as e:
+        print(f"\n❌ Configuration file not found: {e}\n")
+        sys.exit(1)
+    except Exception as e:
+        print(f"\n❌ Unexpected error loading configuration: {e}\n")
+        sys.exit(1)
+
     data_paths = config.get_data_paths()
     setup_logging(log_level=args.log_level, log_dir=data_paths[keys.LOGS_DIR])
 
@@ -232,6 +255,16 @@ def _initialize_pipeline(args: argparse.Namespace) -> Config:
     # Create data directories if they don't exist
     for path in data_paths.values():
         path.mkdir(parents=True, exist_ok=True)
+
+    # Run comprehensive health check
+    logger.info("Running configuration health check...")
+    is_healthy = validate_config_health(config)
+
+    if not is_healthy:
+        logger.error("Configuration health check failed. Please fix errors before continuing.")
+        sys.exit(1)
+
+    logger.info("Configuration health check passed [OK]")
 
     # Clean up old temporary files
     _cleanup_temp_directory(data_paths[keys.TEMP_DIR])
@@ -263,6 +296,11 @@ async def main():
     if args.config_only:
         import yaml
         print("Configuration:\n" + yaml.dump(config._config, default_flow_style=False))
+        return 0
+
+    if args.validate_only:
+        # Health check already ran in _initialize_pipeline
+        print("\n[OK] Configuration validation completed successfully\n")
         return 0
 
     await _run_pipeline_stages(args, config)

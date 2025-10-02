@@ -1,6 +1,17 @@
-# Configuration Validation
+# Configuration Validation System
 
-The scraping pipeline uses **Pydantic-based schema validation** to ensure configuration files are correct before the pipeline starts. This prevents runtime errors caused by typos, type mismatches, or invalid values.
+The scraping pipeline uses a **multi-layered validation system** with Pydantic-based schema validation and comprehensive health checks to ensure configuration correctness before the pipeline starts. This prevents runtime errors caused by typos, type mismatches, invalid values, or missing dependencies.
+
+## Validation Layers
+
+### Layer 1: Schema Validation (Pydantic)
+Validates configuration structure, types, ranges, and relationships using strict Pydantic schemas.
+
+### Layer 2: Health Checks (Runtime)
+Validates runtime requirements including file system access, dependency availability, and resource settings.
+
+### Layer 3: Startup Integration
+Automatically runs all validations when the pipeline starts, failing fast with clear error messages.
 
 ## Key Features
 
@@ -288,24 +299,126 @@ headless_browser:
   browser_type: "chromium"
 ```
 
+## Health Check System (New)
+
+The health check system performs runtime validations beyond schema validation:
+
+### File System Checks
+- ✅ Seed file exists and is accessible
+- ✅ Output directories can be created
+- ✅ Data directories have write permissions
+- ✅ Dedup cache directory is accessible
+
+### Dependency Checks
+- ✅ spaCy models are installed (if NLP enabled)
+- ✅ Playwright/Selenium installed (if headless browser enabled)
+- ✅ Playwright browsers installed
+- ✅ Transformer models available (if transformers enabled)
+
+### Resource Limit Checks
+- ⚠️ Warns on very high concurrency settings
+- ⚠️ Warns on excessive queue sizes
+- ⚠️ Warns on high browser concurrent limits
+- ⚠️ Warns on zero download delay (no rate limiting)
+
+### Performance Checks
+- ℹ️ Identifies potential performance bottlenecks
+- ℹ️ Suggests optimizations for resource-intensive settings
+
+### Example Health Check Output
+
+```bash
+================================================================================
+Configuration Health Check Report
+================================================================================
+
+❌ ERRORS (2):
+--------------------------------------------------------------------------------
+
+  [FILESYSTEM] Seed file not found: data/raw/uconn_urls.csv
+  💡 Create the seed file or update the path in configuration
+
+  [DEPENDENCY] spaCy model 'en_core_web_sm' not installed
+  💡 Run: python -m spacy download en_core_web_sm
+
+⚠️  WARNINGS (1):
+--------------------------------------------------------------------------------
+
+  [LOGIC] Very high concurrent_requests: 200
+  💡 Consider lowering to avoid overwhelming target servers and local resources
+
+================================================================================
+❌ Status: FAILED - Please fix errors before running pipeline
+================================================================================
+```
+
+## Command-Line Usage
+
+### Validate Configuration Only
+Run comprehensive validation without executing the pipeline:
+
+```bash
+# Validate configuration and run health checks
+python -m src.orchestrator.main --env development --validate-only
+```
+
+This will:
+1. Load configuration file
+2. Run Pydantic schema validation
+3. Run comprehensive health checks
+4. Print detailed report
+5. Exit with code 0 (success) or 1 (failure)
+
+### View Configuration
+Display the loaded and validated configuration:
+
+```bash
+python -m src.orchestrator.main --env development --config-only
+```
+
+### Normal Pipeline Execution
+Validation runs automatically at startup:
+
+```bash
+# Runs validation automatically, then executes pipeline
+python -m src.orchestrator.main --env development
+```
+
 ## Testing Configuration
 
-To test your configuration without running the full pipeline:
+### Test Configuration Programmatically
 
 ```python
 from src.orchestrator.config import Config, ConfigValidationError
+from src.common.config_validator import validate_config_health
 
 try:
+    # Schema validation
     config = Config(env='development', validate=True)
-    print("✅ Configuration is valid!")
+
+    # Health check
+    is_healthy = validate_config_health(config)
+
+    if is_healthy:
+        print("✅ Configuration is valid and healthy!")
+    else:
+        print("⚠️ Configuration has warnings or errors")
+
 except ConfigValidationError as e:
     print(f"❌ Configuration error:\n{e}")
 ```
 
-Or run the validation tests:
+### Run Validation Tests
 
 ```bash
+# Schema validation tests
 pytest tests/orchestrator/test_config_validation.py -v
+
+# Health check tests
+pytest tests/common/test_config_validator.py -v
+
+# Run all validation tests
+pytest tests/orchestrator/test_config_validation.py tests/common/test_config_validator.py -v
 ```
 
 ## Environment Variable Overrides

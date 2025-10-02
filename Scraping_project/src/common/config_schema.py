@@ -938,6 +938,119 @@ class PipelineConfig(BaseModel):
         description="Alerts configuration"
     )
 
+    @model_validator(mode='after')
+    def validate_seed_file_exists(self):
+        """Validate that seed file exists if specified"""
+        from pathlib import Path
+
+        seed_file = self.stages.discovery.seed_file
+        if seed_file:
+            seed_path = Path(seed_file)
+            if not seed_path.exists():
+                logger.warning(
+                    f"Seed file '{seed_file}' does not exist. "
+                    f"Discovery stage may fail if this file is required."
+                )
+        return self
+
+    @model_validator(mode='after')
+    def validate_nlp_model_availability(self):
+        """Warn if NLP is enabled but model might not be installed"""
+        if self.stages.enrichment.nlp_enabled:
+            # Check if spaCy model is likely installed
+            try:
+                import spacy
+                model_name = self.nlp.spacy_model or self.nlp.model
+                if model_name:
+                    try:
+                        spacy.load(model_name)
+                    except OSError:
+                        logger.warning(
+                            f"spaCy model '{model_name}' not found. "
+                            f"Run: python -m spacy download {model_name}"
+                        )
+            except ImportError:
+                logger.warning("spaCy not installed but NLP is enabled")
+        return self
+
+    @model_validator(mode='after')
+    def validate_headless_browser_dependencies(self):
+        """Warn if headless browser is enabled but dependencies might not be installed"""
+        stages_to_check = [
+            ('discovery', self.stages.discovery.headless_browser),
+            ('enrichment', self.stages.enrichment.headless_browser)
+        ]
+
+        for stage_name, browser_config in stages_to_check:
+            if browser_config.enabled:
+                engine = browser_config.engine
+                if engine == 'playwright':
+                    try:
+                        import playwright
+                    except ImportError:
+                        logger.warning(
+                            f"Playwright not installed but headless browser is enabled in {stage_name} stage. "
+                            f"Run: pip install playwright && playwright install"
+                        )
+                elif engine == 'selenium':
+                    try:
+                        import selenium
+                    except ImportError:
+                        logger.warning(
+                            f"Selenium not installed but headless browser is enabled in {stage_name} stage. "
+                            f"Run: pip install selenium"
+                        )
+        return self
+
+    @model_validator(mode='after')
+    def validate_output_file_directories(self):
+        """Validate that parent directories for output files exist or can be created"""
+        from pathlib import Path
+
+        output_files = [
+            ('discovery', self.stages.discovery.output_file),
+            ('validation', self.stages.validation.output_file),
+            ('enrichment', self.stages.enrichment.output_file),
+        ]
+
+        for stage_name, output_file in output_files:
+            if output_file:
+                output_path = Path(output_file)
+                parent_dir = output_path.parent
+
+                # Check if parent directory exists or can be created
+                if not parent_dir.exists():
+                    try:
+                        # Don't actually create it, just check if we can
+                        parent_dir.mkdir(parents=True, exist_ok=True)
+                        logger.info(f"Created output directory for {stage_name}: {parent_dir}")
+                    except Exception as e:
+                        raise ValueError(
+                            f"Cannot create output directory for {stage_name} stage: {parent_dir}. "
+                            f"Error: {e}"
+                        )
+        return self
+
+    @model_validator(mode='after')
+    def validate_alert_channel_configs(self):
+        """Validate alert channel configurations if alerting is enabled"""
+        if self.alerts.enabled and not self.alerts.channels:
+            logger.warning(
+                "Alerting is enabled but no channels are configured. "
+                "Alerts will only be written to the alert_file."
+            )
+
+        # Validate email channel configurations
+        for channel in self.alerts.channels:
+            if channel.get('type') == 'email':
+                required_fields = ['smtp_host', 'smtp_port', 'smtp_user', 'smtp_password', 'from_addr', 'to_addrs']
+                missing = [f for f in required_fields if f not in channel or not channel[f]]
+                if missing:
+                    raise ValueError(
+                        f"Email alert channel is missing required fields: {', '.join(missing)}"
+                    )
+        return self
+
     @classmethod
     def from_dict(cls, config_dict: Dict[str, Any]) -> 'PipelineConfig':
         """

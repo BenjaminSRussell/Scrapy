@@ -272,43 +272,34 @@ class PipelineOrchestrator:
             if processed_count % 1000 == 0:
                 logger.info(f"Validated {processed_count} URLs")
 
-        logger.info(f"Stage 2 validation completed: {processed_count} URLs processed")
-
-    async def run_concurrent_stage3_enrichment(self, enricher, scrapy_settings):
-        """Run Stage 3 enrichment with concurrent queue processing"""
-        import asyncio
-        import multiprocessing
-        from twisted.internet import asyncioreactor
-        from scrapy.crawler import CrawlerProcess
-        from concurrent.futures import ThreadPoolExecutor
-        import threading
-
+        logger.info(f"Stage 2 validation completed: {processed_count} URLs processed"
+    async def run_concurrent_stage3_enrichment(
+        self,
+        spider_cls,
+        scrapy_settings,
+        spider_kwargs: dict[str, Any] | None = None,
+        crawler_process_factory=None,
+    ):
+        """Run Stage 3 enrichment with concurrent queue processing."""
         logger.info("Starting concurrent Stage 3 enrichment")
 
         population_task = asyncio.create_task(self.populate_stage3_queue())
+        validation_items_for_enrichment: list[dict[str, Any]] = []
 
-        validation_items_for_enrichment = []
-
-        async def collect_urls_from_queue():
-            """Collect URLs from stage2_to_stage3_queue"""
+        async def collect_urls_from_queue() -> int:
             count = 0
             while True:
-                try:
-                    batch = await self.stage2_to_stage3_queue.get_batch_or_wait(timeout=2.0)
+                batch = await self.stage2_to_stage3_queue.get_batch_or_wait(timeout=2.0)
 
-                    if not batch:
-                        break
-
-                    for item in batch:
-                        validation_items_for_enrichment.append(item.data)
-                        count += 1
-
-                        if count % 1000 == 0:
-                            logger.info(f"Collected {count} URLs for enrichment")
-
-                except Exception as e:
-                    logger.error(f"Error collecting URLs from queue: {e}")
+                if not batch:
                     break
+
+                for item in batch:
+                    validation_items_for_enrichment.append(item.data)
+                    count += 1
+
+                    if count % 1000 == 0:
+                        logger.info(f"Collected {count} URLs for enrichment")
 
             logger.info(f"Finished collecting {count} URLs for enrichment")
             return count
@@ -319,45 +310,60 @@ class PipelineOrchestrator:
             logger.warning("No URLs available for Stage 3 enrichment")
             return
 
-        import subprocess
-        import json
-        from datetime import datetime
-        from pathlib import Path
+        urls_for_enrichment: list[str] = []
+        for item in validation_items_for_enrichment:
+            url = item.get('url')
+            if url:
+                urls_for_enrichment.append(url)
 
-        data_paths = self.config.get_data_paths()
-        temp_dir = data_paths.get(keys.TEMP_DIR, Path("data/temp"))
-        temp_dir.mkdir(parents=True, exist_ok=True)
+        if not urls_for_enrichment:
+            logger.warning("No valid URLs found for Stage 3 enrichment")
+            return
 
-        urls_for_enrichment = [item.get('url', '') for item in validation_items_for_enrichment if item.get('url')]
+        seen_urls: set[str] = set()
+        deduped_urls: list[str] = []
+        for url in urls_for_enrichment:
+            if url not in seen_urls:
+                seen_urls.add(url)
+                deduped_urls.append(url)
 
-        urls_file = temp_dir / f"enrichment_urls_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-        with open(urls_file, 'w') as f:
-            json.dump(urls_for_enrichment, f)
-        urls_file = str(urls_file)
+        spider_kwargs = dict(spider_kwargs or {})
 
-        try:
-            stage3_config = self.config.get_stage3_config()
-            spider_name = stage3_config.get(keys.ENRICHMENT_SPIDER_NAME, 'enrichment')
+        existing_urls = list(spider_kwargs.get('urls_list', []))
+        combined_urls = existing_urls + [url for url in deduped_urls if url not in existing_urls]
+        spider_kwargs['urls_list'] = combined_urls
 
-            cmd = [
-                'scrapy', 'crawl', spider_name,
-                '-s', f'STAGE3_OUTPUT_FILE={scrapy_settings.get("STAGE3_OUTPUT_FILE", "")}',
-                '-s', f'LOG_LEVEL={scrapy_settings.get("LOG_LEVEL", "INFO")}',
-                '-a', f'urls_file={urls_file}'
-            ]
+        existing_metadata = list(spider_kwargs.get('validation_metadata', []))
+        combined_metadata = existing_metadata + validation_items_for_enrichment
+        metadata_by_url: dict[str, Any] = {}
+        for entry in combined_metadata:
+            url = entry.get('url')
+            if url:
+                metadata_by_url[url] = entry
+        spider_kwargs['validation_metadata'] = list(metadata_by_url.values())
 
-            logger.info(f"Running Scrapy command: {' '.join(cmd)}")
-            result = subprocess.run(cmd, capture_output=True, text=True, cwd=str(Path(__file__).parent.parent.parent))
+        if crawler_process_factory is None:
+            from scrapy.crawler import CrawlerProcess
 
-            if result.returncode == 0:
-                logger.info("Scrapy enrichment completed successfully")
-            else:
-                logger.error(f"Scrapy process failed with return code {result.returncode}")
-                logger.error(f"STDOUT: {result.stdout}")
-                logger.error(f"STDERR: {result.stderr}")
+            crawler_process_factory = CrawlerProcess
 
-        finally:
-            if Path(urls_file).exists():
-                Path(urls_file).unlink()
+        process = crawler_process_factory(scrapy_settings)
+
+        def _run_crawler() -> None:
+            try:
+                process.crawl(spider_cls, **spider_kwargs)
+                process.start()
+            finally:
+                stop = getattr(process, 'stop', None)
+                if callable(stop):
+                    try:
+                        stop()
+                    except Exception:
+                        logger.debug("CrawlerProcess.stop raised", exc_info=True)
+
+        loop = asyncio.get_running_loop()
+        logger.info(f"Dispatching {len(deduped_urls)} URLs to Stage 3 crawler")
+
+        await loop.run_in_executor(None, _run_crawler)
 
         logger.info("Stage 3 enrichment completed")
