@@ -596,11 +596,11 @@ class DiscoverySpider(scrapy.Spider):
 
     async def _discover_with_headless_browser(self, url: str, current_depth: int) -> Iterator[DiscoveryItem]:
         """
-        Use headless browser to discover URLs from JavaScript-rendered content.
-        This method captures network requests and extracts URLs from dynamic content.
+        Use enhanced headless browser to discover URLs from JavaScript-rendered content.
+        Supports network interception, auto-click, SPA navigation, and infinite scroll.
         """
         try:
-            from src.common.headless_browser import HeadlessBrowser
+            from src.common.enhanced_browser import EnhancedBrowserDiscovery
 
             # Get headless browser config from settings
             browser_config = self.settings.get('HEADLESS_BROWSER_CONFIG', {})
@@ -608,33 +608,39 @@ class DiscoverySpider(scrapy.Spider):
                 logger.debug(f"Headless browser disabled, skipping: {url}")
                 return
 
-            logger.info(f"Using headless browser for JavaScript-heavy page: {url}")
+            logger.info(f"Using enhanced browser for JavaScript-heavy page: {url}")
 
-            # Initialize and start browser
-            browser = HeadlessBrowser(browser_config)
+            # Initialize and start browser with enhanced features
+            browser = EnhancedBrowserDiscovery(browser_config)
             await browser.start()
 
             try:
-                # Fetch page with browser and capture network requests
-                result = await browser.fetch(url)
+                # Extract base domain from allowed_domains
+                base_domain = self.allowed_domains[0] if self.allowed_domains else 'uconn.edu'
 
-                # Extract discovered URLs from network activity
-                dynamic_urls = result.get('dynamic_urls', [])
-                logger.info(f"Headless browser discovered {len(dynamic_urls)} dynamic URLs from {url}")
+                # Discover URLs using all available techniques
+                result = await browser.discover_urls(url, base_domain)
 
-                # Also extract AJAX endpoints
-                ajax_endpoints = await browser.extract_ajax_endpoints(url)
-                logger.info(f"Headless browser discovered {len(ajax_endpoints)} AJAX endpoints from {url}")
+                # Extract discovered URLs from all sources
+                discovered_urls = set(result.get('discovered_urls', []))
+                network_urls = set(result.get('network_urls', []))
+                all_urls = discovered_urls | network_urls
 
-                # Combine all discovered URLs
-                all_urls = set(dynamic_urls + ajax_endpoints)
+                logger.info(f"Enhanced browser discovered {len(all_urls)} total URLs from {url}")
+                logger.info(f"  - Static HTML: {result['discovery_methods']['static_html']}")
+                logger.info(f"  - Auto-click: {result['discovery_methods']['auto_click']}")
+                logger.info(f"  - Infinite scroll: {result['discovery_methods']['infinite_scroll']}")
+                logger.info(f"  - Network intercept: {result['discovery_methods']['network_intercept']}")
 
-                # Process discovered URLs
+                # Process discovered URLs with appropriate confidence scores
                 for discovered_url in all_urls:
                     normalized = self._normalize_candidate(discovered_url, None)
                     if normalized:
+                        # Higher confidence for URLs discovered via multiple methods
+                        confidence = 0.9 if discovered_url in network_urls else 0.8
+
                         results = self._process_candidate_url(
-                            normalized, url, current_depth, "headless_browser", 0.8
+                            normalized, url, current_depth, "enhanced_browser", confidence
                         )
                         if results:
                             yield results
@@ -643,9 +649,9 @@ class DiscoverySpider(scrapy.Spider):
                 await browser.stop()
 
         except ImportError:
-            logger.warning("Headless browser module not available. Install playwright: pip install playwright")
+            logger.warning("Enhanced browser module not available. Install playwright: pip install playwright && playwright install")
         except Exception as e:
-            logger.error(f"Headless browser discovery failed for {url}: {e}")
+            logger.error(f"Enhanced browser discovery failed for {url}: {e}")
 
     def closed(self, reason):
         """Called when spider closes - report comprehensive crawl summary"""

@@ -1,17 +1,12 @@
 """Tests for Stage 1 Discovery Spider"""
 
 import os
-import sys
 import tempfile
 from pathlib import Path
 from typing import List
 
 import pytest
 from unittest.mock import Mock, patch, mock_open
-
-# Add project root to sys.path
-project_root = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(project_root))
 
 from stage1.discovery_spider import DiscoverySpider
 from common.schemas import DiscoveryItem

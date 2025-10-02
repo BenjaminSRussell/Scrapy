@@ -4,16 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import json
-import sys
 from dataclasses import asdict
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-
-# Add project root to sys.path
-project_root = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(project_root))
 
 from stage2.validator import URLValidator
 from samples import build_validation_result

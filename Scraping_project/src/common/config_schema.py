@@ -163,6 +163,38 @@ class HeadlessBrowserConfig(BaseModel):
         default_factory=HeadlessBrowserViewport,
         description="Browser viewport settings"
     )
+    concurrent_limit: int = Field(
+        default=2,
+        ge=1,
+        le=10,
+        description="Maximum concurrent browser instances"
+    )
+
+    # Enhanced discovery features
+    enable_network_intercept: bool = Field(
+        default=True,
+        description="Enable network request/response interception"
+    )
+    enable_auto_click: bool = Field(
+        default=True,
+        description="Auto-click 'Load More' buttons"
+    )
+    enable_infinite_scroll: bool = Field(
+        default=True,
+        description="Handle infinite scroll pages"
+    )
+    max_scroll_attempts: int = Field(
+        default=10,
+        ge=1,
+        le=50,
+        description="Maximum scroll attempts for infinite scroll"
+    )
+    scroll_pause_ms: int = Field(
+        default=500,
+        ge=100,
+        le=5000,
+        description="Pause duration between scroll attempts (milliseconds)"
+    )
 
     @model_validator(mode='after')
     def validate_engine_browser_compatibility(self):
