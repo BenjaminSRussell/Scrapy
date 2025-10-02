@@ -14,6 +14,7 @@ from src.orchestrator.pipeline import BatchQueueItem
 from src.common.schemas import ValidationResult
 from src.common.checkpoints import CheckpointManager
 from src.common.feedback import FeedbackStore
+from src.common.adaptive_depth import AdaptiveDepthManager
 from src.common import config_keys as keys
 
 logger = logging.getLogger(__name__)
@@ -61,6 +62,10 @@ class URLValidator:
         # Initialize feedback store for Stage 2 -> Stage 1 communication
         feedback_file = Path("data/feedback/stage2_feedback.json")
         self.feedback_store = FeedbackStore(feedback_file)
+
+        # Initialize adaptive depth manager for learning content quality
+        adaptive_depth_file = Path("data/config/adaptive_depth.json")
+        self.adaptive_depth = AdaptiveDepthManager(adaptive_depth_file)
 
         # Ensure output directory exists
         self.output_file.parent.mkdir(parents=True, exist_ok=True)
@@ -212,6 +217,10 @@ class URLValidator:
                         # Record feedback for Stage 2 -> Stage 1 learning
                         item = batch[i]
                         discovery_source = item.discovery_source if hasattr(item, 'discovery_source') else 'unknown'
+                        discovery_depth = item.discovery_depth if hasattr(item, 'discovery_depth') else 0
+
+                        # Determine if this is likely content (HTML)
+                        has_content = result.is_valid and result.content_type and 'html' in result.content_type.lower()
 
                         if result.is_valid:
                             self.feedback_store.record_validation(
@@ -219,6 +228,15 @@ class URLValidator:
                                 discovery_source=discovery_source,
                                 is_valid=True,
                                 status_code=result.status_code
+                            )
+
+                            # Record for adaptive depth learning
+                            self.adaptive_depth.record_validation(
+                                url=result.url,
+                                is_valid=True,
+                                has_content=has_content,
+                                word_count=0,  # We don't have word count in Stage 2
+                                depth=discovery_depth
                             )
                         else:
                             # Record failure with error details
@@ -229,6 +247,15 @@ class URLValidator:
                                 is_valid=False,
                                 status_code=result.status_code,
                                 error_type=error_type
+                            )
+
+                            # Record for adaptive depth learning
+                            self.adaptive_depth.record_validation(
+                                url=result.url,
+                                is_valid=False,
+                                has_content=False,
+                                word_count=0,
+                                depth=discovery_depth
                             )
 
                         # Update checkpoint progress
@@ -303,6 +330,10 @@ class URLValidator:
         # Save feedback for Stage 1 to use in next crawl
         self.feedback_store.save_feedback()
         self.feedback_store.print_report()
+
+        # Save adaptive depth configuration
+        self.adaptive_depth.save_config()
+        self.adaptive_depth.print_report()
 
         return processed_count
 

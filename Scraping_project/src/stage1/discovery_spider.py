@@ -105,6 +105,20 @@ class DiscoverySpider(scrapy.Spider):
         if self.low_quality_patterns:
             logger.info(f"Avoiding {len(self.low_quality_patterns)} low-quality URL patterns from previous crawls")
 
+        # Initialize adaptive depth manager
+        adaptive_depth_file = Path("data/config/adaptive_depth.json")
+        self.adaptive_depth = AdaptiveDepthManager(
+            config_file=adaptive_depth_file,
+            base_depth=self.max_depth,  # Use configured max_depth as base
+            max_depth=self.max_depth + 3  # Allow up to 3 levels deeper for rich sections
+        )
+        logger.info(f"Adaptive depth manager initialized")
+
+        # Get depth configuration
+        depth_config = self.adaptive_depth.get_depth_configuration()
+        if depth_config:
+            logger.info(f"Loaded adaptive depth configuration for {len(depth_config)} sections")
+
         # url dedup with a set for backward compatibility
         self.seen_urls = set()
 
@@ -192,6 +206,12 @@ class DiscoverySpider(scrapy.Spider):
         """Parse response and extract links"""
         source_url = response.meta['source_url']
         current_depth = response.meta['depth']
+
+        # Get adaptive depth limit for this URL's section
+        adaptive_max_depth = self.adaptive_depth.get_depth_for_url(source_url)
+
+        # Record this URL's discovery for adaptive learning
+        self.adaptive_depth.record_discovery(source_url, current_depth)
 
         # Extract links from the current page
         # TODO: The link extractor is not very flexible. It should be made more configurable, such as allowing the user to specify custom deny rules.
@@ -470,7 +490,10 @@ class DiscoverySpider(scrapy.Spider):
             )
         ]
 
-        if current_depth < self.max_depth:
+        # Use adaptive depth for this URL's section
+        adaptive_max_depth = self.adaptive_depth.get_depth_for_url(canonical_url)
+
+        if current_depth < adaptive_max_depth:
             results.append(
                 scrapy.Request(
                     url=canonical_url,
@@ -687,6 +710,13 @@ class DiscoverySpider(scrapy.Spider):
         logger.info("EFFICIENCY METRICS:")
         logger.info(f"Duplicate rate: {duplicate_rate:.1f}% (lower is better)")
         logger.info(f"Discovery rate: {self.unique_urls_found / max(1, self.total_urls_parsed):.1f} URLs/page")
+
+        # Save adaptive depth configuration for next crawl
+        logger.info("-" * 40)
+        self.adaptive_depth.save_config()
+        self.adaptive_depth.print_report()
+
+        logger.info("=" * 80)
 
     def _clean_seed_url(self, raw_url: str, line_number: int) -> Tuple[Optional[str], bool]:
         """Attempt to clean malformed seed URLs while preserving usable entries."""

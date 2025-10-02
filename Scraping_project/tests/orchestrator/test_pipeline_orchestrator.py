@@ -3,11 +3,16 @@
 from __future__ import annotations
 
 import asyncio
+import sys
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Dict, List
 
 import pytest
+
+# Add project root to sys.path
+project_root = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(project_root))
 
 from orchestrator.pipeline import BatchQueue, BatchQueueItem, PipelineOrchestrator
 from samples import build_discovery_item, write_jsonl
