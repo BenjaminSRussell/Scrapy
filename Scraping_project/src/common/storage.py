@@ -210,15 +210,16 @@ class URLCache:
 
 
 class PaginationCache:
-    """SQLite-based cache for pagination metadata to avoid redundant guessing"""
+    """SQLite-based cache for pagination metadata with TTL support to avoid redundant guessing"""
 
-    def __init__(self, db_path: Path):
+    def __init__(self, db_path: Path, ttl_hours: int = 168):  # Default 7 days TTL
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        self.ttl_hours = ttl_hours
         self._init_db()
 
     def _init_db(self):
-        """Initialize the SQLite database for pagination cache"""
+        """Initialize the SQLite database for pagination cache with TTL"""
         with sqlite3.connect(self.db_path) as conn:
             conn.execute("PRAGMA journal_mode=WAL")
             conn.execute("PRAGMA synchronous=NORMAL")
@@ -227,28 +228,133 @@ class PaginationCache:
                     pattern_hash TEXT PRIMARY KEY,
                     base_url TEXT NOT NULL,
                     last_valid_page INTEGER,
-                    updated_at TEXT
+                    max_attempted_page INTEGER DEFAULT 0,
+                    attempt_count INTEGER DEFAULT 0,
+                    success_rate REAL DEFAULT 0.0,
+                    created_at TEXT,
+                    updated_at TEXT,
+                    expires_at TEXT
                 )
             """)
+
+            # Create index on expiration for efficient cleanup
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_expires_at ON pagination(expires_at)
+            """)
+
             conn.commit()
 
     def get_last_valid_page(self, base_url: str) -> int:
-        """Get the last known valid page for a base URL"""
+        """Get the last known valid page for a base URL if not expired"""
         pattern_hash = self._hash_url(base_url)
+        now = datetime.now().isoformat()
+
         with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.execute("SELECT last_valid_page FROM pagination WHERE pattern_hash = ?", (pattern_hash,))
+            cursor = conn.execute("""
+                SELECT last_valid_page FROM pagination
+                WHERE pattern_hash = ? AND (expires_at IS NULL OR expires_at > ?)
+            """, (pattern_hash, now))
             row = cursor.fetchone()
             return row[0] if row else 0
 
-    def update_last_valid_page(self, base_url: str, last_valid_page: int):
-        """Update the last known valid page for a base URL"""
+    def update_last_valid_page(self, base_url: str, last_valid_page: int, success: bool = True):
+        """Update the last known valid page with TTL and success tracking"""
+        pattern_hash = self._hash_url(base_url)
+        now = datetime.now()
+        expires_at = (now + timedelta(hours=self.ttl_hours)).isoformat()
+
+        with sqlite3.connect(self.db_path) as conn:
+            # Get existing data if any
+            cursor = conn.execute("""
+                SELECT attempt_count, max_attempted_page,
+                       (SELECT COUNT(*) FROM pagination WHERE pattern_hash = ?) as exists_count
+                FROM pagination WHERE pattern_hash = ?
+            """, (pattern_hash, pattern_hash))
+            row = cursor.fetchone()
+
+            if row and row[2] > 0:  # Record exists
+                attempt_count = row[0] + 1
+                max_attempted = max(row[1], last_valid_page) if row[1] else last_valid_page
+
+                # Calculate success rate
+                # Simplified: if we successfully got a page, increment successes
+                success_rate = (row[0] * (row[0] / attempt_count) + (1 if success else 0)) / attempt_count if attempt_count > 0 else 0.0
+
+                conn.execute("""
+                    UPDATE pagination
+                    SET last_valid_page = ?,
+                        max_attempted_page = ?,
+                        attempt_count = ?,
+                        success_rate = ?,
+                        updated_at = ?,
+                        expires_at = ?
+                    WHERE pattern_hash = ?
+                """, (last_valid_page, max_attempted, attempt_count, success_rate,
+                      now.isoformat(), expires_at, pattern_hash))
+            else:
+                # New record
+                conn.execute("""
+                    INSERT INTO pagination (
+                        pattern_hash, base_url, last_valid_page, max_attempted_page,
+                        attempt_count, success_rate, created_at, updated_at, expires_at
+                    )
+                    VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?)
+                """, (pattern_hash, base_url, last_valid_page, last_valid_page,
+                      1.0 if success else 0.0, now.isoformat(), now.isoformat(), expires_at))
+
+            conn.commit()
+
+    def should_attempt_page(self, base_url: str, page_num: int, max_pages: int = 10) -> bool:
+        """
+        Determine if we should attempt to fetch a pagination page.
+
+        Args:
+            base_url: The base URL pattern
+            page_num: Page number to attempt
+            max_pages: Maximum pages to try beyond last known valid
+
+        Returns:
+            True if we should attempt this page
+        """
+        last_valid = self.get_last_valid_page(base_url)
+
+        # Always attempt if we have no history
+        if last_valid == 0:
+            return page_num <= max_pages
+
+        # Don't go too far beyond last known valid page
+        if page_num > last_valid + max_pages:
+            return False
+
+        # Check success rate for this pattern
         pattern_hash = self._hash_url(base_url)
         with sqlite3.connect(self.db_path) as conn:
-            conn.execute("""
-                INSERT OR REPLACE INTO pagination (pattern_hash, base_url, last_valid_page, updated_at)
-                VALUES (?, ?, ?, ?)
-            """, (pattern_hash, base_url, last_valid_page, datetime.now().isoformat()))
+            cursor = conn.execute("""
+                SELECT success_rate FROM pagination WHERE pattern_hash = ?
+            """, (pattern_hash,))
+            row = cursor.fetchone()
+
+            if row and row[0] is not None:
+                # If success rate is very low, be more conservative
+                if row[0] < 0.3 and page_num > last_valid + 2:
+                    return False
+
+        return True
+
+    def cleanup_expired(self):
+        """Remove expired pagination records"""
+        now = datetime.now().isoformat()
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.execute("""
+                DELETE FROM pagination WHERE expires_at < ?
+            """, (now,))
+            deleted = cursor.rowcount
             conn.commit()
+
+        if deleted > 0:
+            logger.info(f"Cleaned up {deleted} expired pagination records")
+
+        return deleted
 
     def _hash_url(self, url: str) -> str:
         """Generate a SHA256 hash for a URL pattern"""

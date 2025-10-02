@@ -22,6 +22,8 @@ except ImportError:
 from src.common.schemas import DiscoveryItem
 from src.common.urls import canonicalize_url_simple
 from src.common.storage import URLCache, PaginationCache
+from src.common.feedback import FeedbackStore
+from src.common.adaptive_depth import AdaptiveDepthManager
 
 
 logger = logging.getLogger(__name__)  # Because we need to know what went wrong
@@ -85,6 +87,23 @@ class DiscoverySpider(scrapy.Spider):
         # Initialize pagination cache
         pagination_cache_path = self.settings.get('PAGINATION_CACHE_PATH', 'data/cache/pagination_cache.db')
         self.pagination_cache = PaginationCache(Path(pagination_cache_path))
+
+        # Initialize feedback store for adaptive discovery
+        feedback_file = Path("data/feedback/stage2_feedback.json")
+        self.feedback_store = FeedbackStore(feedback_file)
+        logger.info(f"Loaded feedback from Stage 2 for adaptive discovery")
+
+        # Check which sources should be throttled based on feedback
+        self.throttled_sources = set()
+        for source in ['ajax_endpoint', 'json_blob', 'pagination', 'data_attribute', 'form_action', 'meta_refresh']:
+            if self.feedback_store.should_throttle_source(source, min_samples=50, max_success_rate=0.3):
+                self.throttled_sources.add(source)
+                logger.warning(f"Discovery source '{source}' will be throttled due to low success rate")
+
+        # Get low-quality URL patterns to avoid
+        self.low_quality_patterns = set(self.feedback_store.get_low_quality_patterns(min_samples=10, max_success_rate=0.3))
+        if self.low_quality_patterns:
+            logger.info(f"Avoiding {len(self.low_quality_patterns)} low-quality URL patterns from previous crawls")
 
         # url dedup with a set for backward compatibility
         self.seen_urls = set()
@@ -385,12 +404,31 @@ class DiscoverySpider(scrapy.Spider):
     ) -> list:
         """process URLs and pretend we're being efficient"""
 
+        # Check if source is throttled based on feedback
+        if discovery_source in self.throttled_sources:
+            logger.debug(f"Skipping URL from throttled source '{discovery_source}': {candidate_url}")
+            return []
+
         canonical_url = canonicalize_url_simple(candidate_url)
+
+        # Check if URL pattern is known to be low quality
+        url_pattern = self.feedback_store.extract_url_pattern(canonical_url)
+        if url_pattern in self.low_quality_patterns:
+            logger.debug(f"Skipping low-quality URL pattern '{url_pattern}': {canonical_url}")
+            return []
 
         parsed = urlparse(canonical_url)
         if parsed.scheme not in {"http", "https"} or not parsed.netloc:
             logger.debug(f"Ignoring invalid candidate URL {candidate_url}")
             return []
+
+        # Adjust confidence based on historical performance
+        adjusted_confidence = self.feedback_store.get_adjusted_confidence(
+            canonical_url, discovery_source, confidence
+        )
+
+        # Record discovery in feedback store
+        self.feedback_store.record_discovery(canonical_url, discovery_source, adjusted_confidence)
 
         url_hash = hashlib.sha256(canonical_url.encode("utf-8")).hexdigest()
 
@@ -428,7 +466,7 @@ class DiscoverySpider(scrapy.Spider):
                 url_hash=url_hash,
                 discovery_depth=next_depth,
                 discovery_source=discovery_source,
-                confidence=confidence
+                confidence=adjusted_confidence  # Use feedback-adjusted confidence
             )
         ]
 
@@ -825,29 +863,49 @@ class DiscoverySpider(scrapy.Spider):
                 )
 
     def _generate_pagination_urls(self, base_url: str, limit: int = 10) -> set:
-        """Generate common pagination patterns for API endpoints with caching"""
+        """Generate common pagination patterns for API endpoints with TTL-aware caching"""
         from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 
         pagination_urls = set()
+
+        # Get last valid page from cache (respects TTL)
         last_valid_page = self.pagination_cache.get_last_valid_page(base_url)
-        start_page = last_valid_page + 1
+
+        # Clean up expired entries periodically
+        if hasattr(self, '_pagination_cleanup_counter'):
+            self._pagination_cleanup_counter += 1
+            if self._pagination_cleanup_counter % 100 == 0:
+                self.pagination_cache.cleanup_expired()
+        else:
+            self._pagination_cleanup_counter = 1
 
         parsed = urlparse(base_url)
         query_params = parse_qs(parsed.query)
 
-        # common pagination parameters to try
+        # Common pagination parameters to try
+        # Start from last valid + 1, or 1 if no history
+        start_page = max(1, last_valid_page)
+
         pagination_patterns = [
-            {'page': [str(i) for i in range(start_page, start_page + limit)]},
-            {'p': [str(i) for i in range(start_page, start_page + limit)]},
-            {'offset': [str(i * 10) for i in range(start_page, start_page + limit)]},
-            {'start': [str(i * 10) for i in range(start_page, start_page + limit)]},
+            {'page': list(range(start_page, start_page + limit))},
+            {'p': list(range(start_page, start_page + limit))},
+            {'offset': [i * 10 for i in range(start_page, start_page + limit)]},
+            {'start': [i * 10 for i in range(start_page, start_page + limit)]},
         ]
 
+        generated_count = 0
         for pattern in pagination_patterns:
             for param, values in pattern.items():
-                for value in values:
+                for page_num_or_offset in values:
+                    # Use should_attempt_page to respect success rates and TTL
+                    page_num = page_num_or_offset if param in ['page', 'p'] else page_num_or_offset // 10
+
+                    if not self.pagination_cache.should_attempt_page(base_url, page_num, max_pages=limit):
+                        logger.debug(f"Skipping pagination page {page_num} for {base_url} (TTL/success rate check)")
+                        continue
+
                     new_params = query_params.copy()
-                    new_params[param] = [value]
+                    new_params[param] = [str(page_num_or_offset)]
                     new_query = urlencode(new_params, doseq=True)
                     new_url = urlunparse(
                         (
@@ -856,5 +914,9 @@ class DiscoverySpider(scrapy.Spider):
                         )
                     )
                     pagination_urls.add(new_url)
+                    generated_count += 1
+
+        if generated_count > 0:
+            logger.debug(f"Generated {generated_count} pagination URLs for {base_url} (starting from page {start_page})")
 
         return pagination_urls

@@ -13,6 +13,7 @@ from dataclasses import asdict
 from src.orchestrator.pipeline import BatchQueueItem
 from src.common.schemas import ValidationResult
 from src.common.checkpoints import CheckpointManager
+from src.common.feedback import FeedbackStore
 from src.common import config_keys as keys
 
 logger = logging.getLogger(__name__)
@@ -56,6 +57,10 @@ class URLValidator:
         checkpoint_dir = Path("data/checkpoints")
         self.checkpoint_manager = CheckpointManager(checkpoint_dir)
         self.checkpoint = self.checkpoint_manager.get_checkpoint("stage2_validation")
+
+        # Initialize feedback store for Stage 2 -> Stage 1 communication
+        feedback_file = Path("data/feedback/stage2_feedback.json")
+        self.feedback_store = FeedbackStore(feedback_file)
 
         # Ensure output directory exists
         self.output_file.parent.mkdir(parents=True, exist_ok=True)
@@ -204,6 +209,28 @@ class URLValidator:
                         f.write(json.dumps(asdict(result), ensure_ascii=False) + '\n')
                         successful_validations += 1
 
+                        # Record feedback for Stage 2 -> Stage 1 learning
+                        item = batch[i]
+                        discovery_source = item.discovery_source if hasattr(item, 'discovery_source') else 'unknown'
+
+                        if result.is_valid:
+                            self.feedback_store.record_validation(
+                                url=result.url,
+                                discovery_source=discovery_source,
+                                is_valid=True,
+                                status_code=result.status_code
+                            )
+                        else:
+                            # Record failure with error details
+                            error_type = result.error_message.split(':')[0] if result.error_message else 'unknown'
+                            self.feedback_store.record_validation(
+                                url=result.url,
+                                discovery_source=discovery_source,
+                                is_valid=False,
+                                status_code=result.status_code,
+                                error_type=error_type
+                            )
+
                         # Update checkpoint progress
                         self.checkpoint.update_progress(
                             processed_line=i + 1,
@@ -272,6 +299,11 @@ class URLValidator:
             processed_count += len(batch)
 
         logger.info(f"Validation completed: {processed_count} URLs processed")
+
+        # Save feedback for Stage 1 to use in next crawl
+        self.feedback_store.save_feedback()
+        self.feedback_store.print_report()
+
         return processed_count
 
     async def _validate_with_session(self, session: aiohttp.ClientSession, url: str, url_hash: str) -> ValidationResult:
