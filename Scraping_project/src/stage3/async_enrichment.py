@@ -18,6 +18,7 @@ from urllib.parse import urlparse
 from collections import deque
 import time
 
+from .storage import create_storage_writer
 from src.common.nlp import (
     extract_entities_and_keywords,
     extract_content_tags,
@@ -189,15 +190,36 @@ class AsyncEnrichmentProcessor:
         max_concurrency: int = 50,
         timeout: int = 30,
         max_retries: int = 2,
-        batch_size: int = 100
+        batch_size: int = 100,
+        storage_config: Optional[Dict[str, Any]] = None,
+        storage_backend: Optional[str] = None,
+        storage_options: Optional[Dict[str, Any]] = None,
+        rotation_config: Optional[Dict[str, Any]] = None,
+        compression_config: Optional[Dict[str, Any]] = None,
     ):
-        self.output_file = Path(output_file)
+        self.output_path = Path(output_file) if output_file else Path("data/processed/stage03/enrichment_output.jsonl")
         self.nlp_config = nlp_config or {}
         self.content_types_config = content_types_config or {}
         self.predefined_tags = set(predefined_tags or [])
         self.timeout = aiohttp.ClientTimeout(total=timeout)
         self.max_retries = max_retries
         self.batch_size = batch_size
+
+        base_config: Dict[str, Any] = dict(storage_config or {})
+        if storage_backend:
+            base_config["backend"] = storage_backend
+        if storage_options:
+            options = dict(base_config.get("options") or {})
+            options.update(storage_options)
+            base_config["options"] = options
+        if rotation_config is not None:
+            base_config["rotation"] = rotation_config
+        if compression_config is not None:
+            base_config["compression"] = compression_config
+
+        self.storage_config = base_config
+        self.active_backend = (base_config.get("backend") or "jsonl").lower()
+        self.storage_writer = None
 
         # Initialize NLP
         if nlp_config:
@@ -240,49 +262,120 @@ class AsyncEnrichmentProcessor:
             'end_time': None
         }
 
-        # Output file handle
-        self._output_file = None
         self._output_lock = asyncio.Lock()
 
         # Checkpoint tracker
-        checkpoint_dir = Path("data/checkpoints")
-        self.checkpoint_tracker = AsyncCheckpointTracker(checkpoint_dir, "stage3_async_enrichment")
+        checkpoint_dir = Path('data/checkpoints')
+        self.checkpoint_tracker = AsyncCheckpointTracker(checkpoint_dir, 'stage3_async_enrichment')
+
+
+    def _build_writer(self):
+        config = dict(self.storage_config)
+        backend = (config.get('backend') or 'jsonl').lower()
+        self.active_backend = backend
+        options = dict(config.get('options') or {})
+        rotation = config.get('rotation')
+        compression = config.get('compression')
+
+        default_path = self.output_path
+        if backend != 's3' and 'path' not in options:
+            options['path'] = str(default_path)
+
+        return create_storage_writer(
+            backend=backend,
+            options=options,
+            rotation_config=rotation,
+            compression_config=compression,
+            default_path=default_path,
+        )
 
     async def __aenter__(self):
-        """Async context manager entry"""
-        # Ensure output directory exists
-        self.output_file.parent.mkdir(parents=True, exist_ok=True)
 
-        # Open output file in append mode
-        self._output_file = open(self.output_file, 'a', encoding='utf-8')
+        """Async context manager entry"""
+
+        try:
+
+            self.storage_writer = self._build_writer()
+
+            self.storage_writer.open()
+
+        except Exception:  # pragma: no cover - defensive logging
+
+            logger.error("AsyncEnrichmentProcessor failed to initialize storage backend", exc_info=True)
+
+            raise
+
+
 
         self.stats['start_time'] = time.time()
-        logger.info(f"AsyncEnrichmentProcessor initialized, output: {self.output_file}")
+
+        logger.info("AsyncEnrichmentProcessor initialized with %s backend -> %s",
+
+                    self.active_backend.upper(),
+
+                    self.storage_writer.describe_destination())
+
+
 
         # Initialize checkpoint tracker
+
         await self.checkpoint_tracker.__aenter__()
+
+
 
         return self
 
+
+
+
+
     async def __aexit__(self, exc_type, exc_val, exc_tb):
+
         """Async context manager exit"""
-        if self._output_file:
-            self._output_file.close()
+
+        if self.storage_writer:
+
+            self.storage_writer.close()
+
+            self.storage_writer = None
+
+
 
         self.stats['end_time'] = time.time()
+
         self._log_final_stats()
 
+
+
         # Clean up checkpoint tracker
+
         await self.checkpoint_tracker.__aexit__(exc_type, exc_val, exc_tb)
 
+
+
+
+
     async def _write_result(self, result: EnrichmentResult):
-        """Write result to output file (thread-safe)"""
+
+        """Write result to storage (thread-safe)"""
+
         async with self._output_lock:
+
             try:
-                self._output_file.write(json.dumps(result.to_dict(), ensure_ascii=False) + "\n")
-                self._output_file.flush()
+
+                if not self.storage_writer:
+
+                    raise RuntimeError('Storage writer is not initialized')
+
+                self.storage_writer.write_item(result.to_dict())
+
             except Exception as e:
+
                 logger.error(f"Error writing result for {result.url}: {e}")
+
+
+
+
 
     async def fetch_url(
         self,
@@ -608,7 +701,12 @@ async def run_async_enrichment(
     predefined_tags: Optional[List[str]] = None,
     max_concurrency: int = 50,
     timeout: int = 30,
-    batch_size: int = 100
+    batch_size: int = 100,
+    storage_config: Optional[Dict[str, Any]] = None,
+    storage_backend: Optional[str] = None,
+    storage_options: Optional[Dict[str, Any]] = None,
+    rotation_config: Optional[Dict[str, Any]] = None,
+    compression_config: Optional[Dict[str, Any]] = None
 ):
     """
     Convenience function to run async enrichment.
@@ -622,6 +720,11 @@ async def run_async_enrichment(
         max_concurrency: Maximum concurrent requests
         timeout: Request timeout in seconds
         batch_size: Batch size for processing
+        storage_config: Storage backend configuration dictionary
+        storage_backend: Optional override for the storage backend name
+        storage_options: Optional override for backend-specific options
+        rotation_config: Optional rotation policy configuration
+        compression_config: Optional compression settings
     """
     async with AsyncEnrichmentProcessor(
         output_file=output_file,
@@ -630,6 +733,11 @@ async def run_async_enrichment(
         predefined_tags=predefined_tags,
         max_concurrency=max_concurrency,
         timeout=timeout,
-        batch_size=batch_size
+        batch_size=batch_size,
+        storage_config=storage_config,
+        storage_backend=storage_backend,
+        storage_options=storage_options,
+        rotation_config=rotation_config,
+        compression_config=compression_config
     ) as processor:
         await processor.process_urls(urls)

@@ -132,3 +132,30 @@ git push -u origin feature/your-feature-name
 - Consolidate duplicate test files and improve test coverage
 - Standardize logging format across all modules
 - Remove unused dependencies from requirements.txt
+## Stage 3 Storage Configuration
+
+Stage 3 now supports pluggable output backends via the `enrichment.storage` section in `config/*.yml`.
+Example:
+
+```yaml
+stages:
+  enrichment:
+    output_file: data/processed/stage03/enrichment_output.jsonl
+    storage:
+      backend: jsonl
+      options:
+        path: data/processed/stage03/enrichment_output.jsonl
+      rotation:
+        max_items: 5000
+      compression:
+        codec: none
+```
+
+Backends available:
+
+- `jsonl` (default) with optional rotation and gzip compression
+- `sqlite` (writes rows to `enrichment_items` table)
+- `parquet` (requires `pyarrow`)
+- `s3` (uploads JSONL batches; supports gzip compression and rotation thresholds)
+
+The orchestrator propagates these settings to both the Scrapy pipeline and the async enrichment worker.

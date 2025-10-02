@@ -27,6 +27,7 @@ pytest-cov
 
 # Data processing
 pandas
+pyarrow
 numpy
 
 # Natural language processing (core required)
@@ -60,6 +61,7 @@ click
 tqdm
 psutil
 python-dateutil
+boto3
 
 # Typing helpers
 typing-extensions

@@ -552,6 +552,72 @@ class ValidationStageConfig(BaseModel):
     )
 
 
+class StorageRotationConfig(BaseModel):
+    """Rotation configuration for enrichment storage."""
+    model_config = ConfigDict(extra='forbid')
+
+    max_bytes: Optional[int] = Field(default=None, ge=1, description='Rotate after writing this many bytes')
+    max_items: Optional[int] = Field(default=None, ge=1, description='Rotate after writing this many items')
+    max_seconds: Optional[int] = Field(default=None, ge=1, description='Rotate after this many seconds')
+    enabled: Optional[bool] = Field(default=None, description='Explicitly enable or disable rotation')
+
+
+class StorageCompressionConfig(BaseModel):
+    """Compression configuration for enrichment storage."""
+    model_config = ConfigDict(extra='forbid')
+
+    codec: Literal['none', 'gzip', 'snappy', 'brotli', 'zstd'] = Field(
+        default='none',
+        description='Compression codec to apply'
+    )
+    level: Optional[int] = Field(
+        default=None,
+        ge=1,
+        le=9,
+        description='Compression level where applicable'
+    )
+    use_extension: bool = Field(
+        default=True,
+        description='Append codec-specific extension to generated files'
+    )
+
+    @model_validator(mode='after')
+    def validate_level_usage(self):
+        """Ensure compression level is only set when meaningful."""
+        if self.codec == 'none' and self.level is not None:
+            raise ValueError('Compression level should not be set when codec is "none"')
+        return self
+
+
+class EnrichmentStorageConfig(BaseModel):
+    """Storage configuration for Stage 3 outputs."""
+    model_config = ConfigDict(extra='forbid')
+
+    backend: Literal['jsonl', 'sqlite', 'parquet', 's3'] = Field(
+        default='jsonl',
+        description='Storage backend implementation to use'
+    )
+    options: Dict[str, Any] = Field(
+        default_factory=dict,
+        description='Backend-specific options dictionary'
+    )
+    rotation: Optional[StorageRotationConfig] = Field(
+        default=None,
+        description='Rotation policy configuration'
+    )
+    compression: Optional[StorageCompressionConfig] = Field(
+        default=None,
+        description='Compression configuration'
+    )
+
+    @model_validator(mode='after')
+    def validate_backend_options(self):
+        """Validate backend-specific required options."""
+        if self.backend == 's3' and not self.options.get('bucket'):
+            raise ValueError("S3 storage backend requires a 'bucket' option")
+        return self
+
+
 class EnrichmentStageConfig(BaseModel):
     """Stage 3: Enrichment configuration"""
     model_config = ConfigDict(extra='forbid')
@@ -601,6 +667,11 @@ class EnrichmentStageConfig(BaseModel):
         default_factory=ContentTypesConfig,
         description="Content type handling configuration"
     )
+    storage: EnrichmentStorageConfig = Field(
+        default_factory=EnrichmentStorageConfig,
+        description="Storage backend configuration"
+    )
+
 
     @field_validator('allowed_domains')
     @classmethod
@@ -1010,8 +1081,17 @@ class PipelineConfig(BaseModel):
         output_files = [
             ('discovery', self.stages.discovery.output_file),
             ('validation', self.stages.validation.output_file),
-            ('enrichment', self.stages.enrichment.output_file),
         ]
+
+        enrichment_paths = [self.stages.enrichment.output_file]
+        storage = getattr(self.stages.enrichment, 'storage', None)
+        if storage and storage.backend != 's3':
+            storage_path = storage.options.get('path')
+            if storage_path:
+                enrichment_paths.append(storage_path)
+
+        for path_value in enrichment_paths:
+            output_files.append(('enrichment', path_value))
 
         for stage_name, output_file in output_files:
             if output_file:

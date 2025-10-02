@@ -1,13 +1,19 @@
 import logging
 import json
+import uuid
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from datetime import datetime
 from typing import Optional, Dict, Any
+from contextvars import ContextVar
+
+# Context variables for trace correlation
+session_id_var: ContextVar[Optional[str]] = ContextVar('session_id', default=None)
+trace_id_var: ContextVar[Optional[str]] = ContextVar('trace_id', default=None)
 
 
 class StructuredFormatter(logging.Formatter):
-    """Custom formatter that outputs structured JSON logs"""
+    """Custom formatter that outputs structured JSON logs with trace correlation"""
 
     def format(self, record: logging.LogRecord) -> str:
         log_data = {
@@ -19,6 +25,14 @@ class StructuredFormatter(logging.Formatter):
             'function': record.funcName,
             'line': record.lineno
         }
+
+        # Add trace correlation IDs
+        session_id = session_id_var.get()
+        trace_id = trace_id_var.get()
+        if session_id:
+            log_data['session_id'] = session_id
+        if trace_id:
+            log_data['trace_id'] = trace_id
 
         # Add exception info if present
         if record.exc_info:
@@ -137,3 +151,50 @@ def get_structured_logger(name: str, **context) -> StructuredLogger:
     """
     logger = logging.getLogger(name)
     return StructuredLogger(logger, context)
+
+
+def set_session_id(session_id: Optional[str] = None) -> str:
+    """
+    Set session ID for trace correlation.
+
+    Args:
+        session_id: Session ID (generates new UUID if None)
+
+    Returns:
+        Session ID
+    """
+    if session_id is None:
+        session_id = str(uuid.uuid4())
+    session_id_var.set(session_id)
+    return session_id
+
+
+def set_trace_id(trace_id: Optional[str] = None) -> str:
+    """
+    Set trace ID for request correlation.
+
+    Args:
+        trace_id: Trace ID (generates new UUID if None)
+
+    Returns:
+        Trace ID
+    """
+    if trace_id is None:
+        trace_id = str(uuid.uuid4())
+    trace_id_var.set(trace_id)
+    return trace_id
+
+
+def get_session_id() -> Optional[str]:
+    """Get current session ID"""
+    return session_id_var.get()
+
+
+def get_trace_id() -> Optional[str]:
+    """Get current trace ID"""
+    return trace_id_var.get()
+
+
+def clear_trace_context():
+    """Clear trace context (trace_id only, keep session_id)"""
+    trace_id_var.set(None)

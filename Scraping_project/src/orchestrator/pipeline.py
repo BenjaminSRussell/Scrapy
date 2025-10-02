@@ -272,7 +272,7 @@ class PipelineOrchestrator:
             if processed_count % 1000 == 0:
                 logger.info(f"Validated {processed_count} URLs")
 
-        logger.info(f"Stage 2 validation completed: {processed_count} URLs processed"
+        logger.info(f"Stage 2 validation completed: {processed_count} URLs processed")
     async def run_concurrent_stage3_enrichment(
         self,
         spider_cls,
@@ -364,10 +364,11 @@ class PipelineOrchestrator:
 
         stage3_config = self.config.get_stage3_config()
         nlp_config = self.config.get_nlp_config()
-        content_config = self.config.get(keys.CONTENT, default={})
+        content_config = self.config.get('content', default={})
 
         output_file = stage3_config[keys.ENRICHMENT_OUTPUT_FILE]
         content_types_config = stage3_config.get(keys.ENRICHMENT_CONTENT_TYPES, {})
+        storage_config = stage3_config.get(keys.ENRICHMENT_STORAGE, {})
         predefined_tags = content_config.get('predefined_tags', [])
         max_workers = stage3_config.get(keys.VALIDATION_MAX_WORKERS, 50)
 
@@ -381,7 +382,12 @@ class PipelineOrchestrator:
             predefined_tags=predefined_tags,
             max_concurrency=max_workers,
             timeout=30,
-            batch_size=100
+            batch_size=100,
+            storage_config=storage_config,
+            storage_backend=storage_config.get(keys.STORAGE_BACKEND),
+            storage_options=storage_config.get(keys.STORAGE_OPTIONS, {}),
+            rotation_config=storage_config.get(keys.STORAGE_ROTATION, {}),
+            compression_config=storage_config.get(keys.STORAGE_COMPRESSION, {})
         )
 
     async def _run_scrapy_enrichment(
@@ -391,13 +397,18 @@ class PipelineOrchestrator:
         scrapy_settings: dict,
         spider_kwargs: dict[str, Any] | None,
         validation_items: list[dict[str, Any]],
-        crawler_process_factory
+        crawler_process_factory,
     ):
         """Run enrichment using Scrapy (traditional, single-threaded)"""
         spider_kwargs = dict(spider_kwargs or {})
 
         existing_urls = list(spider_kwargs.get('urls_list', []))
-        combined_urls = existing_urls + [url for url in urls if url not in existing_urls]
+        combined_urls = list(existing_urls)
+        seen_urls = set(existing_urls)
+        for url in urls:
+            if url not in seen_urls:
+                combined_urls.append(url)
+                seen_urls.add(url)
         spider_kwargs['urls_list'] = combined_urls
 
         existing_metadata = list(spider_kwargs.get('validation_metadata', []))
@@ -428,6 +439,6 @@ class PipelineOrchestrator:
                         logger.debug("CrawlerProcess.stop raised", exc_info=True)
 
         loop = asyncio.get_running_loop()
-        logger.info(f"Using Scrapy enrichment (traditional mode)")
+        logger.info("Using Scrapy enrichment (traditional mode)")
 
         await loop.run_in_executor(None, _run_crawler)

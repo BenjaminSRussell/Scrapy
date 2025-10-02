@@ -93,7 +93,7 @@ class Stage3Pipeline:
 
         self.item_count = 0
         logger.info(
-            "[Stage3Pipeline] Using %s backend → %s",
+            "[Stage3Pipeline] Using %s backend -> %s",
             self.active_backend.upper(),
             self.writer.describe_destination(),
         )
@@ -106,7 +106,7 @@ class Stage3Pipeline:
             finally:
                 destination = self.writer.describe_destination()
                 logger.info(
-                    "[Stage3Pipeline] Processed %s enriched items → %s",
+                    "[Stage3Pipeline] Processed %s enriched items -> %s",
                     f"{self.item_count:,}",
                     destination,
                 )
@@ -115,13 +115,15 @@ class Stage3Pipeline:
     def process_item(self, item, spider):
         """Process each enriched content item."""
         adapter = ItemAdapter(item)
+        text_content = adapter.get("text_content", "")
+        word_count = adapter.get("word_count", 0)
 
         enrichment_data = {
             "url": adapter.get("url"),
             "url_hash": adapter.get("url_hash"),
             "title": adapter.get("title", ""),
-            "text_content": adapter.get("text_content", ""),
-            "word_count": adapter.get("word_count", 0),
+            "text_content": text_content,
+            "word_count": word_count,
             "entities": adapter.get("entities", []),
             "keywords": adapter.get("keywords", []),
             "content_tags": adapter.get("content_tags", []),

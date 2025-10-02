@@ -139,10 +139,9 @@ Stage1 JSONL → BatchQueue (async) → URLValidator (concurrent)
   - Device selection (CPU/CUDA/MPS/MLX)
   - Fallback handling
 
-- `Stage3Pipeline`: Output pipeline
-  - Content cleaning
-  - NLP processing
-  - Schema versioning
+- `Stage3Pipeline`: Output pipeline with pluggable storage writers
+  - Content cleaning and schema versioning
+  - JSONL/SQLite/Parquet/S3 outputs with configurable rotation/compression
 
 **Data Flow**:
 ```

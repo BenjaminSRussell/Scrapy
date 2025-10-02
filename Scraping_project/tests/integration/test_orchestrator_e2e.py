@@ -28,6 +28,7 @@ class DummyConfig:
             keys.ENRICHMENT_CONTENT_TYPES: {},
             keys.ENRICHMENT_HEADLESS_BROWSER: {},
             keys.ENRICHMENT_NLP_ENABLED: False,
+            keys.ENRICHMENT_STORAGE: {},
         }
 
     def get_data_paths(self):
@@ -119,7 +120,14 @@ async def test_stage3_enrichment_end_to_end(tmp_path):
         created_processes.append(process)
         return process
 
-    scrapy_settings = {'STAGE3_OUTPUT_FILE': str(stage3_file)}
+    scrapy_settings = {
+        'STAGE3_OUTPUT_FILE': str(stage3_file),
+        'STAGE3_STORAGE': {},
+        'STAGE3_STORAGE_BACKEND': None,
+        'STAGE3_STORAGE_OPTIONS': {},
+        'STAGE3_STORAGE_ROTATION': {},
+        'STAGE3_STORAGE_COMPRESSION': {},
+    }
 
     await orchestrator.run_concurrent_stage3_enrichment(
         spider_cls=DummySpider,

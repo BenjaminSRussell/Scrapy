@@ -305,6 +305,13 @@ class NLPRegistry:
         )
         return summary[0]["summary_text"]
 
+    def classify_text(self, text: str, labels: List[str]) -> dict:
+        if not self.zero_shot_pipeline:
+            raise RuntimeError("Zero-shot classification pipeline is not initialised")
+
+        results = self.zero_shot_pipeline(text, labels)
+        return dict(zip(results["labels"], results["scores"]))
+
     def _keywords_from_doc(self, doc, top_k: int) -> List[str]:
         candidates: List[str] = []
 
@@ -334,6 +341,9 @@ class _DummyNLPRegistry:
 
     def summarize_text(self, text: str, max_length: int, min_length: int) -> str:
         return ""
+
+    def classify_text(self, text: str, labels: List[str]) -> dict:
+        return {}
 
 
 NLP_REGISTRY: Optional[NLPRegistry] = None
@@ -385,6 +395,16 @@ def summarize(text: str, max_length: int = 150, min_length: int = 30) -> str:
 
     registry = get_registry()
     return registry.summarize_text(text, max_length=max_length, min_length=min_length)
+
+
+def classify(text: str, labels: List[str]) -> dict:
+    """Classify text using the configured NLP backend."""
+
+    if not text or not labels:
+        return {}
+
+    registry = get_registry()
+    return registry.classify_text(text, labels)
 
 
 def extract_content_tags(url_path: str, predefined_tags: Set[str]) -> List[str]:

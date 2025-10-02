@@ -14,6 +14,7 @@ if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
 from orchestrator.main import run_stage1_discovery, run_stage2_validation, run_stage3_enrichment, main
+from stage1.discovery_spider import DiscoverySpider
 
 
 class MockConfig:
@@ -50,6 +51,7 @@ class MockConfig:
             'allowed_domains': ['uconn.edu'],
             'content_types': {},
             'headless_browser': {},
+            'storage': {},
         }
     def get_nlp_config(self):
         return {
@@ -77,27 +79,27 @@ async def test_run_stage1_discovery():
     config = MockConfig()
 
     with patch('orchestrator.main.CrawlerProcess') as mock_process_class:
-        mock_process = Mock()
-        mock_process_class.return_value = mock_process
-        mock_process.start = Mock()
+        with patch('stage1.discovery_spider.DiscoverySpider'):
+            mock_process = Mock()
+            mock_process_class.return_value = mock_process
+            mock_process.start = Mock()
 
-        # Mock the executor to avoid blocking
-        with patch('asyncio.get_event_loop') as mock_loop:
-            mock_loop.return_value.run_in_executor = AsyncMock(return_value=None)
+            # Mock the executor to avoid blocking
+            with patch('asyncio.get_event_loop') as mock_loop:
+                mock_loop.return_value.run_in_executor = AsyncMock(return_value=None)
 
-            await run_stage1_discovery(config)
+                await run_stage1_discovery(config)
 
-            # Verify CrawlerProcess was configured correctly
-            mock_process_class.assert_called_once()
-            settings = mock_process_class.call_args[0][0]
-            assert settings['CONCURRENT_REQUESTS'] == 32
-            assert settings['STAGE1_OUTPUT_FILE'] == 'data/processed/stage01/test_urls.jsonl'
+                # Verify CrawlerProcess was configured correctly
+                mock_process_class.assert_called_once()
+                settings = mock_process_class.call_args[0][0]
+                assert settings['CONCURRENT_REQUESTS'] == 32
+                assert settings['STAGE1_OUTPUT_FILE'] == 'data/processed/stage01/test_urls.jsonl'
 
-            # Verify spider was crawled
-            mock_process.crawl.assert_called_once()
-            crawl_args = mock_process.crawl.call_args
-            assert crawl_args[1]['max_depth'] == 3
-
+                # Verify spider was crawled
+                mock_process.crawl.assert_called_once()
+                crawl_args = mock_process.crawl.call_args
+                assert crawl_args[1]['max_depth'] == 3
 
 @pytest.mark.asyncio
 async def test_run_stage2_validation():
@@ -134,6 +136,7 @@ async def test_run_stage3_enrichment():
         assert args[0] is mock_spider_class
         scrapy_settings = args[1]
         assert 'STAGE3_OUTPUT_FILE' in scrapy_settings
+        assert 'STAGE3_STORAGE' in scrapy_settings
         assert scrapy_settings['LOG_LEVEL'] == 'INFO'
         spider_kwargs = kwargs.get('spider_kwargs')
         assert spider_kwargs is not None
@@ -151,16 +154,17 @@ async def test_main_config_only():
         with patch('orchestrator.main.Config') as mock_config_class:
             with patch('orchestrator.main.setup_logging') as mock_setup_logging:
                 with patch('builtins.print') as mock_print:
-                    mock_config = MockConfig()
-                    mock_config._config = {'test': 'config'}
-                    mock_config_class.return_value = mock_config
+                    with patch('orchestrator.main.validate_config_health', return_value=True):
+                        mock_config = MockConfig()
+                        mock_config._config = {'test': 'config'}
+                        mock_config_class.return_value = mock_config
 
-                    result = await main()
+                        result = await main()
 
-                    assert result == 0
-                    mock_print.assert_called()
-                    printed_output = mock_print.call_args[0][0]
-                    assert 'Configuration:' in printed_output
+                        assert result == 0
+                        mock_print.assert_called()
+                        printed_output = mock_print.call_args[0][0]
+                        assert 'Configuration:' in printed_output
 
 
 @pytest.mark.asyncio
@@ -175,16 +179,17 @@ async def test_main_stage_selection():
                     with patch('orchestrator.main.run_stage1_discovery') as mock_stage1:
                         with patch('orchestrator.main.run_stage2_validation') as mock_stage2:
                             with patch('orchestrator.main.run_stage3_enrichment') as mock_stage3:
-                                mock_config = MockConfig()
-                                mock_config_class.return_value = mock_config
-                                mock_orchestrator = Mock()
-                                mock_orchestrator_class.return_value = mock_orchestrator
+                                with patch('orchestrator.main.validate_config_health', return_value=True):
+                                    mock_config = MockConfig()
+                                    mock_config_class.return_value = mock_config
+                                    mock_orchestrator = Mock()
+                                    mock_orchestrator_class.return_value = mock_orchestrator
 
-                                mock_stage1.return_value = AsyncMock()
-                                mock_stage2.return_value = AsyncMock()
-                                mock_stage3.return_value = AsyncMock()
+                                    mock_stage1.return_value = AsyncMock()
+                                    mock_stage2.return_value = AsyncMock()
+                                    mock_stage3.return_value = AsyncMock()
 
-                                result = await main()
+                                    result = await main()
 
                                 assert result == 0
                                 mock_stage1.assert_called_once_with(mock_config)
@@ -204,21 +209,24 @@ async def test_main_all_stages():
                     with patch('orchestrator.main.run_stage1_discovery') as mock_stage1:
                         with patch('orchestrator.main.run_stage2_validation') as mock_stage2:
                             with patch('orchestrator.main.run_stage3_enrichment') as mock_stage3:
-                                mock_config = MockConfig()
-                                mock_config_class.return_value = mock_config
-                                mock_orchestrator = Mock()
-                                mock_orchestrator_class.return_value = mock_orchestrator
+                                with patch('orchestrator.main.validate_config_health', return_value=True):
+                                    mock_config = MockConfig()
+                                    mock_config_class.return_value = mock_config
+                                    mock_orchestrator = Mock()
+                                    mock_orchestrator_class.return_value = mock_orchestrator
 
-                                mock_stage1.return_value = AsyncMock()
-                                mock_stage2.return_value = AsyncMock()
-                                mock_stage3.return_value = AsyncMock()
+                                    mock_stage1.return_value = AsyncMock()
+                                    mock_stage2.return_value = AsyncMock()
+                                    mock_stage3.return_value = AsyncMock()
 
-                                result = await main()
+                                    result = await main()
 
                                 assert result == 0
                                 mock_stage1.assert_called_once_with(mock_config)
                                 mock_stage2.assert_called_once_with(mock_config, mock_orchestrator)
-                                mock_stage3.assert_called_once_with(mock_config, mock_orchestrator)
+                                mock_stage3.assert_called_once()
+                                _, kwargs = mock_stage3.call_args
+                                assert kwargs.get('use_async') is True
 
 
 @pytest.mark.asyncio
@@ -271,21 +279,21 @@ async def test_main_directory_creation():
             with patch('orchestrator.main.setup_logging'):
                 with patch('orchestrator.main.PipelineOrchestrator'):
                     with patch('orchestrator.main.run_stage1_discovery'):
-                        mock_config = MockConfig()
-                        mock_config_class.return_value = mock_config
+                        with patch('orchestrator.main.validate_config_health', return_value=True):
+                            mock_config = MockConfig()
+                            mock_config_class.return_value = mock_config
 
-                        # Mock Path.mkdir
-                        with patch('pathlib.Path.mkdir') as mock_mkdir:
-                            result = await main()
+                            # Mock Path.mkdir
+                            with patch('pathlib.Path.mkdir') as mock_mkdir:
+                                result = await main()
 
-                            assert result == 0
-                            # Should create directories for raw_dir, processed_dir, logs_dir
-                            assert mock_mkdir.call_count >= 3
-                            # Verify mkdir was called with parents=True, exist_ok=True
-                            for call in mock_mkdir.call_args_list:
-                                assert call[1]['parents'] is True
-                                assert call[1]['exist_ok'] is True
-
+                                assert result == 0
+                                # Should create directories for raw_dir, processed_dir, logs_dir
+                                assert mock_mkdir.call_count >= 3
+                                # Verify mkdir was called with parents=True, exist_ok=True
+                                for call in mock_mkdir.call_args_list:
+                                    assert call[1]['parents'] is True
+                                    assert call[1]['exist_ok'] is True
 
 @pytest.mark.parametrize("log_level", ["DEBUG", "INFO", "WARNING", "ERROR"])
 @pytest.mark.asyncio
@@ -297,14 +305,14 @@ async def test_main_log_level_parameter(log_level):
         with patch('orchestrator.main.Config') as mock_config_class:
             with patch('orchestrator.main.setup_logging') as mock_setup_logging:
                 with patch('builtins.print'):
-                    mock_config = MockConfig()
-                    mock_config._config = {}
-                    mock_config_class.return_value = mock_config
+                    with patch('orchestrator.main.validate_config_health', return_value=True):
+                        mock_config = MockConfig()
+                        mock_config._config = {}
+                        mock_config_class.return_value = mock_config
 
-                    result = await main()
+                        result = await main()
 
-                    assert result == 0
-                    mock_setup_logging.assert_called_once()
-                    call_args = mock_setup_logging.call_args
-                    assert call_args[1]['log_level'] == log_level
-
+                        assert result == 0
+                        mock_setup_logging.assert_called_once()
+                        call_args = mock_setup_logging.call_args
+                        assert call_args[1]['log_level'] == log_level

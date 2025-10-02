@@ -205,6 +205,7 @@ class Config:
             keys.ENRICHMENT_OUTPUT_FILE: self.get(keys.STAGES, keys.STAGE_ENRICHMENT, keys.ENRICHMENT_OUTPUT_FILE),
             keys.ENRICHMENT_HEADLESS_BROWSER: self.get(keys.STAGES, keys.STAGE_ENRICHMENT, keys.ENRICHMENT_HEADLESS_BROWSER, default={}),
             keys.ENRICHMENT_CONTENT_TYPES: self.get(keys.STAGES, keys.STAGE_ENRICHMENT, keys.ENRICHMENT_CONTENT_TYPES, default={}),
+            keys.ENRICHMENT_STORAGE: self.get(keys.STAGES, keys.STAGE_ENRICHMENT, keys.ENRICHMENT_STORAGE, default={}),
         }
 
     def get_nlp_config(self) -> Dict[str, Any]:

@@ -1,6 +1,7 @@
 import csv
 import hashlib
 import json
+import logging
 import re
 from datetime import datetime
 from pathlib import Path
@@ -23,7 +24,7 @@ from src.common.urls import canonicalize_url_simple
 from src.common.storage import URLCache, PaginationCache
 from src.common.feedback import FeedbackStore
 from src.common.adaptive_depth import AdaptiveDepthManager
-from src.common.logging import get_structured_logger
+from src.common.logging import get_structured_logger, set_session_id, set_trace_id, clear_trace_context
 
 
 logger = get_structured_logger(__name__, component="discovery_spider", stage="stage1")
@@ -35,7 +36,7 @@ DYNAMIC_SCRIPT_HINTS = (
 )
 
 SCRIPT_URL_PATTERN = re.compile(
-    r'["\'](?P<url>(?:https?:)?//[\w\.-]+(?:/[\w\./\?-]*)?|/[\w\./\?-]+)["\']',
+    r'["\\](?P<url>(?:https?:)?//[\w\.-]+(?:/[\w\./\?-]*)?|[\w\./\?-]+)["\\]',
     re.IGNORECASE
 )
 
@@ -54,9 +55,14 @@ class DiscoverySpider(scrapy.Spider):
 
     name = "discovery"
 
-    def __init__(self, max_depth: int = 3, allowed_domains: list = None, *args, **kwargs):
+    def __init__(self, max_depth: int = 3, allowed_domains: list = None, settings: dict = None, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        if settings:
+            self.settings = scrapy.settings.Settings(settings)
         self.max_depth = int(max_depth)
+
+        # Set session ID for this crawl run
+        self.session_id = set_session_id()
 
         # Load allowed domains from configuration or use default
         if allowed_domains:
@@ -236,6 +242,16 @@ class DiscoverySpider(scrapy.Spider):
         source_url = response.meta['source_url']
         current_depth = response.meta['depth']
 
+        # Set trace ID for this parse request
+        trace_id = set_trace_id()
+        logger.log_with_context(
+            logging.DEBUG,
+            "Parse request started",
+            url=source_url,
+            depth=current_depth,
+            trace_id=trace_id
+        )
+
         # Get adaptive depth limit for this URL's section
         adaptive_max_depth = self.adaptive_depth.get_depth_for_url(source_url)
 
@@ -374,7 +390,7 @@ class DiscoverySpider(scrapy.Spider):
                 for match in re.finditer(r'url\(([^)]+)\)', style):
                     raw_url = match.group(1)
                     # Remove quotes
-                    raw_url = raw_url.strip('\'"')
+                    raw_url = raw_url.strip('"')
                     normalized = self._normalize_candidate(raw_url, response)
                     if normalized:
                         sourced_candidates[normalized] = ("css_inline_style", 0.3)
@@ -392,7 +408,7 @@ class DiscoverySpider(scrapy.Spider):
             svg_styles = response.xpath('//svg//@style | //svg//style/text()').getall()
             for style in svg_styles:
                 for match in re.finditer(r'url\(([^)]+)\)', style):
-                    raw_url = match.group(1).strip('\'"')
+                    raw_url = match.group(1).strip('"')
                     normalized = self._normalize_candidate(raw_url, response)
                     if normalized:
                         sourced_candidates[normalized] = ("svg_embedded_css", 0.3)
@@ -568,6 +584,10 @@ class DiscoverySpider(scrapy.Spider):
 
         discovery_time = datetime.now().isoformat()
 
+        # Generate trace ID for this discovered URL
+        from src.common.logging import get_session_id, get_trace_id
+        item_trace_id = set_trace_id()
+
         results = [
             DiscoveryItem(
                 source_url=source_url,
@@ -579,7 +599,9 @@ class DiscoverySpider(scrapy.Spider):
                 confidence=adjusted_confidence,  # Use feedback-adjusted confidence
                 importance_score=importance_score,
                 anchor_text=anchor_text,
-                is_same_domain=is_same_domain
+                is_same_domain=is_same_domain,
+                session_id=get_session_id(),
+                trace_id=item_trace_id
             )
         ]
 

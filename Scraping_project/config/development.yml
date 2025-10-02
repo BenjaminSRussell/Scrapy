@@ -104,6 +104,12 @@ stages:
     top_keywords: 15
     batch_size: 1000
     output_file: "data/processed/stage03/enrichment_output.jsonl"
+    storage:
+      backend: jsonl
+      rotation: {}
+      compression:
+        codec: none
+
     # Headless browser for JavaScript-rendered content
     headless_browser:
       enabled: true

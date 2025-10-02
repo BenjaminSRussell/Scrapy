@@ -132,11 +132,17 @@ async def run_stage3_enrichment(config: Config, orchestrator: PipelineOrchestrat
 
     # set up stage 3 config
     stage3_config = config.get_stage3_config()
+    storage_config = stage3_config.get(keys.ENRICHMENT_STORAGE, {})
     scrapy_settings = {
         'ITEM_PIPELINES': {
             'src.stage3.enrichment_pipeline.Stage3Pipeline': 300,
         },
         'STAGE3_OUTPUT_FILE': stage3_config[keys.ENRICHMENT_OUTPUT_FILE],
+        'STAGE3_STORAGE': storage_config,
+        'STAGE3_STORAGE_BACKEND': storage_config.get(keys.STORAGE_BACKEND),
+        'STAGE3_STORAGE_OPTIONS': storage_config.get(keys.STORAGE_OPTIONS, {}),
+        'STAGE3_STORAGE_ROTATION': storage_config.get(keys.STORAGE_ROTATION, {}),
+        'STAGE3_STORAGE_COMPRESSION': storage_config.get(keys.STORAGE_COMPRESSION, {}),
         'LOG_LEVEL': config.get_logging_config()[keys.LOGGING_LEVEL],
         'ROBOTSTXT_OBEY': True,
         'DOWNLOAD_DELAY': 1,
@@ -270,7 +276,7 @@ def _initialize_pipeline(args: argparse.Namespace) -> Config:
         sys.exit(1)
     except Exception as e:
         print(f"\n❌ Unexpected error loading configuration: {e}\n")
-        sys.exit(1)
+        raise
 
     data_paths = config.get_data_paths()
     setup_logging(log_level=args.log_level, log_dir=data_paths[keys.LOGS_DIR])
@@ -319,23 +325,32 @@ async def main():
     parser = _setup_arg_parser()
     args = parser.parse_args()
 
-    config = _initialize_pipeline(args)
-
-    if args.config_only:
-        import yaml
-        print("Configuration:\n" + yaml.dump(config._config, default_flow_style=False))
-        return 0
-
-    if args.validate_only:
-        # Health check already ran in _initialize_pipeline
-        print("\n[OK] Configuration validation completed successfully\n")
-        return 0
-
-    await _run_pipeline_stages(args, config)
-
     logger = logging.getLogger(__name__)
-    logger.info("Pipeline orchestrator completed successfully")
-    return 0
+
+    try:
+        config = _initialize_pipeline(args)
+
+        if args.config_only:
+            import yaml
+            print("Configuration:\n" + yaml.dump(config._config, default_flow_style=False))
+            return 0
+
+        if args.validate_only:
+            # Health check already ran in _initialize_pipeline
+            print("\n[OK] Configuration validation completed successfully\n")
+            return 0
+
+        await _run_pipeline_stages(args, config)
+
+        logger.info("Pipeline orchestrator completed successfully")
+        return 0
+
+    except KeyboardInterrupt:
+        logger.info("Pipeline interrupted by user")
+        return 1
+    except Exception as exc:  # pragma: no cover - defensive catch
+        logger.error(f"Pipeline failed: {exc}", exc_info=True)
+        return 1
 
 
 if __name__ == "__main__":

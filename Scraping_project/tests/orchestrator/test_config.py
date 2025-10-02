@@ -195,11 +195,11 @@ def test_config_get_data_paths(temp_config_file):
     data_paths = config.get_data_paths()
 
     assert isinstance(data_paths['raw_dir'], Path)
-    assert str(data_paths['raw_dir']) == 'data/raw'
+    assert data_paths['raw_dir'].as_posix() == 'data/raw'
     assert isinstance(data_paths['processed_dir'], Path)
-    assert str(data_paths['processed_dir']) == 'data/processed'
+    assert data_paths['processed_dir'].as_posix() == 'data/processed'
     assert isinstance(data_paths['logs_dir'], Path)
-    assert str(data_paths['logs_dir']) == 'logs'
+    assert data_paths['logs_dir'].as_posix() == 'logs'
 
 
 def test_config_environment_property(temp_config_file):

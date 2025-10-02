@@ -70,6 +70,12 @@ ENRICHMENT_BATCH_SIZE = "batch_size"
 ENRICHMENT_OUTPUT_FILE = "output_file"
 ENRICHMENT_HEADLESS_BROWSER = "headless_browser"
 ENRICHMENT_CONTENT_TYPES = "content_types"
+ENRICHMENT_STORAGE = "storage"
+STORAGE_BACKEND = "backend"
+STORAGE_OPTIONS = "options"
+STORAGE_ROTATION = "rotation"
+STORAGE_COMPRESSION = "compression"
+
 
 # NLP settings
 NLP = "nlp"

@@ -6,6 +6,7 @@ import asyncio
 import sys
 from pathlib import Path
 from typing import Any, Dict, List
+from types import SimpleNamespace
 
 import pytest
 
@@ -34,6 +35,7 @@ class _DummyConfig:
             keys.ENRICHMENT_HEADLESS_BROWSER: {},
             keys.ENRICHMENT_NLP_ENABLED: False,
             keys.VALIDATION_MAX_WORKERS: 12,
+            keys.ENRICHMENT_STORAGE: {},
         }
         self._nlp_config = {
             keys.NLP_SPACY_MODEL: "en_core_web_sm",
@@ -171,10 +173,8 @@ async def test_run_async_enrichment_invokes_async_processor(monkeypatch, tmp_pat
     async def fake_run_async_enrichment(**kwargs):
         recorded.update(kwargs)
 
-    monkeypatch.setattr(
-        "src.stage3.async_enrichment.run_async_enrichment",
-        fake_run_async_enrichment,
-    )
+    module = SimpleNamespace(run_async_enrichment=fake_run_async_enrichment)
+    monkeypatch.setitem(sys.modules, 'src.stage3.async_enrichment', module)
 
     await orchestrator._run_async_enrichment(
         urls=["https://example.com/resource"],
@@ -187,3 +187,8 @@ async def test_run_async_enrichment_invokes_async_processor(monkeypatch, tmp_pat
     assert recorded["max_concurrency"] == config.get_stage3_config()[keys.VALIDATION_MAX_WORKERS]
     assert recorded["timeout"] == 30
     assert recorded["content_types_config"] == {}
+    assert recorded.get("storage_config") == {}
+    assert recorded.get("storage_backend") is None
+    assert recorded.get("storage_options") == {}
+    assert recorded.get("rotation_config") == {}
+    assert recorded.get("compression_config") == {}

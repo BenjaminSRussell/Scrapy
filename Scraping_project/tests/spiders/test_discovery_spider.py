@@ -13,16 +13,25 @@ from common.schemas import DiscoveryItem
 from tests.samples import html_response, build_discovery_item
 
 
-def test_discovery_spider_initialization():
+@pytest.fixture
+def mock_settings():
+    """Mock Scrapy settings for spider initialization."""
+    settings = Mock()
+    settings.getbool.return_value = True
+    settings.get.return_value = 'data/cache/url_cache.db'
+    return settings
+
+
+def test_discovery_spider_initialization(mock_settings):
     """Test spider initializes with correct max_depth"""
     # Test default initialization
-    spider = DiscoverySpider()
+    spider = DiscoverySpider(settings=mock_settings)
     assert spider.max_depth == 3  # Default value
     assert spider.name == "discovery"
     assert "uconn.edu" in spider.allowed_domains
 
     # Test custom max_depth
-    spider = DiscoverySpider(max_depth=5)
+    spider = DiscoverySpider(max_depth=5, settings=mock_settings)
     assert spider.max_depth == 5
 
     # Test observability counters are initialized
@@ -34,9 +43,10 @@ def test_discovery_spider_initialization():
 
 @patch("builtins.open", new_callable=mock_open, read_data="https://uconn.edu/test1\nhttps://uconn.edu/test2\n")
 @patch("pathlib.Path.exists", return_value=True)
-def test_discovery_spider_loads_seed_urls(mock_exists, mock_file):
+def test_discovery_spider_loads_seed_urls(mock_exists, mock_file, mock_settings):
     """Test spider loads URLs from CSV file correctly"""
-    spider = DiscoverySpider()
+    spider = DiscoverySpider(settings=mock_settings)
+    spider.seed_file = 'seeds.csv'
 
     # Generate start requests
     requests = list(spider.start_requests())
@@ -54,9 +64,10 @@ def test_discovery_spider_loads_seed_urls(mock_exists, mock_file):
 
 
 @patch("pathlib.Path.exists", return_value=False)
-def test_discovery_spider_handles_missing_seed_file(mock_exists):
+def test_discovery_spider_handles_missing_seed_file(mock_exists, mock_settings):
     """Test spider handles missing seed file gracefully"""
-    spider = DiscoverySpider()
+    spider = DiscoverySpider(settings=mock_settings)
+    spider.seed_file = 'seeds.csv'
 
     # Should return empty iterator when seed file doesn't exist
     requests = list(spider.start_requests())
@@ -88,9 +99,9 @@ def test_discovery_spider_handles_missing_seed_file(mock_exists):
         ),
     ],
 )
-def test_discovery_spider_extracts_links(html_snippet, expected_count):
+def test_discovery_spider_extracts_links(html_snippet, expected_count, mock_settings):
     """Test link extraction from HTML responses"""
-    spider = DiscoverySpider(max_depth=2)
+    spider = DiscoverySpider(max_depth=2, settings=mock_settings)
     response = html_response("https://uconn.edu/test", html_snippet, depth=0)
 
     # Process the response (exercises real link extraction)
@@ -121,9 +132,9 @@ def test_discovery_spider_extracts_links(html_snippet, expected_count):
         assert item.discovery_depth == 1
 
 
-def test_discovery_spider_respects_depth_limit():
+def test_discovery_spider_respects_depth_limit(mock_settings):
     """Test spider stops crawling at max_depth"""
-    spider = DiscoverySpider(max_depth=1)
+    spider = DiscoverySpider(max_depth=1, settings=mock_settings)
 
     # Create real HtmlResponse at max depth
     response = html_response(
@@ -148,9 +159,9 @@ def test_discovery_spider_respects_depth_limit():
     assert len(new_requests) == 0
 
 
-def test_discovery_spider_deduplicates_urls():
+def test_discovery_spider_deduplicates_urls(mock_settings):
     """Test URL deduplication by hash"""
-    spider = DiscoverySpider()
+    spider = DiscoverySpider(settings=mock_settings)
 
     # Create real HtmlResponse with duplicate links
     response = html_response(
@@ -182,13 +193,14 @@ def test_discovery_spider_deduplicates_urls():
     # Second parse should yield fewer (or zero) new discovery items
     assert len(discovery_items2) <= len(discovery_items1)
 
-def test_discovery_spider_start_requests_real_seed_file():
+def test_discovery_spider_start_requests_real_seed_file(mock_settings):
     """Ensure start_requests processes the real seed CSV without modification."""
     seed_path = Path(__file__).parent.parent.parent / "data" / "raw" / "uconn_urls.csv"
     if not seed_path.exists():
         pytest.skip("Real seed CSV not available")
 
-    spider = DiscoverySpider()
+    spider = DiscoverySpider(settings=mock_settings)
+    spider.seed_file = str(seed_path)
     requests = list(spider.start_requests())
 
     with seed_path.open("r", encoding="utf-8") as handle:
@@ -203,9 +215,9 @@ def test_discovery_spider_start_requests_real_seed_file():
         assert first_request.meta["depth"] == 0
 
 
-def test_discovery_spider_handles_malformed_html():
+def test_discovery_spider_handles_malformed_html(mock_settings):
     """Test spider handles malformed HTML gracefully."""
-    spider = DiscoverySpider()
+    spider = DiscoverySpider(settings=mock_settings)
 
     # Test with broken HTML
     malformed_html = """
@@ -233,9 +245,9 @@ def test_discovery_spider_handles_malformed_html():
     assert len(valid_urls) >= 1
 
 
-def test_discovery_spider_network_error_handling():
+def test_discovery_spider_network_error_handling(mock_settings):
     """Test spider error handling for network failures."""
-    spider = DiscoverySpider()
+    spider = DiscoverySpider(settings=mock_settings)
 
     # Test that spider's error handling doesn't crash the process
     # This tests the spider's ability to handle exceptions gracefully
@@ -251,9 +263,9 @@ def test_discovery_spider_network_error_handling():
         pytest.fail(f"Spider should handle errors gracefully, but raised: {e}")
 
 
-def test_discovery_spider_memory_efficiency_large_page():
+def test_discovery_spider_memory_efficiency_large_page(mock_settings):
     """Test spider handles large pages without memory issues."""
-    spider = DiscoverySpider()
+    spider = DiscoverySpider(settings=mock_settings)
 
     # Create HTML with many links to test memory efficiency
     large_html_parts = ["<html><body>"]
@@ -274,9 +286,9 @@ def test_discovery_spider_memory_efficiency_large_page():
     assert len(discovery_items) <= 1000  # All links should be extracted
 
 
-def test_discovery_spider_encoding_handling():
+def test_discovery_spider_encoding_handling(mock_settings):
     """Test spider handles various character encodings."""
-    spider = DiscoverySpider()
+    spider = DiscoverySpider(settings=mock_settings)
 
     # Test with international characters
     unicode_html = """

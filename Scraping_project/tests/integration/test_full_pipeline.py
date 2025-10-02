@@ -197,7 +197,7 @@ def test_pipeline_memory_efficiency():
     assert processing_memory_mb < 25, f"URL processing too memory-intensive: {processing_memory_mb:.1f}MB"
     assert total_memory_mb < 75, f"Total memory usage too high: {total_memory_mb:.1f}MB"
 
-    efficiency_score = 15000 / total_memory_mb  # operations per MB
+    efficiency_score = 15000 / (total_memory_mb + 1e-9)  # operations per MB
 
     print(f"\n💾 Memory Efficiency Metrics:")
     print(f"   🔢 Hash Storage: {hash_memory_mb:.1f}MB for 10K hashes")
