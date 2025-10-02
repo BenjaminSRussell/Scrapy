@@ -280,6 +280,24 @@ class PrometheusExporter:
             registry=self.registry
         )
 
+        # Freshness & Content Churn metrics
+        self.freshness_avg_staleness = Gauge(
+            f"{self.namespace}_freshness_avg_staleness_score",
+            "Average staleness score across all URLs",
+            registry=self.registry
+        )
+        self.freshness_domain_churn_rate = Gauge(
+            f"{self.namespace}_freshness_domain_churn_rate",
+            "Content churn rate per domain",
+            ["domain"],
+            registry=self.registry
+        )
+        self.freshness_revalidation_rate = Gauge(
+            f"{self.namespace}_freshness_revalidation_rate",
+            "Rate of URLs requiring revalidation",
+            registry=self.registry
+        )
+
     def update_from_collector(self, collector: EnhancedMetricsCollector):
         """
         Update Prometheus metrics from EnhancedMetricsCollector.
@@ -399,6 +417,18 @@ class PrometheusExporter:
                 self.link_graph_top_pagerank_score.set(lg["top_pagerank_score"])
             if lg.get("top_authority_score"):
                 self.link_graph_top_authority_score.set(lg["top_authority_score"])
+
+        # Freshness statistics (if available)
+        if "freshness" in summary:
+            fr = summary["freshness"]
+            self.freshness_avg_staleness.set(fr.get("avg_staleness_score", 0.0))
+            self.freshness_revalidation_rate.set(fr.get("revalidation_rate", 0.0))
+
+            # Per-domain churn rates
+            if "domain_churn" in fr:
+                for domain, stats in fr["domain_churn"].items():
+                    churn_rate = stats.get("churn_rate", 0.0)
+                    self.freshness_domain_churn_rate.labels(domain=domain).set(churn_rate)
 
     def export_to_textfile(self, output_path: Path):
         """

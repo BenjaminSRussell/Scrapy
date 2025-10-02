@@ -276,8 +276,11 @@ class DiscoverySpider(scrapy.Spider):
         logger.debug(f"Extracted {len(links)} links from {response.url}")
 
         for link in links:
+            # Extract anchor text for importance scoring
+            anchor_text = link.text.strip() if hasattr(link, 'text') and link.text else None
+
             for output in self._process_candidate_url(
-                link.url, source_url, current_depth, "html_link", 1.0
+                link.url, source_url, current_depth, "html_link", 1.0, anchor_text=anchor_text
             ):
                 yield output
 
@@ -497,6 +500,7 @@ class DiscoverySpider(scrapy.Spider):
         current_depth: int,
         discovery_source: str = "html_link",
         confidence: float = 1.0,
+        anchor_text: str = None,
     ) -> list:
         """process URLs and pretend we're being efficient"""
 
@@ -525,6 +529,16 @@ class DiscoverySpider(scrapy.Spider):
 
         # Record discovery in feedback store
         self.feedback_store.record_discovery(canonical_url, discovery_source, adjusted_confidence)
+
+        # Calculate importance score (blend of signals)
+        importance_score = self._calculate_importance_score(
+            canonical_url, source_url, discovery_source, adjusted_confidence, anchor_text
+        )
+
+        # Check if same domain
+        source_domain = urlparse(source_url).netloc
+        target_domain = urlparse(canonical_url).netloc
+        is_same_domain = source_domain == target_domain
 
         url_hash = hashlib.sha256(canonical_url.encode("utf-8")).hexdigest()
 
@@ -562,7 +576,10 @@ class DiscoverySpider(scrapy.Spider):
                 url_hash=url_hash,
                 discovery_depth=next_depth,
                 discovery_source=discovery_source,
-                confidence=adjusted_confidence  # Use feedback-adjusted confidence
+                confidence=adjusted_confidence,  # Use feedback-adjusted confidence
+                importance_score=importance_score,
+                anchor_text=anchor_text,
+                is_same_domain=is_same_domain
             )
         ]
 
@@ -584,6 +601,80 @@ class DiscoverySpider(scrapy.Spider):
             )
 
         return results
+
+    def _calculate_importance_score(
+        self,
+        url: str,
+        source_url: str,
+        discovery_source: str,
+        confidence: float,
+        anchor_text: Optional[str]
+    ) -> float:
+        """
+        Calculate importance score blending multiple signals:
+        - Discovery confidence (30%)
+        - Anchor text quality (20%)
+        - Same-domain boost (15%)
+        - URL path depth penalty (15%)
+        - Discovery source priority (20%)
+        """
+        score = 0.0
+
+        # Base score from discovery confidence (0.0-0.3)
+        score += confidence * 0.3
+
+        # Anchor text quality score (0.0-0.2)
+        if anchor_text:
+            anchor_lower = anchor_text.lower()
+            # High-value keywords
+            high_value_terms = [
+                'research', 'publication', 'faculty', 'department', 'course',
+                'program', 'academic', 'study', 'lab', 'center', 'institute'
+            ]
+            medium_value_terms = [
+                'news', 'event', 'about', 'contact', 'resource', 'library',
+                'student', 'staff', 'admission', 'undergraduate', 'graduate'
+            ]
+
+            if any(term in anchor_lower for term in high_value_terms):
+                score += 0.2
+            elif any(term in anchor_lower for term in medium_value_terms):
+                score += 0.1
+            elif len(anchor_text) > 5:  # Descriptive anchor text
+                score += 0.05
+
+        # Same-domain boost (0.0-0.15)
+        source_domain = urlparse(source_url).netloc
+        target_domain = urlparse(url).netloc
+        if source_domain == target_domain:
+            score += 0.15
+
+        # URL path depth penalty (0.0-0.15)
+        # Shorter paths are typically more important
+        path = urlparse(url).path
+        path_depth = len([p for p in path.split('/') if p])
+        if path_depth == 0 or path_depth == 1:
+            score += 0.15
+        elif path_depth == 2:
+            score += 0.10
+        elif path_depth == 3:
+            score += 0.05
+
+        # Discovery source priority (0.0-0.2)
+        source_priority = {
+            'html_link': 0.20,
+            'sitemap': 0.18,
+            'ajax_endpoint': 0.15,
+            'meta_refresh': 0.15,
+            'json_blob': 0.10,
+            'data_attribute': 0.08,
+            'pagination': 0.05,
+            'html_comment': 0.02
+        }
+        score += source_priority.get(discovery_source, 0.05)
+
+        # Normalize to 0.0-1.0 range
+        return min(1.0, max(0.0, score))
 
     def _normalize_candidate(self, raw_url: str, response: Response) -> Optional[str]:
         """Normalise dynamic candidate URLs and enforce domain boundaries."""

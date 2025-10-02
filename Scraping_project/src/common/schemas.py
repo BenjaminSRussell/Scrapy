@@ -15,9 +15,14 @@ class DiscoveryItem:
     discovery_source: str = "html_link"
     confidence: float = 1.0  # 0.0-1.0 confidence score for dynamic discoveries
 
+    # Link importance scoring
+    importance_score: float = 0.0  # Blended score: PageRank + HITS + anchor text + domain boost
+    anchor_text: str | None = None  # Anchor text from source link
+    is_same_domain: bool = True  # Whether target is same domain as source
+
     # TODO: This schema versioning is very basic. It should be improved to support more complex schema evolution scenarios, such as renaming fields or changing their types.
     # Schema versioning and provenance
-    schema_version: str = "2.0"
+    schema_version: str = "2.1"  # Bumped for importance scoring
     discovery_metadata: dict[str, str] | None = None  # Additional discovery context
 
 
@@ -35,8 +40,14 @@ class ValidationResult:
     validated_at: str
     learned_optimizations: list[str] | None = None
 
+    # Freshness tracking
+    last_modified: str | None = None  # Last-Modified header
+    etag: str | None = None  # ETag for conditional requests
+    staleness_score: float = 0.0  # 0.0=fresh, 1.0=very stale
+    cache_control: str | None = None  # Cache-Control header
+
     # Schema versioning and enhanced validation metadata
-    schema_version: str = "2.0"
+    schema_version: str = "2.1"  # Bumped for freshness tracking
     validation_method: str | None = None  # HEAD, GET, etc.
     redirect_chain: list[str] | None = None  # Track URL redirects
     server_headers: dict[str, str] | None = None  # Relevant server headers

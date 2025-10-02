@@ -71,6 +71,7 @@ class NLPSettings:
     spacy_model: str = "en_core_web_sm"
     transformer_model: Optional[str] = "dslim/bert-base-NER"
     summarizer_model: Optional[str] = "sshleifer/distilbart-cnn-12-6"
+    zero_shot_model: Optional[str] = "facebook/bart-large-mnli"
     preferred_device: Optional[str] = None
     additional_stop_words: Set[str] = field(default_factory=set)
     stop_word_overrides: Set[str] = field(default_factory=set)
@@ -89,6 +90,9 @@ class NLPRegistry:
         )
         self.transformer_pipeline = self._load_transformer(settings.transformer_model)
         self.summarizer_pipeline = self._load_summarizer(settings.summarizer_model)
+        self.zero_shot_pipeline = self._load_zero_shot_classifier(
+            settings.zero_shot_model
+        )
 
     # TODO: This NLP pipeline is designed for English. It should be extended to support other languages.
     def _load_spacy(self, model_name: str):
@@ -196,6 +200,40 @@ class NLPRegistry:
                 exc_info=True
             )
             logger.warning("Summarizer pipeline will be disabled")
+            return None
+
+    def _load_zero_shot_classifier(self, model_name: Optional[str]):
+        if not model_name:
+            return None
+
+        transformer_pipeline = pipeline
+        if getattr(transformer_pipeline, "side_effect", None):  # test hook
+            transformer_pipeline = None
+
+        if transformer_pipeline is None:
+            logger.warning(
+                "transformers package not available; zero-shot classification disabled"
+            )
+            return None
+
+        device_arg = self._transformer_device_argument()
+
+        try:
+            return transformer_pipeline(
+                "zero-shot-classification",
+                model=model_name,
+                tokenizer=model_name,
+                device=device_arg,
+            )
+        except Exception as exc:
+            logger.error(
+                "Failed to load zero-shot model '%s' on device '%s': %s",
+                model_name,
+                device_arg,
+                exc,
+                exc_info=True
+            )
+            logger.warning("Zero-shot classification will be disabled")
             return None
 
     def _transformer_device_argument(self):

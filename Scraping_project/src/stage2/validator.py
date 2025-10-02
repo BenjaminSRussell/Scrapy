@@ -16,6 +16,7 @@ from src.common.checkpoints import CheckpointManager
 from src.common.feedback import FeedbackStore
 from src.common.adaptive_depth import AdaptiveDepthManager
 from src.common.link_graph import LinkGraphAnalyzer, PageImportance
+from src.common.freshness import FreshnessTracker
 from src.common import config_keys as keys
 
 logger = logging.getLogger(__name__)
@@ -78,6 +79,11 @@ class URLValidator:
                 logger.info(f"[Stage2] Link graph loaded for importance-based prioritization")
             else:
                 logger.warning(f"[Stage2] Link graph database not found: {link_graph_db}")
+
+        # Initialize freshness tracker
+        freshness_db = Path("data/cache/freshness.db")
+        self.freshness_tracker = FreshnessTracker(freshness_db)
+        logger.info(f"[Stage2] Freshness tracker initialized")
 
         # Ensure output directory exists
         self.output_file.parent.mkdir(parents=True, exist_ok=True)
@@ -445,6 +451,11 @@ class URLValidator:
             content_length = len(body_bytes)
             response_time = (datetime.now() - start_time).total_seconds()
 
+            # Capture freshness headers
+            last_modified = response.headers.get('Last-Modified')
+            etag = response.headers.get('ETag')
+            cache_control = response.headers.get('Cache-Control')
+
             # Normalize content type
             normalized_content_type = content_type.split(';')[0].strip().lower()
 
@@ -460,6 +471,16 @@ class URLValidator:
             is_valid_content = any(normalized_content_type == ct for ct in valid_content_types)
             is_valid = 200 <= status_code < 400 and is_valid_content
 
+            # Calculate staleness score
+            staleness_score = self.freshness_tracker.update_freshness(
+                url=final_url,
+                url_hash=url_hash,
+                last_modified=last_modified,
+                etag=etag,
+                content_type=normalized_content_type,
+                content_changed=False  # We don't have previous content to compare
+            )
+
             return ValidationResult(
                 url=final_url,
                 url_hash=url_hash,
@@ -469,7 +490,11 @@ class URLValidator:
                 response_time=response_time,
                 is_valid=is_valid,
                 error_message=None if is_valid else f'Invalid response or unsupported content type: {normalized_content_type}',
-                validated_at=datetime.now().isoformat()
+                validated_at=datetime.now().isoformat(),
+                last_modified=last_modified,
+                etag=etag,
+                staleness_score=staleness_score,
+                cache_control=cache_control
             )
 
     def _evaluate_head_response(

@@ -170,7 +170,10 @@ class Stage1Pipeline:
                 "url_hash": url_hash,
                 "discovery_depth": discovery_depth,
                 "discovery_source": adapter.get("discovery_source", "unknown"),
-                "confidence": adapter.get("confidence", 0.0)
+                "confidence": adapter.get("confidence", 0.0),
+                "importance_score": adapter.get("importance_score", 0.0),
+                "anchor_text": adapter.get("anchor_text"),
+                "is_same_domain": adapter.get("is_same_domain", True)
             }
 
             try:
