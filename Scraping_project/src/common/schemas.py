@@ -75,7 +75,7 @@ class EnrichmentItem:
 
     # Model-ready enhancements
     schema_version: str = "2.0"
-    content_summary: str | None = None  # AI-generated summary for training data
+    content_summary: str | None = None  # Automatically generated summary for training data
     content_embedding: list[float] | None = None  # Vector embedding for similarity search
     academic_relevance_score: float | None = None  # 0.0-1.0 relevance to academic content
     content_quality_score: float | None = None  # 0.0-1.0 overall content quality

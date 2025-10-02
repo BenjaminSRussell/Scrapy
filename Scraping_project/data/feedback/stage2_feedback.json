@@ -151,8 +151,38 @@
           "failed": 1
         }
       }
+    },
+    {
+      "session_id": "session_20251002_193854",
+      "started_at": "2025-10-02T19:38:54.575555",
+      "completed_at": "2025-10-02T19:38:54.620330",
+      "total_discovered": 0,
+      "total_validated": 2,
+      "total_failed": 1,
+      "success_rate": 0.6666666666666666,
+      "source_performance": {
+        "unknown": {
+          "validated": 2,
+          "failed": 1
+        }
+      }
+    },
+    {
+      "session_id": "session_20251002_194535",
+      "started_at": "2025-10-02T19:45:35.682858",
+      "completed_at": "2025-10-02T19:45:35.726678",
+      "total_discovered": 0,
+      "total_validated": 2,
+      "total_failed": 1,
+      "success_rate": 0.6666666666666666,
+      "source_performance": {
+        "unknown": {
+          "validated": 2,
+          "failed": 1
+        }
+      }
     }
   ],
-  "last_updated": "2025-10-02T19:33:01.164218",
-  "total_sessions": 11
+  "last_updated": "2025-10-02T19:45:35.726678",
+  "total_sessions": 13
 }

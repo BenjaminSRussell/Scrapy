@@ -17180,3 +17180,209 @@ asyncio.exceptions.CancelledError
 2025-10-02 12:44:40 [INFO] __main__ - Stage(s): all
 2025-10-02 12:44:40 [INFO] __main__ - Running configuration health check...
 2025-10-02 12:44:41 [INFO] __main__ - Configuration health check passed ✓
+2025-10-02 19:40:21 [INFO] __main__ - Starting pipeline orchestrator
+2025-10-02 19:40:21 [INFO] __main__ - Environment: development
+2025-10-02 19:40:21 [INFO] __main__ - Stage(s): all
+2025-10-02 19:40:21 [INFO] __main__ - Running configuration health check...
+2025-10-02 19:40:21 [INFO] __main__ - Configuration health check passed [OK]
+2025-10-02 19:40:21 [INFO] __main__ - ============================================================
+2025-10-02 19:40:21 [INFO] __main__ - STAGE 1: DISCOVERY
+2025-10-02 19:40:21 [INFO] __main__ - ============================================================
+2025-10-02 19:40:21 [INFO] scrapy.utils.log - Scrapy 2.13.3 started (bot: uconn_scraper)
+2025-10-02 19:40:21 [INFO] scrapy.utils.log - Versions:
+{'lxml': '6.0.2',
+ 'libxml2': '2.11.9',
+ 'cssselect': '1.3.0',
+ 'parsel': '1.10.0',
+ 'w3lib': '2.3.1',
+ 'Twisted': '25.5.0',
+ 'Python': '3.11.8 (tags/v3.11.8:db85d51, Feb  6 2024, 22:03:32) [MSC v.1937 '
+           '64 bit (AMD64)]',
+ 'pyOpenSSL': '25.3.0 (OpenSSL 3.5.4 30 Sep 2025)',
+ 'cryptography': '46.0.2',
+ 'Platform': 'Windows-10-10.0.26100-SP0'}
+2025-10-02 19:40:21 [INFO] src.stage1.discovery_spider - Allowed domains configured
+2025-10-02 19:40:21 [INFO] __main__ - Stage 1 discovery completed
+2025-10-02 19:40:21 [INFO] __main__ - ============================================================
+2025-10-02 19:40:21 [INFO] __main__ - STAGE 2: VALIDATION
+2025-10-02 19:40:21 [INFO] __main__ - ============================================================
+2025-10-02 19:40:21 [INFO] src.common.feedback - Loaded feedback: 0 patterns, 0 sources, 12 sessions
+2025-10-02 19:40:21 [INFO] src.common.feedback - FeedbackStore initialized: data\feedback\stage2_feedback.json
+2025-10-02 19:40:21 [INFO] src.common.adaptive_depth - Loaded adaptive depth config: 3 sections
+2025-10-02 19:40:21 [INFO] src.common.adaptive_depth - AdaptiveDepthManager initialized: data\config\adaptive_depth.json
+2025-10-02 19:40:21 [WARNING] src.stage2.validator - [Stage2] Link graph database not found: data\processed\link_graph.db
+2025-10-02 19:40:21 [INFO] src.stage2.validator - [Stage2] Freshness tracker initialized
+2025-10-02 19:40:21 [INFO] src.orchestrator.pipeline - Starting concurrent Stage 2 validation
+2025-10-02 19:40:21 [INFO] src.orchestrator.pipeline - Populating Stage 2 queue from Stage 1 results
+2025-10-02 19:40:21 [WARNING] src.orchestrator.pipeline - Stage 1 output file not found: data\processed\stage01\discovery_output.jsonl
+2025-10-02 19:40:21 [INFO] src.orchestrator.pipeline - Finished queuing 0 items for Stage 2
+2025-10-02 19:40:23 [INFO] src.orchestrator.pipeline - Stage 2 validation completed: 0 URLs processed
+2025-10-02 19:40:23 [INFO] __main__ - ============================================================
+2025-10-02 19:40:23 [INFO] __main__ - STAGE 3: ENRICHMENT
+2025-10-02 19:40:23 [INFO] __main__ - ============================================================
+2025-10-02 19:40:23 [INFO] src.orchestrator.pipeline - Starting concurrent Stage 3 enrichment
+2025-10-02 19:40:23 [INFO] src.orchestrator.pipeline - Populating Stage 3 queue from Stage 2 results
+2025-10-02 19:40:23 [INFO] src.common.interstage_validation - Validating data\processed\stage02\validated_urls.jsonl against ValidationResult schema...
+2025-10-02 19:40:23 [INFO] src.common.interstage_validation - 
+============================================================
+Inter-Stage Validation Report: ValidationResult
+============================================================
+Total Records: 68
+Valid Records: 68 (100.00%)
+Invalid Records: 0
+
+Error Breakdown:
+  - Missing Fields: 0
+  - Extra Fields: 0
+  - Type Errors: 0
+  - Value Errors: 0
+
+Status: ✅ PASS
+============================================================
+
+2025-10-02 19:40:23 [INFO] src.orchestrator.orchestrator_validation - Stage 2 output validation passed with a success rate of 100.00%.
+2025-10-02 19:40:23 [INFO] src.orchestrator.pipeline - Loading Stage 2 results from data\processed\stage02\validated_urls.jsonl
+2025-10-02 19:40:23 [INFO] src.orchestrator.pipeline - Finished queuing 31 items for Stage 3
+2025-10-02 19:40:25 [INFO] src.orchestrator.pipeline - Finished collecting 31 URLs for enrichment
+2025-10-02 19:40:25 [INFO] src.orchestrator.pipeline - Dispatching 29 URLs to Stage 3 enrichment
+2025-10-02 19:40:25 [INFO] src.orchestrator.pipeline - Using AsyncEnrichmentProcessor with max_concurrency=50
+2025-10-02 19:40:25 [CRITICAL] twisted - Unhandled error in Deferred:
+2025-10-02 19:40:26 [CRITICAL] twisted - 
+Traceback (most recent call last):
+  File "C:\Python311\Lib\site-packages\twisted\internet\defer.py", line 1857, in _inlineCallbacks
+    result = context.run(gen.send, result)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python311\Lib\site-packages\scrapy\crawler.py", line 153, in crawl
+    self.spider = self._create_spider(*args, **kwargs)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python311\Lib\site-packages\scrapy\crawler.py", line 166, in _create_spider
+    return self.spidercls.from_crawler(self, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python311\Lib\site-packages\scrapy\spiders\__init__.py", line 74, in from_crawler
+    spider = cls(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^
+  File "C:\dev\Scrapy\Scraping_project\src\stage1\discovery_spider.py", line 126, in __init__
+    use_persistent_dedup = self.settings.getbool('USE_PERSISTENT_DEDUP', True)
+                           ^^^^^^^^^^^^^
+AttributeError: 'DiscoverySpider' object has no attribute 'settings'
+2025-10-02 19:40:26 [INFO] src.common.content_handlers - PDFHandler initialized (extract_text=True, max_pages=100)
+2025-10-02 19:40:26 [INFO] src.common.content_handlers - MediaHandler initialized (extract_metadata=True)
+2025-10-02 19:40:26 [INFO] src.common.content_handlers - ContentTypeRouter initialized with types: {'image/png', 'audio/wav', 'image/jpeg', 'video/mp4', 'application/pdf', 'audio/mpeg', 'text/html', 'video/webm', 'image/gif'}
+2025-10-02 19:40:26 [INFO] src.common.enhanced_checkpoints - Loaded checkpoint: data\checkpoints\stage3_async_enrichment.checkpoint.json (status: completed)
+2025-10-02 19:40:26 [INFO] src.stage3.async_enrichment - AsyncEnrichmentProcessor initialized with JSONL backend -> data\processed\stage03\enrichment_output.jsonl
+2025-10-02 19:40:26 [INFO] src.common.checkpoint_middleware - Checkpoint stage3_async_enrichment already completed
+2025-10-02 19:40:26 [INFO] src.common.enhanced_checkpoints - Checkpoint reset: stage3_async_enrichment (pending items restored: 2)
+2025-10-02 19:40:26 [INFO] src.common.enhanced_checkpoints - Started checkpoint for stage3_async_enrichment with 0 items
+2025-10-02 19:40:26 [INFO] src.stage3.async_enrichment - Processing 29 URLs with adaptive concurrency
+2025-10-02 19:40:26 [INFO] src.common.enhanced_checkpoints - Started checkpoint for stage3_async_enrichment with 29 items
+2025-10-02 19:40:31 [INFO] src.stage3.async_enrichment - Increasing concurrency: 10 -> 12 (success rate: 100.00%)
+2025-10-02 19:42:48 [INFO] __main__ - Starting pipeline orchestrator
+2025-10-02 19:42:48 [INFO] __main__ - Environment: development
+2025-10-02 19:42:48 [INFO] __main__ - Stage(s): all
+2025-10-02 19:42:48 [INFO] __main__ - Running configuration health check...
+2025-10-02 19:42:48 [INFO] __main__ - Configuration health check passed [OK]
+2025-10-02 19:42:48 [INFO] __main__ - ============================================================
+2025-10-02 19:42:48 [INFO] __main__ - STAGE 1: DISCOVERY
+2025-10-02 19:42:48 [INFO] __main__ - ============================================================
+2025-10-02 19:42:48 [INFO] scrapy.utils.log - Scrapy 2.13.3 started (bot: uconn_scraper)
+2025-10-02 19:42:48 [INFO] scrapy.utils.log - Versions:
+{'lxml': '6.0.2',
+ 'libxml2': '2.11.9',
+ 'cssselect': '1.3.0',
+ 'parsel': '1.10.0',
+ 'w3lib': '2.3.1',
+ 'Twisted': '25.5.0',
+ 'Python': '3.11.8 (tags/v3.11.8:db85d51, Feb  6 2024, 22:03:32) [MSC v.1937 '
+           '64 bit (AMD64)]',
+ 'pyOpenSSL': '25.3.0 (OpenSSL 3.5.4 30 Sep 2025)',
+ 'cryptography': '46.0.2',
+ 'Platform': 'Windows-10-10.0.26100-SP0'}
+2025-10-02 19:42:48 [INFO] src.stage1.discovery_spider - Allowed domains configured
+2025-10-02 19:42:48 [INFO] __main__ - Stage 1 discovery completed
+2025-10-02 19:42:48 [INFO] __main__ - ============================================================
+2025-10-02 19:42:48 [INFO] __main__ - STAGE 2: VALIDATION
+2025-10-02 19:42:48 [INFO] __main__ - ============================================================
+2025-10-02 19:42:48 [INFO] src.common.feedback - Loaded feedback: 0 patterns, 0 sources, 12 sessions
+2025-10-02 19:42:48 [INFO] src.common.feedback - FeedbackStore initialized: data\feedback\stage2_feedback.json
+2025-10-02 19:42:48 [INFO] src.common.adaptive_depth - Loaded adaptive depth config: 3 sections
+2025-10-02 19:42:48 [INFO] src.common.adaptive_depth - AdaptiveDepthManager initialized: data\config\adaptive_depth.json
+2025-10-02 19:42:48 [WARNING] src.stage2.validator - [Stage2] Link graph database not found: data\processed\link_graph.db
+2025-10-02 19:42:48 [INFO] src.stage2.validator - [Stage2] Freshness tracker initialized
+2025-10-02 19:42:48 [INFO] src.orchestrator.pipeline - Starting concurrent Stage 2 validation
+2025-10-02 19:42:48 [INFO] src.orchestrator.pipeline - Populating Stage 2 queue from Stage 1 results
+2025-10-02 19:42:48 [WARNING] src.orchestrator.pipeline - Stage 1 output file not found: data\processed\stage01\discovery_output.jsonl
+2025-10-02 19:42:48 [INFO] src.orchestrator.pipeline - Finished queuing 0 items for Stage 2
+2025-10-02 19:42:50 [INFO] src.orchestrator.pipeline - Stage 2 validation completed: 0 URLs processed
+2025-10-02 19:42:50 [INFO] __main__ - ============================================================
+2025-10-02 19:42:50 [INFO] __main__ - STAGE 3: ENRICHMENT
+2025-10-02 19:42:50 [INFO] __main__ - ============================================================
+2025-10-02 19:42:50 [INFO] src.orchestrator.pipeline - Starting concurrent Stage 3 enrichment
+2025-10-02 19:42:50 [INFO] src.orchestrator.pipeline - Populating Stage 3 queue from Stage 2 results
+2025-10-02 19:42:50 [INFO] src.common.interstage_validation - Validating data\processed\stage02\validated_urls.jsonl against ValidationResult schema...
+2025-10-02 19:42:50 [INFO] src.common.interstage_validation - 
+============================================================
+Inter-Stage Validation Report: ValidationResult
+============================================================
+Total Records: 68
+Valid Records: 68 (100.00%)
+Invalid Records: 0
+
+Error Breakdown:
+  - Missing Fields: 0
+  - Extra Fields: 0
+  - Type Errors: 0
+  - Value Errors: 0
+
+Status: ✅ PASS
+============================================================
+
+2025-10-02 19:42:50 [INFO] src.orchestrator.orchestrator_validation - Stage 2 output validation passed with a success rate of 100.00%.
+2025-10-02 19:42:50 [INFO] src.orchestrator.pipeline - Loading Stage 2 results from data\processed\stage02\validated_urls.jsonl
+2025-10-02 19:42:50 [INFO] src.orchestrator.pipeline - Finished queuing 31 items for Stage 3
+2025-10-02 19:42:52 [INFO] src.orchestrator.pipeline - Finished collecting 31 URLs for enrichment
+2025-10-02 19:42:52 [INFO] src.orchestrator.pipeline - Dispatching 29 URLs to Stage 3 enrichment
+2025-10-02 19:42:52 [INFO] src.orchestrator.pipeline - Using AsyncEnrichmentProcessor with max_concurrency=50
+2025-10-02 19:42:52 [CRITICAL] twisted - Unhandled error in Deferred:
+2025-10-02 19:42:52 [CRITICAL] twisted - 
+Traceback (most recent call last):
+  File "C:\Python311\Lib\site-packages\twisted\internet\defer.py", line 1857, in _inlineCallbacks
+    result = context.run(gen.send, result)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python311\Lib\site-packages\scrapy\crawler.py", line 153, in crawl
+    self.spider = self._create_spider(*args, **kwargs)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python311\Lib\site-packages\scrapy\crawler.py", line 166, in _create_spider
+    return self.spidercls.from_crawler(self, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python311\Lib\site-packages\scrapy\spiders\__init__.py", line 74, in from_crawler
+    spider = cls(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^
+  File "C:\dev\Scrapy\Scraping_project\src\stage1\discovery_spider.py", line 126, in __init__
+    use_persistent_dedup = self.settings.getbool('USE_PERSISTENT_DEDUP', True)
+                           ^^^^^^^^^^^^^
+AttributeError: 'DiscoverySpider' object has no attribute 'settings'
+2025-10-02 19:42:53 [INFO] src.common.content_handlers - PDFHandler initialized (extract_text=True, max_pages=100)
+2025-10-02 19:42:53 [INFO] src.common.content_handlers - MediaHandler initialized (extract_metadata=True)
+2025-10-02 19:42:53 [INFO] src.common.content_handlers - ContentTypeRouter initialized with types: {'image/png', 'application/pdf', 'image/jpeg', 'audio/mpeg', 'video/mp4', 'audio/wav', 'image/gif', 'text/html', 'video/webm'}
+2025-10-02 19:42:53 [WARNING] src.common.enhanced_checkpoints - Checkpoint data\checkpoints\stage3_async_enrichment.checkpoint.json was running - possible crash detected
+2025-10-02 19:42:53 [INFO] src.common.enhanced_checkpoints - Loaded checkpoint: data\checkpoints\stage3_async_enrichment.checkpoint.json (status: recovering)
+2025-10-02 19:42:53 [INFO] src.stage3.async_enrichment - AsyncEnrichmentProcessor initialized with JSONL backend -> data\processed\stage03\enrichment_output.jsonl
+2025-10-02 19:42:53 [WARNING] src.common.checkpoint_middleware - Detected incomplete checkpoint for stage3_async_enrichment. Resuming from 0 items
+2025-10-02 19:42:53 [INFO] src.common.enhanced_checkpoints - Checkpoint resumed: stage3_async_enrichment
+2025-10-02 19:42:53 [INFO] src.stage3.async_enrichment - Processing 29 URLs with adaptive concurrency
+2025-10-02 19:42:53 [INFO] src.common.enhanced_checkpoints - Started checkpoint for stage3_async_enrichment with 29 items
+2025-10-02 19:42:58 [INFO] src.stage3.async_enrichment - Increasing concurrency: 10 -> 12 (success rate: 100.00%)
+2025-10-02 19:43:55 [INFO] src.stage3.async_enrichment - ================================================================================
+2025-10-02 19:43:55 [INFO] src.stage3.async_enrichment - Async Enrichment Processor - Final Statistics
+2025-10-02 19:43:55 [INFO] src.stage3.async_enrichment - ================================================================================
+2025-10-02 19:43:55 [INFO] src.stage3.async_enrichment - Total processed: 0
+2025-10-02 19:43:55 [INFO] src.stage3.async_enrichment - Success: 0
+2025-10-02 19:43:55 [INFO] src.stage3.async_enrichment - Failed: 0
+2025-10-02 19:43:55 [INFO] src.stage3.async_enrichment - Duration: 62.4s
+2025-10-02 19:43:55 [INFO] src.stage3.async_enrichment - Throughput: 0.0 URLs/sec
+2025-10-02 19:43:55 [INFO] src.stage3.async_enrichment - Avg fetch time: 0ms
+2025-10-02 19:43:55 [INFO] src.stage3.async_enrichment - Avg process time: 0ms
+2025-10-02 19:43:55 [INFO] src.stage3.async_enrichment - Final concurrency: 12
+2025-10-02 19:43:55 [INFO] src.stage3.async_enrichment - ================================================================================
+2025-10-02 19:43:55 [ERROR] src.common.enhanced_checkpoints - Checkpoint failed: stage3_async_enrichment - CancelledError: 
+2025-10-02 19:43:55 [ERROR] src.common.checkpoint_middleware - Checkpoint stage3_async_enrichment failed: CancelledError: 

@@ -151,12 +151,12 @@ python -m pytest
 5. Submit a pull request for review.
 
 ### Future Project Directions
-The following ideas are based on current developments in AI-powered web data extraction and can guide future contributions.
+The following ideas focus on resilience, maintainability, and observability.
 
-- **LLM-Powered Adaptive Scraping**: Integrate a Large Language Model (e.g., via the OpenAI API or a local model) to dynamically generate CSS/XPath selectors for previously unseen page layouts. This would make the scrapers resilient to website redesigns.
-- **Visual Web Scraping (VQA)**: Employ a Vision Language Model (VLM) to interpret screenshots of web pages. This would allow the scraper to locate elements based on visual cues (e.g., "find the search bar next to the logo") rather than just the DOM structure, handling complex JavaScript-rendered pages more effectively.
-- **Semantic Data Extraction & Structuring**: Instead of relying on NLP for keyword extraction post-scraping, use an LLM to directly extract structured data (e.g., JSON) from raw HTML content based on a target schema. This moves beyond simple text extraction to understanding and structuring the content in one step.
-- **Autonomous Scraping Agents**: Develop an agent-based system where an LLM acts as the "brain" for the scraper. The agent would be given a high-level goal (e.g., "find all faculty members in the Computer Science department") and would autonomously navigate the site, identify relevant links, extract data, and handle pagination or forms.
+- **Dynamic Selector Hardening**: Improve heuristics for generating CSS/XPath selectors when layouts change, and add guard rails to detect stale locators early.
+- **Rendering Diagnostics**: Capture lightweight screenshots or DOM snapshots during scraping runs to simplify debugging tricky, JavaScript-heavy pages.
+- **Structured Data Pipelines**: Expand schema validation and catalog publishing so downstream consumers can rely on versioned, self-describing datasets.
+- **Operational Tooling**: Build dashboards and alerting around checkpoint status, throughput, and retry rates to catch regressions quickly.
 
 - Use feature flags for new discovery heuristics to throttle high-churn areas without removing coverage.
 - Add smoke tests for `run_tests.py --smoke` once the stabilisation workstream lands.

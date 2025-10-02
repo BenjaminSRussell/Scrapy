@@ -247,7 +247,7 @@ class EnrichmentItem(BaseModel):
     )
     content_summary: Optional[str] = Field(
         default=None,
-        description="AI-generated summary"
+        description="Automatically generated summary"
     )
     content_embedding: Optional[List[float]] = Field(
         default=None,

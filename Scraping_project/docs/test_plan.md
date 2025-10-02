@@ -46,10 +46,7 @@ This document outlines a plan for expanding the test suite to improve coverage, 
 - **Test Plugin System:**
   - Write tests for the plugin discovery and registration mechanism.
   - Create a sample plugin and write an integration test to ensure it is loaded and executed correctly by the pipeline.
-- **Test LLM/VLM Integration:** As AI-powered features are added, develop a testing strategy that may involve:
-  - Mocking the model APIs to test the integration logic.
-  - Using a small, local model for integration tests.
-  - Creating a benchmark set of pages to evaluate the accuracy and reliability of the AI-powered extraction.
+- **Test External Integrations:** When adding optional enrichment services, create contract tests that exercise the adapters, provide reliable fakes for CI, and document fallback behaviour when the service is unavailable.
 
 ## 6. Performance and Benchmarking
 

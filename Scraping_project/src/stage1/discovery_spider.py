@@ -99,14 +99,21 @@ class DiscoverySpider(scrapy.Spider):
         # Import Settings class properly
         from scrapy.settings import Settings
         from unittest.mock import Mock
-        if settings and not isinstance(settings, Settings):
-            # Don't try to wrap Mock objects in Settings
-            if isinstance(settings, Mock):
+
+        # Ensure self.settings is always set (might be set by Scrapy's from_crawler)
+        if not hasattr(self, 'settings'):
+            if settings and not isinstance(settings, Settings):
+                # Don't try to wrap Mock objects in Settings
+                if isinstance(settings, Mock):
+                    self.settings = settings
+                else:
+                    self.settings = Settings(settings)
+            elif settings:
                 self.settings = settings
             else:
-                self.settings = Settings(settings)
-        elif settings:
-            self.settings = settings
+                # Create default Settings if none provided
+                self.settings = Settings()
+
         self.max_depth = int(max_depth)
 
         # Set session ID for this crawl run
