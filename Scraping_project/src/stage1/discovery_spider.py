@@ -44,7 +44,8 @@ JSON_URL_KEY_HINTS = {'url', 'href', 'link', 'endpoint', 'action', 'download'}
 DATA_ATTRIBUTE_CANDIDATES = (
     'data-url', 'data-src', 'data-endpoint', 'data-load', 'data-load-url',
     'data-href', 'data-link', 'data-api', 'data-request-url', 'data-action',
-    'data-next', 'data-feed'
+    'data-next', 'data-feed', 'data-bg', 'data-background', 'data-image',
+    'data-video', 'data-iframe', 'data-target'
 )
 
 
@@ -141,11 +142,16 @@ class DiscoverySpider(scrapy.Spider):
         self.enable_json_discovery = self.settings.getbool('ENABLE_JSON_DISCOVERY', True)
         self.enable_pagination_guess = self.settings.getbool('ENABLE_PAGINATION_GUESS', True)
         self.enable_meta_refresh = self.settings.getbool('ENABLE_META_REFRESH_DISCOVERY', True)
+        self.enable_html_comment_discovery = self.settings.getbool('ENABLE_HTML_COMMENT_DISCOVERY', True)
+        self.enable_css_url_extraction = self.settings.getbool('ENABLE_CSS_URL_EXTRACTION', True)
+        self.enable_svg_url_extraction = self.settings.getbool('ENABLE_SVG_URL_EXTRACTION', True)
 
         logger.info(f"Discovery spider initialized with max_depth={self.max_depth}")
         logger.info(f"Heuristics: JSON={self.enable_json_discovery}, AJAX={self.enable_ajax_regex}, "
                    f"Pagination={self.enable_pagination_guess}, DataAttrs={self.enable_data_attribute_discovery}, "
-                   f"Forms={self.enable_form_action_discovery}, MetaRefresh={self.enable_meta_refresh}")
+                   f"Forms={self.enable_form_action_discovery}, MetaRefresh={self.enable_meta_refresh}, "
+                   f"HTMLComments={self.enable_html_comment_discovery}, CSS={self.enable_css_url_extraction}, "
+                   f"SVG={self.enable_svg_url_extraction}")
 
     def start_requests(self) -> Iterator[scrapy.Request]:
         """Load seed URLs and start crawling - legacy sync method for backward compatibility"""
@@ -317,6 +323,47 @@ class DiscoverySpider(scrapy.Spider):
                     normalized = self._normalize_candidate(raw_value, response)
                     if normalized:
                         sourced_candidates[normalized] = ("ajax_endpoint", 0.8)
+
+        # HTML comments - very low confidence
+        if self.enable_html_comment_discovery and heuristic_quality.get('html_comment', 0) < 100:
+            comment_nodes = response.xpath('//comment()').getall()
+            for comment in comment_nodes:
+                for match in SCRIPT_URL_PATTERN.finditer(comment):
+                    raw_candidate = match.group('url')
+                    normalized = self._normalize_candidate(raw_candidate, response)
+                    if normalized:
+                        sourced_candidates[normalized] = ("html_comment", 0.2)
+
+        # Inline CSS background-image URLs - low confidence
+        if self.enable_css_url_extraction and heuristic_quality.get('css_inline_style', 0) < 100:
+            style_attrs = response.xpath('//@style').getall()
+            for style in style_attrs:
+                # A simple regex to find url(...) declarations
+                for match in re.finditer(r'url\(([^)]+)\)', style):
+                    raw_url = match.group(1)
+                    # Remove quotes
+                    raw_url = raw_url.strip('\'"')
+                    normalized = self._normalize_candidate(raw_url, response)
+                    if normalized:
+                        sourced_candidates[normalized] = ("css_inline_style", 0.3)
+
+        # SVG embedded URLs - low confidence
+        if self.enable_svg_url_extraction and heuristic_quality.get('svg_embedded', 0) < 100:
+            # Find all hrefs within inline SVGs
+            svg_hrefs = response.xpath('//svg//@href | //svg//@xlink:href').getall()
+            for raw_url in svg_hrefs:
+                normalized = self._normalize_candidate(raw_url, response)
+                if normalized:
+                    sourced_candidates[normalized] = ("svg_embedded", 0.4)
+
+            # Find style attributes and tags within SVGs
+            svg_styles = response.xpath('//svg//@style | //svg//style/text()').getall()
+            for style in svg_styles:
+                for match in re.finditer(r'url\(([^)]+)\)', style):
+                    raw_url = match.group(1).strip('\'"')
+                    normalized = self._normalize_candidate(raw_url, response)
+                    if normalized:
+                        sourced_candidates[normalized] = ("svg_embedded_css", 0.3)
 
         # form actions - high confidence since they're explicit endpoints
         if self.enable_form_action_discovery and heuristic_quality.get('form_action', 0) < 100:
