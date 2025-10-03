@@ -13,8 +13,8 @@ Usage Examples:
     python3 refresh_data.py --optimize                  # Get optimization recommendations
 """
 
-import asyncio
 import argparse
+import asyncio
 import json
 import logging
 import sys
@@ -24,9 +24,8 @@ from pathlib import Path
 # Add src to path for imports
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
-from orchestrator.data_refresh import DataRefreshManager, RefreshConfig
 from orchestrator.analytics_engine import RequestAnalyticsEngine
-from common.logging import setup_logging
+from orchestrator.data_refresh import DataRefreshManager, RefreshConfig
 
 
 def setup_cli_logging(verbose: bool = False):

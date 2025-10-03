@@ -1,9 +1,11 @@
 # TODO: Add support for other NLP backends, such as NLTK or Flair, to provide more options for NLP processing.
 import importlib
+import json
 import logging
 import re
 from collections import Counter, OrderedDict
 from dataclasses import dataclass, field
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -270,6 +272,9 @@ class NLPRegistry:
             seen[cleaned] = None
             entities.append(cleaned)
 
+        # Apply entity filtering to remove nonsensical results
+        entities = filter_entities(entities)
+
         keywords = self._keywords_from_doc(doc, top_k)
         return entities, keywords
 
@@ -291,7 +296,8 @@ class NLPRegistry:
             seen[cleaned] = None
             entities.append(cleaned)
 
-        return entities
+        # Apply entity filtering to remove nonsensical results
+        return filter_entities(entities)
 
     def summarize_text(self, text: str, max_length: int, min_length: int) -> str:
         if not self.summarizer_pipeline:
@@ -449,6 +455,57 @@ def clean_text(text: str) -> str:
     return text
 
 
+def filter_entities(entities: list[str]) -> list[str]:
+    """Filter out nonsensical or invalid entities.
+
+    Removes entities that:
+    - Are too long (>6 words)
+    - Contain newline characters
+    - Are duplicates (case-insensitive)
+    - Don't contain any letters
+    - Are just numbers or punctuation
+    """
+    if not entities:
+        return []
+
+    filtered = []
+    seen = set()
+
+    for entity in entities:
+        if not entity or not entity.strip():
+            continue
+
+        # Remove newlines and excessive whitespace
+        cleaned = re.sub(r'\s+', ' ', entity.strip())
+
+        # Skip if contains newlines (before cleaning)
+        if '\n' in entity or '\r' in entity:
+            continue
+
+        # Skip if too long (more than 6 words)
+        word_count = len(cleaned.split())
+        if word_count > 6:
+            continue
+
+        # Skip if doesn't contain any letters
+        if not re.search(r'[a-zA-Z]', cleaned):
+            continue
+
+        # Skip if it's just numbers or punctuation
+        if re.match(r'^[\d\s\W]+$', cleaned):
+            continue
+
+        # Deduplicate (case-insensitive)
+        lower = cleaned.lower()
+        if lower in seen:
+            continue
+
+        seen.add(lower)
+        filtered.append(cleaned)
+
+    return filtered
+
+
 def extract_keywords_simple(
     text: str,
     top_k: int = TOP_KEYWORDS,
@@ -538,3 +595,142 @@ def select_device(preferred: str | None = None) -> str:
             logger.debug("MLX reported but unavailable; defaulting to CPU")
 
     return "cpu"
+
+
+def load_taxonomy(taxonomy_path: str | Path | None = None) -> dict:
+    """Load taxonomy from JSON file.
+
+    Args:
+        taxonomy_path: Path to taxonomy JSON file. If None, uses default path.
+
+    Returns:
+        Dictionary containing taxonomy data with categories and keywords
+    """
+    if taxonomy_path is None:
+        taxonomy_path = Path(__file__).parent.parent.parent / "data" / "config" / "taxonomy.json"
+
+    taxonomy_path = Path(taxonomy_path)
+
+    if not taxonomy_path.exists():
+        logger.warning(f"Taxonomy file not found: {taxonomy_path}")
+        return {"categories": []}
+
+    try:
+        with open(taxonomy_path, encoding='utf-8') as f:
+            return json.load(f)
+    except Exception as e:
+        logger.error(f"Failed to load taxonomy from {taxonomy_path}: {e}")
+        return {"categories": []}
+
+
+def load_glossary(glossary_path: str | Path | None = None) -> dict:
+    """Load UConn-specific glossary from JSON file.
+
+    Args:
+        glossary_path: Path to glossary JSON file. If None, uses default path.
+
+    Returns:
+        Dictionary containing glossary terms
+    """
+    if glossary_path is None:
+        glossary_path = Path(__file__).parent.parent.parent / "data" / "config" / "uconn_glossary.json"
+
+    glossary_path = Path(glossary_path)
+
+    if not glossary_path.exists():
+        logger.warning(f"Glossary file not found: {glossary_path}")
+        return {"terms": {}}
+
+    try:
+        with open(glossary_path, encoding='utf-8') as f:
+            return json.load(f)
+    except Exception as e:
+        logger.error(f"Failed to load glossary from {glossary_path}: {e}")
+        return {"terms": {}}
+
+
+def extract_glossary_terms(text: str, glossary: dict) -> list[str]:
+    """Extract UConn-specific terms from text using glossary.
+
+    Args:
+        text: Text content to search
+        glossary: Glossary dictionary loaded from JSON
+
+    Returns:
+        List of matched glossary terms found in text
+    """
+    if not text or not glossary.get("terms"):
+        return []
+
+    text_lower = text.lower()
+    matched_terms = []
+    seen = set()
+
+    # Iterate through all term categories
+    for category, terms in glossary["terms"].items():
+        for term_data in terms:
+            term = term_data.get("term", "")
+            aliases = term_data.get("aliases", [])
+
+            # Check main term
+            if term and term.lower() in text_lower:
+                if term not in seen:
+                    matched_terms.append(term)
+                    seen.add(term)
+
+            # Check aliases
+            for alias in aliases:
+                if alias and alias.lower() in text_lower:
+                    if term not in seen:
+                        matched_terms.append(term)
+                        seen.add(term)
+                        break
+
+    return matched_terms
+
+
+def classify_with_taxonomy(text: str, taxonomy: dict, classifier_func=None, top_k: int = 5) -> list[dict]:
+    """Classify text using taxonomy categories.
+
+    Args:
+        text: Text content to classify
+        taxonomy: Taxonomy dictionary loaded from JSON
+        classifier_func: Optional zero-shot classifier function
+        top_k: Number of top categories to return
+
+    Returns:
+        List of category dictionaries with scores
+    """
+    if not text or not taxonomy.get("categories"):
+        return []
+
+    results = []
+    text_lower = text.lower()
+
+    # Simple keyword-based classification
+    for category in taxonomy["categories"]:
+        cat_id = category.get("id", "")
+        cat_label = category.get("label", "")
+
+        score = 0.0
+        matched_keywords = []
+
+        # Check subcategories
+        for subcat in category.get("subcategories", []):
+            keywords = subcat.get("keywords", [])
+            for keyword in keywords:
+                if keyword.lower() in text_lower:
+                    score += 1.0
+                    matched_keywords.append(keyword)
+
+        if score > 0:
+            results.append({
+                "category_id": cat_id,
+                "category_label": cat_label,
+                "score": score,
+                "matched_keywords": matched_keywords[:5]  # Limit to top 5 matches
+            })
+
+    # Sort by score and return top_k
+    results.sort(key=lambda x: x["score"], reverse=True)
+    return results[:top_k]

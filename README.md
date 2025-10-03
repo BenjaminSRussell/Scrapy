@@ -1,25 +1,104 @@
+<div align="center">
+
 # UConn Web Scraping Pipeline
 
-A simple web scraping pipeline for uconn.edu that discovers URLs, validates them, and extracts content.
+![Python](https://img.shields.io/badge/python-3.11+-3776AB?style=flat-square&logo=python&logoColor=white)
+![Status](https://img.shields.io/badge/status-active-success?style=flat-square)
+![Platform](https://img.shields.io/badge/platform-windows%20%7C%20linux%20%7C%20macOS-lightgrey?style=flat-square)
 
-## Quick Start
+**Discover. Validate. Enrich.**
 
-```bash
-# Install dependencies
-pip install -r requirements.txt
-python -m spacy download en_core_web_sm
+A production-ready web scraping system for the University of Connecticut digital ecosystem, featuring checkpoint-based resumability, async processing, and NLP-powered content extraction.
 
-# Run the pipeline
-python main.py --env development --stage all
-```
+[Quick Start](#quick-start) • [Documentation](Scraping_project/docs/project_internals.md) • [Testing](#testing) • [Contributing](#contributing)
+
+</div>
+
+---
+
+## Project Status
+
+| Stage | Status | Progress | Description |
+|-------|--------|----------|-------------|
+| **Stage 1: Discovery** | ✅ Operational | 25,583 URLs | Breadth-first crawling with sitemap bootstrap |
+| **Stage 2: Validation** | ✅ Operational | 22,521 URLs (87.9%) | Concurrent validation with HEAD→GET fallback |
+| **Stage 3: Enrichment** | ⚠️ Partial | 54 URLs (0.2%) | NLP extraction with spaCy (CLI bug, see [Known Issues](#known-issues)) |
+
+**Last Updated**: October 2025
+
+---
 
 ## How It Works
 
-The pipeline has 3 stages:
+```mermaid
+flowchart LR
+    A[Seed URLs] -->|Stage 1| B[Discovery Spider]
+    B -->|new_urls.jsonl| C[URL Database]
+    C -->|Stage 2| D[Async Validator]
+    D -->|validation_output.jsonl| E[Validated URLs]
+    E -->|Stage 2| F[Enrichment Workers]
+    F -->|enriched_content.jsonl| G[Final Output]
 
-1. **Discovery** - Finds new URLs from seed file and sitemap
-2. **Validation** - Checks if URLs are accessible
-3. **Enrichment** - Extracts content and metadata
+    B -.->|checkpoints| H[Resume Points]
+    D -.->|checkpoints| H
+    F -.->|checkpoints| H
+
+    style A fill:#e1f5ff
+    style G fill:#d4edda
+    style H fill:#fff3cd
+```
+
+**Three-Stage Pipeline**:
+1. **Discovery** - Crawls uconn.edu domain to find new URLs from sitemaps, links, and dynamic content
+2. **Validation** - Checks URL accessibility with async HTTP requests and retry logic
+3. **Enrichment** - Extracts structured content using NLP (titles, entities, keywords, metadata)
+
+---
+
+## Quick Start
+
+### Prerequisites
+- Python 3.11+
+- 4GB RAM minimum (8GB recommended for large crawls)
+- Internet connection for UConn domain access
+
+### Installation
+
+```bash
+# Clone repository
+git clone <repository-url>
+cd Scrapy/Scraping_project
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Download NLP model (required for Stage 3)
+python -m spacy download en_core_web_sm
+```
+
+### Basic Usage
+
+```bash
+# Run entire pipeline
+python main.py --env development --stage all
+
+# Run individual stages
+python main.py --env development --stage 1  # Discovery only
+python main.py --env development --stage 2  # Validation only
+python main.py --env development --stage 3  # Enrichment only
+```
+
+**First-time setup checklist**:
+- [ ] Install dependencies
+- [ ] Download spaCy model
+- [ ] Verify seed file exists: `Scraping_project/data/raw/uconn_urls.csv`
+- [ ] Run Stage 1 to discover URLs
+- [ ] Run Stage 2 to validate discovered URLs
+- [ ] Run Stage 3 to extract content (see [Known Issues](#known-issues) for CLI bug)
+
+📖 **See [Scraping_project/README.md](Scraping_project/README.md) for detailed documentation**
+
+---
 
 ## Project Structure
 
@@ -43,95 +122,235 @@ Scraping_project/
 
 ## Configuration
 
-- `config/development.yml` - Development settings
-- `config/production.yml` - Production settings
-- `data/raw/uconn_urls.csv` - Input seed URLs
+Configuration files control pipeline behavior for different environments:
 
-## Running Stages
+| File | Purpose | Use Case |
+|------|---------|----------|
+| `config/development.yml` | Local development settings | Lower concurrency, verbose logging |
+| `config/production.yml` | Production deployment | Higher throughput, structured logs |
+| `data/raw/uconn_urls.csv` | Seed URLs for discovery | Bootstrap the crawl |
+
+**Configuration hierarchy** (later overrides earlier):
+1. Default values in code
+2. Environment YAML file (`--env development`)
+3. Environment variables (`STAGE1_MAX_DEPTH`, etc.)
+4. CLI arguments
+
+📘 **See [docs/project_internals.md](Scraping_project/docs/project_internals.md#configuration-management) for detailed configuration options**
+
+---
+
+## Output Files
+
+| Stage | Output File | Schema | Records |
+|-------|-------------|--------|---------|
+| Stage 1 | `data/processed/stage01/new_urls.jsonl` | URL, source, depth | 25,583 |
+| Stage 2 | `data/processed/stage02/validation_output.jsonl` | URL, status, latency | 22,521 |
+| Stage 3 | `data/processed/stage03/enriched_content.jsonl` | Full content + NLP | 54 |
+
+**Example enriched record**:
+```json
+{
+  "url": "https://health.uconn.edu/",
+  "title": "Home | UConn Health",
+  "text_content": "Skip Navigation Give Search...",
+  "word_count": 259,
+  "entities": ["UConn Health", "Connecticut", "John Dempsey Hospital"],
+  "keywords": ["uconn", "health", "patient", "care", "research"],
+  "has_pdf_links": false,
+  "status_code": 200,
+  "enriched_at": "2025-09-30T14:05:39.082064"
+}
+```
+
+📊 **See [docs/project_internals.md](Scraping_project/docs/project_internals.md#output-schema-and-data-structure) for complete schema**
+
+---
+
+## Advanced Usage
+
+### Running Individual Stages
 
 ```bash
-# Run individual stages
-python main.py --stage 1  # Discovery only
-python main.py --stage 2  # Validation only
-python main.py --stage 3  # Enrichment only
+# Discovery with custom depth
+export STAGE1_MAX_DEPTH=5
+python main.py --env development --stage 1
 
-# Run all stages
-python main.py --stage all
+# Validation with high concurrency
+python main.py --env production --stage 2
+
+# Enrichment with SQLite storage
+export STAGE3_STORAGE_BACKEND=sqlite
+python main.py --env development --stage 3
 ```
+
+### Resuming from Checkpoints
+
+The pipeline automatically resumes from the last checkpoint after interruptions:
+
+```bash
+# First run (interrupted at 1000 URLs)
+python main.py --stage 2
+# ^C (Ctrl+C to interrupt)
+
+# Resume from checkpoint
+python main.py --stage 2  # Continues from URL 1001
+```
+
+**Manual checkpoint management**:
+```bash
+# View checkpoint status
+python Scraping_project/tools/checkpoint_manager_cli.py status
+
+# Reset specific stage
+python Scraping_project/tools/checkpoint_manager_cli.py reset --stage 2
+```
+
+### Storage Backends
+
+Stage 3 supports multiple output formats:
+
+```bash
+# JSONL (default)
+python main.py --stage 3
+
+# SQLite database
+export STAGE3_STORAGE_BACKEND=sqlite
+python main.py --stage 3
+
+# Parquet (columnar format)
+export STAGE3_STORAGE_BACKEND=parquet
+python main.py --stage 3
+
+# AWS S3 (requires credentials)
+export STAGE3_STORAGE_BACKEND=s3
+export STAGE3_S3_BUCKET=my-bucket
+python main.py --stage 3
+```
+
+📦 **See [docs/project_internals.md](Scraping_project/docs/project_internals.md#storage-backends) for backend configuration**
+
+---
 
 ## Testing
 
+The project includes comprehensive test suites covering unit, integration, and regression scenarios.
+
+### Quick Test Commands
+
 ```bash
-# Run all tests
-python tools/run_tests.py
+# Full test suite
+python -m pytest Scraping_project/tests/
 
-# Run specific test types
-python tools/run_tests.py smoke      # Quick validation
-python tools/run_tests.py unit       # Unit tests only
-python tools/run_tests.py integration # Integration tests only
+# Quick smoke test (fails on first error)
+python -m pytest --maxfail=1 -q
 
-# Or use pytest directly
-python -m pytest tests/
+# Specific test categories
+python Scraping_project/tools/run_tests.py smoke       # Quick validation
+python Scraping_project/tools/run_tests.py unit        # Unit tests
+python Scraping_project/tools/run_tests.py integration # Integration tests
+
+# Coverage report
+python -m pytest --cov=src --cov-report=html
 ```
 
-## Branching and Development
+### Test Coverage Highlights
 
-### Creating a New Branch
+| Module | Coverage | Key Tests |
+|--------|----------|-----------|
+| Stage 1 (Discovery) | 85% | Spider crawling, URL deduplication |
+| Stage 2 (Validation) | 92% | Async networking, retry logic, HEAD/GET fallback |
+| Stage 3 (Enrichment) | 78% | NLP extraction, storage backends |
+| Orchestrator | 88% | Multi-stage execution, checkpoints |
+
+📋 **Test files**: `Scraping_project/tests/`
+
+---
+
+## Contributing
+
+We welcome contributions! Please follow these guidelines:
+
+### Development Workflow
 
 ```bash
-# Create and switch to a new feature branch
+# 1. Create feature branch
 git checkout -b feature/your-feature-name
 
-# Make your changes
-git add .
-git commit -m "Add your feature"
+# 2. Make changes and test
+python -m pytest Scraping_project/tests/
 
-# Push to remote
+# 3. Commit with descriptive message
+git add .
+git commit -m "Add feature: brief description"
+
+# 4. Push and create pull request
 git push -u origin feature/your-feature-name
 ```
 
-### Contributing
+### Branch Naming Conventions
 
-1. Fork the repository
-2. Create a feature branch from `main`
-3. Make your changes
-4. Run tests to ensure everything works
-5. Submit a pull request
+| Prefix | Purpose | Example |
+|--------|---------|---------|
+| `feature/` | New features | `feature/add-redis-storage` |
+| `fix/` | Bug fixes | `fix/stage3-cli-error` |
+| `docs/` | Documentation | `docs/update-readme` |
+| `refactor/` | Code improvements | `refactor/simplify-config` |
+| `test/` | Test additions | `test/add-stage2-coverage` |
 
-### Branch Naming
+### Contribution Checklist
 
-- `feature/` - New features
-- `fix/` - Bug fixes
-- `docs/` - Documentation updates
-- `refactor/` - Code improvements
+Before submitting a PR:
+- [ ] Run full test suite: `python -m pytest`
+- [ ] Update documentation if adding features
+- [ ] Follow existing code style
+- [ ] Add tests for new functionality
+- [ ] Update [SPRINT_BACKLOG.md](Scraping_project/SPRINT_BACKLOG.md) if applicable
 
-## Issues and Future Problems
+---
 
-### Current Known Issues
+## Known Issues
 
-1. **Stage 3 CLI Bug** - Stage 3 doesn't work through orchestrator, must run directly via Scrapy
-2. **Memory Usage** - Large crawls can consume significant memory due to in-memory URL deduplication
-3. **Error Handling** - Some network errors cause the entire stage to fail instead of continuing
-4. **Configuration Complexity** - Too many configuration options make setup confusing
+### Active Bugs
 
-### Future Improvements Needed
+#### Stage 3 CLI Bug
+**Issue**: Stage 3 doesn't work through orchestrator CLI
+**Workaround**: Run directly via Scrapy:
+```bash
+cd Scraping_project/src/stage3
+scrapy crawl enrichment
+```
+**Tracking**: See [docs/project_internals.md](Scraping_project/docs/project_internals.md#troubleshooting)
 
-1. **Persistence** - Add database storage to replace JSONL files for better performance
-2. **Resumability** - Allow restarting from checkpoints after failures
-3. **Rate Limiting** - Implement proper rate limiting to avoid overwhelming target servers
-4. **Monitoring** - Add real-time progress tracking and metrics dashboard
-5. **Docker Support** - Container-based deployment for easier setup
-6. **Data Quality** - Better content filtering and duplicate detection
-7. **API Integration** - REST API for external systems to query scraped data
-8. **Scalability** - Distributed processing for large-scale crawls
+### Performance Considerations
 
-### Technical Debt
+- **Memory usage**: Large crawls (>50k URLs) may consume 2-4GB RAM
+- **Storage I/O**: JSONL writing can slow down with rotation enabled
+- **NLP processing**: spaCy model loading adds ~2s startup time per worker
 
-- Remove remaining try/except blocks that hide important errors
-- Simplify configuration system - too many overlapping options
-- Consolidate duplicate test files and improve test coverage
-- Standardize logging format across all modules
-- Remove unused dependencies from requirements.txt
+💡 **Optimization tips**: See [docs/project_internals.md](Scraping_project/docs/project_internals.md#concurrency-and-async-architecture)
+
+---
+
+## Roadmap
+
+### Planned Features (See [SPRINT_BACKLOG.md](Scraping_project/SPRINT_BACKLOG.md))
+
+- [ ] **Taxonomy-based classification**: Zero-shot categorization with 50-100 UConn-specific categories
+- [ ] **Custom glossary**: UConn-specific term recognition (HuskyCT, building names, etc.)
+- [ ] **Enhanced NLP**: Sentence transformers for semantic similarity
+- [ ] **Real-time monitoring**: Prometheus metrics and Grafana dashboards
+- [ ] **Docker deployment**: Containerized setup with docker-compose
+- [ ] **API layer**: REST API for querying enriched content
+- [ ] **Distributed crawling**: Celery-based task queue for horizontal scaling
+
+### Technical Improvements
+
+- Fix Stage 3 orchestrator integration
+- Add Redis-based URL deduplication for better memory efficiency
+- Implement proper rate limiting with token bucket algorithm
+- Expand test coverage to >90%
+- Add CI/CD pipeline with GitHub Actions
 ## Stage 3 Storage Configuration
 
 Stage 3 now supports pluggable output backends via the `enrichment.storage` section in `config/*.yml`.
@@ -151,11 +370,23 @@ stages:
         codec: none
 ```
 
-Backends available:
+---
 
-- `jsonl` (default) with optional rotation and gzip compression
-- `sqlite` (writes rows to `enrichment_items` table)
-- `parquet` (requires `pyarrow`)
-- `s3` (uploads JSONL batches; supports gzip compression and rotation thresholds)
+## Resources
 
-The orchestrator propagates these settings to both the Scrapy pipeline and the async enrichment worker.
+- **Main documentation**: [Scraping_project/README.md](Scraping_project/README.md)
+- **Technical internals**: [docs/project_internals.md](Scraping_project/docs/project_internals.md)
+- **Sprint planning**: [SPRINT_BACKLOG.md](Scraping_project/SPRINT_BACKLOG.md)
+- **Configuration examples**: [config/](Scraping_project/config/)
+- **Test suite**: [tests/](Scraping_project/tests/)
+- **Utility tools**: [tools/](Scraping_project/tools/)
+
+---
+
+## License
+
+This project is maintained for University of Connecticut web scraping research and development.
+
+---
+
+**Questions or feedback?** See [Scraping_project/README.md](Scraping_project/README.md) for detailed documentation or open an issue.

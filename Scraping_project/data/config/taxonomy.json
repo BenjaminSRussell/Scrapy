@@ -1,0 +1,437 @@
+{
+  "taxonomy_version": "1.0",
+  "created_at": "2025-10-03",
+  "description": "University of Connecticut comprehensive content taxonomy for web scraping classification",
+  "categories": [
+    {
+      "id": "academics",
+      "label": "Academics",
+      "description": "Academic programs, courses, and educational content",
+      "subcategories": [
+        {
+          "id": "academics.undergraduate",
+          "label": "Undergraduate Programs",
+          "keywords": ["undergraduate", "bachelor", "bachelor's degree", "undergraduate program", "bs", "ba", "bfa"]
+        },
+        {
+          "id": "academics.graduate",
+          "label": "Graduate Programs",
+          "keywords": ["graduate", "master", "master's degree", "phd", "doctoral", "graduate program", "ms", "ma", "mfa"]
+        },
+        {
+          "id": "academics.professional",
+          "label": "Professional Programs",
+          "keywords": ["professional program", "professional degree", "jd", "md", "dmd", "pharmd", "law school", "medical school", "dental school"]
+        },
+        {
+          "id": "academics.online_learning",
+          "label": "Online & Distance Learning",
+          "keywords": ["online learning", "distance education", "online course", "online program", "remote learning", "hybrid course"]
+        },
+        {
+          "id": "academics.continuing_education",
+          "label": "Continuing Education",
+          "keywords": ["continuing education", "professional development", "certificate program", "lifelong learning", "executive education"]
+        },
+        {
+          "id": "academics.international",
+          "label": "International Programs",
+          "keywords": ["study abroad", "international program", "exchange program", "global studies", "international student"]
+        }
+      ]
+    },
+    {
+      "id": "research",
+      "label": "Research",
+      "description": "Research activities, labs, and scholarly work",
+      "subcategories": [
+        {
+          "id": "research.labs",
+          "label": "Research Labs & Centers",
+          "keywords": ["research lab", "research center", "laboratory", "research facility", "research institute"]
+        },
+        {
+          "id": "research.publications",
+          "label": "Publications & Papers",
+          "keywords": ["publication", "research paper", "journal article", "scholarly article", "peer-reviewed"]
+        },
+        {
+          "id": "research.grants",
+          "label": "Grants & Funding",
+          "keywords": ["research grant", "funding opportunity", "nsf", "nih", "sponsored research", "grant proposal"]
+        },
+        {
+          "id": "research.innovation",
+          "label": "Innovation & Technology Transfer",
+          "keywords": ["innovation", "technology transfer", "patent", "intellectual property", "startup", "commercialization"]
+        },
+        {
+          "id": "research.collaboration",
+          "label": "Research Collaboration",
+          "keywords": ["collaborative research", "partnership", "research consortium", "interdisciplinary research"]
+        }
+      ]
+    },
+    {
+      "id": "student_services",
+      "label": "Student Services",
+      "description": "Services and resources for students",
+      "subcategories": [
+        {
+          "id": "student_services.advising",
+          "label": "Academic Advising",
+          "keywords": ["academic advising", "advisor", "academic counseling", "degree planning", "course selection"]
+        },
+        {
+          "id": "student_services.housing",
+          "label": "Housing & Residential Life",
+          "keywords": ["housing", "dormitory", "residence hall", "residential life", "on-campus housing", "off-campus"]
+        },
+        {
+          "id": "student_services.dining",
+          "label": "Dining Services",
+          "keywords": ["dining", "meal plan", "cafeteria", "dining hall", "food service"]
+        },
+        {
+          "id": "student_services.health",
+          "label": "Student Health Services",
+          "keywords": ["student health", "health center", "counseling", "mental health", "wellness", "medical services"]
+        },
+        {
+          "id": "student_services.career",
+          "label": "Career Services",
+          "keywords": ["career services", "job placement", "internship", "career counseling", "job search", "career fair"]
+        },
+        {
+          "id": "student_services.disability",
+          "label": "Disability Services",
+          "keywords": ["disability services", "accessibility", "accommodations", "csd", "ada compliance"]
+        },
+        {
+          "id": "student_services.financial_aid",
+          "label": "Financial Aid",
+          "keywords": ["financial aid", "scholarship", "student loan", "fafsa", "tuition assistance", "grant"]
+        },
+        {
+          "id": "student_services.clubs",
+          "label": "Student Organizations & Clubs",
+          "keywords": ["student organization", "club", "student group", "extracurricular", "student activities"]
+        }
+      ]
+    },
+    {
+      "id": "athletics",
+      "label": "Athletics",
+      "description": "Sports, recreation, and athletic programs",
+      "subcategories": [
+        {
+          "id": "athletics.varsity",
+          "label": "Varsity Sports",
+          "keywords": ["varsity", "ncaa", "division i", "basketball", "football", "soccer", "huskies"]
+        },
+        {
+          "id": "athletics.recreation",
+          "label": "Recreation & Intramurals",
+          "keywords": ["recreation", "intramural", "recreational sports", "fitness", "gym"]
+        },
+        {
+          "id": "athletics.facilities",
+          "label": "Athletic Facilities",
+          "keywords": ["gampel pavilion", "pratt & whitney stadium", "athletic facility", "sports complex"]
+        }
+      ]
+    },
+    {
+      "id": "healthcare",
+      "label": "Healthcare",
+      "description": "Medical services, hospitals, and health programs",
+      "subcategories": [
+        {
+          "id": "healthcare.hospital",
+          "label": "Hospital & Clinical Services",
+          "keywords": ["uconn health", "john dempsey hospital", "jdh", "hospital", "clinical services", "patient care"]
+        },
+        {
+          "id": "healthcare.medical_education",
+          "label": "Medical Education",
+          "keywords": ["medical school", "school of medicine", "medical education", "clinical training", "residency"]
+        },
+        {
+          "id": "healthcare.dental",
+          "label": "Dental Services",
+          "keywords": ["dental school", "school of dental medicine", "dental clinic", "oral health", "dentistry"]
+        },
+        {
+          "id": "healthcare.pharmacy",
+          "label": "Pharmacy",
+          "keywords": ["school of pharmacy", "pharmaceutical", "pharmacy services"]
+        },
+        {
+          "id": "healthcare.nursing",
+          "label": "Nursing",
+          "keywords": ["school of nursing", "nursing program", "nursing education", "nurse practitioner"]
+        },
+        {
+          "id": "healthcare.research",
+          "label": "Medical Research",
+          "keywords": ["medical research", "clinical trial", "biomedical research", "health research"]
+        }
+      ]
+    },
+    {
+      "id": "administration",
+      "label": "Administration",
+      "description": "Administrative offices and services",
+      "subcategories": [
+        {
+          "id": "administration.executive",
+          "label": "Executive Leadership",
+          "keywords": ["president", "provost", "chancellor", "executive", "administration", "leadership"]
+        },
+        {
+          "id": "administration.hr",
+          "label": "Human Resources",
+          "keywords": ["human resources", "hr", "employment", "hiring", "benefits", "payroll"]
+        },
+        {
+          "id": "administration.finance",
+          "label": "Finance & Budget",
+          "keywords": ["finance", "budget", "accounting", "fiscal", "treasurer", "comptroller"]
+        },
+        {
+          "id": "administration.it",
+          "label": "Information Technology",
+          "keywords": ["information technology", "it services", "technology support", "computing", "network"]
+        },
+        {
+          "id": "administration.facilities",
+          "label": "Facilities & Operations",
+          "keywords": ["facilities", "operations", "maintenance", "campus services", "physical plant"]
+        },
+        {
+          "id": "administration.police",
+          "label": "Police & Safety",
+          "keywords": ["police", "public safety", "security", "emergency", "ucpd"]
+        }
+      ]
+    },
+    {
+      "id": "libraries",
+      "label": "Libraries",
+      "description": "Library services and resources",
+      "subcategories": [
+        {
+          "id": "libraries.collections",
+          "label": "Collections & Resources",
+          "keywords": ["library", "homer babbidge library", "collection", "archives", "special collections"]
+        },
+        {
+          "id": "libraries.services",
+          "label": "Library Services",
+          "keywords": ["library services", "research help", "interlibrary loan", "database", "circulation"]
+        }
+      ]
+    },
+    {
+      "id": "admissions",
+      "label": "Admissions",
+      "description": "Enrollment and admissions information",
+      "subcategories": [
+        {
+          "id": "admissions.undergraduate",
+          "label": "Undergraduate Admissions",
+          "keywords": ["undergraduate admission", "freshman admission", "transfer admission", "apply"]
+        },
+        {
+          "id": "admissions.graduate",
+          "label": "Graduate Admissions",
+          "keywords": ["graduate admission", "graduate application", "gre", "admission requirements"]
+        },
+        {
+          "id": "admissions.international",
+          "label": "International Admissions",
+          "keywords": ["international admission", "international student", "visa", "toefl", "ielts"]
+        },
+        {
+          "id": "admissions.campus_visit",
+          "label": "Campus Visits & Tours",
+          "keywords": ["campus visit", "campus tour", "open house", "admitted student day"]
+        }
+      ]
+    },
+    {
+      "id": "schools_colleges",
+      "label": "Schools & Colleges",
+      "description": "Academic schools and colleges",
+      "subcategories": [
+        {
+          "id": "schools_colleges.clas",
+          "label": "College of Liberal Arts & Sciences",
+          "keywords": ["clas", "liberal arts", "college of liberal arts and sciences", "arts and sciences"]
+        },
+        {
+          "id": "schools_colleges.engineering",
+          "label": "School of Engineering",
+          "keywords": ["school of engineering", "soe", "engineering program"]
+        },
+        {
+          "id": "schools_colleges.business",
+          "label": "School of Business",
+          "keywords": ["school of business", "sob", "business school", "mba"]
+        },
+        {
+          "id": "schools_colleges.education",
+          "label": "Neag School of Education",
+          "keywords": ["neag school", "school of education", "teacher education", "education program"]
+        },
+        {
+          "id": "schools_colleges.agriculture",
+          "label": "College of Agriculture, Health & Natural Resources",
+          "keywords": ["cahnr", "agriculture", "natural resources", "environmental science"]
+        },
+        {
+          "id": "schools_colleges.fine_arts",
+          "label": "School of Fine Arts",
+          "keywords": ["school of fine arts", "fine arts", "art", "music", "drama", "theater"]
+        },
+        {
+          "id": "schools_colleges.law",
+          "label": "School of Law",
+          "keywords": ["school of law", "law school", "legal education", "juris doctor"]
+        },
+        {
+          "id": "schools_colleges.social_work",
+          "label": "School of Social Work",
+          "keywords": ["school of social work", "social work program", "msw"]
+        }
+      ]
+    },
+    {
+      "id": "campus_life",
+      "label": "Campus Life",
+      "description": "Student life and campus culture",
+      "subcategories": [
+        {
+          "id": "campus_life.events",
+          "label": "Events & Activities",
+          "keywords": ["campus event", "activity", "festival", "concert", "lecture series"]
+        },
+        {
+          "id": "campus_life.diversity",
+          "label": "Diversity & Inclusion",
+          "keywords": ["diversity", "inclusion", "multicultural", "dei", "equity"]
+        },
+        {
+          "id": "campus_life.arts_culture",
+          "label": "Arts & Culture",
+          "keywords": ["museum", "gallery", "theater", "performance", "cultural event"]
+        },
+        {
+          "id": "campus_life.sustainability",
+          "label": "Sustainability",
+          "keywords": ["sustainability", "environmental", "green campus", "recycling", "carbon neutral"]
+        }
+      ]
+    },
+    {
+      "id": "alumni",
+      "label": "Alumni Relations",
+      "description": "Alumni services and engagement",
+      "subcategories": [
+        {
+          "id": "alumni.engagement",
+          "label": "Alumni Engagement",
+          "keywords": ["alumni", "alumni association", "alumni network", "reunion", "homecoming"]
+        },
+        {
+          "id": "alumni.giving",
+          "label": "Alumni Giving",
+          "keywords": ["alumni giving", "donation", "philanthropy", "fundraising", "endowment"]
+        }
+      ]
+    },
+    {
+      "id": "community",
+      "label": "Community & Outreach",
+      "description": "Community engagement and partnerships",
+      "subcategories": [
+        {
+          "id": "community.partnerships",
+          "label": "Community Partnerships",
+          "keywords": ["community partnership", "outreach", "community engagement", "service learning"]
+        },
+        {
+          "id": "community.extension",
+          "label": "Extension Services",
+          "keywords": ["extension", "uconn extension", "cooperative extension", "4-h"]
+        },
+        {
+          "id": "community.economic_development",
+          "label": "Economic Development",
+          "keywords": ["economic development", "workforce development", "regional partnership"]
+        }
+      ]
+    },
+    {
+      "id": "news_media",
+      "label": "News & Media",
+      "description": "News, press releases, and media resources",
+      "subcategories": [
+        {
+          "id": "news_media.news",
+          "label": "News & Press Releases",
+          "keywords": ["news", "press release", "announcement", "uconn today", "media"]
+        },
+        {
+          "id": "news_media.magazine",
+          "label": "Publications & Magazines",
+          "keywords": ["magazine", "publication", "newsletter", "journal"]
+        }
+      ]
+    },
+    {
+      "id": "policies",
+      "label": "Policies & Compliance",
+      "description": "University policies and regulations",
+      "subcategories": [
+        {
+          "id": "policies.academic",
+          "label": "Academic Policies",
+          "keywords": ["academic policy", "student conduct", "academic integrity", "grading policy"]
+        },
+        {
+          "id": "policies.administrative",
+          "label": "Administrative Policies",
+          "keywords": ["university policy", "administrative policy", "procedure", "regulation"]
+        },
+        {
+          "id": "policies.compliance",
+          "label": "Compliance & Legal",
+          "keywords": ["compliance", "legal", "privacy", "ferpa", "title ix", "hipaa"]
+        }
+      ]
+    },
+    {
+      "id": "technology",
+      "label": "Technology & Platforms",
+      "description": "University technology platforms and systems",
+      "subcategories": [
+        {
+          "id": "technology.learning_management",
+          "label": "Learning Management Systems",
+          "keywords": ["huskyct", "blackboard", "learning management", "lms", "canvas"]
+        },
+        {
+          "id": "technology.student_systems",
+          "label": "Student Information Systems",
+          "keywords": ["studentadmin", "peoplesoft", "student information system", "sis", "registration"]
+        },
+        {
+          "id": "technology.collaboration",
+          "label": "Collaboration Tools",
+          "keywords": ["microsoft teams", "zoom", "collaboration", "email", "office 365"]
+        }
+      ]
+    }
+  ]
+}

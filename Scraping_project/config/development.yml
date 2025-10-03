@@ -167,9 +167,42 @@ logging:
 
 # NLP settings
 nlp:
-  model: "en_core_web_sm"
+  # SpaCy model options:
+  # - en_core_web_sm: Small model, ~13MB, fast but less accurate (default for development)
+  # - en_core_web_md: Medium model, ~40MB, better accuracy
+  # - en_core_web_lg: Large model, ~560MB, best accuracy
+  # - en_core_web_trf: Transformer-based, ~438MB, highest accuracy but slower
+  spacy_model: "en_core_web_sm"  # Change to en_core_web_lg or en_core_web_trf for better accuracy
+
+  # Transformer models (optional, requires transformers package)
+  use_transformers: false  # Set to true to enable transformer-based NER
+  transformer_ner_model: "dslim/bert-base-NER"  # For entity recognition
+  summarizer_model: "sshleifer/distilbart-cnn-12-6"  # For text summarization
+  zero_shot_model: "MoritzLaurer/deberta-v3-base-zeroshot-v2.0"  # For zero-shot classification
+
+  # Device selection: "auto", "cuda", "mps", "cpu"
+  device: "auto"  # Will automatically detect GPU if available
+
   max_text_length: 20000
   top_keywords: 15
+
+  # Summary settings (when use_transformers is true)
+  summary_max_length: 150
+  summary_min_length: 30
+
+# Data Warehouse settings
+warehouse:
+  enabled: true
+  db_type: sqlite  # or 'postgresql'
+  connection_string: data/warehouse/uconn_warehouse.db
+  # For PostgreSQL: postgresql://warehouse_user:password@localhost:5432/uconn_warehouse
+
+  # Crawl versioning (increment each run)
+  crawl_version: 1
+
+  # Vendor data integration
+  vendor_config: data/config/vendor_config.json
+  vendor_enabled: false
 
 # Content filtering
 content:

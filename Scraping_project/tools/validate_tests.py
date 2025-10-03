@@ -2,8 +2,8 @@
 """Quick validation script to verify test infrastructure is ready"""
 
 import sys
-import json
 from pathlib import Path
+
 
 def check_file_exists(file_path: str, description: str) -> bool:
     """Check if a file exists and report"""

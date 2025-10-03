@@ -1,0 +1,369 @@
+{
+  "glossary_version": "1.0",
+  "created_at": "2025-10-03",
+  "description": "University of Connecticut domain-specific terminology for improved keyword extraction and entity recognition",
+  "terms": {
+    "platforms_systems": [
+      {
+        "term": "HuskyCT",
+        "aliases": ["Husky CT", "Blackboard"],
+        "category": "Learning Management System",
+        "description": "UConn's learning management system"
+      },
+      {
+        "term": "StudentAdmin",
+        "aliases": ["Student Admin", "PeopleSoft"],
+        "category": "Student Information System",
+        "description": "Student registration and records system"
+      },
+      {
+        "term": "PeopleSoft",
+        "aliases": ["PS"],
+        "category": "Administrative System",
+        "description": "Enterprise resource planning system"
+      },
+      {
+        "term": "MyUConn Portal",
+        "aliases": ["MyUConn", "Student Portal"],
+        "category": "Web Portal",
+        "description": "Student and employee web portal"
+      },
+      {
+        "term": "NetID",
+        "aliases": ["Net ID", "UConn NetID"],
+        "category": "Authentication",
+        "description": "UConn network identity"
+      }
+    ],
+    "buildings_locations": [
+      {
+        "term": "Gampel Pavilion",
+        "aliases": ["Gampel", "Harry A. Gampel Pavilion"],
+        "category": "Athletic Facility",
+        "description": "Basketball arena"
+      },
+      {
+        "term": "Homer Babbidge Library",
+        "aliases": ["Babbidge Library", "Babbidge", "Main Library"],
+        "category": "Library",
+        "description": "Main university library"
+      },
+      {
+        "term": "Storrs Hall",
+        "aliases": ["Storrs"],
+        "category": "Academic Building",
+        "description": "Historic academic building"
+      },
+      {
+        "term": "Student Union",
+        "aliases": ["SU", "Union"],
+        "category": "Student Services",
+        "description": "Student center and services building"
+      },
+      {
+        "term": "Wilbur Cross Building",
+        "aliases": ["Wilbur Cross", "WCB"],
+        "category": "Academic Building",
+        "description": "Liberal arts and sciences building"
+      },
+      {
+        "term": "Rome Commons",
+        "aliases": ["Rome Ballroom"],
+        "category": "Dining & Events",
+        "description": "Dining hall and event space"
+      },
+      {
+        "term": "Pratt & Whitney Stadium",
+        "aliases": ["Rentschler Field", "P&W Stadium"],
+        "category": "Athletic Facility",
+        "description": "Football stadium"
+      },
+      {
+        "term": "John Dempsey Hospital",
+        "aliases": ["JDH", "UConn Health"],
+        "category": "Healthcare Facility",
+        "description": "University hospital"
+      },
+      {
+        "term": "Stamford Campus",
+        "aliases": ["UConn Stamford"],
+        "category": "Regional Campus",
+        "description": "Regional campus location"
+      },
+      {
+        "term": "Avery Point Campus",
+        "aliases": ["UConn Avery Point"],
+        "category": "Regional Campus",
+        "description": "Regional campus location"
+      },
+      {
+        "term": "Hartford Campus",
+        "aliases": ["UConn Hartford", "Hartford"],
+        "category": "Regional Campus",
+        "description": "Regional campus location"
+      },
+      {
+        "term": "Waterbury Campus",
+        "aliases": ["UConn Waterbury"],
+        "category": "Regional Campus",
+        "description": "Regional campus location"
+      }
+    ],
+    "schools_colleges": [
+      {
+        "term": "College of Liberal Arts and Sciences",
+        "aliases": ["CLAS", "Liberal Arts", "Arts and Sciences"],
+        "category": "School/College",
+        "description": "Largest college at UConn"
+      },
+      {
+        "term": "School of Engineering",
+        "aliases": ["SoE", "Engineering"],
+        "category": "School/College",
+        "description": "Engineering programs"
+      },
+      {
+        "term": "School of Business",
+        "aliases": ["SoB", "Business School"],
+        "category": "School/College",
+        "description": "Business programs"
+      },
+      {
+        "term": "Neag School of Education",
+        "aliases": ["Neag", "School of Education"],
+        "category": "School/College",
+        "description": "Education and teacher preparation"
+      },
+      {
+        "term": "College of Agriculture, Health and Natural Resources",
+        "aliases": ["CAHNR", "Ag School"],
+        "category": "School/College",
+        "description": "Agriculture and natural resources"
+      },
+      {
+        "term": "School of Fine Arts",
+        "aliases": ["SFA", "Fine Arts"],
+        "category": "School/College",
+        "description": "Visual and performing arts"
+      },
+      {
+        "term": "School of Law",
+        "aliases": ["Law School", "UConn Law"],
+        "category": "School/College",
+        "description": "Legal education"
+      },
+      {
+        "term": "School of Medicine",
+        "aliases": ["Medical School", "UConn Health"],
+        "category": "School/College",
+        "description": "Medical education and training"
+      },
+      {
+        "term": "School of Dental Medicine",
+        "aliases": ["Dental School", "SDM"],
+        "category": "School/College",
+        "description": "Dental education"
+      },
+      {
+        "term": "School of Nursing",
+        "aliases": ["Nursing School", "SON"],
+        "category": "School/College",
+        "description": "Nursing education"
+      },
+      {
+        "term": "School of Pharmacy",
+        "aliases": ["Pharmacy School"],
+        "category": "School/College",
+        "description": "Pharmaceutical education"
+      },
+      {
+        "term": "School of Social Work",
+        "aliases": ["SSW", "Social Work"],
+        "category": "School/College",
+        "description": "Social work programs"
+      },
+      {
+        "term": "Graduate School",
+        "aliases": ["Grad School"],
+        "category": "School/College",
+        "description": "Graduate education administration"
+      }
+    ],
+    "departments_centers": [
+      {
+        "term": "Center for Excellence in Teaching and Learning",
+        "aliases": ["CETL"],
+        "category": "Academic Support",
+        "description": "Teaching excellence center"
+      },
+      {
+        "term": "Dean of Students Office",
+        "aliases": ["DOS", "Dean of Students"],
+        "category": "Student Services",
+        "description": "Student affairs office"
+      },
+      {
+        "term": "Office of Undergraduate Research",
+        "aliases": ["OUR"],
+        "category": "Research Support",
+        "description": "Undergraduate research opportunities"
+      },
+      {
+        "term": "Center for Students with Disabilities",
+        "aliases": ["CSD"],
+        "category": "Student Services",
+        "description": "Disability accommodations"
+      },
+      {
+        "term": "UConn Police Department",
+        "aliases": ["UCPD", "University Police"],
+        "category": "Public Safety",
+        "description": "Campus police"
+      },
+      {
+        "term": "Student Health and Wellness",
+        "aliases": ["SHaW", "Student Health"],
+        "category": "Health Services",
+        "description": "Student health center"
+      },
+      {
+        "term": "Counseling and Mental Health Services",
+        "aliases": ["CMHS"],
+        "category": "Health Services",
+        "description": "Mental health services"
+      }
+    ],
+    "programs_initiatives": [
+      {
+        "term": "Honors Program",
+        "aliases": ["University Honors", "UConn Honors"],
+        "category": "Academic Program",
+        "description": "Honors curriculum"
+      },
+      {
+        "term": "First Year Experience",
+        "aliases": ["FYE"],
+        "category": "Student Success",
+        "description": "First-year student support"
+      },
+      {
+        "term": "Learning Communities",
+        "aliases": ["LC", "Living Learning Communities"],
+        "category": "Residential Program",
+        "description": "Themed residential communities"
+      },
+      {
+        "term": "Study Abroad",
+        "aliases": ["International Programs"],
+        "category": "International Education",
+        "description": "Global education opportunities"
+      },
+      {
+        "term": "Co-op Program",
+        "aliases": ["Cooperative Education"],
+        "category": "Experiential Learning",
+        "description": "Work-study program"
+      }
+    ],
+    "athletics_teams": [
+      {
+        "term": "UConn Huskies",
+        "aliases": ["Huskies"],
+        "category": "Athletics",
+        "description": "University athletic teams"
+      },
+      {
+        "term": "Jonathan the Husky",
+        "aliases": ["Jonathan"],
+        "category": "Mascot",
+        "description": "University mascot"
+      }
+    ],
+    "events_traditions": [
+      {
+        "term": "Spring Weekend",
+        "aliases": ["SUBOG Spring Weekend"],
+        "category": "Campus Event",
+        "description": "Annual spring festival"
+      },
+      {
+        "term": "Homecoming",
+        "aliases": ["HC"],
+        "category": "Campus Event",
+        "description": "Annual homecoming celebration"
+      },
+      {
+        "term": "Late Night",
+        "aliases": ["UConn Late Night"],
+        "category": "Campus Event",
+        "description": "Late night student events"
+      }
+    ],
+    "administrative_terms": [
+      {
+        "term": "Board of Trustees",
+        "aliases": ["BOT", "Trustees"],
+        "category": "Governance",
+        "description": "University governing board"
+      },
+      {
+        "term": "University Senate",
+        "aliases": ["Senate"],
+        "category": "Governance",
+        "description": "Faculty governance body"
+      },
+      {
+        "term": "Undergraduate Student Government",
+        "aliases": ["USG"],
+        "category": "Student Government",
+        "description": "Undergraduate student governing body"
+      },
+      {
+        "term": "Graduate Student Senate",
+        "aliases": ["GSS"],
+        "category": "Student Government",
+        "description": "Graduate student governing body"
+      }
+    ],
+    "course_codes": [
+      {
+        "term": "ENGL 1007",
+        "aliases": ["English 1007"],
+        "category": "Course Code",
+        "description": "Academic writing course"
+      },
+      {
+        "term": "MATH 1131",
+        "aliases": ["Math 1131"],
+        "category": "Course Code",
+        "description": "Calculus course"
+      }
+    ],
+    "acronyms": [
+      {
+        "term": "FAFSA",
+        "aliases": [],
+        "category": "Financial Aid",
+        "description": "Free Application for Federal Student Aid"
+      },
+      {
+        "term": "GPA",
+        "aliases": [],
+        "category": "Academic",
+        "description": "Grade Point Average"
+      },
+      {
+        "term": "NCAA",
+        "aliases": [],
+        "category": "Athletics",
+        "description": "National Collegiate Athletic Association"
+      },
+      {
+        "term": "STEM",
+        "aliases": [],
+        "category": "Academic",
+        "description": "Science, Technology, Engineering, Mathematics"
+      }
+    ]
+  }
+}

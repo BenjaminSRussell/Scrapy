@@ -1,0 +1,58 @@
+{
+  "vendors": [
+    {
+      "name": "UConn People Directory API",
+      "type": "api",
+      "url": "https://api.uconn.edu/people",
+      "credentials": {
+        "api_key": "your-api-key-here"
+      },
+      "mapping": {
+        "name": "full_name",
+        "email": "email_address",
+        "department": "dept_name"
+      },
+      "enabled": false
+    },
+    {
+      "name": "Course Catalog Extract",
+      "type": "file",
+      "url": "data/vendor/course_catalog.json",
+      "mapping": {
+        "course_code": "code",
+        "course_title": "title",
+        "credits": "credit_hours"
+      },
+      "enabled": false
+    },
+    {
+      "name": "Faculty Research Database",
+      "type": "database",
+      "url": "postgresql://localhost/research_db",
+      "credentials": {
+        "db_type": "postgresql",
+        "user": "readonly_user",
+        "password": "your-password",
+        "query": "SELECT * FROM faculty_publications WHERE published_year >= 2020"
+      },
+      "mapping": {
+        "title": "pub_title",
+        "authors": "author_names",
+        "year": "published_year"
+      },
+      "enabled": false
+    },
+    {
+      "name": "HR Employee Data",
+      "type": "file",
+      "url": "data/vendor/employee_directory.csv",
+      "mapping": {
+        "employee_id": "id",
+        "name": "full_name",
+        "position": "job_title",
+        "hire_date": "start_date"
+      },
+      "enabled": false
+    }
+  ]
+}

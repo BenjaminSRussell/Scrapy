@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>UConn Scraper Visualizer</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header>
+            <h1>🕷️ UConn Web Scraping Pipeline - Live Visualizer</h1>
+            <div class="connection-status">
+                <span id="status-indicator" class="status-dot disconnected"></span>
+                <span id="status-text">Disconnected</span>
+            </div>
+        </header>
+
+        <!-- Main Dashboard -->
+        <div class="dashboard">
+            <!-- Left Panel: Statistics -->
+            <div class="left-panel">
+                <div class="stats-container">
+                    <h2>📊 Live Statistics</h2>
+
+                    <div class="stat-card">
+                        <div class="stat-icon">🔍</div>
+                        <div class="stat-content">
+                            <div class="stat-label">URLs Discovered</div>
+                            <div class="stat-value" id="urls-discovered">0</div>
+                        </div>
+                    </div>
+
+                    <div class="stat-card">
+                        <div class="stat-icon">✅</div>
+                        <div class="stat-content">
+                            <div class="stat-label">URLs Validated</div>
+                            <div class="stat-value" id="urls-validated">0</div>
+                        </div>
+                    </div>
+
+                    <div class="stat-card">
+                        <div class="stat-icon">⚠️</div>
+                        <div class="stat-content">
+                            <div class="stat-label">URLs Failed</div>
+                            <div class="stat-value error" id="urls-failed">0</div>
+                        </div>
+                    </div>
+
+                    <div class="stat-card">
+                        <div class="stat-icon">✨</div>
+                        <div class="stat-content">
+                            <div class="stat-label">Pages Enriched</div>
+                            <div class="stat-value" id="pages-enriched">0</div>
+                        </div>
+                    </div>
+
+                    <div class="stat-card">
+                        <div class="stat-icon">⚡</div>
+                        <div class="stat-content">
+                            <div class="stat-label">Processing Rate</div>
+                            <div class="stat-value" id="processing-rate">0.0 <span class="unit">pages/sec</span></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Processing Rate Chart -->
+                <div class="chart-container">
+                    <h3>Processing Rate (Last 60s)</h3>
+                    <canvas id="rate-chart"></canvas>
+                </div>
+
+                <!-- Status Code Distribution -->
+                <div class="chart-container">
+                    <h3>HTTP Status Codes</h3>
+                    <canvas id="status-chart"></canvas>
+                </div>
+            </div>
+
+            <!-- Center Panel: Network Graph -->
+            <div class="center-panel">
+                <h2>🕸️ URL Discovery Network</h2>
+                <div id="network-graph"></div>
+                <div class="graph-legend">
+                    <div class="legend-item">
+                        <div class="legend-dot discovered"></div>
+                        <span>Discovered</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-dot validated"></div>
+                        <span>Validated</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-dot failed"></div>
+                        <span>Failed</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-dot enriched"></div>
+                        <span>Enriched</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Panel: Event Log -->
+            <div class="right-panel">
+                <h2>📝 Event Log</h2>
+                <div id="event-log" class="event-log"></div>
+                <button id="clear-log" class="btn-clear">Clear Log</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/script.js"></script>
+</body>
+</html>

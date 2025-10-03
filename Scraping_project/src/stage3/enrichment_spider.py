@@ -12,10 +12,14 @@ from scrapy.http import Response
 from src.common.content_handlers import ContentTypeRouter
 from src.common.nlp import (
     NLPSettings,
+    classify_with_taxonomy,
     extract_content_tags,
     extract_entities_and_keywords,
+    extract_glossary_terms,
     has_audio_links,
     initialize_nlp,
+    load_glossary,
+    load_taxonomy,
     summarize,
 )
 from src.common.schemas import EnrichmentItem
@@ -67,8 +71,6 @@ class EnrichmentSpider(scrapy.Spider):
                 self.allowed_domains = [d.strip() for d in allowed_domains.split(',')]
             else:
                 self.allowed_domains = allowed_domains
-        else:
-            self.allowed_domains = ["uconn.edu"]
 
         self.predefined_tags = set(predefined_tags or [])
         self.urls_list = urls_list or []
@@ -115,6 +117,15 @@ class EnrichmentSpider(scrapy.Spider):
         self.link_scorer = None
         self._hf_models_initialized = False
 
+        # Load taxonomy and glossary
+        self.taxonomy = load_taxonomy()
+        self.glossary = load_glossary()
+
+        num_categories = len(self.taxonomy.get("categories", []))
+        num_glossary_terms = sum(len(terms) for terms in self.glossary.get("terms", {}).values())
+
+        self.logger.info(f"Loaded taxonomy with {num_categories} categories")
+        self.logger.info(f"Loaded glossary with {num_glossary_terms} UConn-specific terms")
         self.logger.info(f"Enrichment spider initialized with {len(self.predefined_tags)} predefined tags")
         self.logger.info(f"Enrichment spider will process {len(self.urls_list)} URLs from orchestrator")
 
@@ -306,23 +317,58 @@ class EnrichmentSpider(scrapy.Spider):
             # Extract text content from the page
             title = response.xpath('//title/text()').get(default='').strip()
 
-            # Extract body text (excluding scripts, styles, etc.)
+            # IMPROVED TEXT EXTRACTION: Remove navigation, footer, header, and other non-content elements
+            # This ensures we only process main content and avoid irrelevant text
             text_content = ' '.join(
-                response.xpath('//body//text()[normalize-space() and not(ancestor::script) and not(ancestor::style)]').getall()
+                response.xpath('''
+                    //body//text()[
+                        normalize-space()
+                        and not(ancestor::script)
+                        and not(ancestor::style)
+                        and not(ancestor::nav)
+                        and not(ancestor::footer)
+                        and not(ancestor::header)
+                        and not(ancestor::*[@role="navigation"])
+                        and not(ancestor::*[@role="menu"])
+                        and not(ancestor::*[@role="menubar"])
+                        and not(ancestor::*[@role="banner"])
+                        and not(ancestor::*[@role="contentinfo"])
+                        and not(ancestor::*[contains(@class, "nav")])
+                        and not(ancestor::*[contains(@class, "menu")])
+                        and not(ancestor::*[contains(@class, "footer")])
+                        and not(ancestor::*[contains(@class, "header")])
+                        and not(ancestor::*[contains(@class, "sidebar")])
+                    ]
+                ''').getall()
             ).strip()
 
             # Perform NLP analysis with configured backend
             backend = "transformer" if self.use_transformer_ner else "spacy"
             entities, keywords = extract_entities_and_keywords(text_content, backend=backend)
+
+            # Extract UConn-specific glossary terms and add to keywords
+            glossary_terms = extract_glossary_terms(text_content, self.glossary)
+
+            # Merge keywords with glossary terms, prioritizing glossary
+            combined_keywords = list(dict.fromkeys(glossary_terms + keywords))[:15]
+
             content_summary = summarize(
                 text_content,
                 max_length=self.summary_max_length,
                 min_length=self.summary_min_length
             )
 
-            # Extract content tags from URL path
+            # TAXONOMY-BASED CLASSIFICATION
+            # Classify content using the comprehensive taxonomy
+            taxonomy_results = classify_with_taxonomy(text_content, self.taxonomy, top_k=5)
+
+            # Extract category labels for content_tags
+            content_tags = [result["category_label"] for result in taxonomy_results]
+
+            # Also add URL path-based tags if available
             url_path = urlparse(response.url).path
-            content_tags = extract_content_tags(url_path, self.predefined_tags)
+            url_tags = extract_content_tags(url_path, self.predefined_tags)
+            content_tags = list(dict.fromkeys(content_tags + url_tags))[:10]  # Limit to 10 tags
 
             # Check for special content types
             links = response.xpath('//a/@href').getall()
@@ -334,7 +380,7 @@ class EnrichmentSpider(scrapy.Spider):
                 self._initialize_hf_models()
                 self._score_links_with_hf(links, text_content)
 
-            # Create enrichment item
+            # Create enrichment item with improved data
             item = EnrichmentItem(
                 url=response.url,
                 url_hash=url_hash,
@@ -342,8 +388,8 @@ class EnrichmentSpider(scrapy.Spider):
                 text_content=text_content[:20000],  # Limit text length
                 word_count=len(text_content.split()) if text_content else 0,
                 entities=entities,
-                keywords=keywords,
-                content_tags=content_tags,
+                keywords=combined_keywords,  # Use combined keywords with glossary terms
+                content_tags=content_tags,  # Use taxonomy-based tags
                 has_pdf_links=has_pdf_links,
                 has_audio_links=has_audio,
                 status_code=status_code,

@@ -3,12 +3,12 @@
 Data architecture consolidation script
 Migrates legacy data/ and logs/ directories into the project structure
 """
-import sys
-import shutil
-import logging
-from pathlib import Path
-from datetime import datetime
 import argparse
+import logging
+import shutil
+import sys
+from datetime import datetime
+from pathlib import Path
 
 # Setup logging
 logging.basicConfig(

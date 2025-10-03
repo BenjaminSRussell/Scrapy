@@ -120,7 +120,7 @@ class DiscoverySpider(scrapy.Spider):
         self.session_id = set_session_id()
 
         # Load allowed domains from configuration or use default
-        self.allowed_domains = self._as_iterable(allowed_domains) or ["uconn.edu"]
+        self.allowed_domains = self._as_iterable(allowed_domains)
 
         logger.log_with_context(
             logging.INFO,

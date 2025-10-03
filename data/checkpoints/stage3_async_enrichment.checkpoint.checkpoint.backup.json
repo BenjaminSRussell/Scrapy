@@ -1,0 +1,26 @@
+{
+  "stage": "stage3_async_enrichment",
+  "status": "completed",
+  "progress": {
+    "total_items": 2,
+    "processed_items": 2,
+    "successful_items": 2,
+    "failed_items": 0,
+    "skipped_items": 0,
+    "start_time": 1759524163.6351814,
+    "last_update_time": 1759524163.6408367,
+    "estimated_completion_time": 0.0015482902526855469
+  },
+  "last_processed_item": "https://example.com/page1",
+  "last_processed_index": 2,
+  "batch_id": 0,
+  "input_file": null,
+  "input_file_hash": null,
+  "output_file": null,
+  "created_at": "2025-10-03T16:42:43.631673",
+  "updated_at": "2025-10-03T16:42:43.640836",
+  "error_message": null,
+  "error_count": 0,
+  "last_error_time": null,
+  "metadata": {}
+}

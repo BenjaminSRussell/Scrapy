@@ -28,6 +28,7 @@ def sample_config_data():
         },
         'stages': {
             'discovery': {
+                'allowed_domains': ['example.com'],
                 'max_depth': 3,
                 'batch_size': 100,
                 'output_file': 'data/processed/stage01/discovery_output.jsonl'
@@ -38,6 +39,7 @@ def sample_config_data():
                 'output_file': 'data/processed/stage02/validated_urls.jsonl'
             },
             'enrichment': {
+                'allowed_domains': ['example.com'],
                 'nlp_enabled': True,
                 'max_text_length': 2000,
                 'top_keywords': 10,

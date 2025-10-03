@@ -1,0 +1,42 @@
+# Monitoring and Alerting Configuration
+# Copy this to monitoring_config.yml and fill in your credentials
+
+# Slack integration
+slack:
+  enabled: true
+  webhook_url: "https://hooks.slack.com/services/YOUR/WEBHOOK/URL"
+  channel: "#data-pipeline"
+
+# Prometheus Pushgateway
+prometheus:
+  enabled: true
+  pushgateway_url: "http://prometheus-pushgateway:9091"
+  job_name: "uconn_scraper"
+
+# Datadog
+datadog:
+  enabled: false
+  api_key: "your-datadog-api-key"
+  app_key: "your-datadog-app-key"
+
+# PagerDuty (for critical alerts only)
+pagerduty:
+  enabled: false
+  integration_key: "your-pagerduty-integration-key"
+
+# Email alerts
+email:
+  enabled: true
+  smtp_host: "smtp.uconn.edu"
+  smtp_port: 587
+  from_address: "noreply@uconn.edu"
+  to_addresses:
+    - "data-team@uconn.edu"
+    - "devops@uconn.edu"
+
+# Metrics collection
+metrics:
+  collect_system_metrics: true
+  collect_scrapy_stats: true
+  collect_database_stats: true
+  report_interval_seconds: 300  # 5 minutes

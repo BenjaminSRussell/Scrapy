@@ -6,19 +6,17 @@ Usage:
     python tools/benchmark_enrichment.py --urls 100 --runs 3
 """
 
-import asyncio
 import argparse
-import time
-import json
-from pathlib import Path
-from typing import List, Dict, Any
+import asyncio
 import sys
+import time
+from pathlib import Path
+from typing import Any, Dict, List
 
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.stage3.async_enrichment import run_async_enrichment
-from src.orchestrator.config import Config
 
 
 async def benchmark_async_enrichment(
@@ -65,6 +63,7 @@ def benchmark_scrapy_enrichment(
 
     from scrapy.crawler import CrawlerProcess
     from scrapy.utils.project import get_project_settings
+
     from src.stage3.enrichment_spider import EnrichmentSpider
 
     settings = get_project_settings()

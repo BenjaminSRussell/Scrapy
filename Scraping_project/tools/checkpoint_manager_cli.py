@@ -11,13 +11,13 @@ Provides commands for managing pipeline checkpoints:
 
 import argparse
 import sys
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
 
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.common.enhanced_checkpoints import UnifiedCheckpointManager, CheckpointStatus
+from src.common.enhanced_checkpoints import UnifiedCheckpointManager
 
 
 def list_checkpoints(checkpoint_dir: Path):

@@ -4201,3 +4201,237 @@ Status: ✅ PASS
 2025-10-03 14:06:54 [INFO] src.common.enhanced_checkpoints - Started checkpoint for stage3_async_enrichment with 0 items
 2025-10-03 14:06:54 [INFO] src.stage3.async_enrichment - Processing 29 URLs with adaptive concurrency
 2025-10-03 14:06:54 [INFO] src.common.enhanced_checkpoints - Started checkpoint for stage3_async_enrichment with 29 items
+2025-10-03 14:06:59 [INFO] src.stage3.async_enrichment - Increasing concurrency: 10 -> 12 (success rate: 100.00%)
+2025-10-03 14:22:31 [INFO] __main__ - Starting pipeline orchestrator
+2025-10-03 14:22:31 [INFO] __main__ - Environment: development
+2025-10-03 14:22:31 [INFO] __main__ - Stage(s): all
+2025-10-03 14:22:31 [INFO] __main__ - Running configuration health check...
+2025-10-03 14:22:32 [INFO] __main__ - Configuration health check passed [OK]
+2025-10-03 14:22:32 [INFO] __main__ - ============================================================
+2025-10-03 14:22:32 [INFO] __main__ - STAGE 1: DISCOVERY
+2025-10-03 14:22:32 [INFO] __main__ - ============================================================
+2025-10-03 14:22:32 [INFO] scrapy.utils.log - Scrapy 2.13.3 started (bot: uconn_scraper)
+2025-10-03 14:22:32 [INFO] scrapy.utils.log - Versions:
+{'lxml': '6.0.2',
+ 'libxml2': '2.11.9',
+ 'cssselect': '1.3.0',
+ 'parsel': '1.10.0',
+ 'w3lib': '2.3.1',
+ 'Twisted': '25.5.0',
+ 'Python': '3.12.1 (tags/v3.12.1:2305ca5, Dec  7 2023, 22:03:25) [MSC v.1937 '
+           '64 bit (AMD64)]',
+ 'pyOpenSSL': '25.3.0 (OpenSSL 3.5.4 30 Sep 2025)',
+ 'cryptography': '46.0.2',
+ 'Platform': 'Windows-11-10.0.26100-SP0'}
+2025-10-03 14:22:32 [INFO] src.stage1.discovery_spider - Allowed domains configured
+2025-10-03 14:22:32 [INFO] src.stage1.discovery_spider - Using persistent deduplication with SQLite
+2025-10-03 14:22:32 [INFO] src.stage1.discovery_spider - Loaded existing URL hashes from cache
+2025-10-03 14:22:32 [INFO] src.common.feedback - Loaded feedback: 0 patterns, 0 sources, 20 sessions
+2025-10-03 14:22:32 [INFO] src.common.feedback - FeedbackStore initialized: data\feedback\stage2_feedback.json
+2025-10-03 14:22:32 [INFO] src.stage1.discovery_spider - Loaded feedback from Stage 2 for adaptive discovery
+2025-10-03 14:22:32 [INFO] src.common.adaptive_depth - Loaded adaptive depth config: 273 sections
+2025-10-03 14:22:32 [INFO] src.common.adaptive_depth - AdaptiveDepthManager initialized: data\config\adaptive_depth.json
+2025-10-03 14:22:32 [INFO] src.stage1.discovery_spider - Adaptive depth manager initialized
+2025-10-03 14:22:32 [INFO] src.stage1.discovery_spider - Loaded adaptive depth configuration for 273 sections
+2025-10-03 14:22:32 [INFO] src.stage1.discovery_spider - Discovery spider initialized with max_depth=3
+2025-10-03 14:22:32 [INFO] src.stage1.discovery_spider - Heuristics: JSON=True, AJAX=True, Pagination=True, DataAttrs=True, Forms=True, MetaRefresh=True, HTMLComments=True, CSS=True, SVG=True
+2025-10-03 14:22:32 [INFO] scrapy.addons - Enabled addons:
+[]
+2025-10-03 14:22:32 [WARNING] py.warnings - C:\dev\Scrapy\.venv\Lib\site-packages\scrapy\utils\request.py:120: ScrapyDeprecationWarning: 'REQUEST_FINGERPRINTER_IMPLEMENTATION' is a deprecated setting.
+It will be removed in a future version of Scrapy.
+  return cls(crawler)
+
+2025-10-03 14:22:32 [INFO] scrapy.middleware - Enabled extensions:
+['scrapy.extensions.corestats.CoreStats',
+ 'scrapy.extensions.logstats.LogStats',
+ 'scrapy.extensions.throttle.AutoThrottle']
+2025-10-03 14:22:32 [INFO] scrapy.crawler - Overridden settings:
+{'AUTOTHROTTLE_ENABLED': True,
+ 'AUTOTHROTTLE_MAX_DELAY': 1.0,
+ 'AUTOTHROTTLE_START_DELAY': 0.1,
+ 'AUTOTHROTTLE_TARGET_CONCURRENCY': 16.0,
+ 'BOT_NAME': 'uconn_scraper',
+ 'CONCURRENT_REQUESTS': 64,
+ 'CONCURRENT_REQUESTS_PER_DOMAIN': 32,
+ 'CONCURRENT_REQUESTS_PER_IP': 32,
+ 'DNS_TIMEOUT': 5,
+ 'DOWNLOAD_DELAY': 0.1,
+ 'DOWNLOAD_TIMEOUT': 10,
+ 'FEED_EXPORT_ENCODING': 'utf-8',
+ 'HTTPCACHE_DIR': 'data/cache/scrapy',
+ 'HTTPCACHE_ENABLED': True,
+ 'HTTPCACHE_EXPIRATION_SECS': 3600,
+ 'HTTPCACHE_STORAGE': 'scrapy.extensions.httpcache.DbmCacheStorage',
+ 'LOG_LEVEL': 'INFO',
+ 'NEWSPIDER_MODULE': 'src.stage3',
+ 'REQUEST_FINGERPRINTER_IMPLEMENTATION': '2.7',
+ 'SPIDER_MODULES': ['src.stage1', 'src.stage3'],
+ 'TELNETCONSOLE_ENABLED': False,
+ 'USER_AGENT': 'UConn-Discovery-Crawler/1.0 (development)'}
+2025-10-03 14:22:32 [INFO] scrapy.middleware - Enabled downloader middlewares:
+['scrapy.downloadermiddlewares.offsite.OffsiteMiddleware',
+ 'scrapy.downloadermiddlewares.httpauth.HttpAuthMiddleware',
+ 'scrapy.downloadermiddlewares.downloadtimeout.DownloadTimeoutMiddleware',
+ 'scrapy.downloadermiddlewares.defaultheaders.DefaultHeadersMiddleware',
+ 'scrapy.downloadermiddlewares.useragent.UserAgentMiddleware',
+ 'scrapy.downloadermiddlewares.retry.RetryMiddleware',
+ 'scrapy.downloadermiddlewares.redirect.MetaRefreshMiddleware',
+ 'scrapy.downloadermiddlewares.httpcompression.HttpCompressionMiddleware',
+ 'scrapy.downloadermiddlewares.redirect.RedirectMiddleware',
+ 'scrapy.downloadermiddlewares.cookies.CookiesMiddleware',
+ 'scrapy.downloadermiddlewares.httpproxy.HttpProxyMiddleware',
+ 'scrapy.downloadermiddlewares.stats.DownloaderStats',
+ 'scrapy.downloadermiddlewares.httpcache.HttpCacheMiddleware']
+2025-10-03 14:22:32 [INFO] scrapy.middleware - Enabled spider middlewares:
+['scrapy.spidermiddlewares.start.StartSpiderMiddleware',
+ 'scrapy.spidermiddlewares.httperror.HttpErrorMiddleware',
+ 'scrapy.spidermiddlewares.referer.RefererMiddleware',
+ 'scrapy.spidermiddlewares.urllength.UrlLengthMiddleware',
+ 'scrapy.spidermiddlewares.depth.DepthMiddleware']
+2025-10-03 14:22:32 [INFO] scrapy.middleware - Enabled item pipelines:
+['src.stage1.discovery_pipeline.Stage1Pipeline']
+2025-10-03 14:22:32 [INFO] scrapy.core.engine - Spider opened
+2025-10-03 14:22:32 [INFO] src.stage1.discovery_pipeline - [Stage1Pipeline] Loaded 20,166 existing URL hashes
+2025-10-03 14:22:32 [INFO] src.stage1.discovery_pipeline - [Stage1Pipeline] Writing to data\processed\stage01\discovery_output.jsonl
+2025-10-03 14:22:32 [INFO] src.stage1.discovery_pipeline - [Stage1Pipeline] Link graph analysis enabled: data\processed\link_graph.db
+2025-10-03 14:22:32 [INFO] scrapy.extensions.logstats - Crawled 0 pages (at 0 pages/min), scraped 0 items (at 0 items/min)
+2025-10-03 14:22:33 [INFO] src.stage1.discovery_spider - Loading seed URLs from data\raw\uconn_urls.csv
+2025-10-03 14:22:33 [ERROR] scrapy.downloadermiddlewares.retry - Gave up retrying <GET http://academicplan.uconn.edu/> (failed 3 times): DNS lookup failed: no results for hostname lookup: academicplan.uconn.edu.
+2025-10-03 14:22:34 [ERROR] scrapy.downloadermiddlewares.retry - Gave up retrying <GET http://www.myagnr.uconn.edu/> (failed 3 times): DNS lookup failed: no results for hostname lookup: www.myagnr.uconn.edu.
+2025-10-03 14:22:34 [ERROR] scrapy.core.scraper - Error downloading <GET http://academicplan.uconn.edu/>
+Traceback (most recent call last):
+  File "C:\dev\Scrapy\.venv\Lib\site-packages\twisted\internet\defer.py", line 1853, in _inlineCallbacks
+    result = context.run(
+             ^^^^^^^^^^^^
+  File "C:\dev\Scrapy\.venv\Lib\site-packages\twisted\python\failure.py", line 467, in throwExceptionIntoGenerator
+    return g.throw(self.value.with_traceback(self.tb))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\dev\Scrapy\.venv\Lib\site-packages\scrapy\core\downloader\middleware.py", line 68, in process_request
+    return (yield download_func(request, spider))
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\dev\Scrapy\.venv\Lib\site-packages\twisted\internet\defer.py", line 1092, in _runCallbacks
+    current.result = callback(  # type: ignore[misc]
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\dev\Scrapy\.venv\Lib\site-packages\twisted\internet\endpoints.py", line 1091, in startConnectionAttempts
+    raise error.DNSLookupError(
+twisted.internet.error.DNSLookupError: DNS lookup failed: no results for hostname lookup: academicplan.uconn.edu.
+2025-10-03 14:22:34 [ERROR] scrapy.core.scraper - Error downloading <GET http://www.myagnr.uconn.edu/>
+Traceback (most recent call last):
+  File "C:\dev\Scrapy\.venv\Lib\site-packages\twisted\internet\defer.py", line 1853, in _inlineCallbacks
+    result = context.run(
+             ^^^^^^^^^^^^
+  File "C:\dev\Scrapy\.venv\Lib\site-packages\twisted\python\failure.py", line 467, in throwExceptionIntoGenerator
+    return g.throw(self.value.with_traceback(self.tb))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\dev\Scrapy\.venv\Lib\site-packages\scrapy\core\downloader\middleware.py", line 68, in process_request
+    return (yield download_func(request, spider))
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\dev\Scrapy\.venv\Lib\site-packages\twisted\internet\defer.py", line 1092, in _runCallbacks
+    current.result = callback(  # type: ignore[misc]
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\dev\Scrapy\.venv\Lib\site-packages\twisted\internet\endpoints.py", line 1091, in startConnectionAttempts
+    raise error.DNSLookupError(
+twisted.internet.error.DNSLookupError: DNS lookup failed: no results for hostname lookup: www.myagnr.uconn.edu.
+2025-10-03 14:22:34 [ERROR] scrapy.downloadermiddlewares.retry - Gave up retrying <GET http://www.iaas.uconn.edu/> (failed 3 times): DNS lookup failed: no results for hostname lookup: www.iaas.uconn.edu.
+2025-10-03 14:22:34 [ERROR] scrapy.downloadermiddlewares.retry - Gave up retrying <GET http://rhsa.uconn.edu/> (failed 3 times): DNS lookup failed: no results for hostname lookup: rhsa.uconn.edu.
+2025-10-03 14:22:34 [ERROR] scrapy.core.scraper - Error downloading <GET http://www.iaas.uconn.edu/>
+Traceback (most recent call last):
+  File "C:\dev\Scrapy\.venv\Lib\site-packages\twisted\internet\defer.py", line 1853, in _inlineCallbacks
+    result = context.run(
+             ^^^^^^^^^^^^
+  File "C:\dev\Scrapy\.venv\Lib\site-packages\twisted\python\failure.py", line 467, in throwExceptionIntoGenerator
+    return g.throw(self.value.with_traceback(self.tb))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\dev\Scrapy\.venv\Lib\site-packages\scrapy\core\downloader\middleware.py", line 68, in process_request
+    return (yield download_func(request, spider))
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\dev\Scrapy\.venv\Lib\site-packages\twisted\internet\defer.py", line 1092, in _runCallbacks
+    current.result = callback(  # type: ignore[misc]
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\dev\Scrapy\.venv\Lib\site-packages\twisted\internet\endpoints.py", line 1091, in startConnectionAttempts
+    raise error.DNSLookupError(
+twisted.internet.error.DNSLookupError: DNS lookup failed: no results for hostname lookup: www.iaas.uconn.edu.
+2025-10-03 14:22:44 [INFO] scrapy.spidermiddlewares.urllength - Ignoring link (url length > 2083): https://www.uconn.edu/signin/usernamerecovery?continue=https%3A%2F%2Fcalendar.google.com%2Fcalendar%2Fevent%3Faction%3DTEMPLATE%26dates%3D20240424T123000%2F20240424T133000%26text%3DDoctoral%2BDissertation%2BProposal%2BOral%2BDefense%2C%2BHuiqun%2BHuang%26details%3DTitle%3A%2BMachine%2BLearning%2Band%2BUncertainty%2BQuantification%2Bfor%2BSpatiotemporal%2BData%2BPredictionPh.D.%2BCandidate%3A%2BHuiqun%2BHuangMajor%2BAdvisor%3A%2BDr.%2BFei%2BMiaoAssociate%2BAdvisors%3A%2B%2BDr.%2BCaiwen%2BDing%2C%2BDr.%2BQian%2BYangDate%2FTime%3A%2BWednesday%2C%2BApril%2B24th%2C%2B2024%2C%2B12%3A30%2BpmLocation%3A%2B%2BHBL%2B1947%2BroomWebEx%3AJoin%2Bfrom%2Bthe%2Bmeeting%2Blinkhttps%3A%2F%2Fuconn-cmr.webex.com%2Fuconn-cmr%2Fj.php%3FMTID%253Dmbab20c5d93769888d1f4adc3a70d298e%2BJoin%2Bby%2Bmeeting%2BnumberMeeting%2Bnumber%2B%28access%2Bcode%29%3A%2B2632%2B104%2B2737Meeting%2Bpassword%3A%2Bi3xRV7mN3p4Abstract%2BAccurate%2Band%2Befficient%2Bmodeling%2Bof%2Burban%2Bmobility%2C%2Balong%2Bwith%2Bthe%2Bprediction%2Bof%2Bvehicle%2Band%2Bhuman%2Btrajectories%2C%2Bare%2Bcrucial%2Bfor%2Bensuring%2Bthe%2Bsafety%2Band%2Bresilience%2Bof%2Bintelligent%2Btransportation%2Bsystems%2Band%2Bsmart%2Bcities.%2BHowever%2C%2Bthe%2Bdynamic%2Bnature%2Bof%2Bexternal%2Benvironments%2B%28such%2Bas%2Bweather%2Bconditions%2C%2Broad%2Bnetworks%2C%2Bneighboring%2Bvehicles%2C%2Band%2Bpassenger%2Bbehaviors%29%2B%28View%2BFull%2Bevent%2BDescription%2BHere%3A%2Bhttps%3A%2F%2Fwww.cse.uconn.edu%2Fevent%2Fdoctoral-dissertation-proposal-oral-defense-huiqun-huang%2F%29%26location%3DHBL%2BClass%2Bof%2B1947%2BConference%2BRoom%2C%2BUConn%2BLibrary%2C%2B369%2BFairfield%2BWay%2C%2BUnit%2B1005%2C%2BStorrs%2C%2BCT%2C%2B06269%2C%2BUnited%2BStates%26trp%3Dfalse%26ctz%3DAmerica%2FNew_York%26sprop%3Dwebsite%3Ahttps%3A%2F%2Fwww.cse.uconn.edu&dsh=S-1677516878%3A1713967965990363&emr=1&flowEntry=ServiceLogin&flowName=WebLiteSignIn&followup=https%3A%2F%2Fcalendar.google.com%2Fcalendar%2Fevent%3Faction%3DTEMPLATE%26dates%3D20240424T123000%2F20240424T133000%26text%3DDoctoral%2BDissertation%2BProposal%2BOral%2BDefense%2C%2BHuiqun%2BHuang%26details%3DTitle%3A%2BMachine%2BLearning%2Band%2BUncertainty%2BQuantification%2Bfor%2BSpatiotemporal%2BData%2BPredictionPh.D.%2BCandidate%3A%2BHuiqun%2BHuangMajor%2BAdvisor%3A%2BDr.%2BFei%2BMiaoAssociate%2BAdvisors%3A%2B%2BDr.%2BCaiwen%2BDing%2C%2BDr.%2BQian%2BYangDate%2FTime%3A%2BWednesday%2C%2BApril%2B24th%2C%2B2024%2C%2B12%3A30%2BpmLocation%3A%2B%2BHBL%2B1947%2BroomWebEx%3AJoin%2Bfrom%2Bthe%2Bmeeting%2Blinkhttps%3A%2F%2Fuconn-cmr.webex.com%2Fuconn-cmr%2Fj.php%3FMTID%253Dmbab20c5d93769888d1f4adc3a70d298e%2BJoin%2Bby%2Bmeeting%2BnumberMeeting%2Bnumber%2B%28access%2Bcode%29%3A%2B2632%2B104%2B2737Meeting%2Bpassword%3A%2Bi3xRV7mN3p4Abstract%2BAccurate%2Band%2Befficient%2Bmodeling%2Bof%2Burban%2Bmobility%2C%2Balong%2Bwith%2Bthe%2Bprediction%2Bof%2Bvehicle%2Band%2Bhuman%2Btrajectories%2C%2Bare%2Bcrucial%2Bfor%2Bensuring%2Bthe%2Bsafety%2Band%2Bresilience%2Bof%2Bintelligent%2Btransportation%2Bsystems%2Band%2Bsmart%2Bcities.%2BHowever%2C%2Bthe%2Bdynamic%2Bnature%2Bof%2Bexternal%2Benvironments%2B%28such%2Bas%2Bweather%2Bconditions%2C%2Broad%2Bnetworks%2C%2Bneighboring%2Bvehicles%2C%2Band%2Bpassenger%2Bbehaviors%29%2B%28View%2BFull%2Bevent%2BDescription%2BHere%3A%2Bhttps%3A%2F%2Fwww.cse.uconn.edu%2Fevent%2Fdoctoral-dissertation-proposal-oral-defense-huiqun-huang%2F%29%26location%3DHBL%2BClass%2Bof%2B1947%2BConference%2BRoom%2C%2BUConn%2BLibrary%2C%2B369%2BFairfield%2BWay%2C%2BUnit%2B1005%2C%2BStorrs%2C%2BCT%2C%2B06269%2C%2BUnited%2BStates%26trp%3Dfalse%26ctz%3DAmerica%2FNew_York%26sprop%3Dwebsite%3Ahttps%3A%2F%2Fwww.cse.uconn.edu&ifkv=AaSxoQwJEj4T4m8kzYJ5T9PyN7AqEFRkgw5JthIgqbu1qUgCtsrrsLHZ254ShT300z1poq7ChCHrlA&osid=1&service=cl 
+2025-10-03 14:22:44 [INFO] scrapy.spidermiddlewares.urllength - Ignoring link (url length > 2083): https://www.uconn.edu/lifecycle/flows/signup?continue=https%3A%2F%2Fcalendar.google.com%2Fcalendar%2Fevent%3Faction%3DTEMPLATE%26dates%3D20240424T123000%2F20240424T133000%26text%3DDoctoral%2BDissertation%2BProposal%2BOral%2BDefense%2C%2BHuiqun%2BHuang%26details%3DTitle%3A%2BMachine%2BLearning%2Band%2BUncertainty%2BQuantification%2Bfor%2BSpatiotemporal%2BData%2BPredictionPh.D.%2BCandidate%3A%2BHuiqun%2BHuangMajor%2BAdvisor%3A%2BDr.%2BFei%2BMiaoAssociate%2BAdvisors%3A%2B%2BDr.%2BCaiwen%2BDing%2C%2BDr.%2BQian%2BYangDate%2FTime%3A%2BWednesday%2C%2BApril%2B24th%2C%2B2024%2C%2B12%3A30%2BpmLocation%3A%2B%2BHBL%2B1947%2BroomWebEx%3AJoin%2Bfrom%2Bthe%2Bmeeting%2Blinkhttps%3A%2F%2Fuconn-cmr.webex.com%2Fuconn-cmr%2Fj.php%3FMTID%253Dmbab20c5d93769888d1f4adc3a70d298e%2BJoin%2Bby%2Bmeeting%2BnumberMeeting%2Bnumber%2B%28access%2Bcode%29%3A%2B2632%2B104%2B2737Meeting%2Bpassword%3A%2Bi3xRV7mN3p4Abstract%2BAccurate%2Band%2Befficient%2Bmodeling%2Bof%2Burban%2Bmobility%2C%2Balong%2Bwith%2Bthe%2Bprediction%2Bof%2Bvehicle%2Band%2Bhuman%2Btrajectories%2C%2Bare%2Bcrucial%2Bfor%2Bensuring%2Bthe%2Bsafety%2Band%2Bresilience%2Bof%2Bintelligent%2Btransportation%2Bsystems%2Band%2Bsmart%2Bcities.%2BHowever%2C%2Bthe%2Bdynamic%2Bnature%2Bof%2Bexternal%2Benvironments%2B%28such%2Bas%2Bweather%2Bconditions%2C%2Broad%2Bnetworks%2C%2Bneighboring%2Bvehicles%2C%2Band%2Bpassenger%2Bbehaviors%29%2B%28View%2BFull%2Bevent%2BDescription%2BHere%3A%2Bhttps%3A%2F%2Fwww.cse.uconn.edu%2Fevent%2Fdoctoral-dissertation-proposal-oral-defense-huiqun-huang%2F%29%26location%3DHBL%2BClass%2Bof%2B1947%2BConference%2BRoom%2C%2BUConn%2BLibrary%2C%2B369%2BFairfield%2BWay%2C%2BUnit%2B1005%2C%2BStorrs%2C%2BCT%2C%2B06269%2C%2BUnited%2BStates%26trp%3Dfalse%26ctz%3DAmerica%2FNew_York%26sprop%3Dwebsite%3Ahttps%3A%2F%2Fwww.cse.uconn.edu&dsh=S-1677516878%3A1713967965990363&emr=1&flowEntry=SignUp&flowName=GlifWebSignIn&followup=https%3A%2F%2Fcalendar.google.com%2Fcalendar%2Fevent%3Faction%3DTEMPLATE%26dates%3D20240424T123000%2F20240424T133000%26text%3DDoctoral%2BDissertation%2BProposal%2BOral%2BDefense%2C%2BHuiqun%2BHuang%26details%3DTitle%3A%2BMachine%2BLearning%2Band%2BUncertainty%2BQuantification%2Bfor%2BSpatiotemporal%2BData%2BPredictionPh.D.%2BCandidate%3A%2BHuiqun%2BHuangMajor%2BAdvisor%3A%2BDr.%2BFei%2BMiaoAssociate%2BAdvisors%3A%2B%2BDr.%2BCaiwen%2BDing%2C%2BDr.%2BQian%2BYangDate%2FTime%3A%2BWednesday%2C%2BApril%2B24th%2C%2B2024%2C%2B12%3A30%2BpmLocation%3A%2B%2BHBL%2B1947%2BroomWebEx%3AJoin%2Bfrom%2Bthe%2Bmeeting%2Blinkhttps%3A%2F%2Fuconn-cmr.webex.com%2Fuconn-cmr%2Fj.php%3FMTID%253Dmbab20c5d93769888d1f4adc3a70d298e%2BJoin%2Bby%2Bmeeting%2BnumberMeeting%2Bnumber%2B%28access%2Bcode%29%3A%2B2632%2B104%2B2737Meeting%2Bpassword%3A%2Bi3xRV7mN3p4Abstract%2BAccurate%2Band%2Befficient%2Bmodeling%2Bof%2Burban%2Bmobility%2C%2Balong%2Bwith%2Bthe%2Bprediction%2Bof%2Bvehicle%2Band%2Bhuman%2Btrajectories%2C%2Bare%2Bcrucial%2Bfor%2Bensuring%2Bthe%2Bsafety%2Band%2Bresilience%2Bof%2Bintelligent%2Btransportation%2Bsystems%2Band%2Bsmart%2Bcities.%2BHowever%2C%2Bthe%2Bdynamic%2Bnature%2Bof%2Bexternal%2Benvironments%2B%28such%2Bas%2Bweather%2Bconditions%2C%2Broad%2Bnetworks%2C%2Bneighboring%2Bvehicles%2C%2Band%2Bpassenger%2Bbehaviors%29%2B%28View%2BFull%2Bevent%2BDescription%2BHere%3A%2Bhttps%3A%2F%2Fwww.cse.uconn.edu%2Fevent%2Fdoctoral-dissertation-proposal-oral-defense-huiqun-huang%2F%29%26location%3DHBL%2BClass%2Bof%2B1947%2BConference%2BRoom%2C%2BUConn%2BLibrary%2C%2B369%2BFairfield%2BWay%2C%2BUnit%2B1005%2C%2BStorrs%2C%2BCT%2C%2B06269%2C%2BUnited%2BStates%26trp%3Dfalse%26ctz%3DAmerica%2FNew_York%26sprop%3Dwebsite%3Ahttps%3A%2F%2Fwww.cse.uconn.edu&ifkv=AaSxoQwJEj4T4m8kzYJ5T9PyN7AqEFRkgw5JthIgqbu1qUgCtsrrsLHZ254ShT300z1poq7ChCHrlA&osid=1&service=cl 
+2025-10-03 14:22:44 [INFO] scrapy.spidermiddlewares.urllength - Ignoring link (url length > 2083): https://www.microsoft.com/rpsauth/v2/account/aad/signin?msafed=0&ru=https%3A%2F%2Fwww.microsoft.com%2Fen-us%2Fmicrosoft-365%2Foutlook%2Femail-and-calendar-software-microsoft-outlook%3Fdeeplink%3D%252fowa%252f%253fpath%253d%252fcalendar%252faction%252fcompose%2526rrv%253daddevent%2526startdt%253d2024-04-24T12%253a30%253a00-04%253a00%2526enddt%253d2024-04-24T13%253a30%253a00-04%253a00%2526location%253dHBL%252520Class%252520of%2525201947%252520Conference%252520Room%252c%252520UConn%252520Library%252c%252520369%252520Fairfield%252520Way%252c%252520Unit%2525201005%252c%252520Storrs%252c%252520CT%252c%25252006269%252c%252520United%252520States%2526subject%253dDoctoral%252520Dissertation%252520Proposal%252520Oral%252520Defense%25252C%252520Huiqun%252520Huang%2526body%253dTitle%25253A%252520Machine%252520Learning%252520and%252520Uncertainty%252520Quantification%252520for%252520Spatiotemporal%252520Data%252520PredictionPh.D.%252520Candidate%25253A%252520Huiqun%252520HuangMajor%252520Advisor%25253A%252520Dr.%252520Fei%252520MiaoAssociate%252520Advisors%25253A%252520%252520Dr.%252520Caiwen%252520Ding%25252C%252520Dr.%252520Qian%252520YangDate%25252FTime%25253A%252520Wednesday%25252C%252520April%25252024th%25252C%2525202024%25252C%25252012%25253A30%252520pmLocation%25253A%252520%252520HBL%2525201947%252520roomWebEx%25253AJoin%252520from%252520the%252520meeting%252520linkhttps%25253A%25252F%25252Fuconn-cmr.webex.com%25252Fuconn-cmr%25252Fj.php%25253FMTID%25253Dmbab20c5d93769888d1f4adc3a70d298e%252520Join%252520by%252520meeting%252520numberMeeting%252520number%252520%252528access%252520code%252529%25253A%2525202632%252520104%2525202737Meeting%252520password%25253A%252520i3xRV7mN3p4Abstract%252520Accurate%252520and%252520efficient%252520modeling%252520of%252520urban%252520mobility%25252C%252520along%252520with%252520the%252520prediction%252520of%252520vehicle%252520and%252520human%252520trajectories%25252C%252520are%252520crucial%252520for%252520ensuring%252520the%252520safety%252520and%252520resilience%252520of%252520intelligent%252520transportation%252520systems%252520and%252520smart%252520cities.%252520However%25252C%252520the%252520dynamic%252520nature%252520of%252520external%252520environments%252520%252528such%252520as%252520weather%252520conditions%25252C%252520road%252520networks%25252C%252520neighboring%252520vehicles%25252C%252520and%252520passenger%252520behaviors%252529%252520or%252520intrinsic%252520changes%252520in%252520%252528View%252520Full%252520Event%252520Description%252520Here%25253A%252520https%25253A%25252F%25252Fwww.cse.uconn.edu%25252Fevent%25252Fdoctoral-dissertation-proposal-oral-defense-huiqun-huang%25252F%252529%26sdf%3D0&ruoverride=https%3A%2F%2Fwww.office.com%3Fauthtypeparamname%3Dauth 
+2025-10-03 14:22:44 [INFO] scrapy.spidermiddlewares.urllength - Ignoring link (url length > 2083): https://www.uconn.edu/signin/usernamerecovery?continue=https%3A%2F%2Fcalendar.google.com%2Fcalendar%2Fevent%3Faction%3DTEMPLATE%26dates%3D20240502T120000%2F20240502T130000%26text%3DDoctoral%2BDissertation%2BOral%2BProposal%2C%2BMahan%2BTabatabaie%26details%3D%253Cp%253ETitle%3A%2BUbiquitous%2BDriver%2BBehavioral%2BSensing%2Band%2BLearning%253Cbr%2B%2F%253EPh.D.%2BCandidate%3A%2BMahan%2BTabatabaie%253Cbr%2B%2F%253EMajor%2BAdvisor%3A%2BDr.%2BSuining%2BHe%253Cbr%2B%2F%253EAssociate%2BAdvisors%3A%2BDr.%2BBing%2BWang%2Band%2BDr.%2BSong%2BHan%253Cbr%2B%2F%253EDate%2FTime%3A%2BThursday%2C%2BMay%2B2nd%2C%2B2024%2C%2B12%3A00%2Bpm%253Cbr%2B%2F%253ELocation%3A%2BHBL1947%253C%2Fp%253E%253Cp%253EMeeting%2Blink%3A%253Cbr%2B%2F%253Ehttps%3A%2F%2Fuconn-cmr.webex.com%2Fuconn-cmr%2Fj.php%3FMTID%253Dm92c20047b9dcb3dcbf967aafabbba8c6%253Cbr%2B%2F%253EMeeting%2BAccess%2BCode%3A%2B2634%2B470%2B4049%253Cbr%2B%2F%253EPassword%3A%2B1234%253C%2Fp%253E%253Cp%253EAbstract%3A%253Cbr%2B%2F%253E%253Cbr%2B%2F%253EIn%2Bthis%2Bthesis%2Bproposal%2C%2Bwe%2Baim%2Bat%2Binvestigating%2Bubiquitous%2Bdriver%2Bbehavioral%2Bsensing%2Band%2Blearning%2Btechniques%2Bin%2Bterms%2Bof%2B%281%29%2Bcoarse-grained%2Bdriving%2Bbehavioral%2Bpatterns%2C%2Bsuch%2Bas%2Bdriving%2Broutines%2Bat%2Bdifferent%2Btimes%2Bof%2Bthe%2Bday%2Bor%2Bregions%2Bwithin%2Bthe%2Bcity%2C%2Band%2B%282%29%2Bfine-grained%2Bdriving%2Bactions%2C%2Bsuch%2Bas%2Bthe%2Bleft%2Band%2Bright%2Bturn%2B%28View%2BFull%2Bevent%2BDescription%2BHere%3A%2Bhttps%3A%2F%2Fwww.cse.uconn.edu%2Fevent%2Fdoctoral-dissertation-oral-proposal-mahan-tabatabaie%2F%29%26location%3DHBL%2BClass%2Bof%2B1947%2BConference%2BRoom%2C%2BUConn%2BLibrary%2C%2B369%2BFairfield%2BWay%2C%2BUnit%2B1005%2C%2BStorrs%2C%2BCT%2C%2B06269%2C%2BUnited%2BStates%26trp%3Dfalse%26ctz%3DAmerica%2FNew_York%26sprop%3Dwebsite%3Ahttps%3A%2F%2Fwww.cse.uconn.edu&dsh=S1711861558%3A1713968129471558&emr=1&flowEntry=ServiceLogin&flowName=WebLiteSignIn&followup=https%3A%2F%2Fcalendar.google.com%2Fcalendar%2Fevent%3Faction%3DTEMPLATE%26dates%3D20240502T120000%2F20240502T130000%26text%3DDoctoral%2BDissertation%2BOral%2BProposal%2C%2BMahan%2BTabatabaie%26details%3D%253Cp%253ETitle%3A%2BUbiquitous%2BDriver%2BBehavioral%2BSensing%2Band%2BLearning%253Cbr%2B%2F%253EPh.D.%2BCandidate%3A%2BMahan%2BTabatabaie%253Cbr%2B%2F%253EMajor%2BAdvisor%3A%2BDr.%2BSuining%2BHe%253Cbr%2B%2F%253EAssociate%2BAdvisors%3A%2BDr.%2BBing%2BWang%2Band%2BDr.%2BSong%2BHan%253Cbr%2B%2F%253EDate%2FTime%3A%2BThursday%2C%2BMay%2B2nd%2C%2B2024%2C%2B12%3A00%2Bpm%253Cbr%2B%2F%253ELocation%3A%2BHBL1947%253C%2Fp%253E%253Cp%253EMeeting%2Blink%3A%253Cbr%2B%2F%253Ehttps%3A%2F%2Fuconn-cmr.webex.com%2Fuconn-cmr%2Fj.php%3FMTID%253Dm92c20047b9dcb3dcbf967aafabbba8c6%253Cbr%2B%2F%253EMeeting%2BAccess%2BCode%3A%2B2634%2B470%2B4049%253Cbr%2B%2F%253EPassword%3A%2B1234%253C%2Fp%253E%253Cp%253EAbstract%3A%253Cbr%2B%2F%253E%253Cbr%2B%2F%253EIn%2Bthis%2Bthesis%2Bproposal%2C%2Bwe%2Baim%2Bat%2Binvestigating%2Bubiquitous%2Bdriver%2Bbehavioral%2Bsensing%2Band%2Blearning%2Btechniques%2Bin%2Bterms%2Bof%2B%281%29%2Bcoarse-grained%2Bdriving%2Bbehavioral%2Bpatterns%2C%2Bsuch%2Bas%2Bdriving%2Broutines%2Bat%2Bdifferent%2Btimes%2Bof%2Bthe%2Bday%2Bor%2Bregions%2Bwithin%2Bthe%2Bcity%2C%2Band%2B%282%29%2Bfine-grained%2Bdriving%2Bactions%2C%2Bsuch%2Bas%2Bthe%2Bleft%2Band%2Bright%2Bturn%2B%28View%2BFull%2Bevent%2BDescription%2BHere%3A%2Bhttps%3A%2F%2Fwww.cse.uconn.edu%2Fevent%2Fdoctoral-dissertation-oral-proposal-mahan-tabatabaie%2F%29%26location%3DHBL%2BClass%2Bof%2B1947%2BConference%2BRoom%2C%2BUConn%2BLibrary%2C%2B369%2BFairfield%2BWay%2C%2BUnit%2B1005%2C%2BStorrs%2C%2BCT%2C%2B06269%2C%2BUnited%2BStates%26trp%3Dfalse%26ctz%3DAmerica%2FNew_York%26sprop%3Dwebsite%3Ahttps%3A%2F%2Fwww.cse.uconn.edu&ifkv=AaSxoQy6lLEqu1Ms2t-zENB_MddaHGXNhmnO6eODBAhTAUPRumEv5xNOARVdGadjh_zVU8lIj0urHQ&osid=1&service=cl 
+2025-10-03 14:22:44 [INFO] scrapy.spidermiddlewares.urllength - Ignoring link (url length > 2083): https://www.uconn.edu/lifecycle/flows/signup?continue=https%3A%2F%2Fcalendar.google.com%2Fcalendar%2Fevent%3Faction%3DTEMPLATE%26dates%3D20240502T120000%2F20240502T130000%26text%3DDoctoral%2BDissertation%2BOral%2BProposal%2C%2BMahan%2BTabatabaie%26details%3D%253Cp%253ETitle%3A%2BUbiquitous%2BDriver%2BBehavioral%2BSensing%2Band%2BLearning%253Cbr%2B%2F%253EPh.D.%2BCandidate%3A%2BMahan%2BTabatabaie%253Cbr%2B%2F%253EMajor%2BAdvisor%3A%2BDr.%2BSuining%2BHe%253Cbr%2B%2F%253EAssociate%2BAdvisors%3A%2BDr.%2BBing%2BWang%2Band%2BDr.%2BSong%2BHan%253Cbr%2B%2F%253EDate%2FTime%3A%2BThursday%2C%2BMay%2B2nd%2C%2B2024%2C%2B12%3A00%2Bpm%253Cbr%2B%2F%253ELocation%3A%2BHBL1947%253C%2Fp%253E%253Cp%253EMeeting%2Blink%3A%253Cbr%2B%2F%253Ehttps%3A%2F%2Fuconn-cmr.webex.com%2Fuconn-cmr%2Fj.php%3FMTID%253Dm92c20047b9dcb3dcbf967aafabbba8c6%253Cbr%2B%2F%253EMeeting%2BAccess%2BCode%3A%2B2634%2B470%2B4049%253Cbr%2B%2F%253EPassword%3A%2B1234%253C%2Fp%253E%253Cp%253EAbstract%3A%253Cbr%2B%2F%253E%253Cbr%2B%2F%253EIn%2Bthis%2Bthesis%2Bproposal%2C%2Bwe%2Baim%2Bat%2Binvestigating%2Bubiquitous%2Bdriver%2Bbehavioral%2Bsensing%2Band%2Blearning%2Btechniques%2Bin%2Bterms%2Bof%2B%281%29%2Bcoarse-grained%2Bdriving%2Bbehavioral%2Bpatterns%2C%2Bsuch%2Bas%2Bdriving%2Broutines%2Bat%2Bdifferent%2Btimes%2Bof%2Bthe%2Bday%2Bor%2Bregions%2Bwithin%2Bthe%2Bcity%2C%2Band%2B%282%29%2Bfine-grained%2Bdriving%2Bactions%2C%2Bsuch%2Bas%2Bthe%2Bleft%2Band%2Bright%2Bturn%2B%28View%2BFull%2Bevent%2BDescription%2BHere%3A%2Bhttps%3A%2F%2Fwww.cse.uconn.edu%2Fevent%2Fdoctoral-dissertation-oral-proposal-mahan-tabatabaie%2F%29%26location%3DHBL%2BClass%2Bof%2B1947%2BConference%2BRoom%2C%2BUConn%2BLibrary%2C%2B369%2BFairfield%2BWay%2C%2BUnit%2B1005%2C%2BStorrs%2C%2BCT%2C%2B06269%2C%2BUnited%2BStates%26trp%3Dfalse%26ctz%3DAmerica%2FNew_York%26sprop%3Dwebsite%3Ahttps%3A%2F%2Fwww.cse.uconn.edu&dsh=S1711861558%3A1713968129471558&emr=1&flowEntry=SignUp&flowName=GlifWebSignIn&followup=https%3A%2F%2Fcalendar.google.com%2Fcalendar%2Fevent%3Faction%3DTEMPLATE%26dates%3D20240502T120000%2F20240502T130000%26text%3DDoctoral%2BDissertation%2BOral%2BProposal%2C%2BMahan%2BTabatabaie%26details%3D%253Cp%253ETitle%3A%2BUbiquitous%2BDriver%2BBehavioral%2BSensing%2Band%2BLearning%253Cbr%2B%2F%253EPh.D.%2BCandidate%3A%2BMahan%2BTabatabaie%253Cbr%2B%2F%253EMajor%2BAdvisor%3A%2BDr.%2BSuining%2BHe%253Cbr%2B%2F%253EAssociate%2BAdvisors%3A%2BDr.%2BBing%2BWang%2Band%2BDr.%2BSong%2BHan%253Cbr%2B%2F%253EDate%2FTime%3A%2BThursday%2C%2BMay%2B2nd%2C%2B2024%2C%2B12%3A00%2Bpm%253Cbr%2B%2F%253ELocation%3A%2BHBL1947%253C%2Fp%253E%253Cp%253EMeeting%2Blink%3A%253Cbr%2B%2F%253Ehttps%3A%2F%2Fuconn-cmr.webex.com%2Fuconn-cmr%2Fj.php%3FMTID%253Dm92c20047b9dcb3dcbf967aafabbba8c6%253Cbr%2B%2F%253EMeeting%2BAccess%2BCode%3A%2B2634%2B470%2B4049%253Cbr%2B%2F%253EPassword%3A%2B1234%253C%2Fp%253E%253Cp%253EAbstract%3A%253Cbr%2B%2F%253E%253Cbr%2B%2F%253EIn%2Bthis%2Bthesis%2Bproposal%2C%2Bwe%2Baim%2Bat%2Binvestigating%2Bubiquitous%2Bdriver%2Bbehavioral%2Bsensing%2Band%2Blearning%2Btechniques%2Bin%2Bterms%2Bof%2B%281%29%2Bcoarse-grained%2Bdriving%2Bbehavioral%2Bpatterns%2C%2Bsuch%2Bas%2Bdriving%2Broutines%2Bat%2Bdifferent%2Btimes%2Bof%2Bthe%2Bday%2Bor%2Bregions%2Bwithin%2Bthe%2Bcity%2C%2Band%2B%282%29%2Bfine-grained%2Bdriving%2Bactions%2C%2Bsuch%2Bas%2Bthe%2Bleft%2Band%2Bright%2Bturn%2B%28View%2BFull%2Bevent%2BDescription%2BHere%3A%2Bhttps%3A%2F%2Fwww.cse.uconn.edu%2Fevent%2Fdoctoral-dissertation-oral-proposal-mahan-tabatabaie%2F%29%26location%3DHBL%2BClass%2Bof%2B1947%2BConference%2BRoom%2C%2BUConn%2BLibrary%2C%2B369%2BFairfield%2BWay%2C%2BUnit%2B1005%2C%2BStorrs%2C%2BCT%2C%2B06269%2C%2BUnited%2BStates%26trp%3Dfalse%26ctz%3DAmerica%2FNew_York%26sprop%3Dwebsite%3Ahttps%3A%2F%2Fwww.cse.uconn.edu&ifkv=AaSxoQy6lLEqu1Ms2t-zENB_MddaHGXNhmnO6eODBAhTAUPRumEv5xNOARVdGadjh_zVU8lIj0urHQ&osid=1&service=cl 
+2025-10-03 14:22:44 [INFO] scrapy.spidermiddlewares.urllength - Ignoring link (url length > 2083): https://www.microsoft.com/rpsauth/v2/account/aad/signin?msafed=0&ru=https%3A%2F%2Fwww.microsoft.com%2Fen-us%2Fmicrosoft-365%2Foutlook%2Femail-and-calendar-software-microsoft-outlook%3Fdeeplink%3D%252fowa%252f%253fpath%253d%252fcalendar%252faction%252fcompose%2526rrv%253daddevent%2526startdt%253d2024-05-02T12%253a00%253a00-04%253a00%2526enddt%253d2024-05-02T13%253a00%253a00-04%253a00%2526location%253dHBL%252520Class%252520of%2525201947%252520Conference%252520Room%252c%252520UConn%252520Library%252c%252520369%252520Fairfield%252520Way%252c%252520Unit%2525201005%252c%252520Storrs%252c%252520CT%252c%25252006269%252c%252520United%252520States%2526subject%253dDoctoral%252520Dissertation%252520Oral%252520Proposal%25252C%252520Mahan%252520Tabatabaie%2526body%253d%25253Cp%25253ETitle%25253A%252520Ubiquitous%252520Driver%252520Behavioral%252520Sensing%252520and%252520LearningPh.D.%252520Candidate%25253A%252520Mahan%252520TabatabaieMajor%252520Advisor%25253A%252520Dr.%252520Suining%252520HeAssociate%252520Advisors%25253A%252520Dr.%252520Bing%252520Wang%252520and%252520Dr.%252520Song%252520HanDate%25252FTime%25253A%252520Thursday%25252C%252520May%2525202nd%25252C%2525202024%25252C%25252012%25253A00%252520pmLocation%25253A%252520HBL1947%25253C%25252Fp%25253E%25253Cp%25253EMeeting%252520link%25253Ahttps%25253A%25252F%25252Fuconn-cmr.webex.com%25252Fuconn-cmr%25252Fj.php%25253FMTID%25253Dm92c20047b9dcb3dcbf967aafabbba8c6Meeting%252520Access%252520Code%25253A%2525202634%252520470%2525204049Password%25253A%2525201234%25253C%25252Fp%25253E%25253Cp%25253EAbstract%25253AIn%252520this%252520thesis%252520proposal%25252C%252520we%252520aim%252520at%252520investigating%252520ubiquitous%252520driver%252520behavioral%252520sensing%252520and%252520learning%252520techniques%252520in%252520terms%252520of%252520%2525281%252529%252520coarse-grained%252520driving%252520behavioral%252520patterns%25252C%252520such%252520as%252520driving%252520routines%252520at%252520different%252520times%252520of%252520the%252520day%252520or%252520regions%252520within%252520the%252520city%25252C%252520and%252520%2525282%252529%252520fine-grained%252520driving%252520actions%25252C%252520such%252520as%252520the%252520left%252520and%252520right%252520turn%252520maneuvers.%252520Such%252520driving%252520behavioral%252520sensing%252520and%252520learning%252520approaches%252520can%252520support%252520various%252520practical%252520applications%25252C%252520including%252520prevention%252520of%252520unauthorized%252520driving%252520%252528View%252520Full%252520Event%252520Description%252520Here%25253A%252520https%25253A%25252F%25252Fwww.cse.uconn.edu%25252Fevent%25252Fdoctoral-dissertation-oral-proposal-mahan-tabatabaie%25252F%252529%26sdf%3D0&ruoverride=https%3A%2F%2Fwww.office.com%3Fauthtypeparamname%3Dauth 
+2025-10-03 14:22:49 [INFO] src.stage1.discovery_spider - Loaded 139910 unique seed URLs
+2025-10-03 14:22:49 [ERROR] scrapy.core.scraper - Error downloading <GET http://rhsa.uconn.edu/>
+Traceback (most recent call last):
+  File "C:\dev\Scrapy\.venv\Lib\site-packages\twisted\internet\defer.py", line 1853, in _inlineCallbacks
+    result = context.run(
+             ^^^^^^^^^^^^
+  File "C:\dev\Scrapy\.venv\Lib\site-packages\twisted\python\failure.py", line 467, in throwExceptionIntoGenerator
+    return g.throw(self.value.with_traceback(self.tb))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\dev\Scrapy\.venv\Lib\site-packages\scrapy\core\downloader\middleware.py", line 68, in process_request
+    return (yield download_func(request, spider))
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\dev\Scrapy\.venv\Lib\site-packages\twisted\internet\defer.py", line 1092, in _runCallbacks
+    current.result = callback(  # type: ignore[misc]
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\dev\Scrapy\.venv\Lib\site-packages\twisted\internet\endpoints.py", line 1091, in startConnectionAttempts
+    raise error.DNSLookupError(
+twisted.internet.error.DNSLookupError: DNS lookup failed: no results for hostname lookup: rhsa.uconn.edu.
+2025-10-03 14:22:52 [INFO] src.stage1.discovery_spider - Discovery progress checkpoint
+2025-10-03 14:22:53 [INFO] src.stage1.discovery_pipeline - [Stage1Pipeline] Processed 1,000 unique URLs, 21,166 total items, 95.3% duplicates skipped
+2025-10-03 14:22:57 [INFO] src.stage1.discovery_spider - Discovery progress checkpoint
+2025-10-03 14:23:12 [INFO] src.stage1.discovery_spider - Discovery progress checkpoint
+2025-10-03 14:23:26 [INFO] src.stage1.discovery_spider - Discovery progress checkpoint
+2025-10-03 14:23:30 [INFO] src.stage1.discovery_pipeline - [Stage1Pipeline] Processed 2,000 unique URLs, 22,166 total items, 91.0% duplicates skipped
+2025-10-03 14:23:32 [INFO] src.stage1.discovery_spider - Discovery progress checkpoint
+2025-10-03 14:23:32 [INFO] scrapy.extensions.logstats - Crawled 562 pages (at 562 pages/min), scraped 2285 items (at 2285 items/min)
+2025-10-03 14:23:39 [INFO] src.stage1.discovery_spider - Discovery progress checkpoint
+2025-10-03 14:23:44 [INFO] src.stage1.discovery_spider - Discovery progress checkpoint
+2025-10-03 14:23:50 [INFO] src.stage1.discovery_spider - Discovery progress checkpoint
+2025-10-03 14:23:53 [INFO] src.stage1.discovery_pipeline - [Stage1Pipeline] Processed 3,000 unique URLs, 23,166 total items, 87.0% duplicates skipped
+2025-10-03 14:23:57 [INFO] src.stage1.discovery_spider - Discovery progress checkpoint
+2025-10-03 14:24:09 [INFO] src.stage1.discovery_spider - Discovery progress checkpoint
+2025-10-03 14:24:11 [ERROR] __main__ - Stage 1 discovery failed: too many file descriptors in select()
+Traceback (most recent call last):
+  File "C:\dev\Scrapy\Scraping_project\src\orchestrator\main.py", line 97, in run_stage1_discovery_sync
+    process.start()  # Blocks until finished - manages its own reactor/event loop
+    ^^^^^^^^^^^^^^^
+  File "C:\dev\Scrapy\.venv\Lib\site-packages\scrapy\crawler.py", line 502, in start
+    reactor.run(installSignalHandlers=install_signal_handlers)  # blocking call
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\dev\Scrapy\.venv\Lib\site-packages\twisted\internet\asyncioreactor.py", line 253, in run
+    self._asyncioEventloop.run_forever()
+  File "C:\Users\Ben\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 638, in run_forever
+    self._run_once()
+  File "C:\Users\Ben\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1933, in _run_once
+    event_list = self._selector.select(timeout)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Ben\AppData\Local\Programs\Python\Python312\Lib\selectors.py", line 323, in select
+    r, w, _ = self._select(self._readers, self._writers, [], timeout)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Ben\AppData\Local\Programs\Python\Python312\Lib\selectors.py", line 314, in _select
+    r, w, x = select.select(r, w, w, timeout)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ValueError: too many file descriptors in select()
+2025-10-03 14:24:11 [ERROR] __main__ - Pipeline failed: too many file descriptors in select()
+Traceback (most recent call last):
+  File "C:\dev\Scrapy\Scraping_project\src\orchestrator\main.py", line 366, in main_sync
+    run_stage1_discovery_sync(config)
+  File "C:\dev\Scrapy\Scraping_project\src\orchestrator\main.py", line 97, in run_stage1_discovery_sync
+    process.start()  # Blocks until finished - manages its own reactor/event loop
+    ^^^^^^^^^^^^^^^
+  File "C:\dev\Scrapy\.venv\Lib\site-packages\scrapy\crawler.py", line 502, in start
+    reactor.run(installSignalHandlers=install_signal_handlers)  # blocking call
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\dev\Scrapy\.venv\Lib\site-packages\twisted\internet\asyncioreactor.py", line 253, in run
+    self._asyncioEventloop.run_forever()
+  File "C:\Users\Ben\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 638, in run_forever
+    self._run_once()
+  File "C:\Users\Ben\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1933, in _run_once
+    event_list = self._selector.select(timeout)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Ben\AppData\Local\Programs\Python\Python312\Lib\selectors.py", line 323, in select
+    r, w, _ = self._select(self._readers, self._writers, [], timeout)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Ben\AppData\Local\Programs\Python\Python312\Lib\selectors.py", line 314, in _select
+    r, w, x = select.select(r, w, w, timeout)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ValueError: too many file descriptors in select()

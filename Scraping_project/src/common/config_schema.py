@@ -278,8 +278,8 @@ class ContentTypesConfig(BaseModel):
     @classmethod
     def validate_mime_types(cls, v):
         """Validate MIME type format"""
-        valid_mime_pattern = r'^[a-z]+/[a-z0-9\-\+\.]+$'
         import re
+        valid_mime_pattern = r'^[a-z]+/[a-z0-9\-\+\.]+$'
         for mime_type in v:
             if not re.match(valid_mime_pattern, mime_type, re.IGNORECASE):
                 raise ValueError(f"Invalid MIME type format: {mime_type}")
@@ -368,7 +368,6 @@ class DiscoveryStageConfig(BaseModel):
         description="Spider name"
     )
     allowed_domains: list[str] = Field(
-        default=["uconn.edu"],
         min_length=1,
         description="List of allowed domains to crawl"
     )
@@ -628,7 +627,6 @@ class EnrichmentStageConfig(BaseModel):
         description="Spider name"
     )
     allowed_domains: list[str] = Field(
-        default=["uconn.edu"],
         min_length=1,
         description="List of allowed domains"
     )

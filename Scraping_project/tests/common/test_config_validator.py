@@ -37,6 +37,7 @@ class TestConfigHealthCheck:
             },
             'stages': {
                 'discovery': {
+                    'allowed_domains': ['example.com'],
                     'seed_file': str(seed_file),
                     'output_file': str(tmp_path / 'output.jsonl'),
                     'dedup_cache_path': str(tmp_path / 'cache.db'),
@@ -47,6 +48,7 @@ class TestConfigHealthCheck:
                     'output_file': str(tmp_path / 'validated.jsonl')
                 },
                 'enrichment': {
+                    'allowed_domains': ['example.com'],
                     'nlp_enabled': False,
                     'output_file': str(tmp_path / 'enriched.jsonl'),
                     'headless_browser': {'enabled': False}
@@ -89,8 +91,12 @@ class TestConfigHealthCheck:
             'environment': 'test',
             'stages': {
                 'discovery': {
+                    'allowed_domains': ['example.com'],
                     'seed_file': '/nonexistent/seeds.csv',  # Missing file
                     'dedup_cache_path': str(tmp_path / 'cache.db')
+                },
+                 'enrichment': {
+                    'allowed_domains': ['example.com']
                 }
             },
             'data': {
@@ -124,7 +130,11 @@ class TestConfigHealthCheck:
         config_dict = {
             'environment': 'test',
             'stages': {
+                'discovery': {
+                    'allowed_domains': ['example.com']
+                },
                 'enrichment': {
+                    'allowed_domains': ['example.com'],
                     'nlp_enabled': True,
                 }
             },
@@ -166,8 +176,14 @@ class TestConfigHealthCheck:
                 'concurrent_requests': 200,  # Very high
             },
             'stages': {
+                'discovery': {
+                    'allowed_domains': ['example.com']
+                },
                 'validation': {
                     'max_workers': 100,  # Very high
+                },
+                'enrichment': {
+                    'allowed_domains': ['example.com']
                 }
             },
             'data': {
@@ -203,6 +219,14 @@ class TestConfigHealthCheck:
             'environment': 'test',
             'scrapy': {
                 'download_delay': 0,  # No rate limiting
+            },
+            'stages': {
+                'discovery': {
+                    'allowed_domains': ['example.com']
+                },
+                'enrichment': {
+                    'allowed_domains': ['example.com']
+                }
             },
             'data': {
                 'raw_dir': str(tmp_path / 'raw'),
@@ -254,9 +278,11 @@ class TestConfigHealthCheck:
             },
             'stages': {
                 'discovery': {
+                    'allowed_domains': ['example.com'],
                     'headless_browser': {'enabled': False}
                 },
                 'enrichment': {
+                    'allowed_domains': ['example.com'],
                     'nlp_enabled': False,
                     'headless_browser': {'enabled': False}
                 }

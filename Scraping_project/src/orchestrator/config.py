@@ -179,7 +179,7 @@ class Config:
     def get_stage1_config(self) -> dict[str, Any]:
         """Get Stage 1 discovery configuration"""
         return {
-            keys.DISCOVERY_ALLOWED_DOMAINS: self.get(keys.STAGES, keys.STAGE_DISCOVERY, keys.DISCOVERY_ALLOWED_DOMAINS, default=['uconn.edu']),
+            keys.DISCOVERY_ALLOWED_DOMAINS: self.get(keys.STAGES, keys.STAGE_DISCOVERY, keys.DISCOVERY_ALLOWED_DOMAINS),
             keys.DISCOVERY_MAX_DEPTH: self.get(keys.STAGES, keys.STAGE_DISCOVERY, keys.DISCOVERY_MAX_DEPTH),
             keys.DISCOVERY_BATCH_SIZE: self.get(keys.STAGES, keys.STAGE_DISCOVERY, keys.DISCOVERY_BATCH_SIZE, default=100),
             keys.DISCOVERY_OUTPUT_FILE: self.get(keys.STAGES, keys.STAGE_DISCOVERY, keys.DISCOVERY_OUTPUT_FILE),
@@ -199,7 +199,7 @@ class Config:
     def get_stage3_config(self) -> dict[str, Any]:
         """Get Stage 3 enrichment configuration"""
         return {
-            keys.ENRICHMENT_ALLOWED_DOMAINS: self.get(keys.STAGES, keys.STAGE_ENRICHMENT, keys.ENRICHMENT_ALLOWED_DOMAINS, default=['uconn.edu']),
+            keys.ENRICHMENT_ALLOWED_DOMAINS: self.get(keys.STAGES, keys.STAGE_ENRICHMENT, keys.ENRICHMENT_ALLOWED_DOMAINS),
             keys.ENRICHMENT_NLP_ENABLED: self.get(keys.STAGES, keys.STAGE_ENRICHMENT, keys.ENRICHMENT_NLP_ENABLED),
             keys.ENRICHMENT_MAX_TEXT_LENGTH: self.get(keys.STAGES, keys.STAGE_ENRICHMENT, keys.ENRICHMENT_MAX_TEXT_LENGTH),
             keys.ENRICHMENT_TOP_KEYWORDS: self.get(keys.STAGES, keys.STAGE_ENRICHMENT, keys.ENRICHMENT_TOP_KEYWORDS),

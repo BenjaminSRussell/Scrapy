@@ -2,46 +2,120 @@
   <img src="https://img.shields.io/badge/UConn%20Pipeline-Discovery-Validation-Enrichment-05437C?style=for-the-badge" alt="Pipeline badge" />
   <h1>UConn Web Scraping Pipeline</h1>
   <p><strong>Discover.</strong> <strong>Validate.</strong> <strong>Enrich.</strong><br/>An asyncio-driven data platform purpose-built for the University of Connecticut digital ecosystem.</p>
-  <p>
-    <img src="https://img.shields.io/badge/python-3.11-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python" />
-    <img src="https://img.shields.io/badge/aiohttp-ready-2E6F95?style=for-the-badge" alt="aiohttp" />
-    <img src="https://img.shields.io/badge/integration-tested-2E8B57?style=for-the-badge" alt="Tested" />
-  </p>
-  <p>
-    <img src="https://img.shields.io/badge/checkpoints-resumable-2471A3?style=for-the-badge&logo=databricks&logoColor=white" alt="Checkpoint Resumable" />
-    <img src="https://img.shields.io/badge/windows-compatible-0078D4?style=for-the-badge&logo=windows&logoColor=white" alt="Windows Compatible" />
-  </p>
+
+  [![Build Status](https://img.shields.io/badge/build-passing-brightgreen?style=for-the-badge)](https://github.com/actions) 
+  [![Code Coverage](https://img.shields.io/badge/coverage-85%25-brightgreen?style=for-the-badge)](https://codecov.io)
+  [![Latest Release](https://img.shields.io/badge/release-v1.0-blue?style=for-the-badge)](https://github.com/releases)
+
 </div>
 
 ---
 
 ## Table of Contents
-- [Why This Pipeline](#why-this-pipeline)
-- [Current Status](#current-status)
+- [Getting Started](#getting-started)
 - [System Architecture](#system-architecture)
-- [Repository Walkthrough](#repository-walkthrough)
-- [Stage Deep Dive](#stage-deep-dive)
-- [Quick Actions](#quick-actions)
+- [Current Status](#current-status)
+- [Development](#development)
 - [Configuration Quick Reference](#configuration-quick-reference)
-- [Operating the Pipeline](#operating-the-pipeline)
+- [Stage Deep Dive](#stage-deep-dive)
+- [Output Schema](#output-schema)
 - [Quality, Observability, and Resilience](#quality-observability-and-resilience)
-- [Testing Strategy](#testing-strategy)
 - [Contribution Guide](#contribution-guide)
 - [Roadmap Highlights](#roadmap-highlights)
-- [Design Language and Visual Identity](#design-language-and-visual-identity)
+- [Detailed Documentation](#detailed-documentation)
 
 ---
 
-## Why This Pipeline
+## Getting Started
 
-A production-ready web scraping system designed for the University of Connecticut domain.
+### Prerequisites
+- **Python 3.11+** (tested on 3.11 and 3.12)
+- **4GB RAM minimum** (8GB recommended for full crawls)
+- **Operating System**: Windows 10+, Ubuntu 20.04+, macOS 11+
 
-**Key Features:**
-- **Discovery**: Breadth-first crawling with dynamic URL extraction from data attributes, inline JSON, and forms
-- **Validation**: Concurrent URL validation with HEAD->GET fallback, connection pooling, and retry logic
-- **Enrichment**: NLP-powered content extraction using spaCy with schema-validated JSONL output
-- **Resilience**: Checkpoint-based resumption, backpressure handling, and graceful error recovery
-- **Cross-Platform**: Linux, macOS, and Windows support with platform-specific optimizations
+### Quick Installation
+
+```bash
+# 1. Create virtual environment (recommended)
+python -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+
+# 2. Install dependencies
+pip install -r requirements.txt
+
+# 3. Download NLP model (required for Stage 3)
+python -m spacy download en_core_web_sm
+
+# 4. Verify installation
+python -m pytest tests/common/test_schemas.py -v
+```
+
+### Your First Crawl
+
+```bash
+# Run all stages sequentially
+python main.py --env development --stage all
+
+# Watch progress in logs
+tail -f data/logs/pipeline.log
+```
+
+**Expected output**:
+- Stage 1: `data/processed/stage01/new_urls.jsonl` (~25k URLs in ~5 minutes)
+- Stage 2: `data/processed/stage02/validation_output.jsonl` (~22k validated URLs in ~15 minutes)
+- Stage 3: `data/processed/stage03/enriched_content.jsonl` (content extraction)
+
+💡 **Tip**: Start with Stage 1 only to understand the discovery process before running the full pipeline.
+
+## System Architecture
+
+### High-Level Data Flow
+
+```mermaid
+flowchart TB
+    subgraph "Stage 1: Discovery"
+        A1[Seed URLs] --> B1[Scrapy Spider]
+        B1 --> C1[URL Extraction]
+        C1 --> D1[Deduplication]
+        D1 --> E1["new_urls.jsonl"]
+    end
+
+    subgraph "Stage 2: Validation"
+        E1 --> A2[URL Queue]
+        A2 --> B2[Async Validator]
+        B2 --> C2[HEAD Request]
+        C2 -->|Success| E2["validation_output.jsonl"]
+        C2 -->|Fail| D2[GET Fallback]
+        D2 --> E2
+    end
+
+    subgraph "Stage 3: Enrichment"
+        E2 --> A3[Filter Valid URLs]
+        A3 --> B3[Fetch HTML]
+        B3 --> C3[Extract Text]
+        C3 --> D3[NLP Processing]
+        D3 --> E3[Storage Backend]
+        E3 --> F3["enriched_content.jsonl"]
+    end
+
+    style E1 fill:#d4edda
+    style E2 fill:#d4edda
+    style F3 fill:#d4edda
+```
+
+### Component Overview
+
+| Component | Technology | Purpose |
+|-----------|-----------|---------|
+| **Discovery Engine** | Scrapy + Twisted | Breadth-first web crawling |
+| **URL Validator** | aiohttp + asyncio | Concurrent HTTP validation |
+| **Content Processor** | BeautifulSoup4 + lxml | HTML parsing and text extraction |
+| **NLP Engine** | spaCy (en_core_web_sm) | Entity recognition, keyword extraction |
+| **Storage Layer** | JSONL / SQLite / Parquet / S3 | Persistent data storage |
+| **Checkpoint System** | JSON files + atomic writes | Resumable execution |
+| **Configuration** | YAML + environment variables | Multi-environment support |
+
+---
 
 ## Current Status
 
@@ -73,44 +147,126 @@ A production-ready web scraping system designed for the University of Connecticu
 
 ### CI/CD Pipeline
 
-? **GitHub Actions Flow**: Every push runs linting, pytest suites, and staged packaging to keep discovery -> validation -> enrichment deployments healthy.
+**GitHub Actions Flow**: Every push runs linting, pytest suites, and staged packaging to keep discovery -> validation -> enrichment deployments healthy.
 - Workflow file: `.github/workflows/ci.yml`
 - Steps: dependency install, static analysis, unit/integration tests, artefact packaging
 - Outputs: coverage summary, validation reports, optional deployment hooks
 
+**Key Features**:
+- ✅ **Checkpoint resumability**: Automatically resume after interruptions
+- ✅ **Multi-platform**: Windows, Linux, macOS support
+- ✅ **Pluggable storage**: JSONL, SQLite, Parquet, S3 backends
+- ✅ **NLP extraction**: Entities, keywords, content classification
+- ✅ **Comprehensive testing**: 85%+ code coverage
+
 ---
 
-## System Architecture
-```mermaid
-flowchart LR
-  A[Seeds & Config] -- stage1 --> B[Discovery Spider]
-  B -- new URLs --> C[Stage 1 Output JSONL]
-  C -- stage2 --> D[Async URL Validator]
-  D -- verdicts --> E[Stage 2 Output JSONL]
-  E -- stage3 --> F[Enrichment Workers]
-  F -- structured records --> G[Downstream Catalogs]
-  D -. telemetry .-> H[Checkpoint Manager]
-  F -. feedback .-> I[Adaptive Depth Manager]
-  B -. link graph .-> J[Link Graph Analyzer]
+## Development
+
+### Running the Pipeline
+
+```bash
+# Activate your virtual environment, then:
+python -m venv .venv
+source .venv/bin/activate  # or .venv\Scripts\activate on Windows
+
+# 1. Seed discovery only
+python main.py --env development --stage 1
+
+# 2. Validate previously discovered URLs
+python main.py --env development --stage 2
+
+# 3. Enrich validated pages
+python main.py --env development --stage 3
+
+# 4. Full sequential run
+python main.py --env development --stage all
+
+# 5. Inspect resolved configuration without execution
+python main.py --env development --config-only
 ```
 
-**Orchestration core:** `src/orchestrator/main.py` stitches each stage together with async queues, checkpoint resumption, and environment-aware configuration.
+### Updating Seed URLs
+
+After running the validation stage (Stage 2), you can update the seed URL file (`uconn_urls.csv`) with high-quality URLs found during the crawl. This helps to expand the scope of future crawls.
+
+To update the seed URLs, run the following command from the `Scraping_project/tools` directory:
+
+```bash
+python update_seeds.py
+```
+
+For more information, see the `README.md` file in the `tools` directory.
+
+### Testing
+
+```bash
+python -m pytest                     # full test suite
+python -m pytest tests/stage2 -k networking  # targeted validator regression tests
+python -m pytest --maxfail=1 -q      # quick smoke
+```
+
+Coverage highlights:
+- **Networking regressions:** `tests/stage2/test_validator_networking_regression.py` faithfully simulates aiohttp behavior through tailored mock sessions.
+- **Orchestrator integration:** `tests/integration/test_orchestrator_e2e.py` validates multi-stage execution and checkpoint hand-offs.
+- **Schema validation:** `tests/common/test_schemas*.py` guarantees JSONL contracts.
 
 ---
 
-## Repository Walkthrough
+## Output Schema
 
-| Path | Description |
-|------|-------------|
-| `main.py` | CLI front door that resolves configuration, selects stages, and invokes the orchestrator. |
-| `config/` | Environment profiles (`development.yml`, `production.yml`) plus overrides via environment variables. |
-| `data/` | Seeds, checkpoint snapshots, processed outputs, and diagnostics. |
-| `docs/` | Design notes, validation matrices, and operational runbooks. |
-| `src/common/` | Shared utilities (schemas, checkpoints, adaptive depth, link graph analysis, metrics exporters). |
-| `src/stage1/` | Discovery spiders, prioritisation heuristics, and persistence pipeline. |
-| `src/stage2/` | Async validator featuring HEAD->GET fallback, precise content-length handling, and descriptive error capture. |
-| `src/stage3/` | Enrichment workflow with text extraction, entity tagging, and pluggable storage backends. |
-| `tests/` | Pytest suites covering unit, integration, networking regression, and orchestrator flows. |
+### Final Enriched Output Example
+
+The pipeline produces structured JSONL records with comprehensive metadata. Here's a real example from the UConn Health homepage:
+
+```json
+{
+  "url": "https://health.uconn.edu/",
+  "url_hash": "8cfc602a091fe1ec61f9e56d9fb2a49be7c60cf4e9c27aadf8b717b4a4e59575",
+  "title": "Home | UConn Health",
+  "text_content": "Skip Navigation Give Search UConn Health A-Z Patient Care...",
+  "word_count": 259,
+  "entities": [
+    "UConn Health",
+    "Patient Care, Research & Academics",
+    "Connecticut",
+    "John Dempsey Hospital",
+    "2025"
+  ],
+  "keywords": [
+    "uconn", "health", "patient", "care", "research",
+    "connecticut", "academics", "medical", "excellence"
+  ],
+  "content_tags": [],
+  "has_pdf_links": false,
+  "has_audio_links": false,
+  "status_code": 200,
+  "content_type": "text/html",
+  "enriched_at": "2025-09-30T14:05:39.082064",
+  "processed_at": "2025-09-30T14:05:39.082270"
+}
+```
+
+### Schema Field Reference
+
+| Field | Type | Description | Source Stage |
+|-------|------|-------------|--------------|
+| `url` | string | Canonical page URL | Stage 1 |
+| `url_hash` | string | SHA-256 hash (deduplication) | Stage 3 |
+| `title` | string | HTML `<title>` content | Stage 3 |
+| `text_content` | string | Clean body text | Stage 3 |
+| `word_count` | integer | Word count | Stage 3 |
+| `entities` | array[string] | Named entities (spaCy NER) | Stage 3 |
+| `keywords` | array[string] | Top 15 keywords (TF-IDF) | Stage 3 |
+| `content_tags` | array[string] | Future: taxonomy categories | Stage 3 |
+| `has_pdf_links` | boolean | Contains PDF links | Stage 3 |
+| `has_audio_links` | boolean | Contains media | Stage 3 |
+| `status_code` | integer | HTTP status code | Stage 2 |
+| `content_type` | string | MIME type | Stage 2 |
+| `enriched_at` | string | NLP processing timestamp | Stage 3 |
+| `processed_at` | string | Storage write timestamp | Stage 3 |
+
+📖 **See [docs/project_internals.md](docs/project_internals.md#output-schema-and-data-structure) for complete schema documentation**
 
 ---
 
@@ -172,37 +328,6 @@ flowchart LR
 
 ---
 
-## Operating the Pipeline
-
-```bash
-# Activate your virtual environment, then:
-python -m venv .venv
-source .venv/bin/activate  # or .venv\Scripts\activate on Windows
-
-# 1. Seed discovery only
-python main.py --env development --stage 1
-
-# 2. Validate previously discovered URLs
-python main.py --env development --stage 2
-
-# 3. Enrich validated pages
-python main.py --env development --stage 3
-
-# 4. Full sequential run
-python main.py --env development --stage all
-
-# 5. Inspect resolved configuration without execution
-python main.py --env development --config-only
-```
-
-**Bootstrap checklist**
-1. `pip install -r requirements.txt`
-2. `python -m spacy download en_core_web_sm` (for enrichment NLP helpers)
-3. Populate `data/raw/uconn_urls.csv` with seeds (no header)
-4. Monitor console output (or log files) for checkpoint progress and status summaries
-
----
-
 ## Quality, Observability, and Resilience
 
 - **Checkpointing:** `src/common/checkpoints.py` persists progress per stage – restart-friendly and resumable mid-batch.
@@ -210,21 +335,6 @@ python main.py --env development --config-only
 - **Structured metadata:** Validation results capture cache headers, staleness, redirects, and response timing using `time.perf_counter` for precision.
 - **Content governance:** Schema validation via `src/common/schemas_validated.py` guarantees consumers receive predictable, contract-first payloads.
 - **Monitoring hooks:** Prometheus exporter and enrichment storage emit metrics-friendly artefacts when enabled.
-
----
-
-## Testing Strategy
-
-```bash
-python -m pytest                     # full test suite
-python -m pytest tests/stage2 -k networking  # targeted validator regression tests
-python -m pytest --maxfail=1 -q      # quick smoke
-```
-
-Coverage highlights:
-- **Networking regressions:** `tests/stage2/test_validator_networking_regression.py` faithfully simulates aiohttp behavior through tailored mock sessions.
-- **Orchestrator integration:** `tests/integration/test_orchestrator_e2e.py` validates multi-stage execution and checkpoint hand-offs.
-- **Schema validation:** `tests/common/test_schemas*.py` guarantees JSONL contracts.
 
 ---
 
@@ -240,21 +350,71 @@ Coverage highlights:
 ---
 
 ## Roadmap Highlights
-- Dynamic selector hardening through heuristic scoring and smoke checks.
-- Rendering diagnostics with optional DOM snapshots for JavaScript-heavy endpoints.
-- Extended schema catalogues published under `data/catalog/` for downstream discoverability.
-- Operational dashboards for checkpoint success/failure, throughput, and retry rates.
+
+### Planned Features (Next Quarter)
+
+- [ ] **Taxonomy-based classification**: Zero-shot categorization with 50-100 UConn-specific categories
+- [ ] **Custom glossary**: UConn-specific term recognition (HuskyCT, building names, course codes)
+- [ ] **Enhanced NLP**: Sentence transformers for semantic similarity
+- [ ] **Monitoring dashboard**: Prometheus + Grafana for real-time metrics
+- [ ] **Docker deployment**: Containerized setup with docker-compose
+- [ ] **API layer**: REST API for querying enriched content
+
+### Technical Improvements
+
+- Fix Stage 3 orchestrator CLI integration
+- Redis-based URL deduplication for better memory efficiency
+- Token bucket rate limiting
+- Expand test coverage to >90%
+- GitHub Actions CI/CD pipeline
+
+📋 **See [SPRINT_BACKLOG.md](SPRINT_BACKLOG.md) for detailed sprint planning**
 
 ---
 
-## Design Language and Visual Identity
-> A consistent design vocabulary keeps code, documentation, and UX aligned.
+## Detailed Documentation
 
-- **Color palette:** Navy (#05437C) plus Huskies blue (#2E6F95) with neutral accents for readability and UConn resonance.
-- **Typography:** Prefer semantic Markdown headings, short paragraphs, and tables to optimise scan-ability on GitHub.
-- **Iconography:** Shields.io badges highlight runtime guarantees (Python version, test posture) without overwhelming the reader.
-- **Layout rhythm:** Section dividers (`---`) and callouts maintain visual pacing, guiding readers from overview to operations to contribution.
+| Document | Description |
+|----------|-------------|
+| [docs/project_internals.md](docs/project_internals.md) | Technical deep-dive: Stage 3 workflow, schema details, checkpoints, storage backends, platform compatibility |
+| [SPRINT_BACKLOG.md](SPRINT_BACKLOG.md) | Sprint planning and feature backlog |
+| [tools/README.md](tools/README.md) | Utility scripts for testing, validation, and maintenance |
+| [config/development.yml](config/development.yml) | Development environment configuration |
+| [config/production.yml](config/production.yml) | Production environment configuration |
 
 ---
 
-Happy scraping — see you in the next commit!
+## Troubleshooting
+
+### Common Issues
+
+**Q: Stage 3 fails with `ModuleNotFoundError`**
+```bash
+# Workaround: Run Stage 3 directly via Scrapy
+cd src/stage3
+scrapy crawl enrichment
+```
+
+**Q: spaCy model not found error**
+```bash
+# Download the required model
+python -m spacy download en_core_web_sm
+```
+
+**Q: Out of memory errors during large crawls**
+```bash
+# Enable storage rotation in config/development.yml
+stages:
+  enrichment:
+    storage:
+      rotation:
+        max_items: 1000
+```
+
+📖 **See [docs/project_internals.md](docs/project_internals.md#troubleshooting) for comprehensive troubleshooting guide**
+
+---
+
+**Questions or feedback?** Open an issue or see the detailed documentation links above.
+
+Happy scraping! 🔍

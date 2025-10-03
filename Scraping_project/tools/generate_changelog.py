@@ -1,9 +1,10 @@
 """
 This script generates a CHANGELOG.md file from git commit messages.
 """
-import subprocess
 import re
+import subprocess
 from collections import defaultdict
+
 
 def get_commit_messages():
     """Fetches commit messages from the git repository."""

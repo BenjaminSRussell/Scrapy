@@ -158,15 +158,13 @@ class AdaptiveConcurrencyController:
                     self._semaphore = asyncio.Semaphore(self.current)
                 self._last_increase_time = current_time
 
-    async def acquire(self) -> asyncio.Semaphore:
-        """Acquire semaphore slot and return the semaphore instance."""
-        sem = self._semaphore
-        await sem.acquire()
-        return sem
+    async def acquire(self):
+        """Acquire semaphore slot."""
+        await self._semaphore.acquire()
 
-    def release(self, sem: asyncio.Semaphore):
+    def release(self):
         """Release semaphore slot."""
-        sem.release()
+        self._semaphore.release()
 
     def get_stats(self) -> dict[str, Any]:
         """Get current statistics"""
