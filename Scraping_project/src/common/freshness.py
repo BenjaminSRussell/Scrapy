@@ -8,14 +8,12 @@ Tracks Last-Modified, ETag, and content change patterns to:
 """
 
 import logging
-import json
 import sqlite3
-from datetime import datetime, timedelta
-from pathlib import Path
-from typing import Dict, Optional, Tuple
 from dataclasses import dataclass
-from urllib.parse import urlparse
+from datetime import datetime
 from email.utils import parsedate_to_datetime
+from pathlib import Path
+from urllib.parse import urlparse
 
 from src.common.logging import get_structured_logger
 
@@ -27,9 +25,9 @@ class FreshnessRecord:
     """Freshness record for a URL"""
     url: str
     url_hash: str
-    last_modified: Optional[str] = None
-    etag: Optional[str] = None
-    last_validated: Optional[str] = None
+    last_modified: str | None = None
+    etag: str | None = None
+    last_validated: str | None = None
     validation_count: int = 0
     content_changed_count: int = 0
     staleness_score: float = 0.0
@@ -45,7 +43,7 @@ class FreshnessTracker:
     - Content type heuristics (0-30%)
     """
 
-    def __init__(self, db_path: Optional[Path] = None):
+    def __init__(self, db_path: Path | None = None):
         """
         Initialize freshness tracker.
 
@@ -58,7 +56,7 @@ class FreshnessTracker:
         self._init_db()
 
         # Domain churn tracking (in-memory)
-        self.domain_churn_stats: Dict[str, dict] = {}
+        self.domain_churn_stats: dict[str, dict] = {}
 
     def _init_db(self):
         """Initialize database schema"""
@@ -96,9 +94,9 @@ class FreshnessTracker:
         self,
         url: str,
         url_hash: str,
-        last_modified: Optional[str] = None,
-        etag: Optional[str] = None,
-        content_type: Optional[str] = None,
+        last_modified: str | None = None,
+        etag: str | None = None,
+        content_type: str | None = None,
         content_changed: bool = False
     ) -> float:
         """
@@ -170,9 +168,9 @@ class FreshnessTracker:
     def _calculate_staleness_score(
         self,
         url: str,
-        last_modified: Optional[str],
-        etag: Optional[str],
-        content_type: Optional[str],
+        last_modified: str | None,
+        etag: str | None,
+        content_type: str | None,
         validation_count: int,
         content_changed_count: int
     ) -> float:
@@ -244,7 +242,7 @@ class FreshnessTracker:
 
         return min(1.0, max(0.0, score))
 
-    def get_freshness_record(self, url_hash: str) -> Optional[FreshnessRecord]:
+    def get_freshness_record(self, url_hash: str) -> FreshnessRecord | None:
         """Get freshness record for URL"""
         with sqlite3.connect(str(self.db_path)) as conn:
             cursor = conn.execute("""
@@ -285,7 +283,7 @@ class FreshnessTracker:
 
         stats['churn_rate'] = stats['changes_detected'] / stats['total_checks']
 
-    def get_domain_churn_metrics(self) -> Dict[str, dict]:
+    def get_domain_churn_metrics(self) -> dict[str, dict]:
         """Get per-domain content churn metrics for Prometheus"""
         return self.domain_churn_stats.copy()
 

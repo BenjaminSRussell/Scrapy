@@ -2,13 +2,12 @@
 Tests for configuration health check and validation utilities.
 """
 
-import pytest
-import tempfile
-import yaml
-from pathlib import Path
 from unittest.mock import Mock, patch
 
-from src.common.config_validator import ConfigHealthCheck, ValidationIssue, validate_config_health
+import pytest
+import yaml
+
+from src.common.config_validator import ConfigHealthCheck, ValidationIssue
 from src.orchestrator.config import Config
 
 

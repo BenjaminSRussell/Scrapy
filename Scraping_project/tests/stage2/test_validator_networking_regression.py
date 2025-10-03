@@ -5,25 +5,22 @@ Tests the validator's HEAD/GET/error handling which is central to Stage 2 correc
 Realistic aiohttp-style tests prevent silent regressions in network behavior.
 """
 
-import pytest
-import asyncio
-import aiohttp
 import json
 import tempfile
 from pathlib import Path
-from unittest.mock import AsyncMock, Mock, patch
-from datetime import datetime
-from typing import List, Dict, Any
+from unittest.mock import Mock, patch
 
-from src.stage2.validator import URLValidator
+import aiohttp
+import pytest
+
 from src.orchestrator.pipeline import BatchQueueItem
-from src.common.schemas import ValidationResult
+from src.stage2.validator import URLValidator
 
 
 class MockResponse:
     """Mock aiohttp response for testing"""
 
-    def __init__(self, status: int, headers: Dict[str, str] = None, content: bytes = b"", url: str = ""):
+    def __init__(self, status: int, headers: dict[str, str] = None, content: bytes = b"", url: str = ""):
         self.status = status
         self.headers = headers or {}
         self.url = Mock()
@@ -43,7 +40,7 @@ class MockResponse:
 class MockSession:
     """Mock aiohttp session for testing"""
 
-    def __init__(self, responses: List[MockResponse]):
+    def __init__(self, responses: list[MockResponse]):
         self.responses = responses
         self.call_count = 0
         self.requests = []
@@ -234,7 +231,7 @@ class TestURLValidatorNetworkingRegression:
                 return self
 
             async def __aenter__(self):
-                raise asyncio.TimeoutError("Request timed out")
+                raise TimeoutError("Request timed out")
 
             async def __aexit__(self, exc_type, exc_val, exc_tb):
                 pass
@@ -265,7 +262,7 @@ class TestURLValidatorNetworkingRegression:
 
         client_errors = [
             aiohttp.ClientConnectionError("Connection failed"),
-            asyncio.TimeoutError("Request timeout"),  # ClientTimeout is not an exception, use TimeoutError
+            TimeoutError("Request timeout"),  # ClientTimeout is not an exception, use TimeoutError
             aiohttp.ClientResponseError(
                 request_info=Mock(),
                 history=(),
@@ -444,7 +441,7 @@ class TestURLValidatorNetworkingRegression:
 
         class TimeoutResponse:
             async def __aenter__(self):
-                raise asyncio.TimeoutError("Timeout")
+                raise TimeoutError("Timeout")
 
             async def __aexit__(self, exc_type, exc_val, exc_tb):
                 pass
@@ -458,7 +455,7 @@ class TestURLValidatorNetworkingRegression:
         assert temp_output_file.exists()
 
         results = []
-        with open(temp_output_file, 'r') as f:
+        with open(temp_output_file) as f:
             for line in f:
                 if line.strip():
                     results.append(json.loads(line))
@@ -557,7 +554,7 @@ class TestURLValidatorNetworkingRegression:
         assert temp_output_file.exists()
 
         results = []
-        with open(temp_output_file, 'r') as f:
+        with open(temp_output_file) as f:
             for line in f:
                 if line.strip():
                     results.append(json.loads(line))

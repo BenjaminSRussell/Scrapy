@@ -5,8 +5,8 @@ from __future__ import annotations
 import asyncio
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 
@@ -14,8 +14,8 @@ SRC_DIR = Path(__file__).resolve().parents[2] / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from orchestrator.pipeline import PipelineOrchestrator
 from common import config_keys as keys
+from orchestrator.pipeline import PipelineOrchestrator
 
 
 class _DummyConfig:
@@ -43,16 +43,16 @@ class _DummyConfig:
         }
         self._temp_dir = temp_dir
 
-    def get_stage2_config(self) -> Dict[str, Any]:
+    def get_stage2_config(self) -> dict[str, Any]:
         return self._stage2_config
 
-    def get_stage3_config(self) -> Dict[str, Any]:
+    def get_stage3_config(self) -> dict[str, Any]:
         return self._stage3_config
 
-    def get_nlp_config(self) -> Dict[str, Any]:
+    def get_nlp_config(self) -> dict[str, Any]:
         return self._nlp_config
 
-    def get_data_paths(self) -> Dict[str, Path]:
+    def get_data_paths(self) -> dict[str, Path]:
         return {keys.TEMP_DIR: self._temp_dir}
 
     def get(self, *path: str, default: Any = None) -> Any:
@@ -66,9 +66,9 @@ class _DummySpider:
 
 
 class _FakeCrawlerProcess:
-    def __init__(self, settings: Dict[str, Any]):
+    def __init__(self, settings: dict[str, Any]):
         self.settings = settings
-        self.crawled_args: List[Any] = []
+        self.crawled_args: list[Any] = []
         self.started = False
 
     def crawl(self, spider_cls, **kwargs):
@@ -108,9 +108,9 @@ async def test_run_scrapy_enrichment_merges_urls_and_metadata(tmp_path):
         "extra_param": "preserve-me",
     }
 
-    captured: Dict[str, Any] = {}
+    captured: dict[str, Any] = {}
 
-    def crawler_factory(settings: Dict[str, Any]) -> _FakeCrawlerProcess:
+    def crawler_factory(settings: dict[str, Any]) -> _FakeCrawlerProcess:
         process = _FakeCrawlerProcess(settings)
         captured["process"] = process
         captured["settings"] = settings
@@ -166,7 +166,7 @@ async def test_run_async_enrichment_invokes_async_processor(monkeypatch, tmp_pat
     config = _DummyConfig(stage2_file, stage3_file, temp_dir)
     orchestrator = PipelineOrchestrator(config)
 
-    recorded: Dict[str, Any] = {}
+    recorded: dict[str, Any] = {}
 
     async def fake_run_async_enrichment(**kwargs):
         recorded.update(kwargs)

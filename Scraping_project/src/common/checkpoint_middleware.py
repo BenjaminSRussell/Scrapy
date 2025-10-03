@@ -7,13 +7,12 @@ without requiring major modifications to existing spider code.
 
 import logging
 from pathlib import Path
-from typing import Optional
 
 from scrapy import signals
-from scrapy.http import Request, Response
 from scrapy.exceptions import NotConfigured
+from scrapy.http import Request
 
-from src.common.enhanced_checkpoints import UnifiedCheckpointManager, CheckpointStatus
+from src.common.enhanced_checkpoints import UnifiedCheckpointManager
 
 logger = logging.getLogger(__name__)
 
@@ -206,7 +205,7 @@ class AsyncCheckpointTracker:
             self.checkpoint.fail(error_msg)
             logger.error(f"Checkpoint {self.stage_name} failed: {error_msg}")
 
-    def start(self, total_items: int, input_file: Optional[str] = None):
+    def start(self, total_items: int, input_file: str | None = None):
         """Start tracking"""
         self.checkpoint.start(self.stage_name, total_items=total_items, input_file=input_file)
 
@@ -216,8 +215,8 @@ class AsyncCheckpointTracker:
         successful: int = 0,
         failed: int = 0,
         skipped: int = 0,
-        last_item: Optional[str] = None,
-        index: Optional[int] = None
+        last_item: str | None = None,
+        index: int | None = None
     ):
         """Update progress"""
         self.checkpoint.update_progress(

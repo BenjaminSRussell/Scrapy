@@ -5,9 +5,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import asdict
 from pathlib import Path
-from typing import Any, Dict, List
-
-import pytest
+from typing import Any
 
 from src.orchestrator.pipeline import BatchQueue, BatchQueueItem, PipelineOrchestrator
 from tests.samples import build_discovery_item, write_jsonl
@@ -70,21 +68,21 @@ class DummyConfig:
         self.stage2_output = base_path / "stage02.jsonl"
         self.stage3_output = base_path / "stage03.jsonl"
 
-    def get_stage1_config(self) -> Dict[str, Any]:
+    def get_stage1_config(self) -> dict[str, Any]:
         return {
             "max_depth": 2,
             "batch_size": 100,
             "output_file": str(self.stage1_output),
         }
 
-    def get_stage2_config(self) -> Dict[str, Any]:
+    def get_stage2_config(self) -> dict[str, Any]:
         return {
             "max_workers": 4,
             "timeout": 5,
             "output_file": str(self.stage2_output),
         }
 
-    def get_stage3_config(self) -> Dict[str, Any]:
+    def get_stage3_config(self) -> dict[str, Any]:
         return {
             "nlp_enabled": False,
             "max_text_length": 2000,
@@ -151,13 +149,13 @@ def test_concurrent_producer_consumer(tmp_path):
     write_jsonl(Path(config.get_stage1_config()["output_file"]), validation_data)
 
     orchestrator = PipelineOrchestrator(config)
-    processed: List[str] = []
+    processed: list[str] = []
 
     class FakeValidator:
-        def __init__(self, sink: List[str]):
+        def __init__(self, sink: list[str]):
             self.sink = sink
 
-        async def validate_batch(self, batch: List[BatchQueueItem], batch_id: int = None):
+        async def validate_batch(self, batch: list[BatchQueueItem], batch_id: int = None):
             for item in batch:
                 self.sink.append(item.url_hash)
 

@@ -3,10 +3,11 @@ Tests for comprehensive Pydantic-based configuration validation.
 Demonstrates catching type errors, typos, and range violations.
 """
 
-import pytest
 import tempfile
-import yaml
 from pathlib import Path
+
+import pytest
+import yaml
 
 from src.orchestrator.config import Config, ConfigValidationError
 

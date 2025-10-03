@@ -4,10 +4,10 @@
 import asyncio
 import logging
 import time
-from functools import wraps
-from typing import Callable, Any
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
+from functools import wraps
 
 logger = logging.getLogger(__name__)
 

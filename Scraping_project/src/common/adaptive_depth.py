@@ -5,13 +5,10 @@ Learns which sections/subdomains are content-rich and adjusts depth accordingly.
 
 import json
 import logging
-from collections import defaultdict
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Set
 from urllib.parse import urlparse
-import re
 
 logger = logging.getLogger(__name__)
 
@@ -119,7 +116,7 @@ class AdaptiveDepthManager:
         self.max_depth = max_depth
 
         # Section statistics
-        self.section_stats: Dict[str, SectionStats] = {}
+        self.section_stats: dict[str, SectionStats] = {}
 
         # Load existing configuration
         self._load_config()
@@ -243,7 +240,7 @@ class AdaptiveDepthManager:
             depth_reached=depth
         )
 
-    def get_high_value_sections(self, min_content_pages: int = 50) -> List[str]:
+    def get_high_value_sections(self, min_content_pages: int = 50) -> list[str]:
         """Get sections that have valuable content"""
         high_value = []
 
@@ -253,7 +250,7 @@ class AdaptiveDepthManager:
 
         return sorted(high_value, key=lambda s: self.section_stats[s].total_content_pages, reverse=True)
 
-    def get_low_value_sections(self, max_content_density: float = 0.1) -> List[str]:
+    def get_low_value_sections(self, max_content_density: float = 0.1) -> list[str]:
         """Get sections with low content value (can use shallow depth)"""
         low_value = []
 
@@ -310,14 +307,14 @@ class AdaptiveDepthManager:
 
         logger.info("=" * 80)
 
-    def get_depth_configuration(self) -> Dict[str, int]:
+    def get_depth_configuration(self) -> dict[str, int]:
         """Get a dictionary mapping sections to recommended depths"""
         return {
             section: stats.current_recommended_depth
             for section, stats in self.section_stats.items()
         }
 
-    def suggest_depth_adjustments(self) -> Dict[str, Dict[str, any]]:
+    def suggest_depth_adjustments(self) -> dict[str, dict[str, any]]:
         """
         Suggest depth adjustments based on current data.
 

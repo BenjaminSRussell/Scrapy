@@ -5,18 +5,13 @@ Validates that Stage N output meets requirements of Stage N+1.
 
 import json
 import logging
-from pathlib import Path
-from typing import Dict, List, Set, Optional, Tuple, Any
 from dataclasses import dataclass
-from collections import defaultdict
+from pathlib import Path
+from typing import Any
+
 from pydantic import ValidationError
 
-from src.common.schemas_validated import (
-    DiscoveryItem,
-    ValidationResult,
-    EnrichmentItem,
-    SchemaRegistry
-)
+from src.common.schemas_validated import SchemaRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -33,8 +28,8 @@ class ValidationReport:
     total_records: int
     valid_records: int
     invalid_records: int
-    errors: List[Dict[str, Any]]
-    warnings: List[str]
+    errors: list[dict[str, Any]]
+    warnings: list[str]
     missing_fields_count: int
     extra_fields_count: int
     type_errors_count: int
@@ -141,7 +136,7 @@ class JSONLValidator:
 
         logger.info(f"Validating {file_path} against {self.schema_name} schema...")
 
-        with open(file_path, 'r', encoding='utf-8') as f:
+        with open(file_path, encoding='utf-8') as f:
             for line_num, line in enumerate(f, 1):
                 total_records += 1
 
@@ -232,7 +227,7 @@ class InterstageValidator:
         self,
         stage1_file: Path,
         stage2_file: Path
-    ) -> Tuple[ValidationReport, Dict[str, Any]]:
+    ) -> tuple[ValidationReport, dict[str, Any]]:
         """
         Validate Stage 1 → Stage 2 data integrity
 
@@ -254,7 +249,7 @@ class InterstageValidator:
         stage1_hashes = set()
         stage1_urls = {}  # hash -> url mapping
 
-        with open(stage1_file, 'r', encoding='utf-8') as f:
+        with open(stage1_file, encoding='utf-8') as f:
             for line in f:
                 try:
                     data = json.loads(line.strip())
@@ -270,7 +265,7 @@ class InterstageValidator:
         stage2_hashes = set()
         stage2_urls = {}  # hash -> url mapping
 
-        with open(stage2_file, 'r', encoding='utf-8') as f:
+        with open(stage2_file, encoding='utf-8') as f:
             for line in f:
                 try:
                     data = json.loads(line.strip())
@@ -341,7 +336,7 @@ class InterstageValidator:
         self,
         stage2_file: Path,
         stage3_file: Path
-    ) -> Tuple[ValidationReport, Dict[str, Any]]:
+    ) -> tuple[ValidationReport, dict[str, Any]]:
         """
         Validate Stage 2 → Stage 3 data integrity
 
@@ -364,7 +359,7 @@ class InterstageValidator:
         stage2_all_hashes = set()
         stage2_status = {}  # hash -> is_valid
 
-        with open(stage2_file, 'r', encoding='utf-8') as f:
+        with open(stage2_file, encoding='utf-8') as f:
             for line in f:
                 try:
                     data = json.loads(line.strip())
@@ -382,7 +377,7 @@ class InterstageValidator:
         # Load Stage 3 hashes
         stage3_hashes = set()
 
-        with open(stage3_file, 'r', encoding='utf-8') as f:
+        with open(stage3_file, encoding='utf-8') as f:
             for line in f:
                 try:
                     data = json.loads(line.strip())
@@ -456,7 +451,7 @@ class InterstageValidator:
         stage1_file: Path,
         stage2_file: Path,
         stage3_file: Path
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Validate complete pipeline integrity
 
@@ -517,10 +512,10 @@ class InterstageValidator:
 
 def validate_pipeline_output(
     stage1_file: Path,
-    stage2_file: Optional[Path] = None,
-    stage3_file: Optional[Path] = None,
+    stage2_file: Path | None = None,
+    stage3_file: Path | None = None,
     fail_on_error: bool = False
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Convenience function to validate pipeline output
 

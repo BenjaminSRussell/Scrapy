@@ -1,7 +1,7 @@
 # TODO: Add more detailed schema validation, such as checking the types of the fields and ensuring that required fields are present.
 from __future__ import annotations
+
 from dataclasses import dataclass
-from typing import List, Dict
 
 
 @dataclass

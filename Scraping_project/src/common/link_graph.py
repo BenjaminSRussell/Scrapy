@@ -5,13 +5,12 @@ Provides PageRank-style importance scoring, link graph construction,
 and network analysis for discovered URLs.
 """
 
+import json
 import logging
 import sqlite3
-import json
+from collections import defaultdict
 from dataclasses import dataclass, field
-from typing import Dict, List, Set, Optional, Tuple
 from pathlib import Path
-from collections import defaultdict, Counter
 from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
@@ -50,9 +49,9 @@ class LinkGraphStats:
     largest_community_size: int = 0
 
     # Top pages
-    top_pages_by_pagerank: List[Tuple[str, float]] = field(default_factory=list)
-    top_hubs: List[Tuple[str, float]] = field(default_factory=list)
-    top_authorities: List[Tuple[str, float]] = field(default_factory=list)
+    top_pages_by_pagerank: list[tuple[str, float]] = field(default_factory=list)
+    top_hubs: list[tuple[str, float]] = field(default_factory=list)
+    top_authorities: list[tuple[str, float]] = field(default_factory=list)
 
 
 class LinkGraphAnalyzer:
@@ -62,7 +61,7 @@ class LinkGraphAnalyzer:
     Implements PageRank, HITS algorithm, and network centrality metrics.
     """
 
-    def __init__(self, db_path: Optional[Path] = None):
+    def __init__(self, db_path: Path | None = None):
         """
         Initialize link graph analyzer.
 
@@ -73,9 +72,9 @@ class LinkGraphAnalyzer:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
 
         # In-memory graph structures
-        self.adjacency_list: Dict[str, Set[str]] = defaultdict(set)  # URL -> outlinks
-        self.reverse_adjacency_list: Dict[str, Set[str]] = defaultdict(set)  # URL -> inlinks
-        self.url_metadata: Dict[str, Dict] = {}
+        self.adjacency_list: dict[str, set[str]] = defaultdict(set)  # URL -> outlinks
+        self.reverse_adjacency_list: dict[str, set[str]] = defaultdict(set)  # URL -> inlinks
+        self.url_metadata: dict[str, dict] = {}
 
         # Initialize database
         self._init_db()
@@ -121,9 +120,9 @@ class LinkGraphAnalyzer:
     def add_page(
         self,
         url: str,
-        outlinks: List[str],
+        outlinks: list[str],
         depth: int = 0,
-        metadata: Optional[Dict] = None
+        metadata: dict | None = None
     ):
         """
         Add a page and its outlinks to the graph.
@@ -185,7 +184,7 @@ class LinkGraphAnalyzer:
         damping_factor: float = 0.85,
         max_iterations: int = 100,
         convergence_threshold: float = 0.0001
-    ) -> Dict[str, float]:
+    ) -> dict[str, float]:
         """
         Calculate PageRank scores for all pages in the graph.
 
@@ -251,7 +250,7 @@ class LinkGraphAnalyzer:
         self,
         max_iterations: int = 100,
         convergence_threshold: float = 0.0001
-    ) -> Tuple[Dict[str, float], Dict[str, float]]:
+    ) -> tuple[dict[str, float], dict[str, float]]:
         """
         Calculate HITS (Hyperlink-Induced Topic Search) algorithm scores.
 
@@ -368,7 +367,7 @@ class LinkGraphAnalyzer:
         self,
         metric: str = "pagerank",
         limit: int = 100
-    ) -> List[Tuple[str, float]]:
+    ) -> list[tuple[str, float]]:
         """
         Get top pages by importance metric.
 
@@ -463,7 +462,7 @@ class LinkGraphAnalyzer:
 
         logger.info(f"Loaded {len(page_outlinks)} pages from discovery database")
 
-    def _save_pagerank_scores(self, pagerank: Dict[str, float]):
+    def _save_pagerank_scores(self, pagerank: dict[str, float]):
         """Persist PageRank scores to database"""
         from datetime import datetime
         now = datetime.now().isoformat()
@@ -481,7 +480,7 @@ class LinkGraphAnalyzer:
 
             conn.commit()
 
-    def _save_hits_scores(self, hub_scores: Dict[str, float], authority_scores: Dict[str, float]):
+    def _save_hits_scores(self, hub_scores: dict[str, float], authority_scores: dict[str, float]):
         """Persist HITS scores to database"""
         from datetime import datetime
         now = datetime.now().isoformat()

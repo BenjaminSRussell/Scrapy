@@ -3,24 +3,20 @@ Tests for inter-stage validation system.
 Ensures pipeline data integrity and schema compliance.
 """
 
-import pytest
+import hashlib
 import json
 import tempfile
-from pathlib import Path
 from datetime import datetime
-import hashlib
+from pathlib import Path
+
+import pytest
 
 from src.common.interstage_validation import (
-    JSONLValidator,
     InterstageValidator,
-    ValidationFailure,
-    validate_pipeline_output
+    JSONLValidator,
+    validate_pipeline_output,
 )
-from src.common.schemas_validated import (
-    DiscoveryItem,
-    ValidationResult,
-    EnrichmentItem
-)
+from src.common.schemas_validated import DiscoveryItem, EnrichmentItem, ValidationResult
 
 
 class TestSchemaValidation:

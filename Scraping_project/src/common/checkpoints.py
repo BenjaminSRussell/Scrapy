@@ -4,12 +4,12 @@ Checkpoint system for resumable pipeline operations
 """
 from __future__ import annotations
 
-import json
 import hashlib
-from pathlib import Path
-from typing import Any, Dict
-from datetime import datetime, timedelta
+import json
 import logging
+from datetime import datetime, timedelta
+from pathlib import Path
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +38,7 @@ class BatchCheckpoint:
             }
 
         try:
-            with open(self.checkpoint_file, 'r', encoding='utf-8') as f:
+            with open(self.checkpoint_file, encoding='utf-8') as f:
                 return json.load(f)
         except (json.JSONDecodeError, FileNotFoundError) as e:
             logger.warning(f"Failed to load checkpoint {self.checkpoint_file}: {e}")
@@ -229,7 +229,7 @@ class CheckpointManager:
             self._checkpoints[stage] = BatchCheckpoint(checkpoint_file)
         return self._checkpoints[stage]
 
-    def get_all_stats(self) -> Dict[str, dict[str, Any]]:
+    def get_all_stats(self) -> dict[str, dict[str, Any]]:
         """Get stats for all stage checkpoints"""
         stats = {}
 

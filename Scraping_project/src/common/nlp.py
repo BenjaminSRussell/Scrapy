@@ -4,7 +4,6 @@ import logging
 import re
 from collections import Counter, OrderedDict
 from dataclasses import dataclass, field
-from typing import List, Tuple, Set, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -69,13 +68,13 @@ class NLPSettings:
 
     # TODO: The spaCy and transformer models are hardcoded. They should be configurable.
     spacy_model: str = "en_core_web_sm"
-    transformer_model: Optional[str] = "dslim/bert-base-NER"
-    summarizer_model: Optional[str] = "sshleifer/distilbart-cnn-12-6"
+    transformer_model: str | None = "dslim/bert-base-NER"
+    summarizer_model: str | None = "sshleifer/distilbart-cnn-12-6"
     # Use public zero-shot model to avoid HF auth requirements
-    zero_shot_model: Optional[str] = "MoritzLaurer/deberta-v3-base-zeroshot-v2.0"
-    preferred_device: Optional[str] = None
-    additional_stop_words: Set[str] = field(default_factory=set)
-    stop_word_overrides: Set[str] = field(default_factory=set)
+    zero_shot_model: str | None = "MoritzLaurer/deberta-v3-base-zeroshot-v2.0"
+    preferred_device: str | None = None
+    additional_stop_words: set[str] = field(default_factory=set)
+    stop_word_overrides: set[str] = field(default_factory=set)
 
 
 class NLPRegistry:
@@ -117,7 +116,7 @@ class NLPRegistry:
 
         return nlp
 
-    def _resolve_entity_labels(self) -> Set[str]:
+    def _resolve_entity_labels(self) -> set[str]:
         if not self.spacy_nlp:
             return set()
         pipe_labels = getattr(self.spacy_nlp, "pipe_labels", {})
@@ -125,16 +124,16 @@ class NLPRegistry:
 
     def _build_stop_words(
         self,
-        additions: Set[str],
-        overrides: Set[str],
-    ) -> Set[str]:
+        additions: set[str],
+        overrides: set[str],
+    ) -> set[str]:
         base = set()
         if self.spacy_nlp and hasattr(self.spacy_nlp, "Defaults"):
             base = set(getattr(self.spacy_nlp.Defaults, "stop_words", set()))
         stop_words = (base | additions) - overrides
         return {word.lower() for word in stop_words}
 
-    def _load_transformer(self, model_name: Optional[str]):
+    def _load_transformer(self, model_name: str | None):
         if not model_name:
             return None
 
@@ -169,7 +168,7 @@ class NLPRegistry:
             logger.warning("Transformer pipeline will be disabled")
             return None
 
-    def _load_summarizer(self, model_name: Optional[str]):
+    def _load_summarizer(self, model_name: str | None):
         if not model_name:
             return None
 
@@ -203,7 +202,7 @@ class NLPRegistry:
             logger.warning("Summarizer pipeline will be disabled")
             return None
 
-    def _load_zero_shot_classifier(self, model_name: Optional[str]):
+    def _load_zero_shot_classifier(self, model_name: str | None):
         if not model_name:
             return None
 
@@ -256,7 +255,7 @@ class NLPRegistry:
         self,
         text: str,
         top_k: int
-    ) -> Tuple[List[str], List[str]]:
+    ) -> tuple[list[str], list[str]]:
         doc = self.spacy_nlp(text)
         entities = []
         seen = OrderedDict()
@@ -274,12 +273,12 @@ class NLPRegistry:
         keywords = self._keywords_from_doc(doc, top_k)
         return entities, keywords
 
-    def extract_entities_with_transformer(self, text: str) -> List[str]:
+    def extract_entities_with_transformer(self, text: str) -> list[str]:
         if not self.transformer_pipeline:
             raise RuntimeError("Transformer pipeline is not initialised")
 
         raw_entities = self.transformer_pipeline(text)
-        entities: List[str] = []
+        entities: list[str] = []
         seen = OrderedDict()
 
         for item in raw_entities:
@@ -307,7 +306,7 @@ class NLPRegistry:
         )
         return summary[0]["summary_text"]
 
-    def classify_text(self, text: str, labels: List[str]) -> dict:
+    def classify_text(self, text: str, labels: list[str]) -> dict:
         if not self.zero_shot_pipeline:
             # Return empty dict when zero-shot classifier is not available (e.g., use_transformers=False)
             return {}
@@ -315,8 +314,8 @@ class NLPRegistry:
         results = self.zero_shot_pipeline(text, labels)
         return dict(zip(results["labels"], results["scores"]))
 
-    def _keywords_from_doc(self, doc, top_k: int) -> List[str]:
-        candidates: List[str] = []
+    def _keywords_from_doc(self, doc, top_k: int) -> list[str]:
+        candidates: list[str] = []
 
         for token in doc:
             if not token.is_alpha:
@@ -336,23 +335,23 @@ class NLPRegistry:
 class _DummyNLPRegistry:
     """Fallback registry when models aren't available"""
 
-    def extract_with_spacy(self, text: str, top_k: int) -> Tuple[List[str], List[str]]:
+    def extract_with_spacy(self, text: str, top_k: int) -> tuple[list[str], list[str]]:
         return [], []
 
-    def extract_entities_with_transformer(self, text: str) -> List[str]:
+    def extract_entities_with_transformer(self, text: str) -> list[str]:
         return []
 
     def summarize_text(self, text: str, max_length: int, min_length: int) -> str:
         return ""
 
-    def classify_text(self, text: str, labels: List[str]) -> dict:
+    def classify_text(self, text: str, labels: list[str]) -> dict:
         return {}
 
 
-NLP_REGISTRY: Optional[NLPRegistry] = None
+NLP_REGISTRY: NLPRegistry | None = None
 
 
-def initialize_nlp(settings: Optional[NLPSettings] = None) -> None:
+def initialize_nlp(settings: NLPSettings | None = None) -> None:
     """Initialise the global NLP registry."""
 
     global NLP_REGISTRY
@@ -371,7 +370,7 @@ def extract_entities_and_keywords(
     max_length: int = MAX_TEXT_LENGTH,
     top_k: int = TOP_KEYWORDS,
     backend: str = "spacy",
-) -> Tuple[List[str], List[str]]:
+) -> tuple[list[str], list[str]]:
     """Extract entities/keywords using the configured NLP backend."""
 
     if not text:
@@ -400,7 +399,7 @@ def summarize(text: str, max_length: int = 150, min_length: int = 30) -> str:
     return registry.summarize_text(text, max_length=max_length, min_length=min_length)
 
 
-def classify(text: str, labels: List[str]) -> dict:
+def classify(text: str, labels: list[str]) -> dict:
     """Classify text using the configured NLP backend."""
 
     if not text or not labels:
@@ -410,14 +409,14 @@ def classify(text: str, labels: List[str]) -> dict:
     return registry.classify_text(text, labels)
 
 
-def extract_content_tags(url_path: str, predefined_tags: Set[str]) -> List[str]:
+def extract_content_tags(url_path: str, predefined_tags: set[str]) -> list[str]:
     """Extract content tags from a URL path while preserving order."""
 
     if not url_path or not predefined_tags:
         return []
 
-    cleaned_tags: List[str] = []
-    seen: Set[str] = set()
+    cleaned_tags: list[str] = []
+    seen: set[str] = set()
 
     for part in url_path.split("/"):
         candidate = part.lower().strip()
@@ -431,7 +430,7 @@ def extract_content_tags(url_path: str, predefined_tags: Set[str]) -> List[str]:
     return cleaned_tags
 
 
-def has_audio_links(links: List[str]) -> bool:
+def has_audio_links(links: list[str]) -> bool:
     """Check if any links point to audio-capable resources."""
 
     if not links:
@@ -453,8 +452,8 @@ def clean_text(text: str) -> str:
 def extract_keywords_simple(
     text: str,
     top_k: int = TOP_KEYWORDS,
-    stop_words: Optional[Set[str]] = None,
-) -> List[str]:
+    stop_words: set[str] | None = None,
+) -> list[str]:
     """Extract keywords via simple frequency analysis."""
 
     if not text:
@@ -500,7 +499,7 @@ def _is_true(predicate) -> bool:
     except Exception:
         return False
 
-def select_device(preferred: Optional[str] = None) -> str:
+def select_device(preferred: str | None = None) -> str:
     """Determine the best execution device available."""
 
     if preferred:

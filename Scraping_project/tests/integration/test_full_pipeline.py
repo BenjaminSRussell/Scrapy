@@ -4,12 +4,11 @@ Tests the complete flow from discovery through enrichment.
 """
 
 import json
-import tempfile
 import time
-from pathlib import Path
 from datetime import datetime
 
 import pytest
+
 
 # Test the full pipeline without external dependencies
 def test_full_pipeline_end_to_end(tmp_path):
@@ -160,8 +159,9 @@ def test_full_pipeline_end_to_end(tmp_path):
 
 def test_pipeline_memory_efficiency():
     """Test pipeline memory usage patterns"""
-    import psutil
     import os
+
+    import psutil
 
     process = psutil.Process(os.getpid())
     initial_memory = process.memory_info().rss

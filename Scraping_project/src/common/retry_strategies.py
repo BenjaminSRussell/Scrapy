@@ -3,14 +3,13 @@ Advanced retry strategies with jittered exponential backoff and error classifica
 Handles transient vs permanent errors intelligently.
 """
 
-import random
-import time
-import logging
-from enum import Enum
-from typing import Optional, Tuple, Dict, Any
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta
 import asyncio
+import logging
+import random
+from dataclasses import dataclass
+from datetime import datetime
+from enum import Enum
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -43,9 +42,9 @@ class RetryConfig:
 
 
 def classify_error(
-    status_code: Optional[int] = None,
-    error_message: Optional[str] = None,
-    exception: Optional[Exception] = None
+    status_code: int | None = None,
+    error_message: str | None = None,
+    exception: Exception | None = None
 ) -> ErrorType:
     """
     Classify error type for intelligent retry decisions
@@ -140,7 +139,7 @@ def should_retry(
     attempt: int,
     error_type: ErrorType,
     config: RetryConfig
-) -> Tuple[bool, str]:
+) -> tuple[bool, str]:
     """
     Determine if request should be retried
 
@@ -183,7 +182,7 @@ def should_retry(
 async def retry_with_backoff(
     func,
     *args,
-    config: Optional[RetryConfig] = None,
+    config: RetryConfig | None = None,
     **kwargs
 ) -> Any:
     """
@@ -244,7 +243,7 @@ class CircuitBreakerState:
     """State for circuit breaker pattern"""
     failure_count: int = 0
     success_count: int = 0
-    last_failure_time: Optional[datetime] = None
+    last_failure_time: datetime | None = None
     state: str = "closed"  # closed, open, half_open
     consecutive_failures: int = 0
 
@@ -277,7 +276,7 @@ class DomainCircuitBreaker:
         self.failure_threshold = failure_threshold
         self.success_threshold = success_threshold
         self.timeout = timeout
-        self.domains: Dict[str, CircuitBreakerState] = {}
+        self.domains: dict[str, CircuitBreakerState] = {}
         self._lock = asyncio.Lock()
 
     def _get_state(self, domain: str) -> CircuitBreakerState:
@@ -290,7 +289,7 @@ class DomainCircuitBreaker:
             )
         return self.domains[domain]
 
-    async def is_allowed(self, domain: str) -> Tuple[bool, str]:
+    async def is_allowed(self, domain: str) -> tuple[bool, str]:
         """
         Check if request to domain is allowed
 
@@ -368,7 +367,7 @@ class DomainCircuitBreaker:
                 state.state = "open"
                 logger.info(f"Circuit breaker for {domain}: half_open → open (still failing)")
 
-    async def get_stats(self) -> Dict[str, Dict[str, Any]]:
+    async def get_stats(self) -> dict[str, dict[str, Any]]:
         """Get statistics for all domains"""
         async with self._lock:
             return {

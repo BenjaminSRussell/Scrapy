@@ -3,10 +3,10 @@ Headless browser integration for JavaScript-rendered content and AJAX endpoints.
 Supports both Playwright and Selenium with configurable options.
 """
 
-import logging
 import asyncio
-from typing import Optional, Dict, Any, List
+import logging
 from pathlib import Path
+from typing import Any
 from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
@@ -20,7 +20,7 @@ class HeadlessBrowserError(Exception):
 class HeadlessBrowser:
     """Headless browser wrapper supporting Playwright and Selenium"""
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: dict[str, Any]):
         """
         Initialize headless browser with configuration
 
@@ -164,7 +164,7 @@ class HeadlessBrowser:
             self._browser.quit()
         logger.info("Selenium browser stopped")
 
-    async def fetch_page(self, url: str) -> Dict[str, Any]:
+    async def fetch_page(self, url: str) -> dict[str, Any]:
         """
         Fetch a page with JavaScript execution
 
@@ -181,7 +181,7 @@ class HeadlessBrowser:
         else:
             raise HeadlessBrowserError(f"Unsupported browser engine: {self.engine}")
 
-    async def _fetch_playwright(self, url: str) -> Dict[str, Any]:
+    async def _fetch_playwright(self, url: str) -> dict[str, Any]:
         """Fetch page using Playwright"""
         try:
             response = await self._page.goto(url, wait_until='networkidle')
@@ -226,18 +226,18 @@ class HeadlessBrowser:
 
             raise HeadlessBrowserError(f"Failed to fetch {url}: {e}")
 
-    async def _extract_network_urls_playwright(self) -> List[str]:
+    async def _extract_network_urls_playwright(self) -> list[str]:
         """Extract URLs from network activity in Playwright"""
         # This would require setting up request/response listeners
         # For now, return empty list as placeholder
         return []
 
-    async def _fetch_selenium(self, url: str) -> Dict[str, Any]:
+    async def _fetch_selenium(self, url: str) -> dict[str, Any]:
         """Fetch page using Selenium (runs in executor since it's sync)"""
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, self._fetch_selenium_sync, url)
 
-    def _fetch_selenium_sync(self, url: str) -> Dict[str, Any]:
+    def _fetch_selenium_sync(self, url: str) -> dict[str, Any]:
         """Synchronous Selenium fetch"""
         try:
             self._browser.get(url)
@@ -246,8 +246,8 @@ class HeadlessBrowser:
             if self.wait_for_selector:
                 try:
                     from selenium.webdriver.common.by import By
-                    from selenium.webdriver.support.ui import WebDriverWait
                     from selenium.webdriver.support import expected_conditions as EC
+                    from selenium.webdriver.support.ui import WebDriverWait
 
                     WebDriverWait(self._browser, 5).until(
                         EC.presence_of_element_located((By.CSS_SELECTOR, self.wait_for_selector))
@@ -283,7 +283,7 @@ class HeadlessBrowser:
 
             raise HeadlessBrowserError(f"Failed to fetch {url}: {e}")
 
-    async def extract_ajax_endpoints(self, url: str) -> List[str]:
+    async def extract_ajax_endpoints(self, url: str) -> list[str]:
         """
         Extract AJAX endpoints from a page by monitoring network activity
 
@@ -329,10 +329,10 @@ class HeadlessBrowser:
 class HeadlessBrowserPool:
     """Pool of headless browser instances for concurrent processing"""
 
-    def __init__(self, config: Dict[str, Any], pool_size: int = 5):
+    def __init__(self, config: dict[str, Any], pool_size: int = 5):
         self.config = config
         self.pool_size = pool_size
-        self.browsers: List[HeadlessBrowser] = []
+        self.browsers: list[HeadlessBrowser] = []
         self._lock = asyncio.Lock()
 
     async def start(self):
@@ -352,7 +352,7 @@ class HeadlessBrowserPool:
         self.browsers.clear()
         logger.info("Browser pool stopped")
 
-    async def fetch_page(self, url: str) -> Dict[str, Any]:
+    async def fetch_page(self, url: str) -> dict[str, Any]:
         """Fetch page using an available browser from the pool"""
         async with self._lock:
             if not self.browsers:

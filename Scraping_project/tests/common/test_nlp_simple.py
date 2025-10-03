@@ -1,14 +1,13 @@
 """Simple tests for NLP functionality that actually work."""
 
-import pytest
 from src.common.nlp import (
-    extract_entities_and_keywords,
-    extract_content_tags,
-    has_audio_links,
     clean_text,
     # calculate_content_quality_score,
     # detect_academic_relevance,
     # identify_content_type
+    extract_content_tags,
+    extract_entities_and_keywords,
+    has_audio_links,
 )
 
 

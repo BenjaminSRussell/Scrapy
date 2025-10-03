@@ -5,13 +5,11 @@ Provides content quality scoring, recency detection, academic classification,
 language detection, and information density analysis for Stage 3 enrichment.
 """
 
-import re
 import logging
+import re
+from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Set, Tuple
-from collections import Counter
-from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
 
@@ -104,19 +102,19 @@ class ContentQualityScore:
 @dataclass
 class RecencyInfo:
     """Recency and timestamp information"""
-    most_recent_date: Optional[datetime] = None
-    oldest_date: Optional[datetime] = None
-    all_dates: List[datetime] = field(default_factory=list)
+    most_recent_date: datetime | None = None
+    oldest_date: datetime | None = None
+    all_dates: list[datetime] = field(default_factory=list)
     date_count: int = 0
 
     has_recent_content: bool = False  # Within last year
     has_very_recent_content: bool = False  # Within last 30 days
-    days_since_update: Optional[int] = None
+    days_since_update: int | None = None
 
     # Date sources
-    metadata_date: Optional[datetime] = None
-    content_dates: List[datetime] = field(default_factory=list)
-    semester_dates: List[str] = field(default_factory=list)
+    metadata_date: datetime | None = None
+    content_dates: list[datetime] = field(default_factory=list)
+    semester_dates: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -131,9 +129,9 @@ class AcademicClassification:
     is_policy_page: bool = False
     is_faculty_page: bool = False
 
-    course_codes: List[str] = field(default_factory=list)
-    department: Optional[str] = None
-    semester: Optional[str] = None
+    course_codes: list[str] = field(default_factory=list)
+    department: str | None = None
+    semester: str | None = None
 
     # Scores for each type
     course_score: float = 0.0
@@ -148,11 +146,11 @@ class LanguageInfo:
     primary_language: str = "en"
     confidence: float = 0.0
 
-    detected_languages: Dict[str, float] = field(default_factory=dict)
+    detected_languages: dict[str, float] = field(default_factory=dict)
     is_multilingual: bool = False
 
     # Content language distribution
-    language_segments: List[Tuple[str, int]] = field(default_factory=list)  # (lang, word_count)
+    language_segments: list[tuple[str, int]] = field(default_factory=list)  # (lang, word_count)
 
 
 class ContentAnalyzer:
@@ -162,7 +160,7 @@ class ContentAnalyzer:
         """Initialize content analyzer"""
         self.stop_words = self._load_stop_words()
 
-    def _load_stop_words(self) -> Set[str]:
+    def _load_stop_words(self) -> set[str]:
         """Load common English stop words"""
         return {
             'the', 'be', 'to', 'of', 'and', 'a', 'in', 'that', 'have', 'i',
@@ -175,7 +173,7 @@ class ContentAnalyzer:
     def analyze_content_quality(
         self,
         text_content: str,
-        html_structure: Optional[Dict] = None
+        html_structure: dict | None = None
     ) -> ContentQualityScore:
         """
         Analyze content quality and information density.
@@ -285,7 +283,7 @@ class ContentAnalyzer:
     def extract_recency_info(
         self,
         text_content: str,
-        metadata: Optional[Dict] = None
+        metadata: dict | None = None
     ) -> RecencyInfo:
         """
         Extract recency information and timestamps.
@@ -372,7 +370,7 @@ class ContentAnalyzer:
         self,
         text_content: str,
         url: str,
-        title: Optional[str] = None
+        title: str | None = None
     ) -> AcademicClassification:
         """
         Classify academic content type (course, research, policy, etc.).
@@ -539,18 +537,18 @@ class ContentAnalyzer:
             is_multilingual=is_multilingual
         )
 
-    def _split_sentences(self, text: str) -> List[str]:
+    def _split_sentences(self, text: str) -> list[str]:
         """Split text into sentences"""
         # Simple sentence splitter
         sentences = re.split(r'[.!?]+\s+', text)
         return [s.strip() for s in sentences if s.strip()]
 
-    def _split_paragraphs(self, text: str) -> List[str]:
+    def _split_paragraphs(self, text: str) -> list[str]:
         """Split text into paragraphs"""
         paragraphs = re.split(r'\n\s*\n', text)
         return [p.strip() for p in paragraphs if p.strip()]
 
-    def _extract_dates_from_text(self, text: str) -> List[datetime]:
+    def _extract_dates_from_text(self, text: str) -> list[datetime]:
         """Extract dates from text content"""
         dates = []
 
@@ -615,7 +613,7 @@ class ContentAnalyzer:
 
         return dates
 
-    def _calculate_indicator_score(self, text: str, indicators: List[str]) -> float:
+    def _calculate_indicator_score(self, text: str, indicators: list[str]) -> float:
         """Calculate score based on indicator patterns"""
         score = 0.0
         for pattern in indicators:

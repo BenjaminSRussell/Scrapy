@@ -3,9 +3,9 @@
 
 import csv
 import json
-from pathlib import Path
-from typing import List, Dict, Any
 import logging
+from pathlib import Path
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +17,7 @@ class CSVExporter:
         self.output_file = Path(output_file)
         self.output_file.parent.mkdir(parents=True, exist_ok=True)
 
-    def export_jsonl_to_csv(self, jsonl_file: Path, fields: List[str] = None):
+    def export_jsonl_to_csv(self, jsonl_file: Path, fields: list[str] = None):
         """Convert JSONL file to CSV."""
         if not jsonl_file.exists():
             raise FileNotFoundError(f"JSONL file not found: {jsonl_file}")
@@ -30,7 +30,7 @@ class CSVExporter:
         logger.info(f"Fields: {', '.join(fields)}")
 
         rows_exported = 0
-        with open(jsonl_file, 'r', encoding='utf-8') as infile:
+        with open(jsonl_file, encoding='utf-8') as infile:
             with open(self.output_file, 'w', newline='', encoding='utf-8') as outfile:
                 writer = csv.DictWriter(outfile, fieldnames=fields, extrasaction='ignore')
                 writer.writeheader()
@@ -54,12 +54,12 @@ class CSVExporter:
         logger.info(f"CSV export completed: {rows_exported} rows exported to {self.output_file}")
         return rows_exported
 
-    def _detect_fields(self, jsonl_file: Path) -> List[str]:
+    def _detect_fields(self, jsonl_file: Path) -> list[str]:
         """Detect fields from first few lines of JSONL file."""
         # TODO: This field detection is based on the first few lines of the file. It should be made more robust by scanning the entire file or a larger sample.
         fields = set()
 
-        with open(jsonl_file, 'r', encoding='utf-8') as f:
+        with open(jsonl_file, encoding='utf-8') as f:
             for i, line in enumerate(f):
                 if i >= 5:  # Check first 5 lines
                     break
@@ -72,7 +72,7 @@ class CSVExporter:
 
         return sorted(list(fields))
 
-    def _flatten_data(self, data: Dict[str, Any]) -> Dict[str, Any]:
+    def _flatten_data(self, data: dict[str, Any]) -> dict[str, Any]:
         """Flatten nested data for CSV export."""
         # TODO: This flattening is very basic. It should be improved to handle nested dictionaries and lists of objects more gracefully.
         flattened = {}
@@ -107,7 +107,7 @@ class JSONExporter:
         logger.info(f"Converting {jsonl_file} to structured JSON")
 
         data = []
-        with open(jsonl_file, 'r', encoding='utf-8') as f:
+        with open(jsonl_file, encoding='utf-8') as f:
             for line_no, line in enumerate(f, 1):
                 try:
                     item = json.loads(line.strip())
@@ -161,7 +161,7 @@ class ReportGenerator:
         logger.info(f"Pipeline report generated: {report_file}")
         return report
 
-    def _analyze_stage_file(self, file_path: Path, stage_type: str) -> Dict[str, Any]:
+    def _analyze_stage_file(self, file_path: Path, stage_type: str) -> dict[str, Any]:
         """Analyze a single stage file."""
         if not file_path.exists():
             return {"total_items": 0, "error": f"File not found: {file_path}"}
@@ -171,7 +171,7 @@ class ReportGenerator:
         content_types = {}
         url_patterns = {}
 
-        with open(file_path, 'r', encoding='utf-8') as f:
+        with open(file_path, encoding='utf-8') as f:
             for line in f:
                 try:
                     data = json.loads(line.strip())

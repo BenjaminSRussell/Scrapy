@@ -7,16 +7,16 @@ Provides detailed metrics for each pipeline stage:
 - Stage 3 (Enrichment): Content type distribution, page size statistics
 """
 
-import time
 import json
+import logging
 import statistics
-from collections import defaultdict, Counter
+import time
+from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime
-from pathlib import Path
-from typing import Dict, List, Optional, Any
 from enum import Enum
-import logging
+from pathlib import Path
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +36,7 @@ class Stage1Metrics:
     """Discovery stage metrics"""
     stage_name: str = "discovery"
     start_time: float = field(default_factory=time.time)
-    end_time: Optional[float] = None
+    end_time: float | None = None
 
     # Basic counts
     items_processed: int = 0
@@ -44,9 +44,9 @@ class Stage1Metrics:
     items_failed: int = 0
 
     # Stage 1 specific
-    urls_per_domain: Dict[str, int] = field(default_factory=lambda: defaultdict(int))
-    urls_per_source: Dict[str, int] = field(default_factory=lambda: defaultdict(int))
-    urls_per_depth: Dict[int, int] = field(default_factory=lambda: defaultdict(int))
+    urls_per_domain: dict[str, int] = field(default_factory=lambda: defaultdict(int))
+    urls_per_source: dict[str, int] = field(default_factory=lambda: defaultdict(int))
+    urls_per_depth: dict[int, int] = field(default_factory=lambda: defaultdict(int))
     duplicate_urls_filtered: int = 0
     robots_txt_blocked: int = 0
     total_pages_crawled: int = 0
@@ -56,7 +56,7 @@ class Stage1Metrics:
     ajax_endpoints_discovered: int = 0
     javascript_urls_found: int = 0
 
-    errors: List[str] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
 
     @property
     def duration(self) -> float:
@@ -86,7 +86,7 @@ class Stage2Metrics:
     """Validation stage metrics"""
     stage_name: str = "validation"
     start_time: float = field(default_factory=time.time)
-    end_time: Optional[float] = None
+    end_time: float | None = None
 
     # Basic counts
     items_processed: int = 0
@@ -94,10 +94,10 @@ class Stage2Metrics:
     items_failed: int = 0
 
     # Stage 2 specific
-    status_code_distribution: Dict[int, int] = field(default_factory=lambda: defaultdict(int))
-    error_type_distribution: Dict[str, int] = field(default_factory=lambda: defaultdict(int))
-    response_times: List[float] = field(default_factory=list)  # milliseconds
-    content_length_bytes: List[int] = field(default_factory=list)
+    status_code_distribution: dict[int, int] = field(default_factory=lambda: defaultdict(int))
+    error_type_distribution: dict[str, int] = field(default_factory=lambda: defaultdict(int))
+    response_times: list[float] = field(default_factory=list)  # milliseconds
+    content_length_bytes: list[int] = field(default_factory=list)
 
     # Retry and circuit breaker stats
     total_retries: int = 0
@@ -105,10 +105,10 @@ class Stage2Metrics:
     circuit_breaker_blocks: int = 0
 
     # Per-domain stats
-    requests_per_domain: Dict[str, int] = field(default_factory=lambda: defaultdict(int))
-    errors_per_domain: Dict[str, int] = field(default_factory=lambda: defaultdict(int))
+    requests_per_domain: dict[str, int] = field(default_factory=lambda: defaultdict(int))
+    errors_per_domain: dict[str, int] = field(default_factory=lambda: defaultdict(int))
 
-    errors: List[str] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
 
     @property
     def duration(self) -> float:
@@ -167,7 +167,7 @@ class Stage3Metrics:
     """Enrichment stage metrics"""
     stage_name: str = "enrichment"
     start_time: float = field(default_factory=time.time)
-    end_time: Optional[float] = None
+    end_time: float | None = None
 
     # Basic counts
     items_processed: int = 0
@@ -175,9 +175,9 @@ class Stage3Metrics:
     items_failed: int = 0
 
     # Stage 3 specific
-    content_type_distribution: Dict[str, int] = field(default_factory=lambda: defaultdict(int))
-    page_word_counts: List[int] = field(default_factory=list)
-    page_sizes_bytes: List[int] = field(default_factory=list)
+    content_type_distribution: dict[str, int] = field(default_factory=lambda: defaultdict(int))
+    page_word_counts: list[int] = field(default_factory=list)
+    page_sizes_bytes: list[int] = field(default_factory=list)
 
     # Content processing
     html_pages_processed: int = 0
@@ -189,13 +189,13 @@ class Stage3Metrics:
     # NLP/Entity extraction
     total_entities_extracted: int = 0
     total_keywords_extracted: int = 0
-    nlp_processing_time_ms: List[float] = field(default_factory=list)
+    nlp_processing_time_ms: list[float] = field(default_factory=list)
 
     # Headless browser usage
     headless_browser_pages: int = 0
     javascript_execution_count: int = 0
 
-    errors: List[str] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
 
     @property
     def duration(self) -> float:
@@ -246,12 +246,12 @@ class EnhancedMetricsCollector:
 
     def __init__(self):
         self.pipeline_start_time = time.time()
-        self.pipeline_end_time: Optional[float] = None
+        self.pipeline_end_time: float | None = None
 
         # Stage-specific metrics
-        self.stage1_metrics: Optional[Stage1Metrics] = None
-        self.stage2_metrics: Optional[Stage2Metrics] = None
-        self.stage3_metrics: Optional[Stage3Metrics] = None
+        self.stage1_metrics: Stage1Metrics | None = None
+        self.stage2_metrics: Stage2Metrics | None = None
+        self.stage3_metrics: Stage3Metrics | None = None
 
         # Lock for thread safety
         import threading
@@ -327,7 +327,7 @@ class EnhancedMetricsCollector:
         response_time_ms: float,
         content_length: int = 0,
         success: bool = True,
-        error_type: Optional[str] = None
+        error_type: str | None = None
     ):
         """Record a validation result"""
         with self._lock:
@@ -447,7 +447,7 @@ class EnhancedMetricsCollector:
 
     # ===== Summary and Export Methods =====
 
-    def get_summary(self) -> Dict[str, Any]:
+    def get_summary(self) -> dict[str, Any]:
         """Get comprehensive metrics summary"""
         with self._lock:
             pipeline_duration = (
@@ -635,7 +635,7 @@ class EnhancedMetricsCollector:
 
 
 # Global instance
-_enhanced_metrics_collector: Optional[EnhancedMetricsCollector] = None
+_enhanced_metrics_collector: EnhancedMetricsCollector | None = None
 
 
 def get_enhanced_metrics_collector() -> EnhancedMetricsCollector:

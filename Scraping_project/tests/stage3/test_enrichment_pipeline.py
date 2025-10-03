@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
+import gzip
 import json
+import sqlite3
 import sys
 from pathlib import Path
-
-import gzip
-import sqlite3
 from unittest.mock import MagicMock, patch
 
 import pytest

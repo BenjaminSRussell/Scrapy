@@ -1,11 +1,9 @@
 # TODO: Add support for exporting metrics to a time-series database, like Prometheus or InfluxDB, for better monitoring and alerting.
 """Simple metrics collection for pipeline monitoring."""
 
+import logging
 import time
 from dataclasses import dataclass, field
-from datetime import datetime
-from typing import Dict, List
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +17,7 @@ class StageMetrics:
     items_processed: int = 0
     items_succeeded: int = 0
     items_failed: int = 0
-    errors: List[str] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
 
     @property
     def duration(self) -> float:
@@ -49,7 +47,7 @@ class MetricsCollector:
     """Collects and tracks pipeline metrics."""
 
     def __init__(self):
-        self.stage_metrics: Dict[str, StageMetrics] = {}
+        self.stage_metrics: dict[str, StageMetrics] = {}
         self.pipeline_start_time = time.time()
 
     def start_stage(self, stage_name: str) -> StageMetrics:
@@ -87,7 +85,7 @@ class MetricsCollector:
         """Get metrics for a specific stage."""
         return self.stage_metrics.get(stage_name)
 
-    def get_summary(self) -> Dict[str, any]:
+    def get_summary(self) -> dict[str, any]:
         """Get overall pipeline summary."""
         total_items = sum(m.items_processed for m in self.stage_metrics.values())
         total_successes = sum(m.items_succeeded for m in self.stage_metrics.values())

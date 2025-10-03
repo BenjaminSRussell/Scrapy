@@ -11,7 +11,7 @@ SRC_DIR = Path(__file__).resolve().parents[2] / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from common.schemas import DiscoveryItem, ValidationResult, EnrichmentItem
+from common.schemas import DiscoveryItem, EnrichmentItem, ValidationResult
 
 
 def test_discovery_item_creation():

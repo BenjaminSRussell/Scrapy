@@ -3,14 +3,11 @@ Enhanced headless browser with advanced JavaScript discovery capabilities.
 Includes network interception, auto-click, SPA support, infinite scroll, and resource management.
 """
 
-import logging
 import asyncio
-import re
-from typing import Dict, Any, List, Optional, Set
-from pathlib import Path
-from urllib.parse import urlparse, urljoin
+import logging
 from datetime import datetime
-from collections import defaultdict
+from typing import Any
+from urllib.parse import urljoin
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +23,7 @@ class EnhancedBrowserDiscovery:
     Supports network interception, auto-click, infinite scroll, and SPA navigation.
     """
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: dict[str, Any]):
         """
         Initialize enhanced browser discovery
 
@@ -58,8 +55,8 @@ class EnhancedBrowserDiscovery:
         self.scroll_pause_ms = config.get('scroll_pause_ms', 500)
 
         # Network tracking
-        self.intercepted_requests: Set[str] = set()
-        self.intercepted_responses: List[Dict[str, Any]] = []
+        self.intercepted_requests: set[str] = set()
+        self.intercepted_responses: list[dict[str, Any]] = []
 
         # Resource management
         self.active_browsers = 0
@@ -75,7 +72,7 @@ class EnhancedBrowserDiscovery:
         }
 
         self._playwright = None
-        self._browser_pool: List[Any] = []
+        self._browser_pool: list[Any] = []
 
         logger.info(f"EnhancedBrowserDiscovery initialized: {self.browser_type}, concurrent_limit={self.concurrent_limit}")
 
@@ -134,7 +131,7 @@ class EnhancedBrowserDiscovery:
             return await self._create_browser()
         return self._browser_pool[self.active_browsers % len(self._browser_pool)]
 
-    async def discover_urls(self, url: str, base_domain: str) -> Dict[str, Any]:
+    async def discover_urls(self, url: str, base_domain: str) -> dict[str, Any]:
         """
         Discover URLs from a JavaScript-heavy page using all available techniques.
 
@@ -226,7 +223,7 @@ class EnhancedBrowserDiscovery:
         finally:
             self.active_browsers -= 1
 
-    async def _setup_network_interception(self, page, base_domain: str) -> List[str]:
+    async def _setup_network_interception(self, page, base_domain: str) -> list[str]:
         """Set up network request/response interception"""
         captured_urls = []
 
@@ -258,7 +255,7 @@ class EnhancedBrowserDiscovery:
 
         return captured_urls
 
-    async def _extract_static_urls(self, page, base_url: str) -> Set[str]:
+    async def _extract_static_urls(self, page, base_url: str) -> set[str]:
         """Extract URLs from static HTML content"""
         urls = set()
 
@@ -278,7 +275,7 @@ class EnhancedBrowserDiscovery:
 
         return urls
 
-    async def _auto_click_load_more(self, page, base_url: str) -> Set[str]:
+    async def _auto_click_load_more(self, page, base_url: str) -> set[str]:
         """
         Automatically detect and click "Load More" buttons.
 
@@ -352,7 +349,7 @@ class EnhancedBrowserDiscovery:
 
         return urls
 
-    async def _handle_infinite_scroll(self, page, base_url: str) -> Set[str]:
+    async def _handle_infinite_scroll(self, page, base_url: str) -> set[str]:
         """
         Handle infinite scroll by scrolling down and detecting new content.
         """
@@ -394,7 +391,7 @@ class EnhancedBrowserDiscovery:
 
         return urls
 
-    async def _detect_spa_navigation(self, page, base_url: str) -> Set[str]:
+    async def _detect_spa_navigation(self, page, base_url: str) -> set[str]:
         """
         Detect and handle Single Page Application (SPA) navigation.
 
@@ -459,7 +456,7 @@ class EnhancedBrowserDiscovery:
 
         return urls
 
-    def get_statistics(self) -> Dict[str, Any]:
+    def get_statistics(self) -> dict[str, Any]:
         """Get discovery statistics"""
         return {
             **self.stats,

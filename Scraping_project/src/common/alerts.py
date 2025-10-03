@@ -3,15 +3,16 @@
 Supports multiple notification channels: email, webhook, file-based alerts.
 """
 
-import logging
 import json
+import logging
 import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
-from pathlib import Path
-from typing import Optional, Dict, Any, List
+from dataclasses import asdict, dataclass
 from datetime import datetime
-from dataclasses import dataclass, asdict
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from pathlib import Path
+from typing import Any
+
 import requests
 
 logger = logging.getLogger(__name__)
@@ -23,10 +24,10 @@ class Alert:
     severity: str  # 'info', 'warning', 'error', 'critical'
     title: str
     message: str
-    stage: Optional[str] = None
-    exception: Optional[str] = None
+    stage: str | None = None
+    exception: str | None = None
     timestamp: str = None
-    metadata: Optional[Dict[str, Any]] = None
+    metadata: dict[str, Any] | None = None
 
     def __post_init__(self):
         if self.timestamp is None:
@@ -36,7 +37,7 @@ class Alert:
 class AlertManager:
     """Manages alerts and notifications for pipeline events."""
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: dict[str, Any]):
         """Initialize alert manager with configuration.
 
         Args:
@@ -57,7 +58,7 @@ class AlertManager:
 
         logger.info(f"AlertManager initialized (enabled={self.enabled})")
 
-    def _init_channels(self, channel_configs: List[Dict[str, Any]]) -> List['AlertChannel']:
+    def _init_channels(self, channel_configs: list[dict[str, Any]]) -> list['AlertChannel']:
         """Initialize alert channels from config."""
         channels = []
         for channel_config in channel_configs:
@@ -80,8 +81,8 @@ class AlertManager:
         severity: str,
         title: str,
         message: str,
-        stage: Optional[str] = None,
-        exception: Optional[Exception] = None,
+        stage: str | None = None,
+        exception: Exception | None = None,
         **metadata
     ):
         """Send an alert.
@@ -159,7 +160,7 @@ class AlertManager:
         """Send critical alert."""
         self.alert('critical', title, message, **kwargs)
 
-    def stage_failed(self, stage: str, reason: str, exception: Optional[Exception] = None):
+    def stage_failed(self, stage: str, reason: str, exception: Exception | None = None):
         """Alert for stage failure."""
         self.error(
             f"Stage {stage} Failed",
@@ -168,7 +169,7 @@ class AlertManager:
             exception=exception
         )
 
-    def pipeline_complete(self, stats: Dict[str, Any]):
+    def pipeline_complete(self, stats: dict[str, Any]):
         """Alert for successful pipeline completion."""
         self.info(
             "Pipeline Complete",
@@ -188,7 +189,7 @@ class AlertChannel:
 class EmailChannel(AlertChannel):
     """Email alert channel using SMTP."""
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: dict[str, Any]):
         """Initialize email channel.
 
         Args:
@@ -247,7 +248,7 @@ Message:
 class WebhookChannel(AlertChannel):
     """Webhook alert channel for services like Slack, Discord, etc."""
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: dict[str, Any]):
         """Initialize webhook channel.
 
         Args:
@@ -278,7 +279,7 @@ class WebhookChannel(AlertChannel):
             logger.error(f"Failed to send webhook alert: {e}")
             raise
 
-    def _format_payload(self, alert: Alert) -> Dict[str, Any]:
+    def _format_payload(self, alert: Alert) -> dict[str, Any]:
         """Format alert for webhook."""
         if self.format == 'slack':
             return self._slack_format(alert)
@@ -287,7 +288,7 @@ class WebhookChannel(AlertChannel):
         else:
             return asdict(alert)
 
-    def _slack_format(self, alert: Alert) -> Dict[str, Any]:
+    def _slack_format(self, alert: Alert) -> dict[str, Any]:
         """Format for Slack webhook."""
         color_map = {
             'info': '#36a64f',
@@ -310,7 +311,7 @@ class WebhookChannel(AlertChannel):
             }]
         }
 
-    def _discord_format(self, alert: Alert) -> Dict[str, Any]:
+    def _discord_format(self, alert: Alert) -> dict[str, Any]:
         """Format for Discord webhook."""
         color_map = {
             'info': 3447003,  # Blue
@@ -337,7 +338,7 @@ class WebhookChannel(AlertChannel):
 class FileChannel(AlertChannel):
     """File-based alert channel (writes to file)."""
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: dict[str, Any]):
         """Initialize file channel.
 
         Args:
@@ -365,17 +366,17 @@ class FileChannel(AlertChannel):
 
 
 # Global alert manager instance
-_alert_manager: Optional[AlertManager] = None
+_alert_manager: AlertManager | None = None
 
 
-def initialize_alerts(config: Dict[str, Any]) -> AlertManager:
+def initialize_alerts(config: dict[str, Any]) -> AlertManager:
     """Initialize global alert manager."""
     global _alert_manager
     _alert_manager = AlertManager(config)
     return _alert_manager
 
 
-def get_alert_manager() -> Optional[AlertManager]:
+def get_alert_manager() -> AlertManager | None:
     """Get global alert manager instance."""
     return _alert_manager
 

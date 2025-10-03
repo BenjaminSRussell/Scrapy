@@ -4,9 +4,9 @@ Goes beyond "is it HTML?" to provide rich metadata for Stage 3.
 """
 
 import logging
-from typing import Dict, Any, Optional, List, Tuple
 from dataclasses import dataclass
 from enum import Enum
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -44,10 +44,10 @@ class ClassificationResult:
     mime_type_family: str  # text, image, video, audio, application
     is_enrichable: bool  # Worth sending to Stage 3
     confidence: float  # 0.0-1.0 confidence in classification
-    metadata: Dict[str, Any]  # Additional metadata
-    recommendations: List[str]  # Processing recommendations
+    metadata: dict[str, Any]  # Additional metadata
+    recommendations: list[str]  # Processing recommendations
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSONL output"""
         return {
             'category': self.category.value,
@@ -128,7 +128,7 @@ class ContentClassifier:
         content_type: str,
         content_length: int,
         url: str,
-        headers: Optional[Dict[str, str]] = None
+        headers: dict[str, str] | None = None
     ) -> ClassificationResult:
         """
         Classify content and assess quality
@@ -195,7 +195,7 @@ class ContentClassifier:
     def _classify_redirect(
         self,
         status_code: int,
-        headers: Optional[Dict[str, str]],
+        headers: dict[str, str] | None,
         url: str
     ) -> ClassificationResult:
         """Classify redirect responses"""
@@ -340,8 +340,8 @@ class ContentClassifier:
         status_code: int,
         content_length: int,
         url: str,
-        headers: Optional[Dict[str, str]]
-    ) -> Dict[str, Any]:
+        headers: dict[str, str] | None
+    ) -> dict[str, Any]:
         """Generate additional metadata"""
         metadata = {
             'has_query_params': '?' in url,
@@ -379,7 +379,7 @@ class ContentClassifier:
         quality: ContentQuality,
         content_length: int,
         url: str
-    ) -> List[str]:
+    ) -> list[str]:
         """Generate processing recommendations"""
         recommendations = []
 
@@ -418,7 +418,7 @@ def classify_content(
     content_type: str,
     content_length: int,
     url: str,
-    headers: Optional[Dict[str, str]] = None
+    headers: dict[str, str] | None = None
 ) -> ClassificationResult:
     """
     Convenience function to classify content

@@ -7,23 +7,21 @@ Supports multiple export modes:
 3. Pushgateway push (for batch jobs)
 """
 
-import time
 import logging
 from pathlib import Path
-from typing import Dict, Optional, Any
-from datetime import datetime
+from typing import Any
 
 try:
     from prometheus_client import (
         CollectorRegistry,
-        Gauge,
         Counter,
+        Gauge,
         Histogram,
         Summary,
         generate_latest,
         push_to_gateway,
         start_http_server,
-        write_to_textfile
+        write_to_textfile,
     )
     PROMETHEUS_AVAILABLE = True
 except ImportError:
@@ -51,7 +49,7 @@ class PrometheusExporter:
         namespace: str = "pipeline",
         enable_http_server: bool = False,
         http_port: int = 8000,
-        pushgateway_url: Optional[str] = None
+        pushgateway_url: str | None = None
     ):
         """
         Initialize Prometheus exporter.
@@ -462,7 +460,7 @@ class PrometheusExporter:
                 error=str(e)
             )
 
-    def push_to_gateway(self, pushgateway_url: Optional[str] = None):
+    def push_to_gateway(self, pushgateway_url: str | None = None):
         """
         Push metrics to Prometheus Pushgateway.
 
@@ -517,9 +515,9 @@ class PrometheusExporter:
 
 
 def create_prometheus_exporter(
-    config: Dict[str, Any],
+    config: dict[str, Any],
     job_name: str = "scraping_pipeline"
-) -> Optional[PrometheusExporter]:
+) -> PrometheusExporter | None:
     """
     Create Prometheus exporter from configuration.
 

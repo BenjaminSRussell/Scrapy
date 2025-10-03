@@ -10,18 +10,19 @@ This module provides a comprehensive system for handling HTTP requests with:
 """
 
 import asyncio
-import aiohttp
-import ssl
 import json
-import time
-import random
-from datetime import datetime, timedelta
-from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Any, Union
-from dataclasses import dataclass, asdict
-from collections import defaultdict, deque
-from enum import Enum
 import logging
+import random
+import ssl
+import time
+from collections import defaultdict, deque
+from dataclasses import dataclass
+from datetime import datetime
+from enum import Enum
+from pathlib import Path
+from typing import Any
+
+import aiohttp
 
 logger = logging.getLogger(__name__)
 
@@ -44,11 +45,11 @@ class RequestAttempt:
     url: str
     timestamp: datetime
     outcome: RequestOutcome
-    status_code: Optional[int]
+    status_code: int | None
     response_time: float
-    error_message: Optional[str]
+    error_message: str | None
     retry_attempt: int
-    headers_used: Dict[str, str]
+    headers_used: dict[str, str]
     user_agent: str
 
 
@@ -57,14 +58,14 @@ class RequestResult:
     """Final result of a request with all attempts"""
     url: str
     success: bool
-    final_status_code: Optional[int]
-    content: Optional[str]
-    content_type: Optional[str]
+    final_status_code: int | None
+    content: str | None
+    content_type: str | None
     content_length: int
     total_attempts: int
     total_time: float
-    attempts: List[RequestAttempt]
-    learned_optimizations: List[str]
+    attempts: list[RequestAttempt]
+    learned_optimizations: list[str]
 
 
 class AdaptiveRequestConfig:
@@ -107,7 +108,7 @@ class AdaptiveRequestConfig:
             return
 
         try:
-            with open(self.analytics_file, 'r') as f:
+            with open(self.analytics_file) as f:
                 data = json.load(f)
 
             self.domain_configs = defaultdict(dict, data.get('domain_configs', {}))
@@ -135,7 +136,7 @@ class AdaptiveRequestConfig:
         except Exception as e:
             logger.error(f"Failed to save analytics: {e}")
 
-    def get_optimal_config(self, domain: str) -> Dict[str, Any]:
+    def get_optimal_config(self, domain: str) -> dict[str, Any]:
         """Get optimized configuration for a specific domain"""
         base_config = {
             'timeout': self.base_timeout,
@@ -265,7 +266,7 @@ class SmartRequestHandler:
         else:
             return RequestOutcome.UNKNOWN_ERROR
 
-    def _get_smart_headers(self, domain: str, attempt_num: int) -> Dict[str, str]:
+    def _get_smart_headers(self, domain: str, attempt_num: int) -> dict[str, str]:
         """Generate smart headers based on domain and attempt"""
         config = self.config.get_optimal_config(domain)
 
@@ -390,7 +391,7 @@ class SmartRequestHandler:
             learned_optimizations=self._get_optimizations_for_domain(domain)
         )
 
-    def _get_optimizations_for_domain(self, domain: str) -> List[str]:
+    def _get_optimizations_for_domain(self, domain: str) -> list[str]:
         """Get list of learned optimizations for a domain"""
         optimizations = []
 
@@ -405,7 +406,7 @@ class SmartRequestHandler:
 
         return optimizations
 
-    def get_performance_summary(self) -> Dict[str, Any]:
+    def get_performance_summary(self) -> dict[str, Any]:
         """Get performance and learning summary"""
         success_rate = 0
         if self.stats['total_requests'] > 0:

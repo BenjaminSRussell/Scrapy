@@ -8,8 +8,6 @@ from dataclasses import asdict
 from pathlib import Path
 from types import SimpleNamespace
 
-import pytest
-
 from src.stage2.validator import URLValidator
 from tests.samples import build_validation_result
 
@@ -49,7 +47,7 @@ class StubResponse:
         self._body = body or b"<html></html>"
         self.url = url
 
-    async def __aenter__(self) -> "StubResponse":
+    async def __aenter__(self) -> StubResponse:
         return self
 
     async def __aexit__(self, exc_type, exc, tb) -> None:
@@ -73,7 +71,7 @@ class StubSession:
         self.head_calls: list[str] = []
         self.get_calls: list[str] = []
 
-    async def __aenter__(self) -> "StubSession":
+    async def __aenter__(self) -> StubSession:
         return self
 
     async def __aexit__(self, exc_type, exc, tb) -> None:
@@ -134,7 +132,7 @@ def test_head_fallback_to_get():
 
 
 def test_validation_timeout_handling():
-    timeout_error = asyncio.TimeoutError()
+    timeout_error = TimeoutError()
     session = StubSession(head_response=timeout_error)
 
     validator = URLValidator(DummyConfig(Path("/tmp/validated.jsonl")))

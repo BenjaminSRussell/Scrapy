@@ -3,15 +3,15 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterable
 from dataclasses import asdict
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Iterable, List, Dict, Any, Optional
+from typing import Any, Dict, List, Optional
 
-from scrapy.http import Request, HtmlResponse
+from scrapy.http import HtmlResponse, Request
 
-from src.common.schemas import DiscoveryItem, ValidationResult, EnrichmentItem
-
+from src.common.schemas import DiscoveryItem, EnrichmentItem, ValidationResult
 
 ISO_START = datetime(2024, 1, 1, 12, 0, 0)
 
@@ -77,8 +77,8 @@ def html_response(
     html: str,
     *,
     depth: int = 0,
-    first_seen: Optional[str] = None,
-    request_kwargs: Optional[Dict[str, Any]] = None,
+    first_seen: str | None = None,
+    request_kwargs: dict[str, Any] | None = None,
 ) -> HtmlResponse:
     """Return HtmlResponse with Request carrying required meta data."""
     meta = {
@@ -97,7 +97,7 @@ def html_response(
     )
 
 
-def write_jsonl(path: Path, data: Iterable[Dict[str, Any]]) -> None:
+def write_jsonl(path: Path, data: Iterable[dict[str, Any]]) -> None:
     """Helper to write iterable of dicts to JSONL for fixture setup."""
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as fp:
@@ -105,5 +105,5 @@ def write_jsonl(path: Path, data: Iterable[Dict[str, Any]]) -> None:
             fp.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
 
-def discovery_items_to_dicts(items: Iterable[DiscoveryItem]) -> List[Dict[str, Any]]:
+def discovery_items_to_dicts(items: Iterable[DiscoveryItem]) -> list[dict[str, Any]]:
     return [asdict(item) for item in items]

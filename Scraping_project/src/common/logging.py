@@ -1,15 +1,14 @@
-import logging
 import json
+import logging
 import uuid
+from contextvars import ContextVar
+from datetime import datetime
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
-from datetime import datetime
-from typing import Optional, Dict, Any
-from contextvars import ContextVar
 
 # Context variables for trace correlation
-session_id_var: ContextVar[Optional[str]] = ContextVar('session_id', default=None)
-trace_id_var: ContextVar[Optional[str]] = ContextVar('trace_id', default=None)
+session_id_var: ContextVar[str | None] = ContextVar('session_id', default=None)
+trace_id_var: ContextVar[str | None] = ContextVar('trace_id', default=None)
 
 
 class StructuredFormatter(logging.Formatter):
@@ -69,7 +68,7 @@ class StructuredLogger(logging.LoggerAdapter):
 
 def setup_logging(
     log_level: str = 'INFO',
-    log_dir: Optional[Path] = None,
+    log_dir: Path | None = None,
     structured: bool = False,
     max_bytes: int = 10485760,  # 10MB
     backup_count: int = 3
@@ -153,7 +152,7 @@ def get_structured_logger(name: str, **context) -> StructuredLogger:
     return StructuredLogger(logger, context)
 
 
-def set_session_id(session_id: Optional[str] = None) -> str:
+def set_session_id(session_id: str | None = None) -> str:
     """
     Set session ID for trace correlation.
 
@@ -169,7 +168,7 @@ def set_session_id(session_id: Optional[str] = None) -> str:
     return session_id
 
 
-def set_trace_id(trace_id: Optional[str] = None) -> str:
+def set_trace_id(trace_id: str | None = None) -> str:
     """
     Set trace ID for request correlation.
 
@@ -185,12 +184,12 @@ def set_trace_id(trace_id: Optional[str] = None) -> str:
     return trace_id
 
 
-def get_session_id() -> Optional[str]:
+def get_session_id() -> str | None:
     """Get current session ID"""
     return session_id_var.get()
 
 
-def get_trace_id() -> Optional[str]:
+def get_trace_id() -> str | None:
     """Get current trace ID"""
     return trace_id_var.get()
 

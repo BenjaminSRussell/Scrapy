@@ -6,11 +6,11 @@ utilities for lineage visualization and verification.
 
 import json
 import logging
-from pathlib import Path
-from typing import Dict, List, Optional, Any, Set
-from dataclasses import dataclass, asdict
-from datetime import datetime
 from collections import defaultdict
+from dataclasses import asdict, dataclass
+from datetime import datetime
+from pathlib import Path
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -22,9 +22,9 @@ class LineageNode:
     url: str
     url_hash: str
     timestamp: str
-    input_file: Optional[str] = None
-    output_file: Optional[str] = None
-    metadata: Optional[Dict[str, Any]] = None
+    input_file: str | None = None
+    output_file: str | None = None
+    metadata: dict[str, Any] | None = None
 
 
 @dataclass
@@ -48,14 +48,14 @@ class LineageTracker:
         self.lineage_dir = Path(lineage_dir)
         self.lineage_dir.mkdir(parents=True, exist_ok=True)
 
-        self.nodes: Dict[str, LineageNode] = {}
-        self.edges: List[LineageEdge] = []
+        self.nodes: dict[str, LineageNode] = {}
+        self.edges: list[LineageEdge] = []
 
     def track_discovery(
         self,
         url: str,
         url_hash: str,
-        source_url: Optional[str] = None,
+        source_url: str | None = None,
         discovery_method: str = "html_link"
     ):
         """Track URL discovery in Stage 1.
@@ -218,7 +218,7 @@ class LineageTracker:
         input_file = self.lineage_dir / filename
 
         try:
-            with open(input_file, 'r', encoding='utf-8') as f:
+            with open(input_file, encoding='utf-8') as f:
                 lineage_data = json.load(f)
 
             # Reconstruct nodes
@@ -237,7 +237,7 @@ class LineageTracker:
         except Exception as e:
             logger.error(f"Failed to load lineage: {e}")
 
-    def get_lineage_path(self, url_hash: str) -> List[LineageNode]:
+    def get_lineage_path(self, url_hash: str) -> list[LineageNode]:
         """Get complete lineage path for a URL.
 
         Args:
@@ -269,7 +269,7 @@ class LineageTracker:
 
         return list(reversed(path))
 
-    def verify_lineage(self) -> Dict[str, Any]:
+    def verify_lineage(self) -> dict[str, Any]:
         """Verify lineage integrity.
 
         Returns:
@@ -305,7 +305,7 @@ class LineageTracker:
 
         return results
 
-    def generate_stats(self) -> Dict[str, Any]:
+    def generate_stats(self) -> dict[str, Any]:
         """Generate lineage statistics.
 
         Returns:
@@ -355,8 +355,8 @@ class LineageTracker:
 
 def build_lineage_from_files(
     stage1_file: Path,
-    stage2_file: Optional[Path] = None,
-    stage3_file: Optional[Path] = None
+    stage2_file: Path | None = None,
+    stage3_file: Path | None = None
 ) -> LineageTracker:
     """Build lineage tracker from pipeline output files.
 
@@ -373,7 +373,7 @@ def build_lineage_from_files(
     # Process Stage 1
     if stage1_file and stage1_file.exists():
         logger.info(f"Processing Stage 1 file: {stage1_file}")
-        with open(stage1_file, 'r', encoding='utf-8') as f:
+        with open(stage1_file, encoding='utf-8') as f:
             for line in f:
                 try:
                     data = json.loads(line.strip())
@@ -389,7 +389,7 @@ def build_lineage_from_files(
     # Process Stage 2
     if stage2_file and stage2_file.exists():
         logger.info(f"Processing Stage 2 file: {stage2_file}")
-        with open(stage2_file, 'r', encoding='utf-8') as f:
+        with open(stage2_file, encoding='utf-8') as f:
             for line in f:
                 try:
                     data = json.loads(line.strip())
@@ -405,7 +405,7 @@ def build_lineage_from_files(
     # Process Stage 3
     if stage3_file and stage3_file.exists():
         logger.info(f"Processing Stage 3 file: {stage3_file}")
-        with open(stage3_file, 'r', encoding='utf-8') as f:
+        with open(stage3_file, encoding='utf-8') as f:
             for line in f:
                 try:
                     data = json.loads(line.strip())

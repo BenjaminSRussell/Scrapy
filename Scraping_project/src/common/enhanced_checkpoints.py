@@ -9,17 +9,17 @@ Provides:
 - Checkpoint health monitoring
 """
 
-import json
 import hashlib
+import json
+import logging
+import shutil
 import threading
 import time
-import shutil
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta
-from dataclasses import dataclass, asdict, field
 from enum import Enum
-import logging
+from pathlib import Path
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -42,9 +42,9 @@ class ProgressMetrics:
     successful_items: int = 0
     failed_items: int = 0
     skipped_items: int = 0
-    start_time: Optional[float] = None
-    last_update_time: Optional[float] = None
-    estimated_completion_time: Optional[float] = None
+    start_time: float | None = None
+    last_update_time: float | None = None
+    estimated_completion_time: float | None = None
 
     def get_progress_percentage(self) -> float:
         """Calculate progress percentage"""
@@ -69,7 +69,7 @@ class ProgressMetrics:
 
         return self.processed_items / elapsed
 
-    def estimate_completion(self) -> Optional[float]:
+    def estimate_completion(self) -> float | None:
         """Estimate completion time in seconds"""
         if self.total_items == 0 or self.processed_items == 0:
             return None
@@ -81,7 +81,7 @@ class ProgressMetrics:
         remaining = self.total_items - self.processed_items
         return remaining / throughput
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary"""
         return asdict(self)
 
@@ -94,33 +94,33 @@ class CheckpointState:
     progress: ProgressMetrics = field(default_factory=ProgressMetrics)
 
     # Resume information
-    last_processed_item: Optional[str] = None
+    last_processed_item: str | None = None
     last_processed_index: int = 0
     batch_id: int = 0
 
     # Metadata
-    input_file: Optional[str] = None
-    input_file_hash: Optional[str] = None
-    output_file: Optional[str] = None
+    input_file: str | None = None
+    input_file_hash: str | None = None
+    output_file: str | None = None
     created_at: str = field(default_factory=lambda: datetime.now().isoformat())
     updated_at: str = field(default_factory=lambda: datetime.now().isoformat())
 
     # Error tracking
-    error_message: Optional[str] = None
+    error_message: str | None = None
     error_count: int = 0
-    last_error_time: Optional[str] = None
+    last_error_time: str | None = None
 
     # Custom metadata
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary with enum handling"""
         data = asdict(self)
         data['status'] = self.status.value
         return data
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'CheckpointState':
+    def from_dict(cls, data: dict[str, Any]) -> 'CheckpointState':
         """Create from dictionary"""
         # Handle status enum
         if 'status' in data and isinstance(data['status'], str):
@@ -160,7 +160,7 @@ class EnhancedCheckpoint:
         # Try to load main checkpoint
         if self.checkpoint_file.exists():
             try:
-                with open(self.checkpoint_file, 'r', encoding='utf-8') as f:
+                with open(self.checkpoint_file, encoding='utf-8') as f:
                     data = json.load(f)
                     state = CheckpointState.from_dict(data)
 
@@ -180,7 +180,7 @@ class EnhancedCheckpoint:
                         logger.info(f"Attempting to restore from backup: {self.backup_file}")
                         shutil.copy(self.backup_file, self.checkpoint_file)
 
-                        with open(self.checkpoint_file, 'r', encoding='utf-8') as f:
+                        with open(self.checkpoint_file, encoding='utf-8') as f:
                             data = json.load(f)
                             state = CheckpointState.from_dict(data)
                             state.status = CheckpointStatus.RECOVERING
@@ -221,7 +221,7 @@ class EnhancedCheckpoint:
             except Exception as e:
                 logger.error(f"Failed to save checkpoint {self.checkpoint_file}: {e}")
 
-    def start(self, stage: str, total_items: int = 0, input_file: Optional[str] = None):
+    def start(self, stage: str, total_items: int = 0, input_file: str | None = None):
         """Start checkpoint for a stage"""
         with self._lock:
             self.state.stage = stage
@@ -243,8 +243,8 @@ class EnhancedCheckpoint:
         successful: int = 0,
         failed: int = 0,
         skipped: int = 0,
-        last_item: Optional[str] = None,
-        index: Optional[int] = None
+        last_item: str | None = None,
+        index: int | None = None
     ):
         """Update progress metrics"""
         force_save = False
@@ -313,7 +313,7 @@ class EnhancedCheckpoint:
         """Check if item should be skipped (already processed)"""
         return index <= self.state.last_processed_index
 
-    def get_resume_point(self) -> Dict[str, Any]:
+    def get_resume_point(self) -> dict[str, Any]:
         """Get information for resuming"""
         with self._lock:
             return {
@@ -326,7 +326,7 @@ class EnhancedCheckpoint:
                 'batch_id': self.state.batch_id
             }
 
-    def get_progress_report(self) -> Dict[str, Any]:
+    def get_progress_report(self) -> dict[str, Any]:
         """Get comprehensive progress report"""
         with self._lock:
             return {
@@ -344,7 +344,7 @@ class EnhancedCheckpoint:
                 'elapsed_seconds': (time.time() - self.state.progress.start_time) if self.state.progress.start_time else 0
             }
 
-    def validate_input_file(self, input_file: Path) -> Tuple[bool, str]:
+    def validate_input_file(self, input_file: Path) -> tuple[bool, str]:
         """Validate input file hasn't changed"""
         if not self.state.input_file or not self.state.input_file_hash:
             return True, "No input file validation needed"
@@ -411,10 +411,10 @@ class UnifiedCheckpointManager:
     def __init__(self, checkpoint_dir: Path):
         self.checkpoint_dir = Path(checkpoint_dir)
         self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
-        self._checkpoints: Dict[str, EnhancedCheckpoint] = {}
+        self._checkpoints: dict[str, EnhancedCheckpoint] = {}
         self._lock = threading.Lock()
 
-    def get_checkpoint(self, stage: str, auto_create: bool = True) -> Optional[EnhancedCheckpoint]:
+    def get_checkpoint(self, stage: str, auto_create: bool = True) -> EnhancedCheckpoint | None:
         """Get or create checkpoint for a stage"""
         with self._lock:
             if stage not in self._checkpoints:
@@ -426,7 +426,7 @@ class UnifiedCheckpointManager:
 
             return self._checkpoints[stage]
 
-    def get_all_checkpoints(self) -> List[EnhancedCheckpoint]:
+    def get_all_checkpoints(self) -> list[EnhancedCheckpoint]:
         """Get all active checkpoints"""
         with self._lock:
             # Also load any checkpoint files not yet in memory
@@ -437,7 +437,7 @@ class UnifiedCheckpointManager:
 
             return list(self._checkpoints.values())
 
-    def get_pipeline_progress(self) -> Dict[str, Any]:
+    def get_pipeline_progress(self) -> dict[str, Any]:
         """Get overall pipeline progress"""
         checkpoints = self.get_all_checkpoints()
 

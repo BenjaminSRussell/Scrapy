@@ -2,12 +2,11 @@
 Tests to verify that README examples actually work correctly
 """
 
-import pytest
 import subprocess
 import sys
 from pathlib import Path
-import tempfile
-import json
+
+import pytest
 
 
 class TestREADMEExamples:
@@ -164,7 +163,7 @@ class TestREADMEExamples:
 
     def test_stage_output_schema_fields(self):
         """Test that output schema fields mentioned in README exist"""
-        from src.common.schemas import DiscoveryItem, ValidationResult, EnrichmentItem
+        from src.common.schemas import DiscoveryItem, EnrichmentItem, ValidationResult
 
         # Test Stage 1 fields from README
         discovery_fields = ['source_url', 'discovered_url', 'first_seen', 'discovery_depth', 'confidence']

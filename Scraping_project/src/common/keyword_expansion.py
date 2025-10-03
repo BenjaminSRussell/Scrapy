@@ -2,6 +2,7 @@
 This module provides functionality for expanding keywords with synonyms.
 """
 import logging
+
 import nltk
 from nltk.corpus import wordnet
 

@@ -4,12 +4,10 @@ Supports metadata extraction, text extraction from PDFs, and media processing.
 """
 
 import logging
-import hashlib
-from typing import Dict, Any, Optional, List
-from pathlib import Path
-from datetime import datetime
-from urllib.parse import urlparse
 import mimetypes
+from datetime import datetime
+from pathlib import Path
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +20,7 @@ class ContentHandlerError(Exception):
 class PDFHandler:
     """Handler for PDF content extraction"""
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: dict[str, Any]):
         """
         Initialize PDF handler with configuration
 
@@ -38,7 +36,7 @@ class PDFHandler:
 
         logger.info(f"PDFHandler initialized (extract_text={self.extract_text}, max_pages={self.max_pages})")
 
-    def process_pdf(self, pdf_bytes: bytes, url: str, url_hash: str) -> Dict[str, Any]:
+    def process_pdf(self, pdf_bytes: bytes, url: str, url_hash: str) -> dict[str, Any]:
         """
         Process PDF content and extract text and metadata
 
@@ -61,10 +59,11 @@ class PDFHandler:
                 logger.warning("No PDF library available. Install PyPDF2 or pdfplumber: pip install PyPDF2 pdfplumber")
                 return self._create_basic_result(pdf_bytes, url, url_hash)
 
-    def _process_with_pypdf2(self, pdf_bytes: bytes, url: str, url_hash: str) -> Dict[str, Any]:
+    def _process_with_pypdf2(self, pdf_bytes: bytes, url: str, url_hash: str) -> dict[str, Any]:
         """Process PDF using PyPDF2"""
-        from PyPDF2 import PdfReader
         import io
+
+        from PyPDF2 import PdfReader
 
         pdf_file = io.BytesIO(pdf_bytes)
         reader = PdfReader(pdf_file)
@@ -112,10 +111,11 @@ class PDFHandler:
             'extracted_at': datetime.now().isoformat(),
         }
 
-    def _process_with_pdfplumber(self, pdf_bytes: bytes, url: str, url_hash: str) -> Dict[str, Any]:
+    def _process_with_pdfplumber(self, pdf_bytes: bytes, url: str, url_hash: str) -> dict[str, Any]:
         """Process PDF using pdfplumber (alternative library)"""
-        import pdfplumber
         import io
+
+        import pdfplumber
 
         pdf_file = io.BytesIO(pdf_bytes)
 
@@ -164,7 +164,7 @@ class PDFHandler:
             'extracted_at': datetime.now().isoformat(),
         }
 
-    def _create_basic_result(self, pdf_bytes: bytes, url: str, url_hash: str) -> Dict[str, Any]:
+    def _create_basic_result(self, pdf_bytes: bytes, url: str, url_hash: str) -> dict[str, Any]:
         """Create basic result when no PDF library is available"""
         return {
             'url': url,
@@ -184,7 +184,7 @@ class PDFHandler:
 class MediaHandler:
     """Handler for image, video, and audio content"""
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: dict[str, Any]):
         """
         Initialize media handler with configuration
 
@@ -203,7 +203,7 @@ class MediaHandler:
 
         logger.info(f"MediaHandler initialized (extract_metadata={self.extract_metadata})")
 
-    def process_image(self, image_bytes: bytes, url: str, url_hash: str, content_type: str) -> Dict[str, Any]:
+    def process_image(self, image_bytes: bytes, url: str, url_hash: str, content_type: str) -> dict[str, Any]:
         """
         Process image content and extract metadata
 
@@ -229,8 +229,9 @@ class MediaHandler:
             return result
 
         try:
-            from PIL import Image
             import io
+
+            from PIL import Image
 
             img = Image.open(io.BytesIO(image_bytes))
 
@@ -261,7 +262,7 @@ class MediaHandler:
 
         return result
 
-    def process_video(self, video_bytes: bytes, url: str, url_hash: str, content_type: str) -> Dict[str, Any]:
+    def process_video(self, video_bytes: bytes, url: str, url_hash: str, content_type: str) -> dict[str, Any]:
         """
         Process video content and extract metadata
 
@@ -293,7 +294,7 @@ class MediaHandler:
 
         return result
 
-    def process_audio(self, audio_bytes: bytes, url: str, url_hash: str, content_type: str) -> Dict[str, Any]:
+    def process_audio(self, audio_bytes: bytes, url: str, url_hash: str, content_type: str) -> dict[str, Any]:
         """
         Process audio content and extract metadata
 
@@ -327,7 +328,6 @@ class MediaHandler:
 
     def _save_thumbnail(self, img, url_hash: str) -> Path:
         """Save thumbnail image"""
-        from PIL import Image
 
         thumbnail_size = (200, 200)
         img_copy = img.copy()
@@ -343,7 +343,7 @@ class MediaHandler:
 class ContentTypeRouter:
     """Routes content to appropriate handler based on MIME type"""
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: dict[str, Any]):
         """
         Initialize content router with configuration
 
@@ -364,7 +364,7 @@ class ContentTypeRouter:
 
     def process_content(
         self, content_bytes: bytes, url: str, url_hash: str, content_type: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Route content to appropriate handler
 

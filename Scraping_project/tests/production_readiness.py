@@ -1,10 +1,10 @@
 """Test configuration and benchmarks for production readiness assessment"""
 
-import time
-import psutil
 import os
 from pathlib import Path
-from typing import Dict, Any, List
+from typing import Any
+
+import psutil
 
 # Performance benchmarks for production readiness
 PERFORMANCE_BENCHMARKS = {
@@ -62,7 +62,7 @@ class ProductionReadinessChecker:
             "scalability_proven": False
         }
 
-    def check_performance_benchmark(self, test_name: str, metrics: Dict[str, Any]) -> bool:
+    def check_performance_benchmark(self, test_name: str, metrics: dict[str, Any]) -> bool:
         """Check if performance metrics meet benchmark requirements"""
         if test_name not in PERFORMANCE_BENCHMARKS:
             return True  # No specific benchmark defined
@@ -92,7 +92,7 @@ class ProductionReadinessChecker:
 
         return True
 
-    def evaluate_readiness(self, test_results: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
+    def evaluate_readiness(self, test_results: dict[str, dict[str, Any]]) -> dict[str, Any]:
         """Evaluate overall production readiness"""
         readiness_score = 0
         total_criteria = len(self.criteria)
@@ -155,7 +155,7 @@ class ProductionReadinessChecker:
             "recommendations": self._generate_recommendations()
         }
 
-    def _generate_recommendations(self) -> List[str]:
+    def _generate_recommendations(self) -> list[str]:
         """Generate recommendations based on failed criteria"""
         recommendations = []
 
@@ -179,7 +179,7 @@ class ProductionReadinessChecker:
 
         return recommendations
 
-def get_system_resources() -> Dict[str, Any]:
+def get_system_resources() -> dict[str, Any]:
     """Get current system resource information"""
     process = psutil.Process(os.getpid())
     return {
@@ -191,7 +191,7 @@ def get_system_resources() -> Dict[str, Any]:
         "process_cpu_percent": process.cpu_percent()
     }
 
-def validate_test_environment() -> Dict[str, Any]:
+def validate_test_environment() -> dict[str, Any]:
     """Validate that test environment meets minimum requirements"""
     resources = get_system_resources()
 

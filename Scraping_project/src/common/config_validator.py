@@ -7,9 +7,8 @@ configuration health reporting.
 """
 
 import logging
-from pathlib import Path
-from typing import Dict, List, Tuple, Any
 from dataclasses import dataclass
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -42,9 +41,9 @@ class ConfigHealthCheck:
             config: Config instance or PipelineConfig instance
         """
         self.config = config
-        self.issues: List[ValidationIssue] = []
+        self.issues: list[ValidationIssue] = []
 
-    def run_all_checks(self) -> Tuple[bool, List[ValidationIssue]]:
+    def run_all_checks(self) -> tuple[bool, list[ValidationIssue]]:
         """
         Run all health checks.
 
@@ -194,8 +193,9 @@ class ConfigHealthCheck:
                         import playwright
                         # Check if browsers are installed
                         try:
-                            import sys
                             import asyncio
+                            import sys
+
                             from playwright.sync_api import sync_playwright
 
                             # Temporarily switch to ProactorEventLoop on Windows for Playwright check

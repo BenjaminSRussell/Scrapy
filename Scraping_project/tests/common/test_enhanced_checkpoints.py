@@ -2,20 +2,17 @@
 Tests for enhanced checkpoint system.
 """
 
-import pytest
-import asyncio
 import time
-from pathlib import Path
-import json
 
-from src.common.enhanced_checkpoints import (
-    EnhancedCheckpoint,
-    UnifiedCheckpointManager,
-    CheckpointStatus,
-    ProgressMetrics,
-    CheckpointState
-)
+import pytest
+
 from src.common.checkpoint_middleware import AsyncCheckpointTracker
+from src.common.enhanced_checkpoints import (
+    CheckpointStatus,
+    EnhancedCheckpoint,
+    ProgressMetrics,
+    UnifiedCheckpointManager,
+)
 
 
 class TestProgressMetrics:

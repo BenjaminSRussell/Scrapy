@@ -4,12 +4,11 @@ from __future__ import annotations
 
 import os
 import sys
-import tempfile
-import yaml
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+import yaml
 
 SRC_DIR = Path(__file__).resolve().parents[2] / "src"
 if str(SRC_DIR) not in sys.path:

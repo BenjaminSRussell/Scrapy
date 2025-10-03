@@ -5,18 +5,18 @@ Provides OCR for images, video/audio transcription capabilities,
 and media content analysis for Stage 3 enrichment.
 """
 
+import hashlib
 import logging
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Any
 from pathlib import Path
-import hashlib
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
 # Optional imports - gracefully handle missing dependencies
 try:
-    from PIL import Image
     import pytesseract
+    from PIL import Image
     TESSERACT_AVAILABLE = True
 except ImportError:
     TESSERACT_AVAILABLE = False
@@ -41,11 +41,11 @@ class OCRResult:
     # Metadata
     image_url: str = ""
     image_hash: str = ""
-    image_dimensions: Optional[tuple] = None  # (width, height)
+    image_dimensions: tuple | None = None  # (width, height)
 
     # Error handling
     success: bool = False
-    error_message: Optional[str] = None
+    error_message: str | None = None
 
 
 @dataclass
@@ -54,7 +54,7 @@ class TranscriptionResult:
     text: str = ""
     confidence: float = 0.0
     language: str = "en-US"
-    duration_seconds: Optional[float] = None
+    duration_seconds: float | None = None
 
     # Metadata
     media_url: str = ""
@@ -62,17 +62,17 @@ class TranscriptionResult:
     media_type: str = ""  # audio, video
 
     # Timestamps (if available)
-    segments: List[Dict[str, Any]] = field(default_factory=list)
+    segments: list[dict[str, Any]] = field(default_factory=list)
 
     # Error handling
     success: bool = False
-    error_message: Optional[str] = None
+    error_message: str | None = None
 
 
 class ImageOCRExtractor:
     """Extract text from images using OCR"""
 
-    def __init__(self, config: Optional[Dict] = None):
+    def __init__(self, config: dict | None = None):
         """
         Initialize OCR extractor.
 
@@ -199,7 +199,7 @@ class ImageOCRExtractor:
 class MediaTranscriber:
     """Transcribe audio and video content"""
 
-    def __init__(self, config: Optional[Dict] = None):
+    def __init__(self, config: dict | None = None):
         """
         Initialize media transcriber.
 
@@ -249,7 +249,6 @@ class MediaTranscriber:
             media_hash = hashlib.sha256(audio_data).hexdigest()
 
             # Convert audio data to AudioFile format
-            from io import BytesIO
             import tempfile
 
             # Save to temporary file (speech_recognition requires file)
@@ -351,7 +350,7 @@ class MediaTranscriber:
 class MediaAnalyzer:
     """Unified interface for media content analysis"""
 
-    def __init__(self, config: Optional[Dict] = None):
+    def __init__(self, config: dict | None = None):
         """
         Initialize media analyzer with OCR and transcription capabilities.
 

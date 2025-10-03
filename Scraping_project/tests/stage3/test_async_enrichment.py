@@ -2,18 +2,17 @@
 Tests for async enrichment processor.
 """
 
-import pytest
-import asyncio
-import aiohttp
-from pathlib import Path
-from unittest.mock import Mock, patch, AsyncMock
 import json
+from unittest.mock import AsyncMock, patch
+
+import aiohttp
+import pytest
 
 from src.stage3.async_enrichment import (
+    AdaptiveConcurrencyController,
     AsyncEnrichmentProcessor,
     EnrichmentResult,
-    AdaptiveConcurrencyController,
-    run_async_enrichment
+    run_async_enrichment,
 )
 
 

@@ -5,13 +5,12 @@ Stage 2 reports failed URL patterns back to Stage 1 for adaptive discovery.
 
 import json
 import logging
-from collections import defaultdict, Counter
-from dataclasses import dataclass, field, asdict
-from datetime import datetime, timedelta
-from pathlib import Path
-from typing import Dict, List, Set, Optional, Tuple
-from urllib.parse import urlparse, parse_qs
 import re
+from collections import defaultdict
+from dataclasses import asdict, dataclass, field
+from datetime import datetime
+from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +27,7 @@ class URLPatternStats:
     success_rate: float = 0.0
     avg_confidence: float = 0.0
     last_seen: str = field(default_factory=lambda: datetime.now().isoformat())
-    failure_types: Dict[str, int] = field(default_factory=dict)  # e.g., {"404": 10, "timeout": 2}
+    failure_types: dict[str, int] = field(default_factory=dict)  # e.g., {"404": 10, "timeout": 2}
 
     def update_success_rate(self):
         """Recalculate success rate based on current stats"""
@@ -45,14 +44,14 @@ class SessionStats:
 
     session_id: str
     started_at: str
-    completed_at: Optional[str] = None
+    completed_at: str | None = None
     total_discovered: int = 0
     total_validated: int = 0
     total_failed: int = 0
     success_rate: float = 0.0
 
     # Per-source breakdown for this session
-    source_performance: Dict[str, Dict[str, int]] = field(default_factory=dict)
+    source_performance: dict[str, dict[str, int]] = field(default_factory=dict)
 
 
 class FeedbackStore:
@@ -67,9 +66,9 @@ class FeedbackStore:
         self.feedback_file.parent.mkdir(parents=True, exist_ok=True)
 
         # In-memory stats
-        self.pattern_stats: Dict[str, URLPatternStats] = {}
-        self.source_stats: Dict[str, URLPatternStats] = {}
-        self.session_history: List[SessionStats] = []
+        self.pattern_stats: dict[str, URLPatternStats] = {}
+        self.source_stats: dict[str, URLPatternStats] = {}
+        self.session_history: list[SessionStats] = []
 
         # Current session tracking
         self.current_session = SessionStats(
@@ -207,7 +206,7 @@ class FeedbackStore:
         self.source_stats[discovery_source].total_discovered += 1
 
     def record_validation(self, url: str, discovery_source: str, is_valid: bool,
-                         status_code: Optional[int] = None, error_type: Optional[str] = None):
+                         status_code: int | None = None, error_type: str | None = None):
         """Record validation result from Stage 2"""
         pattern = self.extract_url_pattern(url)
 
@@ -259,7 +258,7 @@ class FeedbackStore:
             source_stats.update_success_rate()
             source_stats.last_seen = datetime.now().isoformat()
 
-    def get_low_quality_patterns(self, min_samples: int = 10, max_success_rate: float = 0.3) -> List[str]:
+    def get_low_quality_patterns(self, min_samples: int = 10, max_success_rate: float = 0.3) -> list[str]:
         """
         Get URL patterns that consistently fail validation.
 
@@ -350,7 +349,7 @@ class FeedbackStore:
 
         return base_confidence
 
-    def get_heuristic_trends(self, num_sessions: int = 10) -> Dict[str, List[float]]:
+    def get_heuristic_trends(self, num_sessions: int = 10) -> dict[str, list[float]]:
         """
         Get success rate trends for each heuristic across recent sessions.
 
@@ -376,7 +375,7 @@ class FeedbackStore:
 
         return dict(trends)
 
-    def get_improving_heuristics(self, min_sessions: int = 3) -> List[str]:
+    def get_improving_heuristics(self, min_sessions: int = 3) -> list[str]:
         """Get heuristics that are showing improvement over time"""
         trends = self.get_heuristic_trends()
         improving = []
@@ -392,7 +391,7 @@ class FeedbackStore:
 
         return improving
 
-    def get_declining_heuristics(self, min_sessions: int = 3) -> List[str]:
+    def get_declining_heuristics(self, min_sessions: int = 3) -> list[str]:
         """Get heuristics that are showing decline over time"""
         trends = self.get_heuristic_trends()
         declining = []
@@ -408,7 +407,7 @@ class FeedbackStore:
 
         return declining
 
-    def get_feedback_summary(self) -> Dict[str, any]:
+    def get_feedback_summary(self) -> dict[str, any]:
         """Get a summary of feedback statistics"""
         return {
             'total_patterns': len(self.pattern_stats),

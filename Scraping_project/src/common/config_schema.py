@@ -3,10 +3,10 @@ Pydantic-based configuration schema with strict validation.
 Catches type errors, range violations, and typos (unknown keys).
 """
 
-from typing import List, Dict, Any, Optional, Literal
-from pathlib import Path
-from pydantic import BaseModel, Field, field_validator, model_validator, ConfigDict
 import logging
+from typing import Any, Literal
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 logger = logging.getLogger(__name__)
 
@@ -147,7 +147,7 @@ class HeadlessBrowserConfig(BaseModel):
         le=300000,
         description="Page load timeout in milliseconds"
     )
-    wait_for_selector: Optional[str] = Field(
+    wait_for_selector: str | None = Field(
         default=None,
         description="CSS selector to wait for (optional)"
     )
@@ -155,7 +155,7 @@ class HeadlessBrowserConfig(BaseModel):
         default=False,
         description="Capture screenshot on errors"
     )
-    user_agent: Optional[str] = Field(
+    user_agent: str | None = Field(
         default="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
         description="Browser user agent"
     )
@@ -250,7 +250,7 @@ class ContentTypesConfig(BaseModel):
     """Content type handling configuration"""
     model_config = ConfigDict(extra='forbid')
 
-    enabled_types: List[str] = Field(
+    enabled_types: list[str] = Field(
         default=[
             "text/html",
             "application/pdf",
@@ -316,7 +316,7 @@ class HeuristicsConfig(BaseModel):
         description="Enable extraction of meta refresh redirect URLs"
     )
 
-    dynamic_script_hints: List[str] = Field(
+    dynamic_script_hints: list[str] = Field(
         default=[
             "fetch(", "xmlhttprequest", "axios", "$.get", "$.post",
             ".ajax", "loadmore", "nexturl", "next_url", "load_more",
@@ -324,11 +324,11 @@ class HeuristicsConfig(BaseModel):
         ],
         description="JavaScript patterns indicating dynamic content"
     )
-    json_url_key_hints: List[str] = Field(
+    json_url_key_hints: list[str] = Field(
         default=["url", "href", "link", "endpoint", "action", "download"],
         description="JSON keys likely to contain URLs"
     )
-    data_attribute_candidates: List[str] = Field(
+    data_attribute_candidates: list[str] = Field(
         default=[
             "data-url", "data-src", "data-endpoint", "data-load",
             "data-load-url", "data-href", "data-link", "data-api",
@@ -367,7 +367,7 @@ class DiscoveryStageConfig(BaseModel):
         min_length=1,
         description="Spider name"
     )
-    allowed_domains: List[str] = Field(
+    allowed_domains: list[str] = Field(
         default=["uconn.edu"],
         min_length=1,
         description="List of allowed domains to crawl"
@@ -556,10 +556,10 @@ class StorageRotationConfig(BaseModel):
     """Rotation configuration for enrichment storage."""
     model_config = ConfigDict(extra='forbid')
 
-    max_bytes: Optional[int] = Field(default=None, ge=1, description='Rotate after writing this many bytes')
-    max_items: Optional[int] = Field(default=None, ge=1, description='Rotate after writing this many items')
-    max_seconds: Optional[int] = Field(default=None, ge=1, description='Rotate after this many seconds')
-    enabled: Optional[bool] = Field(default=None, description='Explicitly enable or disable rotation')
+    max_bytes: int | None = Field(default=None, ge=1, description='Rotate after writing this many bytes')
+    max_items: int | None = Field(default=None, ge=1, description='Rotate after writing this many items')
+    max_seconds: int | None = Field(default=None, ge=1, description='Rotate after this many seconds')
+    enabled: bool | None = Field(default=None, description='Explicitly enable or disable rotation')
 
 
 class StorageCompressionConfig(BaseModel):
@@ -570,7 +570,7 @@ class StorageCompressionConfig(BaseModel):
         default='none',
         description='Compression codec to apply'
     )
-    level: Optional[int] = Field(
+    level: int | None = Field(
         default=None,
         ge=1,
         le=9,
@@ -597,15 +597,15 @@ class EnrichmentStorageConfig(BaseModel):
         default='jsonl',
         description='Storage backend implementation to use'
     )
-    options: Dict[str, Any] = Field(
+    options: dict[str, Any] = Field(
         default_factory=dict,
         description='Backend-specific options dictionary'
     )
-    rotation: Optional[StorageRotationConfig] = Field(
+    rotation: StorageRotationConfig | None = Field(
         default=None,
         description='Rotation policy configuration'
     )
-    compression: Optional[StorageCompressionConfig] = Field(
+    compression: StorageCompressionConfig | None = Field(
         default=None,
         description='Compression configuration'
     )
@@ -627,7 +627,7 @@ class EnrichmentStageConfig(BaseModel):
         min_length=1,
         description="Spider name"
     )
-    allowed_domains: List[str] = Field(
+    allowed_domains: list[str] = Field(
         default=["uconn.edu"],
         min_length=1,
         description="List of allowed domains"
@@ -847,11 +847,11 @@ class NLPConfig(BaseModel):
         default=False,
         description="Enable transformer-based models for advanced NLP"
     )
-    transformer_ner_model: Optional[str] = Field(
+    transformer_ner_model: str | None = Field(
         default="dslim/bert-base-NER",
         description="Transformer model for Named Entity Recognition"
     )
-    summarizer_model: Optional[str] = Field(
+    summarizer_model: str | None = Field(
         default="sshleifer/distilbart-cnn-12-6",
         description="Transformer model for text summarization"
     )
@@ -885,13 +885,13 @@ class NLPConfig(BaseModel):
     )
 
     # Device configuration
-    device: Optional[Literal["cpu", "cuda", "mps", "auto"]] = Field(
+    device: Literal["cpu", "cuda", "mps", "auto"] | None = Field(
         default="auto",
         description="Device for transformer models (auto, cpu, cuda, mps)"
     )
 
     # Legacy compatibility
-    model: Optional[str] = Field(
+    model: str | None = Field(
         default=None,
         description="Deprecated: use spacy_model instead"
     )
@@ -901,7 +901,7 @@ class ContentConfig(BaseModel):
     """Content filtering configuration"""
     model_config = ConfigDict(extra='forbid')
 
-    predefined_tags: List[str] = Field(
+    predefined_tags: list[str] = Field(
         default=[
             "admissions", "about", "research", "students", "faculty",
             "staff", "alumni", "athletics", "covid", "graduate",
@@ -923,7 +923,7 @@ class EmailChannelConfig(BaseModel):
     smtp_user: str = Field(min_length=1)
     smtp_password: str = Field(min_length=1)
     from_addr: str = Field(min_length=1)
-    to_addrs: List[str] = Field(min_length=1)
+    to_addrs: list[str] = Field(min_length=1)
     use_tls: bool = True
 
 
@@ -962,7 +962,7 @@ class AlertsConfig(BaseModel):
         min_length=1,
         description="Alert log file path"
     )
-    channels: List[Dict[str, Any]] = Field(
+    channels: list[dict[str, Any]] = Field(
         default=[],
         description="Alert channels configuration"
     )
@@ -1132,7 +1132,7 @@ class PipelineConfig(BaseModel):
         return self
 
     @classmethod
-    def from_dict(cls, config_dict: Dict[str, Any]) -> 'PipelineConfig':
+    def from_dict(cls, config_dict: dict[str, Any]) -> 'PipelineConfig':
         """
         Create and validate configuration from dictionary.
 
@@ -1157,6 +1157,6 @@ class PipelineConfig(BaseModel):
                     ) from e
             raise ValueError(f"Configuration validation failed: {error_msg}") from e
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Export configuration as dictionary"""
         return self.model_dump()

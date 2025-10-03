@@ -2,11 +2,12 @@
 from __future__ import annotations
 
 import json
-import sqlite3
-from pathlib import Path
-from typing import Any, Iterator
-from datetime import datetime
 import logging
+import sqlite3
+from collections.abc import Iterator
+from datetime import datetime
+from pathlib import Path
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +36,7 @@ class JSONLStorage:
         if not self.file_path.exists():
             return
 
-        with open(self.file_path, 'r', encoding='utf-8') as f:
+        with open(self.file_path, encoding='utf-8') as f:
             for line_no, line in enumerate(f, 1):
                 try:
                     yield json.loads(line.strip())
@@ -47,7 +48,7 @@ class JSONLStorage:
         if not self.file_path.exists():
             return 0
 
-        with open(self.file_path, 'r', encoding='utf-8') as f:
+        with open(self.file_path, encoding='utf-8') as f:
             return sum(1 for _ in f)
 
     def exists(self) -> bool:

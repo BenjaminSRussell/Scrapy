@@ -3,10 +3,11 @@ Pydantic-validated schemas for pipeline data with strict type checking.
 Replaces dataclass schemas with validated models for inter-stage integrity.
 """
 
-from typing import List, Dict, Optional, Any
-from datetime import datetime
-from pydantic import BaseModel, Field, field_validator, model_validator, ConfigDict
 import hashlib
+from datetime import datetime
+from typing import Any
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class DiscoveryItem(BaseModel):
@@ -51,7 +52,7 @@ class DiscoveryItem(BaseModel):
         le=1.0,
         description="Calculated importance score for URL prioritization"
     )
-    anchor_text: Optional[str] = Field(
+    anchor_text: str | None = Field(
         default=None,
         description="Anchor text from the link (if applicable)"
     )
@@ -63,7 +64,7 @@ class DiscoveryItem(BaseModel):
         default="2.0",
         description="Schema version"
     )
-    discovery_metadata: Optional[Dict[str, str]] = Field(
+    discovery_metadata: dict[str, str] | None = Field(
         default=None,
         description="Additional discovery context"
     )
@@ -138,7 +139,7 @@ class ValidationResult(BaseModel):
     is_valid: bool = Field(
         description="Whether URL passed validation"
     )
-    error_message: Optional[str] = Field(
+    error_message: str | None = Field(
         default=None,
         description="Error message if validation failed"
     )
@@ -146,17 +147,17 @@ class ValidationResult(BaseModel):
         min_length=1,
         description="ISO timestamp of validation"
     )
-    learned_optimizations: Optional[List[str]] = Field(
+    learned_optimizations: list[str] | None = Field(
         default=None,
         description="Learned optimization hints"
     )
 
     # Freshness tracking fields
-    last_modified: Optional[str] = Field(
+    last_modified: str | None = Field(
         default=None,
         description="Last-Modified header from response"
     )
-    etag: Optional[str] = Field(
+    etag: str | None = Field(
         default=None,
         description="ETag header for conditional requests"
     )
@@ -166,7 +167,7 @@ class ValidationResult(BaseModel):
         le=1.0,
         description="Staleness score (0.0=fresh, 1.0=very stale)"
     )
-    cache_control: Optional[str] = Field(
+    cache_control: str | None = Field(
         default=None,
         description="Cache-Control header"
     )
@@ -175,19 +176,19 @@ class ValidationResult(BaseModel):
         default="2.1",
         description="Schema version (bumped for freshness tracking)"
     )
-    validation_method: Optional[str] = Field(
+    validation_method: str | None = Field(
         default=None,
         description="Validation method (HEAD, GET, etc.)"
     )
-    redirect_chain: Optional[List[str]] = Field(
+    redirect_chain: list[str] | None = Field(
         default=None,
         description="URL redirect chain"
     )
-    server_headers: Optional[Dict[str, str]] = Field(
+    server_headers: dict[str, str] | None = Field(
         default=None,
         description="Relevant server headers"
     )
-    network_metadata: Optional[Dict[str, str]] = Field(
+    network_metadata: dict[str, str] | None = Field(
         default=None,
         description="Network metadata (DNS time, etc.)"
     )
@@ -249,13 +250,13 @@ class EnrichmentItem(BaseModel):
         ge=0,
         description="Word count"
     )
-    entities: List[str] = Field(
+    entities: list[str] = Field(
         description="Extracted entities"
     )
-    keywords: List[str] = Field(
+    keywords: list[str] = Field(
         description="Extracted keywords"
     )
-    content_tags: List[str] = Field(
+    content_tags: list[str] = Field(
         description="Content classification tags"
     )
     has_pdf_links: bool = Field(
@@ -280,39 +281,39 @@ class EnrichmentItem(BaseModel):
         default="2.0",
         description="Schema version"
     )
-    content_summary: Optional[str] = Field(
+    content_summary: str | None = Field(
         default=None,
         description="Automatically generated summary"
     )
-    content_embedding: Optional[List[float]] = Field(
+    content_embedding: list[float] | None = Field(
         default=None,
         description="Vector embedding"
     )
-    academic_relevance_score: Optional[float] = Field(
+    academic_relevance_score: float | None = Field(
         default=None,
         ge=0.0,
         le=1.0,
         description="Academic relevance score (0-1)"
     )
-    content_quality_score: Optional[float] = Field(
+    content_quality_score: float | None = Field(
         default=None,
         ge=0.0,
         le=1.0,
         description="Content quality score (0-1)"
     )
-    processing_pipeline_version: Optional[str] = Field(
+    processing_pipeline_version: str | None = Field(
         default=None,
         description="Pipeline version"
     )
-    source_discovery_method: Optional[str] = Field(
+    source_discovery_method: str | None = Field(
         default=None,
         description="How URL was discovered"
     )
-    processing_metadata: Optional[Dict[str, str]] = Field(
+    processing_metadata: dict[str, str] | None = Field(
         default=None,
         description="Processing metadata"
     )
-    data_lineage: Optional[List[str]] = Field(
+    data_lineage: list[str] | None = Field(
         default=None,
         description="Chain of processing steps"
     )
@@ -368,7 +369,7 @@ class PipelineStats(BaseModel):
         min_length=1,
         description="Start timestamp"
     )
-    end_time: Optional[str] = Field(
+    end_time: str | None = Field(
         default=None,
         description="End timestamp"
     )
@@ -387,7 +388,7 @@ class PipelineStats(BaseModel):
         ge=0,
         description="Number of errors"
     )
-    duration_seconds: Optional[float] = Field(
+    duration_seconds: float | None = Field(
         default=None,
         ge=0.0,
         description="Execution duration"
@@ -447,7 +448,7 @@ class SchemaRegistry:
         return cls.SCHEMA_MODELS.get(schema_name)
 
     @classmethod
-    def validate_record(cls, schema_name: str, data: Dict[str, Any]) -> BaseModel:
+    def validate_record(cls, schema_name: str, data: dict[str, Any]) -> BaseModel:
         """Validate a record against its schema"""
         model = cls.get_model(schema_name)
         if not model:

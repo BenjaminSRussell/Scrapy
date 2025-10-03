@@ -3,11 +3,9 @@
 
 from __future__ import annotations
 
-from typing import Dict
-
 
 def _patch_scrapy_response_meta() -> None:
- 
+    """Patch Scrapy Response.meta to allow assignment in tests."""
 
     try:
         from scrapy.http import Request, Response  # type: ignore
@@ -21,12 +19,12 @@ def _patch_scrapy_response_meta() -> None:
     if not isinstance(original_property, property):
         return
 
-    def _meta_get(instance: Response) -> Dict:
+    def _meta_get(instance: Response) -> dict:
         return original_property.fget(instance)  # type: ignore[attr-defined]
 
-    def _meta_set(instance: Response, value: Dict) -> None:
+    def _meta_set(instance: Response, value: dict) -> None:
         if value is None:
-            value_dict: Dict = {}
+            value_dict: dict = {}
         elif isinstance(value, dict):
             value_dict = value
         else:

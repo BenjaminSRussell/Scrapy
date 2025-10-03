@@ -1,16 +1,13 @@
 """Tests for Stage 1 Discovery Spider"""
 
-import os
-import tempfile
 from pathlib import Path
-from typing import List
+from unittest.mock import Mock, mock_open, patch
 
 import pytest
-from unittest.mock import Mock, patch, mock_open
 
-from src.stage1.discovery_spider import DiscoverySpider
 from src.common.schemas import DiscoveryItem
-from tests.samples import html_response, build_discovery_item
+from src.stage1.discovery_spider import DiscoverySpider
+from tests.samples import html_response
 
 
 @pytest.fixture
