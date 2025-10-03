@@ -124,7 +124,7 @@ def test_discovery_spider_extracts_links(html_snippet, expected_count, mock_sett
 
     # Should have discovered items and new requests
     discovery_items = [r for r in results if isinstance(r, DiscoveryItem)]
-    new_requests = [r for r in results if hasattr(r, 'url') and not isinstance(r, DiscoveryItem)]
+    [r for r in results if hasattr(r, 'url') and not isinstance(r, DiscoveryItem)]
 
     # Verify we found some links (exact count depends on LinkExtractor filtering)
     assert len(discovery_items) == expected_count

@@ -442,7 +442,7 @@ def generate_lineage_report(tracker: LineageTracker, output_file: Path):
         "",
         "STATISTICS:",
         f"  Total URLs tracked: {stats['total_urls']}",
-        f"  By stage:",
+        "  By stage:",
     ]
 
     for stage, count in sorted(stats['by_stage'].items()):

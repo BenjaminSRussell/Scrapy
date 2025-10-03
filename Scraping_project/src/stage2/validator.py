@@ -1,24 +1,24 @@
 # TODO: Add support for more flexible validation logic, such as allowing the user to specify custom validation rules.
 import asyncio
 import inspect
-import aiohttp
 import json
 import logging
 import ssl
 import time
+from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
-from typing import List, Dict, Any, Optional
-from dataclasses import asdict
 
-from src.orchestrator.pipeline import BatchQueueItem
-from src.common.schemas import ValidationResult
+import aiohttp
+
+from src.common import config_keys as keys
+from src.common.adaptive_depth import AdaptiveDepthManager
 from src.common.checkpoints import CheckpointManager
 from src.common.feedback import FeedbackStore
-from src.common.adaptive_depth import AdaptiveDepthManager
-from src.common.link_graph import LinkGraphAnalyzer, PageImportance
 from src.common.freshness import FreshnessTracker
-from src.common import config_keys as keys
+from src.common.link_graph import LinkGraphAnalyzer
+from src.common.schemas import ValidationResult
+from src.orchestrator.pipeline import BatchQueueItem
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +39,7 @@ if _client_ssl_error is not None:
 
         if needs_patch:
             class _CompatClientSSLError(aiohttp.ClientError):  # pragma: no cover - compatibility shim
-                def __init__(self, *args, os_error: Optional[BaseException] = None, message: str = "", **kwargs):
+                def __init__(self, *args, os_error: BaseException | None = None, message: str = "", **kwargs):
                     derived_message = message
                     if not derived_message:
                         for value in reversed(args):
@@ -78,19 +78,19 @@ class URLValidator:
 
         # Initialize link graph for importance-based prioritization
         self.enable_link_graph = enable_link_graph
-        self.link_graph: Optional[LinkGraphAnalyzer] = None
+        self.link_graph: LinkGraphAnalyzer | None = None
         if enable_link_graph:
             link_graph_db = Path("data/processed/link_graph.db")
             if link_graph_db.exists():
                 self.link_graph = LinkGraphAnalyzer(link_graph_db)
-                logger.info(f"[Stage2] Link graph loaded for importance-based prioritization")
+                logger.info("[Stage2] Link graph loaded for importance-based prioritization")
             else:
                 logger.warning(f"[Stage2] Link graph database not found: {link_graph_db}")
 
         # Initialize freshness tracker
         freshness_db = Path("data/cache/freshness.db")
         self.freshness_tracker = FreshnessTracker(freshness_db)
-        logger.info(f"[Stage2] Freshness tracker initialized")
+        logger.info("[Stage2] Freshness tracker initialized")
 
         # Ensure output directory exists
         self.output_file.parent.mkdir(parents=True, exist_ok=True)
@@ -116,7 +116,7 @@ class URLValidator:
             return processed_hashes
 
         try:
-            with open(self.output_file, 'r', encoding='utf-8') as f:
+            with open(self.output_file, encoding='utf-8') as f:
                 for line in f:
                     try:
                         data = json.loads(line.strip())
@@ -132,7 +132,7 @@ class URLValidator:
         logger.info(f"Loaded {len(processed_hashes)} already-processed URL hashes")
         return processed_hashes
 
-    def _prioritize_batch_by_importance(self, batch: List[BatchQueueItem]) -> List[BatchQueueItem]:
+    def _prioritize_batch_by_importance(self, batch: list[BatchQueueItem]) -> list[BatchQueueItem]:
         """
         Prioritize URLs in batch by link importance scores (PageRank, HITS).
         URLs with higher importance are validated first.
@@ -192,7 +192,7 @@ class URLValidator:
 
         return prioritized_batch
 
-    async def validate_url(self, session: Optional[aiohttp.ClientSession], url: str, url_hash: str) -> ValidationResult:
+    async def validate_url(self, session: aiohttp.ClientSession | None, url: str, url_hash: str) -> ValidationResult:
         """Validate a single URL using HEAD with GET fallback."""
 
         if session is not None:
@@ -228,7 +228,7 @@ class URLValidator:
         ) as managed_session:
             return await self._validate_with_session(managed_session, url, url_hash)
 
-    async def validate_batch(self, batch: List[BatchQueueItem], batch_id: int = 0):
+    async def validate_batch(self, batch: list[BatchQueueItem], batch_id: int = 0):
         """Validate a batch of URLs concurrently with checkpoint support"""
         if not batch:
             return
@@ -366,7 +366,7 @@ class URLValidator:
 
         batch_size = self.max_workers
         processed_count = 0
-        batch: List[BatchQueueItem] = []
+        batch: list[BatchQueueItem] = []
         batch_id = 0
 
         processed_hashes = self._get_processed_url_hashes()
@@ -378,7 +378,7 @@ class URLValidator:
             logger.info(f"Resuming from batch {resume_point['batch_id']}, line {resume_point['last_processed_line']}")
             batch_id = resume_point['batch_id']
 
-        with open(input_file, 'r', encoding='utf-8') as f:
+        with open(input_file, encoding='utf-8') as f:
             for line_no, line in enumerate(f, 1):
                 # Skip lines we've already processed if resuming
                 if self.checkpoint.should_skip_to_line(line_no):
@@ -455,13 +455,13 @@ class URLValidator:
                             head_result = self._evaluate_head_response(head_response, url, url_hash, start_time)
                             if head_result is not None:
                                 return head_result
-                    except (asyncio.TimeoutError, aiohttp.ClientError):
+                    except (TimeoutError, aiohttp.ClientError):
                         # Fall through to GET request
                         pass
 
                 return await self._perform_get(session, url, url_hash, start_time)
 
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 if attempt == max_retries - 1:
                     return self._build_timeout_result(url, url_hash, start_time)
                 await asyncio.sleep(retry_delay * (2 ** attempt))  # Exponential backoff
@@ -558,7 +558,7 @@ class URLValidator:
         url: str,
         url_hash: str,
         start_time: float
-    ) -> Optional[ValidationResult]:
+    ) -> ValidationResult | None:
         """Return a validation result if HEAD response is sufficient, else None."""
 
         content_type = response.headers.get('Content-Type', '') or ''
@@ -646,7 +646,7 @@ class URLValidator:
             return fallback
 
     @staticmethod
-    def _parse_content_length(value: Optional[str]) -> int:
+    def _parse_content_length(value: str | None) -> int:
         if value is None:
             return 0
         try:

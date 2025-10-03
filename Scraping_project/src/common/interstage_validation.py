@@ -57,7 +57,7 @@ class ValidationReport:
             f"Valid Records: {self.valid_records:,} ({self.success_rate:.2f}%)",
             f"Invalid Records: {self.invalid_records:,}",
             "",
-            f"Error Breakdown:",
+            "Error Breakdown:",
             f"  - Missing Fields: {self.missing_fields_count}",
             f"  - Extra Fields: {self.extra_fields_count}",
             f"  - Type Errors: {self.type_errors_count}",
@@ -159,7 +159,7 @@ class JSONLValidator:
 
                 # Validate against schema
                 try:
-                    validated = self.model(**data)
+                    self.model(**data)
                     valid_records += 1
                 except ValidationError as e:
                     # Categorize errors
@@ -320,7 +320,7 @@ class InterstageValidator:
             value_errors_count=0
         )
 
-        logger.info(f"Stage 1 → Stage 2 integrity check:")
+        logger.info("Stage 1 → Stage 2 integrity check:")
         logger.info(f"  Stage 1: {len(stage1_hashes):,} unique URLs")
         logger.info(f"  Stage 2: {len(stage2_hashes):,} validated URLs")
         logger.info(f"  Coverage: {coverage:.2f}%")
@@ -434,7 +434,7 @@ class InterstageValidator:
             value_errors_count=0
         )
 
-        logger.info(f"Stage 2 → Stage 3 integrity check:")
+        logger.info("Stage 2 → Stage 3 integrity check:")
         logger.info(f"  Stage 2 valid: {len(stage2_valid_hashes):,} URLs")
         logger.info(f"  Stage 3 enriched: {len(stage3_hashes):,} URLs")
         logger.info(f"  Coverage: {coverage:.2f}%")

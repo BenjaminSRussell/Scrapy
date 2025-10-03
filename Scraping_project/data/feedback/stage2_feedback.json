@@ -271,8 +271,23 @@
           "failed": 1
         }
       }
+    },
+    {
+      "session_id": "session_20251003_132804",
+      "started_at": "2025-10-03T13:28:04.907805",
+      "completed_at": "2025-10-03T13:28:04.951902",
+      "total_discovered": 0,
+      "total_validated": 2,
+      "total_failed": 1,
+      "success_rate": 0.6666666666666666,
+      "source_performance": {
+        "unknown": {
+          "validated": 2,
+          "failed": 1
+        }
+      }
     }
   ],
-  "last_updated": "2025-10-03T13:24:07.687143",
-  "total_sessions": 19
+  "last_updated": "2025-10-03T13:28:04.952431",
+  "total_sessions": 20
 }

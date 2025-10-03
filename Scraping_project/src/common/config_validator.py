@@ -85,7 +85,7 @@ class ConfigHealthCheck:
                     severity='error',
                     category='filesystem',
                     message=f"Seed file not found: {seed_file}",
-                    suggestion=f"Create the seed file or update the path in configuration"
+                    suggestion="Create the seed file or update the path in configuration"
                 ))
             elif not seed_path.is_file():
                 self.issues.append(ValidationIssue(
@@ -210,7 +210,7 @@ class ConfigHealthCheck:
                             try:
                                 with sync_playwright() as p:
                                     # Try to get browser - this will fail if not installed
-                                    browser_type = getattr(p, browser_config.browser_type)
+                                    getattr(p, browser_config.browser_type)
                             finally:
                                 # Restore original policy
                                 if sys.platform == 'win32' and original_policy:

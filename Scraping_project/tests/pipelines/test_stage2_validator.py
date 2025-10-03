@@ -182,7 +182,7 @@ def test_validate_batch_writes_results(tmp_path, monkeypatch):
     expected = [asdict(build_validation_result(url=item.url, url_hash=item.url_hash)) for item in batch_items]
     written = _read_jsonl(output)
     assert len(written) == len(expected)
-    for line, exp in zip(written, expected):
+    for line, exp in zip(written, expected, strict=False):
         assert line["url_hash"] == exp["url_hash"]
 
 

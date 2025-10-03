@@ -3,13 +3,13 @@
     "uconn.edu/valid": {
       "section_pattern": "uconn.edu/valid",
       "total_urls_discovered": 0,
-      "total_urls_validated": 16,
-      "total_content_pages": 16,
+      "total_urls_validated": 17,
+      "total_content_pages": 17,
       "avg_content_quality": 0.0,
       "avg_word_count": 0,
       "max_useful_depth": 0,
       "current_recommended_depth": 3,
-      "last_updated": "2025-10-03T13:24:07.668016",
+      "last_updated": "2025-10-03T13:28:04.932984",
       "has_valuable_content": false,
       "content_density": 0.0,
       "avg_links_per_page": 0.0
@@ -23,7 +23,7 @@
       "avg_word_count": 0,
       "max_useful_depth": 0,
       "current_recommended_depth": 3,
-      "last_updated": "2025-10-03T13:24:07.668016",
+      "last_updated": "2025-10-03T13:28:04.932984",
       "has_valuable_content": false,
       "content_density": 0.0,
       "avg_links_per_page": 0.0
@@ -31,13 +31,13 @@
     "uconn.edu/another": {
       "section_pattern": "uconn.edu/another",
       "total_urls_discovered": 0,
-      "total_urls_validated": 12,
-      "total_content_pages": 12,
+      "total_urls_validated": 13,
+      "total_content_pages": 13,
       "avg_content_quality": 0.0,
       "avg_word_count": 0,
       "max_useful_depth": 0,
       "current_recommended_depth": 3,
-      "last_updated": "2025-10-03T13:24:07.686412",
+      "last_updated": "2025-10-03T13:28:04.951902",
       "has_valuable_content": false,
       "content_density": 0.0,
       "avg_links_per_page": 0.0
@@ -3560,7 +3560,7 @@
   "metadata": {
     "base_depth": 3,
     "max_depth": 8,
-    "last_updated": "2025-10-03T13:24:07.689898",
+    "last_updated": "2025-10-03T13:28:04.955143",
     "total_sections": 254
   }
 }

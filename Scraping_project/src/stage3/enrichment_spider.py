@@ -1,24 +1,25 @@
-import json
 import hashlib
+import json
+from collections.abc import Iterator
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Iterator, List, Optional
+from typing import Any
 from urllib.parse import urlparse
 
 import scrapy
 from scrapy.http import Response
 
-from src.common.schemas import EnrichmentItem
-from src.common.nlp import (
-    extract_entities_and_keywords,
-    extract_content_tags,
-    has_audio_links,
-    summarize,
-    initialize_nlp,
-    NLPSettings
-)
-from src.common.urls import canonicalize_url_simple
 from src.common.content_handlers import ContentTypeRouter
+from src.common.nlp import (
+    NLPSettings,
+    extract_content_tags,
+    extract_entities_and_keywords,
+    has_audio_links,
+    initialize_nlp,
+    summarize,
+)
+from src.common.schemas import EnrichmentItem
+from src.common.urls import canonicalize_url_simple
 
 
 class EnrichmentSpider(scrapy.Spider):
@@ -28,14 +29,14 @@ class EnrichmentSpider(scrapy.Spider):
 
     def __init__(
         self,
-        predefined_tags: List[str] = None,
-        urls_list: List[str] = None,
+        predefined_tags: list[str] = None,
+        urls_list: list[str] = None,
         urls_file: str = None,
         allowed_domains: list = None,
         headless_browser_config: dict = None,
         content_types_config: dict = None,
         nlp_config: dict = None,
-        validation_metadata: Optional[List[Dict[str, Any]]] = None,
+        validation_metadata: list[dict[str, Any]] | None = None,
         *args,
         **kwargs
     ):
@@ -73,7 +74,7 @@ class EnrichmentSpider(scrapy.Spider):
         self.urls_list = urls_list or []
         self.urls_file = urls_file
         self.processed_count = 0
-        self.validation_lookup: Dict[str, Dict[str, Any]] = {}
+        self.validation_lookup: dict[str, dict[str, Any]] = {}
         if validation_metadata:
             for entry in validation_metadata:
                 url = entry.get('url')
@@ -102,7 +103,7 @@ class EnrichmentSpider(scrapy.Spider):
         # Load URLs from file if provided
         if self.urls_file and Path(self.urls_file).exists():
             try:
-                with open(self.urls_file, 'r') as f:
+                with open(self.urls_file) as f:
                     file_urls = json.load(f)
                     self.urls_list.extend(file_urls)
                     self.logger.info(f"Loaded {len(file_urls)} URLs from {self.urls_file}")
@@ -117,9 +118,9 @@ class EnrichmentSpider(scrapy.Spider):
         self.logger.info(f"Enrichment spider initialized with {len(self.predefined_tags)} predefined tags")
         self.logger.info(f"Enrichment spider will process {len(self.urls_list)} URLs from orchestrator")
 
-    def _build_request_meta(self, url: str) -> Dict[str, Any]:
+    def _build_request_meta(self, url: str) -> dict[str, Any]:
         """Build request metadata including stage 2 validation context if available."""
-        meta: Dict[str, Any] = {}
+        meta: dict[str, Any] = {}
         validation_data = self.validation_lookup.get(url)
         if validation_data:
             meta['validation_data'] = validation_data
@@ -154,7 +155,7 @@ class EnrichmentSpider(scrapy.Spider):
 
         self.logger.info(f"Loading validated URLs from {stage2_output}")
 
-        with open(stage2_output, 'r', encoding='utf-8') as f:
+        with open(stage2_output, encoding='utf-8') as f:
             for line_no, line in enumerate(f, 1):
                 try:
                     data = json.loads(line.strip())
@@ -211,7 +212,7 @@ class EnrichmentSpider(scrapy.Spider):
 
         self._hf_models_initialized = True
 
-    def _score_links_with_hf(self, links: List[str], text_content: str) -> List[float]:
+    def _score_links_with_hf(self, links: list[str], text_content: str) -> list[float]:
         """Score links using HuggingFace embeddings for relevance
 
         Returns relevance scores (0-1) for links based on content similarity.
@@ -329,10 +330,9 @@ class EnrichmentSpider(scrapy.Spider):
             has_audio = has_audio_links(links) or bool(response.xpath('//audio').get())
 
             # Optional: HuggingFace-assisted link scoring (lazy initialization)
-            link_scores = []
             if len(links) > 0:
                 self._initialize_hf_models()
-                link_scores = self._score_links_with_hf(links, text_content)
+                self._score_links_with_hf(links, text_content)
 
             # Create enrichment item
             item = EnrichmentItem(

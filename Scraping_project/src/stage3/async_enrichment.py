@@ -6,29 +6,30 @@ using asyncio, aiohttp, and adaptive concurrency control.
 """
 
 import asyncio
-import aiohttp
 import hashlib
-import json
 import logging
+import time
+from collections import deque
+from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import List, Dict, Any, Optional, Set
-from dataclasses import dataclass, asdict
+from typing import Any
 from urllib.parse import urlparse
-from collections import deque
-import time
+
+import aiohttp
+
+from src.common.checkpoint_middleware import AsyncCheckpointTracker
+from src.common.content_handlers import ContentTypeRouter
+from src.common.nlp import (
+    NLPSettings,
+    extract_content_tags,
+    extract_entities_and_keywords,
+    has_audio_links,
+    initialize_nlp,
+    summarize,
+)
 
 from .storage import create_storage_writer
-from src.common.nlp import (
-    extract_entities_and_keywords,
-    extract_content_tags,
-    has_audio_links,
-    summarize,
-    initialize_nlp,
-    NLPSettings
-)
-from src.common.content_handlers import ContentTypeRouter
-from src.common.checkpoint_middleware import AsyncCheckpointTracker
 
 logger = logging.getLogger(__name__)
 
@@ -41,16 +42,16 @@ class EnrichmentResult:
     title: str = ""
     text_content: str = ""
     word_count: int = 0
-    entities: List[Dict[str, Any]] = None
-    keywords: List[Dict[str, float]] = None
-    content_tags: List[str] = None
+    entities: list[dict[str, Any]] = None
+    keywords: list[dict[str, float]] = None
+    content_tags: list[str] = None
     has_pdf_links: bool = False
     has_audio_links: bool = False
     status_code: int = 0
     content_type: str = ""
     enriched_at: str = ""
     content_summary: str = ""
-    error: Optional[str] = None
+    error: str | None = None
     fetch_duration_ms: float = 0.0
     process_duration_ms: float = 0.0
 
@@ -66,7 +67,7 @@ class EnrichmentResult:
         if not self.url_hash:
             self.url_hash = hashlib.sha256(self.url.encode()).hexdigest()
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization"""
         return asdict(self)
 
@@ -160,7 +161,7 @@ class AdaptiveConcurrencyController:
         """Release semaphore slot"""
         self._semaphore.release()
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get current statistics"""
         return {
             'current_concurrency': self.current,
@@ -184,18 +185,18 @@ class AsyncEnrichmentProcessor:
     def __init__(
         self,
         output_file: str,
-        nlp_config: Optional[Dict[str, Any]] = None,
-        content_types_config: Optional[Dict[str, Any]] = None,
-        predefined_tags: Optional[List[str]] = None,
+        nlp_config: dict[str, Any] | None = None,
+        content_types_config: dict[str, Any] | None = None,
+        predefined_tags: list[str] | None = None,
         max_concurrency: int = 50,
         timeout: int = 30,
         max_retries: int = 2,
         batch_size: int = 100,
-        storage_config: Optional[Dict[str, Any]] = None,
-        storage_backend: Optional[str] = None,
-        storage_options: Optional[Dict[str, Any]] = None,
-        rotation_config: Optional[Dict[str, Any]] = None,
-        compression_config: Optional[Dict[str, Any]] = None,
+        storage_config: dict[str, Any] | None = None,
+        storage_backend: str | None = None,
+        storage_options: dict[str, Any] | None = None,
+        rotation_config: dict[str, Any] | None = None,
+        compression_config: dict[str, Any] | None = None,
     ):
         self.output_path = Path(output_file) if output_file else Path("data/processed/stage03/enrichment_output.jsonl")
         self.output_file = self.output_path  # Add alias for backward compatibility
@@ -206,7 +207,7 @@ class AsyncEnrichmentProcessor:
         self.max_retries = max_retries
         self.batch_size = batch_size
 
-        base_config: Dict[str, Any] = dict(storage_config or {})
+        base_config: dict[str, Any] = dict(storage_config or {})
         if storage_backend:
             base_config["backend"] = storage_backend
         if storage_options:
@@ -465,7 +466,7 @@ class AsyncEnrichmentProcessor:
         self,
         url: str,
         url_hash: str,
-        response_data: Dict[str, Any]
+        response_data: dict[str, Any]
     ) -> EnrichmentResult:
         """Process HTTP response and extract content"""
         from lxml import html as lxml_html
@@ -578,7 +579,7 @@ class AsyncEnrichmentProcessor:
     async def process_batch(
         self,
         session: aiohttp.ClientSession,
-        urls: List[str]
+        urls: list[str]
     ):
         """Process a batch of URLs concurrently"""
         tasks = []
@@ -622,7 +623,7 @@ class AsyncEnrichmentProcessor:
                     self._log_progress()
                     self.checkpoint_tracker.print_progress()
 
-    async def process_urls(self, urls: List[str]):
+    async def process_urls(self, urls: list[str]):
         """Process list of URLs with batching and connection pooling"""
         if not urls:
             logger.warning("No URLs to process")
@@ -709,19 +710,19 @@ class AsyncEnrichmentProcessor:
 
 
 async def run_async_enrichment(
-    urls: List[str],
+    urls: list[str],
     output_file: str,
-    nlp_config: Optional[Dict[str, Any]] = None,
-    content_types_config: Optional[Dict[str, Any]] = None,
-    predefined_tags: Optional[List[str]] = None,
+    nlp_config: dict[str, Any] | None = None,
+    content_types_config: dict[str, Any] | None = None,
+    predefined_tags: list[str] | None = None,
     max_concurrency: int = 50,
     timeout: int = 30,
     batch_size: int = 100,
-    storage_config: Optional[Dict[str, Any]] = None,
-    storage_backend: Optional[str] = None,
-    storage_options: Optional[Dict[str, Any]] = None,
-    rotation_config: Optional[Dict[str, Any]] = None,
-    compression_config: Optional[Dict[str, Any]] = None
+    storage_config: dict[str, Any] | None = None,
+    storage_backend: str | None = None,
+    storage_options: dict[str, Any] | None = None,
+    rotation_config: dict[str, Any] | None = None,
+    compression_config: dict[str, Any] | None = None
 ):
     """
     Convenience function to run async enrichment.

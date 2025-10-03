@@ -4,29 +4,29 @@ Goes beyond "is it HTML?" to provide rich metadata for Stage 3.
 """
 
 import asyncio
-import aiohttp
 import json
 import logging
 import ssl
+from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
-from typing import List, Dict, Any, Optional
-from dataclasses import asdict, replace
+from typing import Any
 from urllib.parse import urlparse
 
-from src.orchestrator.pipeline import BatchQueueItem
-from src.common.schemas import ValidationResult
+import aiohttp
+
 from src.common.checkpoints import CheckpointManager
-from src.common import config_keys as keys
+from src.common.content_classification import ContentClassifier
 from src.common.retry_strategies import (
-    RetryConfig,
     DomainCircuitBreaker,
-    classify_error,
+    ErrorType,
+    RetryConfig,
     calculate_backoff_delay,
+    classify_error,
     should_retry,
-    ErrorType
 )
-from src.common.content_classification import ContentClassifier, classify_content
+from src.common.schemas import ValidationResult
+from src.orchestrator.pipeline import BatchQueueItem
 
 logger = logging.getLogger(__name__)
 
@@ -124,7 +124,7 @@ class EnhancedURLValidator:
             return processed_hashes
 
         try:
-            with open(self.output_file, 'r', encoding='utf-8') as f:
+            with open(self.output_file, encoding='utf-8') as f:
                 for line in f:
                     try:
                         data = json.loads(line.strip())
@@ -264,7 +264,7 @@ class EnhancedURLValidator:
                         return await self._build_result_with_classification(
                             response, url, url_hash, start_time, None, 'HEAD'
                         )
-        except (asyncio.TimeoutError, aiohttp.ClientError):
+        except (TimeoutError, aiohttp.ClientError):
             # HEAD failed or timeout, fall through to GET
             pass
 
@@ -282,7 +282,7 @@ class EnhancedURLValidator:
         url: str,
         url_hash: str,
         start_time: datetime,
-        body_bytes: Optional[bytes],
+        body_bytes: bytes | None,
         method: str
     ) -> ValidationResult:
         """
@@ -385,7 +385,7 @@ class EnhancedURLValidator:
             network_metadata={'exception_class': exception.__class__.__name__}
         )
 
-    async def validate_batch(self, batch: List[BatchQueueItem], batch_id: int = 0):
+    async def validate_batch(self, batch: list[BatchQueueItem], batch_id: int = 0):
         """Validate batch of URLs with enhanced features"""
         if not batch:
             return
@@ -471,7 +471,7 @@ class EnhancedURLValidator:
 
         logger.info(f"Batch {batch_id} complete: {successful_validations}/{len(batch)} validated")
 
-    async def get_statistics(self) -> Dict[str, Any]:
+    async def get_statistics(self) -> dict[str, Any]:
         """Get comprehensive statistics"""
         circuit_breaker_stats = await self.circuit_breaker.get_stats()
 
@@ -481,7 +481,7 @@ class EnhancedURLValidator:
         }
 
     @staticmethod
-    def _parse_content_length(value: Optional[str]) -> int:
+    def _parse_content_length(value: str | None) -> int:
         """Parse content length header"""
         if value is None:
             return 0

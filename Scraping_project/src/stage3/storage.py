@@ -11,17 +11,17 @@ from dataclasses import dataclass
 from datetime import datetime
 from io import BytesIO, StringIO
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 
 @dataclass
 class RotationPolicy:
     """Rotation policy for storage writers."""
 
-    max_bytes: Optional[int] = None
-    max_items: Optional[int] = None
-    max_seconds: Optional[int] = None
-    enabled: Optional[bool] = None
+    max_bytes: int | None = None
+    max_items: int | None = None
+    max_seconds: int | None = None
+    enabled: bool | None = None
 
     def __post_init__(self) -> None:
         self.enabled = bool(self.enabled) if self.enabled is not None else any(
@@ -57,7 +57,7 @@ class RotationPolicy:
         self._opened_at = time.time()
 
     @classmethod
-    def from_config(cls, config: Optional[Dict[str, Any]]) -> "RotationPolicy":
+    def from_config(cls, config: dict[str, Any] | None) -> RotationPolicy:
         if not config:
             return cls()
         return cls(
@@ -73,7 +73,7 @@ class CompressionConfig:
     """Compression configuration shared by storage writers."""
 
     codec: str = "none"
-    level: Optional[int] = None
+    level: int | None = None
     use_extension: bool = True
 
     def __post_init__(self) -> None:
@@ -95,7 +95,7 @@ class CompressionConfig:
             return ".gz"
         return ""
 
-    def parquet_codec(self) -> Optional[str]:
+    def parquet_codec(self) -> str | None:
         if self.codec in {"snappy", "gzip", "brotli", "zstd"}:
             return self.codec
         if self.codec == "none":
@@ -103,7 +103,7 @@ class CompressionConfig:
         return None
 
     @classmethod
-    def from_config(cls, config: Optional[Dict[str, Any]]) -> "CompressionConfig":
+    def from_config(cls, config: dict[str, Any] | None) -> CompressionConfig:
         if not config:
             return cls()
         return cls(
@@ -125,7 +125,7 @@ class BaseStorageWriter(ABC):
         """Open underlying resources."""
 
     @abstractmethod
-    def write_item(self, item: Dict[str, Any]) -> None:
+    def write_item(self, item: dict[str, Any]) -> None:
         """Persist a single enrichment item."""
 
     @abstractmethod
@@ -156,7 +156,7 @@ class JSONLStorageWriter(BaseStorageWriter):
         self.flush_on_write = flush_on_write
         self._file_handle = None
         self._sequence = 0
-        self._current_path: Optional[Path] = None
+        self._current_path: Path | None = None
 
     def open(self) -> None:
         self.base_path.parent.mkdir(parents=True, exist_ok=True)
@@ -189,7 +189,7 @@ class JSONLStorageWriter(BaseStorageWriter):
         self._current_path = path
         self.rotation.reset()
 
-    def write_item(self, item: Dict[str, Any]) -> None:
+    def write_item(self, item: dict[str, Any]) -> None:
         if not self._file_handle:
             raise RuntimeError("JSONLStorageWriter is not open")
         line = json.dumps(item, ensure_ascii=self.ensure_ascii)
@@ -231,10 +231,10 @@ class SQLiteStorageWriter(BaseStorageWriter):
         self.table_name = table_name
         self.synchronous = synchronous
         self.journal_mode = journal_mode
-        self._connection: Optional[sqlite3.Connection] = None
-        self._cursor: Optional[sqlite3.Cursor] = None
+        self._connection: sqlite3.Connection | None = None
+        self._cursor: sqlite3.Cursor | None = None
         self._sequence = 0
-        self._current_path: Optional[Path] = None
+        self._current_path: Path | None = None
 
     def open(self) -> None:
         self.base_path.parent.mkdir(parents=True, exist_ok=True)
@@ -280,7 +280,7 @@ class SQLiteStorageWriter(BaseStorageWriter):
         self._connection.commit()
         self.rotation.reset()
 
-    def write_item(self, item: Dict[str, Any]) -> None:
+    def write_item(self, item: dict[str, Any]) -> None:
         if not self._connection:
             raise RuntimeError("SQLiteStorageWriter is not open")
         payload = json.dumps(item, ensure_ascii=False)
@@ -339,9 +339,9 @@ class ParquetStorageWriter(BaseStorageWriter):
         self.base_path = Path(path)
         self.batch_size = batch_size
         self._sequence = 0
-        self._buffer: list[Dict[str, Any]] = []
+        self._buffer: list[dict[str, Any]] = []
         self._writer = None
-        self._current_path: Optional[Path] = None
+        self._current_path: Path | None = None
         self._pa = None
         self._pq = None
 
@@ -383,7 +383,7 @@ class ParquetStorageWriter(BaseStorageWriter):
             compression = self.compression.parquet_codec()
             self._writer = self._pq.ParquetWriter(str(self._current_path), table.schema, compression=compression)
 
-    def write_item(self, item: Dict[str, Any]) -> None:
+    def write_item(self, item: dict[str, Any]) -> None:
         if not self._pa or not self._pq:
             raise RuntimeError("ParquetStorageWriter is not open")
         self._buffer.append(item)
@@ -423,13 +423,13 @@ class S3StorageWriter(BaseStorageWriter):
         rotation: RotationPolicy,
         compression: CompressionConfig,
         prefix: str = "stage3/",
-        base_name: Optional[str] = None,
+        base_name: str | None = None,
         content_type: str = "application/json",
-        acl: Optional[str] = None,
-        endpoint_url: Optional[str] = None,
-        region_name: Optional[str] = None,
-        profile_name: Optional[str] = None,
-        extra_args: Optional[Dict[str, Any]] = None,
+        acl: str | None = None,
+        endpoint_url: str | None = None,
+        region_name: str | None = None,
+        profile_name: str | None = None,
+        extra_args: dict[str, Any] | None = None,
     ) -> None:
         if compression.codec not in {"none", "gzip"}:
             raise ValueError("S3 backend only supports 'none' or 'gzip' compression")
@@ -500,7 +500,7 @@ class S3StorageWriter(BaseStorageWriter):
         self.rotation.reset()
         self._sequence += 1
 
-    def write_item(self, item: Dict[str, Any]) -> None:
+    def write_item(self, item: dict[str, Any]) -> None:
         line = json.dumps(item, ensure_ascii=False)
         payload = f"{line}\n"
         self._buffer.write(payload)
@@ -533,9 +533,9 @@ def _default_path_for_backend(default_path: Path, backend: str) -> Path:
 
 def create_storage_writer(
     backend: str,
-    options: Dict[str, Any],
-    rotation_config: Optional[Dict[str, Any]],
-    compression_config: Optional[Dict[str, Any]],
+    options: dict[str, Any],
+    rotation_config: dict[str, Any] | None,
+    compression_config: dict[str, Any] | None,
     default_path: Path,
 ) -> BaseStorageWriter:
     """Factory for storage writers based on configuration."""

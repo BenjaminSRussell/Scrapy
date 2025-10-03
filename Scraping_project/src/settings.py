@@ -12,8 +12,9 @@
 # For more info: https://docs.scrapy.org/en/latest/topics/settings.html
 
 import os
-import yaml
 from pathlib import Path
+
+import yaml
 
 # Determine environment and load YAML config
 ENV = os.getenv('ENV', 'development')
@@ -23,7 +24,7 @@ CONFIG_PATH = PROJECT_ROOT / 'config' / f'{ENV}.yml'
 # Load YAML configuration
 _config = {}
 if CONFIG_PATH.exists():
-    with open(CONFIG_PATH, 'r') as f:
+    with open(CONFIG_PATH) as f:
         _config = yaml.safe_load(f) or {}
 
 # Extract Scrapy-specific settings from YAML
@@ -82,6 +83,7 @@ HTTPCACHE_STORAGE = 'scrapy.extensions.httpcache.DbmCacheStorage'  # Secure alte
 # Set settings whose default value is deprecated to a future-proof value
 # Use proactor event loop on Windows to avoid select() file descriptor limits
 import sys
+
 if sys.platform == 'win32':
     import asyncio
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())

@@ -65,7 +65,7 @@ class TestConfigHealthCheck:
             'alerts': {'enabled': False}
         }
 
-        config_file = self.create_temp_config(tmp_path, config_dict)
+        self.create_temp_config(tmp_path, config_dict)
 
         original_config_dir = Config.config_dir
         try:
@@ -101,7 +101,7 @@ class TestConfigHealthCheck:
             }
         }
 
-        config_file = self.create_temp_config(tmp_path, config_dict)
+        self.create_temp_config(tmp_path, config_dict)
 
         original_config_dir = Config.config_dir
         try:
@@ -139,7 +139,7 @@ class TestConfigHealthCheck:
             }
         }
 
-        config_file = self.create_temp_config(tmp_path, config_dict)
+        self.create_temp_config(tmp_path, config_dict)
 
         original_config_dir = Config.config_dir
         try:
@@ -178,7 +178,7 @@ class TestConfigHealthCheck:
             }
         }
 
-        config_file = self.create_temp_config(tmp_path, config_dict)
+        self.create_temp_config(tmp_path, config_dict)
 
         original_config_dir = Config.config_dir
         try:
@@ -212,7 +212,7 @@ class TestConfigHealthCheck:
             }
         }
 
-        config_file = self.create_temp_config(tmp_path, config_dict)
+        self.create_temp_config(tmp_path, config_dict)
 
         original_config_dir = Config.config_dir
         try:
@@ -263,7 +263,7 @@ class TestConfigHealthCheck:
             }
         }
 
-        config_file = self.create_temp_config(tmp_path, config_dict)
+        self.create_temp_config(tmp_path, config_dict)
 
         original_config_dir = Config.config_dir
         try:

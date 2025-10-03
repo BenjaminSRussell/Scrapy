@@ -11,11 +11,11 @@ we need one file to rule them all:
 - Spawns validation/enrichment workers (because parallel processing is fancy)
 """
 
-import sys
-import asyncio
 import argparse
+import asyncio
 import logging
 import shutil
+import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -28,15 +28,14 @@ if sys.platform == 'win32':
 src_dir = Path(__file__).parent.parent
 sys.path.insert(0, str(src_dir))
 
-from src.orchestrator.config import Config, ConfigValidationError
-from src.orchestrator.pipeline import PipelineOrchestrator
-from src.common.logging import setup_logging
 from src.common import config_keys as keys
 from src.common.config_validator import validate_config_health
+from src.common.logging import setup_logging
+from src.orchestrator.config import Config, ConfigValidationError
+from src.orchestrator.pipeline import PipelineOrchestrator
 
 # module-level exports handled through lazy imports because dependencies are optional
 # and we love making things complicated
-
 # Import all the things we actually need
 from src.stage2.validator import URLValidator
 from src.stage3.enrichment_spider import EnrichmentSpider
@@ -51,6 +50,7 @@ def run_stage1_discovery_sync(config: Config):
 
     from scrapy.crawler import CrawlerProcess
     from scrapy.utils.project import get_project_settings
+
     from src.stage1.discovery_spider import DiscoverySpider
 
     # Get scrapy settings because configuration is always fun

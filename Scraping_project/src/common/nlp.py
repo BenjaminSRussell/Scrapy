@@ -312,7 +312,7 @@ class NLPRegistry:
             return {}
 
         results = self.zero_shot_pipeline(text, labels)
-        return dict(zip(results["labels"], results["scores"]))
+        return dict(zip(results["labels"], results["scores"], strict=False))
 
     def _keywords_from_doc(self, doc, top_k: int) -> list[str]:
         candidates: list[str] = []

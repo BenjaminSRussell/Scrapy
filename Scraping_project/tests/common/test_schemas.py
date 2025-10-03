@@ -142,7 +142,7 @@ def test_enrichment_item_word_count_validation(word_count, text):
     )
 
     # Actual word count should match provided count
-    actual_words = len(text.split()) if text else 0
+    len(text.split()) if text else 0
     assert item.word_count == word_count
 
 

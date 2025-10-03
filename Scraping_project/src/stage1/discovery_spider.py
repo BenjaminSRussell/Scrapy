@@ -3,14 +3,14 @@ import hashlib
 import json
 import logging
 import re
+from collections.abc import AsyncGenerator, Iterator
 from datetime import datetime
 from pathlib import Path
-from typing import Iterator, Optional, Tuple, AsyncGenerator
 from urllib.parse import urlparse
 
 import scrapy
-from scrapy.linkextractors import LinkExtractor
 from scrapy.http import Response
+from scrapy.linkextractors import LinkExtractor
 
 try:
     from scrapy_playwright.page import Page
@@ -19,13 +19,12 @@ except ImportError:
     PLAYWRIGHT_AVAILABLE = False
     Page = None  # type: ignore
 
-from src.common.schemas import DiscoveryItem
-from src.common.urls import canonicalize_url_simple
-from src.common.storage import URLCache, PaginationCache
-from src.common.feedback import FeedbackStore
 from src.common.adaptive_depth import AdaptiveDepthManager
-from src.common.logging import get_structured_logger, set_session_id, set_trace_id, clear_trace_context
-
+from src.common.feedback import FeedbackStore
+from src.common.logging import get_structured_logger, set_session_id, set_trace_id
+from src.common.schemas import DiscoveryItem
+from src.common.storage import PaginationCache, URLCache
+from src.common.urls import canonicalize_url_simple
 
 logger = get_structured_logger(__name__, component="discovery_spider", stage="stage1")
 
@@ -97,8 +96,9 @@ class DiscoverySpider(scrapy.Spider):
     def __init__(self, max_depth: int = 3, allowed_domains: list = None, settings: dict = None, *args, **kwargs):
         super().__init__(*args, **kwargs)
         # Import Settings class properly
-        from scrapy.settings import Settings
         from unittest.mock import Mock
+
+        from scrapy.settings import Settings
 
         # Ensure self.settings is always set (might be set by Scrapy's from_crawler)
         if not hasattr(self, 'settings'):
@@ -168,7 +168,7 @@ class DiscoverySpider(scrapy.Spider):
         # Initialize feedback store for adaptive discovery
         feedback_file = Path("data/feedback/stage2_feedback.json")
         self.feedback_store = FeedbackStore(feedback_file)
-        logger.info(f"Loaded feedback from Stage 2 for adaptive discovery")
+        logger.info("Loaded feedback from Stage 2 for adaptive discovery")
 
         # Check which sources should be throttled based on feedback
         self.throttled_sources = set()
@@ -194,7 +194,7 @@ class DiscoverySpider(scrapy.Spider):
             base_depth=self.max_depth,  # Use configured max_depth as base
             max_depth=self.max_depth + 3  # Allow up to 3 levels deeper for rich sections
         )
-        logger.info(f"Adaptive depth manager initialized")
+        logger.info("Adaptive depth manager initialized")
 
         # Get depth configuration
         depth_config = self.adaptive_depth.get_depth_configuration()
@@ -247,7 +247,7 @@ class DiscoverySpider(scrapy.Spider):
 
         logger.info(f"Loading seed URLs from {seed_file}")
 
-        with open(seed_file, 'r', encoding='utf-8') as f:
+        with open(seed_file, encoding='utf-8') as f:
             reader = csv.reader(f)
             for row_num, row in enumerate(reader, 1):
                 if row and row[0].strip():
@@ -311,7 +311,7 @@ class DiscoverySpider(scrapy.Spider):
             return
 
         # Get adaptive depth limit for this URL's section
-        adaptive_max_depth = self.adaptive_depth.get_depth_for_url(source_url)
+        self.adaptive_depth.get_depth_for_url(source_url)
 
         # Record this URL's discovery for adaptive learning
         self.adaptive_depth.record_discovery(source_url, current_depth)
@@ -358,10 +358,9 @@ class DiscoverySpider(scrapy.Spider):
             # Extract anchor text for importance scoring
             anchor_text = link.text.strip() if hasattr(link, 'text') and link.text else None
 
-            for output in self._process_candidate_url(
+            yield from self._process_candidate_url(
                 link.url, source_url, current_depth, "html_link", 1.0, anchor_text=anchor_text
-            ):
-                yield output
+            )
 
         yield from self._discover_dynamic_sources(response, current_depth)
 
@@ -369,7 +368,6 @@ class DiscoverySpider(scrapy.Spider):
         """Identify dynamic/AJAX URLs and hidden API endpoints embedded in the page."""
 
         source_url = response.url
-        dynamic_candidates = set()
 
         # Enhanced throttling for noisy heuristics
         if not hasattr(self, '_dynamic_discovery_stats'):
@@ -575,8 +573,7 @@ class DiscoverySpider(scrapy.Spider):
                 self._dynamic_discovery_stats['source_type_stats'][source_type] = 0
             self._dynamic_discovery_stats['source_type_stats'][source_type] += 1
 
-            for result in results:
-                yield result
+            yield from results
 
         # Update domain pattern tracking
         domain = urlparse(source_url).netloc
@@ -658,8 +655,7 @@ class DiscoverySpider(scrapy.Spider):
         discovery_time = datetime.now().isoformat()
 
         # Generate trace ID for this discovered URL (for logging only, not stored in item)
-        from src.common.logging import get_session_id, get_trace_id
-        item_trace_id = set_trace_id()
+        set_trace_id()
 
         results = [
             DiscoveryItem(
@@ -701,7 +697,7 @@ class DiscoverySpider(scrapy.Spider):
         source_url: str,
         discovery_source: str,
         confidence: float,
-        anchor_text: Optional[str]
+        anchor_text: str | None
     ) -> float:
         """
         Calculate importance score blending multiple signals:
@@ -769,7 +765,7 @@ class DiscoverySpider(scrapy.Spider):
         # Normalize to 0.0-1.0 range
         return min(1.0, max(0.0, score))
 
-    def _normalize_candidate(self, raw_url: str, response: Response) -> Optional[str]:
+    def _normalize_candidate(self, raw_url: str, response: Response) -> str | None:
         """Normalise dynamic candidate URLs and enforce domain boundaries."""
 
         if not raw_url:
@@ -988,7 +984,7 @@ class DiscoverySpider(scrapy.Spider):
 
         logger.info("=" * 80)
 
-    def _clean_seed_url(self, raw_url: str, line_number: int) -> Tuple[Optional[str], bool]:
+    def _clean_seed_url(self, raw_url: str, line_number: int) -> tuple[str | None, bool]:
         """Attempt to clean malformed seed URLs while preserving usable entries."""
 
         url = raw_url.strip()
@@ -1164,7 +1160,7 @@ class DiscoverySpider(scrapy.Spider):
 
     def _generate_pagination_urls(self, base_url: str, limit: int = 10) -> set:
         """Generate common pagination patterns for API endpoints with TTL-aware caching"""
-        from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
+        from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
         pagination_urls = set()
 

@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import asyncio
 import json
-from pathlib import Path
-from typing import Any, AsyncGenerator
+import logging
+from collections.abc import AsyncGenerator
 from dataclasses import dataclass
 from datetime import datetime
-import logging
+from pathlib import Path
+from typing import Any
 
 from src.common import config_keys as keys
 from src.orchestrator.orchestrator_validation import validate_stage_output
@@ -142,7 +143,7 @@ class BatchQueue:
                 except asyncio.QueueEmpty:
                     break
 
-        except asyncio.TimeoutError:
+        except TimeoutError:
             if self._producer_done and queue.empty():
                 return []
             pass
@@ -175,7 +176,7 @@ class PipelineOrchestrator:
 
         logger.info(f"Loading Stage 1 results from {output_file}")
 
-        with open(output_file, 'r', encoding='utf-8') as f:
+        with open(output_file, encoding='utf-8') as f:
             for line_no, line in enumerate(f, 1):
                 try:
                     data = json.loads(line.strip())
@@ -206,7 +207,7 @@ class PipelineOrchestrator:
 
         logger.info(f"Loading Stage 2 results from {output_file}")
 
-        with open(output_file, 'r', encoding='utf-8') as f:
+        with open(output_file, encoding='utf-8') as f:
             for line_no, line in enumerate(f, 1):
                 try:
                     data = json.loads(line.strip())
@@ -451,7 +452,6 @@ class PipelineOrchestrator:
         process = crawler_process_factory(scrapy_settings)
 
         def _run_crawler() -> None:
-            import sys
             try:
                 process.crawl(spider_cls, **spider_kwargs)
                 process.start()  # This blocks until crawling is done

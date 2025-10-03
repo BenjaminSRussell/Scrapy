@@ -13,14 +13,14 @@ from __future__ import annotations
 
 import json
 import logging
+import statistics
+from collections import Counter, defaultdict
+from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
-from collections import defaultdict, Counter
-from dataclasses import dataclass, asdict
-import statistics
 
-from src.common.request_infrastructure import RequestOutcome, RequestAttempt
+from src.common.request_infrastructure import RequestAttempt, RequestOutcome
 
 logger = logging.getLogger(__name__)
 
@@ -97,7 +97,7 @@ class RequestAnalyticsEngine:
         # Load recent attempts for this domain
         try:
             if self.request_log.exists():
-                with open(self.request_log, 'r', encoding='utf-8') as f:
+                with open(self.request_log, encoding='utf-8') as f:
                     for line in f:
                         if line.strip():
                             data = json.loads(line)
@@ -197,7 +197,7 @@ class RequestAnalyticsEngine:
 
         try:
             if self.request_log.exists():
-                with open(self.request_log, 'r', encoding='utf-8') as f:
+                with open(self.request_log, encoding='utf-8') as f:
                     for line in f:
                         if line.strip():
                             data = json.loads(line)
@@ -351,7 +351,7 @@ class RequestAnalyticsEngine:
 
             elif pattern.pattern_type == "time_based_failures":
                 recommendations['monitoring_alerts'].append(
-                    f"Monitor failure rates during identified peak failure hours"
+                    "Monitor failure rates during identified peak failure hours"
                 )
                 recommendations['performance_optimizations'].append(
                     "Implement time-aware request scheduling"
@@ -381,7 +381,7 @@ class RequestAnalyticsEngine:
         # Load recent data
         try:
             if self.request_log.exists():
-                with open(self.request_log, 'r', encoding='utf-8') as f:
+                with open(self.request_log, encoding='utf-8') as f:
                     for line in f:
                         if line.strip():
                             data = json.loads(line)

@@ -298,7 +298,7 @@ class AdaptiveDepthManager:
         deep_sections = sum(1 for s in self.section_stats.values() if s.current_recommended_depth > self.base_depth)
         shallow_sections = sum(1 for s in self.section_stats.values() if s.current_recommended_depth < self.base_depth)
 
-        logger.info(f"\nOverall Statistics:")
+        logger.info("\nOverall Statistics:")
         logger.info(f"  Total sections tracked: {total_sections}")
         logger.info(f"  Average recommended depth: {avg_depth:.1f}")
         logger.info(f"  Sections with deeper crawling: {deep_sections}")

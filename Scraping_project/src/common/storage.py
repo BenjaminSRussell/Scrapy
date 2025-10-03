@@ -1,11 +1,12 @@
 # TODO: Add support for other storage backends, such as a database or a cloud storage service.
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import sqlite3
 from collections.abc import Iterator
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 

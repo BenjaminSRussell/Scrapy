@@ -340,18 +340,17 @@ class ContentAnalyzer:
             has_very_recent_content = days_since_update <= 30
 
         # Freshness score (0-100)
-        freshness_score = 0.0
         if days_since_update is not None:
             if days_since_update <= 30:
-                freshness_score = 100
+                pass
             elif days_since_update <= 90:
-                freshness_score = 80
+                pass
             elif days_since_update <= 365:
-                freshness_score = 60
+                pass
             elif days_since_update <= 730:
-                freshness_score = 40
+                pass
             else:
-                freshness_score = 20
+                pass
 
         return RecencyInfo(
             most_recent_date=most_recent_date,

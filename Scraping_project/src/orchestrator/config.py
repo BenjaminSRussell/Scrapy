@@ -1,12 +1,13 @@
-import os
-import yaml
 import logging
+import os
 from pathlib import Path
-from typing import Dict, Any, List, Tuple
+from typing import Any
+
+import yaml
+from pydantic import ValidationError
 
 from src.common import config_keys as keys
 from src.common.config_schema import PipelineConfig
-from pydantic import ValidationError
 
 logger = logging.getLogger(__name__)
 
@@ -35,21 +36,21 @@ class Config:
             self._validated_config = None
             logger.warning("Configuration validation is disabled. This is not recommended.")
 
-    def _load_config(self) -> Dict[str, Any]:
+    def _load_config(self) -> dict[str, Any]:
         """Load configuration from YAML file because JSON wasn't good enough"""
         config_file = self.config_dir / f'{self.env}.yml'
 
         if not config_file.exists():
             raise FileNotFoundError(f"Configuration file not found: {config_file}")
 
-        with open(config_file, 'r') as f:
+        with open(config_file) as f:
             config = yaml.safe_load(f)
 
         config = self._apply_env_overrides(config)
 
         return config
 
-    def _apply_env_overrides(self, config: Dict[str, Any]) -> Dict[str, Any]:
+    def _apply_env_overrides(self, config: dict[str, Any]) -> dict[str, Any]:
         """Apply environment variable overrides with type coercion"""
         env_overrides = {
             'SCRAPY_CONCURRENT_REQUESTS': ([keys.SCRAPY, keys.SCRAPY_CONCURRENT_REQUESTS], int),
@@ -110,7 +111,7 @@ class Config:
                         f"  ❌ Unknown key '{field_name}' at {location}"
                     )
                     error_lines.append(
-                        f"     This might be a typo. Check your configuration file."
+                        "     This might be a typo. Check your configuration file."
                     )
                 elif 'type_error' in error_type:
                     error_lines.append(f"  ❌ Type error at {location}: {msg}")
@@ -157,7 +158,7 @@ class Config:
                 return default
         return current
 
-    def get_scrapy_settings(self) -> Dict[str, Any]:
+    def get_scrapy_settings(self) -> dict[str, Any]:
         """Get Scrapy-specific settings"""
         return {
             'CONCURRENT_REQUESTS': self.get(keys.SCRAPY, keys.SCRAPY_CONCURRENT_REQUESTS),
@@ -175,7 +176,7 @@ class Config:
             'HTTPERROR_ALLOW_ALL': True,
         }
 
-    def get_stage1_config(self) -> Dict[str, Any]:
+    def get_stage1_config(self) -> dict[str, Any]:
         """Get Stage 1 discovery configuration"""
         return {
             keys.DISCOVERY_ALLOWED_DOMAINS: self.get(keys.STAGES, keys.STAGE_DISCOVERY, keys.DISCOVERY_ALLOWED_DOMAINS, default=['uconn.edu']),
@@ -187,7 +188,7 @@ class Config:
             keys.DISCOVERY_HEURISTICS: self.get(keys.STAGES, keys.STAGE_DISCOVERY, keys.DISCOVERY_HEURISTICS, default={}),
         }
 
-    def get_stage2_config(self) -> Dict[str, Any]:
+    def get_stage2_config(self) -> dict[str, Any]:
         """Get Stage 2 validation configuration"""
         return {
             keys.VALIDATION_MAX_WORKERS: self.get(keys.STAGES, keys.STAGE_VALIDATION, keys.VALIDATION_MAX_WORKERS),
@@ -195,7 +196,7 @@ class Config:
             keys.VALIDATION_OUTPUT_FILE: self.get(keys.STAGES, keys.STAGE_VALIDATION, keys.VALIDATION_OUTPUT_FILE),
         }
 
-    def get_stage3_config(self) -> Dict[str, Any]:
+    def get_stage3_config(self) -> dict[str, Any]:
         """Get Stage 3 enrichment configuration"""
         return {
             keys.ENRICHMENT_ALLOWED_DOMAINS: self.get(keys.STAGES, keys.STAGE_ENRICHMENT, keys.ENRICHMENT_ALLOWED_DOMAINS, default=['uconn.edu']),
@@ -208,7 +209,7 @@ class Config:
             keys.ENRICHMENT_STORAGE: self.get(keys.STAGES, keys.STAGE_ENRICHMENT, keys.ENRICHMENT_STORAGE, default={}),
         }
 
-    def get_nlp_config(self) -> Dict[str, Any]:
+    def get_nlp_config(self) -> dict[str, Any]:
         """Get NLP configuration"""
         return {
             keys.NLP_SPACY_MODEL: self.get(keys.NLP, keys.NLP_SPACY_MODEL, default='en_core_web_sm'),
@@ -222,7 +223,7 @@ class Config:
             keys.NLP_DEVICE: self.get(keys.NLP, keys.NLP_DEVICE, default='auto'),
         }
 
-    def get_logging_config(self) -> Dict[str, Any]:
+    def get_logging_config(self) -> dict[str, Any]:
         """Get logging configuration"""
         return {
             keys.LOGGING_LEVEL: self.get(keys.LOGGING, keys.LOGGING_LEVEL, default='INFO'),
@@ -232,7 +233,7 @@ class Config:
             'backup_count': self.get(keys.LOGGING, 'backup_count', default=3),
         }
 
-    def get_data_paths(self) -> Dict[str, Path]:
+    def get_data_paths(self) -> dict[str, Path]:
         """Get data directory paths"""
         return {
             keys.RAW_DIR: Path(self.get(keys.DATA, keys.RAW_DIR)),

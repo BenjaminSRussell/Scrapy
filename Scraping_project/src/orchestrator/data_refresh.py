@@ -14,13 +14,13 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from datetime import datetime, timedelta
+from dataclasses import asdict, dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any
-from dataclasses import dataclass, asdict
 
-from src.common.request_infrastructure import SmartRequestHandler, AdaptiveRequestConfig
-from src.common.schemas import DiscoveryItem, ValidationResult, EnrichmentItem
+from src.common.request_infrastructure import AdaptiveRequestConfig, SmartRequestHandler
+from src.common.schemas import ValidationResult
 
 try:  # pragma: no cover - compatibility shim for legacy tests
     from src.common.nlp import _DummyNLPRegistry  # type: ignore
@@ -102,7 +102,7 @@ class DataRefreshManager:
 
         data = {}
         try:
-            with open(file_path, 'r', encoding='utf-8') as f:
+            with open(file_path, encoding='utf-8') as f:
                 for line in f:
                     if line.strip():
                         item = json.loads(line)
@@ -334,7 +334,7 @@ class DataRefreshManager:
         try:
             history = []
             if self.refresh_history.exists():
-                with open(self.refresh_history, 'r') as f:
+                with open(self.refresh_history) as f:
                     history = json.load(f)
 
             history.append({
@@ -505,7 +505,7 @@ class DataRefreshManager:
         last_refresh = None
         if self.refresh_history.exists():
             try:
-                with open(self.refresh_history, 'r') as f:
+                with open(self.refresh_history) as f:
                     history = json.load(f)
                 if history:
                     last_refresh = history[-1]['timestamp']

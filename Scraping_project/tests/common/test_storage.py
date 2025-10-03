@@ -23,7 +23,7 @@ def test_jsonl_storage_append_and_read(tmp_path, records):
 
     read_back = list(storage.read_all())
     assert len(read_back) == records
-    for original, loaded in zip(sample, read_back):
+    for original, loaded in zip(sample, read_back, strict=False):
         assert original == loaded
 
 

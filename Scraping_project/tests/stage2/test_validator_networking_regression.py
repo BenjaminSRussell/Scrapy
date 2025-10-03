@@ -674,7 +674,7 @@ class TestValidatorIntegrationRegression:
     @pytest.mark.asyncio
     async def test_real_aiohttp_session_behavior(self, mock_config):
         """Test with real aiohttp session to catch integration issues"""
-        validator = URLValidator(mock_config)
+        URLValidator(mock_config)
 
         # Test with localhost to avoid external dependencies
         # This assumes a test HTTP server or uses httpbin-style responses

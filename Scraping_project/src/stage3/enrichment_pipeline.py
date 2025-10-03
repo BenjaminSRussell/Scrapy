@@ -1,7 +1,7 @@
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 from itemadapter import ItemAdapter
 
@@ -17,15 +17,15 @@ class Stage3Pipeline:
 
     def __init__(
         self,
-        output_file: Optional[str] = None,
-        storage_config: Optional[Dict[str, Any]] = None,
-        storage_backend: Optional[str] = None,
-        storage_options: Optional[Dict[str, Any]] = None,
-        rotation_config: Optional[Dict[str, Any]] = None,
-        compression_config: Optional[Dict[str, Any]] = None,
+        output_file: str | None = None,
+        storage_config: dict[str, Any] | None = None,
+        storage_backend: str | None = None,
+        storage_options: dict[str, Any] | None = None,
+        rotation_config: dict[str, Any] | None = None,
+        compression_config: dict[str, Any] | None = None,
     ) -> None:
         self.output_path = Path(output_file) if output_file else self.DEFAULT_OUTPUT
-        base_config: Dict[str, Any] = dict(storage_config or {})
+        base_config: dict[str, Any] = dict(storage_config or {})
 
         if storage_backend:
             base_config["backend"] = storage_backend
@@ -87,7 +87,7 @@ class Stage3Pipeline:
         try:
             self.writer = self._build_writer()
             self.writer.open()
-        except Exception as exc:
+        except Exception:
             logger.error("[Stage3Pipeline] Failed to initialize storage backend", exc_info=True)
             raise
 

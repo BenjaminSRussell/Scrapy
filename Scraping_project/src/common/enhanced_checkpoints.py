@@ -357,7 +357,7 @@ class EnhancedCheckpoint:
 
         current_hash = self._compute_file_hash(input_file)
         if current_hash != self.state.input_file_hash:
-            return False, f"Input file has changed (hash mismatch)"
+            return False, "Input file has changed (hash mismatch)"
 
         return True, "Input file validated"
 

@@ -1,12 +1,11 @@
 # TODO: Add support for more flexible storage of the seen hashes, such as using a database or a Bloom filter.
 import json
+import logging
+from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
+
 from itemadapter import ItemAdapter
-import logging
-import hashlib
-from typing import Dict, Set
-from collections import defaultdict
 
 from src.common.link_graph import LinkGraphAnalyzer
 
@@ -25,8 +24,8 @@ class Stage1Pipeline:
         # Link graph integration
         self.enable_link_graph = enable_link_graph
         self.link_graph: LinkGraphAnalyzer = None
-        self._page_outlinks: Dict[str, Set[str]] = defaultdict(set)
-        self._page_depths: Dict[str, int] = {}
+        self._page_outlinks: dict[str, set[str]] = defaultdict(set)
+        self._page_depths: dict[str, int] = {}
 
     @classmethod
     def from_crawler(cls, crawler):

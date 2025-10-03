@@ -12,10 +12,8 @@ Ablation flags enable A/B testing of queue strategies.
 
 import logging
 import random
-from enum import Enum
-from typing import List, Optional
 from dataclasses import dataclass
-from pathlib import Path
+from enum import Enum
 
 from src.common.logging import get_structured_logger
 
@@ -38,7 +36,7 @@ class QueueItem:
     importance_score: float = 0.0
     discovery_depth: int = 0
     discovery_source: str = "unknown"
-    anchor_text: Optional[str] = None
+    anchor_text: str | None = None
     is_same_domain: bool = True
 
     # Additional metadata
@@ -84,7 +82,7 @@ class PriorityQueueManager:
             ablation_split=ablation_split if enable_ablation else None
         )
 
-    def order_batch(self, items: List[QueueItem]) -> List[QueueItem]:
+    def order_batch(self, items: list[QueueItem]) -> list[QueueItem]:
         """
         Order a batch of queue items according to strategy.
 
@@ -113,9 +111,9 @@ class PriorityQueueManager:
 
     def _apply_strategy(
         self,
-        items: List[QueueItem],
+        items: list[QueueItem],
         strategy: QueueStrategy
-    ) -> List[QueueItem]:
+    ) -> list[QueueItem]:
         """Apply ordering strategy to items"""
 
         if strategy == QueueStrategy.SCORE_ORDERED:
@@ -162,7 +160,7 @@ class PriorityQueueManager:
             # Default to FIFO
             return sorted(items, key=lambda x: x.insertion_order)
 
-    def _ablation_split_batch(self, items: List[QueueItem]) -> List[QueueItem]:
+    def _ablation_split_batch(self, items: list[QueueItem]) -> list[QueueItem]:
         """
         Split batch for ablation testing.
 

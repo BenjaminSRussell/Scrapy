@@ -147,7 +147,7 @@ def test_full_pipeline_end_to_end(tmp_path):
     assert efficiency_metrics["stage2_success_rate"] >= 75, "Stage 2 success rate too low"
     assert efficiency_metrics["overall_throughput"] > 50, "Overall pipeline too slow"
 
-    print(f"\n📊 Pipeline Efficiency Metrics:")
+    print("\n📊 Pipeline Efficiency Metrics:")
     print(f"   🔍 Discovery: {efficiency_metrics['discovered_urls']} URLs in {stage1_duration:.3f}s ({efficiency_metrics['stage1_throughput']:.0f} URLs/s)")
     print(f"   ✅ Validation: {efficiency_metrics['validated_urls']} URLs in {stage2_duration:.3f}s ({efficiency_metrics['stage2_throughput']:.0f} URLs/s)")
     print(f"   🔬 Enrichment: {efficiency_metrics['enriched_urls']} URLs in {stage3_duration:.3f}s ({efficiency_metrics['stage3_throughput']:.0f} URLs/s)")
@@ -199,7 +199,7 @@ def test_pipeline_memory_efficiency():
 
     efficiency_score = 15000 / (total_memory_mb + 1e-9)  # operations per MB
 
-    print(f"\n💾 Memory Efficiency Metrics:")
+    print("\n💾 Memory Efficiency Metrics:")
     print(f"   🔢 Hash Storage: {hash_memory_mb:.1f}MB for 10K hashes")
     print(f"   ⚙️  URL Processing: {processing_memory_mb:.1f}MB for 5K URLs")
     print(f"   📊 Total Usage: {total_memory_mb:.1f}MB")
@@ -260,7 +260,7 @@ def test_pipeline_scalability_simulation():
     throughputs = [results[size]["throughput"] for size in batch_sizes]
     scalability_factor = max(throughputs) / min(throughputs)
 
-    print(f"\n📈 Scalability Test Results:")
+    print("\n📈 Scalability Test Results:")
     for batch_size in batch_sizes:
         result = results[batch_size]
         print(f"   📦 Batch {batch_size}: {result['throughput']:.0f} URLs/s ({result['success_rate']:.1f}% success)")
@@ -296,12 +296,11 @@ def test_pipeline_endurance():
         for url in urls:
             import hashlib
             # Discovery
-            url_hash = hashlib.sha256(url.encode()).hexdigest()
+            hashlib.sha256(url.encode()).hexdigest()
 
             # Validation (simulate occasional failures)
             if hash(url) % 20 != 0:  # 95% success rate
                 # Enrichment
-                content = f"Content for {url}"
                 processed += 1
 
         iteration_duration = time.perf_counter() - iteration_start

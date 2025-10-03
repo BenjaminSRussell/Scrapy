@@ -119,7 +119,6 @@ class ContentClassifier:
 
             # Data
             'text/csv': ContentCategory.DATA,
-            'application/vnd.ms-excel': ContentCategory.DATA,
         }
 
     def classify(

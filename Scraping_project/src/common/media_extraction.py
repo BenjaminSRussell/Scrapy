@@ -270,7 +270,7 @@ class MediaTranscriber:
             text = self._transcribe_with_engine(audio)
 
             # Calculate word count
-            word_count = len(text.split())
+            len(text.split())
 
             return TranscriptionResult(
                 text=text,
