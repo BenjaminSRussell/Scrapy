@@ -1056,17 +1056,15 @@ class PipelineConfig(BaseModel):
             if browser_config.enabled:
                 engine = browser_config.engine
                 if engine == 'playwright':
-                    try:
-                        import playwright
-                    except ImportError:
+                    from importlib.util import find_spec
+                    if not find_spec("playwright"):
                         logger.warning(
                             f"Playwright not installed but headless browser is enabled in {stage_name} stage. "
                             f"Run: pip install playwright && playwright install"
                         )
                 elif engine == 'selenium':
-                    try:
-                        import selenium
-                    except ImportError:
+                    from importlib.util import find_spec
+                    if not find_spec("selenium"):
                         logger.warning(
                             f"Selenium not installed but headless browser is enabled in {stage_name} stage. "
                             f"Run: pip install selenium"
@@ -1108,7 +1106,7 @@ class PipelineConfig(BaseModel):
                         raise ValueError(
                             f"Cannot create output directory for {stage_name} stage: {parent_dir}. "
                             f"Error: {e}"
-                        )
+                        ) from e
         return self
 
     @model_validator(mode='after')

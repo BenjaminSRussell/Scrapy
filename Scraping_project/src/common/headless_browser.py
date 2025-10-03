@@ -77,7 +77,7 @@ class HeadlessBrowser:
         except ImportError:
             raise HeadlessBrowserError(
                 "Playwright not installed. Install with: pip install playwright && playwright install"
-            )
+            ) from None
 
         self._playwright = await async_playwright().start()
 
@@ -131,7 +131,7 @@ class HeadlessBrowser:
         except ImportError:
             raise HeadlessBrowserError(
                 "Selenium not installed. Install with: pip install selenium"
-            )
+            ) from None
 
         # Configure browser options
         if self.browser_type == 'chromium' or self.browser_type == 'chrome':
@@ -224,7 +224,7 @@ class HeadlessBrowser:
                 except Exception as screenshot_error:
                     logger.warning(f"Failed to save screenshot: {screenshot_error}")
 
-            raise HeadlessBrowserError(f"Failed to fetch {url}: {e}")
+            raise HeadlessBrowserError(f"Failed to fetch {url}: {e}") from e
 
     async def _extract_network_urls_playwright(self) -> list[str]:
         """Extract URLs from network activity in Playwright"""
@@ -281,7 +281,7 @@ class HeadlessBrowser:
                 except Exception as screenshot_error:
                     logger.warning(f"Failed to save screenshot: {screenshot_error}")
 
-            raise HeadlessBrowserError(f"Failed to fetch {url}: {e}")
+            raise HeadlessBrowserError(f"Failed to fetch {url}: {e}") from e
 
     async def extract_ajax_endpoints(self, url: str) -> list[str]:
         """
@@ -338,7 +338,7 @@ class HeadlessBrowserPool:
     async def start(self):
         """Start browser pool"""
         logger.info(f"Starting browser pool with {self.pool_size} instances")
-        for i in range(self.pool_size):
+        for _ in range(self.pool_size):
             browser = HeadlessBrowser(self.config)
             await browser.start()
             self.browsers.append(browser)

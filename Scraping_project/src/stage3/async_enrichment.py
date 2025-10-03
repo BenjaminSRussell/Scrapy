@@ -10,6 +10,7 @@ import hashlib
 import logging
 import time
 from collections import deque
+from contextvars import ContextVar
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
@@ -96,6 +97,10 @@ class AdaptiveConcurrencyController:
         self._last_increase_time = time.time()
         self._recent_requests = deque(maxlen=100)  # Track last 100 requests
         self._semaphore = asyncio.Semaphore(initial_concurrency)
+        self._acquired_semaphores = ContextVar(
+            f"adaptive_concurrency_acquired_{id(self)}",
+            default=(),
+        )
 
     def record_request(self, success: bool, duration_ms: float):
         """Record request result for adaptive adjustment"""
@@ -153,13 +158,15 @@ class AdaptiveConcurrencyController:
                     self._semaphore = asyncio.Semaphore(self.current)
                 self._last_increase_time = current_time
 
-    async def acquire(self):
-        """Acquire semaphore slot"""
-        await self._semaphore.acquire()
+    async def acquire(self) -> asyncio.Semaphore:
+        """Acquire semaphore slot and return the semaphore instance."""
+        sem = self._semaphore
+        await sem.acquire()
+        return sem
 
-    def release(self):
-        """Release semaphore slot"""
-        self._semaphore.release()
+    def release(self, sem: asyncio.Semaphore):
+        """Release semaphore slot."""
+        sem.release()
 
     def get_stats(self) -> dict[str, Any]:
         """Get current statistics"""

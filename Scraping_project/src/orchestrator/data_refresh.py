@@ -154,7 +154,7 @@ class DataRefreshManager:
                     hours_old = (datetime.now() - update_time.replace(tzinfo=None)).total_seconds() / 3600
                     if hours_old > self.config.refresh_interval_hours:
                         priority += max(0, min(25, int(hours_old / 24)))  # older = higher priority
-                except:
+                except Exception:
                     priority += 10  # no idea when = maybe refresh
 
             # working stuff gets lower priority
@@ -509,7 +509,7 @@ class DataRefreshManager:
                     history = json.load(f)
                 if history:
                     last_refresh = history[-1]['timestamp']
-            except:
+            except Exception:
                 pass
 
         return {

@@ -451,7 +451,7 @@ class LinkGraphAnalyzer:
 
             page_outlinks = defaultdict(list)
 
-            for source_url, discovered_url, depth in cursor.fetchall():
+            for source_url, discovered_url, _depth in cursor.fetchall():
                 page_outlinks[source_url].append(discovered_url)
 
             # Add pages to graph

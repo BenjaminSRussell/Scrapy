@@ -103,7 +103,7 @@ class NLPRegistry:
         try:
             nlp = spacy_module.load(model_name)
         except Exception as exc:  # pragma: no cover - configuration issue
-            raise RuntimeError(f"Unable to load spaCy model '{model_name}': {exc}")
+            raise RuntimeError(f"Unable to load spaCy model '{model_name}': {exc}") from exc
 
         # add lemmatizer or things get weird
         if "lemmatizer" not in nlp.pipe_names:

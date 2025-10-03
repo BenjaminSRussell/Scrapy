@@ -170,9 +170,8 @@ class ConfigHealthCheck:
 
             # Check transformer dependencies if enabled
             if validated.nlp.use_transformers:
-                try:
-                    import transformers
-                except ImportError:
+                from importlib.util import find_spec
+                if not find_spec("transformers"):
                     self.issues.append(ValidationIssue(
                         severity='error',
                         category='dependency',
@@ -189,8 +188,8 @@ class ConfigHealthCheck:
         for stage_name, browser_config in stages_to_check:
             if browser_config.enabled:
                 if browser_config.engine == 'playwright':
-                    try:
-                        import playwright
+                    from importlib.util import find_spec
+                    if find_spec("playwright"):
                         # Check if browsers are installed
                         try:
                             import asyncio
@@ -204,7 +203,7 @@ class ConfigHealthCheck:
                                 try:
                                     original_policy = asyncio.get_event_loop_policy()
                                     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
-                                except:
+                                except Exception:
                                     pass
 
                             try:
@@ -223,7 +222,7 @@ class ConfigHealthCheck:
                                 message=f"Playwright browsers not installed for {stage_name} stage",
                                 suggestion="Run: playwright install"
                             ))
-                    except ImportError:
+                    else:
                         self.issues.append(ValidationIssue(
                             severity='error',
                             category='dependency',
@@ -231,9 +230,8 @@ class ConfigHealthCheck:
                             suggestion="Run: pip install playwright && playwright install"
                         ))
                 elif browser_config.engine == 'selenium':
-                    try:
-                        import selenium
-                    except ImportError:
+                    from importlib.util import find_spec
+                    if not find_spec("selenium"):
                         self.issues.append(ValidationIssue(
                             severity='error',
                             category='dependency',

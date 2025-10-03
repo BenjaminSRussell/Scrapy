@@ -367,7 +367,7 @@ class EnhancedCheckpoint:
             updated_at = datetime.fromisoformat(self.state.updated_at)
             age = datetime.now() - updated_at
             return age > timedelta(hours=max_age_hours)
-        except:
+        except Exception:
             return False
 
     @staticmethod

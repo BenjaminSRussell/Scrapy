@@ -83,7 +83,7 @@ class EnhancedBrowserDiscovery:
         except ImportError:
             raise BrowserDiscoveryError(
                 "Playwright not installed. Install with: pip install playwright && playwright install"
-            )
+            ) from None
 
         self._playwright = await async_playwright().start()
 
@@ -218,7 +218,7 @@ class EnhancedBrowserDiscovery:
         except Exception as e:
             logger.error(f"Browser discovery failed for {url}: {e}")
             self.stats['errors'] += 1
-            raise BrowserDiscoveryError(f"Failed to discover URLs: {e}")
+            raise BrowserDiscoveryError(f"Failed to discover URLs: {e}") from e
 
         finally:
             self.active_browsers -= 1
