@@ -38,19 +38,18 @@ from src.common.config_validator import validate_config_health
 # and we love making things complicated
 
 # Import all the things we actually need
-from scrapy.crawler import CrawlerProcess
 from src.stage2.validator import URLValidator
 from src.stage3.enrichment_spider import EnrichmentSpider
 
 
-async def run_stage1_discovery(config: Config):
-    """Run Stage 1: Discovery phase using Scrapy"""
+def run_stage1_discovery_sync(config: Config):
+    """Run Stage 1: Discovery phase using Scrapy (synchronous)"""
     logger = logging.getLogger(__name__)
     logger.info("=" * 60)
     logger.info("STAGE 1: DISCOVERY")
     logger.info("=" * 60)
 
-
+    from scrapy.crawler import CrawlerProcess
     from scrapy.utils.project import get_project_settings
     from src.stage1.discovery_spider import DiscoverySpider
 
@@ -87,17 +86,13 @@ async def run_stage1_discovery(config: Config):
         'TELNETCONSOLE_ENABLED': False,  # Because nobody wants telnet in 2024
     })
 
-    # Fire up the crawler because web scraping is what we do
+    # Use CrawlerProcess for synchronous execution
     process = CrawlerProcess(settings)
     process.crawl(
         DiscoverySpider,
         max_depth=stage1_config[keys.DISCOVERY_MAX_DEPTH]
     )
-
-    # Run scrapy in an executor because async is trendy
-    loop = asyncio.get_running_loop()
-    await loop.run_in_executor(None, process.start)
-    process.stop()  # Always clean up after yourself
+    process.start()  # Blocks until finished
 
     logger.info("Stage 1 discovery completed")
 
@@ -316,7 +311,7 @@ async def _run_pipeline_stages(args: argparse.Namespace, config: Config):
     orchestrator = PipelineOrchestrator(config)
 
     if args.stage in ['1', 'all']:
-        await run_stage1_discovery(config)
+        run_stage1_discovery_sync(config)  # Run synchronously
 
     if args.stage in ['2', 'all']:
         await run_stage2_validation(config, orchestrator)
@@ -325,8 +320,8 @@ async def _run_pipeline_stages(args: argparse.Namespace, config: Config):
         await run_stage3_enrichment(config, orchestrator, use_async=args.async_enrichment)
 
 
-async def main():
-    """The main entry point for the pipeline orchestrator."""
+def main_sync():
+    """Main entry point for stage 1 only (synchronous)."""
     parser = _setup_arg_parser()
     args = parser.parse_args()
 
@@ -341,11 +336,38 @@ async def main():
             return 0
 
         if args.validate_only:
-            # Health check already ran in _initialize_pipeline
             print("\n[OK] Configuration validation completed successfully\n")
             return 0
 
-        await _run_pipeline_stages(args, config)
+        # Only run stage 1 synchronously
+        if args.stage == '1':
+            run_stage1_discovery_sync(config)
+            logger.info("Pipeline orchestrator completed successfully")
+            return 0
+        else:
+            # For other stages, need to run async
+            return asyncio.run(main_async(args, config))
+
+    except KeyboardInterrupt:
+        logger.info("Pipeline interrupted by user")
+        return 1
+    except Exception as exc:
+        logger.error(f"Pipeline failed: {exc}", exc_info=True)
+        return 1
+
+
+async def main_async(args: argparse.Namespace, config: Config):
+    """Async main for stages 2, 3, or all."""
+    logger = logging.getLogger(__name__)
+
+    try:
+        orchestrator = PipelineOrchestrator(config)
+
+        if args.stage in ['2', 'all']:
+            await run_stage2_validation(config, orchestrator)
+
+        if args.stage in ['3', 'all']:
+            await run_stage3_enrichment(config, orchestrator, use_async=args.async_enrichment)
 
         logger.info("Pipeline orchestrator completed successfully")
         return 0
@@ -353,10 +375,10 @@ async def main():
     except KeyboardInterrupt:
         logger.info("Pipeline interrupted by user")
         return 1
-    except Exception as exc:  # pragma: no cover - defensive catch
+    except Exception as exc:
         logger.error(f"Pipeline failed: {exc}", exc_info=True)
         return 1
 
 
 if __name__ == "__main__":
-    sys.exit(asyncio.run(main()))
+    sys.exit(main_sync())

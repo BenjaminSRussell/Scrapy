@@ -1,7 +1,8 @@
+
 <div align="center">
   <img src="https://img.shields.io/badge/UConn%20Pipeline-Discovery-Validation-Enrichment-05437C?style=for-the-badge" alt="Pipeline badge" />
   <h1>UConn Web Scraping Pipeline</h1>
-  <p><strong>Discover.</strong> <strong>Validate.</strong> <strong>Enrich.</strong><br/>An asyncio-first data collection platform tailored for the <code>uconn.edu</code> web estate.</p>
+  <p><strong>Discover.</strong> <strong>Validate.</strong> <strong>Enrich.</strong><br/>An asyncio-driven data platform purpose-built for the University of Connecticut digital ecosystem.</p>
   <p>
     <img src="https://img.shields.io/badge/python-3.11-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python" />
     <img src="https://img.shields.io/badge/aiohttp-ready-2E6F95?style=for-the-badge" alt="aiohttp" />
@@ -22,17 +23,17 @@
 - [Testing Strategy](#testing-strategy)
 - [Contribution Guide](#contribution-guide)
 - [Roadmap Highlights](#roadmap-highlights)
-- [Design Language & Visual Identity](#design-language--visual-identity)
+- [Design Language and Visual Identity](#design-language-and-visual-identity)
 
 ---
 
 ## Why This Pipeline
-> built for reliability, tuned for maintainability, and designed to make downstream modelling effortless.
+> Engineered for reliability, tuned for maintainability, and crafted to streamline every downstream consumer.
 
-- **Purpose-built discovery** for the University of Connecticut domain, with heuristics for hidden APIs and dynamic assets.
-- **Deterministic validation** leveraging <code>aiohttp</code> connection pooling, precise timeout measurement, and Content-Length governance.
-- **Rich enrichment layer** producing schema-validated JSONL assets ready for search, analytics, or ML ingestion.
-- **Operational empathy** through checkpointing, back-pressure aware queues, and structured metadata at every hop.
+- **Delivers purpose-built discovery** for the University of Connecticut domain, with heuristics for hidden APIs and dynamic assets.
+- **Delivers deterministic validation** leveraging <code>aiohttp</code> connection pooling, precise timeout measurement, and Content-Length governance.
+- **Delivers a rich enrichment layer** producing schema-validated JSONL assets ready for search, analytics, or ML ingestion.
+- **Delivers operational empathy** through checkpointing, back-pressure aware queues, and structured metadata at every hop.
 
 ---
 
@@ -58,8 +59,8 @@ flowchart LR
 
 | Path | Description |
 |------|-------------|
-| main.py | CLI front door – resolves configuration, selects stages, and invokes the orchestrator. |
-| config/ | Environment profiles (development.yml, production.yml) plus overrides via env vars. |
+| main.py | CLI front door that resolves configuration, selects stages, and invokes the orchestrator. |
+| config/ | Environment profiles (development.yml, production.yml) plus overrides via environment variables. |
 | data/ | Seeds, checkpoint snapshots, processed outputs, and diagnostics. |
 | docs/ | Design notes, validation matrices, and operational runbooks. |
 | src/common/ | Shared utilities (schemas, checkpoints, adaptive depth, link graph analysis, metrics exporters). |
@@ -72,18 +73,18 @@ flowchart LR
 
 ## Stage Deep Dive
 
-### Stage 1 · Discovery (src/stage1)
+### Stage 1: Discovery (src/stage1)
 - Breadth-first crawl seeded from data/raw/uconn_urls.csv.
 - Dynamic heuristics inspect data attributes, inline JSON, and script tags to reveal AJAX endpoints.
-- Deduplication and canonicalisation pipeline pushes clean records to data/processed/stage01/new_urls.jsonl.
+- Deduplication and canonicalisation push clean records to data/processed/stage01/new_urls.jsonl.
 
-### Stage 2 · Validation (src/stage2)
+### Stage 2: Validation (src/stage2)
 - URLValidator batches URLs, honours HEAD responses when sufficient, and executes GET fallbacks with shared TCP connectors.
-- Content-Length governance: trusts headers when sane, otherwise falls back to body length, ensuring consistent downstream metrics.
+- Content-Length governance: honors well-formed headers and falls back to the actual payload size when they are not, keeping downstream metrics consistent.
 - Exception handling preserves original iohttp error classes, yielding user-readable diagnostics while avoiding bare strings.
 - Writes validation artefacts to data/processed/stage02/validation_output.jsonl with latency, status code, caching hints, and staleness scores.
 
-### Stage 3 · Enrichment (src/stage3)
+### Stage 3: Enrichment (src/stage3)
 - Pulls only validated URLs (status 2xx/3xx) and extracts structured content: titles, body text, keyword hints, media flags.
 - Supports JSONL, SQLite, Parquet, or S3 outputs through the nrichment.storage configuration block.
 - Emits adaptive feedback so discovery depth can be tuned based on observed content quality.
@@ -130,16 +131,16 @@ python main.py --env development --config-only
 1. pip install -r requirements.txt
 2. python -m spacy download en_core_web_sm (for enrichment NLP helpers)
 3. Populate data/raw/uconn_urls.csv with seeds (no header)
-4. Tail logs/ or console output for checkpoints and status summaries
+4. Monitor console output (or log files) for checkpoint progress and status summaries
 
 ---
 
 ## Quality, Observability, and Resilience
 
 - **Checkpointing:** src/common/checkpoints.py persists progress per stage – restart-friendly and resumable mid-batch.
-- **Adaptive depth & feedback:** Stage 2 results feed adaptive depth logic so Stage 1 prioritises high-value paths.
+- **Adaptive depth and feedback:** Stage 2 results feed adaptive depth logic so Stage 1 prioritises high-value paths.
 - **Structured metadata:** Validation results capture cache headers, staleness, redirects, and response timing using 	ime.perf_counter for precision.
-- **Content governance:** Pipeline enforces schema validation via src/common/schemas_validated.py, ensuring consumers receive consistent payloads.
+- **Content governance:** Schema validation via src/common/schemas_validated.py guarantees consumers receive predictable, contract-first payloads.
 - **Monitoring hooks:** Prometheus exporter and enrichment storage emit metrics-friendly artefacts when enabled.
 
 ---
@@ -153,7 +154,7 @@ python -m pytest --maxfail=1 -q      # quick smoke
 `
 
 Coverage highlights:
-- **Networking regressions:** 	ests/stage2/test_validator_networking_regression.py mirrors aiohttp semantics with mock sessions.
+- **Networking regressions:** 	ests/stage2/test_validator_networking_regression.py faithfully simulates aiohttp behavior through tailored mock sessions.
 - **Orchestrator integration:** 	ests/integration/test_orchestrator_e2e.py validates multi-stage execution and checkpoint hand-offs.
 - **Schema validation:** 	ests/common/test_schemas*.py guarantees JSONL contracts.
 
@@ -161,11 +162,11 @@ Coverage highlights:
 
 ## Contribution Guide
 
-1. Fork & branch from main (git checkout -b feature/your-feature).
+1. Fork and branch from main (git checkout -b feature/your-feature).
 2. Keep pull requests focused; update docs/tests alongside code.
-3. Ensure pytest passes and linting (if configured) shows zero warnings.
+3. Run pytest (and linting if configured) to verify a warning-free green build before opening a PR.
 4. Document configuration toggles or migration notes in docs/ when relevant.
-5. Submit PR with context: goal, testing evidence, follow-up actions.
+5. Submit a PR with context: goal, testing evidence, follow-up actions.
 
 Branch naming suggestions: eature/*, ix/*, docs/*, 
 efactor/*, 	est/*.
@@ -180,14 +181,14 @@ efactor/*, 	est/*.
 
 ---
 
-## Design Language & Visual Identity
+## Design Language and Visual Identity
 > A consistent design vocabulary keeps code, documentation, and UX aligned.
 
-- **Color palette:** Navy (#05437C) + Huskies blue (#2E6F95) + supporting neutrals ensure readability and UConn resonance.
+- **Color palette:** Navy (#05437C) plus Huskies blue (#2E6F95) with neutral accents for readability and UConn resonance.
 - **Typography:** Prefer semantic Markdown headings, short paragraphs, and tables to optimise scan-ability on GitHub.
 - **Iconography:** Shields.io badges highlight runtime guarantees (Python version, test posture) without overwhelming the reader.
-- **Layout rhythm:** Section dividers (---) and callouts maintain visual pacing, guiding readers from overview -> operations -> contribution.
+- **Layout rhythm:** Section dividers (---) and callouts maintain visual pacing, guiding readers from overview to operations to contribution.
 
 ---
 
-Happy scraping!
+Happy scraping — see you in the next commit!
