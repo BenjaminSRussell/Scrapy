@@ -257,9 +257,9 @@ class TestAsyncEnrichmentProcessor:
             max_concurrency=10,
             max_retries=1
         ) as processor:
-            # Mock session that raises error
+            # Mock session that raises error - use __aenter__ to properly handle async context manager
             mock_session = AsyncMock()
-            mock_session.get.side_effect = aiohttp.ClientError("Connection failed")
+            mock_session.get.return_value.__aenter__.side_effect = aiohttp.ClientError("Connection failed")
 
             result = await processor.fetch_url(
                 session=mock_session,

@@ -181,8 +181,68 @@
           "failed": 1
         }
       }
+    },
+    {
+      "session_id": "session_20251003_125022",
+      "started_at": "2025-10-03T12:50:22.716554",
+      "completed_at": "2025-10-03T12:50:22.769764",
+      "total_discovered": 0,
+      "total_validated": 2,
+      "total_failed": 1,
+      "success_rate": 0.6666666666666666,
+      "source_performance": {
+        "unknown": {
+          "validated": 2,
+          "failed": 1
+        }
+      }
+    },
+    {
+      "session_id": "session_20251003_125154",
+      "started_at": "2025-10-03T12:51:54.315936",
+      "completed_at": "2025-10-03T12:51:54.361661",
+      "total_discovered": 0,
+      "total_validated": 2,
+      "total_failed": 1,
+      "success_rate": 0.6666666666666666,
+      "source_performance": {
+        "unknown": {
+          "validated": 2,
+          "failed": 1
+        }
+      }
+    },
+    {
+      "session_id": "session_20251003_125823",
+      "started_at": "2025-10-03T12:58:23.645776",
+      "completed_at": "2025-10-03T12:58:23.691835",
+      "total_discovered": 0,
+      "total_validated": 2,
+      "total_failed": 1,
+      "success_rate": 0.6666666666666666,
+      "source_performance": {
+        "unknown": {
+          "validated": 2,
+          "failed": 1
+        }
+      }
+    },
+    {
+      "session_id": "session_20251003_131812",
+      "started_at": "2025-10-03T13:18:12.320194",
+      "completed_at": "2025-10-03T13:18:12.370466",
+      "total_discovered": 0,
+      "total_validated": 2,
+      "total_failed": 1,
+      "success_rate": 0.6666666666666666,
+      "source_performance": {
+        "unknown": {
+          "validated": 2,
+          "failed": 1
+        }
+      }
     }
   ],
-  "last_updated": "2025-10-02T19:45:35.726678",
-  "total_sessions": 13
+  "last_updated": "2025-10-03T13:18:12.370963",
+  "total_sessions": 17
 }

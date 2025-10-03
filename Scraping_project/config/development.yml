@@ -2,9 +2,9 @@ environment: development
 
 # Scrapy settings
 scrapy:
-  concurrent_requests: 32
-  concurrent_requests_per_domain: 16
-  concurrent_requests_per_ip: 16
+  concurrent_requests: 64
+  concurrent_requests_per_domain: 32
+  concurrent_requests_per_ip: 32
   download_delay: 0.1
   download_timeout: 10
   dns_timeout: 5

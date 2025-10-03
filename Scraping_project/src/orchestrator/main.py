@@ -92,7 +92,22 @@ def run_stage1_discovery_sync(config: Config):
         DiscoverySpider,
         max_depth=stage1_config[keys.DISCOVERY_MAX_DEPTH]
     )
-    process.start()  # Blocks until finished
+
+    try:
+        process.start()  # Blocks until finished - manages its own reactor/event loop
+    except KeyboardInterrupt:
+        logger.info("Stage 1 discovery interrupted by user")
+        raise
+    except RuntimeError as e:
+        if "event loop is already running" in str(e):
+            logger.error("Twisted/asyncio event loop conflict detected. This should not happen with WindowsSelectorEventLoopPolicy.")
+            raise
+        else:
+            logger.error(f"Stage 1 runtime error: {e}", exc_info=True)
+            raise
+    except Exception as e:
+        logger.error(f"Stage 1 discovery failed: {e}", exc_info=True)
+        raise
 
     logger.info("Stage 1 discovery completed")
 
@@ -321,7 +336,7 @@ async def _run_pipeline_stages(args: argparse.Namespace, config: Config):
 
 
 def main_sync():
-    """Main entry point for stage 1 only (synchronous)."""
+    """Main entry point - handles both sync (Stage 1) and async (Stage 2/3) execution."""
     parser = _setup_arg_parser()
     args = parser.parse_args()
 
@@ -341,16 +356,24 @@ def main_sync():
 
         # Handle stage execution
         if args.stage == '1':
-            # Stage 1 only - run synchronously
+            # Stage 1 only - run synchronously (Scrapy uses its own event loop)
             run_stage1_discovery_sync(config)
             logger.info("Pipeline orchestrator completed successfully")
             return 0
         elif args.stage == 'all':
-            # All stages - run Stage 1 sync, then 2 & 3 async
+            # All stages - run Stage 1 sync first, then create NEW event loop for async stages
+            # This avoids "event loop already running" error from Scrapy
             run_stage1_discovery_sync(config)
-            return asyncio.run(main_async(args, config))
+
+            # Create a fresh event loop for async stages (Stage 1 consumed the previous one)
+            new_loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(new_loop)
+            try:
+                return new_loop.run_until_complete(main_async(args, config))
+            finally:
+                new_loop.close()
         else:
-            # Stages 2 or 3 only - run async
+            # Stages 2 or 3 only - run async with fresh event loop
             return asyncio.run(main_async(args, config))
 
     except KeyboardInterrupt:

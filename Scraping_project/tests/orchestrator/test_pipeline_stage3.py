@@ -69,17 +69,15 @@ class _FakeCrawlerProcess:
     def __init__(self, settings: Dict[str, Any]):
         self.settings = settings
         self.crawled_args: List[Any] = []
-        self.stopped = False
+        self.started = False
 
     def crawl(self, spider_cls, **kwargs):
         self.crawled_args.append((spider_cls, kwargs))
 
     def start(self):
         # Simulate immediate crawl completion
+        self.started = True
         return None
-
-    def stop(self):
-        self.stopped = True
 
 
 @pytest.mark.asyncio
@@ -154,7 +152,7 @@ async def test_run_scrapy_enrichment_merges_urls_and_metadata(tmp_path):
     metadata_by_url = {entry["url"]: entry for entry in kwargs["validation_metadata"]}
     assert metadata_by_url["https://example.com/a"]["status_code"] == 201
     assert metadata_by_url["https://example.com/existing"]["url_hash"] == "hash-existing"
-    assert process.stopped is True
+    assert process.started is True
     assert captured["settings"]["STAGE3_OUTPUT_FILE"] == str(stage3_file)
 
 

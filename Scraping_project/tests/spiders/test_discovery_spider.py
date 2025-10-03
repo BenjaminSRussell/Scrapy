@@ -17,10 +17,25 @@ from tests.samples import html_response, build_discovery_item
 def mock_settings(tmp_path):
     """Mock Scrapy settings for spider initialization with isolated cache."""
     settings = Mock()
+
+    # Mock getbool to return True for all boolean settings
     settings.getbool.return_value = True
+
     # Use tmp_path for isolated cache per test
     cache_path = tmp_path / "url_cache.db"
-    settings.get.return_value = str(cache_path)
+    pagination_cache_path = tmp_path / "pagination_cache.db"
+
+    # Mock get() to return appropriate values based on key
+    def mock_get(key, default=None):
+        settings_map = {
+            'SEED_FILE': 'data/raw/uconn_urls.csv',
+            'STAGE1_OUTPUT_FILE': 'data/processed/stage01/discovery_output.jsonl',
+            'DEDUP_CACHE_PATH': str(cache_path),
+            'PAGINATION_CACHE_PATH': str(pagination_cache_path),
+        }
+        return settings_map.get(key, default)
+
+    settings.get.side_effect = mock_get
     settings.getlist.return_value = ['uconn.edu']
     return settings
 

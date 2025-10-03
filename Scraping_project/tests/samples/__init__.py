@@ -87,7 +87,14 @@ def html_response(
         "first_seen": first_seen or iso_timestamp(depth),
     }
     request = Request(url=url, meta=meta, **(request_kwargs or {}))
-    return HtmlResponse(url=url, body=html.encode("utf-8"), encoding="utf-8", request=request)
+    headers = {b'Content-Type': b'text/html; charset=utf-8'}
+    return HtmlResponse(
+        url=url,
+        body=html.encode("utf-8"),
+        encoding="utf-8",
+        request=request,
+        headers=headers
+    )
 
 
 def write_jsonl(path: Path, data: Iterable[Dict[str, Any]]) -> None:

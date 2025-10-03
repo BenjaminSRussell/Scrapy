@@ -9,7 +9,7 @@ from typing import Any, Dict, List
 
 import pytest
 
-from orchestrator.pipeline import BatchQueue, BatchQueueItem, PipelineOrchestrator
+from src.orchestrator.pipeline import BatchQueue, BatchQueueItem, PipelineOrchestrator
 from tests.samples import build_discovery_item, write_jsonl
 
 
@@ -157,7 +157,7 @@ def test_concurrent_producer_consumer(tmp_path):
         def __init__(self, sink: List[str]):
             self.sink = sink
 
-        async def validate_batch(self, batch: List[BatchQueueItem]):
+        async def validate_batch(self, batch: List[BatchQueueItem], batch_id: int = None):
             for item in batch:
                 self.sink.append(item.url_hash)
 

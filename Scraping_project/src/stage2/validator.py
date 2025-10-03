@@ -55,14 +55,13 @@ if _client_ssl_error is not None:
 class URLValidator:
     """Stage 2 Validator - async client for URL validation using HEAD/GET checks with link importance prioritization"""
 
-    # TODO: The max_workers is hardcoded. It should be configurable.
     def __init__(self, config, enable_link_graph: bool = True):
         self.config = config
         self.stage2_config = config.get_stage2_config()
         self.max_workers = self.stage2_config['max_workers']
         self.timeout = self.stage2_config['timeout']
         self.output_file = Path(self.stage2_config['output_file'])
-        self.user_agent = self.config.get(keys.SCRAPY_USER_AGENT, 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36')
+        self.user_agent = self.config.get(keys.SCRAPY, keys.SCRAPY_USER_AGENT, 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36')
 
         # Initialize checkpoint manager for resumable validation
         checkpoint_dir = Path("data/checkpoints")
@@ -96,8 +95,10 @@ class URLValidator:
         # Ensure output directory exists
         self.output_file.parent.mkdir(parents=True, exist_ok=True)
 
-        # Session configuration
-        self.connector_limit = min(self.max_workers * 2, 100)
+        # Session configuration - Windows-safe connector limits
+        import sys
+        max_connector_limit = 64 if sys.platform == 'win32' else 100
+        self.connector_limit = min(self.max_workers * 2, max_connector_limit)
         self.session_timeout = aiohttp.ClientTimeout(total=self.timeout)
 
         # Cache of processed URL hashes for idempotency
@@ -141,17 +142,38 @@ class URLValidator:
 
         # Get importance scores for each URL
         url_scores = []
+        pagerank_values = []
+        authority_values = []
+        inlink_counts = []
+
         for item in batch:
             importance = self.link_graph.get_page_importance(item.url)
+            pagerank_values.append(importance.pagerank_score)
+            authority_values.append(importance.authority_score)
+            inlink_counts.append(importance.inlink_count)
 
-            # Calculate combined importance score
-            # Weight: PageRank (40%), Authority (40%), Inlinks (20%)
+        # Normalize scores to [0, 1] range using min-max normalization
+        def normalize(values):
+            if not values:
+                return values
+            min_val = min(values)
+            max_val = max(values)
+            if max_val == min_val:
+                # All values are the same, return uniform scores
+                return [0.5] * len(values)
+            return [(v - min_val) / (max_val - min_val) for v in values]
+
+        norm_pagerank = normalize(pagerank_values)
+        norm_authority = normalize(authority_values)
+        norm_inlinks = normalize(inlink_counts)
+
+        # Calculate combined scores with normalized values
+        for i, item in enumerate(batch):
             combined_score = (
-                importance.pagerank_score * 0.4 +
-                importance.authority_score * 0.4 +
-                min(importance.inlink_count / 100.0, 1.0) * 0.2
+                norm_pagerank[i] * 0.4 +
+                norm_authority[i] * 0.4 +
+                norm_inlinks[i] * 0.2
             )
-
             url_scores.append((item, combined_score))
 
         # Sort by combined score (descending)
@@ -159,10 +181,14 @@ class URLValidator:
 
         prioritized_batch = [item for item, score in url_scores]
 
-        # Log prioritization statistics
-        top_scores = [score for _, score in url_scores[:10]]
-        if top_scores:
-            logger.info(f"[Stage2] Prioritized batch by importance. Top 10 scores: {[f'{s:.4f}' for s in top_scores]}")
+        # Log prioritization statistics with min/max/avg
+        scores_only = [score for _, score in url_scores]
+        if scores_only:
+            min_score = min(scores_only)
+            max_score = max(scores_only)
+            avg_score = sum(scores_only) / len(scores_only)
+            top_10 = scores_only[:10]
+            logger.debug(f"[Stage2] Batch priority stats - min: {min_score:.4f}, max: {max_score:.4f}, avg: {avg_score:.4f}, top 10: {[f'{s:.4f}' for s in top_10]}")
 
         return prioritized_batch
 

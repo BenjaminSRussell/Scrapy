@@ -150,9 +150,30 @@ class ValidationResult(BaseModel):
         default=None,
         description="Learned optimization hints"
     )
+
+    # Freshness tracking fields
+    last_modified: Optional[str] = Field(
+        default=None,
+        description="Last-Modified header from response"
+    )
+    etag: Optional[str] = Field(
+        default=None,
+        description="ETag header for conditional requests"
+    )
+    staleness_score: float = Field(
+        default=0.0,
+        ge=0.0,
+        le=1.0,
+        description="Staleness score (0.0=fresh, 1.0=very stale)"
+    )
+    cache_control: Optional[str] = Field(
+        default=None,
+        description="Cache-Control header"
+    )
+
     schema_version: str = Field(
-        default="2.0",
-        description="Schema version"
+        default="2.1",
+        description="Schema version (bumped for freshness tracking)"
     )
     validation_method: Optional[str] = Field(
         default=None,
@@ -390,14 +411,14 @@ class SchemaRegistry:
 
     CURRENT_VERSIONS = {
         "DiscoveryItem": "2.0",
-        "ValidationResult": "2.0",
+        "ValidationResult": "2.1",
         "EnrichmentItem": "2.0",
         "PipelineStats": "1.0"
     }
 
     COMPATIBLE_VERSIONS = {
         "DiscoveryItem": ["1.0", "2.0"],
-        "ValidationResult": ["1.0", "2.0"],
+        "ValidationResult": ["1.0", "2.0", "2.1"],
         "EnrichmentItem": ["1.0", "2.0"],
         "PipelineStats": ["1.0"]
     }

@@ -645,17 +645,29 @@ class AsyncEnrichmentProcessor:
             ttl_dns_cache=300
         )
 
-        async with aiohttp.ClientSession(connector=connector) as session:
-            # Process in batches
-            for i in range(0, len(urls), self.batch_size):
-                # Skip already processed batches if resuming (only in recovering mode)
-                if resume_point['status'] == 'recovering' and self.checkpoint_tracker.should_skip(i):
-                    continue
+        try:
+            async with aiohttp.ClientSession(connector=connector) as session:
+                # Process in batches
+                for i in range(0, len(urls), self.batch_size):
+                    # Skip already processed batches if resuming (only in recovering mode)
+                    if resume_point['status'] == 'recovering' and self.checkpoint_tracker.should_skip(i):
+                        continue
 
-                batch = urls[i:i + self.batch_size]
-                await self.process_batch(session, batch)
+                    batch = urls[i:i + self.batch_size]
+                    await self.process_batch(session, batch)
 
-        self._log_final_stats()
+            # Mark as completed only if we finished successfully
+            self.checkpoint_tracker.complete()
+            self._log_final_stats()
+
+        except asyncio.CancelledError:
+            logger.warning("Async enrichment cancelled by user")
+            self.checkpoint_tracker.fail("Cancelled by user")
+            raise
+        except Exception as e:
+            logger.error(f"Async enrichment failed: {e}", exc_info=True)
+            self.checkpoint_tracker.fail(str(e))
+            raise
 
     def _log_progress(self):
         """Log current progress"""

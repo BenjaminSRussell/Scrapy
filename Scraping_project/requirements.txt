@@ -20,7 +20,6 @@ itemadapter
 # Testing
 pytest
 pytest-asyncio
-pytest-html
 pytest-mock
 pytest-timeout
 pytest-cov
@@ -28,7 +27,8 @@ pytest-cov
 # Data processing
 pandas
 pyarrow
-numpy<2  # Pin to v1.x for PyTorch compatibility
+python-dateutil  # Required by pandas
+numpy<2  # Required by PyTorch (pin to v1.x for compatibility)
 
 # Natural language processing (core required)
 spacy
@@ -58,14 +58,9 @@ pdfplumber
 Pillow
 
 # Utilities
-click
-tqdm
 psutil
-python-dateutil
-boto3
+boto3  # AWS S3 support (optional)
 
-# Typing helpers
+# Validation and typing
 typing-extensions
-
-# Additional utilities found in codebase
 pydantic

@@ -37,6 +37,7 @@ class BatchQueue:
         self._queue: asyncio.Queue | None = None
         self._running = False
         self._producer_done = False
+        self._last_logged_threshold = None  # Track last logged threshold to avoid spam
 
     def _get_queue(self) -> asyncio.Queue:
         """Return the underlying asyncio queue, creating it lazily."""
@@ -54,14 +55,34 @@ class BatchQueue:
         return self._queue
 
     async def put(self, item: BatchQueueItem):
-        """Add item to queue with backpressure monitoring"""
+        """Add item to queue with backpressure monitoring (with hysteresis to reduce log spam)"""
         queue = self._get_queue()
 
         current_size = queue.qsize()
+
+        # Use thresholded logging with hysteresis to avoid spam
+        # Only log when crossing 80%, 90%, 95%, or 100% thresholds
         if queue.full():
-            logger.warning(f"Queue is full ({self.max_queue_size}), applying backpressure - producer blocked")
-        elif current_size > self.max_queue_size * 0.8:
-            logger.info(f"Queue backpressure: {current_size}/{self.max_queue_size} items ({current_size * 100 // self.max_queue_size}% full)")
+            if self._last_logged_threshold != 100:
+                logger.warning(f"Queue is FULL ({self.max_queue_size}), applying backpressure - producer blocked")
+                self._last_logged_threshold = 100
+        elif current_size > self.max_queue_size * 0.95:
+            if self._last_logged_threshold != 95:
+                logger.warning(f"Queue at 95%+ capacity: {current_size}/{self.max_queue_size} items")
+                self._last_logged_threshold = 95
+        elif current_size > self.max_queue_size * 0.90:
+            if self._last_logged_threshold != 90:
+                logger.info(f"Queue at 90%+ capacity: {current_size}/{self.max_queue_size} items")
+                self._last_logged_threshold = 90
+        elif current_size > self.max_queue_size * 0.80:
+            if self._last_logged_threshold != 80:
+                logger.info(f"Queue at 80%+ capacity: {current_size}/{self.max_queue_size} items")
+                self._last_logged_threshold = 80
+        elif current_size < self.max_queue_size * 0.70:
+            # Reset threshold when queue drains below 70%
+            if self._last_logged_threshold is not None:
+                logger.info(f"Queue drained to {current_size}/{self.max_queue_size} items (< 70%)")
+                self._last_logged_threshold = None
 
         await queue.put(item)
 
@@ -259,6 +280,7 @@ class PipelineOrchestrator:
         """Consumer for Stage 2 queue - processes batches as they become available"""
         queue = self.get_stage2_queue()
         processed_count = 0
+        batch_id = 0
 
         while True:
             batch = await queue.get_batch_or_wait(timeout=2.0)
@@ -266,13 +288,15 @@ class PipelineOrchestrator:
             if not batch:
                 break
 
-            await validator.validate_batch(batch)
+            await validator.validate_batch(batch, batch_id=batch_id)
             processed_count += len(batch)
+            batch_id += 1
 
-            if processed_count % 1000 == 0:
-                logger.info(f"Validated {processed_count} URLs")
+            # Log progress less frequently (every 5000 instead of 1000)
+            if processed_count % 5000 == 0:
+                logger.info(f"Validated {processed_count} URLs ({batch_id} batches)")
 
-        logger.info(f"Stage 2 validation completed: {processed_count} URLs processed")
+        logger.info(f"Stage 2 validation completed: {processed_count} URLs processed in {batch_id} batches")
     async def run_concurrent_stage3_enrichment(
         self,
         spider_cls,
@@ -427,18 +451,29 @@ class PipelineOrchestrator:
         process = crawler_process_factory(scrapy_settings)
 
         def _run_crawler() -> None:
+            import sys
             try:
                 process.crawl(spider_cls, **spider_kwargs)
-                process.start()
+                process.start()  # This blocks until crawling is done
+            except KeyboardInterrupt:
+                logger.info("Crawler interrupted by user")
+            except Exception as e:
+                logger.error(f"Crawler error: {e}", exc_info=True)
+                # Re-raise to propagate to executor
+                raise
             finally:
-                stop = getattr(process, 'stop', None)
-                if callable(stop):
-                    try:
-                        stop()
-                    except Exception:
-                        logger.debug("CrawlerProcess.stop raised", exc_info=True)
+                # Clean shutdown - Scrapy already handles this internally
+                # Don't call stop() as it can cause conflicts
+                logger.debug("Scrapy crawler finished")
 
         loop = asyncio.get_running_loop()
         logger.info("Using Scrapy enrichment (traditional mode)")
 
-        await loop.run_in_executor(None, _run_crawler)
+        try:
+            await loop.run_in_executor(None, _run_crawler)
+        except asyncio.CancelledError:
+            logger.warning("Scrapy enrichment was cancelled")
+            raise
+        except Exception as e:
+            logger.error(f"Scrapy enrichment failed: {e}", exc_info=True)
+            raise

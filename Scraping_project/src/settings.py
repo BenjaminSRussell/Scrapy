@@ -49,9 +49,9 @@ REQUEST_FINGERPRINTER_IMPLEMENTATION = _scrapy_config.get('request_fingerprinter
 USER_AGENT = _scrapy_config.get('user_agent', 'UConn-Discovery-Crawler/1.0')
 
 # Concurrency settings (from YAML)
-CONCURRENT_REQUESTS = _scrapy_config.get('concurrent_requests', 32)
-CONCURRENT_REQUESTS_PER_DOMAIN = _scrapy_config.get('concurrent_requests_per_domain', 16)
-CONCURRENT_REQUESTS_PER_IP = _scrapy_config.get('concurrent_requests_per_ip', 16)
+CONCURRENT_REQUESTS = _scrapy_config.get('concurrent_requests', 64)
+CONCURRENT_REQUESTS_PER_DOMAIN = _scrapy_config.get('concurrent_requests_per_domain', 32)
+CONCURRENT_REQUESTS_PER_IP = _scrapy_config.get('concurrent_requests_per_ip', 32)
 
 # Download settings (from YAML)
 DOWNLOAD_DELAY = _scrapy_config.get('download_delay', 0.1)
@@ -69,7 +69,7 @@ LOG_LEVEL = _scrapy_config.get('log_level', 'INFO')
 AUTOTHROTTLE_ENABLED = True
 AUTOTHROTTLE_START_DELAY = 0.1
 AUTOTHROTTLE_MAX_DELAY = 1.0
-AUTOTHROTTLE_TARGET_CONCURRENCY = 8.0
+AUTOTHROTTLE_TARGET_CONCURRENCY = 16.0
 AUTOTHROTTLE_DEBUG = False
 
 # Enable and configure HTTP caching (using DBM storage instead of pickle for security)
@@ -80,6 +80,11 @@ HTTPCACHE_STORAGE = 'scrapy.extensions.httpcache.DbmCacheStorage'  # Secure alte
 # HTTPCACHE_POLICY = 'scrapy.extensions.httpcache.RFC2616Policy'  # Optional: RFC-compliant caching
 
 # Set settings whose default value is deprecated to a future-proof value
+# Use proactor event loop on Windows to avoid select() file descriptor limits
+import sys
+if sys.platform == 'win32':
+    import asyncio
+    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 TWISTED_REACTOR = 'twisted.internet.asyncioreactor.AsyncioSelectorReactor'
 FEED_EXPORT_ENCODING = 'utf-8'
 

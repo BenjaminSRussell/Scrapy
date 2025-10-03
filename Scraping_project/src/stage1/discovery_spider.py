@@ -304,6 +304,12 @@ class DiscoverySpider(scrapy.Spider):
             trace_id=trace_id
         )
 
+        # Skip non-text responses (images, videos, PDFs, etc.)
+        content_type = response.headers.get('Content-Type', b'').decode('utf-8', errors='ignore').lower()
+        if not any(text_type in content_type for text_type in ['text/html', 'text/plain', 'application/xhtml', 'application/xml']):
+            logger.debug(f"Skipping non-text response: {response.url} (Content-Type: {content_type})")
+            return
+
         # Get adaptive depth limit for this URL's section
         adaptive_max_depth = self.adaptive_depth.get_depth_for_url(source_url)
 
@@ -311,7 +317,6 @@ class DiscoverySpider(scrapy.Spider):
         self.adaptive_depth.record_discovery(source_url, current_depth)
 
         # Extract links from the current page
-        # TODO: The link extractor is not very flexible. It should be made more configurable, such as allowing the user to specify custom deny rules.
         le = LinkExtractor(
             allow_domains=self.allowed_domains,
             unique=True,
@@ -325,7 +330,13 @@ class DiscoverySpider(scrapy.Spider):
             ]
         )
 
-        links = le.extract_links(response)
+        try:
+            links = le.extract_links(response)
+        except AttributeError as e:
+            if "Response content isn't text" in str(e):
+                logger.debug(f"Skipping non-text response during link extraction: {response.url}")
+                return
+            raise
         self.total_urls_parsed += 1
 
         if source_url not in self.referring_pages:
@@ -792,7 +803,11 @@ class DiscoverySpider(scrapy.Spider):
         if not stripped:
             return set()
 
-        payload = json.loads(stripped)
+        try:
+            payload = json.loads(stripped)
+        except json.JSONDecodeError as e:
+            logger.debug(f"Failed to parse JSON from {response.url}: {e}")
+            return set()
 
         return self._extract_urls_from_json(payload, response)
 

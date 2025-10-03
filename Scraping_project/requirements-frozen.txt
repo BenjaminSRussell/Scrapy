@@ -1,5 +1,5 @@
 # UConn Web Scraping Pipeline - Frozen Dependencies
-# Generated: 2025-10-01
+# Generated: 2025-10-03
 #
 # This file contains pinned versions for reproducible builds.
 # Use this in production environments for stability.
@@ -9,12 +9,12 @@
 
 # Core scraping framework
 scrapy==2.11.2
-aiohttp==3.9.5
+aiohttp==3.10.11  # Updated from 3.9.5 (CVE-2025-53643: HTTP smuggling)
 requests==2.32.3
 beautifulsoup4==4.12.3
 lxml==5.2.2
 w3lib==2.3.1
-Twisted==24.7.0
+Twisted==24.11.0  # Updated from 24.7.0 (CVE-2024-41671, CVE-2024-41810)
 
 # Configuration and data
 PyYAML==6.0.2
@@ -50,8 +50,8 @@ pydantic==2.9.0
 
 # Scrapy dependencies (auto-resolved)
 parsel==1.9.1
-cryptography==43.0.1
-pyOpenSSL==24.2.1
+cryptography==44.0.1  # Updated from 43.0.1 (CVE-2024-12797: vulnerable OpenSSL)
+pyOpenSSL==24.3.0
 service-identity==24.1.0
 zope.interface==7.0.3
 cssselect==1.2.0
