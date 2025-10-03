@@ -136,7 +136,7 @@ async def run_benchmark(
 ):
     """Run benchmark comparison"""
     print("=" * 80)
-    print(f"Enrichment Performance Benchmark")
+    print("Enrichment Performance Benchmark")
     print("=" * 80)
     print(f"URLs: {url_count}")
     print(f"Runs: {runs}")
@@ -205,7 +205,7 @@ async def run_benchmark(
         avg_duration = sum(r['duration_seconds'] for r in scrapy_results) / len(scrapy_results)
         avg_throughput = sum(r['throughput_urls_per_sec'] for r in scrapy_results) / len(scrapy_results)
 
-        print(f"\nScrapy Enrichment:")
+        print("\nScrapy Enrichment:")
         print(f"  Average duration: {avg_duration:.1f}s")
         print(f"  Average throughput: {avg_throughput:.1f} URLs/sec")
         print(f"  Processed: {scrapy_results[0]['urls_processed']} URLs")

@@ -22,7 +22,7 @@ from datetime import datetime
 from pathlib import Path
 
 # Add src to path for imports
-sys.path.insert(0, str(Path(__file__).parent / "src"))
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from orchestrator.analytics_engine import RequestAnalyticsEngine
 from orchestrator.data_refresh import DataRefreshManager, RefreshConfig

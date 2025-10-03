@@ -42,6 +42,8 @@ Python Scraping Pipeline
 │   Java ETL Loader      │
 │ (Production Scale)     │
 └────────────────────────┘
+
+**IMPORTANT**: The Python pipeline is for **local development and prototyping only**. The Java ETL loader is the **only** supported method for production data loading.
          ↓
   Production PostgreSQL
   Data Warehouse
@@ -49,13 +51,17 @@ Python Scraping Pipeline
 
 ### Two-Tier Approach
 
-**Tier 1: Python Direct Load** (Development/Prototyping)
+**Tier 1: Python Direct Load (Development Only)**
 - Fast iteration
 - Immediate results
 - SQLite or PostgreSQL
 - Good for <100k records
 
-**Tier 2: Java ETL** (Production)
+**Tier 2: Java ETL (Production Only)**
+- Enterprise-grade transformations
+- Optimized bulk loading
+- Advanced deduplication
+- Good for millions of records
 - Enterprise-grade transformations
 - Optimized bulk loading
 - Advanced deduplication
@@ -274,6 +280,9 @@ python main.py --env development --stage 3
 ---
 
 ## Python Warehouse Integration
+
+> **⚠️ For Development & Prototyping Only**
+> This method provides a quick way to load data for local testing. It is **not** intended for production use. For production, use the [Java ETL Loader](#java-etl-loader).
 
 ### Writing Data
 

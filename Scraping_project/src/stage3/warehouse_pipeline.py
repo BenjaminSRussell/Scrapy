@@ -25,7 +25,16 @@ logger = logging.getLogger(__name__)
 
 
 class DataWarehousePipeline:
-    """Pipeline to write enriched items to data warehouse"""
+    """
+    **DEV-ONLY: Local Development & Prototyping**
+
+    This pipeline writes enriched items to a local data warehouse (SQLite by default).
+    It is designed for rapid prototyping and testing of scraper changes without the
+    need for the full Java ETL production environment.
+
+    **DO NOT USE IN PRODUCTION.** The official Java ETL loader is the sole mechanism
+    for loading data into the production data warehouse.
+    """
 
     def __init__(self, db_type: str = "sqlite", connection_string: str | None = None, crawl_version: int = 1):
         self.db_type = DatabaseType.SQLITE if db_type == "sqlite" else DatabaseType.POSTGRESQL
