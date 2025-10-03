@@ -98,3 +98,517 @@ Traceback (most recent call last):
     r, w, x = select.select(r, w, w, timeout)
               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 ValueError: too many file descriptors in select()
+2025-10-03 13:30:20 [INFO] __main__ - Starting pipeline orchestrator
+2025-10-03 13:30:20 [INFO] __main__ - Environment: development
+2025-10-03 13:30:20 [INFO] __main__ - Stage(s): all
+2025-10-03 13:30:20 [INFO] __main__ - Running configuration health check...
+2025-10-03 13:30:25 [INFO] __main__ - Configuration health check passed [OK]
+2025-10-03 13:30:25 [INFO] __main__ - ============================================================
+2025-10-03 13:30:25 [INFO] __main__ - STAGE 1: DISCOVERY
+2025-10-03 13:30:25 [INFO] __main__ - ============================================================
+2025-10-03 13:30:25 [INFO] scrapy.utils.log - Scrapy 2.13.3 started (bot: uconn_scraper)
+2025-10-03 13:30:25 [INFO] scrapy.utils.log - Versions:
+{'lxml': '6.0.2',
+ 'libxml2': '2.11.9',
+ 'cssselect': '1.3.0',
+ 'parsel': '1.10.0',
+ 'w3lib': '2.3.1',
+ 'Twisted': '25.5.0',
+ 'Python': '3.11.8 (tags/v3.11.8:db85d51, Feb  6 2024, 22:03:32) [MSC v.1937 '
+           '64 bit (AMD64)]',
+ 'pyOpenSSL': '25.3.0 (OpenSSL 3.5.4 30 Sep 2025)',
+ 'cryptography': '46.0.2',
+ 'Platform': 'Windows-10-10.0.26100-SP0'}
+2025-10-03 13:30:25 [INFO] src.stage1.discovery_spider - Allowed domains configured
+2025-10-03 13:30:25 [INFO] src.stage1.discovery_spider - Using persistent deduplication with SQLite
+2025-10-03 13:30:25 [INFO] src.stage1.discovery_spider - Loaded existing URL hashes from cache
+2025-10-03 13:30:25 [INFO] src.common.feedback - Loaded feedback: 0 patterns, 0 sources, 20 sessions
+2025-10-03 13:30:25 [INFO] src.common.feedback - FeedbackStore initialized: data\feedback\stage2_feedback.json
+2025-10-03 13:30:25 [INFO] src.stage1.discovery_spider - Loaded feedback from Stage 2 for adaptive discovery
+2025-10-03 13:30:25 [INFO] src.common.adaptive_depth - Loaded adaptive depth config: 254 sections
+2025-10-03 13:30:25 [INFO] src.common.adaptive_depth - AdaptiveDepthManager initialized: data\config\adaptive_depth.json
+2025-10-03 13:30:25 [INFO] src.stage1.discovery_spider - Adaptive depth manager initialized
+2025-10-03 13:30:25 [INFO] src.stage1.discovery_spider - Loaded adaptive depth configuration for 254 sections
+2025-10-03 13:30:25 [INFO] src.stage1.discovery_spider - Discovery spider initialized with max_depth=3
+2025-10-03 13:30:25 [INFO] src.stage1.discovery_spider - Heuristics: JSON=True, AJAX=True, Pagination=True, DataAttrs=True, Forms=True, MetaRefresh=True, HTMLComments=True, CSS=True, SVG=True
+2025-10-03 13:30:25 [INFO] scrapy.addons - Enabled addons:
+[]
+2025-10-03 13:30:25 [WARNING] py.warnings - C:\Python311\Lib\site-packages\scrapy\utils\request.py:120: ScrapyDeprecationWarning: 'REQUEST_FINGERPRINTER_IMPLEMENTATION' is a deprecated setting.
+It will be removed in a future version of Scrapy.
+  return cls(crawler)
+
+2025-10-03 13:30:25 [INFO] scrapy.middleware - Enabled extensions:
+['scrapy.extensions.corestats.CoreStats',
+ 'scrapy.extensions.logstats.LogStats',
+ 'scrapy.extensions.throttle.AutoThrottle']
+2025-10-03 13:30:25 [INFO] scrapy.crawler - Overridden settings:
+{'AUTOTHROTTLE_ENABLED': True,
+ 'AUTOTHROTTLE_MAX_DELAY': 1.0,
+ 'AUTOTHROTTLE_START_DELAY': 0.1,
+ 'AUTOTHROTTLE_TARGET_CONCURRENCY': 16.0,
+ 'BOT_NAME': 'uconn_scraper',
+ 'CONCURRENT_REQUESTS': 64,
+ 'CONCURRENT_REQUESTS_PER_DOMAIN': 32,
+ 'CONCURRENT_REQUESTS_PER_IP': 32,
+ 'DNS_TIMEOUT': 5,
+ 'DOWNLOAD_DELAY': 0.1,
+ 'DOWNLOAD_TIMEOUT': 10,
+ 'FEED_EXPORT_ENCODING': 'utf-8',
+ 'HTTPCACHE_DIR': 'data/cache/scrapy',
+ 'HTTPCACHE_ENABLED': True,
+ 'HTTPCACHE_EXPIRATION_SECS': 3600,
+ 'HTTPCACHE_STORAGE': 'scrapy.extensions.httpcache.DbmCacheStorage',
+ 'LOG_LEVEL': 'INFO',
+ 'NEWSPIDER_MODULE': 'src.stage3',
+ 'REQUEST_FINGERPRINTER_IMPLEMENTATION': '2.7',
+ 'SPIDER_MODULES': ['src.stage1', 'src.stage3'],
+ 'TELNETCONSOLE_ENABLED': False,
+ 'USER_AGENT': 'UConn-Discovery-Crawler/1.0 (development)'}
+2025-10-03 13:30:25 [INFO] scrapy.middleware - Enabled downloader middlewares:
+['scrapy.downloadermiddlewares.offsite.OffsiteMiddleware',
+ 'scrapy.downloadermiddlewares.httpauth.HttpAuthMiddleware',
+ 'scrapy.downloadermiddlewares.downloadtimeout.DownloadTimeoutMiddleware',
+ 'scrapy.downloadermiddlewares.defaultheaders.DefaultHeadersMiddleware',
+ 'scrapy.downloadermiddlewares.useragent.UserAgentMiddleware',
+ 'scrapy.downloadermiddlewares.retry.RetryMiddleware',
+ 'scrapy.downloadermiddlewares.redirect.MetaRefreshMiddleware',
+ 'scrapy.downloadermiddlewares.httpcompression.HttpCompressionMiddleware',
+ 'scrapy.downloadermiddlewares.redirect.RedirectMiddleware',
+ 'scrapy.downloadermiddlewares.cookies.CookiesMiddleware',
+ 'scrapy.downloadermiddlewares.httpproxy.HttpProxyMiddleware',
+ 'scrapy.downloadermiddlewares.stats.DownloaderStats',
+ 'scrapy.downloadermiddlewares.httpcache.HttpCacheMiddleware']
+2025-10-03 13:30:25 [INFO] scrapy.middleware - Enabled spider middlewares:
+['scrapy.spidermiddlewares.start.StartSpiderMiddleware',
+ 'scrapy.spidermiddlewares.httperror.HttpErrorMiddleware',
+ 'scrapy.spidermiddlewares.referer.RefererMiddleware',
+ 'scrapy.spidermiddlewares.urllength.UrlLengthMiddleware',
+ 'scrapy.spidermiddlewares.depth.DepthMiddleware']
+2025-10-03 13:30:25 [INFO] scrapy.middleware - Enabled item pipelines:
+['src.stage1.discovery_pipeline.Stage1Pipeline']
+2025-10-03 13:30:25 [INFO] scrapy.core.engine - Spider opened
+2025-10-03 13:30:25 [INFO] src.stage1.discovery_pipeline - [Stage1Pipeline] Loaded 19,151 existing URL hashes
+2025-10-03 13:30:25 [INFO] src.stage1.discovery_pipeline - [Stage1Pipeline] Writing to data\processed\stage01\discovery_output.jsonl
+2025-10-03 13:30:25 [INFO] src.stage1.discovery_pipeline - [Stage1Pipeline] Link graph analysis enabled: data\processed\link_graph.db
+2025-10-03 13:30:25 [INFO] scrapy.extensions.logstats - Crawled 0 pages (at 0 pages/min), scraped 0 items (at 0 items/min)
+2025-10-03 13:30:25 [INFO] src.stage1.discovery_spider - Loading seed URLs from data\raw\uconn_urls.csv
+2025-10-03 13:30:34 [INFO] scrapy.spidermiddlewares.urllength - Ignoring link (url length > 2083): https://www.uconn.edu/signin/usernamerecovery?continue=https%3A%2F%2Fcalendar.google.com%2Fcalendar%2Fevent%3Faction%3DTEMPLATE%26dates%3D20240424T123000%2F20240424T133000%26text%3DDoctoral%2BDissertation%2BProposal%2BOral%2BDefense%2C%2BHuiqun%2BHuang%26details%3DTitle%3A%2BMachine%2BLearning%2Band%2BUncertainty%2BQuantification%2Bfor%2BSpatiotemporal%2BData%2BPredictionPh.D.%2BCandidate%3A%2BHuiqun%2BHuangMajor%2BAdvisor%3A%2BDr.%2BFei%2BMiaoAssociate%2BAdvisors%3A%2B%2BDr.%2BCaiwen%2BDing%2C%2BDr.%2BQian%2BYangDate%2FTime%3A%2BWednesday%2C%2BApril%2B24th%2C%2B2024%2C%2B12%3A30%2BpmLocation%3A%2B%2BHBL%2B1947%2BroomWebEx%3AJoin%2Bfrom%2Bthe%2Bmeeting%2Blinkhttps%3A%2F%2Fuconn-cmr.webex.com%2Fuconn-cmr%2Fj.php%3FMTID%253Dmbab20c5d93769888d1f4adc3a70d298e%2BJoin%2Bby%2Bmeeting%2BnumberMeeting%2Bnumber%2B%28access%2Bcode%29%3A%2B2632%2B104%2B2737Meeting%2Bpassword%3A%2Bi3xRV7mN3p4Abstract%2BAccurate%2Band%2Befficient%2Bmodeling%2Bof%2Burban%2Bmobility%2C%2Balong%2Bwith%2Bthe%2Bprediction%2Bof%2Bvehicle%2Band%2Bhuman%2Btrajectories%2C%2Bare%2Bcrucial%2Bfor%2Bensuring%2Bthe%2Bsafety%2Band%2Bresilience%2Bof%2Bintelligent%2Btransportation%2Bsystems%2Band%2Bsmart%2Bcities.%2BHowever%2C%2Bthe%2Bdynamic%2Bnature%2Bof%2Bexternal%2Benvironments%2B%28such%2Bas%2Bweather%2Bconditions%2C%2Broad%2Bnetworks%2C%2Bneighboring%2Bvehicles%2C%2Band%2Bpassenger%2Bbehaviors%29%2B%28View%2BFull%2Bevent%2BDescription%2BHere%3A%2Bhttps%3A%2F%2Fwww.cse.uconn.edu%2Fevent%2Fdoctoral-dissertation-proposal-oral-defense-huiqun-huang%2F%29%26location%3DHBL%2BClass%2Bof%2B1947%2BConference%2BRoom%2C%2BUConn%2BLibrary%2C%2B369%2BFairfield%2BWay%2C%2BUnit%2B1005%2C%2BStorrs%2C%2BCT%2C%2B06269%2C%2BUnited%2BStates%26trp%3Dfalse%26ctz%3DAmerica%2FNew_York%26sprop%3Dwebsite%3Ahttps%3A%2F%2Fwww.cse.uconn.edu&dsh=S-1677516878%3A1713967965990363&emr=1&flowEntry=ServiceLogin&flowName=WebLiteSignIn&followup=https%3A%2F%2Fcalendar.google.com%2Fcalendar%2Fevent%3Faction%3DTEMPLATE%26dates%3D20240424T123000%2F20240424T133000%26text%3DDoctoral%2BDissertation%2BProposal%2BOral%2BDefense%2C%2BHuiqun%2BHuang%26details%3DTitle%3A%2BMachine%2BLearning%2Band%2BUncertainty%2BQuantification%2Bfor%2BSpatiotemporal%2BData%2BPredictionPh.D.%2BCandidate%3A%2BHuiqun%2BHuangMajor%2BAdvisor%3A%2BDr.%2BFei%2BMiaoAssociate%2BAdvisors%3A%2B%2BDr.%2BCaiwen%2BDing%2C%2BDr.%2BQian%2BYangDate%2FTime%3A%2BWednesday%2C%2BApril%2B24th%2C%2B2024%2C%2B12%3A30%2BpmLocation%3A%2B%2BHBL%2B1947%2BroomWebEx%3AJoin%2Bfrom%2Bthe%2Bmeeting%2Blinkhttps%3A%2F%2Fuconn-cmr.webex.com%2Fuconn-cmr%2Fj.php%3FMTID%253Dmbab20c5d93769888d1f4adc3a70d298e%2BJoin%2Bby%2Bmeeting%2BnumberMeeting%2Bnumber%2B%28access%2Bcode%29%3A%2B2632%2B104%2B2737Meeting%2Bpassword%3A%2Bi3xRV7mN3p4Abstract%2BAccurate%2Band%2Befficient%2Bmodeling%2Bof%2Burban%2Bmobility%2C%2Balong%2Bwith%2Bthe%2Bprediction%2Bof%2Bvehicle%2Band%2Bhuman%2Btrajectories%2C%2Bare%2Bcrucial%2Bfor%2Bensuring%2Bthe%2Bsafety%2Band%2Bresilience%2Bof%2Bintelligent%2Btransportation%2Bsystems%2Band%2Bsmart%2Bcities.%2BHowever%2C%2Bthe%2Bdynamic%2Bnature%2Bof%2Bexternal%2Benvironments%2B%28such%2Bas%2Bweather%2Bconditions%2C%2Broad%2Bnetworks%2C%2Bneighboring%2Bvehicles%2C%2Band%2Bpassenger%2Bbehaviors%29%2B%28View%2BFull%2Bevent%2BDescription%2BHere%3A%2Bhttps%3A%2F%2Fwww.cse.uconn.edu%2Fevent%2Fdoctoral-dissertation-proposal-oral-defense-huiqun-huang%2F%29%26location%3DHBL%2BClass%2Bof%2B1947%2BConference%2BRoom%2C%2BUConn%2BLibrary%2C%2B369%2BFairfield%2BWay%2C%2BUnit%2B1005%2C%2BStorrs%2C%2BCT%2C%2B06269%2C%2BUnited%2BStates%26trp%3Dfalse%26ctz%3DAmerica%2FNew_York%26sprop%3Dwebsite%3Ahttps%3A%2F%2Fwww.cse.uconn.edu&ifkv=AaSxoQwJEj4T4m8kzYJ5T9PyN7AqEFRkgw5JthIgqbu1qUgCtsrrsLHZ254ShT300z1poq7ChCHrlA&osid=1&service=cl 
+2025-10-03 13:30:34 [INFO] scrapy.spidermiddlewares.urllength - Ignoring link (url length > 2083): https://www.uconn.edu/lifecycle/flows/signup?continue=https%3A%2F%2Fcalendar.google.com%2Fcalendar%2Fevent%3Faction%3DTEMPLATE%26dates%3D20240424T123000%2F20240424T133000%26text%3DDoctoral%2BDissertation%2BProposal%2BOral%2BDefense%2C%2BHuiqun%2BHuang%26details%3DTitle%3A%2BMachine%2BLearning%2Band%2BUncertainty%2BQuantification%2Bfor%2BSpatiotemporal%2BData%2BPredictionPh.D.%2BCandidate%3A%2BHuiqun%2BHuangMajor%2BAdvisor%3A%2BDr.%2BFei%2BMiaoAssociate%2BAdvisors%3A%2B%2BDr.%2BCaiwen%2BDing%2C%2BDr.%2BQian%2BYangDate%2FTime%3A%2BWednesday%2C%2BApril%2B24th%2C%2B2024%2C%2B12%3A30%2BpmLocation%3A%2B%2BHBL%2B1947%2BroomWebEx%3AJoin%2Bfrom%2Bthe%2Bmeeting%2Blinkhttps%3A%2F%2Fuconn-cmr.webex.com%2Fuconn-cmr%2Fj.php%3FMTID%253Dmbab20c5d93769888d1f4adc3a70d298e%2BJoin%2Bby%2Bmeeting%2BnumberMeeting%2Bnumber%2B%28access%2Bcode%29%3A%2B2632%2B104%2B2737Meeting%2Bpassword%3A%2Bi3xRV7mN3p4Abstract%2BAccurate%2Band%2Befficient%2Bmodeling%2Bof%2Burban%2Bmobility%2C%2Balong%2Bwith%2Bthe%2Bprediction%2Bof%2Bvehicle%2Band%2Bhuman%2Btrajectories%2C%2Bare%2Bcrucial%2Bfor%2Bensuring%2Bthe%2Bsafety%2Band%2Bresilience%2Bof%2Bintelligent%2Btransportation%2Bsystems%2Band%2Bsmart%2Bcities.%2BHowever%2C%2Bthe%2Bdynamic%2Bnature%2Bof%2Bexternal%2Benvironments%2B%28such%2Bas%2Bweather%2Bconditions%2C%2Broad%2Bnetworks%2C%2Bneighboring%2Bvehicles%2C%2Band%2Bpassenger%2Bbehaviors%29%2B%28View%2BFull%2Bevent%2BDescription%2BHere%3A%2Bhttps%3A%2F%2Fwww.cse.uconn.edu%2Fevent%2Fdoctoral-dissertation-proposal-oral-defense-huiqun-huang%2F%29%26location%3DHBL%2BClass%2Bof%2B1947%2BConference%2BRoom%2C%2BUConn%2BLibrary%2C%2B369%2BFairfield%2BWay%2C%2BUnit%2B1005%2C%2BStorrs%2C%2BCT%2C%2B06269%2C%2BUnited%2BStates%26trp%3Dfalse%26ctz%3DAmerica%2FNew_York%26sprop%3Dwebsite%3Ahttps%3A%2F%2Fwww.cse.uconn.edu&dsh=S-1677516878%3A1713967965990363&emr=1&flowEntry=SignUp&flowName=GlifWebSignIn&followup=https%3A%2F%2Fcalendar.google.com%2Fcalendar%2Fevent%3Faction%3DTEMPLATE%26dates%3D20240424T123000%2F20240424T133000%26text%3DDoctoral%2BDissertation%2BProposal%2BOral%2BDefense%2C%2BHuiqun%2BHuang%26details%3DTitle%3A%2BMachine%2BLearning%2Band%2BUncertainty%2BQuantification%2Bfor%2BSpatiotemporal%2BData%2BPredictionPh.D.%2BCandidate%3A%2BHuiqun%2BHuangMajor%2BAdvisor%3A%2BDr.%2BFei%2BMiaoAssociate%2BAdvisors%3A%2B%2BDr.%2BCaiwen%2BDing%2C%2BDr.%2BQian%2BYangDate%2FTime%3A%2BWednesday%2C%2BApril%2B24th%2C%2B2024%2C%2B12%3A30%2BpmLocation%3A%2B%2BHBL%2B1947%2BroomWebEx%3AJoin%2Bfrom%2Bthe%2Bmeeting%2Blinkhttps%3A%2F%2Fuconn-cmr.webex.com%2Fuconn-cmr%2Fj.php%3FMTID%253Dmbab20c5d93769888d1f4adc3a70d298e%2BJoin%2Bby%2Bmeeting%2BnumberMeeting%2Bnumber%2B%28access%2Bcode%29%3A%2B2632%2B104%2B2737Meeting%2Bpassword%3A%2Bi3xRV7mN3p4Abstract%2BAccurate%2Band%2Befficient%2Bmodeling%2Bof%2Burban%2Bmobility%2C%2Balong%2Bwith%2Bthe%2Bprediction%2Bof%2Bvehicle%2Band%2Bhuman%2Btrajectories%2C%2Bare%2Bcrucial%2Bfor%2Bensuring%2Bthe%2Bsafety%2Band%2Bresilience%2Bof%2Bintelligent%2Btransportation%2Bsystems%2Band%2Bsmart%2Bcities.%2BHowever%2C%2Bthe%2Bdynamic%2Bnature%2Bof%2Bexternal%2Benvironments%2B%28such%2Bas%2Bweather%2Bconditions%2C%2Broad%2Bnetworks%2C%2Bneighboring%2Bvehicles%2C%2Band%2Bpassenger%2Bbehaviors%29%2B%28View%2BFull%2Bevent%2BDescription%2BHere%3A%2Bhttps%3A%2F%2Fwww.cse.uconn.edu%2Fevent%2Fdoctoral-dissertation-proposal-oral-defense-huiqun-huang%2F%29%26location%3DHBL%2BClass%2Bof%2B1947%2BConference%2BRoom%2C%2BUConn%2BLibrary%2C%2B369%2BFairfield%2BWay%2C%2BUnit%2B1005%2C%2BStorrs%2C%2BCT%2C%2B06269%2C%2BUnited%2BStates%26trp%3Dfalse%26ctz%3DAmerica%2FNew_York%26sprop%3Dwebsite%3Ahttps%3A%2F%2Fwww.cse.uconn.edu&ifkv=AaSxoQwJEj4T4m8kzYJ5T9PyN7AqEFRkgw5JthIgqbu1qUgCtsrrsLHZ254ShT300z1poq7ChCHrlA&osid=1&service=cl 
+2025-10-03 13:30:34 [INFO] scrapy.spidermiddlewares.urllength - Ignoring link (url length > 2083): https://www.microsoft.com/rpsauth/v2/account/aad/signin?msafed=0&ru=https%3A%2F%2Fwww.microsoft.com%2Fen-us%2Fmicrosoft-365%2Foutlook%2Femail-and-calendar-software-microsoft-outlook%3Fdeeplink%3D%252fowa%252f%253fpath%253d%252fcalendar%252faction%252fcompose%2526rrv%253daddevent%2526startdt%253d2024-04-24T12%253a30%253a00-04%253a00%2526enddt%253d2024-04-24T13%253a30%253a00-04%253a00%2526location%253dHBL%252520Class%252520of%2525201947%252520Conference%252520Room%252c%252520UConn%252520Library%252c%252520369%252520Fairfield%252520Way%252c%252520Unit%2525201005%252c%252520Storrs%252c%252520CT%252c%25252006269%252c%252520United%252520States%2526subject%253dDoctoral%252520Dissertation%252520Proposal%252520Oral%252520Defense%25252C%252520Huiqun%252520Huang%2526body%253dTitle%25253A%252520Machine%252520Learning%252520and%252520Uncertainty%252520Quantification%252520for%252520Spatiotemporal%252520Data%252520PredictionPh.D.%252520Candidate%25253A%252520Huiqun%252520HuangMajor%252520Advisor%25253A%252520Dr.%252520Fei%252520MiaoAssociate%252520Advisors%25253A%252520%252520Dr.%252520Caiwen%252520Ding%25252C%252520Dr.%252520Qian%252520YangDate%25252FTime%25253A%252520Wednesday%25252C%252520April%25252024th%25252C%2525202024%25252C%25252012%25253A30%252520pmLocation%25253A%252520%252520HBL%2525201947%252520roomWebEx%25253AJoin%252520from%252520the%252520meeting%252520linkhttps%25253A%25252F%25252Fuconn-cmr.webex.com%25252Fuconn-cmr%25252Fj.php%25253FMTID%25253Dmbab20c5d93769888d1f4adc3a70d298e%252520Join%252520by%252520meeting%252520numberMeeting%252520number%252520%252528access%252520code%252529%25253A%2525202632%252520104%2525202737Meeting%252520password%25253A%252520i3xRV7mN3p4Abstract%252520Accurate%252520and%252520efficient%252520modeling%252520of%252520urban%252520mobility%25252C%252520along%252520with%252520the%252520prediction%252520of%252520vehicle%252520and%252520human%252520trajectories%25252C%252520are%252520crucial%252520for%252520ensuring%252520the%252520safety%252520and%252520resilience%252520of%252520intelligent%252520transportation%252520systems%252520and%252520smart%252520cities.%252520However%25252C%252520the%252520dynamic%252520nature%252520of%252520external%252520environments%252520%252528such%252520as%252520weather%252520conditions%25252C%252520road%252520networks%25252C%252520neighboring%252520vehicles%25252C%252520and%252520passenger%252520behaviors%252529%252520or%252520intrinsic%252520changes%252520in%252520%252528View%252520Full%252520Event%252520Description%252520Here%25253A%252520https%25253A%25252F%25252Fwww.cse.uconn.edu%25252Fevent%25252Fdoctoral-dissertation-proposal-oral-defense-huiqun-huang%25252F%252529%26sdf%3D0&ruoverride=https%3A%2F%2Fwww.office.com%3Fauthtypeparamname%3Dauth 
+2025-10-03 13:30:34 [INFO] scrapy.spidermiddlewares.urllength - Ignoring link (url length > 2083): https://www.uconn.edu/signin/usernamerecovery?continue=https%3A%2F%2Fcalendar.google.com%2Fcalendar%2Fevent%3Faction%3DTEMPLATE%26dates%3D20240502T120000%2F20240502T130000%26text%3DDoctoral%2BDissertation%2BOral%2BProposal%2C%2BMahan%2BTabatabaie%26details%3D%253Cp%253ETitle%3A%2BUbiquitous%2BDriver%2BBehavioral%2BSensing%2Band%2BLearning%253Cbr%2B%2F%253EPh.D.%2BCandidate%3A%2BMahan%2BTabatabaie%253Cbr%2B%2F%253EMajor%2BAdvisor%3A%2BDr.%2BSuining%2BHe%253Cbr%2B%2F%253EAssociate%2BAdvisors%3A%2BDr.%2BBing%2BWang%2Band%2BDr.%2BSong%2BHan%253Cbr%2B%2F%253EDate%2FTime%3A%2BThursday%2C%2BMay%2B2nd%2C%2B2024%2C%2B12%3A00%2Bpm%253Cbr%2B%2F%253ELocation%3A%2BHBL1947%253C%2Fp%253E%253Cp%253EMeeting%2Blink%3A%253Cbr%2B%2F%253Ehttps%3A%2F%2Fuconn-cmr.webex.com%2Fuconn-cmr%2Fj.php%3FMTID%253Dm92c20047b9dcb3dcbf967aafabbba8c6%253Cbr%2B%2F%253EMeeting%2BAccess%2BCode%3A%2B2634%2B470%2B4049%253Cbr%2B%2F%253EPassword%3A%2B1234%253C%2Fp%253E%253Cp%253EAbstract%3A%253Cbr%2B%2F%253E%253Cbr%2B%2F%253EIn%2Bthis%2Bthesis%2Bproposal%2C%2Bwe%2Baim%2Bat%2Binvestigating%2Bubiquitous%2Bdriver%2Bbehavioral%2Bsensing%2Band%2Blearning%2Btechniques%2Bin%2Bterms%2Bof%2B%281%29%2Bcoarse-grained%2Bdriving%2Bbehavioral%2Bpatterns%2C%2Bsuch%2Bas%2Bdriving%2Broutines%2Bat%2Bdifferent%2Btimes%2Bof%2Bthe%2Bday%2Bor%2Bregions%2Bwithin%2Bthe%2Bcity%2C%2Band%2B%282%29%2Bfine-grained%2Bdriving%2Bactions%2C%2Bsuch%2Bas%2Bthe%2Bleft%2Band%2Bright%2Bturn%2B%28View%2BFull%2Bevent%2BDescription%2BHere%3A%2Bhttps%3A%2F%2Fwww.cse.uconn.edu%2Fevent%2Fdoctoral-dissertation-oral-proposal-mahan-tabatabaie%2F%29%26location%3DHBL%2BClass%2Bof%2B1947%2BConference%2BRoom%2C%2BUConn%2BLibrary%2C%2B369%2BFairfield%2BWay%2C%2BUnit%2B1005%2C%2BStorrs%2C%2BCT%2C%2B06269%2C%2BUnited%2BStates%26trp%3Dfalse%26ctz%3DAmerica%2FNew_York%26sprop%3Dwebsite%3Ahttps%3A%2F%2Fwww.cse.uconn.edu&dsh=S1711861558%3A1713968129471558&emr=1&flowEntry=ServiceLogin&flowName=WebLiteSignIn&followup=https%3A%2F%2Fcalendar.google.com%2Fcalendar%2Fevent%3Faction%3DTEMPLATE%26dates%3D20240502T120000%2F20240502T130000%26text%3DDoctoral%2BDissertation%2BOral%2BProposal%2C%2BMahan%2BTabatabaie%26details%3D%253Cp%253ETitle%3A%2BUbiquitous%2BDriver%2BBehavioral%2BSensing%2Band%2BLearning%253Cbr%2B%2F%253EPh.D.%2BCandidate%3A%2BMahan%2BTabatabaie%253Cbr%2B%2F%253EMajor%2BAdvisor%3A%2BDr.%2BSuining%2BHe%253Cbr%2B%2F%253EAssociate%2BAdvisors%3A%2BDr.%2BBing%2BWang%2Band%2BDr.%2BSong%2BHan%253Cbr%2B%2F%253EDate%2FTime%3A%2BThursday%2C%2BMay%2B2nd%2C%2B2024%2C%2B12%3A00%2Bpm%253Cbr%2B%2F%253ELocation%3A%2BHBL1947%253C%2Fp%253E%253Cp%253EMeeting%2Blink%3A%253Cbr%2B%2F%253Ehttps%3A%2F%2Fuconn-cmr.webex.com%2Fuconn-cmr%2Fj.php%3FMTID%253Dm92c20047b9dcb3dcbf967aafabbba8c6%253Cbr%2B%2F%253EMeeting%2BAccess%2BCode%3A%2B2634%2B470%2B4049%253Cbr%2B%2F%253EPassword%3A%2B1234%253C%2Fp%253E%253Cp%253EAbstract%3A%253Cbr%2B%2F%253E%253Cbr%2B%2F%253EIn%2Bthis%2Bthesis%2Bproposal%2C%2Bwe%2Baim%2Bat%2Binvestigating%2Bubiquitous%2Bdriver%2Bbehavioral%2Bsensing%2Band%2Blearning%2Btechniques%2Bin%2Bterms%2Bof%2B%281%29%2Bcoarse-grained%2Bdriving%2Bbehavioral%2Bpatterns%2C%2Bsuch%2Bas%2Bdriving%2Broutines%2Bat%2Bdifferent%2Btimes%2Bof%2Bthe%2Bday%2Bor%2Bregions%2Bwithin%2Bthe%2Bcity%2C%2Band%2B%282%29%2Bfine-grained%2Bdriving%2Bactions%2C%2Bsuch%2Bas%2Bthe%2Bleft%2Band%2Bright%2Bturn%2B%28View%2BFull%2Bevent%2BDescription%2BHere%3A%2Bhttps%3A%2F%2Fwww.cse.uconn.edu%2Fevent%2Fdoctoral-dissertation-oral-proposal-mahan-tabatabaie%2F%29%26location%3DHBL%2BClass%2Bof%2B1947%2BConference%2BRoom%2C%2BUConn%2BLibrary%2C%2B369%2BFairfield%2BWay%2C%2BUnit%2B1005%2C%2BStorrs%2C%2BCT%2C%2B06269%2C%2BUnited%2BStates%26trp%3Dfalse%26ctz%3DAmerica%2FNew_York%26sprop%3Dwebsite%3Ahttps%3A%2F%2Fwww.cse.uconn.edu&ifkv=AaSxoQy6lLEqu1Ms2t-zENB_MddaHGXNhmnO6eODBAhTAUPRumEv5xNOARVdGadjh_zVU8lIj0urHQ&osid=1&service=cl 
+2025-10-03 13:30:34 [INFO] scrapy.spidermiddlewares.urllength - Ignoring link (url length > 2083): https://www.uconn.edu/lifecycle/flows/signup?continue=https%3A%2F%2Fcalendar.google.com%2Fcalendar%2Fevent%3Faction%3DTEMPLATE%26dates%3D20240502T120000%2F20240502T130000%26text%3DDoctoral%2BDissertation%2BOral%2BProposal%2C%2BMahan%2BTabatabaie%26details%3D%253Cp%253ETitle%3A%2BUbiquitous%2BDriver%2BBehavioral%2BSensing%2Band%2BLearning%253Cbr%2B%2F%253EPh.D.%2BCandidate%3A%2BMahan%2BTabatabaie%253Cbr%2B%2F%253EMajor%2BAdvisor%3A%2BDr.%2BSuining%2BHe%253Cbr%2B%2F%253EAssociate%2BAdvisors%3A%2BDr.%2BBing%2BWang%2Band%2BDr.%2BSong%2BHan%253Cbr%2B%2F%253EDate%2FTime%3A%2BThursday%2C%2BMay%2B2nd%2C%2B2024%2C%2B12%3A00%2Bpm%253Cbr%2B%2F%253ELocation%3A%2BHBL1947%253C%2Fp%253E%253Cp%253EMeeting%2Blink%3A%253Cbr%2B%2F%253Ehttps%3A%2F%2Fuconn-cmr.webex.com%2Fuconn-cmr%2Fj.php%3FMTID%253Dm92c20047b9dcb3dcbf967aafabbba8c6%253Cbr%2B%2F%253EMeeting%2BAccess%2BCode%3A%2B2634%2B470%2B4049%253Cbr%2B%2F%253EPassword%3A%2B1234%253C%2Fp%253E%253Cp%253EAbstract%3A%253Cbr%2B%2F%253E%253Cbr%2B%2F%253EIn%2Bthis%2Bthesis%2Bproposal%2C%2Bwe%2Baim%2Bat%2Binvestigating%2Bubiquitous%2Bdriver%2Bbehavioral%2Bsensing%2Band%2Blearning%2Btechniques%2Bin%2Bterms%2Bof%2B%281%29%2Bcoarse-grained%2Bdriving%2Bbehavioral%2Bpatterns%2C%2Bsuch%2Bas%2Bdriving%2Broutines%2Bat%2Bdifferent%2Btimes%2Bof%2Bthe%2Bday%2Bor%2Bregions%2Bwithin%2Bthe%2Bcity%2C%2Band%2B%282%29%2Bfine-grained%2Bdriving%2Bactions%2C%2Bsuch%2Bas%2Bthe%2Bleft%2Band%2Bright%2Bturn%2B%28View%2BFull%2Bevent%2BDescription%2BHere%3A%2Bhttps%3A%2F%2Fwww.cse.uconn.edu%2Fevent%2Fdoctoral-dissertation-oral-proposal-mahan-tabatabaie%2F%29%26location%3DHBL%2BClass%2Bof%2B1947%2BConference%2BRoom%2C%2BUConn%2BLibrary%2C%2B369%2BFairfield%2BWay%2C%2BUnit%2B1005%2C%2BStorrs%2C%2BCT%2C%2B06269%2C%2BUnited%2BStates%26trp%3Dfalse%26ctz%3DAmerica%2FNew_York%26sprop%3Dwebsite%3Ahttps%3A%2F%2Fwww.cse.uconn.edu&dsh=S1711861558%3A1713968129471558&emr=1&flowEntry=SignUp&flowName=GlifWebSignIn&followup=https%3A%2F%2Fcalendar.google.com%2Fcalendar%2Fevent%3Faction%3DTEMPLATE%26dates%3D20240502T120000%2F20240502T130000%26text%3DDoctoral%2BDissertation%2BOral%2BProposal%2C%2BMahan%2BTabatabaie%26details%3D%253Cp%253ETitle%3A%2BUbiquitous%2BDriver%2BBehavioral%2BSensing%2Band%2BLearning%253Cbr%2B%2F%253EPh.D.%2BCandidate%3A%2BMahan%2BTabatabaie%253Cbr%2B%2F%253EMajor%2BAdvisor%3A%2BDr.%2BSuining%2BHe%253Cbr%2B%2F%253EAssociate%2BAdvisors%3A%2BDr.%2BBing%2BWang%2Band%2BDr.%2BSong%2BHan%253Cbr%2B%2F%253EDate%2FTime%3A%2BThursday%2C%2BMay%2B2nd%2C%2B2024%2C%2B12%3A00%2Bpm%253Cbr%2B%2F%253ELocation%3A%2BHBL1947%253C%2Fp%253E%253Cp%253EMeeting%2Blink%3A%253Cbr%2B%2F%253Ehttps%3A%2F%2Fuconn-cmr.webex.com%2Fuconn-cmr%2Fj.php%3FMTID%253Dm92c20047b9dcb3dcbf967aafabbba8c6%253Cbr%2B%2F%253EMeeting%2BAccess%2BCode%3A%2B2634%2B470%2B4049%253Cbr%2B%2F%253EPassword%3A%2B1234%253C%2Fp%253E%253Cp%253EAbstract%3A%253Cbr%2B%2F%253E%253Cbr%2B%2F%253EIn%2Bthis%2Bthesis%2Bproposal%2C%2Bwe%2Baim%2Bat%2Binvestigating%2Bubiquitous%2Bdriver%2Bbehavioral%2Bsensing%2Band%2Blearning%2Btechniques%2Bin%2Bterms%2Bof%2B%281%29%2Bcoarse-grained%2Bdriving%2Bbehavioral%2Bpatterns%2C%2Bsuch%2Bas%2Bdriving%2Broutines%2Bat%2Bdifferent%2Btimes%2Bof%2Bthe%2Bday%2Bor%2Bregions%2Bwithin%2Bthe%2Bcity%2C%2Band%2B%282%29%2Bfine-grained%2Bdriving%2Bactions%2C%2Bsuch%2Bas%2Bthe%2Bleft%2Band%2Bright%2Bturn%2B%28View%2BFull%2Bevent%2BDescription%2BHere%3A%2Bhttps%3A%2F%2Fwww.cse.uconn.edu%2Fevent%2Fdoctoral-dissertation-oral-proposal-mahan-tabatabaie%2F%29%26location%3DHBL%2BClass%2Bof%2B1947%2BConference%2BRoom%2C%2BUConn%2BLibrary%2C%2B369%2BFairfield%2BWay%2C%2BUnit%2B1005%2C%2BStorrs%2C%2BCT%2C%2B06269%2C%2BUnited%2BStates%26trp%3Dfalse%26ctz%3DAmerica%2FNew_York%26sprop%3Dwebsite%3Ahttps%3A%2F%2Fwww.cse.uconn.edu&ifkv=AaSxoQy6lLEqu1Ms2t-zENB_MddaHGXNhmnO6eODBAhTAUPRumEv5xNOARVdGadjh_zVU8lIj0urHQ&osid=1&service=cl 
+2025-10-03 13:30:34 [INFO] scrapy.spidermiddlewares.urllength - Ignoring link (url length > 2083): https://www.microsoft.com/rpsauth/v2/account/aad/signin?msafed=0&ru=https%3A%2F%2Fwww.microsoft.com%2Fen-us%2Fmicrosoft-365%2Foutlook%2Femail-and-calendar-software-microsoft-outlook%3Fdeeplink%3D%252fowa%252f%253fpath%253d%252fcalendar%252faction%252fcompose%2526rrv%253daddevent%2526startdt%253d2024-05-02T12%253a00%253a00-04%253a00%2526enddt%253d2024-05-02T13%253a00%253a00-04%253a00%2526location%253dHBL%252520Class%252520of%2525201947%252520Conference%252520Room%252c%252520UConn%252520Library%252c%252520369%252520Fairfield%252520Way%252c%252520Unit%2525201005%252c%252520Storrs%252c%252520CT%252c%25252006269%252c%252520United%252520States%2526subject%253dDoctoral%252520Dissertation%252520Oral%252520Proposal%25252C%252520Mahan%252520Tabatabaie%2526body%253d%25253Cp%25253ETitle%25253A%252520Ubiquitous%252520Driver%252520Behavioral%252520Sensing%252520and%252520LearningPh.D.%252520Candidate%25253A%252520Mahan%252520TabatabaieMajor%252520Advisor%25253A%252520Dr.%252520Suining%252520HeAssociate%252520Advisors%25253A%252520Dr.%252520Bing%252520Wang%252520and%252520Dr.%252520Song%252520HanDate%25252FTime%25253A%252520Thursday%25252C%252520May%2525202nd%25252C%2525202024%25252C%25252012%25253A00%252520pmLocation%25253A%252520HBL1947%25253C%25252Fp%25253E%25253Cp%25253EMeeting%252520link%25253Ahttps%25253A%25252F%25252Fuconn-cmr.webex.com%25252Fuconn-cmr%25252Fj.php%25253FMTID%25253Dm92c20047b9dcb3dcbf967aafabbba8c6Meeting%252520Access%252520Code%25253A%2525202634%252520470%2525204049Password%25253A%2525201234%25253C%25252Fp%25253E%25253Cp%25253EAbstract%25253AIn%252520this%252520thesis%252520proposal%25252C%252520we%252520aim%252520at%252520investigating%252520ubiquitous%252520driver%252520behavioral%252520sensing%252520and%252520learning%252520techniques%252520in%252520terms%252520of%252520%2525281%252529%252520coarse-grained%252520driving%252520behavioral%252520patterns%25252C%252520such%252520as%252520driving%252520routines%252520at%252520different%252520times%252520of%252520the%252520day%252520or%252520regions%252520within%252520the%252520city%25252C%252520and%252520%2525282%252529%252520fine-grained%252520driving%252520actions%25252C%252520such%252520as%252520the%252520left%252520and%252520right%252520turn%252520maneuvers.%252520Such%252520driving%252520behavioral%252520sensing%252520and%252520learning%252520approaches%252520can%252520support%252520various%252520practical%252520applications%25252C%252520including%252520prevention%252520of%252520unauthorized%252520driving%252520%252528View%252520Full%252520Event%252520Description%252520Here%25253A%252520https%25253A%25252F%25252Fwww.cse.uconn.edu%25252Fevent%25252Fdoctoral-dissertation-oral-proposal-mahan-tabatabaie%25252F%252529%26sdf%3D0&ruoverride=https%3A%2F%2Fwww.office.com%3Fauthtypeparamname%3Dauth 
+2025-10-03 13:30:39 [INFO] src.stage1.discovery_spider - Loaded 139961 unique seed URLs
+2025-10-03 13:30:54 [INFO] src.stage1.discovery_spider - Discovery progress checkpoint
+2025-10-03 13:31:18 [INFO] src.stage1.discovery_spider - Discovery progress checkpoint
+2025-10-03 13:31:21 [INFO] scrapy.crawler - Received SIGINT, shutting down gracefully. Send again to force 
+2025-10-03 13:31:21 [INFO] scrapy.core.engine - Closing spider (shutdown)
+2025-10-03 13:31:23 [INFO] src.stage1.discovery_spider - Discovery progress checkpoint
+2025-10-03 13:31:24 [INFO] src.stage1.discovery_pipeline - [Stage1Pipeline] Processed 1,000 unique URLs, 20,151 total items, 95.0% duplicates skipped
+2025-10-03 13:31:25 [INFO] scrapy.extensions.logstats - Crawled 331 pages (at 331 pages/min), scraped 1021 items (at 1021 items/min)
+2025-10-03 13:31:25 [INFO] src.stage1.discovery_pipeline - [Stage1Pipeline] Discovered 1,015 new URLs → data\processed\stage01\discovery_output.jsonl
+2025-10-03 13:31:25 [INFO] src.stage1.discovery_pipeline - [Stage1Pipeline] Hash index updated: 20,166 total hashes
+2025-10-03 13:31:25 [INFO] src.stage1.discovery_pipeline - [Stage1Pipeline] Building link graph from discovered URLs...
+2025-10-03 13:31:26 [INFO] src.stage1.discovery_pipeline - [Stage1Pipeline] Added 74 pages to link graph
+2025-10-03 13:31:26 [INFO] src.stage1.discovery_pipeline - [Stage1Pipeline] Calculating PageRank scores...
+2025-10-03 13:31:26 [INFO] src.common.link_graph - PageRank converged after 4 iterations
+2025-10-03 13:31:26 [INFO] src.stage1.discovery_pipeline - [Stage1Pipeline] Calculated PageRank for 1,027 URLs
+2025-10-03 13:31:26 [INFO] src.stage1.discovery_pipeline - [Stage1Pipeline] Calculating HITS (hub/authority) scores...
+2025-10-03 13:31:26 [INFO] src.common.link_graph - HITS converged after 24 iterations
+2025-10-03 13:31:26 [INFO] src.stage1.discovery_pipeline - [Stage1Pipeline] Calculated HITS scores for 1,027 URLs
+2025-10-03 13:31:26 [INFO] src.stage1.discovery_pipeline - ============================================================
+2025-10-03 13:31:26 [INFO] src.stage1.discovery_pipeline - LINK GRAPH STATISTICS:
+2025-10-03 13:31:26 [INFO] src.stage1.discovery_pipeline -   Total nodes: 1,027
+2025-10-03 13:31:26 [INFO] src.stage1.discovery_pipeline -   Total edges: 1,015
+2025-10-03 13:31:26 [INFO] src.stage1.discovery_pipeline -   Average degree: 1.98
+2025-10-03 13:31:26 [INFO] src.stage1.discovery_pipeline -   Max degree: 243
+2025-10-03 13:31:26 [INFO] src.stage1.discovery_pipeline - 
+Top 5 pages by PageRank:
+2025-10-03 13:31:26 [INFO] src.stage1.discovery_pipeline -   1. 1.0000 - https://studentservices.stamford.uconn.edu/contactus/
+2025-10-03 13:31:26 [INFO] src.stage1.discovery_pipeline -   2. 1.0000 - https://damicolab.animalscience.cahnr.uconn.edu/wp-admin/
+2025-10-03 13:31:26 [INFO] src.stage1.discovery_pipeline -   3. 1.0000 - http://ess.uconn.edu/
+2025-10-03 13:31:26 [INFO] src.stage1.discovery_pipeline -   4. 1.0000 - https://extension.uconn.edu/tag/canning/
+2025-10-03 13:31:26 [INFO] src.stage1.discovery_pipeline -   5. 1.0000 - https://soiltesting.cahnr.uconn.edu/
+2025-10-03 13:31:26 [INFO] src.stage1.discovery_pipeline - 
+Top 5 authorities (HITS):
+2025-10-03 13:31:26 [INFO] src.stage1.discovery_pipeline -   1. 0.0641 - https://ovpr.uconn.edu/services/rics/?p=10
+2025-10-03 13:31:26 [INFO] src.stage1.discovery_pipeline -   2. 0.0641 - https://ovpr.uconn.edu/services/rics/animal/animal-care/?start=90
+2025-10-03 13:31:26 [INFO] src.stage1.discovery_pipeline -   3. 0.0641 - https://ovpr.uconn.edu/services/rics/animal/?page=1
+2025-10-03 13:31:26 [INFO] src.stage1.discovery_pipeline -   4. 0.0641 - https://ovpr.uconn.edu/services/rics/animal/animal-care/data-ally-af-style?page=1
+2025-10-03 13:31:26 [INFO] src.stage1.discovery_pipeline -   5. 0.0641 - https://ovpr.uconn.edu/services/rics/animal/animal-care/data-ally-af-style?p=1
+2025-10-03 13:31:26 [INFO] src.stage1.discovery_pipeline - ============================================================
+2025-10-03 13:31:26 [INFO] src.stage1.discovery_spider - ================================================================================
+2025-10-03 13:31:26 [INFO] src.stage1.discovery_spider - DISCOVERY SPIDER CRAWL SUMMARY
+2025-10-03 13:31:26 [INFO] src.stage1.discovery_spider - ================================================================================
+2025-10-03 13:31:26 [INFO] src.stage1.discovery_spider - Crawl completed: shutdown
+2025-10-03 13:31:26 [INFO] src.stage1.discovery_spider - Total pages parsed: 311
+2025-10-03 13:31:26 [INFO] src.stage1.discovery_spider - Unique URLs found: 1,021
+2025-10-03 13:31:26 [INFO] src.stage1.discovery_spider - Duplicates skipped: 20,909
+2025-10-03 13:31:26 [INFO] src.stage1.discovery_spider - Seed URLs loaded: 139,961
+2025-10-03 13:31:26 [INFO] src.stage1.discovery_spider - Sanitized seed URLs recovered: 182
+2025-10-03 13:31:26 [INFO] src.stage1.discovery_spider - Malformed seeds skipped: 0
+2025-10-03 13:31:26 [INFO] src.stage1.discovery_spider - Dynamic/AJAX URLs discovered: 291
+2025-10-03 13:31:26 [INFO] src.stage1.discovery_spider - Hidden API endpoints discovered: 242
+2025-10-03 13:31:26 [INFO] src.stage1.discovery_spider - ----------------------------------------
+2025-10-03 13:31:26 [INFO] src.stage1.discovery_spider - DEPTH DISTRIBUTION:
+2025-10-03 13:31:26 [INFO] src.stage1.discovery_spider -   Depth 0: 0 URLs (0.0%)
+2025-10-03 13:31:26 [INFO] src.stage1.discovery_spider -   Depth 1: 430 URLs (42.7%)
+2025-10-03 13:31:26 [INFO] src.stage1.discovery_spider -   Depth 2: 393 URLs (39.0%)
+2025-10-03 13:31:26 [INFO] src.stage1.discovery_spider -   Depth 3: 184 URLs (18.3%)
+2025-10-03 13:31:26 [INFO] src.stage1.discovery_spider - ----------------------------------------
+2025-10-03 13:31:26 [INFO] src.stage1.discovery_spider - TOP REFERRING PAGES (for pruning noisy seeds):
+2025-10-03 13:31:26 [INFO] src.stage1.discovery_spider -   1. 171 links from https://imrp.dpp.uconn.edu/news/
+2025-10-03 13:31:26 [INFO] src.stage1.discovery_spider -   2. 163 links from https://publicpolicy.uconn.edu/2025/09/18/students-contemplate-voting-access-on-national-voter-registration-day/
+2025-10-03 13:31:26 [INFO] src.stage1.discovery_spider -   3. 127 links from https://imrp.dpp.uconn.edu/2025/09/18/students-contemplate-voting-access-on-national-voter-registration-day/
+2025-10-03 13:31:26 [INFO] src.stage1.discovery_spider -   4. 125 links from https://imrp.dpp.uconn.edu/2025/09/23/from-classroom-to-commission-tommy-dowd-finds-a-fast-track-to-success/
+2025-10-03 13:31:26 [INFO] src.stage1.discovery_spider -   5. 117 links from https://imrp.dpp.uconn.edu/2025/08/22/ctsc-attends-nasc-conference/
+2025-10-03 13:31:26 [INFO] src.stage1.discovery_spider -   6. 108 links from https://lib.uconn.edu/location/asc/
+2025-10-03 13:31:26 [INFO] src.stage1.discovery_spider -   7. 108 links from https://ovpr.uconn.edu/services/research-development/internal-funding-opportunities/
+2025-10-03 13:31:26 [INFO] src.stage1.discovery_spider -   8. 103 links from https://ovpr.uconn.edu/services/rics/?start=90
+2025-10-03 13:31:26 [INFO] src.stage1.discovery_spider -   9. 103 links from https://ovpr.uconn.edu/services/rics/?start=20
+2025-10-03 13:31:26 [INFO] src.stage1.discovery_spider -   10. 103 links from https://ovpr.uconn.edu/services/rics/?offset=20
+2025-10-03 13:31:26 [INFO] src.stage1.discovery_spider - ----------------------------------------
+2025-10-03 13:31:26 [INFO] src.stage1.discovery_spider - DYNAMIC DISCOVERY THROTTLING STATS:
+2025-10-03 13:31:26 [INFO] src.stage1.discovery_spider - Total dynamic discoveries attempted: 311
+2025-10-03 13:31:26 [INFO] src.stage1.discovery_spider - Low quality URLs found: 249
+2025-10-03 13:31:26 [INFO] src.stage1.discovery_spider - Quality ratio: 0.20 (higher is better)
+2025-10-03 13:31:26 [INFO] src.stage1.discovery_spider - Discovery sources:
+2025-10-03 13:31:26 [INFO] src.stage1.discovery_spider -   pagination: 240
+2025-10-03 13:31:26 [INFO] src.stage1.discovery_spider -   json_blob: 28
+2025-10-03 13:31:26 [INFO] src.stage1.discovery_spider -   ajax_endpoint: 14
+2025-10-03 13:31:26 [INFO] src.stage1.discovery_spider -   html_comment: 9
+2025-10-03 13:31:26 [INFO] src.stage1.discovery_spider - Top discovery domains:
+2025-10-03 13:31:26 [INFO] src.stage1.discovery_spider -   ovpr.uconn.edu: 297 candidates
+2025-10-03 13:31:26 [INFO] src.stage1.discovery_spider -   uconn.edu: 241 candidates
+2025-10-03 13:31:26 [INFO] src.stage1.discovery_spider -   library.uconn.edu: 87 candidates
+2025-10-03 13:31:26 [INFO] src.stage1.discovery_spider -   today.uconn.edu: 66 candidates
+2025-10-03 13:31:26 [INFO] src.stage1.discovery_spider -   uconntact.uconn.edu: 56 candidates
+2025-10-03 13:31:26 [INFO] src.stage1.discovery_spider - ----------------------------------------
+2025-10-03 13:31:26 [INFO] src.stage1.discovery_spider - EFFICIENCY METRICS:
+2025-10-03 13:31:26 [INFO] src.stage1.discovery_spider - Duplicate rate: 95.3% (lower is better)
+2025-10-03 13:31:26 [INFO] src.stage1.discovery_spider - Discovery rate: 3.3 URLs/page
+2025-10-03 13:31:26 [INFO] src.stage1.discovery_spider - ----------------------------------------
+2025-10-03 13:31:26 [INFO] src.common.adaptive_depth - Saved adaptive depth config to data\config\adaptive_depth.json
+2025-10-03 13:31:26 [INFO] src.common.adaptive_depth - ================================================================================
+2025-10-03 13:31:26 [INFO] src.common.adaptive_depth - ADAPTIVE DEPTH REPORT
+2025-10-03 13:31:26 [INFO] src.common.adaptive_depth - ================================================================================
+2025-10-03 13:31:26 [INFO] src.common.adaptive_depth - 
+Low-Value Sections (25) - Shallow Crawling Sufficient:
+2025-10-03 13:31:26 [INFO] src.common.adaptive_depth -   today.uconn.edu                         : depth=2 (discovered:   61, valid:    0, density:  0.0%)
+2025-10-03 13:31:26 [INFO] src.common.adaptive_depth -   advising.clas.uconn.edu                 : depth=2 (discovered:   21, valid:    0, density:  0.0%)
+2025-10-03 13:31:26 [INFO] src.common.adaptive_depth -   anthropology.uconn.edu                  : depth=2 (discovered:   21, valid:    0, density:  0.0%)
+2025-10-03 13:31:26 [INFO] src.common.adaptive_depth -   events.uconn.edu                        : depth=2 (discovered:   22, valid:    0, density:  0.0%)
+2025-10-03 13:31:26 [INFO] src.common.adaptive_depth -   ovpr.uconn.edu                          : depth=2 (discovered:  202, valid:    0, density:  0.0%)
+2025-10-03 13:31:26 [INFO] src.common.adaptive_depth -   werth.institute.uconn.edu               : depth=2 (discovered:   21, valid:    0, density:  0.0%)
+2025-10-03 13:31:26 [INFO] src.common.adaptive_depth -   law.uconn.edu                           : depth=2 (discovered:   21, valid:    0, density:  0.0%)
+2025-10-03 13:31:26 [INFO] src.common.adaptive_depth -   library.uconn.edu                       : depth=2 (discovered:   87, valid:    0, density:  0.0%)
+2025-10-03 13:31:26 [INFO] src.common.adaptive_depth -   summersession.uconn.edu                 : depth=2 (discovered:  383, valid:    0, density:  0.0%)
+2025-10-03 13:31:26 [INFO] src.common.adaptive_depth -   syllabus.uconn.edu                      : depth=2 (discovered:   82, valid:    0, density:  0.0%)
+2025-10-03 13:31:26 [INFO] src.common.adaptive_depth - 
+Overall Statistics:
+2025-10-03 13:31:26 [INFO] src.common.adaptive_depth -   Total sections tracked: 273
+2025-10-03 13:31:26 [INFO] src.common.adaptive_depth -   Average recommended depth: 2.1
+2025-10-03 13:31:26 [INFO] src.common.adaptive_depth -   Sections with deeper crawling: 0
+2025-10-03 13:31:26 [INFO] src.common.adaptive_depth -   Sections with shallow crawling: 236
+2025-10-03 13:31:26 [INFO] src.common.adaptive_depth -   Base depth: 3, Max depth: 6
+2025-10-03 13:31:26 [INFO] src.common.adaptive_depth - ================================================================================
+2025-10-03 13:31:26 [INFO] src.stage1.discovery_spider - ================================================================================
+2025-10-03 13:31:26 [INFO] scrapy.statscollectors - Dumping Scrapy stats:
+{'downloader/exception_count': 49,
+ 'downloader/exception_type_count/twisted.internet.error.ConnectionRefusedError': 2,
+ 'downloader/exception_type_count/twisted.internet.error.DNSLookupError': 40,
+ 'downloader/exception_type_count/twisted.internet.error.TimeoutError': 7,
+ 'downloader/request_bytes': 330791,
+ 'downloader/request_count': 880,
+ 'downloader/request_method_count/GET': 880,
+ 'downloader/response_bytes': 12454167,
+ 'downloader/response_count': 831,
+ 'downloader/response_status_count/200': 271,
+ 'downloader/response_status_count/301': 458,
+ 'downloader/response_status_count/302': 41,
+ 'downloader/response_status_count/403': 1,
+ 'downloader/response_status_count/404': 60,
+ 'dupefilter/filtered': 1602,
+ 'elapsed_time_seconds': 60.831275,
+ 'finish_reason': 'shutdown',
+ 'finish_time': datetime.datetime(2025, 10, 3, 17, 31, 26, 337343, tzinfo=datetime.timezone.utc),
+ 'httpcache/firsthand': 830,
+ 'httpcache/hit': 1,
+ 'httpcache/miss': 879,
+ 'httpcache/store': 830,
+ 'httpcompression/response_bytes': 30101131,
+ 'httpcompression/response_count': 306,
+ 'item_scraped_count': 1021,
+ 'items_per_minute': 1021.0,
+ 'log_count/INFO': 128,
+ 'log_count/WARNING': 1,
+ 'offsite/domains': 53,
+ 'offsite/filtered': 8109,
+ 'request_depth_max': 3,
+ 'response_received_count': 331,
+ 'responses_per_minute': 331.0,
+ 'retry/count': 49,
+ 'retry/reason_count/twisted.internet.error.ConnectionRefusedError': 2,
+ 'retry/reason_count/twisted.internet.error.DNSLookupError': 40,
+ 'retry/reason_count/twisted.internet.error.TimeoutError': 7,
+ 'scheduler/dequeued': 880,
+ 'scheduler/dequeued/memory': 880,
+ 'scheduler/enqueued': 131660,
+ 'scheduler/enqueued/memory': 131660,
+ 'start_time': datetime.datetime(2025, 10, 3, 17, 30, 25, 506068, tzinfo=datetime.timezone.utc),
+ 'urllength/request_ignored_count': 6}
+2025-10-03 13:31:26 [INFO] scrapy.core.engine - Spider closed (shutdown)
+2025-10-03 13:31:27 [INFO] __main__ - Stage 1 discovery completed
+2025-10-03 13:31:27 [INFO] __main__ - ============================================================
+2025-10-03 13:31:27 [INFO] __main__ - STAGE 2: VALIDATION
+2025-10-03 13:31:27 [INFO] __main__ - ============================================================
+2025-10-03 13:31:27 [INFO] src.common.feedback - Loaded feedback: 0 patterns, 0 sources, 20 sessions
+2025-10-03 13:31:27 [INFO] src.common.feedback - FeedbackStore initialized: data\feedback\stage2_feedback.json
+2025-10-03 13:31:27 [INFO] src.common.adaptive_depth - Loaded adaptive depth config: 273 sections
+2025-10-03 13:31:27 [INFO] src.common.adaptive_depth - AdaptiveDepthManager initialized: data\config\adaptive_depth.json
+2025-10-03 13:31:27 [INFO] src.stage2.validator - [Stage2] Link graph loaded for importance-based prioritization
+2025-10-03 13:31:27 [INFO] src.stage2.validator - [Stage2] Freshness tracker initialized
+2025-10-03 13:31:27 [INFO] src.orchestrator.pipeline - Starting concurrent Stage 2 validation
+2025-10-03 13:31:27 [INFO] src.orchestrator.pipeline - Populating Stage 2 queue from Stage 1 results
+2025-10-03 13:31:27 [INFO] src.common.interstage_validation - Validating data\processed\stage01\discovery_output.jsonl against DiscoveryItem schema...
+2025-10-03 13:31:27 [INFO] src.common.interstage_validation - 
+============================================================
+Inter-Stage Validation Report: DiscoveryItem
+============================================================
+Total Records: 26,598
+Valid Records: 26,598 (100.00%)
+Invalid Records: 0
+
+Error Breakdown:
+  - Missing Fields: 0
+  - Extra Fields: 0
+  - Type Errors: 0
+  - Value Errors: 0
+
+Status: ✅ PASS
+============================================================
+
+2025-10-03 13:31:27 [INFO] src.orchestrator.orchestrator_validation - Stage 1 output validation passed with a success rate of 100.00%.
+2025-10-03 13:31:27 [INFO] src.orchestrator.pipeline - Loading Stage 1 results from data\processed\stage01\discovery_output.jsonl
+2025-10-03 13:31:27 [INFO] src.orchestrator.pipeline - Queued 1000 items for Stage 2
+2025-10-03 13:31:27 [INFO] src.orchestrator.pipeline - Queued 2000 items for Stage 2
+2025-10-03 13:31:27 [INFO] src.orchestrator.pipeline - Queued 3000 items for Stage 2
+2025-10-03 13:31:27 [INFO] src.orchestrator.pipeline - Queued 4000 items for Stage 2
+2025-10-03 13:31:27 [INFO] src.orchestrator.pipeline - Queued 5000 items for Stage 2
+2025-10-03 13:31:27 [INFO] src.orchestrator.pipeline - Queued 6000 items for Stage 2
+2025-10-03 13:31:27 [INFO] src.orchestrator.pipeline - Queued 7000 items for Stage 2
+2025-10-03 13:31:27 [INFO] src.orchestrator.pipeline - Queued 8000 items for Stage 2
+2025-10-03 13:31:27 [INFO] src.orchestrator.pipeline - Queue at 80%+ capacity: 8001/10000 items
+2025-10-03 13:31:27 [INFO] src.orchestrator.pipeline - Queued 9000 items for Stage 2
+2025-10-03 13:31:27 [INFO] src.orchestrator.pipeline - Queue at 90%+ capacity: 9001/10000 items
+2025-10-03 13:31:27 [WARNING] src.orchestrator.pipeline - Queue at 95%+ capacity: 9501/10000 items
+2025-10-03 13:31:27 [INFO] src.orchestrator.pipeline - Queued 10000 items for Stage 2
+2025-10-03 13:31:27 [WARNING] src.orchestrator.pipeline - Queue is FULL (10000), applying backpressure - producer blocked
+2025-10-03 13:31:27 [INFO] src.stage2.validator - Validating batch 0 of 16 URLs
+2025-10-03 13:31:27 [WARNING] src.orchestrator.pipeline - Queue at 95%+ capacity: 9986/10000 items
+2025-10-03 13:31:27 [WARNING] src.orchestrator.pipeline - Queue is FULL (10000), applying backpressure - producer blocked
+2025-10-03 13:31:27 [INFO] src.stage2.validator - Validating batch 1 of 16 URLs
+2025-10-03 13:31:27 [WARNING] src.orchestrator.pipeline - Queue at 95%+ capacity: 9986/10000 items
+2025-10-03 13:31:27 [WARNING] src.orchestrator.pipeline - Queue is FULL (10000), applying backpressure - producer blocked
+2025-10-03 13:31:27 [INFO] src.stage2.validator - Validating batch 2 of 16 URLs
+2025-10-03 13:31:27 [WARNING] src.orchestrator.pipeline - Queue at 95%+ capacity: 9986/10000 items
+2025-10-03 13:31:27 [WARNING] src.orchestrator.pipeline - Queue is FULL (10000), applying backpressure - producer blocked
+2025-10-03 13:31:27 [INFO] src.stage2.validator - Validating batch 3 of 16 URLs
+2025-10-03 13:31:27 [WARNING] src.orchestrator.pipeline - Queue at 95%+ capacity: 9986/10000 items
+2025-10-03 13:31:27 [WARNING] src.orchestrator.pipeline - Queue is FULL (10000), applying backpressure - producer blocked
+2025-10-03 13:31:28 [INFO] src.stage2.validator - Validating batch 4 of 16 URLs
+2025-10-03 13:31:28 [WARNING] src.orchestrator.pipeline - Queue at 95%+ capacity: 9986/10000 items
+2025-10-03 13:31:28 [WARNING] src.orchestrator.pipeline - Queue is FULL (10000), applying backpressure - producer blocked
+2025-10-03 13:31:28 [INFO] src.stage2.validator - Validating batch 5 of 16 URLs
+2025-10-03 13:31:28 [WARNING] src.orchestrator.pipeline - Queue at 95%+ capacity: 9986/10000 items
+2025-10-03 13:31:28 [WARNING] src.orchestrator.pipeline - Queue is FULL (10000), applying backpressure - producer blocked
+2025-10-03 13:31:28 [INFO] src.stage2.validator - Validating batch 6 of 16 URLs
+2025-10-03 13:31:28 [WARNING] src.orchestrator.pipeline - Queue at 95%+ capacity: 9986/10000 items
+2025-10-03 13:31:28 [WARNING] src.orchestrator.pipeline - Queue is FULL (10000), applying backpressure - producer blocked
+2025-10-03 13:31:28 [INFO] src.stage2.validator - Validating batch 7 of 16 URLs
+2025-10-03 13:31:28 [WARNING] src.orchestrator.pipeline - Queue at 95%+ capacity: 9986/10000 items
+2025-10-03 13:31:28 [WARNING] src.orchestrator.pipeline - Queue is FULL (10000), applying backpressure - producer blocked
+2025-10-03 13:31:28 [INFO] src.stage2.validator - Validating batch 8 of 16 URLs
+2025-10-03 13:31:28 [WARNING] src.orchestrator.pipeline - Queue at 95%+ capacity: 9986/10000 items
+2025-10-03 13:31:28 [WARNING] src.orchestrator.pipeline - Queue is FULL (10000), applying backpressure - producer blocked
+2025-10-03 13:31:28 [INFO] src.stage2.validator - Validating batch 9 of 16 URLs
+2025-10-03 13:31:28 [WARNING] src.orchestrator.pipeline - Queue at 95%+ capacity: 9986/10000 items
+2025-10-03 13:31:28 [WARNING] src.orchestrator.pipeline - Queue is FULL (10000), applying backpressure - producer blocked
+2025-10-03 13:31:28 [INFO] src.stage2.validator - Validating batch 10 of 16 URLs
+2025-10-03 13:31:28 [WARNING] src.orchestrator.pipeline - Queue at 95%+ capacity: 9986/10000 items
+2025-10-03 13:31:28 [WARNING] src.orchestrator.pipeline - Queue is FULL (10000), applying backpressure - producer blocked
+2025-10-03 13:31:28 [INFO] src.stage2.validator - Validating batch 11 of 16 URLs
+2025-10-03 13:31:28 [WARNING] src.orchestrator.pipeline - Queue at 95%+ capacity: 9986/10000 items
+2025-10-03 13:31:28 [WARNING] src.orchestrator.pipeline - Queue is FULL (10000), applying backpressure - producer blocked
+2025-10-03 13:31:28 [INFO] src.stage2.validator - Validating batch 12 of 16 URLs
+2025-10-03 13:31:28 [WARNING] src.orchestrator.pipeline - Queue at 95%+ capacity: 9986/10000 items
+2025-10-03 13:31:28 [WARNING] src.orchestrator.pipeline - Queue is FULL (10000), applying backpressure - producer blocked
+2025-10-03 13:31:28 [INFO] src.stage2.validator - Validating batch 13 of 16 URLs
+2025-10-03 13:31:28 [WARNING] src.orchestrator.pipeline - Queue at 95%+ capacity: 9986/10000 items
+2025-10-03 13:31:28 [WARNING] src.orchestrator.pipeline - Queue is FULL (10000), applying backpressure - producer blocked
+2025-10-03 13:31:29 [INFO] src.stage2.validator - Validating batch 14 of 16 URLs
+2025-10-03 13:31:29 [WARNING] src.orchestrator.pipeline - Queue at 95%+ capacity: 9986/10000 items
+2025-10-03 13:31:29 [WARNING] src.orchestrator.pipeline - Queue is FULL (10000), applying backpressure - producer blocked
+2025-10-03 13:31:29 [INFO] src.stage2.validator - Validating batch 15 of 16 URLs
+2025-10-03 13:31:29 [WARNING] src.orchestrator.pipeline - Queue at 95%+ capacity: 9986/10000 items
+2025-10-03 13:31:29 [WARNING] src.orchestrator.pipeline - Queue is FULL (10000), applying backpressure - producer blocked
+2025-10-03 13:31:29 [INFO] src.stage2.validator - Validating batch 16 of 16 URLs
+2025-10-03 13:31:29 [WARNING] src.orchestrator.pipeline - Queue at 95%+ capacity: 9986/10000 items
+2025-10-03 13:31:29 [WARNING] src.orchestrator.pipeline - Queue is FULL (10000), applying backpressure - producer blocked
+2025-10-03 13:31:29 [INFO] src.stage2.validator - Validating batch 17 of 16 URLs
+2025-10-03 13:31:29 [WARNING] src.orchestrator.pipeline - Queue at 95%+ capacity: 9986/10000 items
+2025-10-03 13:31:29 [WARNING] src.orchestrator.pipeline - Queue is FULL (10000), applying backpressure - producer blocked
+2025-10-03 13:31:29 [INFO] src.stage2.validator - Validating batch 18 of 16 URLs
+2025-10-03 13:31:29 [WARNING] src.orchestrator.pipeline - Queue at 95%+ capacity: 9986/10000 items
+2025-10-03 13:31:29 [WARNING] src.orchestrator.pipeline - Queue is FULL (10000), applying backpressure - producer blocked
+2025-10-03 13:31:29 [INFO] src.stage2.validator - Validating batch 19 of 16 URLs
+2025-10-03 13:31:29 [WARNING] src.orchestrator.pipeline - Queue at 95%+ capacity: 9986/10000 items
+2025-10-03 13:31:29 [WARNING] src.orchestrator.pipeline - Queue is FULL (10000), applying backpressure - producer blocked
+2025-10-03 13:31:29 [INFO] src.stage2.validator - Validating batch 20 of 16 URLs
+2025-10-03 13:31:29 [WARNING] src.orchestrator.pipeline - Queue at 95%+ capacity: 9986/10000 items
+2025-10-03 13:31:29 [WARNING] src.orchestrator.pipeline - Queue is FULL (10000), applying backpressure - producer blocked
+2025-10-03 13:31:29 [INFO] src.stage2.validator - Validating batch 21 of 16 URLs
+2025-10-03 13:31:29 [WARNING] src.orchestrator.pipeline - Queue at 95%+ capacity: 9986/10000 items
+2025-10-03 13:31:29 [WARNING] src.orchestrator.pipeline - Queue is FULL (10000), applying backpressure - producer blocked
+2025-10-03 13:31:29 [INFO] src.stage2.validator - Validating batch 22 of 16 URLs
+2025-10-03 13:31:29 [WARNING] src.orchestrator.pipeline - Queue at 95%+ capacity: 9986/10000 items
+2025-10-03 13:31:29 [WARNING] src.orchestrator.pipeline - Queue is FULL (10000), applying backpressure - producer blocked
+2025-10-03 13:31:30 [INFO] src.stage2.validator - Validating batch 23 of 16 URLs
+2025-10-03 13:31:30 [WARNING] src.orchestrator.pipeline - Queue at 95%+ capacity: 9986/10000 items
+2025-10-03 13:31:30 [WARNING] src.orchestrator.pipeline - Queue is FULL (10000), applying backpressure - producer blocked
+2025-10-03 13:31:30 [INFO] src.stage2.validator - Validating batch 24 of 16 URLs
+2025-10-03 13:31:30 [WARNING] src.orchestrator.pipeline - Queue at 95%+ capacity: 9986/10000 items
+2025-10-03 13:31:30 [WARNING] src.orchestrator.pipeline - Queue is FULL (10000), applying backpressure - producer blocked
+2025-10-03 13:31:30 [INFO] src.stage2.validator - Validating batch 25 of 16 URLs
+2025-10-03 13:31:30 [WARNING] src.orchestrator.pipeline - Queue at 95%+ capacity: 9986/10000 items
+2025-10-03 13:31:30 [WARNING] src.orchestrator.pipeline - Queue is FULL (10000), applying backpressure - producer blocked
+2025-10-03 13:31:30 [INFO] src.stage2.validator - Validating batch 26 of 16 URLs
+2025-10-03 13:31:30 [WARNING] src.orchestrator.pipeline - Queue at 95%+ capacity: 9986/10000 items
+2025-10-03 13:31:30 [WARNING] src.orchestrator.pipeline - Queue is FULL (10000), applying backpressure - producer blocked
+2025-10-03 13:31:30 [INFO] src.stage2.validator - Validating batch 27 of 16 URLs
+2025-10-03 13:31:30 [WARNING] src.orchestrator.pipeline - Queue at 95%+ capacity: 9986/10000 items
+2025-10-03 13:31:30 [WARNING] src.orchestrator.pipeline - Queue is FULL (10000), applying backpressure - producer blocked
+2025-10-03 13:31:33 [INFO] src.stage2.validator - Validating batch 28 of 16 URLs
+2025-10-03 13:31:33 [WARNING] src.orchestrator.pipeline - Queue at 95%+ capacity: 9986/10000 items
+2025-10-03 13:31:33 [WARNING] src.orchestrator.pipeline - Queue is FULL (10000), applying backpressure - producer blocked
+2025-10-03 13:31:36 [INFO] src.stage2.validator - Validating batch 29 of 16 URLs
+2025-10-03 13:31:36 [WARNING] src.orchestrator.pipeline - Queue at 95%+ capacity: 9986/10000 items
+2025-10-03 13:31:36 [WARNING] src.orchestrator.pipeline - Queue is FULL (10000), applying backpressure - producer blocked
+2025-10-03 13:31:39 [INFO] src.stage2.validator - Validating batch 30 of 16 URLs
+2025-10-03 13:31:39 [WARNING] src.orchestrator.pipeline - Queue at 95%+ capacity: 9986/10000 items
+2025-10-03 13:31:39 [WARNING] src.orchestrator.pipeline - Queue is FULL (10000), applying backpressure - producer blocked
+2025-10-03 13:31:39 [INFO] src.stage2.validator - Validating batch 31 of 16 URLs
+2025-10-03 13:31:39 [WARNING] src.orchestrator.pipeline - Queue at 95%+ capacity: 9986/10000 items
+2025-10-03 13:31:39 [WARNING] src.orchestrator.pipeline - Queue is FULL (10000), applying backpressure - producer blocked
+2025-10-03 13:31:39 [INFO] src.stage2.validator - Validating batch 32 of 16 URLs
+2025-10-03 13:31:39 [WARNING] src.orchestrator.pipeline - Queue at 95%+ capacity: 9986/10000 items
+2025-10-03 13:31:39 [WARNING] src.orchestrator.pipeline - Queue is FULL (10000), applying backpressure - producer blocked
+2025-10-03 13:31:40 [INFO] src.stage2.validator - Validating batch 33 of 16 URLs
+2025-10-03 13:31:40 [WARNING] src.orchestrator.pipeline - Queue at 95%+ capacity: 9986/10000 items
+2025-10-03 13:31:40 [WARNING] src.orchestrator.pipeline - Queue is FULL (10000), applying backpressure - producer blocked
+2025-10-03 13:31:40 [INFO] src.stage2.validator - Validating batch 34 of 16 URLs
+2025-10-03 13:31:40 [WARNING] src.orchestrator.pipeline - Queue at 95%+ capacity: 9986/10000 items
+2025-10-03 13:31:40 [WARNING] src.orchestrator.pipeline - Queue is FULL (10000), applying backpressure - producer blocked
+2025-10-03 13:31:40 [INFO] src.stage2.validator - Validating batch 35 of 16 URLs
+2025-10-03 13:31:40 [WARNING] src.orchestrator.pipeline - Queue at 95%+ capacity: 9986/10000 items
+2025-10-03 13:31:40 [WARNING] src.orchestrator.pipeline - Queue is FULL (10000), applying backpressure - producer blocked
+2025-10-03 13:31:43 [INFO] src.stage2.validator - Validating batch 36 of 16 URLs
+2025-10-03 13:31:43 [WARNING] src.orchestrator.pipeline - Queue at 95%+ capacity: 9986/10000 items
+2025-10-03 13:31:43 [WARNING] src.orchestrator.pipeline - Queue is FULL (10000), applying backpressure - producer blocked
+2025-10-03 13:31:43 [INFO] src.stage2.validator - Validating batch 37 of 16 URLs
+2025-10-03 13:31:43 [WARNING] src.orchestrator.pipeline - Queue at 95%+ capacity: 9986/10000 items
+2025-10-03 13:31:43 [WARNING] src.orchestrator.pipeline - Queue is FULL (10000), applying backpressure - producer blocked
+2025-10-03 13:31:43 [INFO] src.stage2.validator - Validating batch 38 of 16 URLs
+2025-10-03 13:31:43 [WARNING] src.orchestrator.pipeline - Queue at 95%+ capacity: 9986/10000 items
+2025-10-03 13:31:43 [WARNING] src.orchestrator.pipeline - Queue is FULL (10000), applying backpressure - producer blocked
+2025-10-03 13:31:43 [INFO] src.stage2.validator - Validating batch 39 of 16 URLs
+2025-10-03 13:31:43 [WARNING] src.orchestrator.pipeline - Queue at 95%+ capacity: 9986/10000 items
+2025-10-03 13:31:43 [WARNING] src.orchestrator.pipeline - Queue is FULL (10000), applying backpressure - producer blocked
+2025-10-03 13:31:44 [INFO] src.stage2.validator - Validating batch 40 of 16 URLs
+2025-10-03 13:31:44 [WARNING] src.orchestrator.pipeline - Queue at 95%+ capacity: 9986/10000 items
+2025-10-03 13:31:44 [WARNING] src.orchestrator.pipeline - Queue is FULL (10000), applying backpressure - producer blocked
+2025-10-03 13:31:44 [INFO] src.stage2.validator - Validating batch 41 of 16 URLs
+2025-10-03 13:31:44 [WARNING] src.orchestrator.pipeline - Queue at 95%+ capacity: 9986/10000 items
+2025-10-03 13:31:44 [WARNING] src.orchestrator.pipeline - Queue is FULL (10000), applying backpressure - producer blocked
+2025-10-03 13:31:44 [INFO] src.stage2.validator - Validating batch 42 of 16 URLs
+2025-10-03 13:31:44 [WARNING] src.orchestrator.pipeline - Queue at 95%+ capacity: 9986/10000 items
+2025-10-03 13:31:44 [WARNING] src.orchestrator.pipeline - Queue is FULL (10000), applying backpressure - producer blocked
+2025-10-03 13:31:44 [INFO] src.stage2.validator - Validating batch 43 of 16 URLs
+2025-10-03 13:31:44 [WARNING] src.orchestrator.pipeline - Queue at 95%+ capacity: 9986/10000 items
+2025-10-03 13:31:44 [WARNING] src.orchestrator.pipeline - Queue is FULL (10000), applying backpressure - producer blocked
+2025-10-03 13:31:44 [INFO] src.stage2.validator - Validating batch 44 of 16 URLs
+2025-10-03 13:31:44 [WARNING] src.orchestrator.pipeline - Queue at 95%+ capacity: 9986/10000 items
+2025-10-03 13:31:44 [WARNING] src.orchestrator.pipeline - Queue is FULL (10000), applying backpressure - producer blocked
+2025-10-03 13:31:44 [INFO] src.stage2.validator - Validating batch 45 of 16 URLs
+2025-10-03 13:31:44 [WARNING] src.orchestrator.pipeline - Queue at 95%+ capacity: 9986/10000 items
+2025-10-03 13:31:44 [WARNING] src.orchestrator.pipeline - Queue is FULL (10000), applying backpressure - producer blocked
+2025-10-03 13:31:44 [INFO] src.stage2.validator - Validating batch 46 of 16 URLs
+2025-10-03 13:31:44 [WARNING] src.orchestrator.pipeline - Queue at 95%+ capacity: 9986/10000 items
+2025-10-03 13:31:44 [WARNING] src.orchestrator.pipeline - Queue is FULL (10000), applying backpressure - producer blocked
+2025-10-03 13:31:44 [INFO] src.stage2.validator - Validating batch 47 of 16 URLs
+2025-10-03 13:31:44 [WARNING] src.orchestrator.pipeline - Queue at 95%+ capacity: 9986/10000 items
+2025-10-03 13:31:44 [WARNING] src.orchestrator.pipeline - Queue is FULL (10000), applying backpressure - producer blocked
+2025-10-03 13:31:45 [INFO] src.stage2.validator - Validating batch 48 of 16 URLs
+2025-10-03 13:31:45 [WARNING] src.orchestrator.pipeline - Queue at 95%+ capacity: 9986/10000 items
+2025-10-03 13:31:45 [WARNING] src.orchestrator.pipeline - Queue is FULL (10000), applying backpressure - producer blocked
+2025-10-03 13:31:45 [INFO] src.stage2.validator - Validating batch 49 of 16 URLs
+2025-10-03 13:31:45 [WARNING] src.orchestrator.pipeline - Queue at 95%+ capacity: 9986/10000 items
+2025-10-03 13:31:45 [WARNING] src.orchestrator.pipeline - Queue is FULL (10000), applying backpressure - producer blocked
+2025-10-03 13:31:45 [INFO] src.stage2.validator - Validating batch 50 of 16 URLs
+2025-10-03 13:31:45 [WARNING] src.orchestrator.pipeline - Queue at 95%+ capacity: 9986/10000 items
+2025-10-03 13:31:45 [WARNING] src.orchestrator.pipeline - Queue is FULL (10000), applying backpressure - producer blocked
+2025-10-03 13:31:48 [INFO] src.stage2.validator - Validating batch 51 of 16 URLs
+2025-10-03 13:31:48 [WARNING] src.orchestrator.pipeline - Queue at 95%+ capacity: 9986/10000 items
+2025-10-03 13:31:48 [WARNING] src.orchestrator.pipeline - Queue is FULL (10000), applying backpressure - producer blocked
+2025-10-03 13:31:48 [INFO] src.stage2.validator - Validating batch 52 of 16 URLs
+2025-10-03 13:31:48 [WARNING] src.orchestrator.pipeline - Queue at 95%+ capacity: 9986/10000 items
+2025-10-03 13:31:48 [WARNING] src.orchestrator.pipeline - Queue is FULL (10000), applying backpressure - producer blocked
+2025-10-03 13:31:51 [INFO] src.stage2.validator - Validating batch 53 of 16 URLs
+2025-10-03 13:31:51 [WARNING] src.orchestrator.pipeline - Queue at 95%+ capacity: 9986/10000 items
+2025-10-03 13:31:51 [WARNING] src.orchestrator.pipeline - Queue is FULL (10000), applying backpressure - producer blocked
+2025-10-03 13:31:51 [INFO] src.stage2.validator - Validating batch 54 of 16 URLs
+2025-10-03 13:31:51 [WARNING] src.orchestrator.pipeline - Queue at 95%+ capacity: 9986/10000 items
+2025-10-03 13:31:51 [WARNING] src.orchestrator.pipeline - Queue is FULL (10000), applying backpressure - producer blocked
+2025-10-03 13:31:51 [INFO] src.stage2.validator - Validating batch 55 of 16 URLs
+2025-10-03 13:31:51 [WARNING] src.orchestrator.pipeline - Queue at 95%+ capacity: 9986/10000 items
+2025-10-03 13:31:51 [WARNING] src.orchestrator.pipeline - Queue is FULL (10000), applying backpressure - producer blocked
+2025-10-03 13:31:51 [INFO] src.stage2.validator - Validating batch 56 of 16 URLs
+2025-10-03 13:31:51 [WARNING] src.orchestrator.pipeline - Queue at 95%+ capacity: 9986/10000 items
+2025-10-03 13:31:51 [WARNING] src.orchestrator.pipeline - Queue is FULL (10000), applying backpressure - producer blocked
+2025-10-03 13:31:51 [INFO] src.stage2.validator - Validating batch 57 of 16 URLs
+2025-10-03 13:31:51 [WARNING] src.orchestrator.pipeline - Queue at 95%+ capacity: 9986/10000 items
+2025-10-03 13:31:51 [WARNING] src.orchestrator.pipeline - Queue is FULL (10000), applying backpressure - producer blocked
+2025-10-03 13:31:52 [INFO] src.stage2.validator - Validating batch 58 of 16 URLs
+2025-10-03 13:31:52 [WARNING] src.orchestrator.pipeline - Queue at 95%+ capacity: 9986/10000 items
+2025-10-03 13:31:52 [WARNING] src.orchestrator.pipeline - Queue is FULL (10000), applying backpressure - producer blocked
+2025-10-03 13:31:52 [INFO] src.stage2.validator - Validating batch 59 of 16 URLs
+2025-10-03 13:31:52 [WARNING] src.orchestrator.pipeline - Queue at 95%+ capacity: 9986/10000 items
+2025-10-03 13:31:52 [WARNING] src.orchestrator.pipeline - Queue is FULL (10000), applying backpressure - producer blocked
+2025-10-03 13:31:52 [INFO] src.stage2.validator - Validating batch 60 of 16 URLs
+2025-10-03 13:31:52 [WARNING] src.orchestrator.pipeline - Queue at 95%+ capacity: 9986/10000 items
+2025-10-03 13:31:52 [WARNING] src.orchestrator.pipeline - Queue is FULL (10000), applying backpressure - producer blocked
+2025-10-03 13:31:52 [INFO] src.stage2.validator - Validating batch 61 of 16 URLs
+2025-10-03 13:31:52 [WARNING] src.orchestrator.pipeline - Queue at 95%+ capacity: 9986/10000 items
+2025-10-03 13:31:52 [WARNING] src.orchestrator.pipeline - Queue is FULL (10000), applying backpressure - producer blocked
+2025-10-03 13:31:52 [INFO] src.stage2.validator - Validating batch 62 of 16 URLs
+2025-10-03 13:31:52 [WARNING] src.orchestrator.pipeline - Queue at 95%+ capacity: 9986/10000 items
+2025-10-03 13:31:52 [INFO] src.orchestrator.pipeline - Queued 11000 items for Stage 2
+2025-10-03 13:31:52 [WARNING] src.orchestrator.pipeline - Queue is FULL (10000), applying backpressure - producer blocked
+2025-10-03 13:31:52 [INFO] src.stage2.validator - Validating batch 63 of 16 URLs
+2025-10-03 13:31:52 [WARNING] src.orchestrator.pipeline - Queue at 95%+ capacity: 9986/10000 items
+2025-10-03 13:31:52 [WARNING] src.orchestrator.pipeline - Queue is FULL (10000), applying backpressure - producer blocked
+2025-10-03 13:31:52 [INFO] src.stage2.validator - Validating batch 64 of 16 URLs
+2025-10-03 13:31:52 [WARNING] src.orchestrator.pipeline - Queue at 95%+ capacity: 9986/10000 items
+2025-10-03 13:31:52 [WARNING] src.orchestrator.pipeline - Queue is FULL (10000), applying backpressure - producer blocked
+2025-10-03 13:31:52 [INFO] src.stage2.validator - Validating batch 65 of 16 URLs
+2025-10-03 13:31:52 [WARNING] src.orchestrator.pipeline - Queue at 95%+ capacity: 9986/10000 items
+2025-10-03 13:31:52 [WARNING] src.orchestrator.pipeline - Queue is FULL (10000), applying backpressure - producer blocked
+2025-10-03 13:31:52 [INFO] src.stage2.validator - Validating batch 66 of 16 URLs
+2025-10-03 13:31:52 [WARNING] src.orchestrator.pipeline - Queue at 95%+ capacity: 9986/10000 items
+2025-10-03 13:31:52 [WARNING] src.orchestrator.pipeline - Queue is FULL (10000), applying backpressure - producer blocked
+2025-10-03 13:31:53 [INFO] src.stage2.validator - Validating batch 67 of 16 URLs
+2025-10-03 13:31:53 [WARNING] src.orchestrator.pipeline - Queue at 95%+ capacity: 9986/10000 items
+2025-10-03 13:31:53 [WARNING] src.orchestrator.pipeline - Queue is FULL (10000), applying backpressure - producer blocked
+2025-10-03 13:32:05 [INFO] src.stage2.validator - Validating batch 68 of 16 URLs
+2025-10-03 13:32:05 [WARNING] src.orchestrator.pipeline - Queue at 95%+ capacity: 9986/10000 items
+2025-10-03 13:32:05 [WARNING] src.orchestrator.pipeline - Queue is FULL (10000), applying backpressure - producer blocked
