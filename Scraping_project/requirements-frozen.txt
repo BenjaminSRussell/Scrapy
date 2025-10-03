@@ -22,7 +22,7 @@ jsonlines==4.0.0
 itemadapter==0.9.0
 
 # Testing
-pytest==8.3.2
+pytest==8.4.2
 pytest-asyncio==0.23.8
 pytest-html==4.1.1
 pytest-mock==3.14.0
