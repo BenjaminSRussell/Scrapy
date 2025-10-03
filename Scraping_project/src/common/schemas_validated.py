@@ -45,6 +45,20 @@ class DiscoveryItem(BaseModel):
         le=1.0,
         description="Confidence score for dynamic discoveries"
     )
+    importance_score: float = Field(
+        default=0.0,
+        ge=0.0,
+        le=1.0,
+        description="Calculated importance score for URL prioritization"
+    )
+    anchor_text: Optional[str] = Field(
+        default=None,
+        description="Anchor text from the link (if applicable)"
+    )
+    is_same_domain: bool = Field(
+        default=True,
+        description="Whether the discovered URL is on the same domain as source"
+    )
     schema_version: str = Field(
         default="2.0",
         description="Schema version"

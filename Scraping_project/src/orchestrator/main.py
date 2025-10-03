@@ -339,13 +339,18 @@ def main_sync():
             print("\n[OK] Configuration validation completed successfully\n")
             return 0
 
-        # Only run stage 1 synchronously
+        # Handle stage execution
         if args.stage == '1':
+            # Stage 1 only - run synchronously
             run_stage1_discovery_sync(config)
             logger.info("Pipeline orchestrator completed successfully")
             return 0
+        elif args.stage == 'all':
+            # All stages - run Stage 1 sync, then 2 & 3 async
+            run_stage1_discovery_sync(config)
+            return asyncio.run(main_async(args, config))
         else:
-            # For other stages, need to run async
+            # Stages 2 or 3 only - run async
             return asyncio.run(main_async(args, config))
 
     except KeyboardInterrupt:

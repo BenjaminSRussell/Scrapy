@@ -28,7 +28,7 @@ pytest-cov
 # Data processing
 pandas
 pyarrow
-numpy
+numpy<2  # Pin to v1.x for PyTorch compatibility
 
 # Natural language processing (core required)
 spacy
@@ -47,6 +47,7 @@ nltk
 # Headless browser support (for JavaScript-rendered content)
 # Install with: pip install playwright && playwright install
 playwright
+scrapy-playwright  # Scrapy integration for Playwright
 # Alternative: selenium>=4.0.0
 
 # PDF and document processing

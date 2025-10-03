@@ -194,10 +194,28 @@ class ConfigHealthCheck:
                         import playwright
                         # Check if browsers are installed
                         try:
+                            import sys
+                            import asyncio
                             from playwright.sync_api import sync_playwright
-                            with sync_playwright() as p:
-                                # Try to get browser - this will fail if not installed
-                                browser_type = getattr(p, browser_config.browser_type)
+
+                            # Temporarily switch to ProactorEventLoop on Windows for Playwright check
+                            original_policy = None
+                            if sys.platform == 'win32':
+                                try:
+                                    original_policy = asyncio.get_event_loop_policy()
+                                    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+                                except:
+                                    pass
+
+                            try:
+                                with sync_playwright() as p:
+                                    # Try to get browser - this will fail if not installed
+                                    browser_type = getattr(p, browser_config.browser_type)
+                            finally:
+                                # Restore original policy
+                                if sys.platform == 'win32' and original_policy:
+                                    asyncio.set_event_loop_policy(original_policy)
+
                         except Exception:
                             self.issues.append(ValidationIssue(
                                 severity='warning',
