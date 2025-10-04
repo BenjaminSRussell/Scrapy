@@ -1,4 +1,3 @@
-# TODO: Consider using a more structured logging format, like JSON, to make it easier to parse and analyze logs.
 """Simple error handling utilities for the pipeline."""
 
 import asyncio

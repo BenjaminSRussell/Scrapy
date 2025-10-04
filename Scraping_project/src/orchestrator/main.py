@@ -1,14 +1,12 @@
-# TODO: Add support for running the pipeline in a distributed environment, such as using a task queue like Celery or RQ.
 #!/usr/bin/env python3
 """
-UConn Web Scraping Pipeline Orchestrator - The Master of All Web Scraping Dreams
+UConn Web Scraping Pipeline Orchestrator
 
-This is the main orchestrator that does all the heavy lifting because apparently
-we need one file to rule them all:
-- Sets up logging (because we love knowing what went wrong)
-- Loads YAML configuration (because JSON wasn't trendy enough)
-- Launches discovery crawler (to find URLs like it's a treasure hunt)
-- Spawns validation/enrichment workers (because parallel processing is fancy)
+Main orchestrator that coordinates all pipeline stages:
+- Sets up logging
+- Loads YAML configuration
+- Launches discovery crawler
+- Spawns validation/enrichment workers
 """
 
 import argparse
@@ -19,12 +17,9 @@ import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 
-# Add src to Python path because Python import system is a joy to work with
 src_dir = Path(__file__).parent.parent
 sys.path.insert(0, str(src_dir))
 
-# Fix Windows ProactorEventLoop/Twisted reactor conflict
-# This must be done BEFORE any Twisted/Scrapy imports
 if sys.platform == 'win32':
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
@@ -33,9 +28,6 @@ from src.common.config_validator import validate_config_health
 from src.common.logging import setup_logging
 from src.orchestrator.config import Config, ConfigValidationError
 from src.orchestrator.pipeline import PipelineOrchestrator
-# module-level exports handled through lazy imports because dependencies are optional
-# and we love making things complicated
-# Import all the things we actually need
 from src.stage2.validator import URLValidator
 from src.stage3.enrichment_spider import EnrichmentSpider
 

@@ -1,4 +1,3 @@
-# TODO: Add support for other NLP backends, such as NLTK or Flair, to provide more options for NLP processing.
 import importlib
 import json
 import logging
@@ -68,11 +67,9 @@ except Exception:  # noqa: BLE001
 class NLPSettings:
     """Runtime configuration for NLP pipelines."""
 
-    # TODO: The spaCy and transformer models are hardcoded. They should be configurable.
     spacy_model: str = "en_core_web_sm"
-    transformer_model: str | None = "dslim/bert-base-NER"
+    transformer_model: str | None = "microsoft/deberta-v3-base"
     summarizer_model: str | None = "sshleifer/distilbart-cnn-12-6"
-    # Use public zero-shot model to avoid HF auth requirements
     zero_shot_model: str | None = "MoritzLaurer/deberta-v3-base-zeroshot-v2.0"
     preferred_device: str | None = None
     additional_stop_words: set[str] = field(default_factory=set)
@@ -96,7 +93,6 @@ class NLPRegistry:
             settings.zero_shot_model
         )
 
-    # TODO: This NLP pipeline is designed for English. It should be extended to support other languages.
     def _load_spacy(self, model_name: str):
         spacy_module = _resolve_module("spacy")
         if spacy_module is None:
@@ -107,7 +103,6 @@ class NLPRegistry:
         except Exception as exc:  # pragma: no cover - configuration issue
             raise RuntimeError(f"Unable to load spaCy model '{model_name}': {exc}") from exc
 
-        # add lemmatizer or things get weird
         if "lemmatizer" not in nlp.pipe_names:
             try:
                 nlp.add_pipe("lemmatizer", config={"mode": "rule"}, after="tagger")
@@ -250,7 +245,6 @@ class NLPRegistry:
             except ImportError:
                 logger.warning("PyTorch missing for MPS device; using CPU instead")
 
-        # HuggingFace doesn't speak MLX yet so fake it
         return -1
 
     def extract_with_spacy(

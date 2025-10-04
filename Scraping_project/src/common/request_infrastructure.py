@@ -1,4 +1,3 @@
-# TODO: Add support for proxies to allow for more robust and anonymous scraping.
 """
 Advanced Request Infrastructure with Learning and Adaptive Error Handling
 

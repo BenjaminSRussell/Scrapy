@@ -1,0 +1,156 @@
+#!/usr/bin/env python3
+"""
+UConn Web Scraper - Single Command Execution
+
+This is THE ONLY command you need to run the entire pipeline.
+It handles installation, setup, and execution automatically.
+
+Usage:
+    ./run_the_scrape              # Run full pipeline
+    ./run_the_scrape --stage 1    # Run stage 1 only
+    ./run_the_scrape --stage 2    # Run stage 2 only
+    ./run_the_scrape --stage 3    # Run stage 3 only
+    ./run_the_scrape --help       # Show help
+"""
+
+import argparse
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+
+def run_command(cmd, description, check=True):
+    """Run a shell command with error handling."""
+    print(f"\n{'='*60}")
+    print(f"▶ {description}")
+    print(f"{'='*60}")
+
+    result = subprocess.run(
+        cmd,
+        shell=True,
+        check=False,
+        capture_output=False
+    )
+
+    if check and result.returncode != 0:
+        print(f"✗ FAILED: {description}")
+        sys.exit(1)
+
+    print(f"✓ SUCCESS: {description}")
+    return result.returncode == 0
+
+
+def check_python_version():
+    """Ensure Python 3.11+ is installed."""
+    version = sys.version_info
+    if version.major < 3 or (version.major == 3 and version.minor < 11):
+        print(f"✗ Python 3.11+ required. You have {version.major}.{version.minor}")
+        sys.exit(1)
+    print(f"✓ Python {version.major}.{version.minor} detected")
+
+
+def install_dependencies():
+    """Install all required dependencies."""
+    if not run_command(
+        "pip install -r Scraping_project/requirements.txt",
+        "Installing Python dependencies",
+        check=False
+    ):
+        print("⚠ Some dependencies failed to install. Continuing anyway...")
+
+    run_command(
+        "python -m spacy download en_core_web_sm",
+        "Downloading spaCy model",
+        check=False
+    )
+
+    run_command(
+        "pip install transformers torch",
+        "Installing DeBERTa transformers",
+        check=False
+    )
+
+
+def setup_directories():
+    """Create required directories."""
+    directories = [
+        "Scraping_project/data/raw",
+        "Scraping_project/data/processed/stage01",
+        "Scraping_project/data/processed/stage02",
+        "Scraping_project/data/processed/stage03",
+        "Scraping_project/data/cache",
+        "Scraping_project/data/logs",
+    ]
+
+    for directory in directories:
+        Path(directory).mkdir(parents=True, exist_ok=True)
+
+    print("✓ Created data directories")
+
+
+def run_pipeline(stage="all"):
+    """Run the scraping pipeline."""
+    os.chdir("Scraping_project")
+
+    cmd = f"python -m src.orchestrator.main --env development --stage {stage}"
+
+    return run_command(
+        cmd,
+        f"Running pipeline (stage={stage})",
+        check=True
+    )
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="UConn Web Scraper - Complete Pipeline"
+    )
+    parser.add_argument(
+        "--stage",
+        choices=["1", "2", "3", "all"],
+        default="all",
+        help="Which stage to run (default: all)"
+    )
+    parser.add_argument(
+        "--skip-install",
+        action="store_true",
+        help="Skip dependency installation"
+    )
+
+    args = parser.parse_args()
+
+    print("""
+    ╔══════════════════════════════════════════════════════╗
+    ║        UConn Web Scraping Pipeline                   ║
+    ║        Single Command Execution                      ║
+    ╚══════════════════════════════════════════════════════╝
+    """)
+
+    check_python_version()
+
+    if not args.skip_install:
+        install_dependencies()
+
+    setup_directories()
+
+    run_pipeline(args.stage)
+
+    print("""
+    ╔══════════════════════════════════════════════════════╗
+    ║        ✓ PIPELINE COMPLETE                           ║
+    ╚══════════════════════════════════════════════════════╝
+
+    Output files:
+    - Stage 1: Scraping_project/data/processed/stage01/discovery_output.jsonl
+    - Stage 2: Scraping_project/data/processed/stage02/validation_output.jsonl
+    - Stage 3: Scraping_project/data/processed/stage03/enriched_content.jsonl
+
+    Next steps:
+    - Analyze link graph: python Scraping_project/tools/analyze_link_graph.py
+    - View logs: tail -f Scraping_project/data/logs/*.log
+    """)
+
+
+if __name__ == "__main__":
+    main()

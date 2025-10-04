@@ -1,4 +1,3 @@
-# TODO: Add support for more flexible refresh strategies, such as allowing the user to specify different refresh intervals for different domains.
 """
 Data Refresh and Recheck System
 

@@ -1,4 +1,3 @@
-# TODO: Consider using a more robust storage for checkpoints, like a database, to avoid issues with file corruption and to make it easier to query the status of checkpoints.
 """
 Checkpoint system for resumable pipeline operations
 """

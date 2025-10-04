@@ -1,4 +1,3 @@
-# TODO: This patching mechanism is a bit of a hack. We should investigate if we can use a more standard way to handle response.meta in tests, perhaps by creating a proper Scrapy Request object.
 """Common shared utilities and project-level compatibility patches."""
 
 from __future__ import annotations

@@ -1,4 +1,3 @@
-# TODO: Add support for exporting metrics to a time-series database, like Prometheus or InfluxDB, for better monitoring and alerting.
 """Simple metrics collection for pipeline monitoring."""
 
 import logging
@@ -133,7 +132,6 @@ class MetricsCollector:
                 logger.info(f"  Errors: {stage_data['error_count']}")
 
 
-# TODO: This global metrics collector is not thread-safe. It should be made thread-safe if the pipeline is ever run in a multi-threaded environment.
 # Global metrics collector instance
 _metrics_collector: MetricsCollector | None = None
 

@@ -23,7 +23,7 @@ from src.common.adaptive_depth import AdaptiveDepthManager
 from src.common.feedback import FeedbackStore
 from src.common.logging import get_structured_logger, set_session_id, set_trace_id
 from src.common.schemas import DiscoveryItem
-from src.common.storage import PaginationCache, URLCache
+from src.common.storage import PaginationCache
 from src.common.urls import canonicalize_url_simple
 
 logger = get_structured_logger(__name__, component="discovery_spider", stage="stage1")
@@ -133,33 +133,17 @@ class DiscoverySpider(scrapy.Spider):
         self.seed_file = self.settings.get('SEED_FILE', 'data/raw/uconn_urls.csv')
         self.output_file = self.settings.get('STAGE1_OUTPUT_FILE', 'data/processed/stage01/discovery_output.jsonl')
 
-        # Initialize persistent deduplication if enabled
-        use_persistent_dedup = self.settings.getbool('USE_PERSISTENT_DEDUP', True)
-        dedup_cache_path = self.settings.get('DEDUP_CACHE_PATH', 'data/cache/url_cache.db')
+        # Initialize URL deduplication with new URLDeduplicator
+        from src.common.url_deduplication import URLDeduplicator
 
-        if use_persistent_dedup:
-            self.url_cache = URLCache(Path(dedup_cache_path))
-            logger.log_with_context(
-                logging.INFO,
-                "Using persistent deduplication with SQLite",
-                cache_path=str(dedup_cache_path),
-                dedup_type="persistent"
-            )
-            # Load existing hashes for in-memory fallback
-            self.url_hashes = self.url_cache.get_all_hashes()
-            logger.log_with_context(
-                logging.INFO,
-                "Loaded existing URL hashes from cache",
-                hash_count=len(self.url_hashes)
-            )
-        else:
-            self.url_cache = None
-            self.url_hashes = set()
-            logger.log_with_context(
-                logging.INFO,
-                "Using in-memory deduplication",
-                dedup_type="in_memory"
-            )
+        dedup_db_path = self.settings.get('DEDUP_CACHE_PATH', 'data/cache/url_dedup.db')
+        self.url_deduplicator = URLDeduplicator(Path(dedup_db_path))
+        logger.log_with_context(
+            logging.INFO,
+            "Using persistent URL deduplication",
+            db_path=str(dedup_db_path),
+            existing_urls=self.url_deduplicator.count()
+        )
 
         # Initialize pagination cache
         pagination_cache_path = self.settings.get('PAGINATION_CACHE_PATH', 'data/cache/pagination_cache.db')
@@ -200,9 +184,6 @@ class DiscoverySpider(scrapy.Spider):
         depth_config = self.adaptive_depth.get_depth_configuration()
         if depth_config:
             logger.info(f"Loaded adaptive depth configuration for {len(depth_config)} sections")
-
-        # url dedup with a set for backward compatibility
-        self.seen_urls = set()
 
         # counters because apparently we need metrics for everything
         self.total_urls_parsed = 0
@@ -266,8 +247,7 @@ class DiscoverySpider(scrapy.Spider):
 
                     canonical_url = canonicalize_url_simple(cleaned_url)
 
-                    if canonical_url not in self.seen_urls:
-                        self.seen_urls.add(canonical_url)
+                    if self.url_deduplicator.add_if_new(canonical_url):
                         self.seed_count += 1
                         yield scrapy.Request(
                             url=canonical_url,
@@ -628,23 +608,10 @@ class DiscoverySpider(scrapy.Spider):
 
         url_hash = hashlib.sha256(canonical_url.encode("utf-8")).hexdigest()
 
-        # Use persistent cache if available, otherwise fallback to in-memory
-        if self.url_cache:
-            # Atomic check-and-insert with SQLite
-            is_new = self.url_cache.add_url_if_new(canonical_url, url_hash)
-            if not is_new:
-                self.duplicates_skipped += 1
-                return []
-            # Update in-memory sets for fast lookups
-            self.url_hashes.add(url_hash)
-            self.seen_urls.add(canonical_url)
-        else:
-            # In-memory deduplication
-            if url_hash in self.url_hashes or canonical_url in self.seen_urls:
-                self.duplicates_skipped += 1
-                return []
-            self.seen_urls.add(canonical_url)
-            self.url_hashes.add(url_hash)
+        # Use URLDeduplicator for persistent deduplication
+        if not self.url_deduplicator.add_if_new(canonical_url):
+            self.duplicates_skipped += 1
+            return []
 
         self.unique_urls_found += 1
 
@@ -915,6 +882,10 @@ class DiscoverySpider(scrapy.Spider):
 
     def closed(self, reason):
         """Called when spider closes - report comprehensive crawl summary"""
+        # Get deduplicator stats before closing
+        dedup_stats = self.url_deduplicator.get_stats()
+        self.url_deduplicator.close()
+
         logger.info("=" * 80)
         logger.info("DISCOVERY SPIDER CRAWL SUMMARY")
         logger.info("=" * 80)
@@ -929,6 +900,7 @@ class DiscoverySpider(scrapy.Spider):
         logger.info(f"Malformed seeds skipped: {self.malformed_seed_skipped:,}")
         logger.info(f"Dynamic/AJAX URLs discovered: {self.dynamic_urls_found:,}")
         logger.info(f"Hidden API endpoints discovered: {self.api_endpoints_found:,}")
+        logger.info(f"Deduplicator: {dedup_stats['unique_urls_in_db']:,} total URLs, {dedup_stats['duplicate_rate']:.1%} duplicate rate")
 
         # Depth histogram for coverage analysis
         logger.info("-" * 40)
@@ -1139,13 +1111,9 @@ class DiscoverySpider(scrapy.Spider):
         for url_match in url_pattern.finditer(response.text):
             url = url_match.group(1)
             canonical_url = canonicalize_url_simple(url)
-            if canonical_url not in self.seen_urls:
-                url_hash = hashlib.sha256(canonical_url.encode("utf-8")).hexdigest()
-                if url_hash in self.url_hashes:
-                    continue
+            url_hash = hashlib.sha256(canonical_url.encode("utf-8")).hexdigest()
 
-                self.seen_urls.add(canonical_url)
-                self.url_hashes.add(url_hash)
+            if self.url_deduplicator.add_if_new(canonical_url):
                 self.unique_urls_found += 1
 
                 yield DiscoveryItem(

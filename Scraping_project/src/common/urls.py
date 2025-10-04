@@ -1,4 +1,3 @@
-# TODO: Add support for more flexible URL normalization, such as allowing the user to specify which parts of the URL to normalize.
 import posixpath
 from urllib.parse import urlparse, urlunparse
 

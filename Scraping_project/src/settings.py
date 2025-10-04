@@ -77,16 +77,8 @@ AUTOTHROTTLE_DEBUG = False
 HTTPCACHE_ENABLED = True
 HTTPCACHE_EXPIRATION_SECS = 3600
 HTTPCACHE_DIR = 'data/cache/scrapy'
-HTTPCACHE_STORAGE = 'scrapy.extensions.httpcache.DbmCacheStorage'  # Secure alternative to pickle
-# HTTPCACHE_POLICY = 'scrapy.extensions.httpcache.RFC2616Policy'  # Optional: RFC-compliant caching
+HTTPCACHE_STORAGE = 'scrapy.extensions.httpcache.DbmCacheStorage'
 
-# Set settings whose default value is deprecated to a future-proof value
-# Use proactor event loop on Windows to avoid select() file descriptor limits
-import sys
-
-if sys.platform == 'win32':
-    import asyncio
-    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 TWISTED_REACTOR = 'twisted.internet.asyncioreactor.AsyncioSelectorReactor'
 FEED_EXPORT_ENCODING = 'utf-8'
 

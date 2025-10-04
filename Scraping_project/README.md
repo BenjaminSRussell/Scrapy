@@ -36,36 +36,32 @@
 ### Quick Installation
 
 ```bash
-# 1. Create virtual environment (recommended)
-python -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+# Clone repository
+git clone <repo-url>
+cd Scrapy
 
-# 2. Install dependencies
-pip install -r requirements.txt
-
-# 3. Download NLP model (required for Stage 3)
-python -m spacy download en_core_web_sm
-
-# 4. Verify installation
-python -m pytest tests/common/test_schemas.py -v
+# Run the scraper (handles all installation automatically)
+./run_the_scrape
 ```
+
+That's it. Everything else is automatic.
 
 ### Your First Crawl
 
 ```bash
-# Run all stages sequentially
-python main.py --env development --stage all
+# Single command - installs everything and runs pipeline
+./run_the_scrape
 
-# Watch progress in logs
-tail -f data/logs/pipeline.log
+# Or run specific stages
+./run_the_scrape --stage 1  # Discovery only
+./run_the_scrape --stage 2  # Validation only
+./run_the_scrape --stage 3  # Enrichment only
 ```
 
-**Expected output**:
-- Stage 1: `data/processed/stage01/new_urls.jsonl` (~25k URLs in ~5 minutes)
-- Stage 2: `data/processed/stage02/validation_output.jsonl` (~22k validated URLs in ~15 minutes)
-- Stage 3: `data/processed/stage03/enriched_content.jsonl` (content extraction)
-
-💡 **Tip**: Start with Stage 1 only to understand the discovery process before running the full pipeline.
+**Output files**:
+- Stage 1: `Scraping_project/data/processed/stage01/discovery_output.jsonl`
+- Stage 2: `Scraping_project/data/processed/stage02/validation_output.jsonl`
+- Stage 3: `Scraping_project/data/processed/stage03/enriched_content.jsonl`
 
 ## System Architecture
 
@@ -109,17 +105,18 @@ flowchart TB
 |-----------|-----------|---------|
 | **Discovery Engine** | Scrapy + Twisted | Breadth-first web crawling |
 | **URL Validator** | aiohttp + asyncio | Concurrent HTTP validation |
-| **Content Processor** | BeautifulSoup4 + lxml | HTML parsing and text extraction |
-| **NLP Engine** | spaCy (en_core_web_sm) | Entity recognition, keyword extraction |
-| **Storage Layer** | JSONL / SQLite / Parquet / S3 | Persistent data storage |
-| **Checkpoint System** | JSON files + atomic writes | Resumable execution |
+| **Content Processor** | lxml + XPath | HTML parsing and text extraction |
+| **NLP Engine** | DeBERTa v3 (transformers) | Entity recognition, zero-shot classification |
+| **Deduplication** | SQLite (URLDeduplicator) | Persistent URL tracking at scale |
+| **Storage Layer** | JSONL / SQLite / Parquet / S3 | Pluggable data persistence |
+| **Logging** | Structured JSON events | Machine-readable observability |
 | **Configuration** | YAML + environment variables | Multi-environment support |
 
 ---
 
 ## Current Status
 
-### Pipeline State (October 2025)
+### Pipeline State (January 2025)
 - **Stage 1 (Discovery)**: ✅ Fully operational
   - 25,583 URLs discovered
   - Sitemap/robots.txt bootstrap working
@@ -145,19 +142,14 @@ flowchart TB
 - Non-text response processing
 - Proactor event loop for high concurrency
 
-### CI/CD Pipeline
+### Key Features
 
-**GitHub Actions Flow**: Every push runs linting, pytest suites, and staged packaging to keep discovery -> validation -> enrichment deployments healthy.
-- Workflow file: `.github/workflows/ci.yml`
-- Steps: dependency install, static analysis, unit/integration tests, artefact packaging
-- Outputs: coverage summary, validation reports, optional deployment hooks
-
-**Key Features**:
+- ✅ **Scalable deduplication**: SQLite-backed URL tracking (handles millions of URLs)
+- ✅ **DeBERTa NLP**: State-of-the-art transformer models for entity extraction
+- ✅ **Structured logging**: Event-based JSON logs with trace correlation
 - ✅ **Checkpoint resumability**: Automatically resume after interruptions
 - ✅ **Multi-platform**: Windows, Linux, macOS support
 - ✅ **Pluggable storage**: JSONL, SQLite, Parquet, S3 backends
-- ✅ **NLP extraction**: Entities, keywords, content classification
-- ✅ **Comprehensive testing**: 85%+ code coverage
 
 ---
 
@@ -166,24 +158,15 @@ flowchart TB
 ### Running the Pipeline
 
 ```bash
-# Activate your virtual environment, then:
-python -m venv .venv
-source .venv/bin/activate  # or .venv\Scripts\activate on Windows
+cd Scraping_project
 
-# 1. Seed discovery only
-python main.py --env development --stage 1
+# Full pipeline (recommended)
+python -m src.orchestrator.main --env development --stage all
 
-# 2. Validate previously discovered URLs
-python main.py --env development --stage 2
-
-# 3. Enrich validated pages
-python main.py --env development --stage 3
-
-# 4. Full sequential run
-python main.py --env development --stage all
-
-# 5. Inspect resolved configuration without execution
-python main.py --env development --config-only
+# Individual stages
+python -m src.orchestrator.main --env development --stage 1  # Discovery
+python -m src.orchestrator.main --env development --stage 2  # Validation
+python -m src.orchestrator.main --env development --stage 3  # Enrichment
 ```
 
 ### Updating Seed URLs
@@ -351,24 +334,21 @@ The pipeline produces structured JSONL records with comprehensive metadata. Here
 
 ## Roadmap Highlights
 
-### Planned Features (Next Quarter)
+### Planned Features
 
-- [ ] **Taxonomy-based classification**: Zero-shot categorization with 50-100 UConn-specific categories
-- [ ] **Custom glossary**: UConn-specific term recognition (HuskyCT, building names, course codes)
-- [ ] **Enhanced NLP**: Sentence transformers for semantic similarity
-- [ ] **Monitoring dashboard**: Prometheus + Grafana for real-time metrics
+- [ ] **Monitoring dashboard**: Real-time visualization (FastAPI + WebSockets)
 - [ ] **Docker deployment**: Containerized setup with docker-compose
 - [ ] **API layer**: REST API for querying enriched content
+- [ ] **Rate limiting**: Token bucket for respectful crawling
 
-### Technical Improvements
+### Recent Updates (2025-01-03)
 
-- Fix Stage 3 orchestrator CLI integration
-- Redis-based URL deduplication for better memory efficiency
-- Token bucket rate limiting
-- Expand test coverage to >90%
-- GitHub Actions CI/CD pipeline
+- ✅ **DeBERTa v3 NLP**: Replaced spaCy with microsoft/deberta-v3-base
+- ✅ **SQLite deduplication**: Database-backed URL tracking replaces in-memory sets
+- ✅ **Fixed orchestrator bug**: Stage 3 URL deduplication now working correctly
+- ✅ **Structured logging**: Event-based logging with centralized LogEvent enum
+- ✅ **Code cleanup**: Removed unnecessary comments, consolidated docs
 
-📋 **See [SPRINT_BACKLOG.md](SPRINT_BACKLOG.md) for detailed sprint planning**
 
 ---
 

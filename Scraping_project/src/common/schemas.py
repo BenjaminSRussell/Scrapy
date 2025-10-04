@@ -1,4 +1,3 @@
-# TODO: Add more detailed schema validation, such as checking the types of the fields and ensuring that required fields are present.
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -130,7 +129,6 @@ class PipelineStats:
     duration_seconds: float | None = None
 
 
-# TODO: Add support for generating documentation from the schemas, such as a data dictionary or a JSON schema.
 class SchemaRegistry:
     """Registry for managing schema versions and compatibility"""
 

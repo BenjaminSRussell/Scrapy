@@ -354,14 +354,19 @@ class PipelineOrchestrator:
             logger.warning("No valid URLs found for Stage 3 enrichment")
             return
 
-        seen_urls: set[str] = set()
+        from src.common.url_deduplication import URLDeduplicator
+
+        # Use persistent deduplication instead of in-memory set
+        dedup_db = Path(self.config.get('stage3', {}).get('dedup_db_path', 'data/cache/stage3_dedup.db'))
+        deduplicator = URLDeduplicator(dedup_db)
+
         deduped_urls: list[str] = []
         for url in urls_for_enrichment:
-            if url not in seen_urls:
-                seen_urls.add(url)
+            if deduplicator.add_if_new(url):
                 deduped_urls.append(url)
 
-        logger.info(f"Dispatching {len(deduped_urls)} URLs to Stage 3 enrichment")
+        logger.info(f"Dispatching {len(deduped_urls)} URLs to Stage 3 enrichment (dedup: {deduplicator.get_stats()['duplicates_found']} duplicates)")
+        deduplicator.close()
 
         # Use async processor if enabled
         if use_async_processor:

@@ -1,58 +1,39 @@
-# TODO: Add support for more flexible storage of the seen hashes, such as using a database or a Bloom filter.
 import json
 import logging
-from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
 
 from itemadapter import ItemAdapter
 
-from src.common.link_graph import LinkGraphAnalyzer
-
 logger = logging.getLogger(__name__)
 
 
 class Stage1Pipeline:
-    """Pipeline for Stage 1 Discovery - writes discovered URLs to JSONL and builds link graph"""
-
-    # TODO: The output file is hardcoded. It should be configurable.
-    def __init__(self, output_file: str = None, enable_link_graph: bool = True):
+    """Pipeline for Stage 1 Discovery - writes discovered URLs to JSONL with buffered I/O"""
+    def __init__(self, output_file: str = None):
         self.output_file = Path(output_file or "data/processed/stage01/discovery_output.jsonl")
-        # persistent hash file to avoid the scale disaster
         self.hash_file = self.output_file.with_suffix('.hashes')
-
-        # Link graph integration
-        self.enable_link_graph = enable_link_graph
-        self.link_graph: LinkGraphAnalyzer = None
-        self._page_outlinks: dict[str, set[str]] = defaultdict(set)
-        self._page_depths: dict[str, int] = {}
 
     @classmethod
     def from_crawler(cls, crawler):
         """Create pipeline instance from crawler settings"""
         settings = crawler.settings
         output_file = settings.get('STAGE1_OUTPUT_FILE')
-        enable_link_graph = settings.getbool('ENABLE_LINK_GRAPH', True)
-        return cls(output_file, enable_link_graph)
+        return cls(output_file)
 
     def open_spider(self, spider):
         """Initialize pipeline when spider opens"""
         self.output_file.parent.mkdir(parents=True, exist_ok=True)
-        self.file = self.output_file.open("a", encoding="utf-8")
+        self.file = self.output_file.open("a", encoding="utf-8", buffering=8192)
         self.seen_hashes = set()
         self.url_count = 0
+        self.write_buffer = []
+        self.buffer_size = 100
 
-        # load ALL existing hashes from persistent file - no more arbitrary limits
         self._load_all_hashes()
 
         logger.info(f"[Stage1Pipeline] Loaded {len(self.seen_hashes):,} existing URL hashes")
         logger.info(f"[Stage1Pipeline] Writing to {self.output_file}")
-
-        # Initialize link graph analyzer
-        if self.enable_link_graph:
-            link_graph_db = Path("data/processed/link_graph.db")
-            self.link_graph = LinkGraphAnalyzer(link_graph_db)
-            logger.info(f"[Stage1Pipeline] Link graph analysis enabled: {link_graph_db}")
 
     def _load_all_hashes(self):
         """Load all seen hashes from persistent storage - properly this time"""
@@ -103,55 +84,15 @@ class Stage1Pipeline:
 
     def close_spider(self, spider):
         """Clean up when spider closes"""
+        if self.write_buffer:
+            self.file.writelines(self.write_buffer)
+            self.write_buffer.clear()
         self.file.close()
-        # save updated hash set for next run
         self._save_hashes()
         logger.info(f"[Stage1Pipeline] Discovered {self.url_count:,} new URLs → {self.output_file}")
         logger.info(f"[Stage1Pipeline] Hash index updated: {len(self.seen_hashes):,} total hashes")
+        logger.info("[Stage1Pipeline] Run 'python tools/analyze_link_graph.py' to analyze link graph")
 
-        # Build link graph and calculate importance scores
-        if self.enable_link_graph and self.link_graph:
-            logger.info("[Stage1Pipeline] Building link graph from discovered URLs...")
-
-            # Add all pages with their outlinks to the graph
-            for source_url, outlinks in self._page_outlinks.items():
-                depth = self._page_depths.get(source_url, 0)
-                self.link_graph.add_page(source_url, list(outlinks), depth=depth)
-
-            logger.info(f"[Stage1Pipeline] Added {len(self._page_outlinks):,} pages to link graph")
-
-            # Calculate PageRank scores
-            logger.info("[Stage1Pipeline] Calculating PageRank scores...")
-            pagerank_scores = self.link_graph.calculate_pagerank()
-            logger.info(f"[Stage1Pipeline] Calculated PageRank for {len(pagerank_scores):,} URLs")
-
-            # Calculate HITS algorithm scores
-            logger.info("[Stage1Pipeline] Calculating HITS (hub/authority) scores...")
-            hub_scores, authority_scores = self.link_graph.calculate_hits()
-            logger.info(f"[Stage1Pipeline] Calculated HITS scores for {len(hub_scores):,} URLs")
-
-            # Print graph statistics
-            stats = self.link_graph.get_graph_stats()
-            logger.info("=" * 60)
-            logger.info("LINK GRAPH STATISTICS:")
-            logger.info(f"  Total nodes: {stats.total_nodes:,}")
-            logger.info(f"  Total edges: {stats.total_edges:,}")
-            logger.info(f"  Average degree: {stats.avg_degree}")
-            logger.info(f"  Max degree: {stats.max_degree}")
-
-            if stats.top_pages_by_pagerank:
-                logger.info("\nTop 5 pages by PageRank:")
-                for i, (url, score) in enumerate(stats.top_pages_by_pagerank[:5], 1):
-                    logger.info(f"  {i}. {score:.4f} - {url}")
-
-            if stats.top_authorities:
-                logger.info("\nTop 5 authorities (HITS):")
-                for i, (url, score) in enumerate(stats.top_authorities[:5], 1):
-                    logger.info(f"  {i}. {score:.4f} - {url}")
-
-            logger.info("=" * 60)
-
-    # TODO: This item processing is very basic. It should be extended to support more complex scenarios, such as handling different item types or enriching items with additional metadata.
     def process_item(self, item, spider):
         """Process each discovered URL item"""
         adapter = ItemAdapter(item)
@@ -176,27 +117,13 @@ class Stage1Pipeline:
             }
 
             try:
-                self.file.write(json.dumps(discovery_data, ensure_ascii=False) + "\n")
-                self.file.flush()  # Ensure data is written immediately
+                self.write_buffer.append(json.dumps(discovery_data, ensure_ascii=False) + "\n")
                 self.seen_hashes.add(url_hash)
                 self.url_count += 1
 
-                # Build link graph: track source -> discovered_url relationship
-                if self.enable_link_graph and source_url and discovered_url:
-                    self._page_outlinks[source_url].add(discovered_url)
-                    # Track depth for graph metadata
-                    if source_url not in self._page_depths:
-                        self._page_depths[source_url] = max(0, discovery_depth - 1)
-                    if discovered_url not in self._page_depths:
-                        self._page_depths[discovered_url] = discovery_depth
-
-                # more spam logs every 1000 because why not
-                if self.url_count % 1000 == 0:
-                    total_items_processed = len(self.seen_hashes)
-                    duplicate_rate = ((total_items_processed - self.url_count) / max(1, total_items_processed)) * 100
-                    logger.info(f"[Stage1Pipeline] Processed {self.url_count:,} unique URLs, "
-                              f"{total_items_processed:,} total items, "
-                              f"{duplicate_rate:.1f}% duplicates skipped")
+                if len(self.write_buffer) >= self.buffer_size:
+                    self.file.writelines(self.write_buffer)
+                    self.write_buffer.clear()
 
             except Exception as e:
                 logger.error(f"[Stage1Pipeline] Error writing item: {e}")

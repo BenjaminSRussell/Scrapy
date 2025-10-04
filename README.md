@@ -24,7 +24,7 @@ A production-ready web scraping system for the University of Connecticut digital
 | **Stage 2: Validation** | ✅ Operational | 22,521 URLs (87.9%) | Concurrent validation with HEAD→GET fallback |
 | **Stage 3: Enrichment** | ⚠️ Partial | 54 URLs (0.2%) | NLP extraction with spaCy (CLI bug, see [Known Issues](#known-issues)) |
 
-**Last Updated**: October 2025
+**Last Updated**: January 3, 2025
 
 ---
 
@@ -67,34 +67,28 @@ flowchart LR
 ```bash
 # Clone repository
 git clone <repository-url>
-cd Scrapy/Scraping_project
+cd Scrapy
 
-# Install dependencies
-pip install -r requirements.txt
-
-# Download NLP model (required for Stage 3)
-python -m spacy download en_core_web_sm
+# Run the scraper (handles all installation)
+./run_the_scrape
 ```
+
+That's it. The script installs all dependencies automatically.
 
 ### Basic Usage
 
 ```bash
-# Run entire pipeline
-python main.py --env development --stage all
+# Single command - installs everything and runs pipeline
+./run_the_scrape
 
-# Run individual stages
-python main.py --env development --stage 1  # Discovery only
-python main.py --env development --stage 2  # Validation only
-python main.py --env development --stage 3  # Enrichment only
+# Run specific stages
+./run_the_scrape --stage 1  # Discovery only
+./run_the_scrape --stage 2  # Validation only
+./run_the_scrape --stage 3  # Enrichment only
+
+# Skip installation if already done
+./run_the_scrape --skip-install
 ```
-
-**First-time setup checklist**:
-- [ ] Install dependencies
-- [ ] Download spaCy model
-- [ ] Verify seed file exists: `Scraping_project/data/raw/uconn_urls.csv`
-- [ ] Run Stage 1 to discover URLs
-- [ ] Run Stage 2 to validate discovered URLs
-- [ ] Run Stage 3 to extract content (see [Known Issues](#known-issues) for CLI bug)
 
 📖 **See [Scraping_project/README.md](Scraping_project/README.md) for detailed documentation**
 
@@ -305,7 +299,6 @@ Before submitting a PR:
 - [ ] Update documentation if adding features
 - [ ] Follow existing code style
 - [ ] Add tests for new functionality
-- [ ] Update [SPRINT_BACKLOG.md](Scraping_project/SPRINT_BACKLOG.md) if applicable
 
 ---
 
@@ -334,7 +327,7 @@ scrapy crawl enrichment
 
 ## Roadmap
 
-### Planned Features (See [SPRINT_BACKLOG.md](Scraping_project/SPRINT_BACKLOG.md))
+### Planned Features
 
 - [ ] **Taxonomy-based classification**: Zero-shot categorization with 50-100 UConn-specific categories
 - [ ] **Custom glossary**: UConn-specific term recognition (HuskyCT, building names, etc.)
@@ -376,7 +369,6 @@ stages:
 
 - **Main documentation**: [Scraping_project/README.md](Scraping_project/README.md)
 - **Technical internals**: [docs/project_internals.md](Scraping_project/docs/project_internals.md)
-- **Sprint planning**: [SPRINT_BACKLOG.md](Scraping_project/SPRINT_BACKLOG.md)
 - **Configuration examples**: [config/](Scraping_project/config/)
 - **Test suite**: [tests/](Scraping_project/tests/)
 - **Utility tools**: [tools/](Scraping_project/tools/)

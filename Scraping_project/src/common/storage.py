@@ -1,4 +1,3 @@
-# TODO: Add support for other storage backends, such as a database or a cloud storage service.
 from __future__ import annotations
 
 import hashlib
