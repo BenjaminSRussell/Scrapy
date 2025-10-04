@@ -87,7 +87,7 @@ class RequestAnalyticsEngine:
         except Exception as e:
             logger.error(f"Error logging request attempt: {e}")
 
-    # TODO: The analytics engine is not very configurable. It should be made more configurable, such as allowing the user to specify the time window for analysis.
+    
     def analyze_domain_performance(self, domain: str, days_back: int = 7) -> DomainAnalytics:
         """Analyze performance for a specific domain"""
         cutoff_time = datetime.now() - timedelta(days=days_back)
@@ -461,7 +461,7 @@ class RequestAnalyticsEngine:
         except Exception as e:
             logger.error(f"Error saving patterns: {e}")
 
-    # TODO: Add support for visualizing the analytics data, such as generating charts and graphs.
+    
     def export_analytics_report(self, output_file: Path = None) -> Path:
         """Export comprehensive analytics report"""
         output_file = output_file or self.analytics_dir / f"analytics_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"

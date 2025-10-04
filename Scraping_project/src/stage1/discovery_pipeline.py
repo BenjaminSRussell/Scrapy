@@ -46,10 +46,10 @@ class Stage1Pipeline:
                             self.seen_hashes.add(hash_val)
             except Exception as e:
                 logger.warning(f"[Stage1Pipeline] Error loading hashes: {e}")
-                # fallback to old method if hash file is corrupted
+                # Rebuild hash file from JSONL if corrupted
                 self._migrate_from_jsonl()
         else:
-            # first run or missing hash file - build from existing JSONL
+            # First run or missing hash file - build from existing JSONL
             self._migrate_from_jsonl()
 
     def _migrate_from_jsonl(self):

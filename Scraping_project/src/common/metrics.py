@@ -25,7 +25,7 @@ class StageMetrics:
             return time.time() - self.start_time
         return self.end_time - self.start_time
 
-    # TODO: Add more granular metrics, such as per-domain success rates and response times.
+    
     @property
     def success_rate(self) -> float:
         """Get success rate as percentage."""

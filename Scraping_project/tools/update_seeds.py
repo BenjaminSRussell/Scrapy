@@ -27,13 +27,13 @@ def update_seed_urls(project_root, validation_output_path, seed_path, min_succes
         return
 
     # Read validation output
-    with open(validation_output_file, 'r') as f:
+    with open(validation_output_file) as f:
         validation_data = [json.loads(line) for line in f]
 
-    # Filter for high-quality URLs
+    # Filter for high-quality URLs (using status_code, not status)
     successful_validations = [
         item['url'] for item in validation_data
-        if item.get('status') == 200 and item.get('content_type', '').startswith('text/html') and is_valid_url(item['url'])
+        if item.get('status_code') == 200 and item.get('content_type', '').startswith('text/html') and is_valid_url(item['url'])
     ]
 
     # Count successful validations for each URL

@@ -156,7 +156,7 @@ class TestREADMEExamples:
         ]
 
         # Config class should have these in its override mapping
-        for env_var in env_vars:
+        for _env_var in env_vars:
             # The config class should be aware of these variables
             # (They're in the _apply_env_overrides method)
             assert hasattr(config, '_apply_env_overrides')

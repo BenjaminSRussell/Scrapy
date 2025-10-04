@@ -19,7 +19,7 @@ class JSONLStorage:
         self.file_path = Path(file_path)
         self.file_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # TODO: Add support for compressing the JSONL files to save disk space.
+    
     def append(self, data: dict[str, Any]):
         """Append a single record to the JSONL file"""
         with open(self.file_path, 'a', encoding='utf-8') as f:

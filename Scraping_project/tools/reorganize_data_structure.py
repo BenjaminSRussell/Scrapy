@@ -5,7 +5,6 @@ Consolidates scattered data locations into unified structure.
 """
 
 import shutil
-from pathlib import Path
 
 from src.common.constants import (
     CACHE_DIR,
@@ -45,7 +44,7 @@ def reorganize_data_structure():
 
     # 2. Consolidate cache directories
     scrapy_cache = LEGACY_SCRAPY_DATA / "cache"
-    data_cache = DATA_DIR / "cache"
+    DATA_DIR / "cache"
 
     if scrapy_cache.exists() and scrapy_cache != CACHE_DIR:
         print(f"  Merging {scrapy_cache} into {CACHE_DIR}...")
@@ -87,13 +86,13 @@ def reorganize_data_structure():
         (OUTPUT_DIR / stage_dir).mkdir(parents=True, exist_ok=True)
 
     print("✅ Data structure reorganization complete!")
-    print(f"\nNew structure:")
+    print("\nNew structure:")
     print(f"  📁 {OUTPUT_DIR}/")
-    print(f"     ├── stage1_discovery/    # Stage 1 outputs")
-    print(f"     ├── stage2_validation/   # Stage 2 outputs")
-    print(f"     ├── stage3_enrichment/   # Stage 3 outputs")
-    print(f"     ├── temp/                # Temporary files")
-    print(f"     └── samples/             # Sample data")
+    print("     ├── stage1_discovery/    # Stage 1 outputs")
+    print("     ├── stage2_validation/   # Stage 2 outputs")
+    print("     ├── stage3_enrichment/   # Stage 3 outputs")
+    print("     ├── temp/                # Temporary files")
+    print("     └── samples/             # Sample data")
     print(f"  📁 {CACHE_DIR}/             # All cache data")
     print(f"  📁 {LOGS_DIR}/              # All log files")
 

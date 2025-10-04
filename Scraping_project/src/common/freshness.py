@@ -7,7 +7,6 @@ Tracks Last-Modified, ETag, and content change patterns to:
 - Track per-domain content churn rates
 """
 
-import logging
 import sqlite3
 from dataclasses import dataclass
 from datetime import datetime
@@ -154,14 +153,7 @@ class FreshnessTracker:
         # Update domain churn stats
         self._update_domain_churn(domain, content_changed)
 
-        logger.log_with_context(
-            logging.DEBUG,
-            "Freshness updated",
-            url_hash=url_hash[:12],
-            staleness_score=round(staleness_score, 3),
-            content_changed=content_changed,
-            validation_count=validation_count
-        )
+        logger.debug(f"Freshness updated: {url_hash[:12]}, score={staleness_score:.3f}")
 
         return staleness_score
 

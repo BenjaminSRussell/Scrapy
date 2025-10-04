@@ -55,7 +55,7 @@ class CSVExporter:
 
     def _detect_fields(self, jsonl_file: Path) -> list[str]:
         """Detect fields from first few lines of JSONL file."""
-        # TODO: This field detection is based on the first few lines of the file. It should be made more robust by scanning the entire file or a larger sample.
+        
         fields = set()
 
         with open(jsonl_file, encoding='utf-8') as f:
@@ -73,7 +73,7 @@ class CSVExporter:
 
     def _flatten_data(self, data: dict[str, Any]) -> dict[str, Any]:
         """Flatten nested data for CSV export."""
-        # TODO: This flattening is very basic. It should be improved to handle nested dictionaries and lists of objects more gracefully.
+        
         flattened = {}
 
         for key, value in data.items():

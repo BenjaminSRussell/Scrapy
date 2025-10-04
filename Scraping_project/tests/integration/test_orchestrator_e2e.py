@@ -13,6 +13,14 @@ class DummyConfig:
         self._stage3_path = Path(stage3_path)
         self._temp_dir = Path(temp_dir)
 
+    def get(self, key, default=None):
+        """Dict-like get method for config access"""
+        config_map = {
+            'stage2': self.get_stage2_config(),
+            'stage3': self.get_stage3_config(),
+        }
+        return config_map.get(key, default)
+
     def get_stage2_config(self):
         return {
             keys.VALIDATION_MAX_WORKERS: 4,
@@ -29,6 +37,7 @@ class DummyConfig:
             keys.ENRICHMENT_HEADLESS_BROWSER: {},
             keys.ENRICHMENT_NLP_ENABLED: False,
             keys.ENRICHMENT_STORAGE: {},
+            'dedup_db_path': str(self._temp_dir / 'stage3_dedup.db'),
         }
 
     def get_data_paths(self):

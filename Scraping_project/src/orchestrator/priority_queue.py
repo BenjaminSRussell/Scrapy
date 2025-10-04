@@ -10,7 +10,6 @@ Supports multiple ordering strategies:
 Ablation flags enable A/B testing of queue strategies.
 """
 
-import logging
 import random
 from dataclasses import dataclass
 from enum import Enum
@@ -74,13 +73,7 @@ class PriorityQueueManager:
         self.score_ordered_count = 0
         self.fifo_count = 0
 
-        logger.log_with_context(
-            logging.INFO,
-            "Priority queue initialized",
-            strategy=strategy.value,
-            enable_ablation=enable_ablation,
-            ablation_split=ablation_split if enable_ablation else None
-        )
+        logger.info(f"Priority queue initialized: strategy={strategy.value}, ablation={enable_ablation}")
 
     def order_batch(self, items: list[QueueItem]) -> list[QueueItem]:
         """
@@ -126,14 +119,8 @@ class PriorityQueueManager:
             self.score_ordered_count += len(items)
 
             # Log top scores
-            top_scores = [item.importance_score for item in sorted_items[:10]]
-            logger.log_with_context(
-                logging.DEBUG,
-                "Batch ordered by importance score",
-                batch_size=len(items),
-                top_10_scores=[f"{s:.4f}" for s in top_scores],
-                strategy="score-ordered"
-            )
+            [item.importance_score for item in sorted_items[:10]]
+            logger.debug(f"Batch ordered by importance score: {len(items)} items")
 
             return sorted_items
 
@@ -184,14 +171,7 @@ class PriorityQueueManager:
         # Combine
         combined = score_ordered_items + fifo_items
 
-        logger.log_with_context(
-            logging.INFO,
-            "Ablation split applied",
-            total_items=len(items),
-            score_ordered_count=len(score_ordered_items),
-            fifo_count=len(fifo_items),
-            split_ratio=self.ablation_split
-        )
+        logger.info(f"Ablation split applied: {len(score_ordered_items)} score-ordered, {len(fifo_items)} FIFO")
 
         return combined
 

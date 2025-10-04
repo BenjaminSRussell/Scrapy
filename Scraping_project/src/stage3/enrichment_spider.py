@@ -313,12 +313,12 @@ class EnrichmentSpider(scrapy.Spider):
                     self.logger.warning(f"Unsupported content type {normalized_content_type} for {response.url}")
                     return
 
-            # HTML content processing (existing logic)
+            # HTML content processing
             # Extract text content from the page
             title = response.xpath('//title/text()').get(default='').strip()
 
-            # IMPROVED TEXT EXTRACTION: Remove navigation, footer, header, and other non-content elements
-            # This ensures we only process main content and avoid irrelevant text
+            # Extract main content only - exclude navigation, footer, header, and sidebar elements
+            # This ensures we only process relevant content for NLP analysis
             text_content = ' '.join(
                 response.xpath('''
                     //body//text()[
@@ -342,7 +342,7 @@ class EnrichmentSpider(scrapy.Spider):
                 ''').getall()
             ).strip()
 
-            # Perform NLP analysis with configured backend
+            # Perform NLP analysis with configured backend (DeBERTa transformers or spaCy fallback)
             backend = "transformer" if self.use_transformer_ner else "spacy"
             entities, keywords = extract_entities_and_keywords(text_content, backend=backend)
 
@@ -380,7 +380,7 @@ class EnrichmentSpider(scrapy.Spider):
                 self._initialize_hf_models()
                 self._score_links_with_hf(links, text_content)
 
-            # Create enrichment item with improved data
+            # Create enrichment item with NLP-extracted metadata
             item = EnrichmentItem(
                 url=response.url,
                 url_hash=url_hash,

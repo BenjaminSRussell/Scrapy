@@ -73,14 +73,14 @@ def show_checkpoint_detail(checkpoint_dir: Path, stage: str):
     print(f"Created: {state.created_at}")
     print(f"Updated: {state.updated_at}")
 
-    print(f"\nProgress:")
+    print("\nProgress:")
     print(f"  Total Items: {report['total']}")
     print(f"  Processed: {report['processed']} ({report['progress_pct']:.1f}%)")
     print(f"  Successful: {report['successful']}")
     print(f"  Failed: {report['failed']}")
     print(f"  Skipped: {report['skipped']}")
 
-    print(f"\nPerformance:")
+    print("\nPerformance:")
     print(f"  Success Rate: {report['success_rate']:.1f}%")
     print(f"  Throughput: {report['throughput']:.2f} items/sec")
     print(f"  Elapsed Time: {report['elapsed_seconds']:.1f} seconds")
@@ -88,7 +88,7 @@ def show_checkpoint_detail(checkpoint_dir: Path, stage: str):
     if report['eta_seconds']:
         print(f"  Estimated Time Remaining: {report['eta_seconds']/60:.1f} minutes")
 
-    print(f"\nResume Point:")
+    print("\nResume Point:")
     resume = checkpoint.get_resume_point()
     print(f"  Last Processed Index: {resume['last_processed_index']}")
     if resume['last_processed_item']:
@@ -101,13 +101,13 @@ def show_checkpoint_detail(checkpoint_dir: Path, stage: str):
             print(f"  Hash: {state.input_file_hash[:16]}...")
 
     if state.error_message:
-        print(f"\nError Information:")
+        print("\nError Information:")
         print(f"  Message: {state.error_message}")
         print(f"  Error Count: {state.error_count}")
         print(f"  Last Error: {state.last_error_time}")
 
     if state.metadata:
-        print(f"\nMetadata:")
+        print("\nMetadata:")
         for key, value in state.metadata.items():
             print(f"  {key}: {value}")
 

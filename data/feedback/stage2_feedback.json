@@ -3,36 +3,21 @@
   "sources": {},
   "session_history": [
     {
-      "session_id": "session_20251003_163735",
-      "started_at": "2025-10-03T16:37:35.310270",
-      "completed_at": "2025-10-03T16:37:35.357401",
+      "session_id": "session_20251004_113826",
+      "started_at": "2025-10-04T11:38:26.632503",
+      "completed_at": "2025-10-04T11:38:26.675589",
       "total_discovered": 0,
-      "total_validated": 2,
-      "total_failed": 1,
-      "success_rate": 0.6666666666666666,
+      "total_validated": 0,
+      "total_failed": 3,
+      "success_rate": 0.0,
       "source_performance": {
         "unknown": {
-          "validated": 2,
-          "failed": 1
-        }
-      }
-    },
-    {
-      "session_id": "session_20251003_164232",
-      "started_at": "2025-10-03T16:42:32.993743",
-      "completed_at": "2025-10-03T16:42:33.038170",
-      "total_discovered": 0,
-      "total_validated": 2,
-      "total_failed": 1,
-      "success_rate": 0.6666666666666666,
-      "source_performance": {
-        "unknown": {
-          "validated": 2,
-          "failed": 1
+          "validated": 0,
+          "failed": 3
         }
       }
     }
   ],
-  "last_updated": "2025-10-03T16:42:33.038170",
-  "total_sessions": 2
+  "last_updated": "2025-10-04T11:38:26.675589",
+  "total_sessions": 1
 }

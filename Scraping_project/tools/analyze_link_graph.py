@@ -37,7 +37,7 @@ def analyze_link_graph(discovery_file: Path, graph_db: Path):
     page_depths = {}
     url_count = 0
 
-    with open(discovery_file, 'r', encoding='utf-8') as f:
+    with open(discovery_file, encoding='utf-8') as f:
         for line_no, line in enumerate(f, 1):
             try:
                 data = json.loads(line.strip())

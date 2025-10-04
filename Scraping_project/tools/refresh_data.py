@@ -57,9 +57,9 @@ def print_status_summary(status: dict):
 
     recommendations = status['recommendations']
 
-    print(f"\n🎯 RECOMMENDATIONS:")
+    print("\n🎯 RECOMMENDATIONS:")
     if recommendations['should_refresh']:
-        print(f"✅ Refresh recommended")
+        print("✅ Refresh recommended")
         print(f"⏱️  Estimated time: ~{recommendations['estimated_time_minutes']} minutes")
 
         if recommendations['high_priority_domains']:
@@ -82,7 +82,7 @@ def print_refresh_results(results: dict):
 
     if 'performance_summary' in results:
         perf = results['performance_summary']
-        print(f"\n📈 PERFORMANCE:")
+        print("\n📈 PERFORMANCE:")
         print(f"   Success Rate: {perf['success_rate']}")
         print(f"   Avg Retries: {perf['avg_retries_per_request']:.1f}")
         print(f"   Domains Learned: {perf['domains_learned']}")
@@ -106,13 +106,13 @@ def print_analytics_summary(dashboard: dict):
     print(f"📅 Period: {overview['time_period']}")
 
     # Top domains
-    print(f"\n🏗️  TOP DOMAINS:")
+    print("\n🏗️  TOP DOMAINS:")
     for i, domain_data in enumerate(dashboard['domain_performance'][:5], 1):
         print(f"   {i}. {domain_data['domain']}: {domain_data['requests']} requests, {domain_data['success_rate']:.1f}% success")
 
     # Error breakdown
     if dashboard['error_breakdown']:
-        print(f"\n❌ TOP ERRORS:")
+        print("\n❌ TOP ERRORS:")
         for i, (error, count) in enumerate(list(dashboard['error_breakdown'].items())[:5], 1):
             print(f"   {i}. {error}: {count} occurrences")
 
@@ -138,7 +138,7 @@ def print_optimization_recommendations(recommendations: dict):
 
     config_changes = recommendations.get('configuration_changes', {})
     if config_changes:
-        print(f"\n⚙️  CONFIGURATION CHANGES:")
+        print("\n⚙️  CONFIGURATION CHANGES:")
         for change_type, changes in config_changes.items():
             print(f"   {change_type.replace('_', ' ').title()}:")
             if isinstance(changes, dict):
@@ -149,13 +149,13 @@ def print_optimization_recommendations(recommendations: dict):
 
     monitoring = recommendations.get('monitoring_alerts', [])
     if monitoring:
-        print(f"\n📊 MONITORING ALERTS:")
+        print("\n📊 MONITORING ALERTS:")
         for i, alert in enumerate(monitoring, 1):
             print(f"   {i}. {alert}")
 
     performance = recommendations.get('performance_optimizations', [])
     if performance:
-        print(f"\n📈 PERFORMANCE OPTIMIZATIONS:")
+        print("\n📈 PERFORMANCE OPTIMIZATIONS:")
         for i, opt in enumerate(performance, 1):
             print(f"   {i}. {opt}")
 

@@ -58,7 +58,7 @@ CREATE TABLE IF NOT EXISTS entities (
     entity_text TEXT NOT NULL,
     entity_type TEXT,
     confidence REAL DEFAULT 1.0,
-    source TEXT DEFAULT 'spacy',  -- 'spacy', 'transformer', 'glossary'
+    source TEXT DEFAULT 'nlp',  -- 'nlp', 'transformer', 'glossary', 'deberta'
 
     crawl_version INTEGER NOT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -200,7 +200,7 @@ CREATE TABLE IF NOT EXISTS entities (
     entity_text TEXT NOT NULL,
     entity_type TEXT,
     confidence REAL DEFAULT 1.0,
-    source TEXT DEFAULT 'spacy',
+    source TEXT DEFAULT 'nlp',
 
     crawl_version INTEGER NOT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -343,7 +343,7 @@ class EntityRecord:
     entity_text: str
     entity_type: str | None = None
     confidence: float = 1.0
-    source: str = "spacy"
+    source: str = "nlp"
     crawl_version: int = 1
 
     entity_id: int | None = None

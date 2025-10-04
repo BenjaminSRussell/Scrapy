@@ -9,7 +9,6 @@ import hashlib
 import logging
 import sqlite3
 from pathlib import Path
-from typing import Optional
 from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
@@ -32,7 +31,7 @@ class URLDeduplicator:
             create_if_missing: Create database if it doesn't exist
         """
         self.db_path = Path(db_path)
-        self._conn: Optional[sqlite3.Connection] = None
+        self._conn: sqlite3.Connection | None = None
         self._stats = {
             'total_checked': 0,
             'duplicates_found': 0,

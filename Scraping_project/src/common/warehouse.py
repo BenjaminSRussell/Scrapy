@@ -8,10 +8,11 @@ Handles schema creation, data insertion, and querying with proper versioning and
 import json
 import logging
 import sqlite3
+from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
 
 from src.common.warehouse_schema import (
     CategoryRecord,
@@ -72,8 +73,8 @@ class DataWarehouse:
                     yield conn
                 finally:
                     conn.close()
-            except ImportError:
-                raise RuntimeError("psycopg2 not installed. Run: pip install psycopg2-binary")
+            except ImportError as e:
+                raise RuntimeError("psycopg2 not installed. Run: pip install psycopg2-binary") from e
 
     def create_schema(self):
         """Create database schema"""
@@ -392,18 +393,18 @@ class DataWarehouse:
             if not page_row:
                 return None
 
-            page = dict(page_row) if self.db_type == DatabaseType.SQLITE else dict(zip([desc[0] for desc in cursor.description], page_row))
+            page = dict(page_row) if self.db_type == DatabaseType.SQLITE else dict(zip([desc[0] for desc in cursor.description], page_row, strict=False))
 
             # Get entities
             cursor.execute(f"SELECT entity_text, entity_type, confidence, source FROM entities WHERE page_id = {placeholder}", (page_id,))
-            page['entities'] = [dict(row) if self.db_type == DatabaseType.SQLITE else dict(zip([desc[0] for desc in cursor.description], row)) for row in cursor.fetchall()]
+            page['entities'] = [dict(row) if self.db_type == DatabaseType.SQLITE else dict(zip([desc[0] for desc in cursor.description], row, strict=False)) for row in cursor.fetchall()]
 
             # Get keywords
             cursor.execute(f"SELECT keyword_text, frequency, relevance_score, source FROM keywords WHERE page_id = {placeholder}", (page_id,))
-            page['keywords'] = [dict(row) if self.db_type == DatabaseType.SQLITE else dict(zip([desc[0] for desc in cursor.description], row)) for row in cursor.fetchall()]
+            page['keywords'] = [dict(row) if self.db_type == DatabaseType.SQLITE else dict(zip([desc[0] for desc in cursor.description], row, strict=False)) for row in cursor.fetchall()]
 
             # Get categories
             cursor.execute(f"SELECT category_name, category_path, confidence_score, matched_keywords FROM categories WHERE page_id = {placeholder}", (page_id,))
-            page['categories'] = [dict(row) if self.db_type == DatabaseType.SQLITE else dict(zip([desc[0] for desc in cursor.description], row)) for row in cursor.fetchall()]
+            page['categories'] = [dict(row) if self.db_type == DatabaseType.SQLITE else dict(zip([desc[0] for desc in cursor.description], row, strict=False)) for row in cursor.fetchall()]
 
             return page

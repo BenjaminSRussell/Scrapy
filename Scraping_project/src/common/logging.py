@@ -21,7 +21,7 @@ from contextvars import ContextVar
 from datetime import datetime
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from src.common.log_events import LogEvent, LogLevel, get_default_level
 
@@ -152,8 +152,8 @@ class PipelineLogger(logging.LoggerAdapter):
     def log_event(
         self,
         event: LogEvent,
-        message: Optional[str] = None,
-        level: Optional[LogLevel] = None,
+        message: str | None = None,
+        level: LogLevel | None = None,
         **data: Any
     ) -> None:
         """
@@ -201,7 +201,7 @@ class PipelineLogger(logging.LoggerAdapter):
 
 def setup_logging(
     log_level: str = 'INFO',
-    log_dir: Optional[Path] = None,
+    log_dir: Path | None = None,
     console_format: str = 'human',  # 'human' or 'json'
     file_format: str = 'json',      # 'human' or 'json'
     max_bytes: int = 10485760,      # 10MB
@@ -311,7 +311,7 @@ def get_logger(name: str) -> PipelineLogger:
     return PipelineLogger(base_logger, {})
 
 
-def set_session_id(session_id: Optional[str] = None) -> str:
+def set_session_id(session_id: str | None = None) -> str:
     """
     Set session ID for trace correlation.
 
@@ -334,7 +334,7 @@ def set_session_id(session_id: Optional[str] = None) -> str:
     return session_id
 
 
-def set_trace_id(trace_id: Optional[str] = None) -> str:
+def set_trace_id(trace_id: str | None = None) -> str:
     """
     Set trace ID for request correlation.
 
@@ -373,17 +373,17 @@ def set_stage(stage: str) -> None:
     stage_var.set(stage)
 
 
-def get_session_id() -> Optional[str]:
+def get_session_id() -> str | None:
     """Get current session ID"""
     return session_id_var.get()
 
 
-def get_trace_id() -> Optional[str]:
+def get_trace_id() -> str | None:
     """Get current trace ID"""
     return trace_id_var.get()
 
 
-def get_stage() -> Optional[str]:
+def get_stage() -> str | None:
     """Get current stage"""
     return stage_var.get()
 

@@ -527,7 +527,7 @@ class AsyncEnrichmentProcessor:
             text_elements = tree.xpath('//body//text()[normalize-space() and not(ancestor::script) and not(ancestor::style)]')
             text_content = ' '.join(text_elements).strip()
 
-            # NLP analysis (run in executor to avoid blocking)
+            # NLP analysis with DeBERTa transformers or spaCy fallback (run in executor to avoid blocking)
             loop = asyncio.get_event_loop()
             backend = "transformer" if self.use_transformer_ner else "spacy"
 

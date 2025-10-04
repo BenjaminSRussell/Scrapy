@@ -63,6 +63,14 @@ except Exception:  # noqa: BLE001
     HAS_TRANSFORMERS = False
 
 
+try:  # pragma: no cover - optional dependency
+    import yake  # type: ignore
+    HAS_YAKE = True
+except Exception:  # noqa: BLE001
+    yake = None  # type: ignore
+    HAS_YAKE = False
+
+
 @dataclass
 class NLPSettings:
     """Runtime configuration for NLP pipelines."""
@@ -74,10 +82,11 @@ class NLPSettings:
     preferred_device: str | None = None
     additional_stop_words: set[str] = field(default_factory=set)
     stop_word_overrides: set[str] = field(default_factory=set)
+    use_yake_keywords: bool = True  # Use YAKE for advanced keyword extraction
 
 
 class NLPRegistry:
-    """Centralised manager for spaCy and transformer pipelines."""
+    """Centralised manager for NLP pipelines using spaCy and DeBERTa transformers."""
 
     def __init__(self, settings: NLPSettings) -> None:
         self.settings = settings
@@ -92,6 +101,7 @@ class NLPRegistry:
         self.zero_shot_pipeline = self._load_zero_shot_classifier(
             settings.zero_shot_model
         )
+        self.yake_extractor = self._load_yake_extractor(settings.use_yake_keywords)
 
     def _load_spacy(self, model_name: str):
         spacy_module = _resolve_module("spacy")
@@ -247,6 +257,40 @@ class NLPRegistry:
 
         return -1
 
+    def _load_yake_extractor(self, use_yake: bool):
+        """Load YAKE keyword extractor if enabled and available."""
+        if not use_yake:
+            return None
+
+        yake_module = _resolve_module("yake")
+        if yake_module is None:
+            logger.warning("YAKE not available; falling back to spaCy keyword extraction")
+            return None
+
+        try:
+            # Configure YAKE for general-purpose keyword extraction
+            # Extracts meaningful keywords from any content: academic, sports, faculty, events, etc.
+            # language: English
+            # max_ngram_size: 3 = captures names (e.g. "John Smith"), phrases (e.g. "basketball team")
+            # deduplication_threshold: 0.9 = lenient dedup to preserve names and specific terms
+            # deduplication_algo: leve = Levenshtein distance for better name variants
+            # window_size: 1 = tighter window to capture precise collocations
+            # top: Extract top 50 most relevant keywords
+            kw_extractor = yake_module.KeywordExtractor(
+                lan="en",
+                n=3,  # Max n-gram size (names, phrases, terms)
+                dedupLim=0.9,  # Lenient dedup to preserve names/variants
+                dedupFunc='leve',  # Levenshtein for name matching
+                windowsSize=1,  # Tight window for precision
+                top=50  # Extract top 50 keywords
+            )
+            logger.info("YAKE keyword extractor initialized successfully")
+            return kw_extractor
+        except Exception as exc:
+            logger.error(f"Failed to initialize YAKE keyword extractor: {exc}")
+            logger.warning("Falling back to spaCy keyword extraction")
+            return None
+
     def extract_with_spacy(
         self,
         text: str,
@@ -269,7 +313,12 @@ class NLPRegistry:
         # Apply entity filtering to remove nonsensical results
         entities = filter_entities(entities)
 
-        keywords = self._keywords_from_doc(doc, top_k)
+        # Use YAKE for keyword extraction if available, otherwise fall back to spaCy
+        if self.yake_extractor:
+            keywords = self._extract_keywords_with_yake(text, top_k)
+        else:
+            keywords = self._keywords_from_doc(doc, top_k)
+
         return entities, keywords
 
     def extract_entities_with_transformer(self, text: str) -> list[str]:
@@ -314,7 +363,58 @@ class NLPRegistry:
         results = self.zero_shot_pipeline(text, labels)
         return dict(zip(results["labels"], results["scores"], strict=False))
 
+    def _extract_keywords_with_yake(self, text: str, top_k: int) -> list[str]:
+        """Extract keywords using YAKE algorithm.
+
+        YAKE (Yet Another Keyword Extractor) is a statistical keyword extraction method
+        that uses local text features to identify important keywords without requiring
+        training data or dictionaries.
+        """
+        if not self.yake_extractor or not text:
+            return []
+
+        try:
+            # Extract keywords with YAKE (returns list of (keyword, score) tuples)
+            # Lower score = more relevant keyword
+            yake_results = self.yake_extractor.extract_keywords(text)
+
+            # Filter and clean keywords
+            keywords = []
+            seen = set()
+
+            for keyword, score in yake_results:
+                # Clean the keyword
+                cleaned = keyword.strip().lower()
+
+                # Skip if already seen (case-insensitive)
+                if cleaned in seen:
+                    continue
+
+                # Skip if it's a stop word
+                if cleaned in self.stop_words:
+                    continue
+
+                # Skip very short keywords (less than 3 characters)
+                if len(cleaned) < 3:
+                    continue
+
+                # Add to results
+                keywords.append(cleaned)
+                seen.add(cleaned)
+
+                # Stop when we have enough keywords
+                if len(keywords) >= top_k:
+                    break
+
+            return keywords
+
+        except Exception as exc:
+            logger.warning(f"YAKE keyword extraction failed: {exc}")
+            # Fall back to simple frequency-based extraction
+            return []
+
     def _keywords_from_doc(self, doc, top_k: int) -> list[str]:
+        """Fallback keyword extraction using spaCy frequency analysis."""
         candidates: list[str] = []
 
         for token in doc:
@@ -371,7 +471,13 @@ def extract_entities_and_keywords(
     top_k: int = TOP_KEYWORDS,
     backend: str = "spacy",
 ) -> tuple[list[str], list[str]]:
-    """Extract entities/keywords using the configured NLP backend."""
+    """Extract entities and keywords using the configured NLP backend.
+
+    Keywords are extracted using YAKE (Yet Another Keyword Extractor) if available,
+    otherwise falls back to spaCy frequency-based extraction.
+
+    Entities are extracted using either DeBERTa transformers or spaCy NER.
+    """
 
     if not text:
         return [], []
@@ -381,7 +487,7 @@ def extract_entities_and_keywords(
 
     if backend == "transformer":
         entities = registry.extract_entities_with_transformer(truncated)
-        # Keywords still leverage spaCy for richer linguistic signals
+        # Keywords use YAKE if available, otherwise spaCy frequency analysis
         _, keywords = registry.extract_with_spacy(truncated, top_k)
         return entities, keywords
 
@@ -661,7 +767,7 @@ def extract_glossary_terms(text: str, glossary: dict) -> list[str]:
     seen = set()
 
     # Iterate through all term categories
-    for category, terms in glossary["terms"].items():
+    for _category, terms in glossary["terms"].items():
         for term_data in terms:
             term = term_data.get("term", "")
             aliases = term_data.get("aliases", [])

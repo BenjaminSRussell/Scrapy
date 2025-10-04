@@ -19,7 +19,7 @@ class DiscoveryItem:
     anchor_text: str | None = None  # Anchor text from source link
     is_same_domain: bool = True  # Whether target is same domain as source
 
-    # TODO: This schema versioning is very basic. It should be improved to support more complex schema evolution scenarios, such as renaming fields or changing their types.
+    
     # Schema versioning and provenance
     schema_version: str = "2.1"  # Bumped for importance scoring
     discovery_metadata: dict[str, str] | None = None  # Additional discovery context
@@ -55,7 +55,7 @@ class ValidationResult:
 
 @dataclass
 class EnrichmentItem:
-    """Item returned by Stage 3 Enrichment Spider with model-ready enhancements"""
+    """Enriched page data with NLP-extracted metadata and features"""
     url: str
     url_hash: str
     title: str
@@ -72,9 +72,9 @@ class EnrichmentItem:
     expanded_keywords: dict[str, list[str]] | None = None
     qa_pairs: list[dict[str, str]] | None = None
 
-    # Model-ready enhancements
+    # Advanced NLP features
     schema_version: str = "2.0"
-    content_summary: str | None = None  # Automatically generated summary for training data
+    content_summary: str | None = None  # DeBERTa-generated summary
     content_embedding: list[float] | None = None  # Vector embedding for similarity search
     academic_relevance_score: float | None = None  # 0.0-1.0 relevance to academic content
     content_quality_score: float | None = None  # 0.0-1.0 overall content quality

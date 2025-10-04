@@ -15,8 +15,8 @@ SRC_DIR = Path(__file__).resolve().parents[2] / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from common.schemas import EnrichmentItem
-from stage3.enrichment_pipeline import Stage3Pipeline
+from common.schemas import EnrichmentItem  # noqa: E402
+from stage3.enrichment_pipeline import Stage3Pipeline  # noqa: E402
 
 
 class DummySpider:

@@ -17,8 +17,10 @@ import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 
+# Setup path and Windows event loop before other imports
 src_dir = Path(__file__).parent.parent
-sys.path.insert(0, str(src_dir))
+if str(src_dir) not in sys.path:
+    sys.path.insert(0, str(src_dir))
 
 if sys.platform == 'win32':
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())

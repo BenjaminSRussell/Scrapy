@@ -334,7 +334,7 @@ class ConfigHealthCheck:
     def print_report(self):
         """Print a formatted health check report"""
         if not self.issues:
-            print("\n[✓] Configuration Health Check: PASSED")
+            print("\n[[OK]] Configuration Health Check: PASSED")
             print("No issues found.\n")
             return
 
@@ -378,7 +378,7 @@ class ConfigHealthCheck:
         elif warnings:
             print("[!] Status: PASSED WITH WARNINGS - Review warnings before running")
         else:
-            print("[✓] Status: PASSED")
+            print("[[OK]] Status: PASSED")
 
         print("=" * 80 + "\n")
 

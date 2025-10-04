@@ -56,7 +56,7 @@ def with_retry(config: RetryConfig = None):
                         last_exception = e
 
                         if attempt < config.max_attempts - 1:
-                            # TODO: Add jitter to the retry delay to avoid thundering herd problems.
+                            
                             # Calculate exponential backoff delay
                             delay = min(config.base_delay * (2 ** attempt), config.max_delay)
                             logger.warning(f"Attempt {attempt + 1}/{config.max_attempts} failed for {func.__name__}: {e}. Retrying in {delay:.1f}s")
@@ -185,7 +185,7 @@ async def safe_execute_async(coro, error_tracker: ErrorTracker = None, severity:
 class CircuitBreaker:
     """Simple circuit breaker implementation."""
 
-    # TODO: Allow for more flexible configuration of the circuit breaker, such as allowing different failure thresholds for different types of exceptions.
+    
     def __init__(self, failure_threshold: int = 5, timeout: float = 60.0):
         self.failure_threshold = failure_threshold
         self.timeout = timeout

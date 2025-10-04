@@ -275,16 +275,19 @@ class TestURLValidatorNetworkingRegression:
 
         for error in client_errors:
             class ErrorSession:
+                def __init__(self, err):
+                    self.err = err
+
                 def get(self, url, **kwargs):
                     return self
 
                 async def __aenter__(self):
-                    raise error
+                    raise self.err
 
                 async def __aexit__(self, exc_type, exc_val, exc_tb):
                     pass
 
-            error_session = ErrorSession()
+            error_session = ErrorSession(error)
 
             result = await validator.validate_url(
                 session=error_session,
@@ -598,7 +601,7 @@ class TestURLValidatorNetworkingRegression:
                 assert call_kwargs['limit_per_host'] == 10
                 assert call_kwargs['ttl_dns_cache'] == 300
                 assert 'ssl' in call_kwargs
-                assert call_kwargs.get('enable_cleanup_closed') == True
+                assert call_kwargs.get('enable_cleanup_closed')
 
                 # Verify ClientSession was called with proper config
                 mock_session_class.assert_called_once()

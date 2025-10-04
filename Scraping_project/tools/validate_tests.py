@@ -30,7 +30,7 @@ def validate_config_file(config_path: str) -> bool:
             return False
 
         import yaml
-        with open(path, 'r') as f:
+        with open(path) as f:
             config = yaml.safe_load(f)
 
         # Check for required sections
@@ -53,7 +53,7 @@ def check_data_availability() -> bool:
     uconn_csv = Path("data/raw/uconn_urls.csv")
     if uconn_csv.exists():
         try:
-            with open(uconn_csv, 'r') as f:
+            with open(uconn_csv) as f:
                 line_count = sum(1 for _ in f)
             print(f"✅ Test data available: {uconn_csv} ({line_count:,} lines)")
             return True

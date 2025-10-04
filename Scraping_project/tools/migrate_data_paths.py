@@ -109,7 +109,7 @@ def update_config_files(project_root: Path, dry_run: bool = False):
         try:
             import yaml
 
-            with open(config_file, 'r') as f:
+            with open(config_file) as f:
                 config = yaml.safe_load(f)
 
             # Update data paths to use project-relative paths
@@ -236,7 +236,7 @@ def main():
 
     if args.dry_run:
         logger.info("DRY RUN: Would perform the following migrations:")
-        for path_type, info in migration_info.items():
+        for _path_type, info in migration_info.items():
             logger.info(f"  {info['source']} -> {info['target']} ({info['files_count']} files)")
         return 0
 

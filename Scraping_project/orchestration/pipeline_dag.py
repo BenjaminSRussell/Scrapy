@@ -104,7 +104,7 @@ def check_warehouse_data(**context):
     context['task_instance'].xcom_push(key='crawl_version', value=crawl_version)
     context['task_instance'].xcom_push(key='pages_processed', value=processed)
 
-    print(f"✓ Warehouse validation passed:")
+    print("✓ Warehouse validation passed:")
     print(f"  - Current pages: {current_pages}")
     print(f"  - Crawl version: {crawl_version}")
     print(f"  - Processed: {processed}, Added: {added}, Updated: {updated}")
@@ -261,7 +261,7 @@ def send_failure_alert(context):
     task_instance = context['task_instance']
     dag_run = context['dag_run']
 
-    print(f"❌ FAILURE ALERT:")
+    print("❌ FAILURE ALERT:")
     print(f"  Task: {task_instance.task_id}")
     print(f"  DAG: {dag_run.dag_id}")
     print(f"  Execution date: {dag_run.execution_date}")

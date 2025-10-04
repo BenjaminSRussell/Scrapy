@@ -30,9 +30,9 @@ class DataWarehousePipeline:
 
     This pipeline writes enriched items to a local data warehouse (SQLite by default).
     It is designed for rapid prototyping and testing of scraper changes without the
-    need for the full Java ETL production environment.
+    need for the full Java data pipeline production environment.
 
-    **DO NOT USE IN PRODUCTION.** The official Java ETL loader is the sole mechanism
+    **DO NOT USE IN PRODUCTION.** The official Java data pipeline loader is the sole mechanism
     for loading data into the production data warehouse.
     """
 

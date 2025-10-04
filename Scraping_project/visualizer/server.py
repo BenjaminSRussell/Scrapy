@@ -6,7 +6,6 @@ It receives events from the pipeline via POST requests and broadcasts them to co
 WebSocket clients for live visualization.
 """
 
-import asyncio
 import logging
 from collections import deque
 from datetime import datetime

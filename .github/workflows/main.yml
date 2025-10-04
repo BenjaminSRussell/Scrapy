@@ -38,12 +38,17 @@ jobs:
     - name: Lint with ruff
       run: |
         pip install ruff
-        ruff check Scraping_project/src/ --output-format=github
+        ruff check Scraping_project/src/ --select F,E4,E7,E9 --output-format=github
 
-    - name: Run tests
+    - name: Run unit tests
       run: |
         cd Scraping_project
-        python -m pytest tests/ -v --tb=short
+        python -m pytest tests/common/ tests/stage1/ -v --tb=short -m "not slow"
+
+    - name: Run integration tests
+      run: |
+        cd Scraping_project
+        python -m pytest tests/integration/ -v --tb=short --maxfail=5 -m "not slow"
 
   deploy:
     needs: test

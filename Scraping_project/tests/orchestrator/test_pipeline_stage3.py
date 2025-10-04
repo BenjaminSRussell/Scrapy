@@ -14,8 +14,8 @@ SRC_DIR = Path(__file__).resolve().parents[2] / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from common import config_keys as keys
-from orchestrator.pipeline import PipelineOrchestrator
+from common import config_keys as keys  # noqa: E402
+from orchestrator.pipeline import PipelineOrchestrator  # noqa: E402
 
 
 class _DummyConfig:

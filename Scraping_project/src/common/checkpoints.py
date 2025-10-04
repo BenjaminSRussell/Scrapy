@@ -70,7 +70,7 @@ class BatchCheckpoint:
 
     def start_batch(self, stage: str, batch_id: int, metadata: dict[str, Any] = None):
         """Mark the start of a new batch"""
-        # TODO: Add more context to the checkpoint metadata, such as the input file being processed.
+        
         self._data.update({
             'stage': stage,
             'batch_id': batch_id,
@@ -88,7 +88,7 @@ class BatchCheckpoint:
         if total_processed is not None:
             self._data['total_processed'] = total_processed
 
-        # TODO: The frequency of saving checkpoints is hardcoded to every 100 updates. This should be configurable.
+        
         # save every 100 updates to avoid constant disk I/O
         if processed_line % 100 == 0:
             self.save_checkpoint()

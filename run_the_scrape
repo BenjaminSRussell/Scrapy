@@ -23,7 +23,7 @@ from pathlib import Path
 def run_command(cmd, description, check=True):
     """Run a shell command with error handling."""
     print(f"\n{'='*60}")
-    print(f"▶ {description}")
+    print(f"> {description}")
     print(f"{'='*60}")
 
     result = subprocess.run(
@@ -34,10 +34,10 @@ def run_command(cmd, description, check=True):
     )
 
     if check and result.returncode != 0:
-        print(f"✗ FAILED: {description}")
+        print(f"[FAIL] FAILED: {description}")
         sys.exit(1)
 
-    print(f"✓ SUCCESS: {description}")
+    print(f"[OK] SUCCESS: {description}")
     return result.returncode == 0
 
 
@@ -45,9 +45,9 @@ def check_python_version():
     """Ensure Python 3.11+ is installed."""
     version = sys.version_info
     if version.major < 3 or (version.major == 3 and version.minor < 11):
-        print(f"✗ Python 3.11+ required. You have {version.major}.{version.minor}")
+        print(f"[FAIL] Python 3.11+ required. You have {version.major}.{version.minor}")
         sys.exit(1)
-    print(f"✓ Python {version.major}.{version.minor} detected")
+    print(f"[OK] Python {version.major}.{version.minor} detected")
 
 
 def install_dependencies():
@@ -57,7 +57,7 @@ def install_dependencies():
         "Installing Python dependencies",
         check=False
     ):
-        print("⚠ Some dependencies failed to install. Continuing anyway...")
+        print("[WARN] Some dependencies failed to install. Continuing anyway...")
 
     run_command(
         "python -m spacy download en_core_web_sm",
@@ -86,7 +86,7 @@ def setup_directories():
     for directory in directories:
         Path(directory).mkdir(parents=True, exist_ok=True)
 
-    print("✓ Created data directories")
+    print("[OK] Created data directories")
 
 
 def run_pipeline(stage="all"):
@@ -95,11 +95,23 @@ def run_pipeline(stage="all"):
 
     cmd = f"python -m src.orchestrator.main --env development --stage {stage}"
 
-    return run_command(
+    success = run_command(
         cmd,
         f"Running pipeline (stage={stage})",
         check=True
     )
+
+    # If pipeline completed successfully and we ran all stages or just stage 3, export to data lake
+    if success and (stage == "all" or stage == "3"):
+        enriched_file = Path("data/processed/stage03/enriched_content.jsonl")
+        if enriched_file.exists():
+            run_command(
+                "python tools/export_to_datalake.py",
+                "Exporting data to Delta Lake",
+                check=False
+            )
+
+    return success
 
 
 def main():
@@ -121,10 +133,9 @@ def main():
     args = parser.parse_args()
 
     print("""
-    ╔══════════════════════════════════════════════════════╗
-    ║        UConn Web Scraping Pipeline                   ║
-    ║        Single Command Execution                      ║
-    ╚══════════════════════════════════════════════════════╝
+    ========================================================
+    UConn Web Scraping Pipeline - Single Command Execution
+    ========================================================
     """)
 
     check_python_version()
@@ -137,18 +148,24 @@ def main():
     run_pipeline(args.stage)
 
     print("""
-    ╔══════════════════════════════════════════════════════╗
-    ║        ✓ PIPELINE COMPLETE                           ║
-    ╚══════════════════════════════════════════════════════╝
+    ========================================================
+    SUCCESS - PIPELINE COMPLETE
+    ========================================================
 
     Output files:
     - Stage 1: Scraping_project/data/processed/stage01/discovery_output.jsonl
     - Stage 2: Scraping_project/data/processed/stage02/validation_output.jsonl
     - Stage 3: Scraping_project/data/processed/stage03/enriched_content.jsonl
+    - Data Lake: Scraping_project/data/datalake/enriched_content (Delta Lake format)
 
-    Next steps:
+    Query the data lake:
+    - Python: python -c "import duckdb; duckdb.connect().execute('SELECT * FROM delta_scan(\\\"data/datalake/enriched_content\\\") LIMIT 5').show()"
+    - CLI: duckdb -c "SELECT COUNT(*) FROM delta_scan('data/datalake/enriched_content')"
+
+    Additional tools:
     - Analyze link graph: python Scraping_project/tools/analyze_link_graph.py
     - View logs: tail -f Scraping_project/data/logs/*.log
+    - Export data: python Scraping_project/tools/export_to_datalake.py --help
     """)
 
 

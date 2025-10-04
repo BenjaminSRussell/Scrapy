@@ -11,7 +11,7 @@ import asyncio
 import sys
 import time
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -20,10 +20,10 @@ from src.stage3.async_enrichment import run_async_enrichment
 
 
 async def benchmark_async_enrichment(
-    urls: List[str],
+    urls: list[str],
     output_file: str,
     max_concurrency: int
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Benchmark async enrichment processor"""
     start_time = time.time()
 
@@ -54,9 +54,9 @@ async def benchmark_async_enrichment(
 
 
 def benchmark_scrapy_enrichment(
-    urls: List[str],
+    urls: list[str],
     output_file: str
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Benchmark traditional Scrapy enrichment (for comparison)"""
     # This would require running the actual Scrapy spider
     # For now, return placeholder data
@@ -105,7 +105,7 @@ def benchmark_scrapy_enrichment(
     }
 
 
-def generate_test_urls(count: int) -> List[str]:
+def generate_test_urls(count: int) -> list[str]:
     """Generate test URLs for benchmarking"""
     base_urls = [
         "https://uconn.edu/",

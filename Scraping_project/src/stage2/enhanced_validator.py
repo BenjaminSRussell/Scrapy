@@ -1,6 +1,8 @@
 """
 Enhanced Stage 2 Validator with intelligent retry, circuit breakers, and content classification.
-Goes beyond "is it HTML?" to provide rich metadata for Stage 3.
+
+Validates URLs with adaptive retry strategies and provides rich metadata
+to help Stage 3 determine which content to enrich.
 """
 
 import asyncio
@@ -33,11 +35,11 @@ logger = logging.getLogger(__name__)
 
 class EnhancedURLValidator:
     """
-    Enhanced Stage 2 Validator with:
+    Enhanced Stage 2 URL Validator with adaptive features:
     - Intelligent retry with jittered exponential backoff
-    - Domain-specific circuit breakers
-    - Content classification beyond HTML
-    - Rich metadata for Stage 3
+    - Domain-specific circuit breakers to avoid overwhelming servers
+    - Content classification (HTML, PDF, images, APIs, etc.)
+    - Rich metadata for Stage 3 enrichment decisions
     """
 
     def __init__(self, config):

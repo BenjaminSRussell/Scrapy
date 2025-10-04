@@ -7,7 +7,6 @@ Supports multiple export modes:
 3. Pushgateway push (for batch jobs)
 """
 
-import logging
 from pathlib import Path
 from typing import Any
 
@@ -62,11 +61,7 @@ class PrometheusExporter:
             pushgateway_url: Pushgateway URL (e.g., 'localhost:9091')
         """
         if not PROMETHEUS_AVAILABLE:
-            logger.log_with_context(
-                logging.WARNING,
-                "prometheus_client not installed",
-                install_command="pip install prometheus-client"
-            )
+            logger.warning("prometheus_client not installed - install_command: pip install prometheus-client")
             self.enabled = False
             return
 
@@ -85,19 +80,9 @@ class PrometheusExporter:
         if enable_http_server:
             try:
                 start_http_server(http_port, registry=self.registry)
-                logger.log_with_context(
-                    logging.INFO,
-                    "Prometheus HTTP server started",
-                    port=http_port,
-                    endpoint=f"http://localhost:{http_port}/metrics"
-                )
+                logger.info(f"Prometheus HTTP server started - port: {http_port}, endpoint: http://localhost:{http_port}/metrics")
             except Exception as e:
-                logger.log_with_context(
-                    logging.ERROR,
-                    "Failed to start Prometheus HTTP server",
-                    port=http_port,
-                    error=str(e)
-                )
+                logger.error(f"Failed to start Prometheus HTTP server - port: {http_port}, error: {str(e)}")
 
     def _init_metrics(self):
         """Initialize Prometheus metrics"""
@@ -436,29 +421,15 @@ class PrometheusExporter:
             output_path: Path to write metrics file (e.g., /var/lib/node_exporter/scraping_pipeline.prom)
         """
         if not self.enabled:
-            logger.log_with_context(
-                logging.WARNING,
-                "Prometheus exporter not enabled",
-                operation="export_to_textfile"
-            )
+            logger.warning("Prometheus exporter not enabled - operation: export_to_textfile")
             return
 
         try:
             output_path.parent.mkdir(parents=True, exist_ok=True)
             write_to_textfile(str(output_path), self.registry)
-            logger.log_with_context(
-                logging.INFO,
-                "Prometheus metrics exported to textfile",
-                output_path=str(output_path),
-                export_mode="textfile"
-            )
+            logger.info(f"Prometheus metrics exported to textfile - output_path: {str(output_path)}, export_mode: textfile")
         except Exception as e:
-            logger.log_with_context(
-                logging.ERROR,
-                "Failed to export metrics to textfile",
-                output_path=str(output_path),
-                error=str(e)
-            )
+            logger.error(f"Failed to export metrics to textfile - output_path: {str(output_path)}, error: {str(e)}")
 
     def push_to_gateway(self, pushgateway_url: str | None = None):
         """
@@ -468,38 +439,19 @@ class PrometheusExporter:
             pushgateway_url: Pushgateway URL (default: use constructor value)
         """
         if not self.enabled:
-            logger.log_with_context(
-                logging.WARNING,
-                "Prometheus exporter not enabled",
-                operation="push_to_gateway"
-            )
+            logger.warning("Prometheus exporter not enabled - operation: push_to_gateway")
             return
 
         url = pushgateway_url or self.pushgateway_url
         if not url:
-            logger.log_with_context(
-                logging.ERROR,
-                "No pushgateway URL configured",
-                operation="push_to_gateway"
-            )
+            logger.error("No pushgateway URL configured - operation: push_to_gateway")
             return
 
         try:
             push_to_gateway(url, job=self.job_name, registry=self.registry)
-            logger.log_with_context(
-                logging.INFO,
-                "Metrics pushed to Pushgateway",
-                pushgateway_url=url,
-                job_name=self.job_name,
-                export_mode="pushgateway"
-            )
+            logger.info(f"Metrics pushed to Pushgateway - pushgateway_url: {url}, job_name: {self.job_name}, export_mode: pushgateway")
         except Exception as e:
-            logger.log_with_context(
-                logging.ERROR,
-                "Failed to push metrics to Pushgateway",
-                pushgateway_url=url,
-                error=str(e)
-            )
+            logger.error(f"Failed to push metrics to Pushgateway - pushgateway_url: {url}, error: {str(e)}")
 
     def get_text_metrics(self) -> str:
         """

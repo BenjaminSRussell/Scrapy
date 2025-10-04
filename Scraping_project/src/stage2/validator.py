@@ -10,7 +10,6 @@ from pathlib import Path
 
 import aiohttp
 
-from src.common import config_keys as keys
 from src.common.adaptive_depth import AdaptiveDepthManager
 from src.common.checkpoints import CheckpointManager
 from src.common.feedback import FeedbackStore
@@ -60,7 +59,7 @@ class URLValidator:
         self.max_workers = self.stage2_config['max_workers']
         self.timeout = self.stage2_config['timeout']
         self.output_file = Path(self.stage2_config['output_file'])
-        self.user_agent = self.config.get(keys.SCRAPY, keys.SCRAPY_USER_AGENT, 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36')
+        self.user_agent = self.config.get('scrapy', 'user_agent', default='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
 
         # Initialize checkpoint manager for resumable validation
         checkpoint_dir = Path("data/checkpoints")
@@ -441,23 +440,15 @@ class URLValidator:
         """Execute validation using the provided session with retry logic."""
         start_time = time.perf_counter()
 
-        # TODO: The retry logic is very basic. It should be made more flexible, such as allowing the user to specify different retry strategies for different error types.
+        
         # Retry configuration
         max_retries = 3
         retry_delay = 1.0
 
         for attempt in range(max_retries):
             try:
-                if hasattr(session, 'head'):
-                    try:
-                        async with session.head(url, allow_redirects=True) as head_response:
-                            head_result = self._evaluate_head_response(head_response, url, url_hash, start_time)
-                            if head_result is not None:
-                                return head_result
-                    except (TimeoutError, aiohttp.ClientError):
-                        # Fall through to GET request
-                        pass
-
+                # Skip HEAD request - aiohttp 3.12 has serialization bugs with HEAD
+                # Just use GET directly
                 return await self._perform_get(session, url, url_hash, start_time)
 
             except TimeoutError:
@@ -472,6 +463,9 @@ class URLValidator:
 
             except Exception as exc:
                 # Unexpected error, don't retry
+                import traceback
+                logger.error(f"Validation error for {url}: {exc}")
+                logger.error(traceback.format_exc())
                 return self._build_client_error_result(url, url_hash, exc, start_time)
 
         # This should never be reached due to the logic above

@@ -87,7 +87,7 @@ def canonicalize_url_simple(url: str) -> str:
 
 
 def is_valid_uconn_url(url: str) -> bool:
-    # TODO: This URL validation is specific to UConn. It should be made more generic to support other domains.
+    
     """Check if URL is a valid UConn domain URL"""
     if url is None:
         raise TypeError("url must not be None")

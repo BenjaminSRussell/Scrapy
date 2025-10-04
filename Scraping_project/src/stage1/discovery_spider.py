@@ -1,7 +1,6 @@
 import csv
 import hashlib
 import json
-import logging
 import re
 from collections.abc import AsyncGenerator, Iterator
 from datetime import datetime
@@ -122,12 +121,6 @@ class DiscoverySpider(scrapy.Spider):
         # Load allowed domains from configuration or use default
         self.allowed_domains = self._as_iterable(allowed_domains)
 
-        logger.log_with_context(
-            logging.INFO,
-            "Allowed domains configured",
-            allowed_domains=self.allowed_domains,
-            domain_count=len(self.allowed_domains)
-        )
 
         # Get seed file and output file from settings
         self.seed_file = self.settings.get('SEED_FILE', 'data/raw/uconn_urls.csv')
@@ -138,12 +131,6 @@ class DiscoverySpider(scrapy.Spider):
 
         dedup_db_path = self.settings.get('DEDUP_CACHE_PATH', 'data/cache/url_dedup.db')
         self.url_deduplicator = URLDeduplicator(Path(dedup_db_path))
-        logger.log_with_context(
-            logging.INFO,
-            "Using persistent URL deduplication",
-            db_path=str(dedup_db_path),
-            existing_urls=self.url_deduplicator.count()
-        )
 
         # Initialize pagination cache
         pagination_cache_path = self.settings.get('PAGINATION_CACHE_PATH', 'data/cache/pagination_cache.db')
@@ -159,12 +146,6 @@ class DiscoverySpider(scrapy.Spider):
         for source in ['ajax_endpoint', 'json_blob', 'pagination', 'data_attribute', 'form_action', 'meta_refresh']:
             if self.feedback_store.should_throttle_source(source, min_samples=50, max_success_rate=0.3):
                 self.throttled_sources.add(source)
-                logger.log_with_context(
-                    logging.WARNING,
-                    "Discovery source will be throttled due to low success rate",
-                    source=source,
-                    reason="low_success_rate"
-                )
 
         # Get low-quality URL patterns to avoid
         self.low_quality_patterns = set(self.feedback_store.get_low_quality_patterns(min_samples=10, max_success_rate=0.3))
@@ -216,7 +197,7 @@ class DiscoverySpider(scrapy.Spider):
                    f"SVG={self.enable_svg_url_extraction}")
 
     def start_requests(self) -> Iterator[scrapy.Request]:
-        """Load seed URLs and start crawling - legacy sync method for backward compatibility"""
+        """Load seed URLs and start crawling"""
         seed_file = Path(self.seed_file)
 
         if not seed_file.exists():
@@ -260,12 +241,12 @@ class DiscoverySpider(scrapy.Spider):
                             }
                         )
 
-        # log stats so we know when our CSV gets outdated
+        # Log seed URL statistics for monitoring
         logger.info(f"Loaded {self.seed_count} unique seed URLs")
 
     async def start(self) -> AsyncGenerator[scrapy.Request, None]:
-        """New async start method to replace deprecated start_requests()"""
-        # Delegate to the sync method for now to maintain compatibility
+        """Async start method for compatibility with async Scrapy features"""
+        # Delegate to the sync method to maintain compatibility with Scrapy's architecture
         for request in self.start_requests():
             yield request
 
@@ -275,14 +256,7 @@ class DiscoverySpider(scrapy.Spider):
         current_depth = response.meta['depth']
 
         # Set trace ID for this parse request
-        trace_id = set_trace_id()
-        logger.log_with_context(
-            logging.DEBUG,
-            "Parse request started",
-            url=source_url,
-            depth=current_depth,
-            trace_id=trace_id
-        )
+        set_trace_id()
 
         # Skip non-text responses (images, videos, PDFs, etc.)
         content_type = response.headers.get('Content-Type', b'').decode('utf-8', errors='ignore').lower()
@@ -324,13 +298,7 @@ class DiscoverySpider(scrapy.Spider):
         self.referring_pages[source_url] += len(links)
 
         if self.total_urls_parsed % 100 == 0:
-            logger.log_with_context(
-                logging.INFO,
-                "Discovery progress checkpoint",
-                pages_parsed=self.total_urls_parsed,
-                unique_urls_found=self.unique_urls_found,
-                duplicates_skipped=self.duplicates_skipped
-            )
+            logger.info(f"Discovery progress: parsed {self.total_urls_parsed} pages")
 
         logger.debug(f"Extracted {len(links)} links from {response.url}")
 

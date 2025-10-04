@@ -6,7 +6,6 @@ the UConn.edu domain and its approved subdomains.
 """
 
 import logging
-from typing import List
 from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
@@ -84,7 +83,7 @@ def is_uconn_url(url: str, strict: bool = True) -> bool:
         return False
 
 
-def filter_uconn_urls(urls: List[str], strict: bool = True) -> List[str]:
+def filter_uconn_urls(urls: list[str], strict: bool = True) -> list[str]:
     """
     Filter list to only include UConn URLs.
 
@@ -109,7 +108,7 @@ def filter_uconn_urls(urls: List[str], strict: bool = True) -> List[str]:
     return filtered
 
 
-def get_allowed_domains() -> List[str]:
+def get_allowed_domains() -> list[str]:
     """
     Get list of all allowed UConn domains.
 

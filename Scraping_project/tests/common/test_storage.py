@@ -12,7 +12,7 @@ SRC_DIR = Path(__file__).resolve().parents[2] / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from src.common.storage import ConfigurableStorage, JSONLStorage, URLCache
+from src.common.storage import ConfigurableStorage, JSONLStorage, URLCache  # noqa: E402
 
 
 @pytest.mark.parametrize("records", [1, 5, 20])

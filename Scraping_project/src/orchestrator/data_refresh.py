@@ -40,7 +40,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class RefreshConfig:
     """Configuration for data refresh operations"""
-    # TODO: The refresh config is not very granular. It should be made more granular, such as allowing the user to specify different refresh intervals for different file types.
+    
     max_concurrent: int = 20
     priority_domains: list[str] = None
     refresh_interval_hours: int = 24
@@ -80,7 +80,7 @@ class DataRefreshManager:
         self.refresh_history = Path("data/analytics/refresh_history.json")
         self.refresh_history.parent.mkdir(parents=True, exist_ok=True)
 
-    # TODO: This data refresh manager is not designed for distributed environments. It should be extended to support distributed locking to prevent multiple instances from refreshing the same data at the same time.
+    
     async def __aenter__(self):
         self.request_handler = SmartRequestHandler(self.request_config)
         await self.request_handler.__aenter__()

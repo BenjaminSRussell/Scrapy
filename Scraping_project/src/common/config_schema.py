@@ -833,25 +833,29 @@ class NLPConfig(BaseModel):
     """NLP processing configuration"""
     model_config = ConfigDict(extra='forbid')
 
-    # spaCy configuration
+    # spaCy configuration (for keywords and linguistic analysis)
     spacy_model: str = Field(
         default="en_core_web_sm",
         min_length=1,
-        description="spaCy model name for basic NLP"
+        description="spaCy model for keyword extraction and linguistic analysis"
     )
 
-    # Transformer models configuration
+    # Transformer models configuration (DeBERTa-based NLP)
     use_transformers: bool = Field(
         default=False,
-        description="Enable transformer-based models for advanced NLP"
+        description="Enable DeBERTa transformer models for NER (replaces spaCy for entity extraction)"
     )
     transformer_ner_model: str | None = Field(
-        default="dslim/bert-base-NER",
-        description="Transformer model for Named Entity Recognition"
+        default="microsoft/deberta-v3-base",
+        description="DeBERTa model for Named Entity Recognition"
     )
     summarizer_model: str | None = Field(
         default="sshleifer/distilbart-cnn-12-6",
         description="Transformer model for text summarization"
+    )
+    zero_shot_model: str | None = Field(
+        default="MoritzLaurer/deberta-v3-base-zeroshot-v2.0",
+        description="Zero-shot classification model"
     )
 
     # Processing settings
@@ -888,10 +892,10 @@ class NLPConfig(BaseModel):
         description="Device for transformer models (auto, cpu, cuda, mps)"
     )
 
-    # Legacy compatibility
+    # Legacy compatibility (deprecated)
     model: str | None = Field(
         default=None,
-        description="Deprecated: use spacy_model instead"
+        description="DEPRECATED: Use spacy_model instead. This field is kept for backward compatibility only."
     )
 
 
@@ -899,6 +903,10 @@ class ContentConfig(BaseModel):
     """Content filtering configuration"""
     model_config = ConfigDict(extra='forbid')
 
+    predefined_tags_file: str | None = Field(
+        default="config/keywords.txt",
+        description="Path to file containing predefined tags (one per line)"
+    )
     predefined_tags: list[str] = Field(
         default=[
             "admissions", "about", "research", "students", "faculty",
@@ -907,7 +915,7 @@ class ContentConfig(BaseModel):
             "financial-aid", "scholarships", "library", "majors",
             "minors", "housing", "dining", "parking", "sustainability"
         ],
-        description="Predefined content tags"
+        description="DEPRECATED: Use predefined_tags_file instead. This field is kept for backward compatibility."
     )
 
 
@@ -1006,6 +1014,10 @@ class PipelineConfig(BaseModel):
         default_factory=AlertsConfig,
         description="Alerts configuration"
     )
+    warehouse: dict[str, Any] | None = Field(
+        default=None,
+        description="Data warehouse configuration (optional)"
+    )
 
     @model_validator(mode='after')
     def validate_seed_file_exists(self):
@@ -1024,9 +1036,9 @@ class PipelineConfig(BaseModel):
 
     @model_validator(mode='after')
     def validate_nlp_model_availability(self):
-        """Warn if NLP is enabled but model might not be installed"""
+        """Warn if NLP is enabled but required models might not be installed"""
         if self.stages.enrichment.nlp_enabled:
-            # Check if spaCy model is likely installed
+            # Check if spaCy model is installed (needed for keywords even with transformers)
             try:
                 import spacy
                 model_name = self.nlp.spacy_model or self.nlp.model

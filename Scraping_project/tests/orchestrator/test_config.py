@@ -14,7 +14,7 @@ SRC_DIR = Path(__file__).resolve().parents[2] / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from orchestrator.config import Config, ConfigValidationError
+from orchestrator.config import Config, ConfigValidationError  # noqa: E402
 
 
 @pytest.fixture

@@ -1,6 +1,8 @@
 """
-Content classification and enrichment for Stage 2 validation.
-Goes beyond "is it HTML?" to provide rich metadata for Stage 3.
+Content classification for Stage 2 validation.
+
+Analyzes content type, quality, and enrichability to determine
+which URLs should proceed to Stage 3 enrichment.
 """
 
 import logging
@@ -63,8 +65,8 @@ class ClassificationResult:
 
 class ContentClassifier:
     """
-    Classifies content beyond simple HTML check.
-    Provides rich metadata for Stage 3 decision making.
+    Classifies web content by type, quality, and enrichability.
+    Provides metadata to help Stage 3 determine processing strategies.
     """
 
     def __init__(self):

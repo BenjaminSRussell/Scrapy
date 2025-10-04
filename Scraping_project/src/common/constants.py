@@ -31,9 +31,9 @@ STAGE_VALIDATION: Final[str] = "stage2_validation"
 STAGE_ENRICHMENT: Final[str] = "stage3_enrichment"
 
 # NLP Configuration
-DEFAULT_SPACY_MODEL: Final[str] = "en_core_web_sm"
+DEFAULT_SPACY_MODEL: Final[str] = "en_core_web_sm"  # Used for keywords and linguistic analysis
 LARGE_SPACY_MODEL: Final[str] = "en_core_web_lg"
-TRANSFORMER_MODEL: Final[str] = "dslim/bert-base-NER"
+TRANSFORMER_MODEL: Final[str] = "microsoft/deberta-v3-base"  # DeBERTa model for NER
 
 # Taxonomy and glossary paths
 TAXONOMY_PATH: Final[Path] = CONFIG_DIR / "taxonomy.json"

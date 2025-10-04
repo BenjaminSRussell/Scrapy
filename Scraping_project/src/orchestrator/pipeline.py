@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from src.common import config_keys as keys
+from src.common.progress_display import create_stage, finish, render, update_stage
 from src.orchestrator.orchestrator_validation import validate_stage_output
 
 logger = logging.getLogger(__name__)
@@ -163,6 +164,21 @@ class PipelineOrchestrator:
             batch_size=config.get_stage3_config().get(keys.ENRICHMENT_BATCH_SIZE, 1000)
         )
 
+    @staticmethod
+    def _load_predefined_tags(content_config: dict) -> list[str]:
+        """Load predefined tags from file or fallback to config list."""
+        tags_file = content_config.get('predefined_tags_file')
+        if tags_file and Path(tags_file).exists():
+            try:
+                with open(tags_file, encoding='utf-8') as f:
+                    tags = [line.strip() for line in f if line.strip()]
+                logger.info(f"Loaded {len(tags)} predefined tags from {tags_file}")
+                return tags
+            except Exception as e:
+                logger.warning(f"Failed to load tags from {tags_file}: {e}, using config fallback")
+
+        return content_config.get('predefined_tags', [])
+
     async def load_stage1_results(self) -> AsyncGenerator[BatchQueueItem, None]:
         """Load Stage 1 discovery results and yield as queue items"""
         stage1_config = self.config.get_stage1_config()
@@ -231,6 +247,7 @@ class PipelineOrchestrator:
     async def populate_stage2_queue(self):
         """Populate the Stage 2 queue from Stage 1 results"""
         logger.info("Populating Stage 2 queue from Stage 1 results")
+        create_stage("Stage 2 Queue Population", total=0)
 
         count = 0
         try:
@@ -238,15 +255,19 @@ class PipelineOrchestrator:
                 await self.stage1_to_stage2_queue.put(item)
                 count += 1
 
-                if count % 1000 == 0:
-                    logger.info(f"Queued {count} items for Stage 2")
+                if count % 100 == 0:
+                    update_stage("Stage 2 Queue Population", processed=count)
+                    render()
         finally:
             self.stage1_to_stage2_queue.mark_producer_done()
+            update_stage("Stage 2 Queue Population", processed=count, total=count)
+            finish("Stage 2 Queue Population")
             logger.info(f"Finished queuing {count} items for Stage 2")
 
     async def populate_stage3_queue(self):
         """Populate the Stage 3 queue from Stage 2 results"""
         logger.info("Populating Stage 3 queue from Stage 2 results")
+        create_stage("Stage 3 Queue Population", total=0)
 
         count = 0
         try:
@@ -254,10 +275,13 @@ class PipelineOrchestrator:
                 await self.stage2_to_stage3_queue.put(item)
                 count += 1
 
-                if count % 1000 == 0:
-                    logger.info(f"Queued {count} items for Stage 3")
+                if count % 100 == 0:
+                    update_stage("Stage 3 Queue Population", processed=count)
+                    render()
         finally:
             self.stage2_to_stage3_queue.mark_producer_done()
+            update_stage("Stage 3 Queue Population", processed=count, total=count)
+            finish("Stage 3 Queue Population")
             logger.info(f"Finished queuing {count} items for Stage 3")
 
     def get_stage2_queue(self) -> BatchQueue:
@@ -282,6 +306,7 @@ class PipelineOrchestrator:
         queue = self.get_stage2_queue()
         processed_count = 0
         batch_id = 0
+        create_stage("Stage 2 Validation", total=0)
 
         while True:
             batch = await queue.get_batch_or_wait(timeout=2.0)
@@ -293,10 +318,12 @@ class PipelineOrchestrator:
             processed_count += len(batch)
             batch_id += 1
 
-            # Log progress less frequently (every 5000 instead of 1000)
-            if processed_count % 5000 == 0:
-                logger.info(f"Validated {processed_count} URLs ({batch_id} batches)")
+            if processed_count % 100 == 0:
+                update_stage("Stage 2 Validation", processed=processed_count)
+                render()
 
+        update_stage("Stage 2 Validation", processed=processed_count, total=processed_count)
+        finish("Stage 2 Validation")
         logger.info(f"Stage 2 validation completed: {processed_count} URLs processed in {batch_id} batches")
     async def run_concurrent_stage3_enrichment(
         self,
@@ -322,6 +349,7 @@ class PipelineOrchestrator:
 
         async def collect_urls_from_queue() -> int:
             count = 0
+            create_stage("Stage 3 URL Collection", total=0)
             while True:
                 batch = await self.stage2_to_stage3_queue.get_batch_or_wait(timeout=2.0)
 
@@ -332,9 +360,12 @@ class PipelineOrchestrator:
                     validation_items_for_enrichment.append(item.data)
                     count += 1
 
-                    if count % 1000 == 0:
-                        logger.info(f"Collected {count} URLs for enrichment")
+                    if count % 100 == 0:
+                        update_stage("Stage 3 URL Collection", processed=count)
+                        render()
 
+            update_stage("Stage 3 URL Collection", processed=count, total=count)
+            finish("Stage 3 URL Collection")
             logger.info(f"Finished collecting {count} URLs for enrichment")
             return count
 
@@ -399,7 +430,8 @@ class PipelineOrchestrator:
         output_file = stage3_config[keys.ENRICHMENT_OUTPUT_FILE]
         content_types_config = stage3_config.get(keys.ENRICHMENT_CONTENT_TYPES, {})
         storage_config = stage3_config.get(keys.ENRICHMENT_STORAGE, {})
-        predefined_tags = content_config.get('predefined_tags', [])
+
+        predefined_tags = self._load_predefined_tags(content_config)
         max_workers = stage3_config.get(keys.VALIDATION_MAX_WORKERS, 50)
 
         logger.info(f"Using AsyncEnrichmentProcessor with max_concurrency={max_workers}")
