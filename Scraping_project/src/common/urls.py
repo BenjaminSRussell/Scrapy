@@ -1,5 +1,5 @@
 import posixpath
-from urllib.parse import urlparse, urlunparse
+from urllib.parse import urlparse, urlunparse, parse_qsl, urlencode
 
 from w3lib.url import canonicalize_url
 
@@ -25,59 +25,53 @@ def _sanitize_path(path: str) -> str:
     return normalized
 
 
-def normalize_url(url: str) -> str:
-    """Canonicalize a URL with path traversal resolution."""
+def normalize_url(url: str, lowercase_path_query: bool = True) -> str:
+    """
+    Canonicalize a URL with enhanced normalization rules.
+
+    - Resolves path traversal (e.g., /a/b/../c -> /a/c)
+    - Removes default ports (e.g., :80, :443)
+    - Removes URL fragments (e.g., #section)
+    - Sorts query parameters for consistency
+    - Optionally lowercases the path and query
+    """
     if url is None:
         raise TypeError("url must not be None")
 
-    parsed = urlparse(url)
+    # Use w3lib's canonicalize_url for initial cleaning (removes fragments, etc.)
+    canonical_temp = canonicalize_url(url)
+    parsed = urlparse(canonical_temp)
+
+    # Sanitize path to resolve dot segments
     sanitized_path = _sanitize_path(parsed.path)
 
-    sanitized = urlunparse(
-        (
-            parsed.scheme.lower(),
-            parsed.netloc,
-            sanitized_path,
-            parsed.params,
-            parsed.query,
-            parsed.fragment,
-        )
-    )
+    # Sort query parameters
+    query_params = parse_qsl(parsed.query)
+    sorted_query = sorted(query_params, key=lambda x: x[0])
+    encoded_query = urlencode(sorted_query)
 
-    canonical_temp = canonicalize_url(sanitized)
-    parsed_canonical = urlparse(canonical_temp)
+    # Optionally lowercase path and query
+    if lowercase_path_query:
+        sanitized_path = sanitized_path.lower()
+        encoded_query = encoded_query.lower()
 
-    netloc = parsed_canonical.netloc
-    default_ports = {"http": 80, "https": 443}
-    scheme_lower = parsed_canonical.scheme.lower()
-
-    if parsed_canonical.port and default_ports.get(scheme_lower) == parsed_canonical.port:
-        userinfo = ""
-        if parsed_canonical.username:
-            userinfo = parsed_canonical.username
-            if parsed_canonical.password:
-                userinfo += f":{parsed_canonical.password}"
-            userinfo += "@"
-
-        host = parsed_canonical.hostname or ""
-        netloc = f"{userinfo}{host}"
-
+    # Reconstruct the URL
     canonical = urlunparse(
         (
-            parsed_canonical.scheme,
-            netloc,
-            parsed_canonical.path,
-            parsed_canonical.params,
-            parsed_canonical.query,
-            parsed_canonical.fragment,
+            parsed.scheme.lower(),
+            parsed.netloc.lower(),
+            sanitized_path,
+            parsed.params,
+            encoded_query,
+            '',  # Explicitly remove fragment
         )
     )
 
-    if not parsed.path and canonical.endswith("/"):
+    # Remove trailing slash from root path
+    if parsed.path in ('', '/') and canonical.endswith('/'):
         canonical = canonical[:-1]
 
     return canonical
-
 
 
 
@@ -93,7 +87,7 @@ def is_valid_uconn_url(url: str) -> bool:
         raise TypeError("url must not be None")
 
     try:
-        canonicalize_url(url)
+        # Use the robust normalize_url
         parsed = urlparse(normalize_url(url))
 
         # Only allow HTTP schemes

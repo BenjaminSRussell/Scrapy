@@ -45,13 +45,16 @@ def run_stage1(config_file: str = "config/development.yml"):
     logger.info("=== STAGE 1: URL DISCOVERY ===")
 
     from src.orchestrator.config import Config
-    config = Config(config_file)
+    # Ensure config_file is a valid path
+    if not Path(config_file).is_absolute():
+        config_file = Path(__file__).parent / config_file
+    config = Config(str(config_file))
 
     # Run discovery spider
     import subprocess
     result = subprocess.run(
-        ["python", "-m", "scrapy", "crawl", "discovery_spider"],
-        cwd=Path(__file__).parent / "Scraping_project",
+        ["python", "-m", "scrapy", "crawl", "discovery"],
+        cwd=Path(__file__).parent,  # We are already in the Scraping_project directory
         capture_output=True,
         text=True
     )

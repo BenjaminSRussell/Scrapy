@@ -38,10 +38,29 @@ NEWSPIDER_MODULE = 'src.stage3'
 # Obey robots.txt rules (from YAML or default)
 ROBOTSTXT_OBEY = _scrapy_config.get('robotstxt_obey', False)
 
+# Configure downloader middlewares
+# See https://docs.scrapy.org/en/latest/topics/downloader-middleware.html
+DOWNLOADER_MIDDLEWARES = {
+    'src.common.adaptive_depth_middleware.AdaptiveDepthMiddleware': 543,
+}
+
 # Configure pipelines
 ITEM_PIPELINES = {
     'src.stage3.enrichment_pipeline.Stage3Pipeline': 300,
 }
+
+# --- Adaptive Depth Settings ---
+ADAPTIVE_DEPTH_ENABLED = _scrapy_config.get('adaptive_depth_enabled', True)
+ADAPTIVE_DEPTH_CONFIG_FILE = PROJECT_ROOT / 'data' / 'config' / 'adaptive_depth.json'
+
+# --- Discovery Strategy Settings ---
+# Defines the discovery mode. Can be 'full', 'selective', or 'supplement'.
+# - full: Crawls all allowed domains from scratch.
+# - selective: Crawls only specific, high-value sections.
+# - supplement: Crawls new URLs to supplement an existing link graph.
+DISCOVERY_STRATEGY = _scrapy_config.get('discovery_strategy', 'full')
+
+
 
 # Configure request fingerprinting (from YAML or default)
 REQUEST_FINGERPRINTER_IMPLEMENTATION = _scrapy_config.get('request_fingerprinter_implementation', '2.7')

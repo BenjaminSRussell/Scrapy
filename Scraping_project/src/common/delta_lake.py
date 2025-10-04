@@ -7,18 +7,23 @@ Provides ACID transactions, time travel, schema evolution for all pipeline data.
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Union
 
+# Define type alias for Schema to avoid runtime errors
 try:
     from deltalake import DeltaTable, write_deltalake
     import pyarrow as pa
     import pyarrow.parquet as pq
     DELTA_AVAILABLE = True
+    Schema = pa.Schema
 except ImportError:
     DELTA_AVAILABLE = False
     DeltaTable = None
     write_deltalake = None
     pa = None
+    # Dummy class for type hints when pyarrow not available
+    class Schema:
+        pass
 
 from src.common.constants import (
     DELTA_RAW_URLS,
@@ -58,7 +63,7 @@ class DeltaLakeWriter:
         self,
         data: list[dict[str, Any]],
         mode: str = "append",
-        schema: pa.Schema | None = None
+        schema: Union[Schema, None] = None
     ):
         """
         Write data to Delta Lake table.
@@ -204,7 +209,7 @@ class DeltaLakeReader:
         """Get total record count."""
         return len(self.read(columns=['_ingestion_time']))
 
-    def get_schema(self) -> pa.Schema:
+    def get_schema(self) -> Schema:
         """Get table schema."""
         return self.table.schema().to_pyarrow()
 

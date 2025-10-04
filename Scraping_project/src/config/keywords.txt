@@ -1,0 +1,10 @@
+university
+education
+research
+academic
+admissions
+faculty
+student
+program
+course
+campus

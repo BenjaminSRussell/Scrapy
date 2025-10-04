@@ -24,6 +24,7 @@ from src.common.logging import get_logger, set_session_id, set_trace_id
 from src.common.schemas import DiscoveryItem
 from src.common.storage import PaginationCache
 from src.common.urls import canonicalize_url_simple
+from src.common.error_handling import LinkExtractionError, NormalizationError, DynamicDiscoveryError, HeadlessBrowserError
 
 logger = get_logger(__name__)
 
@@ -197,14 +198,26 @@ class DiscoverySpider(scrapy.Spider):
                    f"SVG={self.enable_svg_url_extraction}")
 
     def start_requests(self) -> Iterator[scrapy.Request]:
-        """Load seed URLs and start crawling"""
+        """Load seed URLs and start crawling based on the configured discovery strategy."""
+        strategy = self.settings.get('DISCOVERY_STRATEGY', 'full')
+        logger.info(f"Starting discovery with strategy: {strategy}")
+
+        if strategy == 'selective':
+            yield from self._start_selective_requests()
+        elif strategy == 'supplement':
+            yield from self._start_supplement_requests()
+        else:  # full strategy
+            yield from self._start_full_requests()
+
+    def _start_full_requests(self) -> Iterator[scrapy.Request]:
+        """Default full discovery from seed file and sitemaps."""
         seed_file = Path(self.seed_file)
 
         if not seed_file.exists():
             logger.error(f"Seed file not found: {seed_file}")
             return
 
-        # attempt to grab some sitemap/robots data because manually updating CSVs is terrible
+        # Attempt to grab some sitemap/robots data
         yield from self._generate_sitemap_requests()
 
         logger.info(f"Loading seed URLs from {seed_file}")
@@ -241,8 +254,80 @@ class DiscoverySpider(scrapy.Spider):
                             }
                         )
 
-        # Log seed URL statistics for monitoring
-        logger.info(f"Loaded {self.seed_count} unique seed URLs")
+        logger.info(f"Loaded {self.seed_count} unique seed URLs for full discovery.")
+
+    def _start_selective_requests(self) -> Iterator[scrapy.Request]:
+        """Starts a selective crawl focusing on high-value sections."""
+        logger.info("Starting selective discovery of high-value sections.")
+        high_value_sections = self.adaptive_depth.get_high_value_sections(min_content_pages=20)
+
+        if not high_value_sections:
+            logger.warning("No high-value sections found for selective crawl. Falling back to full discovery.")
+            yield from self._start_full_requests()
+            return
+
+        logger.info(f"Found {len(high_value_sections)} high-value sections to crawl.")
+
+        for section in high_value_sections:
+            # We need a representative URL for the section to start the crawl.
+            # This is a simplification; a real implementation might store and retrieve
+            # the best entry point URL for a section.
+            # For now, we'll construct a plausible start URL.
+            if section.startswith('http'):
+                start_url = section
+            else:
+                # This is a simplified way to create a start URL from a section
+                domain, *path_parts = section.split('/')
+                start_url = f"https://{domain}/{'/'.join(path_parts)}"
+
+            canonical_url = canonicalize_url_simple(start_url)
+            if self.url_deduplicator.add_if_new(canonical_url):
+                self.seed_count += 1
+                yield scrapy.Request(
+                    url=canonical_url,
+                    callback=self.parse,
+                    meta={
+                        'source_url': canonical_url,
+                        'depth': 0,
+                        'first_seen': datetime.now().isoformat(),
+                        'playwright': True
+                    }
+                )
+        logger.info(f"Loaded {self.seed_count} high-value sections for selective discovery.")
+
+    def _start_supplement_requests(self) -> Iterator[scrapy.Request]:
+        """Starts a crawl to supplement the existing link graph with new URLs."""
+        logger.info("Starting supplement discovery to find new URLs.")
+        # This is a placeholder for loading the existing link graph.
+        # In a real scenario, you would load this from your data lake.
+        # For this example, we'll assume it's a file with a list of known URLs.
+        link_graph_file = Path('data/datalake/link_graph.jsonl')
+        if not link_graph_file.exists():
+            logger.warning("Link graph not found for supplement crawl. Falling back to full discovery.")
+            yield from self._start_full_requests()
+            return
+
+        known_urls = set()
+        with open(link_graph_file, 'r', encoding='utf-8') as f:
+            for line in f:
+                try:
+                    data = json.loads(line)
+                    if 'discovered_url' in data:
+                        known_urls.add(canonicalize_url_simple(data['discovered_url']))
+                except (json.JSONDecodeError, IOError) as e:
+                    logger.warning(f"Skipping corrupted line in link graph: {e}")
+                    continue
+        
+        logger.info(f"Loaded {len(known_urls)} known URLs from the link graph.")
+
+        # Now, we start from the seed URLs and only crawl URLs that are not in the known set.
+        # The deduplication logic in _process_candidate_url will handle this.
+        # We just need to add the known URLs to the deduplicator.
+        for url in known_urls:
+            self.url_deduplicator.add_if_new(url)
+        
+        logger.info("Populated deduplicator with known URLs. Starting crawl for new URLs.")
+        yield from self._start_full_requests()
 
     async def start(self) -> AsyncGenerator[scrapy.Request, None]:
         """Async start method for compatibility with async Scrapy features"""
@@ -286,11 +371,8 @@ class DiscoverySpider(scrapy.Spider):
 
         try:
             links = le.extract_links(response)
-        except AttributeError as e:
-            if "Response content isn't text" in str(e):
-                logger.debug(f"Skipping non-text response during link extraction: {response.url}")
-                return
-            raise
+        except Exception as e:
+            raise LinkExtractionError(f"Link extraction failed for {response.url}: {e}") from e
         self.total_urls_parsed += 1
 
         if source_url not in self.referring_pages:
@@ -637,35 +719,44 @@ class DiscoverySpider(scrapy.Spider):
         """
         Calculate importance score blending multiple signals:
         - Discovery confidence (30%)
-        - Anchor text quality (20%)
-        - Same-domain boost (15%)
-        - URL path depth penalty (15%)
-        - Discovery source priority (20%)
+        - Keyword relevance from keywords.txt (30%)
+        - Same-domain boost (20%)
+        - URL path depth and quality (20%)
         """
         score = 0.0
 
         # Base score from discovery confidence (0.0-0.3)
         score += confidence * 0.3
 
-        # Anchor text quality score (0.0-0.2)
-        if anchor_text:
-            anchor_lower = anchor_text.lower()
-            # High-value keywords
-            high_value_terms = [
-                'research', 'publication', 'faculty', 'department', 'course',
-                'program', 'academic', 'study', 'lab', 'center', 'institute'
-            ]
-            medium_value_terms = [
-                'news', 'event', 'about', 'contact', 'resource', 'library',
-                'student', 'staff', 'admission', 'undergraduate', 'graduate'
-            ]
+        from src.common.keyword_manager import KeywordManager
 
-            if any(term in anchor_lower for term in high_value_terms):
-                score += 0.2
-            elif any(term in anchor_lower for term in medium_value_terms):
-                score += 0.1
-            elif len(anchor_text) > 5:  # Descriptive anchor text
-                score += 0.05
+        self.keyword_manager = KeywordManager()
+
+        # Get keywords from the keyword manager
+        keywords = self.keyword_manager.get_keywords()
+
+        # Extract text for matching from URL and anchor
+        path = urlparse(url).path.lower()
+        path_segments = {seg.strip() for seg in path.split('/') if seg.strip()}
+        
+        # Get words from segments for more precise matching
+        path_words = set()
+        for segment in path_segments:
+            path_words.update(word.strip() for word in re.split(r'[-_.]', segment))
+        
+        # Calculate keyword matches (exact segment matches weighted higher)
+        segment_matches = sum(1 for kw in keywords if kw in path_segments)
+        word_matches = sum(1 for kw in keywords if kw in path_words)
+        
+        # Weight segment matches higher (0.05 per match) than partial matches (0.02)
+        keyword_score = min(0.2, (segment_matches * 0.05) + (word_matches * 0.02))
+        score += keyword_score
+
+        # Check anchor text keywords if available
+        if anchor_text:
+            anchor_words = {word.strip().lower() for word in re.split(r'[-_\s.]', anchor_text)}
+            anchor_matches = sum(1 for kw in self._keywords if kw in anchor_words)
+            score += min(0.1, anchor_matches * 0.02)  # Up to 0.1 for anchor matches
 
         # Same-domain boost (0.0-0.15)
         source_domain = urlparse(source_url).netloc
@@ -749,9 +840,8 @@ class DiscoverySpider(scrapy.Spider):
             
             return final_url
 
-        except Exception as e:
-            logger.debug(f"Error normalizing URL {raw_url}: {e}")
-            return None
+        except (ValueError, AttributeError) as e:
+            raise NormalizationError(f"Error normalizing URL {raw_url}: {e}") from e
 
     def _extract_urls_from_json_text(self, raw_value: str, response: Response) -> set:
         """Parse JSON strings and gather plausible URL values recursively."""
@@ -764,8 +854,7 @@ class DiscoverySpider(scrapy.Spider):
         try:
             payload = json.loads(stripped)
         except json.JSONDecodeError as e:
-            logger.debug(f"Failed to parse JSON from {response.url}: {e}")
-            return set()
+            raise DynamicDiscoveryError(f"Failed to parse JSON from {response.url}: {e}") from e
 
         return self._extract_urls_from_json(payload, response)
 
@@ -816,7 +905,7 @@ class DiscoverySpider(scrapy.Spider):
     def _contains_dynamic_hint(self, script_text: str) -> bool:
         return any(hint in script_text for hint in DYNAMIC_SCRIPT_HINTS)
 
-    async def _discover_with_headless_browser(self, url: str, current_depth: int) -> Iterator[DiscoveryItem]:
+    async def _discover_with_headless_browser(self, url: str, current_depth: int) -> AsyncGenerator[DiscoveryItem, None]:
         """
         Use enhanced headless browser to discover URLs from JavaScript-rendered content.
         Supports network interception, auto-click, SPA navigation, and infinite scroll.
@@ -824,7 +913,6 @@ class DiscoverySpider(scrapy.Spider):
         try:
             from src.common.enhanced_browser import EnhancedBrowserDiscovery
 
-            # Get headless browser config from settings
             browser_config = self.settings.get('HEADLESS_BROWSER_CONFIG', {})
             if not browser_config.get('enabled', False):
                 logger.debug(f"Headless browser disabled, skipping: {url}")
@@ -832,48 +920,36 @@ class DiscoverySpider(scrapy.Spider):
 
             logger.info(f"Using enhanced browser for JavaScript-heavy page: {url}")
 
-            # Initialize and start browser with enhanced features
-            browser = EnhancedBrowserDiscovery(browser_config)
-            await browser.start()
-
-            try:
-                # Extract base domain from allowed_domains
+            async with EnhancedBrowserDiscovery(browser_config) as browser:
                 base_domain = self.allowed_domains[0] if self.allowed_domains else 'uconn.edu'
-
-                # Discover URLs using all available techniques
                 result = await browser.discover_urls(url, base_domain)
 
-                # Extract discovered URLs from all sources
                 discovered_urls = set(result.get('discovered_urls', []))
                 network_urls = set(result.get('network_urls', []))
                 all_urls = discovered_urls | network_urls
 
                 logger.info(f"Enhanced browser discovered {len(all_urls)} total URLs from {url}")
                 logger.info(f"  - Static HTML: {result['discovery_methods']['static_html']}")
+                logger.info(f"  - JS Extraction: {result['discovery_methods']['js_extraction']}")
                 logger.info(f"  - Auto-click: {result['discovery_methods']['auto_click']}")
                 logger.info(f"  - Infinite scroll: {result['discovery_methods']['infinite_scroll']}")
                 logger.info(f"  - Network intercept: {result['discovery_methods']['network_intercept']}")
 
-                # Process discovered URLs with appropriate confidence scores
                 for discovered_url in all_urls:
                     normalized = self._normalize_candidate(discovered_url, None)
                     if normalized:
-                        # Higher confidence for URLs discovered via multiple methods
                         confidence = 0.9 if discovered_url in network_urls else 0.8
-
                         results = self._process_candidate_url(
                             normalized, url, current_depth, "enhanced_browser", confidence
                         )
                         if results:
-                            yield results
-
-            finally:
-                await browser.stop()
+                            for result in results:
+                                yield result
 
         except ImportError:
             logger.warning("Enhanced browser module not available. Install playwright: pip install playwright && playwright install")
-        except Exception as e:
-            logger.error(f"Enhanced browser discovery failed for {url}: {e}")
+        except HeadlessBrowserError as e:
+            logger.error(f"Headless browser error for {url}: {e}")
 
     def closed(self, reason):
         """Called when spider closes - report comprehensive crawl summary"""

@@ -5,6 +5,7 @@ Includes network interception, auto-click, SPA support, infinite scroll, and res
 
 import asyncio
 import logging
+import re
 from datetime import datetime
 from typing import Any
 from urllib.parse import urljoin
@@ -174,6 +175,10 @@ class EnhancedBrowserDiscovery:
                 static_urls = await self._extract_static_urls(page, url)
                 discovered_urls.update(static_urls)
 
+                # Extract URLs from JavaScript
+                js_urls = await self._extract_urls_from_js(page, url)
+                discovered_urls.update(js_urls)
+
                 # Auto-click "Load More" buttons if enabled
                 if self.enable_auto_click:
                     click_urls = await self._auto_click_load_more(page, url)
@@ -201,6 +206,7 @@ class EnhancedBrowserDiscovery:
                     'status_code': response.status if response else 0,
                     'discovery_methods': {
                         'static_html': len(static_urls),
+                        'js_extraction': len(js_urls),
                         'auto_click': self.stats['buttons_clicked'],
                         'infinite_scroll': self.stats['scroll_actions'],
                         'network_intercept': len(network_urls)
@@ -272,6 +278,29 @@ class EnhancedBrowserDiscovery:
 
         except Exception as e:
             logger.debug(f"Failed to extract static URLs: {e}")
+
+        return urls
+
+    async def _extract_urls_from_js(self, page, base_url: str) -> set[str]:
+        """Extract URLs from inline and external JavaScript."""
+        urls = set()
+        
+        # Regex to find URLs in JavaScript code
+        # This regex looks for strings that look like URLs.
+        js_url_pattern = re.compile(r'["']((?:https?:)?//[^\s"\`]+|[a-zA-Z0-9._/-]+\.(?:html|php|aspx|jsp))["']')
+
+        try:
+            # Get all script contents
+            scripts = await page.query_selector_all('script')
+            for script in scripts:
+                script_content = await script.inner_text()
+                if script_content:
+                    for match in js_url_pattern.finditer(script_content):
+                        url = match.group(1)
+                        absolute_url = urljoin(base_url, url)
+                        urls.add(absolute_url)
+        except Exception as e:
+            logger.debug(f"Failed to extract URLs from JavaScript: {e}")
 
         return urls
 
@@ -464,3 +493,12 @@ class EnhancedBrowserDiscovery:
             'active_browsers': self.active_browsers,
             'pool_size': len(self._browser_pool)
         }
+
+    async def __aenter__(self):
+        """Async context manager entry."""
+        await self.start()
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Async context manager exit."""
+        await self.stop()
