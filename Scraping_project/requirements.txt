@@ -1,6 +1,8 @@
 # UConn Web Scraping Pipeline Dependencies
 # Install: pip install -r requirements.txt
-# Post-install: python -m spacy download en_core_web_sm
+# Post-install: 
+#   python -m spacy download en_core_web_sm
+#   python -c "import whisper; whisper.load_model('base')"
 
 # Core scraping
 scrapy>=2.11.0
@@ -47,6 +49,13 @@ typing-extensions>=4.8.0
 
 # Optional: AWS S3 support
 # boto3>=1.29.0
+
+# File processing
+Pillow>=10.1.0  # PIL for image processing
+pytesseract>=0.3.10  # OCR for images
+openai-whisper>=20231117  # Audio transcription
+ffmpeg-python>=0.2.0  # Audio processing
+pydub>=0.25.1  # Audio file handling
 
 # Optional: Playwright for JavaScript rendering
 # playwright>=1.40.0

@@ -6,7 +6,7 @@ Run this AFTER Stage 1 discovery completes.
 
 Usage:
     python tools/analyze_link_graph.py
-    python tools/analyze_link_graph.py --input data/processed/stage01/discovery_output.jsonl
+    python tools/analyze_link_graph.py --input data/datalake/raw_urls
 """
 
 import argparse
@@ -114,14 +114,14 @@ def main():
     parser.add_argument(
         '--input',
         type=Path,
-        default=Path('data/processed/stage01/discovery_output.jsonl'),
-        help='Discovery output JSONL file'
+        default=Path('data/datalake/raw_urls'),
+        help='Discovery raw_urls Delta Lake table'
     )
     parser.add_argument(
         '--graph-db',
         type=Path,
-        default=Path('data/processed/link_graph.db'),
-        help='Link graph database file'
+        default=Path('data/datalake/link_graph'),
+        help='Link graph Delta Lake table'
     )
 
     args = parser.parse_args()

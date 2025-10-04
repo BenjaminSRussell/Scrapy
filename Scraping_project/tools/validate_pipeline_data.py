@@ -1,6 +1,14 @@
-#!/usr/bin/env python3
-"""
-CLI tool to validate pipeline data integrity.
+#!/usr/bin/env python3  # Validate Stage 1 output schema
+  python tools/validate_pipeline_data.py --stage1 data/datalake/raw_urls
+
+  # Validate Stage 1 → Stage 2 integrity
+  python tools/validate_pipeline_data.py --stage1 data/datalake/raw_urls \
+                                         --stage2 data/datalake/validated_urls
+
+  # Validate full pipeline
+  python tools/validate_pipeline_data.py --stage1 data/datalake/raw_urls \
+                                         --stage2 data/datalake/validated_urls \
+                                         --stage3 data/datalake/enriched_contentol to validate pipeline data integrity.
 Run after each stage or at the end to verify data quality.
 """
 

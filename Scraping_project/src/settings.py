@@ -67,10 +67,12 @@ RETRY_TIMES = _scrapy_config.get('retry_times', 2)
 LOG_LEVEL = _scrapy_config.get('log_level', 'INFO')
 
 # Enable and configure the AutoThrottle extension (disabled by default)
+# AutoThrottle dynamically adjusts concurrency based on server response times
+# TARGET_CONCURRENCY matches CONCURRENT_REQUESTS for full utilization
 AUTOTHROTTLE_ENABLED = True
 AUTOTHROTTLE_START_DELAY = 0.1
 AUTOTHROTTLE_MAX_DELAY = 1.0
-AUTOTHROTTLE_TARGET_CONCURRENCY = 16.0
+AUTOTHROTTLE_TARGET_CONCURRENCY = 64.0  # Match CONCURRENT_REQUESTS for maximum throughput
 AUTOTHROTTLE_DEBUG = False
 
 # Enable and configure HTTP caching (using DBM storage instead of pickle for security)

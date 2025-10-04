@@ -141,55 +141,7 @@ class SchemaRegistry:
         "PipelineStats": "1.0"
     }
 
-    # Schema compatibility matrix - which versions can be read by current code
-    COMPATIBLE_VERSIONS = {
-        "DiscoveryItem": ["1.0", "2.0"],
-        "ValidationResult": ["1.0", "2.0"],
-        "EnrichmentItem": ["1.0", "2.0"],
-        "URLRecord": ["1.0"],
-        "PipelineStats": ["1.0"]
-    }
-
-    @classmethod
-    def is_compatible(cls, schema_name: str, version: str) -> bool:
-        """Check if a schema version is compatible with current code"""
-        return version in cls.COMPATIBLE_VERSIONS.get(schema_name, [])
-
     @classmethod
     def get_current_version(cls, schema_name: str) -> str:
         """Get the current version for a schema"""
         return cls.CURRENT_VERSIONS.get(schema_name, "1.0")
-
-    @classmethod
-    def upgrade_discovery_item(cls, data: dict[str, any]) -> dict[str, any]:
-        """Upgrade DiscoveryItem from v1.0 to v2.0"""
-        if data.get("schema_version", "1.0") == "1.0":
-            data["schema_version"] = "2.0"
-            data["discovery_metadata"] = None
-        return data
-
-    @classmethod
-    def upgrade_validation_result(cls, data: dict[str, any]) -> dict[str, any]:
-        """Upgrade ValidationResult from v1.0 to v2.0"""
-        if data.get("schema_version", "1.0") == "1.0":
-            data["schema_version"] = "2.0"
-            data["validation_method"] = None
-            data["redirect_chain"] = None
-            data["server_headers"] = None
-            data["network_metadata"] = None
-        return data
-
-    @classmethod
-    def upgrade_enrichment_item(cls, data: dict[str, any]) -> dict[str, any]:
-        """Upgrade EnrichmentItem from v1.0 to v2.0"""
-        if data.get("schema_version", "1.0") == "1.0":
-            data["schema_version"] = "2.0"
-            data["content_summary"] = None
-            data["content_embedding"] = None
-            data["academic_relevance_score"] = None
-            data["content_quality_score"] = None
-            data["processing_pipeline_version"] = None
-            data["source_discovery_method"] = None
-            data["processing_metadata"] = None
-            data["data_lineage"] = None
-        return data

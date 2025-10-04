@@ -25,8 +25,8 @@ def mock_settings(tmp_path):
     # Mock get() to return appropriate values based on key
     def mock_get(key, default=None):
         settings_map = {
-            'SEED_FILE': 'data/raw/uconn_urls.csv',
-            'STAGE1_OUTPUT_FILE': 'data/processed/stage01/discovery_output.jsonl',
+            'SEED_FILE': 'data/datalake/raw_urls/seeds.csv',
+            'STAGE1_OUTPUT_FILE': 'data/datalake/raw_urls',
             'DEDUP_CACHE_PATH': str(cache_path),
             'PAGINATION_CACHE_PATH': str(pagination_cache_path),
         }
@@ -201,8 +201,9 @@ def test_discovery_spider_deduplicates_urls(mock_settings):
     # On second parse, duplicates should be detected
     assert spider.duplicates_skipped > 0
 
-    # URL hashes should be tracked
-    assert len(spider.url_hashes) > 0
+    # URL deduplicator should have tracked URLs
+    dedup_stats = spider.url_deduplicator.get_stats()
+    assert dedup_stats['unique_urls_in_db'] > 0
 
     # Second parse should yield fewer (or zero) new discovery items
     assert len(discovery_items2) <= len(discovery_items1)
@@ -220,13 +221,18 @@ def test_discovery_spider_start_requests_real_seed_file(mock_settings):
     with seed_path.open("r", encoding="utf-8") as handle:
         expected_urls = [line.strip() for line in handle if line.strip()]
 
-    # Spider filters out malformed URLs, so request count will be less than raw CSV count
-    assert len(requests) <= len(expected_urls)
+    # Spider adds robots.txt/sitemap requests, so request count may be higher than seed count
+    assert len(requests) >= len(expected_urls)
     assert len(requests) > 0  # Should have some valid requests
+
+    # Verify some requests are for seed URLs
+    seed_request_urls = [r.url for r in requests if not any(x in r.url for x in ['robots.txt', 'sitemap'])]
+    assert len(seed_request_urls) > 0
+
     if expected_urls:
-        first_request = requests[0]
-        assert first_request.url.startswith("https://")
-        assert first_request.meta["depth"] == 0
+        first_seed_request = [r for r in requests if r.url in expected_urls][0] if any(r.url in expected_urls for r in requests) else requests[0]
+        assert first_seed_request.url.startswith("https://")
+        assert first_seed_request.meta["depth"] == 0
 
 
 def test_discovery_spider_handles_malformed_html(mock_settings):

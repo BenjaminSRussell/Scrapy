@@ -6,9 +6,10 @@ This script converts the final enriched_content.jsonl output to Parquet format
 and writes it into a Delta Lake table for efficient querying with DuckDB/SQL.
 
 Usage:
-    python tools/export_to_datalake.py
-    python tools/export_to_datalake.py --input data/processed/stage03/enriched_content.jsonl
-    python tools/export_to_datalake.py --output data/datalake/enriched_content
+    python tools/export_to_datalake.py --stage stage3
+    python tools/export_to_datalake.py --stage stage1 --table raw_urls
+    python tools/export_to_datalake.py --stage stage2 --table validated_urls
+    python tools/export_to_datalake.py --stage stage3 --table enriched_content
 """
 
 import argparse
@@ -158,16 +159,16 @@ def main():
         description="Export pipeline data to Delta Lake for analytics"
     )
     parser.add_argument(
-        '--input',
-        type=Path,
-        default=Path('data/processed/stage03/enriched_content.jsonl'),
-        help='Input JSONL file (default: data/processed/stage03/enriched_content.jsonl)'
+        '--stage',
+        choices=['stage1', 'stage2', 'stage3'],
+        default='stage3',
+        help='Pipeline stage to export (default: stage3)'
     )
     parser.add_argument(
-        '--output',
-        type=Path,
-        default=Path('data/datalake/enriched_content'),
-        help='Output Delta Lake path (default: data/datalake/enriched_content)'
+        '--table',
+        choices=['raw_urls', 'validated_urls', 'enriched_content'],
+        default=None,
+        help='Target table name in data lake'
     )
     parser.add_argument(
         '--mode',

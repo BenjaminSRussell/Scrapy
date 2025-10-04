@@ -14,9 +14,9 @@ from email.utils import parsedate_to_datetime
 from pathlib import Path
 from urllib.parse import urlparse
 
-from src.common.logging import get_structured_logger
+from src.common.logging import get_logger
 
-logger = get_structured_logger(__name__, component="freshness_tracker")
+logger = get_logger(__name__)
 
 
 @dataclass

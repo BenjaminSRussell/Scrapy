@@ -14,9 +14,9 @@ import random
 from dataclasses import dataclass
 from enum import Enum
 
-from src.common.logging import get_structured_logger
+from src.common.logging import get_logger
 
-logger = get_structured_logger(__name__, component="priority_queue")
+logger = get_logger(__name__)
 
 
 class QueueStrategy(Enum):

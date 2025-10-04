@@ -117,8 +117,8 @@ class TestREADMEExamples:
         project_root = Path(__file__).parent.parent.parent
 
         expected_dirs = [
-            "data/processed/stage01",
-            "data/processed/stage02",
+            "data/datalake/raw_urls",
+            "data/datalake/validated_urls",
             "data/processed/stage03",
         ]
 

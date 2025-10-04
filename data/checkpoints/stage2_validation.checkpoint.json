@@ -1,14 +1,14 @@
 {
   "stage": "stage2_validation",
   "batch_id": 1,
-  "last_processed_line": 50,
-  "last_url_hash": "hash_49",
-  "total_processed": 50,
+  "last_processed_line": 3,
+  "last_url_hash": "hash_batch_2",
+  "total_processed": 3,
   "created_at": "2025-10-04T11:38:26.633705",
-  "updated_at": "2025-10-04T11:38:26.909217",
+  "updated_at": "2025-10-04T13:31:25.726181",
   "status": "completed",
   "metadata": {
-    "batch_size": 50,
-    "output_file": "test_validation_output.jsonl"
+    "batch_size": 3,
+    "output_file": "C:\\Users\\Ben\\AppData\\Local\\Temp\\pytest-of-Ben\\pytest-99\\test_validate_batch_writes_res0\\validated.jsonl"
   }
 }

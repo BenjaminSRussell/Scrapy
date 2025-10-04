@@ -78,12 +78,14 @@ class StubSession:
         return None
 
     def head(self, url: str, allow_redirects: bool = True):
+        """Return stub response (context manager, not coroutine)"""
         self.head_calls.append(url)
         if isinstance(self.head_response, Exception):
             raise self.head_response
         return self.head_response
 
     def get(self, url: str, allow_redirects: bool = True):
+        """Return stub response (context manager, not coroutine)"""
         self.get_calls.append(url)
         if isinstance(self.get_response, Exception):
             raise self.get_response
@@ -102,8 +104,11 @@ def test_url_validator_initialization(tmp_path):
 
 def test_validate_single_url():
     response_headers = {"Content-Type": "text/html", "Content-Length": "512"}
+    # Validator now uses GET directly (skips HEAD due to aiohttp bugs)
+    get_response = StubResponse(headers=response_headers, status=200, url="https://uconn.edu/page", body=b"<html>test</html>")
     session = StubSession(
         head_response=StubResponse(headers=response_headers, status=200, url="https://uconn.edu/page"),
+        get_response=get_response
     )
 
     validator = URLValidator(DummyConfig(Path("/tmp/validated.jsonl")))
@@ -112,8 +117,8 @@ def test_validate_single_url():
     assert result.url == "https://uconn.edu/page"
     assert result.status_code == 200
     assert result.is_valid is True
-    assert session.head_calls == ["https://uconn.edu/page"]
-    assert session.get_calls == []
+    # Validator now uses GET directly (HEAD is skipped)
+    assert session.get_calls == ["https://uconn.edu/page"]
 
 
 def test_head_fallback_to_get():

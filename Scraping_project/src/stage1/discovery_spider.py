@@ -5,7 +5,7 @@ import re
 from collections.abc import AsyncGenerator, Iterator
 from datetime import datetime
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import urlparse, quote, unquote
 
 import scrapy
 from scrapy.http import Response
@@ -20,12 +20,12 @@ except ImportError:
 
 from src.common.adaptive_depth import AdaptiveDepthManager
 from src.common.feedback import FeedbackStore
-from src.common.logging import get_structured_logger, set_session_id, set_trace_id
+from src.common.logging import get_logger, set_session_id, set_trace_id
 from src.common.schemas import DiscoveryItem
 from src.common.storage import PaginationCache
 from src.common.urls import canonicalize_url_simple
 
-logger = get_structured_logger(__name__, component="discovery_spider", stage="stage1")
+logger = get_logger(__name__)
 
 
 DYNAMIC_SCRIPT_HINTS = (
@@ -706,25 +706,52 @@ class DiscoverySpider(scrapy.Spider):
         if not raw_url:
             return None
 
-        candidate = raw_url.strip()
+        # First, decode any percent-encoded characters
+        try:
+            decoded_url = unquote(raw_url.strip())
+        except Exception:
+            decoded_url = raw_url.strip()
 
-        if not candidate or candidate.startswith(('#', 'javascript:', 'mailto:')):
+        if not decoded_url or decoded_url.startswith(('#', 'javascript:', 'mailto:')):
             return None
 
-        absolute = response.urljoin(candidate)
-        parsed = urlparse(absolute)
+        try:
+            # Use response.urljoin to handle relative URLs
+            absolute = response.urljoin(decoded_url)
+            parsed = urlparse(absolute)
 
-        if parsed.scheme not in ('http', 'https'):
-            return None
-
-        hostname = (parsed.hostname or '').lower()
-        if hostname:
-            # Check if hostname matches any of the allowed domains
-            allowed = any(hostname.endswith(domain) for domain in self.allowed_domains)
-            if not allowed:
+            if parsed.scheme not in ('http', 'https'):
                 return None
 
-        return absolute
+            hostname = (parsed.hostname or '').lower()
+            if hostname:
+                # Check if hostname matches any of the allowed domains
+                allowed = any(hostname.endswith(domain) for domain in self.allowed_domains)
+                if not allowed:
+                    return None
+
+            # Re-encode the URL properly while preserving UTF-8 characters
+            path_parts = parsed.path.split('/')
+            encoded_path = '/'.join(quote(part) for part in path_parts if part)
+            if encoded_path:
+                encoded_path = '/' + encoded_path
+            
+            # Reconstruct the URL with properly encoded path
+            from urllib.parse import urlunparse
+            final_url = urlunparse((
+                parsed.scheme,
+                parsed.netloc,
+                encoded_path,
+                parsed.params,
+                parsed.query,
+                parsed.fragment
+            ))
+            
+            return final_url
+
+        except Exception as e:
+            logger.debug(f"Error normalizing URL {raw_url}: {e}")
+            return None
 
     def _extract_urls_from_json_text(self, raw_value: str, response: Response) -> set:
         """Parse JSON strings and gather plausible URL values recursively."""

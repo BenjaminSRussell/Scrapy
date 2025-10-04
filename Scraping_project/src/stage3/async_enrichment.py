@@ -762,3 +762,66 @@ async def run_async_enrichment(
         compression_config=compression_config
     ) as processor:
         await processor.process_urls(urls)
+
+
+def main():
+    """CLI entry point for async enrichment processor."""
+    import argparse
+    import json
+
+    parser = argparse.ArgumentParser(description='Asynchronous URL enrichment processor')
+    parser.add_argument('--input', default='data/processed/stage02/validation_output.jsonl',
+                        help='Input JSONL file from stage 2')
+    parser.add_argument('--output', default='data/processed/stage03/enrichment_output.jsonl',
+                        help='Output JSONL file')
+    parser.add_argument('--max-concurrency', type=int, default=50,
+                        help='Maximum concurrent requests')
+    parser.add_argument('--timeout', type=int, default=30,
+                        help='Request timeout in seconds')
+    parser.add_argument('--batch-size', type=int, default=100,
+                        help='Batch size for processing')
+
+    args = parser.parse_args()
+
+    # Read validated URLs from stage 2 output
+    urls = []
+    input_path = Path(args.input)
+
+    if not input_path.exists():
+        logger.error(f"Input file not found: {input_path}")
+        return
+
+    logger.info(f"Reading URLs from {input_path}")
+    with open(input_path, 'r', encoding='utf-8') as f:
+        for line in f:
+            record = json.loads(line)
+            if record.get('is_valid'):
+                urls.append(record['discovered_url'])
+
+    logger.info(f"Loaded {len(urls)} valid URLs for enrichment")
+
+    # Run async processor
+    asyncio.run(run_async_enrichment(
+        urls=urls,
+        output_file=args.output,
+        max_concurrency=args.max_concurrency,
+        timeout=args.timeout,
+        batch_size=args.batch_size
+    ))
+
+
+if __name__ == '__main__':
+    import sys
+    from src.common.logging import setup_logging
+
+    # Setup logging
+    setup_logging(log_level='INFO', log_dir=Path('data/logs'))
+
+    try:
+        main()
+    except KeyboardInterrupt:
+        logger.info("Interrupted by user")
+        sys.exit(0)
+    except Exception as e:
+        logger.exception(f"Fatal error: {e}")
+        sys.exit(1)

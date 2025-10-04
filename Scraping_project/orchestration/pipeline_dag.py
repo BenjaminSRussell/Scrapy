@@ -121,8 +121,7 @@ with TaskGroup('python_scraping', dag=dag) as python_scraping_group:
         bash_command=f"""
         cd {PROJECT_DIR}
         python -m scrapy crawl discovery_spider \
-            -s CLOSESPIDER_PAGECOUNT=1000 \
-            -s CONCURRENT_REQUESTS=16
+            -s CLOSESPIDER_PAGECOUNT=1000
         """,
     )
 
@@ -135,13 +134,12 @@ with TaskGroup('python_scraping', dag=dag) as python_scraping_group:
         """,
     )
 
-    # Stage 3: Enrichment
+    # Stage 3: Enrichment (using async processor for better performance)
     stage3_enrichment = BashOperator(
         task_id='stage3_enrichment',
         bash_command=f"""
         cd {PROJECT_DIR}
-        python -m scrapy crawl enrichment_spider \
-            -s CONCURRENT_REQUESTS=8
+        python -m src.stage3.async_enrichment
         """,
     )
 

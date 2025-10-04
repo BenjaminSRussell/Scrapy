@@ -27,9 +27,9 @@ except ImportError:
     PROMETHEUS_AVAILABLE = False
 
 from .enhanced_metrics import EnhancedMetricsCollector
-from .logging import get_structured_logger
+from .logging import get_logger
 
-logger = get_structured_logger(__name__, component="prometheus_exporter")
+logger = get_logger(__name__)
 
 
 class PrometheusExporter:

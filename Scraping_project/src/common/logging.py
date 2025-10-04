@@ -410,19 +410,3 @@ def clear_all_context():
     session_id_var.set(None)
     trace_id_var.set(None)
     stage_var.set(None)
-
-
-# Legacy compatibility - deprecated but kept for backward compatibility
-class StructuredFormatter(EventFormatter):
-    """DEPRECATED: Use EventFormatter instead"""
-    pass
-
-
-class StructuredLogger(PipelineLogger):
-    """DEPRECATED: Use PipelineLogger instead"""
-    pass
-
-
-def get_structured_logger(name: str, **context) -> PipelineLogger:
-    """DEPRECATED: Use get_logger() instead"""
-    return get_logger(name)

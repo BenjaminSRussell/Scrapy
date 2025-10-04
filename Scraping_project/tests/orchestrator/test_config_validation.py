@@ -44,8 +44,8 @@ class TestConfigValidation:
                     'spider_name': 'discovery',
                     'allowed_domains': ['example.com'],
                     'max_depth': 3,
-                    'output_file': 'data/processed/stage01/discovery_output.jsonl',
-                    'seed_file': 'data/raw/seeds.csv',
+                    'output_table': 'data/datalake/raw_urls',
+                    'seed_file': 'data/datalake/raw_urls/seeds.csv',
                     'use_persistent_dedup': True,
                     'dedup_cache_path': 'data/cache/url_cache.db',
                     'headless_browser': {
@@ -68,7 +68,7 @@ class TestConfigValidation:
                 'validation': {
                     'max_workers': 16,
                     'timeout': 15,
-                    'output_file': 'data/processed/stage02/validated_urls.jsonl'
+                    'output_table': 'data/datalake/validated_urls'
                 },
                 'enrichment': {
                     'spider_name': 'enrichment',
@@ -77,7 +77,7 @@ class TestConfigValidation:
                     'max_text_length': 20000,
                     'top_keywords': 15,
                     'batch_size': 1000,
-                    'output_file': 'data/processed/stage03/enrichment_output.jsonl',
+                    'output_table': 'data/datalake/enriched_content',
                     'headless_browser': {
                         'enabled': False,
                         'engine': 'playwright',
@@ -104,8 +104,7 @@ class TestConfigValidation:
                 }
             },
             'data': {
-                'raw_dir': 'data/raw',
-                'processed_dir': 'data/processed',
+                'datalake_dir': 'data/datalake',
                 'catalog_dir': 'data/catalog',
                 'cache_dir': 'data/cache',
                 'exports_dir': 'data/exports',
@@ -341,7 +340,7 @@ class TestConfigValidation:
             'environment': 'test',
             'stages': {
                 'discovery': {
-                    'allowed_domains': ['invalid_domain']  # Invalid format
+                    'allowed_domains': ['not-a.valid.domain']  # Invalid format
                 }
             }
         }

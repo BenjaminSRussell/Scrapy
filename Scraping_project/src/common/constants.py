@@ -9,21 +9,26 @@ from typing import Final
 # Project root directory
 PROJECT_ROOT: Final[Path] = Path(__file__).parent.parent.parent
 
-# Data directories - SINGLE SOURCE OF TRUTH
+# Data architecture - SINGLE SOURCE OF TRUTH (Delta Lake primary)
 DATA_DIR: Final[Path] = PROJECT_ROOT / "data"
-OUTPUT_DIR: Final[Path] = DATA_DIR / "output"  # Single unified output location
-LOGS_DIR: Final[Path] = DATA_DIR / "logs"
-CHECKPOINTS_DIR: Final[Path] = DATA_DIR / "checkpoints"
+DATALAKE_DIR: Final[Path] = DATA_DIR / "datalake"
 CONFIG_DIR: Final[Path] = DATA_DIR / "config"
+LOGS_DIR: Final[Path] = DATA_DIR / "logs"
 CACHE_DIR: Final[Path] = DATA_DIR / "cache"
+CHECKPOINTS_DIR: Final[Path] = DATA_DIR / "checkpoints"
 
-# Legacy directories (to be removed/migrated)
-LEGACY_SCRAPY_DATA: Final[Path] = PROJECT_ROOT / ".scrapy" / "data"
+# Delta Lake tables (primary storage)
+DELTA_RAW_URLS: Final[Path] = DATALAKE_DIR / "raw_urls"
+DELTA_VALIDATED_URLS: Final[Path] = DATALAKE_DIR / "validated_urls"
+DELTA_ENRICHED_CONTENT: Final[Path] = DATALAKE_DIR / "enriched_content"
+DELTA_LINK_GRAPH: Final[Path] = DATALAKE_DIR / "link_graph"
+DELTA_PERFORMANCE_METRICS: Final[Path] = DATALAKE_DIR / "performance_metrics"
 
-# Output file patterns
-DISCOVERED_URLS_PATTERN: Final[str] = "discovered_urls_*.jsonl"
-VALIDATED_URLS_PATTERN: Final[str] = "validated_urls_*.jsonl"
-ENRICHED_PAGES_PATTERN: Final[str] = "enriched_pages_*.jsonl"
+# Legacy paths (for backward compatibility - will be phased out)
+LEGACY_PROCESSED_DIR: Final[Path] = DATA_DIR / "processed"
+LINK_GRAPH_DB: Final[Path] = LEGACY_PROCESSED_DIR / "link_graph.db"
+FRESHNESS_DB: Final[Path] = CACHE_DIR / "freshness.db"
+WAREHOUSE_DB: Final[Path] = DATA_DIR / "warehouse" / "uconn_warehouse.db"
 
 # Stage identifiers
 STAGE_DISCOVERY: Final[str] = "stage1_discovery"
@@ -34,6 +39,19 @@ STAGE_ENRICHMENT: Final[str] = "stage3_enrichment"
 DEFAULT_SPACY_MODEL: Final[str] = "en_core_web_sm"  # Used for keywords and linguistic analysis
 LARGE_SPACY_MODEL: Final[str] = "en_core_web_lg"
 TRANSFORMER_MODEL: Final[str] = "microsoft/deberta-v3-base"  # DeBERTa model for NER
+SUMMARIZATION_MODEL: Final[str] = "facebook/bart-large-cnn"  # For long-form summarization
+WHISPER_MODEL: Final[str] = "base"  # Whisper model for audio transcription (tiny/base/small/medium/large)
+
+# Content Processing
+SUPPORTED_IMAGE_TYPES: Final[tuple] = ('.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.webp')
+SUPPORTED_AUDIO_TYPES: Final[tuple] = ('.mp3', '.wav', '.m4a', '.ogg', '.flac', '.aac')
+SUPPORTED_VIDEO_TYPES: Final[tuple] = ('.mp4', '.avi', '.mov', '.wmv', '.flv', '.webm', '.mkv')
+SUPPORTED_DOC_TYPES: Final[tuple] = ('.pdf', '.doc', '.docx', '.txt', '.rtf')
+
+# OCR Configuration
+OCR_ENGINE: Final[str] = "easyocr"  # Options: 'easyocr', 'tesseract', 'paddleocr'
+OCR_LANGUAGES: Final[list] = ['en']  # Languages for OCR
+MAX_IMAGE_SIZE_MB: Final[int] = 10  # Maximum image size for OCR
 
 # Taxonomy and glossary paths
 TAXONOMY_PATH: Final[Path] = CONFIG_DIR / "taxonomy.json"
@@ -59,7 +77,7 @@ MIN_ENTITY_LENGTH: Final[int] = 2
 
 # Database configuration
 DEFAULT_DB_TYPE: Final[str] = "sqlite"
-SQLITE_DB_PATH: Final[Path] = DATA_DIR / "warehouse" / "uconn_warehouse.db"
+SQLITE_DB_PATH: Final[Path] = WAREHOUSE_DB
 
 # Logging configuration
 LOG_FORMAT: Final[str] = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -86,35 +104,15 @@ VISUALIZER_EVENT_PATH: Final[str] = "/event"
 def ensure_directories() -> None:
     """Create all necessary directories if they don't exist."""
     directories = [
-        OUTPUT_DIR,
-        LOGS_DIR,
-        CHECKPOINTS_DIR,
+        WAREHOUSE_DIR,
+        WAREHOUSE_CACHE,
+        WAREHOUSE_CONFIG,
         CONFIG_DIR,
-        CACHE_DIR,
-        OUTPUT_DIR / "stage1",
-        OUTPUT_DIR / "stage2",
-        OUTPUT_DIR / "stage3",
-        DATA_DIR / "warehouse",
+        LOGS_DIR,
     ]
 
     for directory in directories:
         directory.mkdir(parents=True, exist_ok=True)
-
-
-def get_output_path(stage: str, filename: str) -> Path:
-    """
-    Get the standardized output path for a given stage and filename.
-
-    Args:
-        stage: Stage identifier (use STAGE_* constants)
-        filename: Output filename
-
-    Returns:
-        Path: Full path to output file
-    """
-    stage_dir = OUTPUT_DIR / stage.replace("stage", "stage")
-    stage_dir.mkdir(parents=True, exist_ok=True)
-    return stage_dir / filename
 
 
 def get_log_path(component: str) -> Path:
