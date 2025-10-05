@@ -149,7 +149,7 @@ class ConfigHealthCheck:
         if validated.stages.enrichment.nlp_enabled:
             try:
                 import spacy
-                model_name = validated.nlp.spacy_model or validated.nlp.model
+                model_name = validated.nlp.spacy_model
                 if model_name:
                     try:
                         spacy.load(model_name)
