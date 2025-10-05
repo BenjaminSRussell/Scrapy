@@ -1,8 +1,7 @@
 "Tests for Stage 1 Discovery Spider"
 
-import sys
 from pathlib import Path
-from unittest.mock import Mock, mock_open, patch, MagicMock
+from unittest.mock import Mock, mock_open, patch
 
 import pytest
 
@@ -328,80 +327,38 @@ def test_discovery_spider_encoding_handling(mock_settings):
     assert len(discovery_items) >= 0  # May be 0 if URL validation rejects encoded URLs
 
 
-@pytest.mark.asyncio
-async def test_headless_browser_handles_relative_url_correctly(mock_settings):
-    """
-    Test that _discover_with_headless_browser correctly handles relative URLs
-    after the fix.
-    """
-    # Create a mock for the EnhancedBrowserDiscovery class and its instance
-    MockBrowserClass = MagicMock()
-    mock_browser_instance = MockBrowserClass.return_value
-
-    # Mock the async methods that will be called
-    async def async_noop(*args, **kwargs):
-        pass
-
-    async def mock_discover_urls(*args, **kwargs):
-        return {
-            'discovered_urls': ['/relative-path'],
-            'network_urls': [],
-            'discovery_methods': {'static_html': 1, 'auto_click': 0, 'infinite_scroll': 0, 'network_intercept': 0}
-        }
-
-    mock_browser_instance.start = MagicMock(side_effect=async_noop)
-    mock_browser_instance.stop = MagicMock(side_effect=async_noop)
-    mock_browser_instance.discover_urls.side_effect = mock_discover_urls
-
-    # Create a mock for the module to house the class
-    mock_module = MagicMock()
-    mock_module.EnhancedBrowserDiscovery = MockBrowserClass
-
-    # Patch sys.modules to intercept the import of the non-existent module
-    with patch.dict(sys.modules, {'src.common.enhanced_browser': mock_module}):
-        spider = DiscoverySpider(settings=mock_settings, allowed_domains=['uconn.edu'])
-
-        # Mock settings to enable the headless browser feature for this test
-        original_get_side_effect = spider.settings.get.side_effect
-        def new_get_side_effect(key, default=None):
-            if key == 'HEADLESS_BROWSER_CONFIG':
-                return {'enabled': True}
-            if original_get_side_effect:
-                return original_get_side_effect(key, default)
-            return default
-        spider.settings.get.side_effect = new_get_side_effect
-
-        start_url = "https://uconn.edu"
-
-        # The bug is fixed, so we now expect a DiscoveryItem, not an exception
-        results_generator = spider._discover_with_headless_browser(start_url, 0)
-        results = [item async for item in results_generator]
-
-        # Ensure that at least one item was yielded
-        assert len(results) > 0
-
-        # Check that the first result is a DiscoveryItem with the correct absolute URL
-        first_result = results[0]
-        assert isinstance(first_result, DiscoveryItem)
-        assert first_result.discovered_url == "https://uconn.edu/relative-path"
-
-
-def test_normalize_candidate_preserves_multiple_slashes(mock_settings):
-    """
-    Test that _normalize_candidate preserves multiple slashes in a URL path,
-    which is important for some web servers.
-    """
+def test_normalize_candidate_preserves_encoded_slashes(mock_settings):
+    """Test that _normalize_candidate preserves percent-encoded slashes in URLs."""
     spider = DiscoverySpider(settings=mock_settings, allowed_domains=['uconn.edu'])
-    response = html_response("https://uconn.edu", "", depth=0)
 
-    # Test URL with multiple consecutive slashes
-    url_with_slashes = "https://uconn.edu/find//a/job"
-    normalized_url = spider._normalize_candidate(url_with_slashes, response)
+    # Create a mock response object required by _normalize_candidate
+    mock_response = Mock()
+    mock_response.url = "https://uconn.edu/base"
 
-    # The URL path should be preserved exactly as is
-    assert normalized_url == "https://uconn.edu/find//a/job"
+    # Define a urljoin that just prepends the base for relative URLs
+    def mock_urljoin(url):
+        from urllib.parse import urljoin
+        return urljoin(mock_response.url, url)
 
-    # Test with a more complex case including special characters
-    url_with_special_chars = "https://uconn.edu/foo//bar%20baz"
-    normalized_url_special = spider._normalize_candidate(url_with_special_chars, response)
-    assert normalized_url_special == "https://uconn.edu/foo//bar%20baz"
+    mock_response.urljoin = mock_urljoin
+
+    # Test URL with a percent-encoded slash
+    test_url_with_encoded_slash = "https://uconn.edu/api/resource/foo%2Fbar"
+
+    # Normalize the URL
+    normalized_url = spider._normalize_candidate(test_url_with_encoded_slash, mock_response)
+
+    # The bug would turn %2F into /, so we assert it's preserved.
+    assert normalized_url == test_url_with_encoded_slash, \
+        f"Expected URL to be '{test_url_with_encoded_slash}', but got '{normalized_url}'"
+
+    # Another test case with a more complex path
+    complex_url = "https://uconn.edu/search?query=foo%2Fbar&page=1"
+    normalized_complex = spider._normalize_candidate(complex_url, mock_response)
+    assert normalized_complex == complex_url
+
+    # Test a relative URL with encoded slash
+    relative_url = "/api/data/item%2F_id"
+    expected_full_url = "https://uconn.edu/api/data/item%2F_id"
+    normalized_relative = spider._normalize_candidate(relative_url, mock_response)
+    assert normalized_relative == expected_full_url

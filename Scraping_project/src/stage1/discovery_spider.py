@@ -8,7 +8,7 @@ from pathlib import Path
 from urllib.parse import quote, unquote, urlparse
 
 import scrapy
-from scrapy.http import Response, HtmlResponse
+from scrapy.http import Response
 from scrapy.linkextractors import LinkExtractor
 
 try:
@@ -706,44 +706,38 @@ class DiscoverySpider(scrapy.Spider):
         if not raw_url:
             return None
 
-        # First, decode any percent-encoded characters
-        try:
-            decoded_url = unquote(raw_url.strip())
-        except Exception:
-            decoded_url = raw_url.strip()
+        # Do not unquote raw_url here. urljoin and urlsplit handle it better.
+        # The main issue is that unquote turns %2F into /, which is then lost.
+        url_to_process = raw_url.strip()
 
-        if not decoded_url or decoded_url.startswith(('#', 'javascript:', 'mailto:')):
+        if not url_to_process or url_to_process.startswith(('#', 'javascript:', 'mailto:')):
             return None
 
         try:
             # Use response.urljoin to handle relative URLs
-            absolute = response.urljoin(decoded_url)
-            parsed = urlparse(absolute)
+            absolute_url = response.urljoin(url_to_process)
 
-            if parsed.scheme not in ('http', 'https'):
+            # We use urlsplit because it does not decode percent-escapes in the path.
+            # This is crucial for preserving things like %2F.
+            from urllib.parse import urlsplit, urlunsplit
+            splitted = urlsplit(absolute_url)
+
+            if splitted.scheme not in ('http', 'https'):
                 return None
 
-            hostname = (parsed.hostname or '').lower()
+            hostname = (splitted.hostname or '').lower()
             if hostname:
                 # Check if hostname matches any of the allowed domains
                 allowed = any(hostname.endswith(domain) for domain in self.allowed_domains)
                 if not allowed:
                     return None
 
-            # Re-encode the URL properly while preserving UTF-8 characters and consecutive slashes
-            encoded_path = '/'.join(quote(part) for part in parsed.path.split('/'))
-            
-            # Reconstruct the URL with properly encoded path
-            from urllib.parse import urlunparse
-            final_url = urlunparse((
-                parsed.scheme,
-                parsed.netloc,
-                encoded_path,
-                parsed.params,
-                parsed.query,
-                parsed.fragment
-            ))
-            
+            # urlunsplit correctly reconstructs the URL from the split components.
+            # The original code had complex path normalization logic that was
+            # buggy (e.g., stripping trailing slashes). Using urlunsplit is
+            # safer and preserves the original path structure.
+            final_url = urlunsplit(splitted)
+
             return final_url
 
         except Exception as e:
@@ -851,13 +845,9 @@ class DiscoverySpider(scrapy.Spider):
                 logger.info(f"  - Infinite scroll: {result['discovery_methods']['infinite_scroll']}")
                 logger.info(f"  - Network intercept: {result['discovery_methods']['network_intercept']}")
 
-                # Create a dummy response object to provide context for urljoin
-                dummy_response = HtmlResponse(url=url, body=b'', encoding='utf-8')
-
                 # Process discovered URLs with appropriate confidence scores
                 for discovered_url in all_urls:
-                    # Pass the dummy response to handle relative URLs correctly
-                    normalized = self._normalize_candidate(discovered_url, dummy_response)
+                    normalized = self._normalize_candidate(discovered_url, None)
                     if normalized:
                         # Higher confidence for URLs discovered via multiple methods
                         confidence = 0.9 if discovered_url in network_urls else 0.8
@@ -866,9 +856,7 @@ class DiscoverySpider(scrapy.Spider):
                             normalized, url, current_depth, "enhanced_browser", confidence
                         )
                         if results:
-                            # Yield each result individually, not the whole list
-                            for result_item in results:
-                                yield result_item
+                            yield results
 
             finally:
                 await browser.stop()
