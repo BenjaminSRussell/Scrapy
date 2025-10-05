@@ -71,10 +71,9 @@ class RequestAnalyticsEngine:
         """Log a request attempt for analytics"""
         try:
             # Write to request log
-            log_entry = {
-                **asdict(attempt),
-                'timestamp': attempt.timestamp.isoformat()
-            }
+            log_entry = asdict(attempt)
+            log_entry['timestamp'] = attempt.timestamp.isoformat()
+            log_entry['outcome'] = attempt.outcome.value  # Convert Enum to string
 
             with open(self.request_log, 'a', encoding='utf-8') as f:
                 f.write(json.dumps(log_entry, ensure_ascii=False) + '\n')
@@ -129,8 +128,11 @@ class RequestAnalyticsEngine:
 
         # Calculate optimal timeout (3x 95th percentile of successful response times)
         successful_times = [a['response_time'] for a in domain_attempts if a['outcome'] == 'success' and a['response_time'] > 0]
-        if successful_times:
-            optimal_timeout = max(5.0, statistics.quantile(successful_times, 0.95) * 3)
+        if len(successful_times) > 1:
+            # n=20 for 19 quantiles (5th, 10th, ..., 95th percentile)
+            # The 19th element (index 18) corresponds to the 95th percentile.
+            percentiles = statistics.quantiles(successful_times, n=20)
+            optimal_timeout = max(5.0, percentiles[18] * 3)
         else:
             optimal_timeout = 10.0
 
