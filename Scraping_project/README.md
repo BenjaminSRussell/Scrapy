@@ -1,180 +1,129 @@
-# 🚀 Scraping Project Technical README 🚀
+# Ultra Scraping Pipeline
 
-Welcome to the technical deep dive into the UConn Web Scraping Pipeline! This guide is for developers and anyone curious about what makes this project tick. Let's explore the engine room! 🛠️
+Mass web scraping with **ultra-aggressive URL discovery**, **media processing** (OCR + Whisper), and **Delta Lake** storage.
 
----
+## Features
 
-## 🏁 Quick Start for Developers
+✅ **Ultra Discovery** - Finds ALL URLs (hidden, obfuscated, encoded)  
+✅ **Media Detection** - Identifies images, audio, video  
+✅ **OCR** - Extracts text from images (EasyOCR)  
+✅ **Whisper** - Transcribes audio/video content  
+✅ **Auto Seed Update** - Adds new URLs to seed file for continuous crawling  
+✅ **Delta Lake** - ACID storage with auto-checkpoint  
+✅ **NLP** - YAKE keywords + DeBerta classification  
 
-Get the pipeline running from within the project directory:
-
-```bash
-cd Scraping_project
-python -m src.orchestrator.main --env development --stage all
-```
-
----
-
-## 🏗️ How It Works: The 3-Stage Pipeline
-
-Our pipeline is a three-act show, transforming seed URLs into enriched, ready-to-use data.
-
-| Stage               | What it Does                               | Engine            |
-|---------------------|--------------------------------------------|-------------------|
-| 🌐 **1. Discovery**   | Crawls seed URLs to find new links.        | Scrapy + Twisted  |
-| ✨ **2. Validation**  | Checks if discovered URLs are valid & live.| aiohttp + asyncio |
-| 🧠 **3. Enrichment**  | Extracts valuable info using NLP.          | Scrapy + spaCy    |
-
----
-
-## ⚙️ Configuration
-
-All settings are neatly organized in the `config/` directory.
-
-- `development.yml`: For your local machine.
-- `production.yml`: For deployment.
-- `keywords.txt`: For content classification.
-
-### Key Settings Example
-
-Here are some of the levers you can pull:
-
-```yaml
-stages:
-  discovery:
-    max_depth: 3
-    seed_file: data/raw/uconn_urls.csv
-
-  validation:
-    max_workers: 50
-    timeout: 10
-
-  enrichment:
-    batch_size: 100
-
-nlp:
-  model: en_core_web_sm
-
-queue:
-  max_queue_size: 10000
-```
-
----
-
-## 🗺️ Project Tour
-
-Let's take a walk through the project structure.
-
-```
-Scraping_project/
-├── src/                # 🐍 The Python source code lives here
-│   ├── stage1/         # Discovery spider
-│   ├── stage2/         # URL validator
-│   ├── stage3/         # Content enrichment
-│   ├── common/         # Shared utilities for all stages
-│   └── orchestrator/   # The conductor of our pipeline
-├── tests/              # ✅ All our tests
-├── tools/              # 🔨 Utility and helper scripts
-├── config/             # ⚙️ Pipeline configurations
-└── data/               # 📊 Input and output data
-```
-
----
-
-## 📊 Data Outputs
-
-Each stage produces a specific output file. Here’s what to expect.
-
-### Stage 1: Discovery
-
-- **File:** `data/processed/stage01/discovery_output.jsonl`
-- **Content:** A list of all URLs discovered from the initial seeds.
-
-### Stage 2: Validation
-
-- **File:** `data/processed/stage02/validation_output.jsonl`
-- **Content:** The status of each URL (e.g., 200 OK, 404 Not Found).
-
-### Stage 3: Enrichment (The Grand Finale!)
-
-- **File:** `data/processed/stage03/enriched_content.jsonl`
-- **Content:** The final, enriched data with NLP insights.
-
-```json
-{
-  "url": "https://uconn.edu/academics",
-  "title": "Academics - UConn",
-  "entities": ["University of Connecticut"],
-  "keywords": ["academics", "programs"],
-  "word_count": 1234
-}
-```
-
----
-
-## 🚀 Running the Pipeline
-
-You have granular control over the pipeline execution.
-
-### Run a Single Stage
+## Quick Start
 
 ```bash
-# Stage 1: Discover URLs
-python -m src.orchestrator.main --stage 1
+# Install
+pip install -r requirements.txt
+brew install ffmpeg  # macOS (or apt-get on Linux)
 
-# Stage 2: Validate URLs
-python -m src.orchestrator.main --stage 2
-
-# Stage 3: Enrich Content
-python -m src.orchestrator.main --stage 3
+# Run
+python run_pipeline.py
 ```
 
-### Run the Full Pipeline
+## Architecture
+
+```
+Stage 1: Ultra Discovery
+  ├── Finds ALL URLs (standard + hidden + obfuscated)
+  ├── Detects media (images, audio, video)
+  ├── Updates seed file with new URLs
+  └── Saves to Delta Lake
+
+Stage 3: Enrichment
+  ├── Extracts text content
+  ├── OCR on images
+  ├── Whisper transcription on audio/video
+  ├── YAKE keyword extraction
+  ├── DeBerta classification
+  └── Saves enriched data to Delta Lake
+```
+
+**No Stage 2** - Validation merged into discovery.
+
+## Usage
 
 ```bash
-python -m src.orchestrator.main --stage all
+# Full pipeline (unlimited depth)
+python run_pipeline.py --stage all
+
+# Discovery only
+python run_pipeline.py --stage discovery --max-depth 5
+
+# Enrichment only
+python run_pipeline.py --stage enrichment
+
+# Custom seed file
+python run_pipeline.py --seed my_urls.csv
 ```
 
----
+## Continuous Crawling
 
-## ✅ Testing
-
-Ensure everything is running smoothly with our test suite.
+After each run, new URLs are automatically added to seed file. Run again to discover more!
 
 ```bash
-# Run the full test suite
-python -m pytest tests/ -v
-
-# Focus on end-to-end tests
-python -m pytest tests/test_end_to_end.py -v
-
-# Check test coverage
-python -m pytest tests/ --cov=src --cov-report=html
+python run_pipeline.py  # Discovers new URLs
+python run_pipeline.py  # Discovers even more!
 ```
 
----
+## File Structure
 
-## 🤯 Troubleshooting
+```
+├── run_pipeline.py        # Main runner
+├── src/
+│   ├── common/           # 5 essential files
+│   ├── stage1/           # Ultra discovery
+│   └── stage3/           # Enrichment + media
+├── data/
+│   ├── delta_lake/       # All data here
+│   └── raw/uconn_urls.csv  # Auto-updated!
+└── config/settings.yml   # Configuration
+```
 
-Having issues? Here are some common fixes.
+## Data Access
 
-- **Configuration Error?**
-  - Double-check your `.yml` files for syntax errors.
+```python
+from src.common.delta_storage import get_storage
 
-- **Out of Memory?**
-  - Try reducing `max_workers` in your `development.yml` file.
+storage = get_storage()
+data = storage.read()
+print(f"Discovered {len(data)} records")
+```
 
-- **No Visualization?**
-  - Make sure you're using a modern terminal like Windows Terminal or PowerShell 7+.
+## Configuration
 
----
+Edit `config/settings.yml` to control:
+- Max crawl depth
+- Media processing limits
+- OCR/Whisper models
+- Concurrent requests
 
-## 🙋‍♀️ Support
+## What Changed
 
-- **Found a bug?** Report it on GitHub Issues.
-- **Need more details?** Check out the `docs/` folder.
-- **Want to see examples?** The `tests/` folder is your friend.
+**Removed:**
+- ❌ Orchestrator (bloat)
+- ❌ Stage 2 validation (merged to stage 1)
+- ❌ spaCy (using YAKE + DeBerta)
+- ❌ 50+ legacy files
+- ❌ Tools, visualizer, etc.
 
----
+**Added:**
+- ✅ Media processing (OCR + Whisper)
+- ✅ Auto seed file updates
+- ✅ Simplified structure
 
-**Last Updated:** October 4, 2025
+## Requirements
+
+- Python 3.10+
+- FFmpeg (for video processing)
+- See requirements.txt for packages
+
+## Troubleshooting
+
+**Import errors:** Run from project root  
+**Media fails:** Install ffmpeg  
+**Delta Lake errors:** `pip install deltalake pyarrow`  
+
+Check logs: `data/logs/pipeline.log`

@@ -45,7 +45,7 @@ ROBOTSTXT_OBEY = _scrapy_config.get('robotstxt_obey', False)
 
 # Configure pipelines
 ITEM_PIPELINES = _scrapy_config.get('item_pipelines', {
-    'src.stage3.enrichment_pipeline.Stage3Pipeline': 300,
+    # No pipelines needed - stage 1 saves directly to Delta Lake
 })
 
 # Configure request fingerprinting (from YAML or default)

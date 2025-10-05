@@ -1,17 +1,19 @@
 """
-Delta Lake integration for pipeline storage.
-
-Provides ACID transactions, time travel, schema evolution for all pipeline data.
+Organized Delta Lake with separate tables per stage.
+Concurrent queue system for multiple requests.
 """
 
 import logging
+import queue
+import signal
+import sys
+import threading
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 try:
     import pyarrow as pa
-    import pyarrow.parquet as pq
     from deltalake import DeltaTable, write_deltalake
     DELTA_AVAILABLE = True
 except ImportError:
@@ -20,247 +22,175 @@ except ImportError:
     write_deltalake = None
     pa = None
 
-from src.common.constants import DELTA_ENRICHED_CONTENT, DELTA_RAW_URLS, DELTA_VALIDATED_URLS
+from src.common.constants import DELTA_LAKE
 
 logger = logging.getLogger(__name__)
 
 
-class DeltaLakeWriter:
-    """Write data to Delta Lake tables with ACID guarantees."""
+class DeltaLakeManager:
+    """
+    Manages Delta Lake with organized stage-based tables.
+    Supports concurrent writes with queue system.
+    """
 
-    def __init__(self, table_path: Path, partition_by: list[str] | None = None):
-        """
-        Initialize Delta Lake writer.
-
-        Args:
-            table_path: Path to Delta Lake table
-            partition_by: Columns to partition by (e.g., ['year', 'month', 'day'])
-        """
+    def __init__(self):
         if not DELTA_AVAILABLE:
-            raise ImportError(
-                "Delta Lake not available. Install with: pip install deltalake pyarrow"
-            )
+            raise ImportError("Delta Lake not available. Install: pip install deltalake pyarrow")
 
-        self.table_path = str(table_path)
-        self.partition_by = partition_by or []
-        self.table_path_obj = Path(table_path)
+        self.base_path = DELTA_LAKE
+        self.base_path.mkdir(parents=True, exist_ok=True)
 
-        # Ensure directory exists
-        self.table_path_obj.mkdir(parents=True, exist_ok=True)
+        # Stage-specific tables with relationships
+        self.tables = {
+            'stage1_discovery': self.base_path / 'stage1_discovery',
+            'stage1_errors': self.base_path / 'stage1_errors',
+            'stage2_page_analysis': self.base_path / 'stage2_page_analysis',
+            'stage3_analytics': self.base_path / 'stage3_analytics',
+            'stage4_summaries': self.base_path / 'stage4_summaries',
+        }
 
-    def write(
-        self,
-        data: list[dict[str, Any]],
-        mode: str = "append",
-        schema: pa.Schema | None = None
-    ):
+        # Create table directories
+        for table_path in self.tables.values():
+            table_path.mkdir(parents=True, exist_ok=True)
+
+        # Concurrent write queue
+        self.write_queue = queue.Queue()
+        self.worker_thread = None
+        self.shutdown_event = threading.Event()
+
+        # Start background worker
+        self._start_worker()
+
+        # Register shutdown handlers
+        signal.signal(signal.SIGINT, self._shutdown_handler)
+        signal.signal(signal.SIGTERM, self._shutdown_handler)
+
+    def _start_worker(self):
+        """Start background worker for concurrent writes."""
+        self.worker_thread = threading.Thread(target=self._process_queue, daemon=True)
+        self.worker_thread.start()
+        logger.info("Delta Lake queue worker started")
+
+    def _process_queue(self):
+        """Process write queue in background."""
+        while not self.shutdown_event.is_set():
+            try:
+                # Get write task with timeout
+                task = self.write_queue.get(timeout=1.0)
+                if task is None:  # Shutdown signal
+                    break
+
+                table_name, data, mode = task
+
+                # Perform write
+                self._write_sync(table_name, data, mode)
+
+                self.write_queue.task_done()
+
+            except queue.Empty:
+                continue
+            except Exception as e:
+                logger.error(f"Queue worker error: {e}", exc_info=True)
+
+    def _write_sync(self, table_name: str, data: list[dict[str, Any]], mode: str = "append"):
+        """Synchronous write to Delta table."""
+        if not data:
+            return
+
+        table_path = self.tables.get(table_name)
+        if not table_path:
+            raise ValueError(f"Unknown table: {table_name}")
+
+        # Add metadata
+        for record in data:
+            if '_ingestion_time' not in record:
+                record['_ingestion_time'] = datetime.now().isoformat()
+            if '_stage' not in record:
+                record['_stage'] = table_name
+
+        # Convert to PyArrow Table
+        table = pa.Table.from_pylist(data)
+
+        # Write to Delta Lake
+        write_deltalake(
+            str(table_path),
+            table,
+            mode=mode,
+            schema_mode="merge" if mode == "append" else "overwrite"
+        )
+
+        logger.info(f"✅ Wrote {len(data)} records to {table_name}")
+
+    def write(self, table_name: str, data: list[dict[str, Any]], mode: str = "append", async_write: bool = True):
         """
         Write data to Delta Lake table.
 
         Args:
-            data: List of dictionaries to write
-            mode: Write mode ('append', 'overwrite', 'merge')
-            schema: PyArrow schema (auto-inferred if None)
+            table_name: 'stage1_discovery', 'stage2_analytics', or 'stage3_summaries'
+            data: List of dictionaries
+            mode: 'append' or 'overwrite'
+            async_write: If True, queue for background write. If False, write immediately.
         """
-        if not data:
-            logger.warning(f"No data to write to {self.table_path}")
-            return
-
-        # Add ingestion timestamp
-        for record in data:
-            if '_ingestion_time' not in record:
-                record['_ingestion_time'] = datetime.now().isoformat()
-
-        # Convert to PyArrow Table
-        if schema:
-            table = pa.Table.from_pylist(data, schema=schema)
+        if async_write:
+            # Queue for background processing
+            self.write_queue.put((table_name, data, mode))
+            logger.debug(f"Queued {len(data)} records for {table_name}")
         else:
-            table = pa.Table.from_pylist(data)
+            # Immediate synchronous write
+            self._write_sync(table_name, data, mode)
 
-        # Write to Delta Lake
-        write_deltalake(
-            self.table_path,
-            table,
-            mode=mode,
-            partition_by=self.partition_by if self.partition_by else None,
-            schema_mode="merge" if mode == "append" else "overwrite"
-        )
+    def read(self, table_name: str, filters: Any = None) -> list[dict]:
+        """Read data from Delta Lake table."""
+        table_path = self.tables.get(table_name)
+        if not table_path:
+            raise ValueError(f"Unknown table: {table_name}")
 
-        logger.info(f"Wrote {len(data)} records to {self.table_path} (mode={mode})")
+        if not (table_path / "_delta_log").exists():
+            logger.warning(f"No data found in {table_name}")
+            return []
 
-    def merge(
-        self,
-        data: list[dict[str, Any]],
-        predicate: str,
-        match_update: dict[str, str] | None = None,
-        not_match_insert: dict[str, str] | None = None
-    ):
-        """
-        Merge (upsert) data into Delta Lake table.
-
-        Args:
-            data: New data to merge
-            predicate: Merge condition (e.g., "target.url = source.url")
-            match_update: Column mappings for matched rows
-            not_match_insert: Column mappings for new rows
-        """
-        # For now, use overwrite on duplicates
-        # TODO: Implement proper merge when deltalake-python supports it
-        self.write(data, mode="append")
-
-
-class DeltaLakeReader:
-    """Read data from Delta Lake tables with time travel support."""
-
-    def __init__(self, table_path: Path):
-        """
-        Initialize Delta Lake reader.
-
-        Args:
-            table_path: Path to Delta Lake table
-        """
-        if not DELTA_AVAILABLE:
-            raise ImportError(
-                "Delta Lake not available. Install with: pip install deltalake pyarrow"
-            )
-
-        self.table_path = str(table_path)
-        self.table_path_obj = Path(table_path)
-
-        if not self.table_path_obj.exists():
-            raise FileNotFoundError(f"Delta table not found: {table_path}")
-
-        self.table = DeltaTable(self.table_path)
-
-    def read(
-        self,
-        columns: list[str] | None = None,
-        filters: Any = None,
-        version: int | None = None,
-        timestamp: str | None = None
-    ) -> list[dict]:
-        """
-        Read data from Delta Lake table.
-
-        Args:
-            columns: Columns to select (None = all)
-            filters: PyArrow filter expression
-            version: Table version for time travel
-            timestamp: ISO timestamp for time travel
-
-        Returns:
-            List of dictionaries
-        """
-        # Load table at specific version if requested
-        if version is not None:
-            table = DeltaTable(self.table_path, version=version)
-        elif timestamp is not None:
-            # Convert timestamp to version (approximate)
-            table = DeltaTable(self.table_path)
-        else:
-            table = self.table
-
-        # Read as PyArrow table
-        pa_table = table.to_pyarrow_table(columns=columns, filters=filters)
-
-        # Convert to list of dicts
+        table = DeltaTable(str(table_path))
+        pa_table = table.to_pyarrow_table(filters=filters)
         return pa_table.to_pylist()
 
-    def query(self, sql: str) -> list[dict]:
-        """
-        Query Delta Lake table using DuckDB SQL.
+    def count(self, table_name: str) -> int:
+        """Get record count for a table."""
+        data = self.read(table_name)
+        return len(data)
 
-        Args:
-            sql: SQL query string
+    def checkpoint(self):
+        """Wait for queue to finish and checkpoint all tables."""
+        logger.info("Waiting for queue to finish...")
+        self.write_queue.join()  # Wait for all tasks
 
-        Returns:
-            List of dictionaries
-        """
-        try:
-            import duckdb
-        except ImportError:
-            raise ImportError("DuckDB required for SQL queries: pip install duckdb")
+        logger.info("Checkpointing all Delta tables...")
+        for name, table_path in self.tables.items():
+            try:
+                if (table_path / "_delta_log").exists():
+                    table = DeltaTable(str(table_path))
+                    table.vacuum(retention_hours=168)  # 7 days
+                    logger.info(f"✅ Checkpointed {name}")
+            except Exception as e:
+                logger.error(f"Failed to checkpoint {name}: {e}")
 
-        # DuckDB can query Delta Lake tables directly
-        con = duckdb.connect()
-        result = con.execute(f"""
-            SELECT * FROM delta_scan('{self.table_path}')
-            WHERE {sql}
-        """).fetchall()
-
-        # Get column names
-        columns = [desc[0] for desc in con.description]
-
-        # Convert to list of dicts
-        return [dict(zip(columns, row, strict=False)) for row in result]
-
-    def count(self) -> int:
-        """Get total record count."""
-        return len(self.read(columns=['_ingestion_time']))
-
-    def get_schema(self) -> pa.Schema:
-        """Get table schema."""
-        return self.table.schema().to_pyarrow()
-
-    def get_history(self) -> list[dict]:
-        """Get table history (all versions)."""
-        return self.table.history()
-
-    def vacuum(self, retention_hours: int = 168):
-        """
-        Remove old Parquet files (default: 7 days).
-
-        Args:
-            retention_hours: Hours to retain old versions
-        """
-        self.table.vacuum(retention_hours=retention_hours)
-        logger.info(f"Vacuumed {self.table_path} (retention={retention_hours}h)")
+    def _shutdown_handler(self, signum, frame):
+        """Handle shutdown gracefully."""
+        logger.info("Shutdown signal received, checkpointing Delta Lake...")
+        self.shutdown_event.set()
+        self.write_queue.put(None)  # Signal worker to stop
+        if self.worker_thread:
+            self.worker_thread.join(timeout=10)
+        self.checkpoint()
+        sys.exit(0)
 
 
-# Convenience functions for common tables
-
-def write_raw_urls(data: list[dict], mode: str = "append"):
-    """Write to raw_urls Delta table."""
-    writer = DeltaLakeWriter(DELTA_RAW_URLS, partition_by=['crawl_date'])
-    writer.write(data, mode=mode)
+# Global singleton
+_delta_manager = None
 
 
-def write_validated_urls(data: list[dict], mode: str = "append"):
-    """Write to validated_urls Delta table."""
-    writer = DeltaLakeWriter(DELTA_VALIDATED_URLS, partition_by=['validation_date'])
-    writer.write(data, mode=mode)
-
-
-def write_enriched_content(data: list[dict], mode: str = "append"):
-    """Write to enriched_content Delta table."""
-    writer = DeltaLakeWriter(DELTA_ENRICHED_CONTENT, partition_by=['enrichment_date'])
-    writer.write(data, mode=mode)
-
-
-def read_raw_urls(filters: Any = None) -> list[dict]:
-    """Read from raw_urls Delta table."""
-    reader = DeltaLakeReader(DELTA_RAW_URLS)
-    return reader.read(filters=filters)
-
-
-def read_validated_urls(filters: Any = None) -> list[dict]:
-    """Read from validated_urls Delta table."""
-    reader = DeltaLakeReader(DELTA_VALIDATED_URLS)
-    return reader.read(filters=filters)
-
-
-def read_enriched_content(filters: Any = None) -> list[dict]:
-    """Read from enriched_content Delta table."""
-    reader = DeltaLakeReader(DELTA_ENRICHED_CONTENT)
-    return reader.read(filters=filters)
-
-
-def query_enriched_content(sql_where: str) -> list[dict]:
-    """
-    Query enriched content using SQL WHERE clause.
-
-    Example:
-        results = query_enriched_content("title LIKE '%admissions%'")
-    """
-    reader = DeltaLakeReader(DELTA_ENRICHED_CONTENT)
-    return reader.query(sql_where)
+def get_delta_manager() -> DeltaLakeManager:
+    """Get or create global Delta Lake manager."""
+    global _delta_manager
+    if _delta_manager is None:
+        _delta_manager = DeltaLakeManager()
+    return _delta_manager

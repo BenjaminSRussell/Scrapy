@@ -114,11 +114,15 @@ class UltraDiscovery:
         for src in self.response.css('object::attr(data), embed::attr(src)').getall():
             self._add_url(src)
 
+        return iter(())
+
     def _extract_from_javascript(self) -> Iterator[str]:
         """Extract URLs from external JavaScript files"""
         script_urls = self.response.css('script::attr(src)').getall()
         for url in script_urls:
             self._add_url(url)
+
+        return iter(())
 
     def _extract_from_inline_scripts(self) -> Iterator[str]:
         """Extract URLs from inline <script> tags"""
@@ -150,6 +154,8 @@ class UltraDiscovery:
                 for match in pattern.finditer(script):
                     self._add_url(match.group(1))
 
+        return iter(())
+
     def _extract_from_event_handlers(self) -> Iterator[str]:
         """Extract URLs from onclick, onload, etc."""
         event_attrs = [
@@ -171,6 +177,8 @@ class UltraDiscovery:
                     for match in pattern.finditer(handler):
                         self._add_url(match.group(1))
 
+        return iter(())
+
     def _extract_from_css(self) -> Iterator[str]:
         """Extract URLs from CSS (inline styles)"""
         styles = self.response.css('[style]::attr(style)').getall()
@@ -179,6 +187,8 @@ class UltraDiscovery:
             # Find url() declarations
             for match in re.finditer(r'url\(["\']?([^)"\']+)["\']?\)', style):
                 self._add_url(match.group(1))
+
+        return iter(())
 
     def _extract_from_style_tags(self) -> Iterator[str]:
         """Extract URLs from <style> tags"""
@@ -192,6 +202,8 @@ class UltraDiscovery:
             # Find @import statements
             for match in re.finditer(r'@import\s+["\']([^"\']+)["\']', content):
                 self._add_url(match.group(1))
+
+        return iter(())
 
     def _extract_from_meta_tags(self) -> Iterator[str]:
         """Extract URLs from meta tags"""
@@ -219,6 +231,8 @@ class UltraDiscovery:
         if canonical:
             self._add_url(canonical)
 
+        return iter(())
+
     def _extract_from_iframes(self) -> Iterator[str]:
         """Extract URLs from iframes and frame elements"""
         for src in self.response.css('iframe::attr(src), frame::attr(src)').getall():
@@ -227,6 +241,8 @@ class UltraDiscovery:
         # Lazy-loaded iframes
         for data_src in self.response.css('iframe::attr(data-src), iframe::attr(data-lazy-src)').getall():
             self._add_url(data_src)
+
+        return iter(())
 
     def _extract_from_data_uris(self) -> Iterator[str]:
         """Decode data URIs that might contain URLs"""
@@ -246,6 +262,8 @@ class UltraDiscovery:
                 except Exception:
                     pass
 
+        return iter(())
+
     def _extract_from_json_ld(self) -> Iterator[str]:
         """Extract URLs from JSON-LD structured data"""
         json_ld_scripts = self.response.css('script[type="application/ld+json"]::text').getall()
@@ -259,6 +277,8 @@ class UltraDiscovery:
                     self._add_url(url)
             except json.JSONDecodeError:
                 pass
+
+        return iter(())
 
     def _extract_urls_from_json(self, obj, depth=0) -> Iterator[str]:
         """Recursively extract URLs from JSON object"""
@@ -284,11 +304,15 @@ class UltraDiscovery:
             if obj.startswith(('http://', 'https://', '/', 'www.')):
                 yield obj
 
+        return iter(())
+
     def _extract_from_microdata(self) -> Iterator[str]:
         """Extract URLs from microdata (itemprop)"""
         urls = self.response.css('[itemprop*="url"]::attr(href), [itemprop*="image"]::attr(src)').getall()
         for url in urls:
             self._add_url(url)
+
+        return iter(())
 
     def _extract_from_srcset(self) -> Iterator[str]:
         """Extract URLs from srcset attributes (responsive images)"""
@@ -300,6 +324,8 @@ class UltraDiscovery:
                 url = part.strip().split()[0]  # Get URL part before size descriptor
                 self._add_url(url)
 
+        return iter(())
+
     def _extract_from_headers(self) -> Iterator[str]:
         """Extract URLs from HTTP Link headers"""
         link_headers = self.response.headers.getlist('Link')
@@ -309,6 +335,8 @@ class UltraDiscovery:
             matches = re.finditer(r'<([^>]+)>', header.decode('utf-8', errors='ignore'))
             for match in matches:
                 self._add_url(match.group(1))
+
+        return iter(())
 
     def _extract_from_encoded(self) -> Iterator[str]:
         """Extract URLs from encoded/obfuscated content"""
@@ -335,6 +363,8 @@ class UltraDiscovery:
                 except Exception:
                     pass
 
+        return iter(())
+
     def _extract_from_query_params(self) -> Iterator[str]:
         """Extract URLs from query parameters (nested URLs)"""
         parsed = urlparse(self.base_url)
@@ -353,6 +383,8 @@ class UltraDiscovery:
                         self._add_url(decoded)
                 except Exception:
                     pass
+
+        return iter(())
 
     def _generate_from_patterns(self) -> Iterator[str]:
         """Generate potential URLs from discovered patterns"""
@@ -383,6 +415,8 @@ class UltraDiscovery:
                     self._add_url(new_url)
             except (ValueError, IndexError):
                 pass
+
+        return iter(())
 
     def _add_url(self, url: str):
         """Normalize and add URL to discovered set"""

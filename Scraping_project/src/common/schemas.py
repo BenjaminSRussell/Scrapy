@@ -1,147 +1,82 @@
-from __future__ import annotations
+"""
+Simple data schemas for pipeline.
+"""
 
 from dataclasses import dataclass
-
-
-@dataclass
-class DiscoveryItem:
-    """Item returned by Stage 1 Discovery Spider with schema versioning"""
-    source_url: str
-    discovered_url: str
-    first_seen: str
-    url_hash: str
-    discovery_depth: int
-    discovery_source: str = "html_link"
-    confidence: float = 1.0  # 0.0-1.0 confidence score for dynamic discoveries
-
-    # Link importance scoring
-    importance_score: float = 0.0  # Blended score: PageRank + HITS + anchor text + domain boost
-    anchor_text: str | None = None  # Anchor text from source link
-    is_same_domain: bool = True  # Whether target is same domain as source
-
-    
-    # Schema versioning and provenance
-    schema_version: str = "2.1"  # Bumped for importance scoring
-    discovery_metadata: dict[str, str] | None = None  # Additional discovery context
-
-
-@dataclass
-class ValidationResult:
-    """Result from Stage 2 URL Validation with enhanced metadata"""
-    url: str
-    url_hash: str  # critical for stage linkage - without this everything breaks
-    status_code: int
-    content_type: str
-    content_length: int
-    response_time: float
-    is_valid: bool
-    error_message: str | None
-    validated_at: str
-    learned_optimizations: list[str] | None = None
-
-    # Freshness tracking
-    last_modified: str | None = None  # Last-Modified header
-    etag: str | None = None  # ETag for conditional requests
-    staleness_score: float = 0.0  # 0.0=fresh, 1.0=very stale
-    cache_control: str | None = None  # Cache-Control header
-
-    # Schema versioning and enhanced validation metadata
-    schema_version: str = "2.1"  # Bumped for freshness tracking
-    validation_method: str | None = None  # HEAD, GET, etc.
-    redirect_chain: list[str] | None = None  # Track URL redirects
-    server_headers: dict[str, str] | None = None  # Relevant server headers
-    network_metadata: dict[str, str] | None = None  # DNS resolution time, etc.
-
-
-@dataclass
-class EnrichmentItem:
-    """Enriched page data with NLP-extracted metadata and features"""
-    url: str
-    url_hash: str
-    title: str
-    text_content: str
-    word_count: int
-    entities: list[str]
-    keywords: list[str]
-    content_tags: list[str]
-    has_pdf_links: bool
-    has_audio_links: bool
-    status_code: int
-    content_type: str
-    enriched_at: str
-    expanded_keywords: dict[str, list[str]] | None = None
-    qa_pairs: list[dict[str, str]] | None = None
-
-    # Advanced NLP features
-    schema_version: str = "2.0"
-    content_summary: str | None = None  # DeBERTa-generated summary
-    content_embedding: list[float] | None = None  # Vector embedding for similarity search
-    academic_relevance_score: float | None = None  # 0.0-1.0 relevance to academic content
-    content_quality_score: float | None = None  # 0.0-1.0 overall content quality
-
-    # Provenance and lineage tracking
-    processing_pipeline_version: str | None = None
-    source_discovery_method: str | None = None  # How this URL was discovered
-    processing_metadata: dict[str, str] | None = None  # Processing timestamps, versions, etc.
-    data_lineage: list[str] | None = None  # Chain of processing steps
+from datetime import datetime
+from typing import Optional
 
 
 @dataclass
 class URLRecord:
-    """Complete record combining all stages"""
+    """URL discovery record."""
     url: str
+    depth: int
+    source_url: Optional[str] = None
+    discovered_at: str = None
 
-    # Discovery info
-    source_url: str | None = None
-    first_seen: str | None = None
-    discovery_depth: int | None = None
+    def __post_init__(self):
+        if self.discovered_at is None:
+            self.discovered_at = datetime.now().isoformat()
 
-    # Validation info
-    status_code: int | None = None
-    content_type: str | None = None
-    content_length: int | None = None
-    response_time: float | None = None
-    is_valid: bool | None = None
-    validation_error: str | None = None
-    validated_at: str | None = None
-
-    # Enrichment info
-    title: str | None = None
-    text_content: str | None = None
-    word_count: int | None = None
-    entities: list[str] | None = None
-    keywords: list[str] | None = None
-    content_tags: list[str] | None = None
-    has_pdf_links: bool | None = None
-    has_audio_links: bool | None = None
-    enriched_at: str | None = None
+    def to_dict(self) -> dict:
+        return {
+            "url": self.url,
+            "depth": self.depth,
+            "source_url": self.source_url,
+            "discovered_at": self.discovered_at
+        }
 
 
 @dataclass
-class PipelineStats:
-    """Statistics about pipeline execution"""
-    stage: str
-    start_time: str
-    end_time: str | None = None
-    input_count: int = 0
-    output_count: int = 0
-    error_count: int = 0
-    duration_seconds: float | None = None
+class ValidationResult:
+    """URL validation result."""
+    url: str
+    is_valid: bool
+    status_code: Optional[int] = None
+    content_type: Optional[str] = None
+    error: Optional[str] = None
+    validated_at: str = None
+
+    def __post_init__(self):
+        if self.validated_at is None:
+            self.validated_at = datetime.now().isoformat()
+
+    def to_dict(self) -> dict:
+        return {
+            "url": self.url,
+            "is_valid": self.is_valid,
+            "status_code": self.status_code,
+            "content_type": self.content_type,
+            "error": self.error,
+            "validated_at": self.validated_at
+        }
 
 
-class SchemaRegistry:
-    """Registry for managing schema versions and compatibility"""
+@dataclass
+class EnrichedContent:
+    """Enriched content record."""
+    url: str
+    title: Optional[str] = None
+    content: Optional[str] = None
+    keywords: list[str] = None
+    classification: dict = None
+    enriched_at: str = None
 
-    # Current schema versions
-    CURRENT_VERSIONS = {
-        "DiscoveryItem": "2.0",
-        "ValidationResult": "2.0",
-        "EnrichmentItem": "2.0",
-        "URLRecord": "1.0",
-        "PipelineStats": "1.0"
-    }
+    def __post_init__(self):
+        if self.keywords is None:
+            self.keywords = []
+        if self.classification is None:
+            self.classification = {}
+        if self.enriched_at is None:
+            self.enriched_at = datetime.now().isoformat()
 
-    @classmethod
-    def get_current_version(cls, schema_name: str) -> str:
-        """Get the current version for a schema"""
-        return cls.CURRENT_VERSIONS.get(schema_name, "1.0")
+    def to_dict(self) -> dict:
+        return {
+            "url": self.url,
+            "title": self.title,
+            "content": self.content,
+            "keywords": self.keywords,
+            "classification": self.classification,
+            "enriched_at": self.enriched_at
+        }

@@ -1,259 +1,150 @@
 #!/usr/bin/env python3
 """
-UConn Web Scraping Pipeline - Main Entry Point
-
-Orchestrates the complete scraping pipeline with Delta Lake storage.
-
-Usage:
-    python start.py --full              # Run complete pipeline
-    python start.py --stage1            # Run stage 1 only
-    python start.py --stage2            # Run stage 2 only
-    python start.py --stage3            # Run stage 3 only
-    python start.py --query "SQL"       # Query Delta Lake
-    python start.py --status            # Show pipeline status
+Start script for the scraping pipeline.
+Usage: python start.py [stage] [options]
 """
 
-import argparse
-import asyncio
-import json
 import sys
-from datetime import datetime
+import argparse
+import logging
 from pathlib import Path
 
-# Add project to path
+# Setup path
 sys.path.insert(0, str(Path(__file__).parent))
 
-from src.common.constants import DELTA_ENRICHED_CONTENT, DELTA_RAW_URLS, DELTA_VALIDATED_URLS, LOGS_DIR
-from src.common.delta_lake import DeltaLakeReader
-from src.common.logging import get_logger, setup_logging
+from src.common.delta_lake import get_delta_manager
 
-logger = get_logger(__name__)
-
-
-def run_stage1(config_file: str = "config/development.yml"):
-    """Run Stage 1: URL Discovery."""
-    logger.info("=== STAGE 1: URL DISCOVERY ===")
-
-    from src.orchestrator.config import Config
-    config = Config(config_file)
-
-    # Run discovery spider
-    import subprocess
-    result = subprocess.run(
-        ["python", "-m", "scrapy", "crawl", "discovery_spider"],
-        cwd=Path(__file__).parent / "Scraping_project",
-        capture_output=True,
-        text=True
-    )
-
-    if result.returncode != 0:
-        logger.error(f"Stage 1 failed: {result.stderr}")
-        return False
-
-    logger.info("Stage 1 completed successfully")
-    return True
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 
-def run_stage2(config_file: str = "config/development.yml"):
-    """Run Stage 2: URL Validation with file type detection."""
-    logger.info("=== STAGE 2: URL VALIDATION ===")
+def run_stage1(seed_file: str = None):
+    """Run Stage 1: Ultra-aggressive URL discovery."""
+    from scrapy.crawler import CrawlerProcess
+    from scrapy.utils.project import get_project_settings
+    from src.stage1.discovery import DiscoverySpider
 
-    from src.orchestrator.config import Config
-    from src.stage2.validator import URLValidator
+    logger.info("=" * 80)
+    logger.info("STAGE 1: ULTRA-AGGRESSIVE URL DISCOVERY")
+    logger.info("=" * 80)
 
-    config = Config(config_file)
-    validator = URLValidator(config)
+    settings = get_project_settings()
+    process = CrawlerProcess(settings)
 
-    # Run validation
-    asyncio.run(validator.validate_all())
+    process.crawl(DiscoverySpider, seed_file=seed_file)
+    process.start()
 
-    logger.info("Stage 2 completed successfully")
-    return True
-
-
-def run_stage3(config_file: str = "config/development.yml"):
-    """Run Stage 3: Content Enrichment with OCR/Whisper."""
-    logger.info("=== STAGE 3: CONTENT ENRICHMENT ===")
+    logger.info("Stage 1 complete")
 
 
-    # Run async enrichment
-    result = subprocess.run(
-        ["python", "-m", "src.stage3.async_enrichment"],
-        cwd=Path(__file__).parent / "Scraping_project",
-        capture_output=True,
-        text=True
-    )
+def run_stage2():
+    """Run Stage 2: Page analysis with word count, errors, PDF+OCR, YAKE."""
+    from src.stage2.page_analysis import PageAnalyzer
 
-    if result.returncode != 0:
-        logger.error(f"Stage 3 failed: {result.stderr}")
-        return False
+    logger.info("=" * 80)
+    logger.info("STAGE 2: PAGE ANALYSIS")
+    logger.info("=" * 80)
 
-    logger.info("Stage 3 completed successfully")
-    return True
+    delta = get_delta_manager()
 
+    # Get URLs from stage 1
+    stage1_data = delta.read('stage1_discovery')
+    logger.info(f"Analyzing {len(stage1_data)} URLs from Stage 1")
 
-def run_full_pipeline(config_file: str = "config/development.yml"):
-    """Run complete pipeline: Stage 1 -> 2 -> 3."""
-    logger.info("=== STARTING FULL PIPELINE ===")
-    start_time = datetime.now()
+    analyzer = PageAnalyzer()
+    batch = []
 
-    stages = [
-        ("Stage 1: Discovery", run_stage1),
-        ("Stage 2: Validation", run_stage2),
-        ("Stage 3: Enrichment", run_stage3)
-    ]
+    for i, record in enumerate(stage1_data):
+        url = record.get('url')
+        is_heavy = record.get('is_heavy', False)
 
-    for stage_name, stage_func in stages:
-        logger.info(f"\n{'=' * 60}\n{stage_name}\n{'=' * 60}")
-
-        if not stage_func(config_file):
-            logger.error(f"{stage_name} failed, pipeline aborted")
-            return False
-
-    elapsed = (datetime.now() - start_time).total_seconds()
-    logger.info(f"\n{'=' * 60}\nPIPELINE COMPLETED in {elapsed:.1f}s\n{'=' * 60}")
-
-    # Show summary
-    show_status()
-
-    return True
-
-
-def query_delta_lake(sql: str):
-    """Query Delta Lake using SQL."""
-    logger.info(f"Executing query: {sql}")
-
-    try:
-        from src.common.delta_lake import DeltaLakeReader
-
-        # Determine which table to query (simple heuristic)
-        if 'enriched' in sql.lower():
-            reader = DeltaLakeReader(DELTA_ENRICHED_CONTENT)
-        elif 'validated' in sql.lower():
-            reader = DeltaLakeReader(DELTA_VALIDATED_URLS)
-        else:
-            reader = DeltaLakeReader(DELTA_RAW_URLS)
-
-        results = reader.query(sql)
-
-        print(f"\nFound {len(results)} results:")
-        for i, row in enumerate(results[:10], 1):
-            print(f"\n{i}. {json.dumps(row, indent=2)}")
-
-        if len(results) > 10:
-            print(f"\n... and {len(results) - 10} more")
-
-    except Exception as e:
-        logger.error(f"Query failed: {e}")
-
-
-def show_status():
-    """Show pipeline status and statistics."""
-    print("\n" + "=" * 60)
-    print("PIPELINE STATUS")
-    print("=" * 60)
-
-    try:
-        # Raw URLs
         try:
-            reader = DeltaLakeReader(DELTA_RAW_URLS)
-            raw_count = reader.count()
-            print(f"\n✓ Raw URLs discovered: {raw_count:,}")
-        except:
-            print("\n✗ Raw URLs: Not available")
+            analysis = analyzer.analyze(url, is_heavy)
+            analysis['url_hash'] = record.get('url_hash')
+            analysis['from_stage1'] = True
+            batch.append(analysis)
 
-        # Validated URLs
-        try:
-            reader = DeltaLakeReader(DELTA_VALIDATED_URLS)
-            validated_count = reader.count()
-            print(f"✓ URLs validated: {validated_count:,}")
-        except:
-            print("✗ Validated URLs: Not available")
+            if len(batch) >= 50:
+                delta.write('stage2_page_analysis', batch, mode='append', async_write=False)
+                logger.info(f"Saved batch {i//50 + 1} ({len(batch)} records)")
+                batch = []
 
-        # Enriched Content
-        try:
-            reader = DeltaLakeReader(DELTA_ENRICHED_CONTENT)
-            enriched_count = reader.count()
-            print(f"✓ Content enriched: {enriched_count:,}")
+        except Exception as e:
+            logger.error(f"Failed to analyze {url}: {e}")
 
-            # Sample recent entries
-            recent = reader.read(columns=['url', 'title', '_ingestion_time'])[-5:]
-            print("\nRecent enriched content:")
-            for entry in recent:
-                print(f"  • {entry.get('title', 'No title')[:50]}")
-                print(f"    {entry.get('url', '')}")
+    # Save remaining
+    if batch:
+        delta.write('stage2_page_analysis', batch, mode='append', async_write=False)
+        logger.info(f"Saved final batch ({len(batch)} records)")
 
-        except:
-            print("✗ Enriched Content: Not available")
+    analyzer.close()
+    logger.info("Stage 2 complete")
 
-    except Exception as e:
-        print(f"\nError getting status: {e}")
 
-    print("\n" + "=" * 60)
+def run_stage3():
+    """Run Stage 3: Analytics (old stage 2)."""
+    logger.info("=" * 80)
+    logger.info("STAGE 3: ANALYTICS")
+    logger.info("=" * 80)
+    logger.info("Not yet implemented")
+
+
+def run_stage4():
+    """Run Stage 4: Summarization (old stage 3)."""
+    logger.info("=" * 80)
+    logger.info("STAGE 4: SUMMARIZATION")
+    logger.info("=" * 80)
+    logger.info("Not yet implemented")
+
+
+def show_stats():
+    """Show Delta Lake statistics."""
+    delta = get_delta_manager()
+
+    logger.info("=" * 80)
+    logger.info("DELTA LAKE STATISTICS")
+    logger.info("=" * 80)
+
+    for table_name in delta.tables.keys():
+        count = delta.count(table_name)
+        logger.info(f"{table_name}: {count} records")
 
 
 def main():
-    """Main entry point."""
-    parser = argparse.ArgumentParser(
-        description="UConn Web Scraping Pipeline with Delta Lake",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  python start.py --full                    # Run complete pipeline
-  python start.py --stage1                  # Run discovery only
-  python start.py --query "title LIKE '%admissions%'"  # Query Delta Lake
-  python start.py --status                  # Show pipeline status
-        """
-    )
-
-    parser.add_argument('--full', action='store_true', help='Run full pipeline')
-    parser.add_argument('--stage1', action='store_true', help='Run Stage 1 (Discovery)')
-    parser.add_argument('--stage2', action='store_true', help='Run Stage 2 (Validation)')
-    parser.add_argument('--stage3', action='store_true', help='Run Stage 3 (Enrichment)')
-    parser.add_argument('--query', type=str, help='Query Delta Lake (SQL WHERE clause)')
-    parser.add_argument('--status', action='store_true', help='Show pipeline status')
-    parser.add_argument('--config', default='config/development.yml', help='Config file path')
-    parser.add_argument('--log-level', default='INFO', help='Logging level')
+    parser = argparse.ArgumentParser(description='Web Scraping Pipeline')
+    parser.add_argument('stage', nargs='?', choices=['1', '2', '3', '4', 'all', 'stats'], default='stats',
+                        help='Which stage to run (default: stats)')
+    parser.add_argument('--seed', type=str, help='Seed file for stage 1')
 
     args = parser.parse_args()
 
-    # Setup logging
-    setup_logging(log_level=args.log_level, log_dir=LOGS_DIR)
-
-    # Execute requested action
     try:
-        if args.full:
-            success = run_full_pipeline(args.config)
-            sys.exit(0 if success else 1)
-
-        elif args.stage1:
-            success = run_stage1(args.config)
-            sys.exit(0 if success else 1)
-
-        elif args.stage2:
-            success = run_stage2(args.config)
-            sys.exit(0 if success else 1)
-
-        elif args.stage3:
-            success = run_stage3(args.config)
-            sys.exit(0 if success else 1)
-
-        elif args.query:
-            query_delta_lake(args.query)
-
-        elif args.status:
-            show_status()
-
+        if args.stage == '1':
+            run_stage1(args.seed)
+        elif args.stage == '2':
+            run_stage2()
+        elif args.stage == '3':
+            run_stage3()
+        elif args.stage == '4':
+            run_stage4()
+        elif args.stage == 'all':
+            run_stage1(args.seed)
+            run_stage2()
+            run_stage3()
+            run_stage4()
+        elif args.stage == 'stats':
+            show_stats()
         else:
             parser.print_help()
-            sys.exit(1)
 
     except KeyboardInterrupt:
-        logger.info("\nInterrupted by user")
+        logger.warning("\nInterrupted by user")
         sys.exit(0)
-
     except Exception as e:
-        logger.exception(f"Fatal error: {e}")
+        logger.error(f"Pipeline failed: {e}", exc_info=True)
         sys.exit(1)
 
 

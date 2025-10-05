@@ -1,64 +1,34 @@
-# UConn Web Scraping Pipeline Dependencies
-# Install: pip install -r requirements.txt
-# Post-install: 
-#   python -m spacy download en_core_web_sm
-#   python -c "import whisper; whisper.load_model('base')"
+# Ultra Scraping Pipeline - Core Dependencies
 
-# Core scraping
+# Web scraping
 scrapy>=2.11.0
 aiohttp>=3.9.0
+httpx>=0.25.0
 requests>=2.31.0
 beautifulsoup4>=4.12.0
 lxml>=4.9.0
-w3lib>=2.1.0
-Twisted>=23.10.0
 
-# Configuration and data
+# Data storage
 PyYAML>=6.0.1
 jsonlines>=4.0.0
-itemadapter>=0.8.0
-
-# Testing
-pytest>=7.4.0
-pytest-asyncio>=0.21.0
-pytest-mock>=3.12.0
-pytest-timeout>=2.2.0
-pytest-cov>=4.1.0
-
-# Data processing
 pandas>=2.1.0
 pyarrow>=14.0.0
-python-dateutil>=2.8.2
-
-# Data lake and analytics
 deltalake>=0.14.0
-duckdb>=0.9.0
 
-# NLP - DeBERTa transformers
+# NLP - YAKE + DeBerta only
 transformers>=4.35.0
 torch>=2.1.0
-sentence-transformers>=2.2.2
-spacy>=3.7.0
-nltk>=3.8.1
-yake>=0.6.0  # YAKE keyword extraction
+yake>=0.6.0
+
+# Media processing
+easyocr>=1.7.0
+openai-whisper>=20231117
+ffmpeg-python>=0.2.0
 
 # Utilities
 psutil>=5.9.0
 pydantic>=2.5.0
-typing-extensions>=4.8.0
 
-# Optional: AWS S3 support
-# boto3>=1.29.0
-
-# File processing
-Pillow>=10.1.0  # PIL for image processing
-pytesseract>=0.3.10  # OCR for images
-openai-whisper>=20231117  # Audio transcription
-ffmpeg-python>=0.2.0  # Audio processing
-pydub>=0.25.1  # Audio file handling
-
-# Optional: Playwright for JavaScript rendering
-# playwright>=1.40.0
-# scrapy-playwright>=0.0.34
-protobuf>=4.25.0
-sentencepiece>=0.1.99
+# Testing
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
