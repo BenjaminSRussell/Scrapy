@@ -87,45 +87,20 @@ class DeBERTaNLPProcessor:
                 logger.error("Failed to initialize any NER pipeline")
                 return
 
-            # Zero-shot classification - using microsoft/deberta-v3-base for text-classification
-            # This model is cached and can work without network access
+            # Zero-shot classification pipeline
             try:
-                # Use a simple sentiment model as fallback for zero-shot
-                # distilbert-base-uncased is cached and can be used for basic classification
-                import torch
-                from transformers import AutoModelForSequenceClassification, AutoTokenizer
-
-                # Use distilbert for text classification as a workaround
-                model_name = "distilbert-base-uncased"
-                tokenizer = AutoTokenizer.from_pretrained(model_name, local_files_only=True)
-                model = AutoModelForSequenceClassification.from_pretrained(
-                    model_name,
-                    local_files_only=True,
-                    num_labels=2  # Binary classification
+                self._zero_shot_pipeline = pipeline(
+                    "zero-shot-classification",
+                    model="MoritzLaurer/deberta-v3-base-zeroshot-v2.0",
+                    device=self.device
                 )
-
-                # Create a custom zero-shot function
-                def zero_shot_classify(text, labels):
-                    """Simple zero-shot classification using model"""
-                    scores = {}
-                    for label in labels:
-                        # Combine text with label for classification
-                        combined = f"{text} This is about {label}."
-                        inputs = tokenizer(combined, return_tensors="pt", truncation=True, max_length=512)
-                        outputs = model(**inputs)
-                        # Get probability score
-                        probs = torch.nn.functional.softmax(outputs.logits, dim=-1)
-                        scores[label] = float(probs[0][1])  # Positive class probability
-                    return scores
-
-                self._zero_shot_fn = zero_shot_classify
-                logger.info("Zero-shot classification initialized (offline mode)")
+                logger.info("Zero-shot classification pipeline initialized successfully.")
             except Exception as e:
                 logger.warning(f"Failed to load zero-shot pipeline: {e}")
-                self._zero_shot_fn = None
+                self._zero_shot_pipeline = None
 
             # Set initialized to True if at least one pipeline loaded
-            self._initialized = (self._ner_pipeline is not None or self._zero_shot_fn is not None)
+            self._initialized = (self._ner_pipeline is not None or self._zero_shot_pipeline is not None)
 
             if self._initialized:
                 logger.info("NLP pipelines initialized successfully")
@@ -202,23 +177,20 @@ class DeBERTaNLPProcessor:
         max_length: int = 512
     ) -> dict[str, float]:
         """Classify content using zero-shot classification"""
-        if not self._initialized or not hasattr(self, '_zero_shot_fn') or not self._zero_shot_fn:
+        if not self._initialized or not self._zero_shot_pipeline:
             return {}
 
         try:
             truncated_text = text[:max_length]
 
-            # Use custom zero-shot function
-            scores = self._zero_shot_fn(truncated_text, candidate_labels)
+            # Use the zero-shot pipeline
+            pipeline_result = self._zero_shot_pipeline(truncated_text, candidate_labels, truncation=True)
 
-            # Filter to confident predictions (> 0.3)
-            confident_scores = {
-                label: score
-                for label, score in scores.items()
-                if score > 0.3
-            }
+            # The pipeline returns a dict with 'labels' and 'scores'
+            if 'labels' in pipeline_result and 'scores' in pipeline_result:
+                return dict(zip(pipeline_result['labels'], pipeline_result['scores']))
 
-            return confident_scores
+            return {}
 
         except Exception as e:
             logger.error(f"Content classification failed: {e}")
