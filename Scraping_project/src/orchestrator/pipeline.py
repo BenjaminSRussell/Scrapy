@@ -312,7 +312,10 @@ class PipelineOrchestrator:
             batch = await queue.get_batch_or_wait(timeout=2.0)
 
             if not batch:
-                break
+                if queue.is_producer_done():
+                    break  # Producer is done and queue is empty, so we can exit.
+                else:
+                    continue  # It was just a timeout, producer is still working.
 
             await validator.validate_batch(batch, batch_id=batch_id)
             processed_count += len(batch)
