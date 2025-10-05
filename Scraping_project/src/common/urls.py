@@ -9,8 +9,12 @@ def _sanitize_path(path: str) -> str:
     if not path:
         return ""
 
-    has_trailing = path.endswith("/")
-    candidate = path if path.startswith("/") else f"/{path}"
+    # Protect double slashes from being collapsed by normpath
+    placeholder = "___DOUBLE_SLASH___"
+    path_with_placeholder = path.replace("//", placeholder)
+
+    has_trailing = path_with_placeholder.endswith("/")
+    candidate = path_with_placeholder if path_with_placeholder.startswith("/") else f"/{path_with_placeholder}"
 
     normalized = posixpath.normpath(candidate)
     if normalized == ".":
@@ -22,7 +26,8 @@ def _sanitize_path(path: str) -> str:
     if not normalized.startswith("/"):
         normalized = f"/{normalized}"
 
-    return normalized
+    # Restore double slashes
+    return normalized.replace(placeholder, "//")
 
 
 def normalize_url(url: str) -> str:
