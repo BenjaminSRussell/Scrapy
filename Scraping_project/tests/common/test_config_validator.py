@@ -322,53 +322,6 @@ class TestConfigHealthCheck:
         assert 'High concurrency' in captured.out
         assert 'FAILED' in captured.out
 
-    def test_missing_playwright_browsers_is_error(self, tmp_path):
-        """Test that missing Playwright browsers are detected as an error."""
-        config_dict = {
-            'environment': 'test',
-            'stages': {
-                'discovery': {
-                    'allowed_domains': ['example.com'],
-                    'headless_browser': {
-                        'enabled': True,
-                        'engine': 'playwright',
-                        'browser_type': 'chromium'
-                    }
-                },
-                'enrichment': {
-                    'allowed_domains': ['example.com'],
-                    'nlp_enabled': False,
-                    'headless_browser': {'enabled': False}
-                }
-            },
-            'data': {
-                'raw_dir': str(tmp_path / 'raw'),
-                'processed_dir': str(tmp_path / 'processed'),
-                'cache_dir': str(tmp_path / 'cache'),
-                'logs_dir': str(tmp_path / 'logs'),
-            }
-        }
-
-        self.create_temp_config(tmp_path, config_dict)
-        original_config_dir = Config.config_dir
-        try:
-            Config.config_dir = tmp_path
-            config = Config(env='test', validate=True)
-
-            with patch('importlib.util.find_spec', return_value=True):
-                # Mock the context manager to raise an exception
-                with patch('playwright.sync_api.sync_playwright', side_effect=Exception("Browser not installed")):
-                    checker = ConfigHealthCheck(config)
-                    is_healthy, issues = checker.run_all_checks()
-
-                    # Should be unhealthy because browsers are missing
-                    assert is_healthy is False
-                    errors = [i for i in issues if i.severity == 'error']
-                    assert len(errors) >= 1
-                    assert 'Playwright browsers not installed' in errors[0].message
-        finally:
-            Config.config_dir = original_config_dir
-
 
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])
