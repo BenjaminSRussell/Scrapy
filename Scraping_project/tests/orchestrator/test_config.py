@@ -196,8 +196,6 @@ def test_config_get_data_paths(temp_config_file):
 
     assert isinstance(data_paths['raw_dir'], Path)
     assert data_paths['datalake_dir'].as_posix() == 'data/datalake'
-    assert isinstance(data_paths['processed_dir'], Path)
-    # Removed processed_dir assertion as it's no longer needed with datalake
     assert isinstance(data_paths['logs_dir'], Path)
     assert data_paths['logs_dir'].as_posix() == 'logs'
 

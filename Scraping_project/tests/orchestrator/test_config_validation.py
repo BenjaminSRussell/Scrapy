@@ -160,7 +160,11 @@ class TestConfigValidation:
             'environment': 'test',
             'stages': {
                 'discovery': {
+                    'allowed_domains': ['example.com'],
                     'max_depth': "5"  # String instead of int - should PASS with coercion
+                },
+                'enrichment': {
+                    'allowed_domains': ['example.com'],
                 }
             }
         }
@@ -211,6 +215,9 @@ class TestConfigValidation:
                 'discovery': {
                     'maxDepth': 5,  # Typo: should be max_depth
                     'allowed_domains': ['example.com']
+                },
+                'enrichment': {
+                    'allowed_domains': ['example.com']
                 }
             }
         }
@@ -237,10 +244,14 @@ class TestConfigValidation:
             'environment': 'test',
             'stages': {
                 'discovery': {
+                    'allowed_domains': ['example.com'],
                     'headless_browser': {
                         'enabled': True,
                         'engien': 'playwright',  # Typo: should be 'engine'
                     }
+                },
+                'enrichment': {
+                    'allowed_domains': ['example.com']
                 }
             }
         }
@@ -266,7 +277,11 @@ class TestConfigValidation:
             'environment': 'test',
             'stages': {
                 'discovery': {
+                    'allowed_domains': ['example.com'],
                     'max_depth': 15  # Out of range: must be <= 10
+                },
+                'enrichment': {
+                    'allowed_domains': ['example.com'],
                 }
             }
         }
@@ -292,6 +307,14 @@ class TestConfigValidation:
             'environment': 'test',
             'scrapy': {
                 'concurrent_requests': -5  # Invalid: must be >= 1
+            },
+            'stages': {
+                'discovery': {
+                    'allowed_domains': ['example.com']
+                },
+                'enrichment': {
+                    'allowed_domains': ['example.com']
+                }
             }
         }
 
@@ -316,6 +339,14 @@ class TestConfigValidation:
             'environment': 'test',
             'logging': {
                 'level': 'TRACE'  # Invalid: must be DEBUG, INFO, WARNING, ERROR, or CRITICAL
+            },
+            'stages': {
+                'discovery': {
+                    'allowed_domains': ['example.com']
+                },
+                'enrichment': {
+                    'allowed_domains': ['example.com']
+                }
             }
         }
 
@@ -367,6 +398,14 @@ class TestConfigValidation:
             'queue': {
                 'backpressure_warning_threshold': 0.95,
                 'backpressure_critical_threshold': 0.80  # Invalid: warning must be < critical
+            },
+            'stages': {
+                'discovery': {
+                    'allowed_domains': ['example.com']
+                },
+                'enrichment': {
+                    'allowed_domains': ['example.com']
+                }
             }
         }
 
@@ -392,6 +431,14 @@ class TestConfigValidation:
             'scrapy': {
                 'concurrent_requests': 10,
                 'concurrent_requests_per_domain': 20  # Invalid: exceeds total
+            },
+            'stages': {
+                'discovery': {
+                    'allowed_domains': ['example.com']
+                },
+                'enrichment': {
+                    'allowed_domains': ['example.com']
+                }
             }
         }
 
@@ -415,7 +462,11 @@ class TestConfigValidation:
         config_dict = {
             'environment': 'test',
             'stages': {
+                'discovery': {
+                    'allowed_domains': ['example.com']
+                },
                 'enrichment': {
+                    'allowed_domains': ['example.com'],
                     'headless_browser': {
                         'enabled': True,
                         'engine': 'selenium',
@@ -445,7 +496,11 @@ class TestConfigValidation:
         config_dict = {
             'environment': 'test',
             'stages': {
+                'discovery': {
+                    'allowed_domains': ['example.com']
+                },
                 'enrichment': {
+                    'allowed_domains': ['example.com'],
                     'content_types': {
                         'enabled_types': ['not-a-valid-mime-type']  # Invalid format
                     }
