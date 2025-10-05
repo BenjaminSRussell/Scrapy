@@ -28,10 +28,7 @@ DELTA_PERFORMANCE_METRICS: Final[Path] = DATALAKE_DIR / "performance_metrics"
 LEGACY_PROCESSED_DIR: Final[Path] = DATA_DIR / "processed"
 LINK_GRAPH_DB: Final[Path] = LEGACY_PROCESSED_DIR / "link_graph.db"
 FRESHNESS_DB: Final[Path] = CACHE_DIR / "freshness.db"
-WAREHOUSE_DIR: Final[Path] = DATA_DIR / "warehouse"
-WAREHOUSE_CACHE: Final[Path] = WAREHOUSE_DIR / "cache"
-WAREHOUSE_CONFIG: Final[Path] = WAREHOUSE_DIR / "config"
-WAREHOUSE_DB: Final[Path] = WAREHOUSE_DIR / "uconn_warehouse.db"
+WAREHOUSE_DB: Final[Path] = DATA_DIR / "warehouse" / "uconn_warehouse.db"
 
 # Stage identifiers
 STAGE_DISCOVERY: Final[str] = "stage1_discovery"

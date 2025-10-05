@@ -39,18 +39,18 @@ class TestConfigHealthCheck:
                 'discovery': {
                     'allowed_domains': ['example.com'],
                     'seed_file': str(seed_file),
-                    'output_table': str(tmp_path / 'output.jsonl'),
+                    'output_file': str(tmp_path / 'output.jsonl'),
                     'dedup_cache_path': str(tmp_path / 'cache.db'),
                     'headless_browser': {'enabled': False}
                 },
                 'validation': {
                     'max_workers': 16,
-                    'output_table': str(tmp_path / 'validated.jsonl')
+                    'output_file': str(tmp_path / 'validated.jsonl')
                 },
                 'enrichment': {
                     'allowed_domains': ['example.com'],
                     'nlp_enabled': False,
-                    'output_table': str(tmp_path / 'enriched.jsonl'),
+                    'output_file': str(tmp_path / 'enriched.jsonl'),
                     'headless_browser': {'enabled': False}
                 }
             },

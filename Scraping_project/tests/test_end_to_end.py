@@ -36,6 +36,15 @@ class TestSystemReadiness:
         assert dedup.count() == 1
         dedup.close()
 
+    def test_pipeline_config_manager(self):
+        """Test pipeline configuration manager"""
+        from src.common.pipeline_config import ConfigurationManager
+
+        config = ConfigurationManager()
+        assert config.paths.stage1_discovery.name == "discovery_output.jsonl"
+        assert config.paths.stage2_validation.name == "validation_output.jsonl"
+        assert config.paths.stage3_enrichment.name == "enriched_content.jsonl"
+
     def test_output_paths_consistent(self):
         """Test all output paths are consistent"""
         from src.orchestrator.config import Config
@@ -43,8 +52,8 @@ class TestSystemReadiness:
         dev_config = Config('development')
         prod_config = Config('production')
 
-        assert dev_config.get_stage1_config()['output_table'].endswith('raw_urls')
-        assert prod_config.get_stage1_config()['output_table'].endswith('raw_urls')
+        assert dev_config.get_stage1_config()['output_file'].endswith('discovery_output.jsonl')
+        assert prod_config.get_stage1_config()['output_file'].endswith('discovery_output.jsonl')
 
 
 class TestProductionReadiness:
