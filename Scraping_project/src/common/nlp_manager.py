@@ -94,12 +94,11 @@ class DeBERTaNLPProcessor:
                     model="MoritzLaurer/deberta-v3-base-zeroshot-v2.0",
                     device=self.device
                 )
-                logger.info("Zero-shot classification pipeline initialized successfully.")
+                logger.info("Zero-shot classification pipeline initialized using MoritzLaurer/deberta-v3-base-zeroshot-v2.0")
             except Exception as e:
                 logger.warning(f"Failed to load zero-shot pipeline: {e}")
                 self._zero_shot_pipeline = None
 
-            # Set initialized to True if at least one pipeline loaded
             self._initialized = (self._ner_pipeline is not None or self._zero_shot_pipeline is not None)
 
             if self._initialized:
@@ -173,23 +172,21 @@ class DeBERTaNLPProcessor:
     def classify_content(
         self,
         text: str,
-        candidate_labels: list[str],
-        max_length: int = 512
+        candidate_labels: list[str]
     ) -> dict[str, float]:
         """Classify content using zero-shot classification"""
         if not self._initialized or not self._zero_shot_pipeline:
             return {}
 
         try:
-            truncated_text = text[:max_length]
+            # The pipeline handles truncation. multi_label=True is important.
+            results = self._zero_shot_pipeline(text, candidate_labels, multi_label=True)
 
-            # Use the zero-shot pipeline
-            pipeline_result = self._zero_shot_pipeline(truncated_text, candidate_labels, truncation=True)
+            # The pipeline returns a dictionary with 'labels' and 'scores' lists.
+            if 'labels' in results and 'scores' in results:
+                return dict(zip(results['labels'], results['scores']))
 
-            # The pipeline returns a dict with 'labels' and 'scores'
-            if 'labels' in pipeline_result and 'scores' in pipeline_result:
-                return dict(zip(pipeline_result['labels'], pipeline_result['scores']))
-
+            logger.warning("Zero-shot pipeline did not return expected format.")
             return {}
 
         except Exception as e:
@@ -240,13 +237,12 @@ class DeBERTaNLPProcessor:
 
         if categories:
             confidence_scores = self.classify_content(text, categories)
-            # Get categories with confidence > 0.3
-            classified_categories = [
-                cat for cat, score in confidence_scores.items()
-                if score > 0.3
-            ]
+            # The classify_content method now returns scores for all labels.
+            # We can filter them here if needed, or pass them all.
+            # For now, let's pass all returned categories and their scores.
+            classified_categories = [label for label, score in confidence_scores.items() if score > 0.5]
         else:
-            confidence_scores = None
+            confidence_scores = {}
             classified_categories = []
 
         return NLPResult(

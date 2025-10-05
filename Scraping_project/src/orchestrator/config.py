@@ -182,7 +182,7 @@ class Config:
             keys.DISCOVERY_ALLOWED_DOMAINS: self.get(keys.STAGES, keys.STAGE_DISCOVERY, keys.DISCOVERY_ALLOWED_DOMAINS),
             keys.DISCOVERY_MAX_DEPTH: self.get(keys.STAGES, keys.STAGE_DISCOVERY, keys.DISCOVERY_MAX_DEPTH),
             keys.DISCOVERY_BATCH_SIZE: self.get(keys.STAGES, keys.STAGE_DISCOVERY, keys.DISCOVERY_BATCH_SIZE, default=100),
-            'output_table': self.get(keys.STAGES, keys.STAGE_DISCOVERY, 'output_table'),
+            keys.DISCOVERY_OUTPUT_FILE: self.get(keys.STAGES, keys.STAGE_DISCOVERY, keys.DISCOVERY_OUTPUT_FILE),
             keys.DISCOVERY_SEED_FILE: self.get(keys.STAGES, keys.STAGE_DISCOVERY, keys.DISCOVERY_SEED_FILE),
             keys.DISCOVERY_HEADLESS_BROWSER: self.get(keys.STAGES, keys.STAGE_DISCOVERY, keys.DISCOVERY_HEADLESS_BROWSER, default={}),
             keys.DISCOVERY_HEURISTICS: self.get(keys.STAGES, keys.STAGE_DISCOVERY, keys.DISCOVERY_HEURISTICS, default={}),
@@ -193,7 +193,7 @@ class Config:
         return {
             keys.VALIDATION_MAX_WORKERS: self.get(keys.STAGES, keys.STAGE_VALIDATION, keys.VALIDATION_MAX_WORKERS),
             keys.VALIDATION_TIMEOUT: self.get(keys.STAGES, keys.STAGE_VALIDATION, keys.VALIDATION_TIMEOUT),
-            'output_table': self.get(keys.STAGES, keys.STAGE_VALIDATION, 'output_table'),
+            keys.VALIDATION_OUTPUT_FILE: self.get(keys.STAGES, keys.STAGE_VALIDATION, keys.VALIDATION_OUTPUT_FILE),
         }
 
     def get_stage3_config(self) -> dict[str, Any]:
@@ -203,7 +203,7 @@ class Config:
             keys.ENRICHMENT_NLP_ENABLED: self.get(keys.STAGES, keys.STAGE_ENRICHMENT, keys.ENRICHMENT_NLP_ENABLED),
             keys.ENRICHMENT_MAX_TEXT_LENGTH: self.get(keys.STAGES, keys.STAGE_ENRICHMENT, keys.ENRICHMENT_MAX_TEXT_LENGTH),
             keys.ENRICHMENT_TOP_KEYWORDS: self.get(keys.STAGES, keys.STAGE_ENRICHMENT, keys.ENRICHMENT_TOP_KEYWORDS),
-            'output_table': self.get(keys.STAGES, keys.STAGE_ENRICHMENT, 'output_table'),
+            keys.ENRICHMENT_OUTPUT_FILE: self.get(keys.STAGES, keys.STAGE_ENRICHMENT, keys.ENRICHMENT_OUTPUT_FILE),
             keys.ENRICHMENT_HEADLESS_BROWSER: self.get(keys.STAGES, keys.STAGE_ENRICHMENT, keys.ENRICHMENT_HEADLESS_BROWSER, default={}),
             keys.ENRICHMENT_CONTENT_TYPES: self.get(keys.STAGES, keys.STAGE_ENRICHMENT, keys.ENRICHMENT_CONTENT_TYPES, default={}),
             keys.ENRICHMENT_STORAGE: self.get(keys.STAGES, keys.STAGE_ENRICHMENT, keys.ENRICHMENT_STORAGE, default={}),
@@ -236,8 +236,8 @@ class Config:
     def get_data_paths(self) -> dict[str, Path]:
         """Get data directory paths"""
         return {
-            'datalake_dir': Path(self.get(keys.DATA, 'datalake_dir')),
             keys.RAW_DIR: Path(self.get(keys.DATA, keys.RAW_DIR)),
+            keys.PROCESSED_DIR: Path(self.get(keys.DATA, keys.PROCESSED_DIR)),
             keys.CATALOG_DIR: Path(self.get(keys.DATA, keys.CATALOG_DIR)),
             keys.CACHE_DIR: Path(self.get(keys.DATA, keys.CACHE_DIR)),
             keys.EXPORTS_DIR: Path(self.get(keys.DATA, keys.EXPORTS_DIR)),

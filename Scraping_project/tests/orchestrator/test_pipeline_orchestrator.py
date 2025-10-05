@@ -89,12 +89,9 @@ class DummyConfig:
             "top_keywords": 10,
             "output_file": str(self.stage3_output),
             "batch_size": 2,
-            "dedup_db_path": str(self.base_path / "stage3_dedup.db"),
         }
 
     def get(self, *keys: str, default=None):
-        if keys and keys[0] == "stage3":
-            return self.get_stage3_config()
         if keys == ("scrapy", "user_agent"):
             return "OrchestratorTest/1.0"
         if keys == ("logging", "level"):

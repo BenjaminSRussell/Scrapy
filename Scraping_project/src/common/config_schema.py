@@ -383,10 +383,10 @@ class DiscoveryStageConfig(BaseModel):
         le=10000,
         description="Batch size for processing"
     )
-    output_table: str = Field(
-        default="data/datalake/raw_urls",
+    output_file: str = Field(
+        default="data/processed/stage01/discovery_output.jsonl",
         min_length=1,
-        description="Output Delta table for raw URLs"
+        description="Output file path"
     )
     seed_file: str = Field(
         default="data/raw/uconn_urls.csv",
@@ -536,10 +536,10 @@ class ValidationStageConfig(BaseModel):
         le=300,
         description="Request timeout in seconds"
     )
-    output_table: str = Field(
-        default="data/datalake/validated_urls",
+    output_file: str = Field(
+        default="data/processed/stage02/validated_urls.jsonl",
         min_length=1,
-        description="Output Delta table for validated URLs"
+        description="Output file path"
     )
     retry: RetryConfig = Field(
         default_factory=RetryConfig,
@@ -652,10 +652,10 @@ class EnrichmentStageConfig(BaseModel):
         le=10000,
         description="Batch size for processing"
     )
-    output_table: str = Field(
-        default="data/datalake/enriched_content",
+    output_file: str = Field(
+        default="data/processed/stage03/enrichment_output.jsonl",
         min_length=1,
-        description="Output Delta table for enriched content"
+        description="Output file path"
     )
     headless_browser: HeadlessBrowserConfig = Field(
         default_factory=HeadlessBrowserConfig,
@@ -705,11 +705,6 @@ class DataPathsConfig(BaseModel):
     """Data directory paths configuration"""
     model_config = ConfigDict(extra='forbid')
 
-    datalake_dir: str = Field(
-        default="data/datalake",
-        min_length=1,
-        description="Datalake root directory"
-    )
     raw_dir: str = Field(
         default="data/raw",
         min_length=1,
@@ -1088,15 +1083,15 @@ class PipelineConfig(BaseModel):
 
     @model_validator(mode='after')
     def validate_output_file_directories(self):
-        """Validate that parent directories for output tables exist or can be created"""
+        """Validate that parent directories for output files exist or can be created"""
         from pathlib import Path
 
-        output_tables = [
-            ('discovery', self.stages.discovery.output_table),
-            ('validation', self.stages.validation.output_table),
+        output_files = [
+            ('discovery', self.stages.discovery.output_file),
+            ('validation', self.stages.validation.output_file),
         ]
 
-        enrichment_paths = [self.stages.enrichment.output_table]
+        enrichment_paths = [self.stages.enrichment.output_file]
         storage = getattr(self.stages.enrichment, 'storage', None)
         if storage and storage.backend != 's3':
             storage_path = storage.options.get('path')
@@ -1104,11 +1099,11 @@ class PipelineConfig(BaseModel):
                 enrichment_paths.append(storage_path)
 
         for path_value in enrichment_paths:
-            output_tables.append(('enrichment', path_value))
+            output_files.append(('enrichment', path_value))
 
-        for stage_name, output_path_str in output_tables:
-            if output_path_str:
-                output_path = Path(output_path_str)
+        for stage_name, output_file in output_files:
+            if output_file:
+                output_path = Path(output_file)
                 parent_dir = output_path.parent
 
                 # Check if parent directory exists or can be created
