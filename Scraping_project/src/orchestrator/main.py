@@ -243,16 +243,26 @@ def _cleanup_temp_directory(temp_dir: Path, max_age_hours: int = 24):
     try:
         for item in temp_dir.iterdir():
             try:
-                # Get file modification time
-                mod_time = datetime.fromtimestamp(item.stat().st_mtime)
+                # Use lstat to get info of the item itself, not its target (if it's a symlink).
+                # This is critical for security to prevent symlink attacks.
+                stat_result = item.lstat()
+                mod_time = datetime.fromtimestamp(stat_result.st_mtime)
 
                 if mod_time < cutoff_time:
-                    if item.is_file():
-                        size = item.stat().st_size
+                    # IMPORTANT: Check for symlink first to avoid traversing it.
+                    if item.is_symlink():
+                        size = stat_result.st_size
+                        item.unlink()
+                        removed_count += 1
+                        removed_size += size
+                    elif item.is_file():
+                        size = stat_result.st_size
                         item.unlink()
                         removed_count += 1
                         removed_size += size
                     elif item.is_dir():
+                        # This is now safe, as is_dir() is only called after we've
+                        # confirmed the item is not a symlink.
                         size = sum(f.stat().st_size for f in item.rglob('*') if f.is_file())
                         shutil.rmtree(item)
                         removed_count += 1

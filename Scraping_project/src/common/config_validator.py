@@ -149,7 +149,7 @@ class ConfigHealthCheck:
         if validated.stages.enrichment.nlp_enabled:
             try:
                 import spacy
-                model_name = validated.nlp.spacy_model or validated.nlp.model
+                model_name = validated.nlp.spacy_model
                 if model_name:
                     try:
                         spacy.load(model_name)
@@ -217,7 +217,7 @@ class ConfigHealthCheck:
 
                         except Exception:
                             self.issues.append(ValidationIssue(
-                                severity='warning',
+                                severity='error',
                                 category='dependency',
                                 message=f"Playwright browsers not installed for {stage_name} stage",
                                 suggestion="Run: playwright install"
