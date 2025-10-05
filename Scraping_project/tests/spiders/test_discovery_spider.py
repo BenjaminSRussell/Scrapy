@@ -325,3 +325,44 @@ def test_discovery_spider_encoding_handling(mock_settings):
     # Should handle Unicode URLs without crashing
     discovery_items = [r for r in results if isinstance(r, DiscoveryItem)]
     assert len(discovery_items) >= 0  # May be 0 if URL validation rejects encoded URLs
+
+
+@pytest.mark.asyncio
+async def test_discover_with_headless_browser_handles_relative_urls(mock_settings, mocker):
+    """Test that the headless browser discovery can handle relative URLs without crashing."""
+    spider = DiscoverySpider(settings=mock_settings, allowed_domains=['example.com'])
+    test_url = "https://example.com"
+
+    # Mock the EnhancedBrowserDiscovery
+    mock_browser_instance = mocker.AsyncMock()
+    mock_browser_instance.discover_urls.return_value = {
+        'discovered_urls': ['/about-us'],
+        'network_urls': [],
+        'discovery_methods': {'static_html': 1, 'auto_click': 0, 'infinite_scroll': 0, 'network_intercept': 0}
+    }
+
+    mocker.patch('src.common.enhanced_browser.EnhancedBrowserDiscovery', return_value=mock_browser_instance)
+
+    # Create a new side effect function for spider.settings.get
+    original_side_effect = spider.settings.get.side_effect
+    def new_side_effect(key, default=None):
+        if key == 'HEADLESS_BROWSER_CONFIG':
+            return {'enabled': True}
+        if original_side_effect:
+            return original_side_effect(key, default)
+        return default
+    spider.settings.get.side_effect = new_side_effect
+
+    # The bug is that _normalize_candidate is called with a `None` response,
+    # which will cause an AttributeError when trying to resolve a relative URL.
+    # This test will fail with that error until the bug is fixed.
+    results = []
+    # The method yields a list of items, so we collect them.
+    async for item_list in spider._discover_with_headless_browser(test_url, 0):
+        results.extend(item_list)
+
+    # After the fix, this should execute without error and yield a valid DiscoveryItem
+    assert len(results) > 0
+    assert any(isinstance(r, DiscoveryItem) for r in results)
+    discovery_item = next(r for r in results if isinstance(r, DiscoveryItem))
+    assert discovery_item.discovered_url == "https://example.com/about-us"

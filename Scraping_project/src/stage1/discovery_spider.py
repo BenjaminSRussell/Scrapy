@@ -8,7 +8,7 @@ from pathlib import Path
 from urllib.parse import quote, unquote, urlparse
 
 import scrapy
-from scrapy.http import Response
+from scrapy.http import Response, HtmlResponse
 from scrapy.linkextractors import LinkExtractor
 
 try:
@@ -855,8 +855,9 @@ class DiscoverySpider(scrapy.Spider):
                 logger.info(f"  - Network intercept: {result['discovery_methods']['network_intercept']}")
 
                 # Process discovered URLs with appropriate confidence scores
+                response_for_joining = HtmlResponse(url=url)
                 for discovered_url in all_urls:
-                    normalized = self._normalize_candidate(discovered_url, None)
+                    normalized = self._normalize_candidate(discovered_url, response_for_joining)
                     if normalized:
                         # Higher confidence for URLs discovered via multiple methods
                         confidence = 0.9 if discovered_url in network_urls else 0.8
