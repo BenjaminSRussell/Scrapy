@@ -134,8 +134,8 @@ class SchemaRegistry:
 
     # Current schema versions
     CURRENT_VERSIONS = {
-        "DiscoveryItem": "2.0",
-        "ValidationResult": "2.0",
+        "DiscoveryItem": "2.1",
+        "ValidationResult": "2.1",
         "EnrichmentItem": "2.0",
         "URLRecord": "1.0",
         "PipelineStats": "1.0"
