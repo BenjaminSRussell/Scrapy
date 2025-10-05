@@ -11,7 +11,16 @@ SRC_DIR = Path(__file__).resolve().parents[2] / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from common.schemas import DiscoveryItem, EnrichmentItem, ValidationResult  # noqa: E402
+from common.schemas import DiscoveryItem, EnrichmentItem, ValidationResult, SchemaRegistry  # noqa: E402
+
+
+def test_schema_registry_is_in_sync():
+    """
+    Tests that the SchemaRegistry is in sync with the schema versions
+    defined in the dataclasses.
+    """
+    assert SchemaRegistry.get_current_version("DiscoveryItem") == DiscoveryItem.schema_version
+    assert SchemaRegistry.get_current_version("ValidationResult") == ValidationResult.schema_version
 
 
 def test_discovery_item_creation():
