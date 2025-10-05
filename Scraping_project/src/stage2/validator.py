@@ -10,6 +10,14 @@ from pathlib import Path
 
 import aiohttp
 
+# Use a try-except block for optional dependency
+try:
+    from src.common.delta_lake import write_validated_urls, read_validated_urls, DELTA_AVAILABLE
+except ImportError:
+    DELTA_AVAILABLE = False
+    write_validated_urls = None
+    read_validated_urls = None
+
 from src.common.adaptive_depth import AdaptiveDepthManager
 from src.common.checkpoints import CheckpointManager
 from src.common.feedback import FeedbackStore
@@ -56,10 +64,16 @@ class URLValidator:
     def __init__(self, config, enable_link_graph: bool = True):
         self.config = config
         self.stage2_config = config.get_stage2_config()
+        self.storage_config = self.stage2_config.get("storage", {})
+        self.storage_backend = self.storage_config.get("backend", "jsonl")
+
         self.max_workers = self.stage2_config['max_workers']
         self.timeout = self.stage2_config['timeout']
         self.output_file = Path(self.stage2_config['output_file'])
         self.user_agent = self.config.get('scrapy', 'user_agent', default='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
+
+        self.write_buffer = []
+        self.buffer_size = 100
 
         # Initialize checkpoint manager for resumable validation
         checkpoint_dir = Path("data/checkpoints")
@@ -91,7 +105,8 @@ class URLValidator:
         logger.info("[Stage2] Freshness tracker initialized")
 
         # Ensure output directory exists
-        self.output_file.parent.mkdir(parents=True, exist_ok=True)
+        if self.storage_backend == "jsonl":
+            self.output_file.parent.mkdir(parents=True, exist_ok=True)
 
         # Session configuration - Windows-safe connector limits
         import sys
@@ -109,26 +124,55 @@ class URLValidator:
 
         processed_hashes = set()
 
-        if not self.output_file.exists():
-            self._processed_hashes_cache = processed_hashes
-            return processed_hashes
-
-        try:
-            with open(self.output_file, encoding='utf-8') as f:
-                for line in f:
-                    try:
-                        data = json.loads(line.strip())
-                        url_hash = data.get('url_hash')
-                        if url_hash:
-                            processed_hashes.add(url_hash)
-                    except json.JSONDecodeError:
-                        continue
-        except Exception as e:
-            logger.warning(f"Failed to read processed hashes: {e}")
+        if self.storage_backend == 'delta':
+            if not DELTA_AVAILABLE:
+                raise RuntimeError("Delta Lake backend configured, but 'deltalake' is not installed.")
+            try:
+                existing_records = read_validated_urls(columns=['url_hash'])
+                processed_hashes = {record['url_hash'] for record in existing_records if 'url_hash' in record}
+            except FileNotFoundError:
+                logger.info("[Stage2] validated_urls Delta table not found. Starting fresh.")
+            except Exception as e:
+                logger.error(f"Failed to load hashes from Delta Lake: {e}", exc_info=True)
+        else: # jsonl
+            if self.output_file.exists():
+                try:
+                    with open(self.output_file, encoding='utf-8') as f:
+                        for line in f:
+                            try:
+                                data = json.loads(line.strip())
+                                url_hash = data.get('url_hash')
+                                if url_hash:
+                                    processed_hashes.add(url_hash)
+                            except json.JSONDecodeError:
+                                continue
+                except Exception as e:
+                    logger.warning(f"Failed to read processed hashes from file: {e}")
 
         self._processed_hashes_cache = processed_hashes
         logger.info(f"Loaded {len(processed_hashes)} already-processed URL hashes")
         return processed_hashes
+
+    def _flush_buffer(self):
+        """Flush the write buffer to the configured storage."""
+        if not self.write_buffer:
+            return
+
+        try:
+            if self.storage_backend == 'delta':
+                if write_validated_urls:
+                    data_to_write = [asdict(item) for item in self.write_buffer]
+                    write_validated_urls(data_to_write)
+                else:
+                    logger.error("write_validated_urls function not available.")
+            else:  # jsonl
+                with open(self.output_file, 'a', encoding='utf-8') as f:
+                    for item in self.write_buffer:
+                         f.write(json.dumps(asdict(item), ensure_ascii=False) + '\n')
+        except Exception as e:
+            logger.error(f"[Stage2Validator] Failed to write buffer: {e}", exc_info=True)
+        finally:
+            self.write_buffer.clear()
 
     def _prioritize_batch_by_importance(self, batch: list[BatchQueueItem]) -> list[BatchQueueItem]:
         """
@@ -279,71 +323,70 @@ class URLValidator:
             # Run validations concurrently
             results = await asyncio.gather(*tasks, return_exceptions=True)
 
-            # Write results to output file with progress tracking
+            # Process results and add to buffer
             successful_validations = 0
-            with open(self.output_file, 'a', encoding='utf-8') as f:
-                for i, result in enumerate(results):
-                    if isinstance(result, Exception):
-                        logger.error(f"Validation task failed: {result}")
-                        self.checkpoint.mark_failed(f"Task {i} failed: {result}")
-                        continue
+            for i, result in enumerate(results):
+                if isinstance(result, Exception):
+                    logger.error(f"Validation task failed: {result}")
+                    self.checkpoint.mark_failed(f"Task {i} failed: {result}")
+                    continue
 
-                    try:
-                        f.write(json.dumps(asdict(result), ensure_ascii=False) + '\n')
-                        successful_validations += 1
+                self.write_buffer.append(result)
+                successful_validations += 1
 
-                        # Record feedback for Stage 2 -> Stage 1 learning
-                        item = batch[i]
-                        discovery_source = item.discovery_source if hasattr(item, 'discovery_source') else 'unknown'
-                        discovery_depth = item.discovery_depth if hasattr(item, 'discovery_depth') else 0
+                # Record feedback for Stage 2 -> Stage 1 learning
+                item = batch[i]
+                discovery_source = item.data.get('discovery_source', 'unknown') if hasattr(item, 'data') else 'unknown'
+                discovery_depth = item.data.get('discovery_depth', 0) if hasattr(item, 'data') else 0
 
-                        # Determine if this is likely content (HTML)
-                        has_content = result.is_valid and result.content_type and 'html' in result.content_type.lower()
+                # Determine if this is likely content (HTML)
+                has_content = result.is_valid and result.content_type and 'html' in result.content_type.lower()
 
-                        if result.is_valid:
-                            self.feedback_store.record_validation(
-                                url=result.url,
-                                discovery_source=discovery_source,
-                                is_valid=True,
-                                status_code=result.status_code
-                            )
+                if result.is_valid:
+                    self.feedback_store.record_validation(
+                        url=result.url,
+                        discovery_source=discovery_source,
+                        is_valid=True,
+                        status_code=result.status_code
+                    )
 
-                            # Record for adaptive depth learning
-                            self.adaptive_depth.record_validation(
-                                url=result.url,
-                                is_valid=True,
-                                has_content=has_content,
-                                word_count=0,  # We don't have word count in Stage 2
-                                depth=discovery_depth
-                            )
-                        else:
-                            # Record failure with error details
-                            error_type = result.error_message.split(':')[0] if result.error_message else 'unknown'
-                            self.feedback_store.record_validation(
-                                url=result.url,
-                                discovery_source=discovery_source,
-                                is_valid=False,
-                                status_code=result.status_code,
-                                error_type=error_type
-                            )
+                    # Record for adaptive depth learning
+                    self.adaptive_depth.record_validation(
+                        url=result.url,
+                        is_valid=True,
+                        has_content=has_content,
+                        word_count=0,  # We don't have word count in Stage 2
+                        depth=discovery_depth
+                    )
+                else:
+                    # Record failure with error details
+                    error_type = result.error_message.split(':')[0] if result.error_message else 'unknown'
+                    self.feedback_store.record_validation(
+                        url=result.url,
+                        discovery_source=discovery_source,
+                        is_valid=False,
+                        status_code=result.status_code,
+                        error_type=error_type
+                    )
 
-                            # Record for adaptive depth learning
-                            self.adaptive_depth.record_validation(
-                                url=result.url,
-                                is_valid=False,
-                                has_content=False,
-                                word_count=0,
-                                depth=discovery_depth
-                            )
+                    # Record for adaptive depth learning
+                    self.adaptive_depth.record_validation(
+                        url=result.url,
+                        is_valid=False,
+                        has_content=False,
+                        word_count=0,
+                        depth=discovery_depth
+                    )
 
-                        # Update checkpoint progress
-                        self.checkpoint.update_progress(
-                            processed_line=i + 1,
-                            url_hash=result.url_hash,
-                            total_processed=successful_validations
-                        )
-                    except Exception as e:
-                        logger.error(f"Error writing validation result: {e}")
+                # Update checkpoint progress
+                self.checkpoint.update_progress(
+                    processed_line=i + 1,
+                    url_hash=result.url_hash,
+                    total_processed=successful_validations
+                )
+
+            # Flush buffer after processing the batch
+            self._flush_buffer()
 
             # Mark batch as completed
             self.checkpoint.complete_batch(successful_validations)
@@ -358,7 +401,7 @@ class URLValidator:
 
         logger.info(f"Starting validation from {input_file}")
 
-        if not self.output_file.exists() or self.output_file.stat().st_size == 0:
+        if self.storage_backend == "jsonl" and (not self.output_file.exists() or self.output_file.stat().st_size == 0):
             logger.debug("Resetting checkpoint for new or empty output file")
             self.checkpoint.reset()
 

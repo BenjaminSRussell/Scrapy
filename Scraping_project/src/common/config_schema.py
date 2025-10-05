@@ -410,6 +410,10 @@ class DiscoveryStageConfig(BaseModel):
         default_factory=HeuristicsConfig,
         description="Discovery heuristics"
     )
+    storage: "EnrichmentStorageConfig" = Field(
+        default_factory=lambda: {"backend": "jsonl"},
+        description="Storage backend configuration"
+    )
 
     @field_validator('allowed_domains')
     @classmethod
@@ -549,6 +553,10 @@ class ValidationStageConfig(BaseModel):
         default_factory=CircuitBreakerConfig,
         description="Circuit breaker configuration"
     )
+    storage: "EnrichmentStorageConfig" = Field(
+        default_factory=lambda: {"backend": "jsonl"},
+        description="Storage backend configuration"
+    )
 
 
 class StorageRotationConfig(BaseModel):
@@ -592,7 +600,7 @@ class EnrichmentStorageConfig(BaseModel):
     """Storage configuration for Stage 3 outputs."""
     model_config = ConfigDict(extra='forbid')
 
-    backend: Literal['jsonl', 'sqlite', 'parquet', 's3'] = Field(
+    backend: Literal['jsonl', 'sqlite', 'parquet', 's3', 'delta'] = Field(
         default='jsonl',
         description='Storage backend implementation to use'
     )

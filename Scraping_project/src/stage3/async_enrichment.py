@@ -21,6 +21,8 @@ import aiohttp
 
 from src.common.checkpoint_middleware import AsyncCheckpointTracker
 from src.common.content_handlers import ContentTypeRouter
+from src.common.content_handlers import ContentTypeRouter
+from src.common.delta_lake import write_enriched_content
 from src.common.nlp import (
     NLPSettings,
     extract_content_tags,
@@ -227,6 +229,7 @@ class AsyncEnrichmentProcessor:
         self.storage_config = base_config
         self.active_backend = (base_config.get("backend") or "jsonl").lower()
         self.storage_writer = None
+        self.delta_buffer: list[dict[str, Any]] | None = None
 
         # Initialize NLP
         if nlp_config:
@@ -301,92 +304,76 @@ class AsyncEnrichmentProcessor:
         )
 
     async def __aenter__(self):
-
         """Async context manager entry"""
-
-        try:
-
-            self.storage_writer = self._build_writer()
-
-            self.storage_writer.open()
-
-        except Exception:  # pragma: no cover - defensive logging
-
-            logger.error("AsyncEnrichmentProcessor failed to initialize storage backend", exc_info=True)
-
-            raise
-
-
+        if self.active_backend == "delta":
+            self.delta_buffer = []
+            logger.info("Using Delta Lake backend, results will be buffered.")
+        else:
+            try:
+                self.storage_writer = self._build_writer()
+                self.storage_writer.open()
+            except Exception:  # pragma: no cover - defensive logging
+                logger.error("AsyncEnrichmentProcessor failed to initialize storage backend", exc_info=True)
+                raise
 
         self.stats['start_time'] = time.time()
-
-        logger.info("AsyncEnrichmentProcessor initialized with %s backend -> %s",
-
-                    self.active_backend.upper(),
-
-                    self.storage_writer.describe_destination())
-
-
+        destination = "Delta Lake" if self.active_backend == "delta" else self.storage_writer.describe_destination()
+        logger.info(
+            "AsyncEnrichmentProcessor initialized with %s backend -> %s",
+            self.active_backend.upper(),
+            destination
+        )
 
         # Initialize checkpoint tracker
-
         await self.checkpoint_tracker.__aenter__()
-
-
 
         return self
 
-
-
-
-
     async def __aexit__(self, exc_type, exc_val, exc_tb):
-
         """Async context manager exit"""
+        if self.active_backend == "delta" and self.delta_buffer:
+            logger.info(f"Flushing final {len(self.delta_buffer)} records to Delta Lake.")
+            await self._flush_delta_buffer()
 
         if self.storage_writer:
-
             self.storage_writer.close()
-
             self.storage_writer = None
 
-
-
         self.stats['end_time'] = time.time()
-
         self._log_final_stats()
 
-
-
         # Clean up checkpoint tracker
-
         await self.checkpoint_tracker.__aexit__(exc_type, exc_val, exc_tb)
 
+    async def _flush_delta_buffer(self):
+        """Writes the contents of the delta buffer to the delta table."""
+        if not self.delta_buffer:
+            return
 
-
-
+        try:
+            loop = asyncio.get_running_loop()
+            # write_enriched_content is sync, run in executor
+            await loop.run_in_executor(None, write_enriched_content, self.delta_buffer)
+            logger.info(f"Successfully wrote {len(self.delta_buffer)} records to Delta Lake.")
+            self.delta_buffer.clear()
+        except Exception as e:
+            logger.error(f"Failed to write to Delta Lake: {e}", exc_info=True)
 
     async def _write_result(self, result: EnrichmentResult):
-
         """Write result to storage (thread-safe)"""
+        if self.active_backend == "delta":
+            # Buffer the result if using Delta Lake
+            if self.delta_buffer is not None:
+                self.delta_buffer.append(result.to_dict())
+            return
 
         async with self._output_lock:
-
             try:
-
                 if not self.storage_writer:
-
                     raise RuntimeError('Storage writer is not initialized')
-
                 self.storage_writer.write_item(result.to_dict())
-
             except Exception as e:
-
                 logger.error(f"Error writing result for {result.url}: {e}")
-
-
-
-
 
     async def fetch_url(
         self,
@@ -627,6 +614,11 @@ class AsyncEnrichmentProcessor:
                 if self.stats['total_processed'] % 100 == 0:
                     self._log_progress()
                     self.checkpoint_tracker.print_progress()
+
+        # If using delta, check if buffer needs flushing
+        if self.active_backend == "delta" and self.delta_buffer and len(self.delta_buffer) >= self.batch_size:
+            logger.info(f"Delta buffer full ({len(self.delta_buffer)} items), flushing to table.")
+            await self._flush_delta_buffer()
 
     async def process_urls(self, urls: list[str]):
         """Process list of URLs with batching and connection pooling"""

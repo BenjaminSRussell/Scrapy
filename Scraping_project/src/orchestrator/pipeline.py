@@ -385,19 +385,52 @@ class PipelineOrchestrator:
             logger.warning("No valid URLs found for Stage 3 enrichment")
             return
 
-        from src.common.url_deduplication import URLDeduplicator
-
-        # Use persistent deduplication instead of in-memory set
-        dedup_db = Path(self.config.get('stage3', {}).get('dedup_db_path', 'data/cache/stage3_dedup.db'))
-        deduplicator = URLDeduplicator(dedup_db)
+        stage3_config = self.config.get_stage3_config()
+        storage_backend = stage3_config.get(keys.ENRICHMENT_STORAGE, {}).get(keys.STORAGE_BACKEND)
 
         deduped_urls: list[str] = []
-        for url in urls_for_enrichment:
-            if deduplicator.add_if_new(url):
-                deduped_urls.append(url)
 
-        logger.info(f"Dispatching {len(deduped_urls)} URLs to Stage 3 enrichment (dedup: {deduplicator.get_stats()['duplicates_found']} duplicates)")
-        deduplicator.close()
+        if storage_backend == 'delta':
+            try:
+                from src.common.delta_lake import read_enriched_content, DELTA_AVAILABLE
+                if not DELTA_AVAILABLE:
+                    raise ImportError("deltalake optional dependency not installed.")
+
+                logger.info("Deduplicating against enriched_content Delta table...")
+                existing_records = read_enriched_content(columns=['url_hash'])
+                seen_hashes = {record['url_hash'] for record in existing_records if 'url_hash' in record}
+
+                url_to_hash_map = {item['url']: item['url_hash'] for item in validation_items_for_enrichment if 'url' in item and 'url_hash' in item}
+
+                duplicates_found = 0
+                for url in urls_for_enrichment:
+                    url_hash = url_to_hash_map.get(url)
+                    if url_hash and url_hash not in seen_hashes:
+                        deduped_urls.append(url)
+                    else:
+                        duplicates_found += 1
+
+                logger.info(f"Dispatching {len(deduped_urls)} URLs to Stage 3 enrichment (dedup: {duplicates_found} duplicates from Delta Lake)")
+
+            except (ImportError, FileNotFoundError) as e:
+                logger.warning(f"Delta Lake deduplication failed ({e}), falling back to local deduplication.")
+                from src.common.url_deduplication import URLDeduplicator
+                dedup_db = Path(self.config.get('stage3', {}).get('dedup_db_path', 'data/cache/stage3_dedup.db'))
+                deduplicator = URLDeduplicator(dedup_db)
+                for url in urls_for_enrichment:
+                    if deduplicator.add_if_new(url):
+                        deduped_urls.append(url)
+                logger.info(f"Dispatching {len(deduped_urls)} URLs to Stage 3 enrichment (dedup: {deduplicator.get_stats()['duplicates_found']} duplicates)")
+                deduplicator.close()
+        else:
+            from src.common.url_deduplication import URLDeduplicator
+            dedup_db = Path(self.config.get('stage3', {}).get('dedup_db_path', 'data/cache/stage3_dedup.db'))
+            deduplicator = URLDeduplicator(dedup_db)
+            for url in urls_for_enrichment:
+                if deduplicator.add_if_new(url):
+                    deduped_urls.append(url)
+            logger.info(f"Dispatching {len(deduped_urls)} URLs to Stage 3 enrichment (dedup: {deduplicator.get_stats()['duplicates_found']} duplicates)")
+            deduplicator.close()
 
         # Use async processor if enabled
         if use_async_processor:

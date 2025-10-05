@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 Delta Lake integration for pipeline storage.
 
@@ -52,7 +54,7 @@ class DeltaLakeWriter:
         self,
         data: list[dict[str, Any]],
         mode: str = "append",
-        schema: pa.Schema | None = None
+        schema: "pa.Schema" | None = None
     ):
         """
         Write data to Delta Lake table.
@@ -198,7 +200,7 @@ class DeltaLakeReader:
         """Get total record count."""
         return len(self.read(columns=['_ingestion_time']))
 
-    def get_schema(self) -> pa.Schema:
+    def get_schema(self) -> "pa.Schema":
         """Get table schema."""
         return self.table.schema().to_pyarrow()
 

@@ -31,19 +31,20 @@ def sample_config_data():
                 'allowed_domains': ['example.com'],
                 'max_depth': 3,
                 'batch_size': 100,
-                'output_table': 'data/datalake/raw_urls'
+                'output_file': 'data/processed/stage01/discovery_output.jsonl',
+                'seed_file': 'data/raw/seeds.csv'
             },
             'validation': {
                 'max_workers': 10,
                 'timeout': 5,
-                'output_table': 'data/datalake/validated_urls'
+                'output_file': 'data/processed/stage02/validation_output.jsonl'
             },
             'enrichment': {
                 'allowed_domains': ['example.com'],
                 'nlp_enabled': True,
                 'max_text_length': 2000,
                 'top_keywords': 10,
-                'output_table': 'data/datalake/enriched_content'
+                'output_file': 'data/processed/stage03/enriched_content.jsonl'
             }
         },
         'logging': {
@@ -51,11 +52,16 @@ def sample_config_data():
             'file': 'logs/pipeline.log'
         },
         'data': {
-            'datalake_dir': 'data/datalake',
+            'raw_dir': 'data/raw',
+            'processed_dir': 'data/processed',
             'catalog_dir': 'data/catalog',
             'cache_dir': 'data/cache',
             'exports_dir': 'data/exports',
-            'logs_dir': 'logs'
+            'logs_dir': 'logs',
+            'temp_dir': 'data/temp'
+        },
+        'nlp': {
+            'spacy_model': 'en_core_web_sm'
         }
     }
 
@@ -155,20 +161,20 @@ def test_config_get_stage_configs(temp_config_file):
     stage1_config = config.get_stage1_config()
     assert stage1_config['max_depth'] == 3
     assert stage1_config['batch_size'] == 100
-    assert stage1_config['output_table'] == 'data/datalake/raw_urls'
+    assert stage1_config['output_file'] == 'data/processed/stage01/discovery_output.jsonl'
 
     # Stage 2 config
     stage2_config = config.get_stage2_config()
     assert stage2_config['max_workers'] == 10
     assert stage2_config['timeout'] == 5
-    assert stage2_config['output_table'] == 'data/datalake/validated_urls'
+    assert stage2_config['output_file'] == 'data/processed/stage02/validation_output.jsonl'
 
     # Stage 3 config
     stage3_config = config.get_stage3_config()
     assert stage3_config['nlp_enabled'] is True
     assert stage3_config['max_text_length'] == 2000
     assert stage3_config['top_keywords'] == 10
-    assert stage3_config['output_table'] == 'data/datalake/enriched_content'
+    assert stage3_config['output_file'] == 'data/processed/stage03/enriched_content.jsonl'
 
 
 def test_config_get_logging_config(temp_config_file):
@@ -195,9 +201,9 @@ def test_config_get_data_paths(temp_config_file):
     data_paths = config.get_data_paths()
 
     assert isinstance(data_paths['raw_dir'], Path)
-    assert data_paths['datalake_dir'].as_posix() == 'data/datalake'
+    assert data_paths['raw_dir'].as_posix() == 'data/raw'
     assert isinstance(data_paths['processed_dir'], Path)
-    # Removed processed_dir assertion as it's no longer needed with datalake
+    assert data_paths['processed_dir'].as_posix() == 'data/processed'
     assert isinstance(data_paths['logs_dir'], Path)
     assert data_paths['logs_dir'].as_posix() == 'logs'
 

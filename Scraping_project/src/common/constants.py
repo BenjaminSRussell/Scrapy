@@ -29,6 +29,7 @@ LEGACY_PROCESSED_DIR: Final[Path] = DATA_DIR / "processed"
 LINK_GRAPH_DB: Final[Path] = LEGACY_PROCESSED_DIR / "link_graph.db"
 FRESHNESS_DB: Final[Path] = CACHE_DIR / "freshness.db"
 WAREHOUSE_DB: Final[Path] = DATA_DIR / "warehouse" / "uconn_warehouse.db"
+WAREHOUSE_DIR: Final[Path] = WAREHOUSE_DB.parent
 
 # Stage identifiers
 STAGE_DISCOVERY: Final[str] = "stage1_discovery"
@@ -105,10 +106,9 @@ def ensure_directories() -> None:
     """Create all necessary directories if they don't exist."""
     directories = [
         WAREHOUSE_DIR,
-        WAREHOUSE_CACHE,
-        WAREHOUSE_CONFIG,
         CONFIG_DIR,
         LOGS_DIR,
+        CACHE_DIR,
     ]
 
     for directory in directories:

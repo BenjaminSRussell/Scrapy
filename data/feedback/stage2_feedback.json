@@ -31,8 +31,158 @@
           "failed": 1
         }
       }
+    },
+    {
+      "session_id": "session_20251005_013538",
+      "started_at": "2025-10-05T01:35:38.095616",
+      "completed_at": "2025-10-05T01:35:38.187376",
+      "total_discovered": 0,
+      "total_validated": 2,
+      "total_failed": 1,
+      "success_rate": 0.6666666666666666,
+      "source_performance": {
+        "unknown": {
+          "validated": 2,
+          "failed": 1
+        }
+      }
+    },
+    {
+      "session_id": "session_20251005_014242",
+      "started_at": "2025-10-05T01:42:42.218166",
+      "completed_at": "2025-10-05T01:42:42.318433",
+      "total_discovered": 0,
+      "total_validated": 2,
+      "total_failed": 1,
+      "success_rate": 0.6666666666666666,
+      "source_performance": {
+        "unknown": {
+          "validated": 2,
+          "failed": 1
+        }
+      }
+    },
+    {
+      "session_id": "session_20251005_014832",
+      "started_at": "2025-10-05T01:48:32.347514",
+      "completed_at": "2025-10-05T01:48:32.444431",
+      "total_discovered": 0,
+      "total_validated": 2,
+      "total_failed": 1,
+      "success_rate": 0.6666666666666666,
+      "source_performance": {
+        "unknown": {
+          "validated": 2,
+          "failed": 1
+        }
+      }
+    },
+    {
+      "session_id": "session_20251005_015741",
+      "started_at": "2025-10-05T01:57:41.222359",
+      "completed_at": "2025-10-05T01:57:41.314620",
+      "total_discovered": 0,
+      "total_validated": 2,
+      "total_failed": 1,
+      "success_rate": 0.6666666666666666,
+      "source_performance": {
+        "unknown": {
+          "validated": 2,
+          "failed": 1
+        }
+      }
+    },
+    {
+      "session_id": "session_20251005_020134",
+      "started_at": "2025-10-05T02:01:34.082770",
+      "completed_at": "2025-10-05T02:01:34.174824",
+      "total_discovered": 0,
+      "total_validated": 2,
+      "total_failed": 1,
+      "success_rate": 0.6666666666666666,
+      "source_performance": {
+        "unknown": {
+          "validated": 2,
+          "failed": 1
+        }
+      }
+    },
+    {
+      "session_id": "session_20251005_020556",
+      "started_at": "2025-10-05T02:05:56.810264",
+      "completed_at": "2025-10-05T02:05:56.905028",
+      "total_discovered": 0,
+      "total_validated": 2,
+      "total_failed": 1,
+      "success_rate": 0.6666666666666666,
+      "source_performance": {
+        "unknown": {
+          "validated": 2,
+          "failed": 1
+        }
+      }
+    },
+    {
+      "session_id": "session_20251005_020813",
+      "started_at": "2025-10-05T02:08:13.973318",
+      "completed_at": "2025-10-05T02:08:14.068180",
+      "total_discovered": 0,
+      "total_validated": 2,
+      "total_failed": 1,
+      "success_rate": 0.6666666666666666,
+      "source_performance": {
+        "unknown": {
+          "validated": 2,
+          "failed": 1
+        }
+      }
+    },
+    {
+      "session_id": "session_20251005_021029",
+      "started_at": "2025-10-05T02:10:29.123173",
+      "completed_at": "2025-10-05T02:10:29.221119",
+      "total_discovered": 0,
+      "total_validated": 2,
+      "total_failed": 1,
+      "success_rate": 0.6666666666666666,
+      "source_performance": {
+        "unknown": {
+          "validated": 2,
+          "failed": 1
+        }
+      }
+    },
+    {
+      "session_id": "session_20251005_021505",
+      "started_at": "2025-10-05T02:15:05.575745",
+      "completed_at": "2025-10-05T02:15:05.673079",
+      "total_discovered": 0,
+      "total_validated": 2,
+      "total_failed": 1,
+      "success_rate": 0.6666666666666666,
+      "source_performance": {
+        "unknown": {
+          "validated": 2,
+          "failed": 1
+        }
+      }
+    },
+    {
+      "session_id": "session_20251005_022355",
+      "started_at": "2025-10-05T02:23:55.909235",
+      "completed_at": "2025-10-05T02:23:56.005078",
+      "total_discovered": 0,
+      "total_validated": 2,
+      "total_failed": 1,
+      "success_rate": 0.6666666666666666,
+      "source_performance": {
+        "unknown": {
+          "validated": 2,
+          "failed": 1
+        }
+      }
     }
   ],
-  "last_updated": "2025-10-04T19:17:01.617588",
-  "total_sessions": 2
+  "last_updated": "2025-10-05T02:23:56.005290",
+  "total_sessions": 12
 }
