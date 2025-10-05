@@ -324,11 +324,15 @@ class TestConfigHealthCheck:
 
     def test_missing_playwright_browsers_is_error(self, tmp_path):
         """Test that missing Playwright browsers are detected as an error."""
+        seed_file = tmp_path / 'seeds.csv'
+        seed_file.write_text('url\nhttps://example.com')
+
         config_dict = {
             'environment': 'test',
             'stages': {
                 'discovery': {
                     'allowed_domains': ['example.com'],
+                    'seed_file': str(seed_file),
                     'headless_browser': {
                         'enabled': True,
                         'engine': 'playwright',
