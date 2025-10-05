@@ -7,7 +7,6 @@ This ensures consistent data types, partitioning, and indexes across all tables.
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional
 
 
 class TableType(Enum):

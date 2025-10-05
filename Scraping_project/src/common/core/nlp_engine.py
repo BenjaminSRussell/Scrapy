@@ -13,13 +13,10 @@ Consolidates:
 """
 
 import importlib
-import json
 import logging
 import re
 from collections import Counter, OrderedDict
 from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -237,8 +234,8 @@ class NLPEngine:
     def _load_zero_shot_classifier(self, model_name: str):
         """Load zero-shot classification model (offline-capable)"""
         try:
-            from transformers import AutoModelForSequenceClassification, AutoTokenizer
             import torch
+            from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
             # Use distilbert for offline text classification
             tokenizer = AutoTokenizer.from_pretrained(model_name, local_files_only=True)

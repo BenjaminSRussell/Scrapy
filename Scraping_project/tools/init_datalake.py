@@ -18,13 +18,7 @@ from pathlib import Path
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.common.datalake_schema import (
-    DataLakeConfig,
-    DeltaLakeSchema,
-    TableType,
-    get_create_table_sql,
-    get_sample_queries
-)
+from src.common.datalake_schema import DataLakeConfig, DeltaLakeSchema, get_sample_queries
 
 logging.basicConfig(
     level=logging.INFO,
@@ -36,8 +30,8 @@ logger = logging.getLogger(__name__)
 def create_delta_table(table_path: Path, schema: dict, partition_cols: list = None):
     """Create a Delta Lake table with the specified schema"""
     try:
-        from deltalake import write_deltalake
         import pyarrow as pa
+        from deltalake import write_deltalake
 
         # Convert schema dict to PyArrow schema
         fields = []

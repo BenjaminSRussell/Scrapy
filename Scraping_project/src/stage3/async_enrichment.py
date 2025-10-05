@@ -792,7 +792,7 @@ def main():
         return
 
     logger.info(f"Reading URLs from {input_path}")
-    with open(input_path, 'r', encoding='utf-8') as f:
+    with open(input_path, encoding='utf-8') as f:
         for line in f:
             record = json.loads(line)
             if record.get('is_valid'):
@@ -812,6 +812,7 @@ def main():
 
 if __name__ == '__main__':
     import sys
+
     from src.common.logging import setup_logging
 
     # Setup logging

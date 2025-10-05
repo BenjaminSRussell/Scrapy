@@ -7,21 +7,16 @@ Handles OCR (EasyOCR/Tesseract), audio transcription (Whisper), and content extr
 import logging
 import mimetypes
 from pathlib import Path
-from typing import Optional
 
 from src.common.constants import (
     OCR_ENGINE,
     OCR_LANGUAGES,
-    WHISPER_MODEL,
-    SUPPORTED_IMAGE_TYPES,
     SUPPORTED_AUDIO_TYPES,
     SUPPORTED_DOC_TYPES,
-    MAX_IMAGE_SIZE_MB
+    SUPPORTED_IMAGE_TYPES,
+    WHISPER_MODEL,
 )
-from src.common.summarization import (
-    summarize_pdf_content,
-    summarize_audio_transcript
-)
+from src.common.summarization import summarize_audio_transcript, summarize_pdf_content
 
 logger = logging.getLogger(__name__)
 
@@ -104,7 +99,7 @@ def get_whisper_model():
     return _whisper_model
 
 
-def extract_text_from_image(image_path: str) -> Optional[str]:
+def extract_text_from_image(image_path: str) -> str | None:
     """
     Extract text from image using OCR.
 
@@ -121,9 +116,10 @@ def extract_text_from_image(image_path: str) -> Optional[str]:
             result = reader.readtext(image_path, detail=0)
             text = " ".join(result)
         elif OCR_ENGINE == "tesseract":
-            from PIL import Image
-            import requests
             from io import BytesIO
+
+            import requests
+            from PIL import Image
 
             # Load image
             if image_path.startswith('http'):
@@ -144,7 +140,7 @@ def extract_text_from_image(image_path: str) -> Optional[str]:
         return None
 
 
-def extract_text_from_pdf(pdf_path: str, use_ocr: bool = True) -> Optional[str]:
+def extract_text_from_pdf(pdf_path: str, use_ocr: bool = True) -> str | None:
     """
     Extract text from PDF.
 
@@ -156,9 +152,10 @@ def extract_text_from_pdf(pdf_path: str, use_ocr: bool = True) -> Optional[str]:
         Extracted text with summary
     """
     try:
+        from io import BytesIO
+
         import PyPDF2
         import requests
-        from io import BytesIO
 
         # Load PDF
         if pdf_path.startswith('http'):
@@ -198,7 +195,7 @@ def extract_text_from_pdf(pdf_path: str, use_ocr: bool = True) -> Optional[str]:
         return None
 
 
-def transcribe_audio(audio_path: str, language: str = 'en') -> Optional[str]:
+def transcribe_audio(audio_path: str, language: str = 'en') -> str | None:
     """
     Transcribe audio using Whisper.
 
@@ -210,8 +207,8 @@ def transcribe_audio(audio_path: str, language: str = 'en') -> Optional[str]:
         Transcript with summary
     """
     try:
+
         import requests
-        from io import BytesIO
 
         model = get_whisper_model()
 
@@ -240,7 +237,7 @@ def transcribe_audio(audio_path: str, language: str = 'en') -> Optional[str]:
         return None
 
 
-def process_file(url: str, content_type: Optional[str] = None) -> dict:
+def process_file(url: str, content_type: str | None = None) -> dict:
     """
     Process file based on type and extract content.
 

@@ -23,19 +23,9 @@ from pathlib import Path
 # Add project to path
 sys.path.insert(0, str(Path(__file__).parent))
 
-from src.common.logging import setup_logging, get_logger
-from src.common.constants import (
-    DELTA_RAW_URLS,
-    DELTA_VALIDATED_URLS,
-    DELTA_ENRICHED_CONTENT,
-    LOGS_DIR
-)
-from src.common.delta_lake import (
-    DeltaLakeReader,
-    read_raw_urls,
-    read_validated_urls,
-    read_enriched_content
-)
+from src.common.constants import DELTA_ENRICHED_CONTENT, DELTA_RAW_URLS, DELTA_VALIDATED_URLS, LOGS_DIR
+from src.common.delta_lake import DeltaLakeReader
+from src.common.logging import get_logger, setup_logging
 
 logger = get_logger(__name__)
 
@@ -45,16 +35,13 @@ def run_stage1(config_file: str = "config/development.yml"):
     logger.info("=== STAGE 1: URL DISCOVERY ===")
 
     from src.orchestrator.config import Config
-    # Ensure config_file is a valid path
-    if not Path(config_file).is_absolute():
-        config_file = Path(__file__).parent / config_file
-    config = Config(str(config_file))
+    config = Config(config_file)
 
     # Run discovery spider
     import subprocess
     result = subprocess.run(
-        ["python", "-m", "scrapy", "crawl", "discovery"],
-        cwd=Path(__file__).parent,  # We are already in the Scraping_project directory
+        ["python", "-m", "scrapy", "crawl", "discovery_spider"],
+        cwd=Path(__file__).parent / "Scraping_project",
         capture_output=True,
         text=True
     )
@@ -71,8 +58,8 @@ def run_stage2(config_file: str = "config/development.yml"):
     """Run Stage 2: URL Validation with file type detection."""
     logger.info("=== STAGE 2: URL VALIDATION ===")
 
-    from src.stage2.validator import URLValidator
     from src.orchestrator.config import Config
+    from src.stage2.validator import URLValidator
 
     config = Config(config_file)
     validator = URLValidator(config)
@@ -88,7 +75,6 @@ def run_stage3(config_file: str = "config/development.yml"):
     """Run Stage 3: Content Enrichment with OCR/Whisper."""
     logger.info("=== STAGE 3: CONTENT ENRICHMENT ===")
 
-    from src.stage3 import async_enrichment
 
     # Run async enrichment
     result = subprocess.run(
@@ -174,7 +160,7 @@ def show_status():
             raw_count = reader.count()
             print(f"\n✓ Raw URLs discovered: {raw_count:,}")
         except:
-            print(f"\n✗ Raw URLs: Not available")
+            print("\n✗ Raw URLs: Not available")
 
         # Validated URLs
         try:
@@ -182,7 +168,7 @@ def show_status():
             validated_count = reader.count()
             print(f"✓ URLs validated: {validated_count:,}")
         except:
-            print(f"✗ Validated URLs: Not available")
+            print("✗ Validated URLs: Not available")
 
         # Enriched Content
         try:
@@ -198,7 +184,7 @@ def show_status():
                 print(f"    {entry.get('url', '')}")
 
         except:
-            print(f"✗ Enriched Content: Not available")
+            print("✗ Enriched Content: Not available")
 
     except Exception as e:
         print(f"\nError getting status: {e}")

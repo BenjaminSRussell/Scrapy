@@ -7,13 +7,11 @@ import logging
 import mimetypes
 import tempfile
 from pathlib import Path
-from typing import Optional, Union
 
 import pytesseract
 import torch
 import whisper
 from PIL import Image
-from transformers import pipeline
 
 # Setup logging
 logger = logging.getLogger(__name__)
@@ -55,7 +53,7 @@ class FileProcessor:
                 logger.error(f"Failed to load Whisper model: {e}")
                 raise
 
-    def detect_file_type(self, file_path: Union[str, Path], content_type: Optional[str] = None) -> str:
+    def detect_file_type(self, file_path: str | Path, content_type: str | None = None) -> str:
         """Detect file type from path and optional content type header."""
         file_path = Path(file_path)
         
@@ -72,7 +70,7 @@ class FileProcessor:
             
         raise ValueError(f"Unsupported or unknown file type: {file_path}")
 
-    def extract_text_from_image(self, image_path: Union[str, Path]) -> str:
+    def extract_text_from_image(self, image_path: str | Path) -> str:
         """Extract text from image using OCR."""
         logger.info(f"Processing image: {image_path}")
         
@@ -98,7 +96,7 @@ class FileProcessor:
             logger.error(f"Failed to process image {image_path}: {e}")
             return ""
 
-    def extract_text_from_audio(self, audio_path: Union[str, Path]) -> str:
+    def extract_text_from_audio(self, audio_path: str | Path) -> str:
         """Extract text from audio using Whisper."""
         logger.info(f"Processing audio: {audio_path}")
         
@@ -121,7 +119,7 @@ class FileProcessor:
             logger.error(f"Failed to process audio {audio_path}: {e}")
             return ""
 
-    def process_file(self, file_path: Union[str, Path], content_type: Optional[str] = None) -> str:
+    def process_file(self, file_path: str | Path, content_type: str | None = None) -> str:
         """Process a file and extract text content based on its type."""
         file_path = Path(file_path)
         if not file_path.exists():

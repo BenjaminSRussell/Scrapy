@@ -6,8 +6,8 @@ Ensures NO URL is missed - extracts from every possible source
 import base64
 import json
 import re
-from typing import Iterator
-from urllib.parse import urljoin, urlparse, parse_qs, unquote
+from collections.abc import Iterator
+from urllib.parse import parse_qs, unquote, urljoin, urlparse
 
 from scrapy.http import Response
 

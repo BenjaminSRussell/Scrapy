@@ -15,11 +15,9 @@ Choose the mode that fits your needs and copy the relevant code.
 import scrapy
 from scrapy.http import Response
 from scrapy.linkextractors import LinkExtractor
-from typing import Iterator, AsyncGenerator
 
-from src.stage1.ultra_discovery import UltraDiscovery, extract_all_urls
 from src.common.schemas import DiscoveryItem
-
+from src.stage1.ultra_discovery import UltraDiscovery, extract_all_urls
 
 # ============================================================================
 # OPTION 1: FULL MODE - Maximum Coverage (97%+ coverage)

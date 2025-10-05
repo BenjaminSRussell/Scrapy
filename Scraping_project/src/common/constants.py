@@ -104,14 +104,11 @@ VISUALIZER_EVENT_PATH: Final[str] = "/event"
 def ensure_directories() -> None:
     """Create all necessary directories if they don't exist."""
     directories = [
-        DATALAKE_DIR,
+        WAREHOUSE_DIR,
+        WAREHOUSE_CACHE,
+        WAREHOUSE_CONFIG,
         CONFIG_DIR,
         LOGS_DIR,
-        CACHE_DIR,
-        CHECKPOINTS_DIR,
-        DELTA_RAW_URLS,
-        DELTA_VALIDATED_URLS,
-        DELTA_ENRICHED_CONTENT,
     ]
 
     for directory in directories:

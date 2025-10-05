@@ -19,9 +19,11 @@ class ConfigValidationError(Exception):
 
 class Config:
     """Configuration manager with Pydantic-based validation (fail-fast on errors)"""
+    config_dir = Path(__file__).parent.parent.parent / 'config'
+
     def __init__(self, env: str = 'development', validate: bool = True):
         self.env = env
-        self.config_dir = Path(__file__).parent.parent.parent / 'config'
+        self.config_dir = self.config_dir
         self._raw_config = self._load_config()
 
         if validate:
@@ -36,13 +38,7 @@ class Config:
 
     def _load_config(self) -> dict[str, Any]:
         """Load configuration from YAML file because JSON wasn't good enough"""
-        # Handle both file paths and environment names
-        if self.env.endswith('.yml'):
-            config_file = Path(self.env)
-            if not config_file.is_absolute():
-                config_file = self.config_dir / config_file.name
-        else:
-            config_file = self.config_dir / f'{self.env}.yml'
+        config_file = self.config_dir / f'{self.env}.yml'
 
         if not config_file.exists():
             raise FileNotFoundError(f"Configuration file not found: {config_file}")

@@ -6,13 +6,13 @@ Tracks and logs pipeline performance metrics every 10 seconds for monitoring and
 
 import json
 import logging
-import psutil
 import threading
 import time
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+
+import psutil
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +37,7 @@ class PerformanceMonitor:
     def __init__(
         self,
         stage: str,
-        output_file: Optional[Path] = None,
+        output_file: Path | None = None,
         log_interval: int = 10
     ):
         self.stage = stage
@@ -50,7 +50,7 @@ class PerformanceMonitor:
         self.last_log_time = self.start_time
 
         self.running = False
-        self.monitor_thread: Optional[threading.Thread] = None
+        self.monitor_thread: threading.Thread | None = None
         self.process = psutil.Process()
 
         # Ensure output directory exists
@@ -167,7 +167,7 @@ def load_performance_metrics(metrics_file: Path) -> list[PerformanceSnapshot]:
     if not metrics_file.exists():
         return metrics
 
-    with open(metrics_file, 'r', encoding='utf-8') as f:
+    with open(metrics_file, encoding='utf-8') as f:
         for line in f:
             try:
                 data = json.loads(line)
@@ -178,12 +178,13 @@ def load_performance_metrics(metrics_file: Path) -> list[PerformanceSnapshot]:
     return metrics
 
 
-def plot_performance_metrics(metrics_file: Path, output_image: Optional[Path] = None):
+def plot_performance_metrics(metrics_file: Path, output_image: Path | None = None):
     """Generate performance visualization (requires matplotlib)"""
     try:
-        import matplotlib.pyplot as plt
-        import matplotlib.dates as mdates
         from datetime import datetime as dt
+
+        import matplotlib.dates as mdates
+        import matplotlib.pyplot as plt
     except ImportError:
         logger.error("matplotlib not installed. Run: pip install matplotlib")
         return

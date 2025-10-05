@@ -5,7 +5,6 @@ Handles videos, long documents, and other verbose content.
 """
 
 import logging
-from typing import Optional
 
 from src.common.constants import SUMMARIZATION_MODEL
 
@@ -45,7 +44,7 @@ def summarize_text(
     max_length: int = 150,
     min_length: int = 50,
     do_sample: bool = False
-) -> Optional[str]:
+) -> str | None:
     """
     Summarize long text into a concise paragraph.
 

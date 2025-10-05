@@ -52,8 +52,7 @@ typing-extensions>=4.8.0
 
 # File processing
 Pillow>=10.1.0  # PIL for image processing
-PyPDF2>=3.0.1  # PDF text extraction
-easyocr>=1.7.0  # Modern OCR (better than tesseract)
+pytesseract>=0.3.10  # OCR for images
 openai-whisper>=20231117  # Audio transcription
 ffmpeg-python>=0.2.0  # Audio processing
 pydub>=0.25.1  # Audio file handling
@@ -63,4 +62,3 @@ pydub>=0.25.1  # Audio file handling
 # scrapy-playwright>=0.0.34
 protobuf>=4.25.0
 sentencepiece>=0.1.99
-pybloom-live>=3.0.0

@@ -36,7 +36,7 @@ def load_jsonl(input_file: Path) -> pd.DataFrame:
         raise FileNotFoundError(f"Input file not found: {input_file}")
 
     records = []
-    with open(input_file, 'r', encoding='utf-8') as f:
+    with open(input_file, encoding='utf-8') as f:
         for line_num, line in enumerate(f, 1):
             try:
                 record = json.loads(line)
@@ -134,7 +134,7 @@ def show_query_examples(datalake_path: Path):
     print(f"SELECT COUNT(*) FROM delta_scan('{datalake_path}');")
     print("")
     print("# Get URLs by department")
-    print(f"SELECT url, title")
+    print("SELECT url, title")
     print(f"FROM delta_scan('{datalake_path}')")
     print("WHERE url LIKE '%/academics/%'")
     print("LIMIT 5;")

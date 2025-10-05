@@ -42,8 +42,8 @@ class DeBERTaNLPProcessor:
             return
 
         try:
-            from transformers import pipeline
             import torch
+            from transformers import pipeline
 
             logger.info("Initializing NLP pipelines...")
 
@@ -92,8 +92,8 @@ class DeBERTaNLPProcessor:
             try:
                 # Use a simple sentiment model as fallback for zero-shot
                 # distilbert-base-uncased is cached and can be used for basic classification
-                from transformers import AutoModelForSequenceClassification, AutoTokenizer
                 import torch
+                from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
                 # Use distilbert for text classification as a workaround
                 model_name = "distilbert-base-uncased"
