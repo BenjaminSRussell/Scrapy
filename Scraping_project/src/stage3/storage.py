@@ -171,9 +171,6 @@ class JSONLStorageWriter(BaseStorageWriter):
         else:
             timestamp = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
             candidate = self.base_path.with_name(f"{stem}{'-' if stem else ''}{timestamp}-{sequence:04d}{suffix}")
-        extension = self.compression.extension()
-        if extension and not "".join(candidate.suffixes).endswith(extension):
-            candidate = candidate.with_name(candidate.name + extension)
         return candidate
 
     def _open_new_file(self) -> None:
@@ -365,9 +362,6 @@ class ParquetStorageWriter(BaseStorageWriter):
         else:
             timestamp = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
             candidate = self.base_path.with_name(f"{stem}{'-' if stem else ''}{timestamp}-{sequence:04d}{suffix}")
-        extension = self.compression.extension()
-        if extension and not "".join(candidate.suffixes).endswith(extension):
-            candidate = candidate.with_name(candidate.name + extension)
         return candidate
 
     def _open_writer(self) -> None:
