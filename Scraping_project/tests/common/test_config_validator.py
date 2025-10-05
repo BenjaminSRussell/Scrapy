@@ -366,6 +366,59 @@ class TestConfigHealthCheck:
             # This assertion will FAIL with the current code and PASS with the fix.
             mock_spacy_load.assert_not_called()
 
+    def test_missing_playwright_browsers_issue_details(self, tmp_path):
+        """Test the details of the issue raised for missing Playwright browsers."""
+        seed_file = tmp_path / 'seeds.csv'
+        seed_file.write_text('url\nhttps://example.com')
+
+        config_dict = {
+            'environment': 'test',
+            'stages': {
+                'discovery': {
+                    'allowed_domains': ['example.com'],
+                    'seed_file': str(seed_file),
+                    'headless_browser': {
+                        'enabled': True,
+                        'engine': 'playwright',
+                        'browser_type': 'chromium'
+                    }
+                },
+                'enrichment': {
+                    'allowed_domains': ['example.com'],
+                    'nlp_enabled': False,
+                    'headless_browser': {'enabled': False}
+                }
+            },
+            'data': {
+                'raw_dir': str(tmp_path / 'raw'),
+                'processed_dir': str(tmp_path / 'processed'),
+                'cache_dir': str(tmp_path / 'cache'),
+                'logs_dir': str(tmp_path / 'logs'),
+            }
+        }
+
+        self.create_temp_config(tmp_path, config_dict)
+        original_config_dir = Config.config_dir
+        try:
+            Config.config_dir = tmp_path
+            config = Config(env='test', validate=True)
+
+            with patch('importlib.util.find_spec', return_value=True):
+                with patch('playwright.sync_api.sync_playwright', side_effect=Exception("Browser not installed")):
+                    checker = ConfigHealthCheck(config)
+                    _, issues = checker.run_all_checks()
+
+                    playwright_errors = [
+                        i for i in issues
+                        if i.severity == 'error' and 'Playwright' in i.message
+                    ]
+                    assert len(playwright_errors) == 1
+                    issue = playwright_errors[0]
+                    assert issue.category == 'dependency'
+                    assert issue.suggestion == "Run: playwright install"
+        finally:
+            Config.config_dir = original_config_dir
+
 
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])
