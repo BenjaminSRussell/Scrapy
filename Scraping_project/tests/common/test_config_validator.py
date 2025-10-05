@@ -322,6 +322,50 @@ class TestConfigHealthCheck:
         assert 'High concurrency' in captured.out
         assert 'FAILED' in captured.out
 
+    def test_health_check_ignores_deprecated_nlp_model(self, tmp_path):
+        """
+        Test that the health check ignores the deprecated 'model' key in the NLP config,
+        relying only on 'spacy_model'.
+        """
+        # Create a mock config object to bypass Pydantic validation and test
+        # the health checker's logic in isolation.
+        mock_config = Mock()
+        mock_config._validated_config.stages.enrichment.nlp_enabled = True
+        mock_config._validated_config.stages.enrichment.headless_browser.enabled = False
+        mock_config._validated_config.stages.enrichment.max_text_length = 20000
+
+        # This is the crucial part: spacy_model is None, but the deprecated model is set.
+        mock_config._validated_config.nlp.spacy_model = None
+        mock_config._validated_config.nlp.model = 'en_core_web_sm' # Deprecated
+        mock_config._validated_config.nlp.use_transformers = False
+
+        # Satisfy other file system checks to avoid unrelated errors
+        mock_config._validated_config.stages.discovery.seed_file = None
+        mock_config._validated_config.stages.discovery.dedup_cache_path = str(tmp_path / 'cache.db')
+        mock_config._validated_config.stages.discovery.headless_browser.enabled = False
+        mock_config._validated_config.data.raw_dir = str(tmp_path / 'raw')
+        mock_config._validated_config.data.processed_dir = str(tmp_path / 'processed')
+        mock_config._validated_config.data.cache_dir = str(tmp_path / 'cache')
+        mock_config._validated_config.data.logs_dir = str(tmp_path / 'logs')
+
+        # Satisfy resource limit checks
+        mock_config._validated_config.scrapy.concurrent_requests = 16
+        mock_config._validated_config.stages.validation.max_workers = 16
+        mock_config._validated_config.queue.max_queue_size = 10000
+        mock_config._validated_config.scrapy.download_delay = 0.1
+        mock_config._validated_config.scrapy.retry_enabled = True
+
+
+        with patch('spacy.load') as mock_spacy_load:
+            checker = ConfigHealthCheck(mock_config)
+            checker.run_all_checks()
+
+            # The buggy code calls spacy.load because it falls back to the deprecated 'model' key.
+            # The corrected code should NOT call it, because 'spacy_model' is None and the
+            # fallback logic will be removed.
+            # This assertion will FAIL with the current code and PASS with the fix.
+            mock_spacy_load.assert_not_called()
+
 
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])
