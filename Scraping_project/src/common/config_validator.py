@@ -217,7 +217,7 @@ class ConfigHealthCheck:
 
                         except Exception:
                             self.issues.append(ValidationIssue(
-                                severity='warning',
+                                severity='error',
                                 category='dependency',
                                 message=f"Playwright browsers not installed for {stage_name} stage",
                                 suggestion="Run: playwright install"
