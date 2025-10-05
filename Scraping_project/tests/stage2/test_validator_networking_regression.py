@@ -335,24 +335,35 @@ class TestURLValidatorNetworkingRegression:
         """Test proper content length calculation"""
         validator = URLValidator(mock_config)
 
+        case1_content = b"<html><body>Test content</body></html>"
+        case2_content = b"<html><body>No header</body></html>"
+        case3_content = b"<html><body>Wrong header</body></html>"
+        case4_content = b"<html><body>This is longer than the header says.</body></html>"
+
         test_cases = [
             # Case 1: Content-Length header present and accurate
             {
-                "content": b"<html><body>Test content</body></html>",
-                "header_length": "37",
-                "expected_length": 37
+                "content": case1_content,
+                "header_length": str(len(case1_content)),
+                "expected_length": len(case1_content)
             },
             # Case 2: Content-Length header missing
             {
-                "content": b"<html><body>No header</body></html>",
+                "content": case2_content,
                 "header_length": None,
-                "expected_length": 35
+                "expected_length": len(case2_content)
             },
             # Case 3: Content-Length header incorrect (should use actual length)
             {
-                "content": b"<html><body>Wrong header</body></html>",
+                "content": case3_content,
                 "header_length": "999",
-                "expected_length": 38
+                "expected_length": len(case3_content)
+            },
+            # Case 4: Content-Length header is smaller than actual content (the bug)
+            {
+                "content": case4_content,
+                "header_length": "20",
+                "expected_length": len(case4_content)
             },
         ]
 

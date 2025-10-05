@@ -489,13 +489,6 @@ class URLValidator:
             final_url = self._stringify_url(response, url)
             body_length = len(body_bytes)
             content_length = body_length
-            if header_length is not None:
-                try:
-                    parsed_length = int(header_length)
-                    if parsed_length >= 0 and parsed_length <= body_length:
-                        content_length = parsed_length
-                except (TypeError, ValueError):
-                    pass
 
             response_time = (time.perf_counter() - start_time)
 
