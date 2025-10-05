@@ -399,6 +399,20 @@ class PipelineOrchestrator:
         logger.info(f"Dispatching {len(deduped_urls)} URLs to Stage 3 enrichment (dedup: {deduplicator.get_stats()['duplicates_found']} duplicates)")
         deduplicator.close()
 
+        if not deduped_urls:
+            logger.warning("No new URLs available for Stage 3 enrichment after deduplication")
+            return
+
+        # Filter metadata to align with deduplicated URLs, preserving the first-seen metadata
+        deduped_urls_set = set(deduped_urls)
+        filtered_validation_items: list[dict[str, Any]] = []
+        seen_metadata_urls = set()
+        for item in validation_items_for_enrichment:
+            url = item.get('url')
+            if url in deduped_urls_set and url not in seen_metadata_urls:
+                filtered_validation_items.append(item)
+                seen_metadata_urls.add(url)
+
         # Use async processor if enabled
         if use_async_processor:
             await self._run_async_enrichment(deduped_urls, scrapy_settings, spider_kwargs)
@@ -408,7 +422,7 @@ class PipelineOrchestrator:
                 spider_cls,
                 scrapy_settings,
                 spider_kwargs,
-                validation_items_for_enrichment,
+                filtered_validation_items,
                 crawler_process_factory
             )
 
