@@ -1,7 +1,8 @@
 "Tests for Stage 1 Discovery Spider"
 
+import sys
 from pathlib import Path
-from unittest.mock import Mock, mock_open, patch
+from unittest.mock import Mock, mock_open, patch, MagicMock
 
 import pytest
 
@@ -325,3 +326,61 @@ def test_discovery_spider_encoding_handling(mock_settings):
     # Should handle Unicode URLs without crashing
     discovery_items = [r for r in results if isinstance(r, DiscoveryItem)]
     assert len(discovery_items) >= 0  # May be 0 if URL validation rejects encoded URLs
+
+
+@pytest.mark.asyncio
+async def test_headless_browser_handles_relative_url_correctly(mock_settings):
+    """
+    Test that _discover_with_headless_browser correctly handles relative URLs
+    after the fix.
+    """
+    # Create a mock for the EnhancedBrowserDiscovery class and its instance
+    MockBrowserClass = MagicMock()
+    mock_browser_instance = MockBrowserClass.return_value
+
+    # Mock the async methods that will be called
+    async def async_noop(*args, **kwargs):
+        pass
+
+    async def mock_discover_urls(*args, **kwargs):
+        return {
+            'discovered_urls': ['/relative-path'],
+            'network_urls': [],
+            'discovery_methods': {'static_html': 1, 'auto_click': 0, 'infinite_scroll': 0, 'network_intercept': 0}
+        }
+
+    mock_browser_instance.start = MagicMock(side_effect=async_noop)
+    mock_browser_instance.stop = MagicMock(side_effect=async_noop)
+    mock_browser_instance.discover_urls.side_effect = mock_discover_urls
+
+    # Create a mock for the module to house the class
+    mock_module = MagicMock()
+    mock_module.EnhancedBrowserDiscovery = MockBrowserClass
+
+    # Patch sys.modules to intercept the import of the non-existent module
+    with patch.dict(sys.modules, {'src.common.enhanced_browser': mock_module}):
+        spider = DiscoverySpider(settings=mock_settings, allowed_domains=['uconn.edu'])
+
+        # Mock settings to enable the headless browser feature for this test
+        original_get_side_effect = spider.settings.get.side_effect
+        def new_get_side_effect(key, default=None):
+            if key == 'HEADLESS_BROWSER_CONFIG':
+                return {'enabled': True}
+            if original_get_side_effect:
+                return original_get_side_effect(key, default)
+            return default
+        spider.settings.get.side_effect = new_get_side_effect
+
+        start_url = "https://uconn.edu"
+
+        # The bug is fixed, so we now expect a DiscoveryItem, not an exception
+        results_generator = spider._discover_with_headless_browser(start_url, 0)
+        results = [item async for item in results_generator]
+
+        # Ensure that at least one item was yielded
+        assert len(results) > 0
+
+        # Check that the first result is a DiscoveryItem with the correct absolute URL
+        first_result = results[0]
+        assert isinstance(first_result, DiscoveryItem)
+        assert first_result.discovered_url == "https://uconn.edu/relative-path"

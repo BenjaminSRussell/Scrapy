@@ -8,7 +8,7 @@ from pathlib import Path
 from urllib.parse import quote, unquote, urlparse
 
 import scrapy
-from scrapy.http import Response
+from scrapy.http import Response, HtmlResponse
 from scrapy.linkextractors import LinkExtractor
 
 try:
@@ -854,9 +854,13 @@ class DiscoverySpider(scrapy.Spider):
                 logger.info(f"  - Infinite scroll: {result['discovery_methods']['infinite_scroll']}")
                 logger.info(f"  - Network intercept: {result['discovery_methods']['network_intercept']}")
 
+                # Create a dummy response object to provide context for urljoin
+                dummy_response = HtmlResponse(url=url, body=b'', encoding='utf-8')
+
                 # Process discovered URLs with appropriate confidence scores
                 for discovered_url in all_urls:
-                    normalized = self._normalize_candidate(discovered_url, None)
+                    # Pass the dummy response to handle relative URLs correctly
+                    normalized = self._normalize_candidate(discovered_url, dummy_response)
                     if normalized:
                         # Higher confidence for URLs discovered via multiple methods
                         confidence = 0.9 if discovered_url in network_urls else 0.8
@@ -865,7 +869,9 @@ class DiscoverySpider(scrapy.Spider):
                             normalized, url, current_depth, "enhanced_browser", confidence
                         )
                         if results:
-                            yield results
+                            # Yield each result individually, not the whole list
+                            for result_item in results:
+                                yield result_item
 
             finally:
                 await browser.stop()
