@@ -384,3 +384,24 @@ async def test_headless_browser_handles_relative_url_correctly(mock_settings):
         first_result = results[0]
         assert isinstance(first_result, DiscoveryItem)
         assert first_result.discovered_url == "https://uconn.edu/relative-path"
+
+
+def test_normalize_candidate_preserves_multiple_slashes(mock_settings):
+    """
+    Test that _normalize_candidate preserves multiple slashes in a URL path,
+    which is important for some web servers.
+    """
+    spider = DiscoverySpider(settings=mock_settings, allowed_domains=['uconn.edu'])
+    response = html_response("https://uconn.edu", "", depth=0)
+
+    # Test URL with multiple consecutive slashes
+    url_with_slashes = "https://uconn.edu/find//a/job"
+    normalized_url = spider._normalize_candidate(url_with_slashes, response)
+
+    # The URL path should be preserved exactly as is
+    assert normalized_url == "https://uconn.edu/find//a/job"
+
+    # Test with a more complex case including special characters
+    url_with_special_chars = "https://uconn.edu/foo//bar%20baz"
+    normalized_url_special = spider._normalize_candidate(url_with_special_chars, response)
+    assert normalized_url_special == "https://uconn.edu/foo//bar%20baz"

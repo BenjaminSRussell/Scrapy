@@ -730,11 +730,8 @@ class DiscoverySpider(scrapy.Spider):
                 if not allowed:
                     return None
 
-            # Re-encode the URL properly while preserving UTF-8 characters
-            path_parts = parsed.path.split('/')
-            encoded_path = '/'.join(quote(part) for part in path_parts if part)
-            if encoded_path:
-                encoded_path = '/' + encoded_path
+            # Re-encode the URL properly while preserving UTF-8 characters and consecutive slashes
+            encoded_path = '/'.join(quote(part) for part in parsed.path.split('/'))
             
             # Reconstruct the URL with properly encoded path
             from urllib.parse import urlunparse
