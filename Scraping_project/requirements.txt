@@ -18,6 +18,7 @@ lxml>=4.9.0  # Fast XML/HTML parsing
 datasketch>=1.6.0  # Efficient similarity detection (Stage 3)
 yake>=0.6.0  # Keyword extraction
 httpx>=0.25.0  # Modern HTTP client
+aiohttp>=3.9.0  # Async HTTP client for Stage 2 worker
 
 # OCR & Media - Optional for document processing
 easyocr>=1.7.0
@@ -29,3 +30,13 @@ pillow>=10.0.0
 pyyaml>=6.0
 tqdm>=4.66.0
 python-dotenv>=1.0.0
+
+# Development & Testing
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+pytest-cov>=4.1.0
+ruff>=0.1.0
+mypy>=1.7.0
+
+# Security
+pip-audit>=2.6.0
