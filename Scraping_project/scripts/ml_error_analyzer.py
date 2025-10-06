@@ -21,27 +21,24 @@ Usage:
 
 import logging
 import sys
-from collections import Counter
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 from urllib.parse import urlparse
 
 # Add project root to path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
+from src.common.postgres_manager import get_postgres_manager
+
 try:
     import pandas as pd
-    import numpy as np
     from sklearn.cluster import KMeans
     from sklearn.preprocessing import LabelEncoder
-    from sklearn.feature_extraction.text import TfidfVectorizer
 except ImportError as e:
     print(f"❌ Missing dependencies: {e}")
     print("Install with: pip install pandas numpy scikit-learn")
     sys.exit(1)
-
-from src.common.postgres_manager import get_postgres_manager
 
 logging.basicConfig(
     level=logging.INFO,
@@ -435,7 +432,7 @@ def main():
 
         logger.info("")
         logger.info("✅ Error analysis complete!")
-        logger.info(f"Results saved to database (error_analysis_reports table)")
+        logger.info("Results saved to database (error_analysis_reports table)")
 
     except KeyboardInterrupt:
         logger.info("")

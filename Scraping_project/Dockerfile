@@ -86,7 +86,7 @@ ENTRYPOINT ["kafka-delta-ingest"]
 # ============================================
 # Stage 3: Python Dependency Builder
 # ============================================
-FROM python:3.10-slim-bookworm AS crawler-base
+FROM python:3.12-slim-bookworm AS crawler-base
 
 # Set working directory
 WORKDIR /build
@@ -115,7 +115,7 @@ RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
 # ============================================
 # Stage 4: Final Scrapy Crawler Runtime
 # ============================================
-FROM python:3.10-slim-bookworm AS crawler
+FROM python:3.12-slim-bookworm AS crawler
 
 # Set working directory
 WORKDIR /app
@@ -159,7 +159,7 @@ CMD ["python", "run.py"]
 # ============================================
 # Stage 5: Python Kafka->Delta Ingestor
 # ============================================
-FROM python:3.10-slim-bookworm AS ingestor
+FROM python:3.12-slim-bookworm AS ingestor
 
 # Set working directory
 WORKDIR /app
@@ -201,7 +201,7 @@ CMD ["python", "kafka_delta_ingestor.py"]
 # ============================================
 # Stage 6: Metrics Exporter
 # ============================================
-FROM python:3.10-slim AS metrics
+FROM python:3.12-slim AS metrics
 
 WORKDIR /app
 

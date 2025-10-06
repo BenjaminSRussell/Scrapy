@@ -72,7 +72,7 @@ class LakeDrainer:
         if persistent:
             print("🔒 PERSISTENT QUEUES (will NOT be drained):")
             print("-" * 70)
-            for name, size, status in sorted(persistent):
+            for name, size, _status in sorted(persistent):
                 print(f"  {name:<40} {size:>10,} items")
             print()
 
@@ -80,7 +80,7 @@ class LakeDrainer:
         if transient:
             print("💨 TRANSIENT QUEUES (will be drained):")
             print("-" * 70)
-            for name, size, status in sorted(transient):
+            for name, size, _status in sorted(transient):
                 print(f"  {name:<40} {size:>10,} items")
             print()
 
@@ -88,7 +88,7 @@ class LakeDrainer:
         if other:
             print("❓ OTHER QUEUES:")
             print("-" * 70)
-            for name, size, status in sorted(other):
+            for name, size, _status in sorted(other):
                 print(f"  {name:<40} {size:>10,} items")
             print()
 

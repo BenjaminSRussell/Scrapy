@@ -9,7 +9,6 @@ import logging
 import signal
 import sys
 from pathlib import Path
-from typing import Dict, List, Optional
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
@@ -88,7 +87,7 @@ class DeltaConsumer:
             f"table={self.delta_table}, batch_size={self.batch_size}"
         )
 
-        batch: List[Dict] = []
+        batch: list[dict] = []
 
         while self.running:
             try:
@@ -128,7 +127,7 @@ class DeltaConsumer:
             f"batches={self.batches_written}, errors={self.errors}"
         )
 
-    async def _write_batch(self, batch: List[Dict]):
+    async def _write_batch(self, batch: list[dict]):
         """Write batch to Delta Lake.
 
         Args:
@@ -168,14 +167,14 @@ class DeltaConsumer:
 class MultiTableConsumer:
     """Consumer that handles multiple queues/tables in parallel."""
 
-    def __init__(self, queue_table_mapping: Dict[str, str]):
+    def __init__(self, queue_table_mapping: dict[str, str]):
         """Initialize multi-table consumer.
 
         Args:
             queue_table_mapping: Dict mapping queue names to table names
         """
         self.queue_table_mapping = queue_table_mapping
-        self.consumers: List[DeltaConsumer] = []
+        self.consumers: list[DeltaConsumer] = []
 
         for queue, table in queue_table_mapping.items():
             consumer = DeltaConsumer(queue, table)
@@ -194,7 +193,7 @@ class MultiTableConsumer:
 
 
 # Predefined consumer configurations
-def get_default_consumers() -> Dict[str, str]:
+def get_default_consumers() -> dict[str, str]:
     """Get default queue-to-table mappings.
 
     Returns:

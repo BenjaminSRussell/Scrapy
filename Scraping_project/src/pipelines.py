@@ -8,7 +8,7 @@ import logging
 import os
 import re
 from datetime import datetime
-from typing import Any, Dict
+from typing import Any
 
 from confluent_kafka import Producer
 from itemadapter import ItemAdapter
@@ -267,7 +267,7 @@ class KafkaPipeline:
         self,
         bootstrap_servers: str,
         topic: str,
-        producer_config: Dict[str, Any] = None,
+        producer_config: dict[str, Any] = None,
     ):
         """Initialize the Kafka pipeline.
 

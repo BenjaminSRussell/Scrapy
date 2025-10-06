@@ -20,11 +20,10 @@ import signal
 import sys
 import time
 from datetime import datetime
-from typing import Dict, List
 
 import pandas as pd
 from confluent_kafka import Consumer, KafkaError, KafkaException
-from deltalake import DeltaTable, write_deltalake
+from deltalake import write_deltalake
 from prometheus_client import Counter, Gauge, Histogram, start_http_server
 
 # Configure logging
@@ -106,7 +105,7 @@ class KafkaDeltaIngestor:
         # State
         self.consumer = None
         self.running = False
-        self.message_batch: List[Dict] = []
+        self.message_batch: list[dict] = []
         self.last_flush_time = time.time()
 
         logger.info(f"Ingestor initialized: {topic} -> {delta_table_path}")
@@ -155,7 +154,7 @@ class KafkaDeltaIngestor:
         signal.signal(signal.SIGTERM, signal_handler)
         signal.signal(signal.SIGINT, signal_handler)
 
-    def process_message(self, message: str) -> Dict:
+    def process_message(self, message: str) -> dict:
         """Process a single message.
 
         Args:

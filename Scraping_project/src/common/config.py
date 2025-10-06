@@ -1,9 +1,8 @@
 """Configuration Loader - Single source of truth for all pipeline settings."""
 
 import logging
-import os
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 import yaml
 
@@ -13,7 +12,7 @@ logger = logging.getLogger(__name__)
 class Config:
     """Configuration manager for the scraping pipeline."""
 
-    def __init__(self, config_path: Optional[str] = None):
+    def __init__(self, config_path: str | None = None):
         """Load configuration from YAML file.
 
         Args:
@@ -25,7 +24,7 @@ class Config:
             config_path = project_root / "config.yml"
 
         self.config_path = Path(config_path)
-        self._config: Dict[str, Any] = {}
+        self._config: dict[str, Any] = {}
         self._load_config()
 
     def _load_config(self):
@@ -45,7 +44,7 @@ class Config:
             logger.warning("Using default configuration")
             self._config = self._get_default_config()
 
-    def _get_default_config(self) -> Dict[str, Any]:
+    def _get_default_config(self) -> dict[str, Any]:
         """Get default configuration if file doesn't exist."""
         return {
             'redis': {
@@ -96,7 +95,7 @@ class Config:
 
         return value
 
-    def get_section(self, section: str) -> Dict[str, Any]:
+    def get_section(self, section: str) -> dict[str, Any]:
         """Get entire configuration section.
 
         Args:
@@ -135,51 +134,51 @@ class Config:
     # ============================================
 
     @property
-    def redis_config(self) -> Dict[str, Any]:
+    def redis_config(self) -> dict[str, Any]:
         """Get Redis configuration."""
         return self.get_section('redis')
 
     @property
-    def postgres_config(self) -> Dict[str, Any]:
+    def postgres_config(self) -> dict[str, Any]:
         """Get PostgreSQL configuration."""
         return self.get_section('postgres')
 
     @property
-    def stage1_config(self) -> Dict[str, Any]:
+    def stage1_config(self) -> dict[str, Any]:
         """Get Stage 1 configuration."""
         return self.get_section('stage1')
 
     @property
-    def stage2_config(self) -> Dict[str, Any]:
+    def stage2_config(self) -> dict[str, Any]:
         """Get Stage 2 configuration."""
         return self.get_section('stage2')
 
     @property
-    def stage3_config(self) -> Dict[str, Any]:
+    def stage3_config(self) -> dict[str, Any]:
         """Get Stage 3 configuration."""
         return self.get_section('stage3')
 
     @property
-    def stage4_config(self) -> Dict[str, Any]:
+    def stage4_config(self) -> dict[str, Any]:
         """Get Stage 4 configuration."""
         return self.get_section('stage4')
 
     @property
-    def delta_lake_config(self) -> Dict[str, Any]:
+    def delta_lake_config(self) -> dict[str, Any]:
         """Get Delta Lake configuration."""
         return self.get_section('delta_lake')
 
     @property
-    def message_queue_config(self) -> Dict[str, Any]:
+    def message_queue_config(self) -> dict[str, Any]:
         """Get message queue configuration."""
         return self.get_section('message_queues')
 
 
 # Global configuration instance
-_config: Optional[Config] = None
+_config: Config | None = None
 
 
-def get_config(config_path: Optional[str] = None) -> Config:
+def get_config(config_path: str | None = None) -> Config:
     """Get global configuration instance.
 
     Args:

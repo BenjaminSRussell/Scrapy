@@ -15,7 +15,6 @@ Commands:
 import argparse
 import asyncio
 import logging
-import os
 import shutil
 import sys
 from pathlib import Path
@@ -328,8 +327,8 @@ def cmd_setup(args):
         logger.info(f"   Purpose: {model['purpose']}")
         logger.info(f"   Size: {model['size']}")
 
-    logger.info(f"\nTotal download size: ~2 GB")
-    logger.info(f"Models will be cached in: ~/.cache/huggingface/hub/")
+    logger.info("\nTotal download size: ~2 GB")
+    logger.info("Models will be cached in: ~/.cache/huggingface/hub/")
 
     if not args.yes:
         try:
@@ -408,7 +407,7 @@ def cmd_clean(args):
             print("✅ Delta Lake data deleted successfully")
 
             delta_lake_path.mkdir(parents=True, exist_ok=True)
-            print(f"✅ Empty Delta Lake directory recreated")
+            print("✅ Empty Delta Lake directory recreated")
 
             print("\n" + "=" * 80)
             print("CLEANUP COMPLETE - Delta Lake is ready for a fresh start")
@@ -449,7 +448,7 @@ def cmd_reset(args):
         dir_count = sum(1 for _ in delta_lake_path.rglob('*') if _.is_dir())
         print(f"\n📊 Current Delta Lake: {dir_count} directories, {file_count} files")
     else:
-        print(f"\n📊 Current Delta Lake: Not initialized")
+        print("\n📊 Current Delta Lake: Not initialized")
 
     print("\n⚠️  WARNING: This will DELETE all Delta Lake data and start fresh!")
 
@@ -467,12 +466,12 @@ def cmd_reset(args):
             print("✅ Delta Lake data deleted")
 
         delta_lake_path.mkdir(parents=True, exist_ok=True)
-        print(f"✅ Empty Delta Lake directory created")
+        print("✅ Empty Delta Lake directory created")
 
         print("\n" + "=" * 80)
         print("✅ RESET COMPLETE - Pipeline is ready for a fresh run")
         print("=" * 80)
-        print(f"\nNext steps:")
+        print("\nNext steps:")
         print("  python run_pipeline.py run")
 
     except Exception as e:
@@ -484,7 +483,6 @@ def cmd_export(args):
     """Export Delta Lake tables."""
     try:
         import duckdb
-        import pandas as pd
     except ImportError:
         print("❌ ERROR: Missing dependencies. Install with: pip install duckdb pandas")
         sys.exit(1)
@@ -528,7 +526,7 @@ def cmd_export(args):
 
     if args.all:
         available_tables = [d.name for d in delta_lake_path.iterdir() if d.is_dir()]
-        print(f"=" * 80)
+        print("=" * 80)
         print(f"EXPORTING ALL TABLES ({len(available_tables)} tables)")
         print("=" * 80)
 

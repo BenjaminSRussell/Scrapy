@@ -5,6 +5,8 @@
 # should be exposed to Prometheus
 # ==================================================================
 
+# JMX connection settings
+hostPort: kafka:9999
 lowercaseOutputName: true
 lowercaseOutputLabelNames: true
 

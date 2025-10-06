@@ -189,7 +189,6 @@ class DeltaLakeManager:
         for name, table_path in self.tables.items():
             try:
                 if (table_path / "_delta_log").exists():
-                    table = DeltaTable(str(table_path))
                     # Skip vacuum during shutdown (too slow)
                     # table.vacuum(retention_hours=168)
                     logger.info(f"✅ Verified {name}")
@@ -262,10 +261,11 @@ class DeltaLakeManager:
             format: Output format ('csv', 'json', 'parquet')
         """
         try:
-            import duckdb
             from pathlib import Path
+
+            import duckdb
         except ImportError:
-            raise ImportError("Export requires duckdb. Install: pip install duckdb")
+            raise ImportError("Export requires duckdb. Install: pip install duckdb") from None
 
         table_path = self.tables.get(table_name)
         if not table_path:

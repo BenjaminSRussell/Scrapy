@@ -287,6 +287,8 @@ services:
     container_name: scraping_scrapy_app
     ports:
       - "9410:9410"  # Prometheus metrics endpoint
+    env_file:
+      - .env
     environment:
       # Database connections
       - REDIS_HOST=redis
@@ -304,6 +306,13 @@ services:
       # Scrapy settings
       - SCRAPY_SETTINGS_MODULE=src.settings
       - ENV=development
+
+      # Cloud storage (AWS/S3)
+      - AWS_ENDPOINT_URL=${AWS_ENDPOINT_URL:-http://minio:9000}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-minioadmin}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-minioadmin123}
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+      - AWS_ALLOW_HTTP=${AWS_ALLOW_HTTP:-true}
     volumes:
       # Mount source code for development (hot reload)
       - ./src:/app/src:ro
@@ -359,21 +368,23 @@ services:
       --allowed-latency 60
       --max-messages-per-batch 1000
       --transform 'date: substr(scraped_at_utc, `0`, `10`)'
+    env_file:
+      - .env
     environment:
       # AWS S3 configuration (pointing to MinIO for local development)
-      - AWS_ENDPOINT_URL=http://minio:9000
-      - AWS_ACCESS_KEY_ID=minioadmin
-      - AWS_SECRET_ACCESS_KEY=minioadmin123
-      - AWS_REGION=us-east-1
-      - AWS_ALLOW_HTTP=true
+      - AWS_ENDPOINT_URL=${AWS_ENDPOINT_URL:-http://minio:9000}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-minioadmin}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-minioadmin123}
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+      - AWS_ALLOW_HTTP=${AWS_ALLOW_HTTP:-true}
 
       # StatsD metrics configuration
-      - STATSD_HOST=statsd-exporter
-      - STATSD_PORT=9125
+      - STATSD_HOST=${STATSD_HOST:-statsd-exporter}
+      - STATSD_PORT=${STATSD_PORT:-9125}
 
       # Rust logging
-      - RUST_LOG=info
-      - RUST_BACKTRACE=1
+      - RUST_LOG=${RUST_LOG:-info}
+      - RUST_BACKTRACE=${RUST_BACKTRACE:-1}
     volumes:
       - ./data:/delta
     restart: unless-stopped
@@ -482,6 +493,8 @@ services:
       - "5556:5556"
     environment:
       - SERVICE_PORT=5556
+      - JMX_HOST=kafka
+      - JMX_PORT=9999
     command:
       - "5556"
       - "/etc/jmx-exporter/config.yml"

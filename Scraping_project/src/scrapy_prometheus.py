@@ -1,25 +1,33 @@
 """
 Custom Scrapy Prometheus Exporter Extension
 ============================================
-This extension exposes Scrapy metrics in Prometheus format via an HTTP endpoint.
+This extension exposes comprehensive Scrapy metrics in Prometheus format via an HTTP endpoint.
 
 Metrics exposed:
-- scrapy_items_scraped_total: Total items scraped
-- scrapy_items_dropped_total: Total items dropped
-- scrapy_requests_total: Total requests made
-- scrapy_responses_total: Total responses received (by status code)
-- scrapy_response_time_seconds: Response time histogram
-- scrapy_spider_opened: Number of spiders opened
-- scrapy_spider_closed: Number of spiders closed
+- scrapy_spider_opened: Crawl start time, spider name (Gauge)
+- scrapy_spider_closed_total: Crawl end time, finish reason (Counter)
+- scrapy_responses_total: HTTP status codes (Counter)
+- scrapy_response_time_seconds: Response latency histogram
+- scrapy_items_scraped_total: Items/sec throughput (Counter)
+- scrapy_items_dropped_total: Dropped items by reason (Counter)
+- scrapy_spider_errors_total: Exception count by type (Counter)
+- scrapy_requests_dropped_total: Dropped requests (Counter)
+- scrapy_requests_total: Total requests made (Counter)
+- scrapy_downloader_request_bytes_total: Bytes sent (Counter)
+- scrapy_downloader_response_bytes_total: Bytes received (Counter)
+- scrapy_crawl_duration_seconds: Total crawl duration (Gauge)
+
+All metrics are consolidated in this single extension for efficient Prometheus scraping.
 """
 
 import logging
-from typing import Any
+import time
+from typing import Any, Dict
 
 from prometheus_client import Counter, Gauge, Histogram, start_http_server
 from scrapy import Spider, signals
 from scrapy.crawler import Crawler
-from scrapy.exceptions import NotConfigured
+from scrapy.exceptions import NotConfigured, DropItem
 from scrapy.http import Request, Response
 
 logger = logging.getLogger(__name__)
@@ -69,6 +77,18 @@ SPIDER_CLOSED = Counter(
     ['spider', 'reason']
 )
 
+SPIDER_ERRORS = Counter(
+    'scrapy_spider_errors_total',
+    'Total number of spider errors',
+    ['spider', 'exception_type']
+)
+
+REQUESTS_DROPPED = Counter(
+    'scrapy_requests_dropped_total',
+    'Total number of requests dropped',
+    ['spider', 'reason']
+)
+
 DOWNLOADER_REQUEST_BYTES = Counter(
     'scrapy_downloader_request_bytes_total',
     'Total bytes sent in requests',
@@ -80,6 +100,15 @@ DOWNLOADER_RESPONSE_BYTES = Counter(
     'Total bytes received in responses',
     ['spider']
 )
+
+CRAWL_DURATION = Gauge(
+    'scrapy_crawl_duration_seconds',
+    'Duration of the current crawl in seconds',
+    ['spider']
+)
+
+# Track crawl start times for duration calculation
+CRAWL_START_TIMES: Dict[str, float] = {}
 
 
 class PrometheusExtension:
@@ -120,12 +149,14 @@ class PrometheusExtension:
         # Create extension instance
         ext = cls(port=port, host=host)
 
-        # Connect signals
+        # Connect signals for comprehensive metrics collection
         crawler.signals.connect(ext.spider_opened, signal=signals.spider_opened)
         crawler.signals.connect(ext.spider_closed, signal=signals.spider_closed)
         crawler.signals.connect(ext.item_scraped, signal=signals.item_scraped)
         crawler.signals.connect(ext.item_dropped, signal=signals.item_dropped)
+        crawler.signals.connect(ext.spider_error, signal=signals.spider_error)
         crawler.signals.connect(ext.request_scheduled, signal=signals.request_scheduled)
+        crawler.signals.connect(ext.request_dropped, signal=signals.request_dropped)
         crawler.signals.connect(ext.response_received, signal=signals.response_received)
         crawler.signals.connect(ext.request_reached_downloader, signal=signals.request_reached_downloader)
         crawler.signals.connect(ext.response_downloaded, signal=signals.response_downloaded)
@@ -144,7 +175,7 @@ class PrometheusExtension:
                 logger.error(f"Failed to start Prometheus server: {e}")
 
     def spider_opened(self, spider: Spider):
-        """Called when spider is opened.
+        """Called when spider is opened - Track crawl start time.
 
         Args:
             spider: Spider instance
@@ -152,22 +183,32 @@ class PrometheusExtension:
         # Start server when first spider opens
         self.start_server()
 
+        # Record crawl start time
+        CRAWL_START_TIMES[spider.name] = time.time()
+
         SPIDER_OPENED.labels(spider=spider.name).set(1)
-        logger.info(f"Spider opened: {spider.name}")
+        logger.info(f"Spider opened: {spider.name} at {time.strftime('%Y-%m-%d %H:%M:%S')}")
 
     def spider_closed(self, spider: Spider, reason: str):
-        """Called when spider is closed.
+        """Called when spider is closed - Calculate and record total crawl duration.
 
         Args:
             spider: Spider instance
-            reason: Reason for closure
+            reason: Reason for closure (finished, shutdown, etc.)
         """
+        # Calculate crawl duration
+        if spider.name in CRAWL_START_TIMES:
+            duration = time.time() - CRAWL_START_TIMES[spider.name]
+            CRAWL_DURATION.labels(spider=spider.name).set(duration)
+            logger.info(f"Spider {spider.name} crawl duration: {duration:.2f} seconds")
+            del CRAWL_START_TIMES[spider.name]
+
         SPIDER_OPENED.labels(spider=spider.name).set(0)
         SPIDER_CLOSED.labels(spider=spider.name, reason=reason).inc()
         logger.info(f"Spider closed: {spider.name}, reason: {reason}")
 
     def item_scraped(self, item: Any, spider: Spider):
-        """Called when item is scraped.
+        """Called when item is scraped - Track scrape rate (items/sec).
 
         Args:
             item: Scraped item
@@ -176,14 +217,39 @@ class PrometheusExtension:
         ITEMS_SCRAPED.labels(spider=spider.name).inc()
 
     def item_dropped(self, item: Any, spider: Spider, exception: Exception):
-        """Called when item is dropped.
+        """Called when item is dropped - Track drop reasons for data quality monitoring.
 
         Args:
             item: Dropped item
             spider: Spider instance
-            exception: Exception that caused the drop
+            exception: Exception that caused the drop (e.g., DropItem)
         """
+        # Extract exception type/reason
+        exception_type = type(exception).__name__ if exception else 'Unknown'
+
+        # Try to extract drop reason from DropItem exception message
+        drop_reason = 'Unknown'
+        if isinstance(exception, DropItem):
+            drop_reason = str(exception)[:50]  # Truncate long messages
+        elif exception:
+            drop_reason = exception_type
+
         ITEMS_DROPPED.labels(spider=spider.name).inc()
+        logger.debug(f"Item dropped in {spider.name}: {drop_reason}")
+
+    def spider_error(self, failure, response, spider):
+        """Called when spider encounters an error - Monitor critical failures.
+
+        Args:
+            failure: Twisted Failure instance
+            response: Response that caused the error
+            spider: Spider instance
+        """
+        # Extract exception type for categorization
+        exception_type = failure.type.__name__ if hasattr(failure, 'type') else 'Unknown'
+
+        SPIDER_ERRORS.labels(spider=spider.name, exception_type=exception_type).inc()
+        logger.error(f"Spider error in {spider.name}: {exception_type} - {failure.getErrorMessage()}")
 
     def request_scheduled(self, request: Request, spider: Spider):
         """Called when request is scheduled.
@@ -194,20 +260,49 @@ class PrometheusExtension:
         """
         REQUESTS_TOTAL.labels(spider=spider.name, method=request.method).inc()
 
+    def request_dropped(self, request: Request, spider: Spider):
+        """Called when request is dropped - Track filtered/duplicate requests.
+
+        Args:
+            request: Dropped request
+            spider: Spider instance
+        """
+        # Determine drop reason from request metadata
+        drop_reason = 'filtered'
+        if hasattr(request, 'meta'):
+            if request.meta.get('dont_filter'):
+                drop_reason = 'scheduler'
+            elif request.meta.get('duplicate'):
+                drop_reason = 'duplicate'
+
+        REQUESTS_DROPPED.labels(spider=spider.name, reason=drop_reason).inc()
+        logger.debug(f"Request dropped in {spider.name}: {drop_reason} - {request.url}")
+
     def response_received(self, response: Response, request: Request, spider: Spider):
-        """Called when response is received.
+        """Called when response is received - Monitor HTTP status codes and latency.
 
         Args:
             response: Response instance
             request: Request instance
             spider: Spider instance
         """
+        # Track response status codes (403 blocks, 503 errors, 301/302 redirects, 500 errors)
         RESPONSES_TOTAL.labels(spider=spider.name, status_code=response.status).inc()
 
-        # Calculate response time if available
+        # Calculate and track response time (latency)
         if hasattr(request, 'meta') and 'download_latency' in request.meta:
             latency = request.meta['download_latency']
             RESPONSE_TIME.labels(spider=spider.name).observe(latency)
+
+            # Log slow responses
+            if latency > 5.0:
+                logger.warning(f"Slow response in {spider.name}: {latency:.2f}s for {response.url}")
+
+        # Log specific status codes of interest
+        if response.status in [403, 503]:
+            logger.warning(f"Blocked/Error response in {spider.name}: {response.status} from {response.url}")
+        elif response.status >= 500:
+            logger.error(f"Server error in {spider.name}: {response.status} from {response.url}")
 
     def request_reached_downloader(self, request: Request, spider: Spider):
         """Called when request reaches downloader.

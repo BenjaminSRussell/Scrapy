@@ -9,18 +9,17 @@ Exports metrics about:
 """
 
 import logging
+import sys
 import time
 from pathlib import Path
-from typing import Dict
 
-from prometheus_client import Gauge, Counter, Histogram, start_http_server
+from prometheus_client import Counter, Gauge, Histogram, start_http_server
 
-import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.common.config import get_config
-from src.common.redis_manager import get_redis_manager
 from src.common.delta_lake import get_delta_manager
+from src.common.redis_manager import get_redis_manager
 
 logging.basicConfig(
     level=logging.INFO,

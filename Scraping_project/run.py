@@ -16,7 +16,6 @@ Features:
 import logging
 import signal
 import sys
-from typing import List
 
 from scrapy.crawler import CrawlerRunner
 from scrapy.utils.log import configure_logging
@@ -35,7 +34,7 @@ logger = logging.getLogger(__name__)
 class ScrapyRunner:
     """Orchestrates multiple Scrapy spiders using CrawlerRunner."""
 
-    def __init__(self, spider_names: List[str] = None):
+    def __init__(self, spider_names: list[str] = None):
         """Initialize the Scrapy runner.
 
         Args:

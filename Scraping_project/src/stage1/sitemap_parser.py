@@ -2,8 +2,7 @@
 
 import logging
 import xml.etree.ElementTree as ET
-from datetime import datetime
-from typing import Iterator, List, Optional, Set
+from collections.abc import Iterator
 from urllib.parse import urljoin, urlparse
 
 import httpx
@@ -33,10 +32,10 @@ class SitemapParser:
         self.base_url = base_url
         self.timeout = timeout
         self.max_depth = max_depth
-        self.visited_sitemaps: Set[str] = set()
-        self.discovered_urls: Set[str] = set()
+        self.visited_sitemaps: set[str] = set()
+        self.discovered_urls: set[str] = set()
 
-    async def discover_all_urls(self) -> List[str]:
+    async def discover_all_urls(self) -> list[str]:
         """Discover all URLs from sitemaps (including nested).
 
         Returns:
@@ -67,7 +66,7 @@ class SitemapParser:
 
         return list(self.discovered_urls)
 
-    async def _get_sitemaps_from_robots(self, base_url: str) -> List[str]:
+    async def _get_sitemaps_from_robots(self, base_url: str) -> list[str]:
         """Extract sitemap URLs from robots.txt.
 
         Args:
@@ -171,7 +170,7 @@ class SitemapParser:
 
         return False
 
-    def _extract_nested_sitemaps(self, root: ET.Element) -> List[str]:
+    def _extract_nested_sitemaps(self, root: ET.Element) -> list[str]:
         """Extract nested sitemap URLs from sitemap index.
 
         Args:
@@ -197,7 +196,7 @@ class SitemapParser:
 
         return sitemaps
 
-    def _extract_urls_from_sitemap(self, root: ET.Element) -> Set[str]:
+    def _extract_urls_from_sitemap(self, root: ET.Element) -> set[str]:
         """Extract URLs from regular sitemap.
 
         Args:
@@ -232,7 +231,7 @@ class SitemapParser:
 
         return urls
 
-    def _extract_from_plain_text(self, text: str) -> Set[str]:
+    def _extract_from_plain_text(self, text: str) -> set[str]:
         """Extract URLs from plain text sitemap (non-XML).
 
         Some sites serve plain text sitemaps with one URL per line.
@@ -265,7 +264,7 @@ class SitemapIntegration:
         self.spider = spider
         self.parser = SitemapParser(spider.start_urls[0] if spider.start_urls else "")
 
-    async def discover_sitemap_urls(self) -> List[str]:
+    async def discover_sitemap_urls(self) -> list[str]:
         """Discover all URLs from sitemaps.
 
         Returns:
@@ -279,7 +278,7 @@ class SitemapIntegration:
             logger.error(f"Sitemap discovery failed: {e}")
             return []
 
-    def generate_scrapy_requests(self, urls: List[str]) -> Iterator:
+    def generate_scrapy_requests(self, urls: list[str]) -> Iterator:
         """Generate Scrapy requests from sitemap URLs.
 
         Args:
@@ -302,7 +301,7 @@ class SitemapIntegration:
 
 
 # Synchronous wrapper for use in Scrapy
-def discover_sitemaps_sync(base_url: str, timeout: int = 30) -> List[str]:
+def discover_sitemaps_sync(base_url: str, timeout: int = 30) -> list[str]:
     """Synchronous wrapper for sitemap discovery.
 
     Args:

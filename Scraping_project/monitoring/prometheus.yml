@@ -23,13 +23,16 @@ rule_files:
   # - '/etc/prometheus/alerting_rules.yml'  # Uncomment when ready
 
 scrape_configs:
-  # Scrape Scrapy application metrics
+  # Scrape Scrapy application metrics - Real-time scraping metrics
   - job_name: 'scrapy_app'
+    scrape_interval: 10s  # Frequent scraping for real-time monitoring
+    scrape_timeout: 5s
     static_configs:
       - targets: ['scrapy-app:9410']
         labels:
           service: 'scrapy'
           component: 'scraper'
+          environment: 'development'
 
   # Scrape Kafka to Delta Lake ingestor metrics
   - job_name: 'kafka_ingestor'
@@ -60,18 +63,24 @@ scrape_configs:
         labels:
           service: 'postgres'
 
-  # Scrape Kafka JMX metrics
+  # Scrape Kafka JMX metrics - Real-time metrics from Kafka broker
   - job_name: 'kafka_jmx'
+    scrape_interval: 10s  # More frequent scraping for real-time data
+    scrape_timeout: 5s
     static_configs:
       - targets: ['kafka-jmx-exporter:5556']
         labels:
           service: 'kafka'
           component: 'broker'
+          environment: 'development'
 
-  # Scrape StatsD metrics (kafka-delta-ingest)
+  # Scrape StatsD metrics (kafka-delta-ingest) - Real-time ingest metrics
   - job_name: 'statsd'
+    scrape_interval: 10s  # Frequent scraping for real-time ingest monitoring
+    scrape_timeout: 5s
     static_configs:
       - targets: ['statsd-exporter:9102']
         labels:
           service: 'ingestor'
           component: 'metrics'
+          environment: 'development'

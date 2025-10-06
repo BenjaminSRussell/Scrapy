@@ -6,7 +6,6 @@ require rendering with Playwright/Puppeteer.
 
 import logging
 import re
-from typing import Dict, List
 
 from scrapy.http import Response
 
@@ -83,7 +82,7 @@ class JSDetector:
         self.html_lower = response.text.lower()
         self.url = response.url
 
-    def requires_js_rendering(self) -> Dict[str, any]:
+    def requires_js_rendering(self) -> dict[str, any]:
         """Determine if page requires JavaScript rendering.
 
         Returns:
@@ -151,7 +150,7 @@ class JSDetector:
             'detected_framework': detected_framework,
         }
 
-    def _detect_spa_framework(self) -> Dict[str, any]:
+    def _detect_spa_framework(self) -> dict[str, any]:
         """Detect SPA framework indicators.
 
         Returns:
@@ -164,7 +163,7 @@ class JSDetector:
 
         return {'detected': False, 'framework': None}
 
-    def _detect_bundled_app(self) -> Dict[str, any]:
+    def _detect_bundled_app(self) -> dict[str, any]:
         """Detect bundled application files (webpack, rollup, etc).
 
         Returns:
@@ -187,7 +186,7 @@ class JSDetector:
             'files': bundled_files[:3],  # Return first 3
         }
 
-    def _detect_state_objects(self) -> Dict[str, any]:
+    def _detect_state_objects(self) -> dict[str, any]:
         """Detect client-side state hydration objects.
 
         Returns:
@@ -206,7 +205,7 @@ class JSDetector:
             'objects': found_objects,
         }
 
-    def _detect_async_loading(self) -> Dict[str, any]:
+    def _detect_async_loading(self) -> dict[str, any]:
         """Detect heavy async loading patterns.
 
         Returns:
@@ -225,7 +224,7 @@ class JSDetector:
             'count': count,
         }
 
-    def _check_minimal_content(self) -> Dict[str, any]:
+    def _check_minimal_content(self) -> dict[str, any]:
         """Check if page has minimal initial text content.
 
         Returns:
@@ -247,7 +246,7 @@ class JSDetector:
             'text_length': text_length,
         }
 
-    def _check_empty_body(self) -> Dict[str, any]:
+    def _check_empty_body(self) -> dict[str, any]:
         """Check for empty body with only div/script (classic SPA pattern).
 
         Returns:
@@ -311,7 +310,7 @@ def detect_js_requirement(response: Response) -> bool:
     return result['requires_js']
 
 
-def detect_js_with_details(response: Response) -> Dict[str, any]:
+def detect_js_with_details(response: Response) -> dict[str, any]:
     """Detailed JS requirement detection.
 
     Args:

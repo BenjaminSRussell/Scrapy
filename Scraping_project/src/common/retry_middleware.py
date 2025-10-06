@@ -8,7 +8,6 @@ Implements smart retry logic:
 
 import logging
 import time
-from typing import Optional
 
 from scrapy import Request, Spider
 from scrapy.downloadermiddlewares.retry import RetryMiddleware
@@ -97,7 +96,7 @@ class IntelligentRetryMiddleware(RetryMiddleware):
         request: Request,
         reason: any = None,
         spider: Spider = None,
-    ) -> Optional[Request]:
+    ) -> Request | None:
         """Retry request with exponential backoff.
 
         Args:
@@ -255,8 +254,8 @@ class CircuitBreakerMiddleware:
             Middleware instance
         """
         # Get Redis manager
-        from src.common.redis_manager import get_redis_manager
         from src.common.config import get_config
+        from src.common.redis_manager import get_redis_manager
 
         config = get_config()
         redis_config = config.redis_config
@@ -281,6 +280,7 @@ class CircuitBreakerMiddleware:
             None to continue, or Response to short-circuit
         """
         from urllib.parse import urlparse
+
         from scrapy.http import Response
 
         domain = urlparse(request.url).netloc

@@ -11,12 +11,10 @@ Tests the essential components of the pipeline:
 
 import os
 import tempfile
-from datetime import datetime
 from pathlib import Path
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
-
 
 # ============================================================================
 # Delta Lake Tests
@@ -171,6 +169,7 @@ class TestStage2Worker:
     def test_html_analysis(self, mock_delta_manager):
         """Test HTML content analysis."""
         import asyncio
+
         from src.stage2.stage2_worker import Stage2Worker
 
         with patch('src.stage2.stage2_worker.get_delta_manager', return_value=mock_delta_manager):
@@ -243,6 +242,7 @@ class TestStage3Worker:
     def test_deduplication(self, mock_delta_manager):
         """Test document deduplication with MinHash LSH."""
         import asyncio
+
         from src.stage3.stage3_worker import Stage3Worker
 
         with patch('src.stage3.stage3_worker.get_delta_manager', return_value=mock_delta_manager):
@@ -289,8 +289,9 @@ class TestDrainLake:
 
     def test_drain_lake_function(self, temp_delta_path):
         """Test drain_lake function logic."""
-        from src.common.delta_lake import DeltaLakeManager
         import shutil
+
+        from src.common.delta_lake import DeltaLakeManager
 
         with patch('src.common.constants.DELTA_LAKE', temp_delta_path):
             manager = DeltaLakeManager()

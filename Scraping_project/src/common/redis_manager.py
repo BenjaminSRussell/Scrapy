@@ -9,9 +9,8 @@ This module provides:
 
 import hashlib
 import logging
-import time
-from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional
+from datetime import datetime
+from typing import Any
 from urllib.parse import urlparse
 
 import redis
@@ -35,7 +34,7 @@ class RedisManager:
         host: str = "localhost",
         port: int = 6379,
         db: int = 0,
-        password: Optional[str] = None,
+        password: str | None = None,
         max_connections: int = 50,
     ):
         """Initialize Redis connection pool.
@@ -104,7 +103,7 @@ class RedisManager:
         key = f"{self.PREFIX_URL_HASH}{url_hash}"
         return self.redis.exists(key) > 0
 
-    def add_url(self, url: str, metadata: Optional[Dict[str, Any]] = None) -> bool:
+    def add_url(self, url: str, metadata: dict[str, Any] | None = None) -> bool:
         """Add URL to deduplication set.
 
         Args:
@@ -133,7 +132,7 @@ class RedisManager:
         self.redis.hset(key, mapping=data)
         return True
 
-    def get_url_metadata(self, url: str) -> Optional[Dict[str, str]]:
+    def get_url_metadata(self, url: str) -> dict[str, str] | None:
         """Get metadata for a URL.
 
         Args:
@@ -147,7 +146,7 @@ class RedisManager:
         data = self.redis.hgetall(key)
         return data if data else None
 
-    def bulk_add_urls(self, urls: List[str]) -> int:
+    def bulk_add_urls(self, urls: list[str]) -> int:
         """Add multiple URLs efficiently using pipeline.
 
         Args:
@@ -164,11 +163,6 @@ class RedisManager:
             key = f"{self.PREFIX_URL_HASH}{url_hash}"
 
             # Use SETNX (set if not exists) for atomic operation
-            data = {
-                'url': url,
-                'url_hash': url_hash,
-                'timestamp': str(datetime.now()),
-            }
             pipeline.hsetnx(key, 'url', url)
 
         results = pipeline.execute()
@@ -183,7 +177,7 @@ class RedisManager:
         self,
         url: str,
         priority: float = 0.0,
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
     ) -> bool:
         """Add URL to priority queue with scoring.
 
@@ -242,7 +236,6 @@ class RedisManager:
             Final priority score
         """
         score = base_priority
-        url_lower = url.lower()
         parsed = urlparse(url)
         path = parsed.path.lower()
 
@@ -262,7 +255,7 @@ class RedisManager:
 
         return score
 
-    def get_next_urls(self, batch_size: int = 10) -> List[Dict[str, Any]]:
+    def get_next_urls(self, batch_size: int = 10) -> list[dict[str, Any]]:
         """Get next batch of URLs to crawl (highest priority first).
 
         Args:
@@ -359,7 +352,7 @@ class RedisManager:
         self.redis.delete(key)
         logger.info(f"Circuit breaker CLOSED for {domain}")
 
-    def get_open_circuits(self) -> List[Dict[str, str]]:
+    def get_open_circuits(self) -> list[dict[str, str]]:
         """Get all currently open circuit breakers.
 
         Returns:
@@ -381,7 +374,7 @@ class RedisManager:
     # Message Queues (Decoupled Data Flow)
     # ============================================
 
-    def push_to_queue(self, queue_name: str, data: Dict[str, Any]):
+    def push_to_queue(self, queue_name: str, data: dict[str, Any]):
         """Push data to a message queue.
 
         Args:
@@ -398,7 +391,7 @@ class RedisManager:
         import json
         self.redis.lpush(key, json.dumps(data))
 
-    def pop_from_queue(self, queue_name: str, timeout: int = 0) -> Optional[Dict[str, Any]]:
+    def pop_from_queue(self, queue_name: str, timeout: int = 0) -> dict[str, Any] | None:
         """Pop data from message queue (blocking).
 
         Args:
@@ -453,7 +446,7 @@ class RedisManager:
         logger.info(f"Cleared queue '{queue_name}': {length} items removed")
         return length
 
-    def get_all_queue_stats(self) -> Dict[str, int]:
+    def get_all_queue_stats(self) -> dict[str, int]:
         """Get statistics for all queues.
 
         Returns:
@@ -473,7 +466,7 @@ class RedisManager:
     # Utility Methods
     # ============================================
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get overall Redis statistics.
 
         Returns:
@@ -502,14 +495,14 @@ class RedisManager:
 
 
 # Global instance
-_redis_manager: Optional[RedisManager] = None
+_redis_manager: RedisManager | None = None
 
 
 def get_redis_manager(
     host: str = "localhost",
     port: int = 6379,
     db: int = 0,
-    password: Optional[str] = None,
+    password: str | None = None,
 ) -> RedisManager:
     """Get or create global Redis manager instance.
 

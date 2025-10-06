@@ -15,7 +15,7 @@ import logging
 import os
 from contextlib import contextmanager
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any
 
 try:
     import psycopg2
@@ -36,11 +36,11 @@ class PostgresManager:
 
     def __init__(
         self,
-        host: Optional[str] = None,
-        port: Optional[int] = None,
-        database: Optional[str] = None,
-        user: Optional[str] = None,
-        password: Optional[str] = None,
+        host: str | None = None,
+        port: int | None = None,
+        database: str | None = None,
+        user: str | None = None,
+        password: str | None = None,
         min_conn: int = 1,
         max_conn: int = 10
     ):
@@ -183,8 +183,8 @@ class PostgresManager:
         stage: str,
         urls_processed: int,
         processing_time_seconds: float,
-        worker_count: Optional[int] = None,
-        memory_usage_mb: Optional[float] = None
+        worker_count: int | None = None,
+        memory_usage_mb: float | None = None
     ):
         """Log a performance metric for a pipeline stage.
 
@@ -219,9 +219,9 @@ class PostgresManager:
         stage: str,
         url: str,
         error_type: str,
-        error_message: Optional[str] = None,
-        stack_trace: Optional[str] = None,
-        http_status_code: Optional[int] = None,
+        error_message: str | None = None,
+        stack_trace: str | None = None,
+        http_status_code: int | None = None,
         retry_count: int = 0
     ):
         """Log an error that occurred during pipeline processing.
@@ -251,9 +251,9 @@ class PostgresManager:
 
     def get_performance_metrics(
         self,
-        stage: Optional[str] = None,
-        start_time: Optional[datetime] = None,
-        end_time: Optional[datetime] = None,
+        stage: str | None = None,
+        start_time: datetime | None = None,
+        end_time: datetime | None = None,
         limit: int = 1000
     ) -> list[dict[str, Any]]:
         """Retrieve performance metrics with optional filtering.
@@ -295,10 +295,10 @@ class PostgresManager:
 
     def get_error_logs(
         self,
-        stage: Optional[str] = None,
-        error_type: Optional[str] = None,
-        start_time: Optional[datetime] = None,
-        end_time: Optional[datetime] = None,
+        stage: str | None = None,
+        error_type: str | None = None,
+        start_time: datetime | None = None,
+        end_time: datetime | None = None,
         limit: int = 1000
     ) -> list[dict[str, Any]]:
         """Retrieve error logs with optional filtering.
@@ -402,10 +402,10 @@ class PostgresManager:
 
 
 # Global singleton
-_postgres_manager: Optional[PostgresManager] = None
+_postgres_manager: PostgresManager | None = None
 
 
-def get_postgres_manager() -> Optional[PostgresManager]:
+def get_postgres_manager() -> PostgresManager | None:
     """Get or create global PostgreSQL manager.
 
     Returns:
