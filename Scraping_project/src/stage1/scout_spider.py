@@ -16,6 +16,7 @@ from scrapy.spidermiddlewares.httperror import HttpError
 from twisted.internet.error import DNSLookupError, TCPTimedOutError, TimeoutError
 
 from src.common.delta_lake import get_delta_manager
+from src.common.postgres_manager import get_postgres_manager
 from src.stage1.ultra_discovery import UltraDiscovery
 
 logger = logging.getLogger(__name__)
@@ -75,18 +76,24 @@ class ScoutSpider(scrapy.Spider):
     def __init__(self, seed_file=None, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.seed_file = seed_file or str(Path(__file__).parent.parent.parent / "data" / "raw" / "uconn_urls.csv")
-        
+
         self.url_hashes: set[str] = set()
         self.discovered_records = []
         self.error_records = []
         self.js_render_queue = []
-        
+
         self.delta = get_delta_manager()
+        self.postgres = get_postgres_manager()  # PostgreSQL for metrics
         self._load_existing_urls()
-        
+
+        # Performance tracking
+        self.perf_start_time = datetime.now()
+        self.perf_urls_processed = 0
+        self.perf_last_log = datetime.now()
+
         signal.signal(signal.SIGINT, self._graceful_shutdown)
         signal.signal(signal.SIGTERM, self._graceful_shutdown)
-        
+
         self.start_urls = self._load_seed_urls()
         logger.info(f"Scout loaded {len(self.start_urls)} seeds, {len(self.url_hashes)} existing URLs")
 
@@ -213,6 +220,10 @@ class ScoutSpider(scrapy.Spider):
         }
 
         self.discovered_records.append(record)
+        self.perf_urls_processed += 1
+
+        # Log performance metrics every 5 seconds
+        self._maybe_log_performance()
 
         if len(self.discovered_records) >= 100:
             self._save_batch()
@@ -355,17 +366,21 @@ class ScoutSpider(scrapy.Spider):
 
         if failure.check(HttpError):
             response = failure.value.response
-            error_type = 'http_error'
+            error_type = 'HttpError'
             error_code = response.status
+            error_message = f"HTTP {response.status}"
         elif failure.check(DNSLookupError):
-            error_type = 'dns_error'
+            error_type = 'DNSLookupError'
             error_code = 0
+            error_message = "DNS lookup failed"
         elif failure.check(TimeoutError, TCPTimedOutError):
-            error_type = 'timeout'
+            error_type = 'TimeoutError'
             error_code = 0
+            error_message = "Request timeout"
         else:
-            error_type = 'unknown'
+            error_type = failure.type.__name__ if hasattr(failure, 'type') else 'UnknownError'
             error_code = 0
+            error_message = str(failure.value) if hasattr(failure, 'value') else "Unknown error"
 
         error_record = {
             'url': url,
@@ -377,6 +392,21 @@ class ScoutSpider(scrapy.Spider):
         }
 
         self.error_records.append(error_record)
+
+        # Log to PostgreSQL if available
+        if self.postgres:
+            try:
+                stack_trace = failure.getTraceback() if hasattr(failure, 'getTraceback') else None
+                self.postgres.log_error(
+                    stage='stage1',
+                    url=url,
+                    error_type=error_type,
+                    error_message=error_message,
+                    stack_trace=stack_trace,
+                    http_status_code=error_code if error_code > 0 else None
+                )
+            except Exception as e:
+                logger.debug(f"Failed to log error to PostgreSQL: {e}")
 
     def _save_batch(self):
         """Save batches to Delta Lake."""
@@ -409,6 +439,33 @@ class ScoutSpider(scrapy.Spider):
                 self.js_render_queue = []
             except Exception as e:
                 logger.error(f"Failed to save JS queue: {e}")
+
+    def _maybe_log_performance(self):
+        """Log performance metrics every 5 seconds."""
+        now = datetime.now()
+        elapsed = (now - self.perf_last_log).total_seconds()
+
+        if elapsed >= 5.0 and self.perf_urls_processed > 0:
+            # Calculate metrics
+            total_elapsed = (now - self.perf_start_time).total_seconds()
+
+            if self.postgres and total_elapsed > 0:
+                try:
+                    self.postgres.log_performance_metric(
+                        stage='stage1',
+                        urls_processed=self.perf_urls_processed,
+                        processing_time_seconds=elapsed
+                    )
+                    logger.debug(
+                        f"Stage 1 performance: {self.perf_urls_processed} URLs in {elapsed:.1f}s "
+                        f"({self.perf_urls_processed/elapsed:.2f} URLs/sec)"
+                    )
+                except Exception as e:
+                    logger.debug(f"Failed to log performance to PostgreSQL: {e}")
+
+            # Reset counters
+            self.perf_last_log = now
+            self.perf_urls_processed = 0
 
     def closed(self, reason):
         """Save remaining data on close."""

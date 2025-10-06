@@ -279,12 +279,10 @@ Scraping_project/
 │       └── summarization.py        # BART-large utilities
 │
 ├── 🧪 Testing
-│   ├── tests/                      # pytest test suite
-│   │   ├── test_pipeline.py
-│   │   ├── test_stage2_worker.py
-│   │   └── test_intelligent_analyzer.py
-│   └── temp_testing/               # Integration tests
-│       └── test_pipeline_stages.py
+│   └── tests/                      # pytest test suite
+│       ├── test_pipeline.py
+│       ├── test_stage2_worker.py
+│       └── test_intelligent_analyzer.py
 │
 └── 🔄 CI/CD
     └── .github/workflows/

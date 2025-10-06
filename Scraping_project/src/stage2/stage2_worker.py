@@ -5,6 +5,7 @@ Downloads and analyzes URLs from stage1_discovery table.
 
 import asyncio
 import logging
+import time
 from datetime import datetime
 from typing import Any
 
@@ -12,6 +13,7 @@ import aiohttp
 from bs4 import BeautifulSoup
 
 from src.common.delta_lake import get_delta_manager
+from src.common.postgres_manager import get_postgres_manager
 
 logger = logging.getLogger(__name__)
 
@@ -31,11 +33,16 @@ class Stage2Worker:
         self.batch_size = batch_size
         self.semaphore = asyncio.Semaphore(max_concurrent)
         self.delta = get_delta_manager()
+        self.postgres = get_postgres_manager()
 
         # Quality thresholds
         self.MIN_WORD_COUNT = 50
         self.MIN_TEXT_TO_HTML_RATIO = 0.1
         self.MASSIVE_DOC_THRESHOLD = 50000  # 50k characters
+
+        # Performance tracking
+        self.perf_start_time = None
+        self.perf_urls_processed = 0
 
     async def run(self):
         """Main worker loop - process all pending URLs."""
@@ -72,9 +79,15 @@ class Stage2Worker:
             batch = pending[i:i + self.batch_size]
             logger.info(f"Processing batch {i // self.batch_size + 1}: {len(batch)} URLs")
 
+            # Track performance
+            batch_start = time.time()
+
             # Process batch concurrently
             tasks = [self._analyze_url(record) for record in batch]
             results = await asyncio.gather(*tasks, return_exceptions=True)
+
+            # Calculate batch time
+            batch_time = time.time() - batch_start
 
             # Filter successful results
             valid_results = [r for r in results if isinstance(r, dict) and not isinstance(r, Exception)]
@@ -83,6 +96,18 @@ class Stage2Worker:
             if valid_results:
                 self.delta.write('stage2_page_analysis', valid_results, mode='append', async_write=False)
                 logger.info(f"Saved {len(valid_results)} analysis results")
+
+            # Log performance to PostgreSQL
+            if self.postgres and len(valid_results) > 0:
+                try:
+                    self.postgres.log_performance_metric(
+                        stage='stage2',
+                        urls_processed=len(valid_results),
+                        processing_time_seconds=batch_time,
+                        worker_count=self.max_concurrent
+                    )
+                except Exception as e:
+                    logger.debug(f"Failed to log performance to PostgreSQL: {e}")
 
         logger.info("Stage 2 Worker completed all batches")
 
@@ -113,12 +138,16 @@ class Stage2Worker:
                             # Other content types - minimal processing
                             return self._minimal_record(url, url_hash, content_type)
 
-            except TimeoutError:
+            except TimeoutError as e:
+                self._log_error_to_postgres(url, 'TimeoutError', str(e))
                 return self._error_record(url, url_hash, 0, 'timeout')
             except aiohttp.ClientError as e:
-                return self._error_record(url, url_hash, 0, f'client_error: {type(e).__name__}')
+                error_type = f'ClientError: {type(e).__name__}'
+                self._log_error_to_postgres(url, error_type, str(e))
+                return self._error_record(url, url_hash, 0, error_type)
             except Exception as e:
                 logger.error(f"Failed to analyze {url}: {e}")
+                self._log_error_to_postgres(url, type(e).__name__, str(e))
                 return self._error_record(url, url_hash, 0, f'error: {str(e)}')
 
     async def _analyze_html(self, url: str, url_hash: str, html: str, is_heavy: bool) -> dict[str, Any]:
@@ -316,3 +345,17 @@ class Stage2Worker:
             'keywords': [''],  # Empty string to avoid null type
             'processed_at': datetime.now().isoformat(),
         }
+
+    def _log_error_to_postgres(self, url: str, error_type: str, error_message: str, http_status: int = None):
+        """Helper to log errors to PostgreSQL."""
+        if self.postgres:
+            try:
+                self.postgres.log_error(
+                    stage='stage2',
+                    url=url,
+                    error_type=error_type,
+                    error_message=error_message,
+                    http_status_code=http_status
+                )
+            except Exception as e:
+                logger.debug(f"Failed to log error to PostgreSQL: {e}")

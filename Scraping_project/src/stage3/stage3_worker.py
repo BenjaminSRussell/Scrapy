@@ -5,12 +5,14 @@ Uses datasketch MinHash for deduplication and BART for summarization.
 
 import asyncio
 import logging
+import time
 from datetime import datetime
 from typing import Any
 
 from datasketch import MinHash, MinHashLSH
 
 from src.common.delta_lake import get_delta_manager
+from src.common.postgres_manager import get_postgres_manager
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +26,7 @@ class Stage3Worker:
         self.batch_size = batch_size
         self.semaphore = asyncio.Semaphore(max_concurrent)
         self.delta = get_delta_manager()
+        self.postgres = get_postgres_manager()
         self.SIMILARITY_THRESHOLD = 0.3
 
     async def run(self):
@@ -73,6 +76,9 @@ class Stage3Worker:
             batch = pending[i:i + self.batch_size]
             logger.info(f"Processing batch {i // self.batch_size + 1}: {len(batch)} documents")
 
+            # Track performance
+            batch_start = time.time()
+
             # Deduplicate batch
             unique_batch = await self._deduplicate_documents(batch)
             logger.info(f"After deduplication: {len(unique_batch)} unique documents")
@@ -81,12 +87,27 @@ class Stage3Worker:
             tasks = [self._summarize_document(doc) for doc in unique_batch]
             results = await asyncio.gather(*tasks, return_exceptions=True)
 
+            # Calculate batch time
+            batch_time = time.time() - batch_start
+
             # Filter valid results
             valid_results = [r for r in results if isinstance(r, dict) and not isinstance(r, Exception)]
 
             if valid_results:
                 self.delta.write('stage4_summaries', valid_results, mode='append', async_write=False)
                 logger.info(f"Saved {len(valid_results)} summaries")
+
+                # Log performance to PostgreSQL
+                if self.postgres:
+                    try:
+                        self.postgres.log_performance_metric(
+                            stage='stage3',
+                            urls_processed=len(valid_results),
+                            processing_time_seconds=batch_time,
+                            worker_count=self.max_concurrent
+                        )
+                    except Exception as e:
+                        logger.debug(f"Failed to log performance to PostgreSQL: {e}")
 
         logger.info("Stage 3 Worker completed all batches")
 
@@ -153,6 +174,19 @@ class Stage3Worker:
 
             except Exception as e:
                 logger.error(f"Summarization failed for {doc.get('url', '')}: {e}")
+
+                # Log error to PostgreSQL
+                if self.postgres:
+                    try:
+                        self.postgres.log_error(
+                            stage='stage3',
+                            url=doc.get('url', ''),
+                            error_type=type(e).__name__,
+                            error_message=str(e)
+                        )
+                    except Exception as pg_error:
+                        logger.debug(f"Failed to log error to PostgreSQL: {pg_error}")
+
                 return None
 
     def _fallback_summary(self, text: str, max_chars: int = 500) -> str:

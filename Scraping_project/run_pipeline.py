@@ -4,6 +4,7 @@
 Commands:
   run         Run the multi-stage pipeline (default)
   setup       Download and validate transformer models
+  drain       Drain Delta Lake tables (keeps seed URLs)
   clean       Clean Delta Lake data
   reset       Reset pipeline to initial state
   export      Export Delta Lake tables
@@ -365,6 +366,17 @@ def cmd_setup(args):
 # DELTA LAKE OPERATIONS
 # ============================================================================
 
+def cmd_drain(args):
+    """Drain Delta Lake tables without deleting seed URLs."""
+    from scripts.drain_lake import drain_lake
+
+    try:
+        drain_lake(skip_confirmation=args.yes)
+    except Exception as e:
+        logger.error(f"Drain operation failed: {e}")
+        sys.exit(1)
+
+
 def cmd_clean(args):
     """Clean Delta Lake data."""
     project_root = Path(__file__).parent
@@ -712,6 +724,11 @@ def main():
     parser_setup = subparsers.add_parser('setup', help='Download transformer models')
     parser_setup.add_argument('-y', '--yes', action='store_true', help='Skip confirmation prompt')
     parser_setup.set_defaults(func=cmd_setup)
+
+    # DRAIN command
+    parser_drain = subparsers.add_parser('drain', help='Drain Delta Lake tables (keeps seed URLs)')
+    parser_drain.add_argument('-y', '--yes', action='store_true', help='Skip confirmation prompt')
+    parser_drain.set_defaults(func=cmd_drain)
 
     # CLEAN command
     parser_clean = subparsers.add_parser('clean', help='Clean Delta Lake data')

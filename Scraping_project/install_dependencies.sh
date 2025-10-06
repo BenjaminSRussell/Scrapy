@@ -41,9 +41,6 @@ echo ""
 echo "📦 Installing datasketch..."
 $INSTALL_CMD datasketch>=1.6.0
 
-echo ""
-echo "📦 Installing duckdb..."
-$INSTALL_CMD duckdb>=1.1.0
 
 echo ""
 echo "================================================================================"
@@ -59,7 +56,6 @@ import sys
 packages = [
     ('pandas', 'Pandas'),
     ('datasketch', 'DataSketch'),
-    ('duckdb', 'DuckDB'),
 ]
 
 all_ok = True
@@ -85,12 +81,12 @@ echo "NEXT STEPS"
 echo "================================================================================"
 echo ""
 echo "1. Run tests to verify:"
-echo "   cd temp_testing && python test_pipeline_stages.py"
+echo "   pytest tests/ -v"
 echo ""
 echo "2. Reset and run pipeline:"
-echo "   python reset_pipeline.py"
-echo "   python run_pipeline.py"
+echo "   python run_pipeline.py reset"
+echo "   python run_pipeline.py run"
 echo ""
 echo "3. Export results:"
-echo "   python export_table.py --all"
+echo "   python run_pipeline.py export --all"
 echo ""
