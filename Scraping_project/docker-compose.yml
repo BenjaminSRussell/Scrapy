@@ -83,6 +83,7 @@ services:
     ports:
       - "9092:9092"
       - "9093:9093"
+      - "9999:9999"  # JMX metrics port
     environment:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
@@ -105,8 +106,11 @@ services:
       KAFKA_LOG_RETENTION_CHECK_INTERVAL_MS: 300000
       KAFKA_COMPRESSION_TYPE: snappy
 
-      # JVM settings
+      # JVM settings with JMX enabled
       KAFKA_HEAP_OPTS: "-Xmx1G -Xms1G"
+      KAFKA_JMX_PORT: 9999
+      KAFKA_JMX_HOSTNAME: kafka
+      KAFKA_JMX_OPTS: "-Dcom.sun.management.jmxremote -Dcom.sun.management.jmxremote.authenticate=false -Dcom.sun.management.jmxremote.ssl=false -Dcom.sun.management.jmxremote.local.only=false -Dcom.sun.management.jmxremote.rmi.port=9999"
 
       # Offsets topic configuration
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
@@ -361,6 +365,10 @@ services:
       - AWS_REGION=us-east-1
       - AWS_ALLOW_HTTP=true
 
+      # StatsD metrics configuration
+      - STATSD_HOST=statsd-exporter
+      - STATSD_PORT=9125
+
       # Rust logging
       - RUST_LOG=info
       - RUST_BACKTRACE=1
@@ -374,6 +382,8 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
+      statsd-exporter:
+        condition: service_started
 
   # Python-based Kafka to Delta Lake Ingestor (Alternative/Backup)
   # Uncomment to use Python ingestor instead of Rust version
@@ -458,6 +468,42 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+
+  # Kafka JMX Exporter - Export Kafka JMX metrics to Prometheus
+  kafka-jmx-exporter:
+    image: bitnami/jmx-exporter:latest
+    container_name: scraping_kafka_jmx_exporter
+    ports:
+      - "5556:5556"
+    environment:
+      - SERVICE_PORT=5556
+    command:
+      - "5556"
+      - "/etc/jmx-exporter/config.yml"
+    volumes:
+      - ./monitoring/kafka_jmx_config.yml:/etc/jmx-exporter/config.yml:ro
+    restart: unless-stopped
+    networks:
+      - scraping_network
+    depends_on:
+      kafka:
+        condition: service_healthy
+
+  # StatsD Exporter - Convert StatsD metrics to Prometheus format
+  # Used by kafka-delta-ingest daemon to expose metrics
+  statsd-exporter:
+    image: prom/statsd-exporter:latest
+    container_name: scraping_statsd_exporter
+    ports:
+      - "9102:9102"  # Prometheus metrics endpoint
+      - "9125:9125/udp"  # StatsD UDP receiver
+    command:
+      - "--statsd.mapping-config=/etc/statsd/statsd_mapping.yml"
+    volumes:
+      - ./monitoring/statsd_mapping.yml:/etc/statsd/statsd_mapping.yml:ro
+    restart: unless-stopped
+    networks:
+      - scraping_network
 
 # ============================================
 # Volumes

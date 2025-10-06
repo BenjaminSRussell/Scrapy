@@ -42,10 +42,12 @@ NEWSPIDER_MODULE = _scrapy_config.get('newspider_module', 'src.stage3')
 # Obey robots.txt rules (from YAML or default)
 ROBOTSTXT_OBEY = _scrapy_config.get('robotstxt_obey', False)
 
-# Configure pipelines
+# Configure pipelines - Order matters! Lower numbers execute first
 ITEM_PIPELINES = _scrapy_config.get('item_pipelines', {
-    # No pipelines needed - stage 1 saves directly to Delta Lake
-    # 'src.pipelines.KafkaPipeline': 300,  # Uncomment to enable Kafka streaming
+    'src.pipelines.DataValidationPipeline': 100,   # First: Validate and drop invalid items
+    'src.pipelines.DataCleansingPipeline': 200,    # Second: Cleanse and normalize data
+    'src.pipelines.MetadataPipeline': 250,          # Third: Add operational metadata
+    'src.pipelines.KafkaPipeline': 300,             # Fourth: Serialize and publish to Kafka
 })
 
 # Configure request fingerprinting (from YAML or default)

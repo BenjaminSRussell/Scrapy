@@ -1,0 +1,84 @@
+# ==================================================================
+# StatsD Exporter Mapping Configuration
+# ==================================================================
+# This configuration maps StatsD metrics from kafka-delta-ingest
+# to Prometheus metric format
+# ==================================================================
+
+mappings:
+  # ============================================
+  # Kafka Delta Ingest Metrics
+  # ============================================
+
+  # Records processed by the ingestor
+  - match: "ingestor.records.processed"
+    name: "ingestor_records_processed_total"
+    labels:
+      job: "kafka-delta-ingest"
+
+  # Records failed during processing
+  - match: "ingestor.records.failed"
+    name: "ingestor_records_failed_total"
+    labels:
+      job: "kafka-delta-ingest"
+
+  # Batch write latency (milliseconds)
+  - match: "ingestor.batch.write.latency"
+    name: "ingestor_batch_write_latency_ms"
+    labels:
+      job: "kafka-delta-ingest"
+
+  # Batch size (number of records)
+  - match: "ingestor.batch.size"
+    name: "ingestor_batch_size"
+    labels:
+      job: "kafka-delta-ingest"
+
+  # Delta table commits
+  - match: "ingestor.delta.commits"
+    name: "ingestor_delta_commits_total"
+    labels:
+      job: "kafka-delta-ingest"
+
+  # Kafka consumer lag
+  - match: "ingestor.kafka.lag"
+    name: "ingestor_kafka_lag"
+    labels:
+      job: "kafka-delta-ingest"
+
+  # Kafka messages consumed
+  - match: "ingestor.kafka.consumed"
+    name: "ingestor_kafka_consumed_total"
+    labels:
+      job: "kafka-delta-ingest"
+
+  # Bytes written to Delta Lake
+  - match: "ingestor.delta.bytes_written"
+    name: "ingestor_delta_bytes_written_total"
+    labels:
+      job: "kafka-delta-ingest"
+
+  # ============================================
+  # Generic Pattern Matching
+  # ============================================
+
+  # Match metrics with topic labels
+  - match: "ingestor.*.*.count"
+    match_type: regex
+    name: "ingestor_${1}_${2}_total"
+    labels:
+      job: "kafka-delta-ingest"
+
+  # Match timing metrics
+  - match: "ingestor.*.*.time"
+    match_type: regex
+    name: "ingestor_${1}_${2}_seconds"
+    labels:
+      job: "kafka-delta-ingest"
+
+  # Fallback: pass through any other metrics
+  - match: ".*"
+    match_type: regex
+    name: "statsd_${1}"
+    labels:
+      job: "unknown"

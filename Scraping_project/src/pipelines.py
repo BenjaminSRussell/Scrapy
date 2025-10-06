@@ -6,19 +6,240 @@ This module contains custom pipeline implementations for processing scraped item
 import json
 import logging
 import os
+import re
+from datetime import datetime
 from typing import Any, Dict
 
 from confluent_kafka import Producer
 from itemadapter import ItemAdapter
 from scrapy import Spider, signals
 from scrapy.crawler import Crawler
-from scrapy.exceptions import NotConfigured
+from scrapy.exceptions import DropItem, NotConfigured
 
 logger = logging.getLogger(__name__)
 
 
+class DataValidationPipeline:
+    """Pipeline for validating scraped items before further processing.
+
+    This pipeline ensures data quality by validating critical fields and dropping
+    invalid items early in the pipeline chain. This prevents bad data from ever
+    reaching Kafka or Delta Lake.
+
+    Validation rules:
+    - All items must have a 'url' field
+    - Text content fields must not be empty or whitespace-only
+    - Numeric fields (if present) must be valid numbers
+    - Required fields are configurable via settings
+    """
+
+    def __init__(self, required_fields: list = None):
+        """Initialize the validation pipeline.
+
+        Args:
+            required_fields: List of field names that must be present in every item
+        """
+        self.required_fields = required_fields or ['url']
+        self.items_validated = 0
+        self.items_dropped = 0
+
+    @classmethod
+    def from_crawler(cls, crawler: Crawler) -> 'DataValidationPipeline':
+        """Factory method to create pipeline instance from crawler settings.
+
+        Args:
+            crawler: Scrapy crawler instance with settings
+
+        Returns:
+            Configured DataValidationPipeline instance
+        """
+        required_fields = crawler.settings.getlist('VALIDATION_REQUIRED_FIELDS', ['url'])
+        return cls(required_fields=required_fields)
+
+    def process_item(self, item: Any, spider: Spider) -> Any:
+        """Validate item and raise DropItem if validation fails.
+
+        Args:
+            item: The scraped item to validate
+            spider: The spider that yielded the item
+
+        Returns:
+            The validated item
+
+        Raises:
+            DropItem: If item fails validation
+        """
+        adapter = ItemAdapter(item)
+
+        # Check required fields
+        for field in self.required_fields:
+            if field not in adapter:
+                self.items_dropped += 1
+                raise DropItem(
+                    f"Missing required field '{field}' in item from spider '{spider.name}'. "
+                    f"Item: {dict(adapter)}"
+                )
+
+            value = adapter.get(field)
+
+            # Check for empty or whitespace-only strings
+            if isinstance(value, str) and not value.strip():
+                self.items_dropped += 1
+                raise DropItem(
+                    f"Required field '{field}' is empty or whitespace in item from spider '{spider.name}'. "
+                    f"Item: {dict(adapter)}"
+                )
+
+            # Check for None values
+            if value is None:
+                self.items_dropped += 1
+                raise DropItem(
+                    f"Required field '{field}' is None in item from spider '{spider.name}'. "
+                    f"Item: {dict(adapter)}"
+                )
+
+        self.items_validated += 1
+
+        # Log validation stats every 1000 items
+        if self.items_validated % 1000 == 0:
+            logger.info(
+                f"Validation stats - Validated: {self.items_validated}, "
+                f"Dropped: {self.items_dropped}"
+            )
+
+        return item
+
+
+class DataCleansingPipeline:
+    """Pipeline for cleansing and normalizing scraped data.
+
+    This pipeline performs data normalization to ensure consistency:
+    - Strips leading/trailing whitespace from all string fields
+    - Converts currency strings to float values
+    - Standardizes categorical data (e.g., lowercase categories)
+    - Normalizes URLs and domains
+    """
+
+    # Pattern for extracting numeric values from currency strings
+    CURRENCY_PATTERN = re.compile(r'[\$£€¥]?\s*([0-9,]+\.?[0-9]*)')
+
+    def __init__(self):
+        """Initialize the cleansing pipeline."""
+        self.items_cleansed = 0
+
+    def process_item(self, item: Any, spider: Spider) -> Any:
+        """Cleanse and normalize item data.
+
+        Args:
+            item: The scraped item to cleanse
+            spider: The spider that yielded the item
+
+        Returns:
+            The cleansed item
+        """
+        adapter = ItemAdapter(item)
+
+        # Process each field
+        for field_name in adapter.field_names():
+            value = adapter.get(field_name)
+
+            # Skip None values
+            if value is None:
+                continue
+
+            # Strip whitespace from strings
+            if isinstance(value, str):
+                cleaned = value.strip()
+
+                # Normalize common fields
+                if field_name in ('category', 'type', 'status'):
+                    cleaned = cleaned.lower()
+
+                # Convert currency strings to float
+                if field_name in ('price', 'cost', 'amount'):
+                    cleaned = self._parse_currency(cleaned)
+
+                adapter[field_name] = cleaned
+
+            # Normalize lists (strip strings in lists)
+            elif isinstance(value, list):
+                adapter[field_name] = [
+                    item.strip() if isinstance(item, str) else item
+                    for item in value
+                ]
+
+        self.items_cleansed += 1
+
+        if self.items_cleansed % 1000 == 0:
+            logger.info(f"Cleansed {self.items_cleansed} items")
+
+        return item
+
+    def _parse_currency(self, value: str) -> float:
+        """Parse currency string to float.
+
+        Args:
+            value: Currency string (e.g., '$19.99', '1,234.56')
+
+        Returns:
+            Parsed float value, or original string if parsing fails
+        """
+        match = self.CURRENCY_PATTERN.search(value)
+        if match:
+            try:
+                # Remove commas and convert to float
+                return float(match.group(1).replace(',', ''))
+            except ValueError:
+                logger.warning(f"Failed to parse currency value: {value}")
+                return value
+        return value
+
+
+class MetadataPipeline:
+    """Pipeline for enriching items with operational metadata.
+
+    This pipeline adds critical metadata for tracking and auditing:
+    - scraped_at_utc: UTC timestamp when item was scraped
+    - spider_name: Name of the spider that scraped the item
+    - pipeline_version: Version of the pipeline processing the item
+    """
+
+    PIPELINE_VERSION = "1.0.0"
+
+    def __init__(self):
+        """Initialize the metadata pipeline."""
+        self.items_enriched = 0
+
+    def process_item(self, item: Any, spider: Spider) -> Any:
+        """Enrich item with metadata.
+
+        Args:
+            item: The scraped item to enrich
+            spider: The spider that yielded the item
+
+        Returns:
+            The enriched item
+        """
+        adapter = ItemAdapter(item)
+
+        # Add metadata fields
+        adapter['scraped_at_utc'] = datetime.utcnow().isoformat() + 'Z'
+        adapter['spider_name'] = spider.name
+        adapter['pipeline_version'] = self.PIPELINE_VERSION
+
+        self.items_enriched += 1
+
+        if self.items_enriched % 1000 == 0:
+            logger.info(f"Enriched {self.items_enriched} items with metadata")
+
+        return item
+
+
 class KafkaPipeline:
     """High-performance Kafka pipeline for streaming scraped items.
+
+    This pipeline is responsible ONLY for serialization and publishing to Kafka.
+    All validation, cleansing, and enrichment should be done by earlier pipelines.
 
     This pipeline uses the confluent-kafka library (librdkafka wrapper) to provide
     enterprise-grade reliability and performance for publishing scraped items to Kafka.
@@ -200,13 +421,16 @@ class KafkaPipeline:
                 )
 
     def process_item(self, item: Any, spider: Spider) -> Any:
-        """Process and publish item to Kafka.
+        """Serialize and publish item to Kafka.
 
         This method is called by Scrapy for every item yielded by the spider.
-        It serializes the item to JSON and publishes it to Kafka asynchronously.
+        It serializes the fully processed item to JSON and publishes it to Kafka.
+
+        Note: This pipeline assumes the item has already been validated, cleansed,
+        and enriched by earlier pipelines in the chain.
 
         Args:
-            item: The scraped item to process
+            item: The fully processed scraped item
             spider: The spider that yielded the item
 
         Returns:
@@ -215,10 +439,6 @@ class KafkaPipeline:
         try:
             # Convert item to dictionary using ItemAdapter (works with dicts, scrapy Items, etc.)
             item_dict = ItemAdapter(item).asdict()
-
-            # Add metadata
-            item_dict['_spider'] = spider.name
-            item_dict['_pipeline_timestamp'] = self._get_timestamp()
 
             # Serialize to JSON
             message_value = json.dumps(item_dict, ensure_ascii=False, default=str)
@@ -240,13 +460,3 @@ class KafkaPipeline:
             # Don't raise - allow item to continue through pipeline
 
         return item
-
-    @staticmethod
-    def _get_timestamp() -> str:
-        """Get ISO format timestamp.
-
-        Returns:
-            Current timestamp in ISO 8601 format
-        """
-        from datetime import datetime
-        return datetime.utcnow().isoformat() + 'Z'

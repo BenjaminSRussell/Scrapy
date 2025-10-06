@@ -59,3 +59,19 @@ scrape_configs:
       - targets: ['postgres-exporter:9187']
         labels:
           service: 'postgres'
+
+  # Scrape Kafka JMX metrics
+  - job_name: 'kafka_jmx'
+    static_configs:
+      - targets: ['kafka-jmx-exporter:5556']
+        labels:
+          service: 'kafka'
+          component: 'broker'
+
+  # Scrape StatsD metrics (kafka-delta-ingest)
+  - job_name: 'statsd'
+    static_configs:
+      - targets: ['statsd-exporter:9102']
+        labels:
+          service: 'ingestor'
+          component: 'metrics'

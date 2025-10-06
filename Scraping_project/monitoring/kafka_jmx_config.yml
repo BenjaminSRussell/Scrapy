@@ -1,0 +1,141 @@
+# ==================================================================
+# Kafka JMX Exporter Configuration
+# ==================================================================
+# This configuration file defines which JMX metrics from Kafka
+# should be exposed to Prometheus
+# ==================================================================
+
+lowercaseOutputName: true
+lowercaseOutputLabelNames: true
+
+rules:
+  # ============================================
+  # Broker Topic Metrics
+  # ============================================
+  # Messages in per topic (critical for data funnel tracking)
+  - pattern: kafka.server<type=BrokerTopicMetrics, name=MessagesInPerSec, topic=(.+)><>Count
+    name: kafka_server_brokertopicmetrics_messagesin_total
+    labels:
+      topic: "$1"
+    type: COUNTER
+
+  # Bytes in per topic
+  - pattern: kafka.server<type=BrokerTopicMetrics, name=BytesInPerSec, topic=(.+)><>Count
+    name: kafka_server_brokertopicmetrics_bytesin_total
+    labels:
+      topic: "$1"
+    type: COUNTER
+
+  # Bytes out per topic
+  - pattern: kafka.server<type=BrokerTopicMetrics, name=BytesOutPerSec, topic=(.+)><>Count
+    name: kafka_server_brokertopicmetrics_bytesout_total
+    labels:
+      topic: "$1"
+    type: COUNTER
+
+  # Failed produce requests
+  - pattern: kafka.server<type=BrokerTopicMetrics, name=FailedProduceRequestsPerSec, topic=(.+)><>Count
+    name: kafka_server_brokertopicmetrics_failedproducerequests_total
+    labels:
+      topic: "$1"
+    type: COUNTER
+
+  # Failed fetch requests
+  - pattern: kafka.server<type=BrokerTopicMetrics, name=FailedFetchRequestsPerSec, topic=(.+)><>Count
+    name: kafka_server_brokertopicmetrics_failedfetchrequests_total
+    labels:
+      topic: "$1"
+    type: COUNTER
+
+  # ============================================
+  # Request Metrics
+  # ============================================
+  # Request latency percentiles
+  - pattern: kafka.network<type=RequestMetrics, name=TotalTimeMs, request=(.+)><>(\d+)thPercentile
+    name: kafka_network_requestmetrics_totaltimems
+    labels:
+      request: "$1"
+      quantile: "0.$2"
+    type: GAUGE
+
+  # Request queue size
+  - pattern: kafka.network<type=RequestMetrics, name=RequestQueueSize><>Value
+    name: kafka_network_requestmetrics_requestqueuesize
+    type: GAUGE
+
+  # ============================================
+  # Log Metrics
+  # ============================================
+  # Log flush rate
+  - pattern: kafka.log<type=LogFlushStats, name=LogFlushRateAndTimeMs><>Count
+    name: kafka_log_logflushstats_total
+    type: COUNTER
+
+  # Log size per partition
+  - pattern: kafka.log<type=Log, name=Size, topic=(.+), partition=(.+)><>Value
+    name: kafka_log_log_size_bytes
+    labels:
+      topic: "$1"
+      partition: "$2"
+    type: GAUGE
+
+  # ============================================
+  # Consumer Group Metrics
+  # ============================================
+  # Consumer lag (requires consumer groups to be active)
+  - pattern: kafka.consumer<type=consumer-fetch-manager-metrics, client-id=(.+), topic=(.+), partition=(.+)><>records-lag
+    name: kafka_consumer_records_lag
+    labels:
+      client_id: "$1"
+      topic: "$2"
+      partition: "$3"
+    type: GAUGE
+
+  # ============================================
+  # General Broker Metrics
+  # ============================================
+  # Active controller count (should be 1 in cluster)
+  - pattern: kafka.controller<type=KafkaController, name=ActiveControllerCount><>Value
+    name: kafka_controller_activecontrollercount
+    type: GAUGE
+
+  # Under-replicated partitions (critical for reliability)
+  - pattern: kafka.server<type=ReplicaManager, name=UnderReplicatedPartitions><>Value
+    name: kafka_server_replicamanager_underreplicatedpartitions
+    type: GAUGE
+
+  # Offline partitions (critical alert)
+  - pattern: kafka.controller<type=KafkaController, name=OfflinePartitionsCount><>Value
+    name: kafka_controller_offlinepartitionscount
+    type: GAUGE
+
+  # Leader election rate
+  - pattern: kafka.controller<type=ControllerStats, name=LeaderElectionRateAndTimeMs><>Count
+    name: kafka_controller_leaderelection_total
+    type: COUNTER
+
+  # ============================================
+  # JVM Metrics
+  # ============================================
+  # Heap memory usage
+  - pattern: 'java.lang<type=Memory><HeapMemoryUsage>(\w+)'
+    name: kafka_jvm_memory_heap_$1
+    type: GAUGE
+
+  # Garbage collection
+  - pattern: java.lang<type=GarbageCollector, name=(.+)><>CollectionCount
+    name: kafka_jvm_gc_collection_total
+    labels:
+      gc: "$1"
+    type: COUNTER
+
+  - pattern: java.lang<type=GarbageCollector, name=(.+)><>CollectionTime
+    name: kafka_jvm_gc_collection_seconds_total
+    labels:
+      gc: "$1"
+    type: COUNTER
+
+  # Thread count
+  - pattern: java.lang<type=Threading><>ThreadCount
+    name: kafka_jvm_threads_current
+    type: GAUGE
