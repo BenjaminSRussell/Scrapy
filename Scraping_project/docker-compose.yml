@@ -283,6 +283,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      target: crawler
     container_name: scraping_scrapy_app
     ports:
       - "9410:9410"  # Prometheus metrics endpoint
@@ -346,8 +347,9 @@ services:
   # Kafka to Delta Lake Ingestor (Rust) - High-performance streaming ingest
   kafka-delta-ingestor:
     build:
-      context: ./kafka-delta-ingest
-      dockerfile: ../Dockerfile.kafka-delta-ingest
+      context: .
+      dockerfile: Dockerfile
+      target: kafka-delta-ingest
     container_name: scraping_kafka_delta_ingestor
     command: >
       ingest scraped-items s3://delta-lake/scraped_data
@@ -390,7 +392,8 @@ services:
   # ingestor:
   #   build:
   #     context: .
-  #     dockerfile: Dockerfile.ingestor
+  #     dockerfile: Dockerfile
+  #     target: ingestor
   #   container_name: scraping_ingestor
   #   environment:
   #     - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
@@ -415,6 +418,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      target: crawler
     container_name: scraping_pipeline
     restart: unless-stopped
     networks:
@@ -430,7 +434,8 @@ services:
   metrics-exporter:
     build:
       context: .
-      dockerfile: monitoring/Dockerfile.metrics
+      dockerfile: Dockerfile
+      target: metrics
     container_name: scraping_metrics_exporter
     ports:
       - "8000:8000"
