@@ -1,0 +1,208 @@
+# UConn Web Scraping Pipeline Configuration
+# Single source of truth for all system settings
+
+# ============================================
+# Redis Configuration
+# ============================================
+redis:
+  host: localhost
+  port: 6379
+  db: 0
+  password: null  # Set if Redis requires authentication
+  max_connections: 50
+
+# ============================================
+# PostgreSQL Configuration
+# ============================================
+postgres:
+  host: localhost
+  port: 5432
+  database: scraping_pipeline
+  user: postgres
+  password: null  # Set via environment variable or here
+
+# ============================================
+# Stage 1: Discovery Settings
+# ============================================
+stage1:
+  # Scrapy Spider Settings
+  concurrent_requests: 512
+  concurrent_requests_per_domain: 256
+  download_timeout: 45
+  retry_times: 3
+  depth_limit: 5  # 0 = unlimited
+  closespider_pagecount: 0  # 0 = unlimited
+
+  # Memory limits
+  memory_limit_mb: 8192
+  memory_warning_mb: 6144
+
+  # Autothrottle
+  autothrottle_enabled: true
+  autothrottle_start_delay: 0
+  autothrottle_max_delay: 0.3
+  autothrottle_target_concurrency: 512
+
+  # Batch sizes
+  batch_size: 100  # URLs to batch before writing to Delta Lake
+  js_queue_batch_size: 50  # JS render queue batch size
+
+  # Circuit Breaker Settings
+  circuit_breaker_enabled: true
+  circuit_breaker_error_threshold: 10  # Errors before opening circuit
+  circuit_breaker_duration_seconds: 900  # 15 minutes
+
+  # Priority Queue Settings
+  use_redis_queue: true  # Use Redis priority queue instead of Scrapy's queue
+  priority_boost_keywords:
+    - research
+    - faculty
+    - publication
+    - people
+    - directory
+    - staff
+  priority_penalty_keywords:
+    - login
+    - calendar
+    - event
+    - news
+    - archive
+
+# ============================================
+# Stage 2: Analysis Settings
+# ============================================
+stage2:
+  # Worker Configuration
+  max_workers: 100
+  batch_size: 50
+  poll_interval_seconds: 3
+
+  # Quality Thresholds
+  min_word_count: 50
+  min_text_to_html_ratio: 0.1
+  massive_doc_threshold: 50000  # Characters to trigger Stage 4
+
+  # Retry Configuration
+  max_retries: 3
+  retry_backoff_base: 2  # Exponential backoff: 2^attempt seconds
+  retry_on_status_codes: [408, 429, 500, 502, 503, 504]
+
+# ============================================
+# Stage 3: Summarization Settings
+# ============================================
+stage3:
+  # Worker Configuration
+  max_workers: 50
+  batch_size: 100
+  poll_interval_seconds: 5
+
+  # Deduplication
+  similarity_threshold: 0.3  # MinHash LSH threshold (0.0-1.0)
+
+  # Model Settings
+  model_name: "sshleifer/distilbart-cnn-12-6"
+  max_length: 150
+  min_length: 50
+  device: "cpu"  # or "cuda" for GPU
+
+# ============================================
+# Stage 4: Large Document Processing
+# ============================================
+stage4:
+  # Chunking Settings
+  chunk_size: 10000
+  chunk_overlap: 500
+
+  # Model Settings
+  model_name: "facebook/bart-large-cnn"
+  max_summary_length: 500
+  min_summary_length: 100
+  device: "cpu"  # or "cuda" for GPU
+
+  # Processing
+  max_workers: 1  # CPU-bound, keep low
+
+# ============================================
+# Delta Lake Settings
+# ============================================
+delta_lake:
+  base_path: ./data/delta_lake
+  checkpoint_interval: 100  # Checkpoint every N writes
+  force_shutdown_timeout: 15  # Seconds before forced shutdown
+
+  # Table Names
+  tables:
+    stage1_discovery: stage1_discovery
+    stage1_errors: stage1_errors
+    stage1_js_render_queue: stage1_js_render_queue
+    stage2_page_analysis: stage2_page_analysis
+    stage3_summaries: stage3_summaries
+    stage4_large_docs: stage4_large_docs
+    stage4_summaries: stage4_summaries
+
+# ============================================
+# Message Queue Configuration
+# ============================================
+message_queues:
+  # Stage 1 -> Stage 2
+  stage1_to_stage2: stage1_discovered_urls
+
+  # Stage 2 -> Stage 3
+  stage2_to_stage3: stage2_analyzed_pages
+
+  # Stage 2 -> Stage 4 (large docs)
+  stage2_to_stage4: stage2_large_docs
+
+  # JS Render Queue
+  js_render_queue: stage1_js_render_pending
+  js_render_results: stage1_js_render_results
+
+  # Error Queues
+  stage1_errors: stage1_error_queue
+  stage2_errors: stage2_error_queue
+  stage3_errors: stage3_error_queue
+  stage4_errors: stage4_error_queue
+
+  # Queue Persistence Settings
+  persistent_queues:
+    - stage2_large_docs  # Stage 4 queue is persistent
+  transient_queues:
+    - stage1_discovered_urls
+    - stage2_analyzed_pages
+    - stage1_js_render_pending
+    - stage1_js_render_results
+
+# ============================================
+# Logging Configuration
+# ============================================
+logging:
+  level: INFO  # DEBUG, INFO, WARNING, ERROR
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file: ./data/logs/pipeline.log
+  max_bytes: 10485760  # 10MB
+  backup_count: 5
+
+# ============================================
+# Grafana/Monitoring Configuration
+# ============================================
+monitoring:
+  enabled: true
+  prometheus_port: 9090
+  grafana_port: 3000
+
+  # Metrics to track
+  metrics:
+    - urls_processed
+    - queue_depths
+    - consumer_lag
+    - error_rates
+    - processing_throughput
+    - circuit_breaker_status
+
+# ============================================
+# Data Export Settings
+# ============================================
+export:
+  default_format: csv  # csv, json, parquet
+  output_directory: ./exports
+  compression: gzip  # none, gzip, bz2, xz

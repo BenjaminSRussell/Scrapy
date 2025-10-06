@@ -1,0 +1,194 @@
+{
+  "dashboard": {
+    "title": "UConn Scraping Pipeline - Live Operations",
+    "tags": ["scraping", "pipeline", "monitoring"],
+    "timezone": "browser",
+    "panels": [
+      {
+        "id": 1,
+        "title": "Queue Depths",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+        "targets": [
+          {
+            "expr": "redis_queue_length{queue=\"stage1_discovered_urls\"}",
+            "legendFormat": "Stage 1 → Stage 2"
+          },
+          {
+            "expr": "redis_queue_length{queue=\"stage2_analyzed_pages\"}",
+            "legendFormat": "Stage 2 → Stage 3"
+          },
+          {
+            "expr": "redis_queue_length{queue=\"stage2_large_docs\"}",
+            "legendFormat": "Stage 2 → Stage 4 (Large Docs)"
+          },
+          {
+            "expr": "redis_queue_length{queue=\"stage1_js_render_pending\"}",
+            "legendFormat": "JS Render Queue"
+          }
+        ],
+        "yaxes": [
+          {"label": "Queue Depth (items)", "format": "short"},
+          {"label": null, "format": "short"}
+        ]
+      },
+      {
+        "id": 2,
+        "title": "System Throughput",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+        "targets": [
+          {
+            "expr": "rate(urls_processed_total{stage=\"stage1\"}[5m])",
+            "legendFormat": "Stage 1 (URLs/sec)"
+          },
+          {
+            "expr": "rate(urls_processed_total{stage=\"stage2\"}[5m])",
+            "legendFormat": "Stage 2 (Pages/sec)"
+          },
+          {
+            "expr": "rate(urls_processed_total{stage=\"stage3\"}[5m])",
+            "legendFormat": "Stage 3 (Summaries/sec)"
+          },
+          {
+            "expr": "rate(urls_processed_total{stage=\"stage4\"}[5m])",
+            "legendFormat": "Stage 4 (Large Docs/min)"
+          }
+        ],
+        "yaxes": [
+          {"label": "Processing Rate", "format": "ops"},
+          {"label": null, "format": "short"}
+        ]
+      },
+      {
+        "id": 3,
+        "title": "Error Rates by Stage",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+        "targets": [
+          {
+            "expr": "rate(errors_total{stage=\"stage1\"}[5m])",
+            "legendFormat": "Stage 1 Errors"
+          },
+          {
+            "expr": "rate(errors_total{stage=\"stage2\"}[5m])",
+            "legendFormat": "Stage 2 Errors"
+          },
+          {
+            "expr": "rate(errors_total{stage=\"stage3\"}[5m])",
+            "legendFormat": "Stage 3 Errors"
+          },
+          {
+            "expr": "rate(errors_total{stage=\"stage4\"}[5m])",
+            "legendFormat": "Stage 4 Errors"
+          }
+        ],
+        "yaxes": [
+          {"label": "Error Rate (errors/sec)", "format": "short"},
+          {"label": null, "format": "short"}
+        ]
+      },
+      {
+        "id": 4,
+        "title": "Consumer Lag",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+        "targets": [
+          {
+            "expr": "consumer_lag_seconds{consumer=\"stage2_consumer\"}",
+            "legendFormat": "Stage 2 Consumer Lag"
+          },
+          {
+            "expr": "consumer_lag_seconds{consumer=\"stage3_consumer\"}",
+            "legendFormat": "Stage 3 Consumer Lag"
+          },
+          {
+            "expr": "consumer_lag_seconds{consumer=\"stage4_consumer\"}",
+            "legendFormat": "Stage 4 Consumer Lag"
+          }
+        ],
+        "yaxes": [
+          {"label": "Lag (seconds)", "format": "s"},
+          {"label": null, "format": "short"}
+        ]
+      },
+      {
+        "id": 5,
+        "title": "Circuit Breaker Status",
+        "type": "stat",
+        "gridPos": {"h": 4, "w": 6, "x": 0, "y": 16},
+        "targets": [
+          {
+            "expr": "circuit_breaker_open_count",
+            "legendFormat": "Open Circuits"
+          }
+        ]
+      },
+      {
+        "id": 6,
+        "title": "Total URLs Discovered",
+        "type": "stat",
+        "gridPos": {"h": 4, "w": 6, "x": 6, "y": 16},
+        "targets": [
+          {
+            "expr": "total_urls_discovered",
+            "legendFormat": "Total URLs"
+          }
+        ]
+      },
+      {
+        "id": 7,
+        "title": "Active Workers",
+        "type": "stat",
+        "gridPos": {"h": 4, "w": 6, "x": 12, "y": 16},
+        "targets": [
+          {
+            "expr": "active_workers_count",
+            "legendFormat": "Workers"
+          }
+        ]
+      },
+      {
+        "id": 8,
+        "title": "Redis Memory Usage",
+        "type": "stat",
+        "gridPos": {"h": 4, "w": 6, "x": 18, "y": 16},
+        "targets": [
+          {
+            "expr": "redis_memory_used_bytes / 1024 / 1024",
+            "legendFormat": "Redis Memory (MB)"
+          }
+        ]
+      },
+      {
+        "id": 9,
+        "title": "Error Breakdown by Type",
+        "type": "piechart",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 20},
+        "targets": [
+          {
+            "expr": "sum(errors_total) by (error_type)",
+            "legendFormat": "{{error_type}}"
+          }
+        ]
+      },
+      {
+        "id": 10,
+        "title": "Domain Request Distribution",
+        "type": "table",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 20},
+        "targets": [
+          {
+            "expr": "topk(10, sum(requests_total) by (domain))",
+            "legendFormat": "{{domain}}"
+          }
+        ]
+      }
+    ],
+    "refresh": "10s",
+    "time": {
+      "from": "now-1h",
+      "to": "now"
+    }
+  }
+}

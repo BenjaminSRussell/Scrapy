@@ -115,31 +115,216 @@ graph TB
 
 ## 🚀 Quick Start
 
-### 📦 Installation
+### 📦 One-Command Setup
+
+> **⚠️ IMPORTANT**: Always use a virtual environment! This prevents system-wide Python conflicts and the `externally-managed-environment` error on macOS/Linux.
+
+**Automated Setup (Recommended):**
 
 ```bash
 # Clone repository
 git clone https://github.com/benjaminrussell/uconn-scraper.git
 cd uconn-scraper
 
-# Create virtual environment
-python -m venv .venv
-source .venv/bin/activate  # Windows: .venv\Scripts\activate
+# One command to set up everything!
+./start.sh
+```
 
-# Install ALL dependencies (single source of truth)
+This will:
+1. ✅ Check prerequisites (Python 3.10+, Docker, Docker Compose)
+2. ✅ Create and activate virtual environment
+3. ✅ Install all dependencies from `pyproject.toml`
+4. ✅ Start Docker services (Redis, PostgreSQL, Prometheus, Grafana)
+5. ✅ Verify service health
+6. ✅ Show you what to do next
+
+**Manual Setup (Alternative):**
+
+```bash
+# Step 1: Create virtual environment
+python3 -m venv .venv
+
+# Step 2: Activate virtual environment
+source .venv/bin/activate  # macOS/Linux
+# Windows: .venv\Scripts\activate
+
+# Step 3: Install ALL dependencies (from pyproject.toml)
 pip install -e .
 
-# Install Playwright browsers for JS rendering
+# Step 4: Start infrastructure
+docker-compose up -d
+
+# Step 5: Install Playwright browsers for JS rendering
 playwright install chromium
 
-# Validate setup
-python run_pipeline.py validate
-
-# Download transformer models (REQUIRED - ~2 GB total)
+# Step 6: Download transformer models (REQUIRED - ~2 GB total)
 python run_pipeline.py setup
 ```
 
+> **💡 Pro Tip**: If you see `externally-managed-environment` errors, you forgot to activate the virtual environment. Run `source .venv/bin/activate` again.
+
 > **⚠️ Model Download Required**: Models are downloaded via the unified CLI. DistilBART (350 MB) and BART-large (1.6 GB) are cached in `~/.cache/huggingface/hub/`.
+
+> **📚 See [QUICK_START.md](QUICK_START.md) for detailed instructions**
+
+## 🌐 Service Endpoints & Dashboards
+
+After running `./start.sh`, the following services will be available:
+
+### Core Services
+
+| Service | URL | Credentials | Purpose |
+|---------|-----|-------------|---------|
+| 🔴 **Redis** | `localhost:6379` | None | Message queues, URL deduplication, circuit breaker |
+| 🐘 **PostgreSQL** | `localhost:5432` | user: `postgres`<br>pass: `postgres` | Analytics database, error logs, performance metrics |
+| 📈 **Prometheus** | [http://localhost:9090](http://localhost:9090) | None | Metrics collection and time-series storage |
+| 📊 **Grafana** | [http://localhost:3000](http://localhost:3000) | user: `admin`<br>pass: `admin` | Real-time visualization dashboards |
+
+### Metrics Exporters
+
+| Service | URL | Purpose |
+|---------|-----|---------|
+| **Redis Exporter** | `localhost:9121` | Exports Redis metrics to Prometheus |
+| **PostgreSQL Exporter** | `localhost:9187` | Exports PostgreSQL metrics to Prometheus |
+| **Pipeline Metrics** | `localhost:9091` | Custom pipeline metrics (when running) |
+
+### 📊 Available Grafana Dashboards
+
+Once Grafana is running at [http://localhost:3000](http://localhost:3000), you'll have access to:
+
+#### **Main Pipeline Dashboard** (Auto-provisioned)
+
+1. **Queue Depths** (Time Series Graph)
+   - Stage 1 → Stage 2 queue depth
+   - Stage 2 → Stage 3 queue depth
+   - Stage 2 → Stage 4 (Large Docs) queue depth
+   - JS Render Queue depth
+   - Updates every 10 seconds
+
+2. **System Throughput** (Time Series Graph)
+   - Stage 1: URLs discovered per second
+   - Stage 2: Pages analyzed per second
+   - Stage 3: Summaries generated per second
+   - Stage 4: Large docs processed per minute
+
+3. **Error Rates by Stage** (Time Series Graph)
+   - Error rates for each stage
+   - Broken down by error type
+   - 5-minute rolling average
+
+4. **Consumer Lag** (Time Series Graph)
+   - Delay between message queued and processed
+   - Separate line for each consumer
+   - Measured in seconds
+
+5. **Circuit Breaker Status** (Stat Panel)
+   - Number of currently open circuit breakers
+   - Domains temporarily blocked
+
+6. **Total URLs Discovered** (Stat Panel)
+   - Cumulative count of unique URLs
+   - Updated in real-time
+
+7. **Active Workers** (Stat Panel)
+   - Number of active worker processes
+   - By stage
+
+8. **Redis Memory Usage** (Stat Panel)
+   - Current Redis memory consumption
+   - In megabytes
+
+9. **Error Breakdown** (Pie Chart)
+   - Distribution of errors by type
+   - Helps identify common failure patterns
+
+10. **Domain Request Distribution** (Table)
+    - Top 10 most-crawled domains
+    - Request counts per domain
+
+#### **Redis Dashboard** (Built-in)
+- Connected clients
+- Memory usage trends
+- Command statistics
+- Key space analytics
+
+#### **PostgreSQL Dashboard** (Built-in)
+- Database size
+- Connection counts
+- Query performance
+- Transaction rates
+
+---
+
+## 🚀 What Does `start.sh` Do?
+
+The `start.sh` script is a complete automation tool that sets up your entire environment:
+
+### Step-by-Step Breakdown:
+
+#### **[1/5] Checking Prerequisites**
+- ✅ Verifies Python 3.10+ is installed
+- ✅ Verifies Docker is installed and running
+- ✅ Verifies Docker Compose is available
+- ❌ Exits with helpful error messages if anything is missing
+
+#### **[2/5] Setting Up Python Environment**
+- ✅ Creates `.venv` virtual environment (if it doesn't exist)
+- ✅ Activates the virtual environment automatically
+- ✅ Upgrades pip to latest version
+- ✅ Installs all dependencies from `pyproject.toml` including:
+  - Scrapy, Playwright, httpx (crawling)
+  - Redis, psycopg2 (databases)
+  - Transformers, torch (ML models)
+  - Prometheus-client (monitoring)
+  - All other requirements
+
+#### **[3/5] Starting Docker Infrastructure**
+- ✅ Checks if Docker daemon is running
+- ✅ Runs `docker-compose up -d` to start:
+  - Redis container
+  - PostgreSQL container
+  - Prometheus container
+  - Grafana container
+  - Redis Exporter
+  - PostgreSQL Exporter
+- ✅ Waits for services to become healthy
+- ✅ Verifies each service started successfully
+
+#### **[4/5] Service Endpoints**
+- 📋 Displays all service URLs and credentials
+- 📋 Shows you where to access Grafana, Prometheus, etc.
+
+#### **[5/5] System Status**
+- ✅ Tests Redis connection with `redis-cli ping`
+- ✅ Runs `drain_lake.py --list` to show queue status
+- ✅ Displays next steps for running the pipeline
+
+### Output Example:
+
+```
+╔════════════════════════════════════════════════════════════════╗
+║  Infrastructure Started Successfully! 🎉                       ║
+╚════════════════════════════════════════════════════════════════╝
+
+Next Steps:
+
+  Option A: Run monolithic pipeline (simpler, all-in-one)
+    python run_pipeline.py run
+
+  Option B: Run distributed pipeline (production-grade)
+    Terminal 1: python monitoring/metrics_exporter.py
+    Terminal 2: python src/consumers/delta_consumer.py --all
+    Terminal 3: cd src/stage1 && scrapy crawl scout
+    Terminal 4: python src/stage2/stage2_worker.py
+
+  Management:
+    • Check health:   python run_pipeline.py health
+    • Manage queues:  python drain_lake.py --list
+    • View logs:      docker-compose logs -f
+    • Stop services:  docker-compose down
+```
+
+---
 
 ### 🎮 Unified CLI Commands
 

@@ -1,0 +1,157 @@
+version: '3.8'
+
+# ==================================================================
+# UConn Scraping Pipeline - Complete Infrastructure Stack
+# ==================================================================
+# Quick start: docker-compose up -d
+# Stop all:    docker-compose down
+# View logs:   docker-compose logs -f
+# ==================================================================
+
+services:
+  # ============================================
+  # Core Infrastructure
+  # ============================================
+
+  # Redis - Message queues, priority queue, circuit breaker
+  redis:
+    image: redis:7-alpine
+    container_name: scraping_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes --maxmemory 2gb --maxmemory-policy allkeys-lru
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - scraping_network
+
+  # PostgreSQL - Analytics database for metrics
+  postgres:
+    image: postgres:16-alpine
+    container_name: scraping_postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: scraping_pipeline
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - scraping_network
+
+  # ============================================
+  # Monitoring Stack
+  # ============================================
+
+  # Prometheus - Metrics collection and storage
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: scraping_prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+      - '--storage.tsdb.retention.time=30d'
+    restart: unless-stopped
+    networks:
+      - scraping_network
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+
+  # Grafana - Visualization and dashboards
+  grafana:
+    image: grafana/grafana:latest
+    container_name: scraping_grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_INSTALL_PLUGINS=redis-datasource
+      - GF_SERVER_ROOT_URL=http://localhost:3000
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana_datasource.yml:/etc/grafana/provisioning/datasources/datasource.yml
+      - ./monitoring/grafana_dashboard.json:/etc/grafana/provisioning/dashboards/dashboard.json
+    restart: unless-stopped
+    networks:
+      - scraping_network
+    depends_on:
+      - prometheus
+
+  # Redis Exporter - Export Redis metrics to Prometheus
+  redis-exporter:
+    image: oliver006/redis_exporter:latest
+    container_name: scraping_redis_exporter
+    ports:
+      - "9121:9121"
+    environment:
+      - REDIS_ADDR=redis:6379
+    restart: unless-stopped
+    networks:
+      - scraping_network
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  # PostgreSQL Exporter - Export PostgreSQL metrics to Prometheus
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:latest
+    container_name: scraping_postgres_exporter
+    ports:
+      - "9187:9187"
+    environment:
+      - DATA_SOURCE_NAME=postgresql://postgres:postgres@postgres:5432/scraping_pipeline?sslmode=disable
+    restart: unless-stopped
+    networks:
+      - scraping_network
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+# ============================================
+# Volumes
+# ============================================
+volumes:
+  redis_data:
+    driver: local
+
+  postgres_data:
+    driver: local
+
+  prometheus_data:
+    driver: local
+
+  grafana_data:
+    driver: local
+
+# ============================================
+# Networks
+# ============================================
+networks:
+  scraping_network:
+    name: scraping_network
+    driver: bridge
