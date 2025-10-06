@@ -1,0 +1,79 @@
+# ==================================================================
+# Multi-Stage Dockerfile for kafka-delta-ingest (Rust Application)
+# ==================================================================
+# Stage 1: Builder - Compile Rust application
+# Stage 2: Final - Minimal runtime image with only the binary
+# ==================================================================
+
+# ============================================
+# Stage 1: Builder - Build the Rust Binary
+# ============================================
+FROM rust:1.75-slim-bookworm AS builder
+
+# Install system dependencies required for building
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    pkg-config \
+    libssl-dev \
+    cmake \
+    g++ \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set working directory
+WORKDIR /build
+
+# Copy only dependency manifests first for better layer caching
+# This allows Docker to cache the dependencies layer if Cargo.toml doesn't change
+COPY Cargo.toml Cargo.lock ./
+
+# Create a dummy main.rs to build dependencies
+RUN mkdir -p src && \
+    echo "fn main() {}" > src/main.rs && \
+    cargo build --release && \
+    rm -rf src
+
+# Now copy the actual source code
+COPY src ./src
+
+# Build the actual application
+# Touch main.rs to force rebuild of the application code (not cached dependencies)
+RUN touch src/main.rs && \
+    cargo build --release --bin kafka-delta-ingest
+
+# Strip debug symbols to reduce binary size
+RUN strip /build/target/release/kafka-delta-ingest
+
+# ============================================
+# Stage 2: Final - Minimal Runtime Image
+# ============================================
+FROM debian:bookworm-slim
+
+# Install only runtime dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    libssl3 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create non-root user for security
+RUN groupadd -r ingestor && \
+    useradd -r -g ingestor -u 1000 ingestor && \
+    mkdir -p /delta /app && \
+    chown -R ingestor:ingestor /delta /app
+
+# Set working directory
+WORKDIR /app
+
+# Copy the compiled binary from builder stage
+COPY --from=builder --chown=ingestor:ingestor /build/target/release/kafka-delta-ingest /usr/local/bin/
+
+# Switch to non-root user
+USER ingestor
+
+# Expose metrics port (if kafka-delta-ingest supports it)
+EXPOSE 8001
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD pgrep kafka-delta-ingest || exit 1
+
+# The actual command will be provided in docker-compose.yml
+ENTRYPOINT ["kafka-delta-ingest"]

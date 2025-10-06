@@ -1,0 +1,117 @@
+# ==================================================================
+# Alertmanager Configuration - Clustered Setup
+# ==================================================================
+# This configuration is shared across all 3 Alertmanager replicas.
+# The cluster uses gossip protocol to share state (silences, etc.)
+# ==================================================================
+
+global:
+  # Default SMTP settings (configure for production)
+  smtp_smarthost: 'localhost:25'
+  smtp_from: 'alertmanager@scraping-pipeline.local'
+  smtp_require_tls: false
+
+# Grouping, routing, and notification settings
+route:
+  # Default receiver for all alerts
+  receiver: 'default'
+
+  # Group alerts by cluster, alertname, and severity
+  group_by: ['cluster', 'alertname', 'severity']
+
+  # Wait time before sending initial notification
+  group_wait: 10s
+
+  # Wait time before sending notification about new alerts in group
+  group_interval: 10s
+
+  # Minimum time between notifications for same group
+  repeat_interval: 3h
+
+  # Child routes for specific alert types
+  routes:
+    # Critical alerts - immediate notification
+    - receiver: 'critical'
+      match:
+        severity: critical
+      repeat_interval: 30m
+      continue: false
+
+    # Warning alerts - batched notification
+    - receiver: 'warning'
+      match:
+        severity: warning
+      repeat_interval: 2h
+      continue: false
+
+    # Info alerts - less frequent notification
+    - receiver: 'info'
+      match:
+        severity: info
+      repeat_interval: 12h
+      continue: false
+
+# Alert inhibition rules
+# Suppress certain alerts when others are firing
+inhibit_rules:
+  # Suppress warning alerts when critical alert is firing
+  - source_match:
+      severity: 'critical'
+    target_match:
+      severity: 'warning'
+    equal: ['cluster', 'alertname', 'spider']
+
+  # Suppress info alerts when warning or critical is firing
+  - source_match:
+      severity: 'warning'
+    target_match:
+      severity: 'info'
+    equal: ['cluster', 'alertname', 'spider']
+
+# Notification receivers
+receivers:
+  # Default receiver - log to console
+  - name: 'default'
+    # No configuration = alerts are logged but not sent
+
+  # Critical alerts receiver
+  - name: 'critical'
+    # Email notifications for critical alerts
+    # email_configs:
+    #   - to: 'ops-team@example.com'
+    #     send_resolved: true
+    #     headers:
+    #       Subject: '[CRITICAL] Scraping Pipeline Alert'
+
+    # Slack notifications (configure webhook URL in production)
+    # slack_configs:
+    #   - api_url: 'https://hooks.slack.com/services/YOUR/WEBHOOK/URL'
+    #     channel: '#alerts-critical'
+    #     send_resolved: true
+    #     title: '[CRITICAL] {{ .GroupLabels.alertname }}'
+    #     text: '{{ range .Alerts }}{{ .Annotations.description }}{{ end }}'
+
+    # PagerDuty integration (configure in production)
+    # pagerduty_configs:
+    #   - service_key: 'YOUR_PAGERDUTY_SERVICE_KEY'
+    #     send_resolved: true
+
+  # Warning alerts receiver
+  - name: 'warning'
+    # email_configs:
+    #   - to: 'dev-team@example.com'
+    #     send_resolved: true
+    #     headers:
+    #       Subject: '[WARNING] Scraping Pipeline Alert'
+
+  # Info alerts receiver
+  - name: 'info'
+    # email_configs:
+    #   - to: 'monitoring@example.com'
+    #     send_resolved: false
+    #     headers:
+    #       Subject: '[INFO] Scraping Pipeline Notification'
+
+# Template files for custom alert messages
+# templates:
+#   - '/etc/alertmanager/templates/*.tmpl'

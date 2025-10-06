@@ -1,5 +1,72 @@
-.venv
-data
-__pycache__
-.pytest_cache
-.ruff_cache
+# ============================================
+# .dockerignore for Scrapy Application
+# ============================================
+# Prevents unnecessary files from being copied into Docker images
+# This reduces build context size and prevents secrets from leaking
+
+# Version Control
+.git/
+.gitignore
+.gitattributes
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+pip-log.txt
+.tox/
+.coverage
+*.egg-info/
+dist/
+build/
+
+# Virtual Environments
+venv/
+.venv/
+ENV/
+env/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Environment Variables & Secrets (CRITICAL!)
+.env
+.env.*
+*.pem
+*.key
+*.crt
+secrets/
+credentials/
+
+# Local Data (exclude from image)
+data/
+
+# Docker
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# Documentation
+README.md
+docs/
+*.md
+LICENSE
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+
+# Testing
+tests/
+
+# Temporary Files
+tmp/
+*.log

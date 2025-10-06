@@ -1,6 +1,26 @@
 global:
   scrape_interval: 15s
   evaluation_interval: 15s
+  external_labels:
+    cluster: 'scraping-pipeline'
+    # This will be overridden by environment variable for each replica
+    replica: '${PROMETHEUS_REPLICA:-a}'
+
+# Alertmanager cluster configuration
+alerting:
+  alertmanagers:
+    - static_configs:
+        # Send to all 3 Alertmanager replicas
+        # The cluster handles deduplication internally
+        - targets:
+            - 'alertmanager-1:9093'
+            - 'alertmanager-2:9093'
+            - 'alertmanager-3:9093'
+
+# Load recording and alerting rules
+rule_files:
+  - '/etc/prometheus/recording_rules.yml'
+  # - '/etc/prometheus/alerting_rules.yml'  # Uncomment when ready
 
 scrape_configs:
   # Scrape Scrapy application metrics
