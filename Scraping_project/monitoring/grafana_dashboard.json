@@ -1,194 +1,503 @@
 {
   "dashboard": {
-    "title": "UConn Scraping Pipeline - Live Operations",
-    "tags": ["scraping", "pipeline", "monitoring"],
+    "title": "UConn Scraping Pipeline - Enhanced Live Dashboard",
+    "tags": ["scraping", "pipeline", "monitoring", "delta-lake"],
     "timezone": "browser",
+    "refresh": "5s",
+    "time": {
+      "from": "now-15m",
+      "to": "now"
+    },
     "panels": [
       {
         "id": 1,
-        "title": "Queue Depths",
-        "type": "graph",
-        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+        "title": "📊 Delta Lake Breakdown (Records)",
+        "type": "piechart",
+        "gridPos": {"h": 10, "w": 8, "x": 0, "y": 0},
         "targets": [
           {
-            "expr": "redis_queue_length{queue=\"stage1_discovered_urls\"}",
-            "legendFormat": "Stage 1 → Stage 2"
-          },
-          {
-            "expr": "redis_queue_length{queue=\"stage2_analyzed_pages\"}",
-            "legendFormat": "Stage 2 → Stage 3"
-          },
-          {
-            "expr": "redis_queue_length{queue=\"stage2_large_docs\"}",
-            "legendFormat": "Stage 2 → Stage 4 (Large Docs)"
-          },
-          {
-            "expr": "redis_queue_length{queue=\"stage1_js_render_pending\"}",
-            "legendFormat": "JS Render Queue"
+            "expr": "delta_lake_records",
+            "legendFormat": "{{table}}",
+            "refId": "A"
           }
         ],
-        "yaxes": [
-          {"label": "Queue Depth (items)", "format": "short"},
-          {"label": null, "format": "short"}
-        ]
+        "options": {
+          "legend": {
+            "displayMode": "table",
+            "placement": "right",
+            "values": ["value", "percent"]
+          },
+          "pieType": "donut",
+          "tooltip": {
+            "mode": "single"
+          },
+          "displayLabels": ["name", "value", "percent"]
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "decimals": 0
+          }
+        }
       },
       {
         "id": 2,
-        "title": "System Throughput",
-        "type": "graph",
-        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+        "title": "⚡ Live URL Throughput (5-second updates)",
+        "type": "timeseries",
+        "gridPos": {"h": 10, "w": 16, "x": 8, "y": 0},
         "targets": [
           {
-            "expr": "rate(urls_processed_total{stage=\"stage1\"}[5m])",
-            "legendFormat": "Stage 1 (URLs/sec)"
+            "expr": "urls_processed_per_second{stage=\"stage1\"}",
+            "legendFormat": "Stage 1: Discovery",
+            "refId": "A"
           },
           {
-            "expr": "rate(urls_processed_total{stage=\"stage2\"}[5m])",
-            "legendFormat": "Stage 2 (Pages/sec)"
+            "expr": "urls_processed_per_second{stage=\"stage2\"}",
+            "legendFormat": "Stage 2: Analysis",
+            "refId": "B"
           },
           {
-            "expr": "rate(urls_processed_total{stage=\"stage3\"}[5m])",
-            "legendFormat": "Stage 3 (Summaries/sec)"
+            "expr": "urls_processed_per_second{stage=\"stage3\"}",
+            "legendFormat": "Stage 3: Summarization",
+            "refId": "C"
           },
           {
-            "expr": "rate(urls_processed_total{stage=\"stage4\"}[5m])",
-            "legendFormat": "Stage 4 (Large Docs/min)"
+            "expr": "urls_processed_per_second{stage=\"stage4\"}",
+            "legendFormat": "Stage 4: Large Docs",
+            "refId": "D"
           }
         ],
-        "yaxes": [
-          {"label": "Processing Rate", "format": "ops"},
-          {"label": null, "format": "short"}
-        ]
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "custom": {
+              "lineWidth": 2,
+              "fillOpacity": 20,
+              "showPoints": "auto"
+            }
+          },
+          "overrides": []
+        },
+        "options": {
+          "tooltip": {
+            "mode": "multi",
+            "sort": "none"
+          },
+          "legend": {
+            "displayMode": "list",
+            "placement": "bottom"
+          }
+        }
       },
       {
         "id": 3,
-        "title": "Error Rates by Stage",
-        "type": "graph",
-        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+        "title": "📈 Stage 1: URLs Discovered",
+        "type": "stat",
+        "gridPos": {"h": 3, "w": 6, "x": 0, "y": 10},
         "targets": [
           {
-            "expr": "rate(errors_total{stage=\"stage1\"}[5m])",
-            "legendFormat": "Stage 1 Errors"
-          },
-          {
-            "expr": "rate(errors_total{stage=\"stage2\"}[5m])",
-            "legendFormat": "Stage 2 Errors"
-          },
-          {
-            "expr": "rate(errors_total{stage=\"stage3\"}[5m])",
-            "legendFormat": "Stage 3 Errors"
-          },
-          {
-            "expr": "rate(errors_total{stage=\"stage4\"}[5m])",
-            "legendFormat": "Stage 4 Errors"
+            "expr": "delta_lake_records{table=\"stage1_discovery\"}",
+            "legendFormat": "URLs",
+            "refId": "A"
           }
         ],
-        "yaxes": [
-          {"label": "Error Rate (errors/sec)", "format": "short"},
-          {"label": null, "format": "short"}
-        ]
+        "options": {
+          "graphMode": "area",
+          "colorMode": "value",
+          "textMode": "value_and_name",
+          "reduceOptions": {
+            "values": false,
+            "calcs": ["lastNotNull"]
+          }
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"value": null, "color": "blue"}
+              ]
+            }
+          }
+        }
       },
       {
         "id": 4,
-        "title": "Consumer Lag",
-        "type": "graph",
-        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+        "title": "🔍 Stage 2: Pages Analyzed",
+        "type": "stat",
+        "gridPos": {"h": 3, "w": 6, "x": 6, "y": 10},
         "targets": [
           {
-            "expr": "consumer_lag_seconds{consumer=\"stage2_consumer\"}",
-            "legendFormat": "Stage 2 Consumer Lag"
-          },
-          {
-            "expr": "consumer_lag_seconds{consumer=\"stage3_consumer\"}",
-            "legendFormat": "Stage 3 Consumer Lag"
-          },
-          {
-            "expr": "consumer_lag_seconds{consumer=\"stage4_consumer\"}",
-            "legendFormat": "Stage 4 Consumer Lag"
+            "expr": "delta_lake_records{table=\"stage2_page_analysis\"}",
+            "legendFormat": "Pages",
+            "refId": "A"
           }
         ],
-        "yaxes": [
-          {"label": "Lag (seconds)", "format": "s"},
-          {"label": null, "format": "short"}
-        ]
+        "options": {
+          "graphMode": "area",
+          "colorMode": "value",
+          "textMode": "value_and_name"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"value": null, "color": "purple"}
+              ]
+            }
+          }
+        }
       },
       {
         "id": 5,
-        "title": "Circuit Breaker Status",
+        "title": "⚡ Stage 3: Summaries",
         "type": "stat",
-        "gridPos": {"h": 4, "w": 6, "x": 0, "y": 16},
+        "gridPos": {"h": 3, "w": 6, "x": 12, "y": 10},
         "targets": [
           {
-            "expr": "circuit_breaker_open_count",
-            "legendFormat": "Open Circuits"
+            "expr": "delta_lake_records{table=\"stage3_summaries\"}",
+            "legendFormat": "Summaries",
+            "refId": "A"
           }
-        ]
+        ],
+        "options": {
+          "graphMode": "area",
+          "colorMode": "value",
+          "textMode": "value_and_name"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"value": null, "color": "green"}
+              ]
+            }
+          }
+        }
       },
       {
         "id": 6,
-        "title": "Total URLs Discovered",
+        "title": "🏋️ Stage 4: Large Docs",
         "type": "stat",
-        "gridPos": {"h": 4, "w": 6, "x": 6, "y": 16},
+        "gridPos": {"h": 3, "w": 6, "x": 18, "y": 10},
         "targets": [
           {
-            "expr": "total_urls_discovered",
-            "legendFormat": "Total URLs"
+            "expr": "delta_lake_records{table=\"stage4_summaries\"}",
+            "legendFormat": "Processed",
+            "refId": "A"
           }
-        ]
+        ],
+        "options": {
+          "graphMode": "area",
+          "colorMode": "value",
+          "textMode": "value_and_name"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"value": null, "color": "orange"}
+              ]
+            }
+          }
+        }
       },
       {
         "id": 7,
-        "title": "Active Workers",
+        "title": "💾 Total Delta Lake Records",
         "type": "stat",
-        "gridPos": {"h": 4, "w": 6, "x": 12, "y": 16},
+        "gridPos": {"h": 3, "w": 6, "x": 0, "y": 13},
         "targets": [
           {
-            "expr": "active_workers_count",
-            "legendFormat": "Workers"
+            "expr": "delta_lake_total_records",
+            "legendFormat": "Total",
+            "refId": "A"
           }
-        ]
+        ],
+        "options": {
+          "graphMode": "area",
+          "colorMode": "background",
+          "textMode": "value_and_name"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"value": 0, "color": "green"},
+                {"value": 10000, "color": "yellow"},
+                {"value": 100000, "color": "red"}
+              ]
+            }
+          }
+        }
       },
       {
         "id": 8,
-        "title": "Redis Memory Usage",
+        "title": "❌ Errors Logged",
         "type": "stat",
-        "gridPos": {"h": 4, "w": 6, "x": 18, "y": 16},
+        "gridPos": {"h": 3, "w": 6, "x": 6, "y": 13},
         "targets": [
           {
-            "expr": "redis_memory_used_bytes / 1024 / 1024",
-            "legendFormat": "Redis Memory (MB)"
+            "expr": "delta_lake_records{table=\"stage1_errors\"}",
+            "legendFormat": "Errors",
+            "refId": "A"
           }
-        ]
+        ],
+        "options": {
+          "graphMode": "area",
+          "colorMode": "value",
+          "textMode": "value_and_name"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"value": null, "color": "red"}
+              ]
+            }
+          }
+        }
       },
       {
         "id": 9,
-        "title": "Error Breakdown by Type",
-        "type": "piechart",
-        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 20},
+        "title": "📦 Large Docs Queued",
+        "type": "stat",
+        "gridPos": {"h": 3, "w": 6, "x": 12, "y": 13},
         "targets": [
           {
-            "expr": "sum(errors_total) by (error_type)",
-            "legendFormat": "{{error_type}}"
+            "expr": "delta_lake_records{table=\"stage4_large_docs\"}",
+            "legendFormat": "Queued",
+            "refId": "A"
           }
-        ]
+        ],
+        "options": {
+          "graphMode": "area",
+          "colorMode": "value",
+          "textMode": "value_and_name"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"value": null, "color": "yellow"}
+              ]
+            }
+          }
+        }
       },
       {
         "id": 10,
-        "title": "Domain Request Distribution",
-        "type": "table",
-        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 20},
+        "title": "🔴 Circuit Breakers Open",
+        "type": "stat",
+        "gridPos": {"h": 3, "w": 6, "x": 18, "y": 13},
         "targets": [
           {
-            "expr": "topk(10, sum(requests_total) by (domain))",
-            "legendFormat": "{{domain}}"
+            "expr": "circuit_breaker_open_count",
+            "legendFormat": "Blocked Domains",
+            "refId": "A"
           }
-        ]
+        ],
+        "options": {
+          "graphMode": "none",
+          "colorMode": "background",
+          "textMode": "value_and_name"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"value": 0, "color": "green"},
+                {"value": 1, "color": "yellow"},
+                {"value": 5, "color": "red"}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 11,
+        "title": "📊 Pipeline Progress (Cumulative)",
+        "type": "timeseries",
+        "gridPos": {"h": 8, "w": 24, "x": 0, "y": 16},
+        "targets": [
+          {
+            "expr": "delta_lake_records{table=\"stage1_discovery\"}",
+            "legendFormat": "Stage 1: URLs Discovered",
+            "refId": "A"
+          },
+          {
+            "expr": "delta_lake_records{table=\"stage2_page_analysis\"}",
+            "legendFormat": "Stage 2: Pages Analyzed",
+            "refId": "B"
+          },
+          {
+            "expr": "delta_lake_records{table=\"stage3_summaries\"}",
+            "legendFormat": "Stage 3: Summaries Generated",
+            "refId": "C"
+          },
+          {
+            "expr": "delta_lake_records{table=\"stage4_summaries\"}",
+            "legendFormat": "Stage 4: Large Docs Processed",
+            "refId": "D"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "custom": {
+              "lineWidth": 2,
+              "fillOpacity": 0
+            }
+          }
+        }
+      },
+      {
+        "id": 12,
+        "title": "Queue Depths (Real-time)",
+        "type": "timeseries",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 24},
+        "targets": [
+          {
+            "expr": "redis_queue_length{queue=\"stage1_discovered_urls\"}",
+            "legendFormat": "Stage 1 → Stage 2",
+            "refId": "A"
+          },
+          {
+            "expr": "redis_queue_length{queue=\"stage2_analyzed_pages\"}",
+            "legendFormat": "Stage 2 → Stage 3",
+            "refId": "B"
+          },
+          {
+            "expr": "redis_queue_length{queue=\"stage2_large_docs\"}",
+            "legendFormat": "Stage 2 → Stage 4",
+            "refId": "C"
+          },
+          {
+            "expr": "redis_queue_length{queue=\"stage1_js_render_pending\"}",
+            "legendFormat": "JS Render Queue",
+            "refId": "D"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short"
+          }
+        }
+      },
+      {
+        "id": 13,
+        "title": "💾 Delta Lake Storage Size",
+        "type": "timeseries",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 24},
+        "targets": [
+          {
+            "expr": "delta_lake_size_bytes{table=\"stage1_discovery\"} / 1024 / 1024",
+            "legendFormat": "Stage 1 (MB)",
+            "refId": "A"
+          },
+          {
+            "expr": "delta_lake_size_bytes{table=\"stage2_page_analysis\"} / 1024 / 1024",
+            "legendFormat": "Stage 2 (MB)",
+            "refId": "B"
+          },
+          {
+            "expr": "delta_lake_size_bytes{table=\"stage3_summaries\"} / 1024 / 1024",
+            "legendFormat": "Stage 3 (MB)",
+            "refId": "C"
+          },
+          {
+            "expr": "delta_lake_size_bytes{table=\"stage4_summaries\"} / 1024 / 1024",
+            "legendFormat": "Stage 4 (MB)",
+            "refId": "D"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "custom": {
+              "stacking": {
+                "mode": "normal"
+              }
+            }
+          }
+        }
+      },
+      {
+        "id": 14,
+        "title": "Error Rates by Stage",
+        "type": "timeseries",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 32},
+        "targets": [
+          {
+            "expr": "rate(errors_total{stage=\"stage1\"}[5m])",
+            "legendFormat": "Stage 1",
+            "refId": "A"
+          },
+          {
+            "expr": "rate(errors_total{stage=\"stage2\"}[5m])",
+            "legendFormat": "Stage 2",
+            "refId": "B"
+          },
+          {
+            "expr": "rate(errors_total{stage=\"stage3\"}[5m])",
+            "legendFormat": "Stage 3",
+            "refId": "C"
+          },
+          {
+            "expr": "rate(errors_total{stage=\"stage4\"}[5m])",
+            "legendFormat": "Stage 4",
+            "refId": "D"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short"
+          }
+        }
+      },
+      {
+        "id": 15,
+        "title": "Consumer Lag",
+        "type": "timeseries",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 32},
+        "targets": [
+          {
+            "expr": "consumer_lag_seconds{consumer=\"stage2_consumer\"}",
+            "legendFormat": "Stage 2",
+            "refId": "A"
+          },
+          {
+            "expr": "consumer_lag_seconds{consumer=\"stage3_consumer\"}",
+            "legendFormat": "Stage 3",
+            "refId": "B"
+          },
+          {
+            "expr": "consumer_lag_seconds{consumer=\"stage4_consumer\"}",
+            "legendFormat": "Stage 4",
+            "refId": "C"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "s"
+          }
+        }
       }
-    ],
-    "refresh": "10s",
-    "time": {
-      "from": "now-1h",
-      "to": "now"
-    }
+    ]
   }
 }

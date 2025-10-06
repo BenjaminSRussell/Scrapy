@@ -83,16 +83,34 @@ delta_lake_records = Gauge(
     ['table']
 )
 
+# New metrics for enhanced dashboard
+urls_processed_per_second = Gauge(
+    'urls_processed_per_second',
+    'URLs processed per second (5-second window)',
+    ['stage']
+)
+
+delta_lake_total_records = Gauge(
+    'delta_lake_total_records',
+    'Total number of records across all Delta Lake tables'
+)
+
+delta_lake_size_bytes = Gauge(
+    'delta_lake_size_bytes',
+    'Size of Delta Lake table in bytes',
+    ['table']
+)
+
 
 class MetricsExporter:
     """Exports pipeline metrics to Prometheus."""
 
-    def __init__(self, port: int = 9090, update_interval: int = 10):
+    def __init__(self, port: int = 9090, update_interval: int = 5):
         """Initialize exporter.
 
         Args:
             port: Port to expose metrics on
-            update_interval: Seconds between metric updates
+            update_interval: Seconds between metric updates (default: 5 for live stats)
         """
         self.port = port
         self.update_interval = update_interval
@@ -110,7 +128,11 @@ class MetricsExporter:
 
         self.delta = get_delta_manager()
 
-        logger.info(f"Metrics exporter initialized on port {port}")
+        # Track previous counts for rate calculation
+        self.previous_counts = {}
+        self.last_update_time = time.time()
+
+        logger.info(f"Metrics exporter initialized on port {port} with {update_interval}s update interval")
 
     def start(self):
         """Start metrics server and update loop."""
@@ -128,6 +150,7 @@ class MetricsExporter:
                 self._update_queue_metrics()
                 self._update_circuit_breaker_metrics()
                 self._update_delta_lake_metrics()
+                self._update_throughput_metrics()
 
                 logger.debug("Metrics updated successfully")
 
@@ -162,19 +185,36 @@ class MetricsExporter:
 
     def _update_delta_lake_metrics(self):
         """Update Delta Lake table metrics."""
+        import os
+
         try:
             tables = [
                 'stage1_discovery',
+                'stage1_errors',
                 'stage2_page_analysis',
                 'stage3_summaries',
+                'stage4_large_docs',
                 'stage4_summaries',
             ]
+
+            total_records = 0
 
             for table in tables:
                 try:
                     records = self.delta.read(table)
                     count = len(records) if records else 0
                     delta_lake_records.labels(table=table).set(count)
+                    total_records += count
+
+                    # Calculate table size
+                    table_path = f"data/delta_lake/{table}"
+                    if os.path.exists(table_path):
+                        size = sum(
+                            os.path.getsize(os.path.join(dirpath, filename))
+                            for dirpath, dirnames, filenames in os.walk(table_path)
+                            for filename in filenames
+                        )
+                        delta_lake_size_bytes.labels(table=table).set(size)
 
                     # Update total URLs discovered
                     if table == 'stage1_discovery':
@@ -183,8 +223,49 @@ class MetricsExporter:
                 except Exception as e:
                     logger.debug(f"Table {table} not found or empty: {e}")
 
+            # Set total across all tables
+            delta_lake_total_records.set(total_records)
+
         except Exception as e:
             logger.error(f"Error updating Delta Lake metrics: {e}")
+
+    def _update_throughput_metrics(self):
+        """Update real-time throughput metrics (URLs per second)."""
+        try:
+            current_time = time.time()
+            time_delta = current_time - self.last_update_time
+
+            if time_delta > 0:
+                tables_to_stages = {
+                    'stage1_discovery': 'stage1',
+                    'stage2_page_analysis': 'stage2',
+                    'stage3_summaries': 'stage3',
+                    'stage4_summaries': 'stage4',
+                }
+
+                for table, stage in tables_to_stages.items():
+                    try:
+                        records = self.delta.read(table)
+                        current_count = len(records) if records else 0
+
+                        # Get previous count
+                        previous_count = self.previous_counts.get(table, current_count)
+
+                        # Calculate rate (records per second)
+                        if time_delta > 0:
+                            rate = (current_count - previous_count) / time_delta
+                            urls_processed_per_second.labels(stage=stage).set(max(0, rate))
+
+                        # Update previous count
+                        self.previous_counts[table] = current_count
+
+                    except Exception as e:
+                        logger.debug(f"Could not calculate throughput for {table}: {e}")
+
+            self.last_update_time = current_time
+
+        except Exception as e:
+            logger.error(f"Error updating throughput metrics: {e}")
 
 
 def main():
