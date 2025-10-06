@@ -328,9 +328,13 @@ class ScoutSpider(scrapy.Spider):
                 logger.error(f"Failed to save errors: {e}")
 
     def _save_js_queue(self):
-        """Save JS render queue."""
+        """Save JS render queue with 'pending' status for worker pickup."""
         if self.js_render_queue:
             try:
+                # Add 'pending' status for JS bot to pick up
+                for record in self.js_render_queue:
+                    record['status'] = 'pending'
+
                 self.delta.write('stage1_js_render_queue', self.js_render_queue, mode='append', async_write=False)
                 logger.info(f"Saved {len(self.js_render_queue)} JS pages to render queue")
                 self.js_render_queue = []

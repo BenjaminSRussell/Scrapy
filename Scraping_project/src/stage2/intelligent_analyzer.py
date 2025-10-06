@@ -1,6 +1,6 @@
 """
 Stage 2: Intelligent Page Analysis with Quality Control and Triage.
-Routes massive documents to separate queue.
+Routes massive documents to separate queue for Stage 4 processing.
 """
 
 import re
@@ -11,6 +11,8 @@ from urllib.parse import urlparse
 import httpx
 from bs4 import BeautifulSoup
 
+from src.common.delta_lake import get_delta_manager
+
 logger = logging.getLogger(__name__)
 
 
@@ -19,11 +21,12 @@ class IntelligentAnalyzer:
 
     def __init__(self):
         self.client = httpx.Client(timeout=30, follow_redirects=True)
-        
+        self.delta = get_delta_manager()
+
         # Quality thresholds
         self.MIN_WORD_COUNT = 50
         self.MIN_TEXT_TO_HTML_RATIO = 0.1
-        self.MASSIVE_DOC_THRESHOLD = 50000  # 50k words
+        self.MASSIVE_DOC_THRESHOLD = 50000  # 50k characters (roughly 8-10k words)
 
     def analyze(self, url: str, is_heavy: bool = False) -> Dict[str, Any]:
         """Complete analysis with QC and triage."""
@@ -73,12 +76,17 @@ class IntelligentAnalyzer:
             text_to_html_ratio < self.MIN_TEXT_TO_HTML_RATIO
         )
 
-        # Document triage
-        is_massive_doc = word_count > self.MASSIVE_DOC_THRESHOLD
-        
-        # Extract keywords only if quality passes
+        # Document triage - check if text is massive
+        is_massive_doc = content_length > self.MASSIVE_DOC_THRESHOLD
+
+        # Route massive documents to Stage 4 queue
+        if is_massive_doc and not is_low_quality:
+            self._route_to_stage4(url, text, word_count, content_length)
+            logger.info(f"Routed large document ({content_length} chars) to Stage 4: {url[:80]}")
+
+        # Extract keywords only if quality passes and not massive
         keywords = []
-        if not is_low_quality:
+        if not is_low_quality and not is_massive_doc:
             keywords = self._extract_keywords(text, is_heavy)
 
         # Check for embedded PDFs
@@ -247,11 +255,29 @@ class IntelligentAnalyzer:
         """Calculate quality score 0-1."""
         # Word count component (0-0.6)
         word_score = min(word_count / 1000, 0.6)
-        
+
         # Text ratio component (0-0.4)
         ratio_score = min(text_ratio * 0.4, 0.4)
-        
+
         return round(word_score + ratio_score, 3)
+
+    def _route_to_stage4(self, url: str, text: str, word_count: int, content_length: int):
+        """Route large document to Stage 4 for heavyweight processing."""
+        from datetime import datetime
+
+        record = {
+            'url': url,
+            'text': text,
+            'word_count': word_count,
+            'content_length': content_length,
+            'status': 'pending',
+            'queued_at': datetime.now().isoformat(),
+        }
+
+        try:
+            self.delta.write('stage4_large_docs', [record], mode='append', async_write=True)
+        except Exception as e:
+            logger.error(f"Failed to route to Stage 4: {e}")
 
     def close(self):
         """Close HTTP client."""
