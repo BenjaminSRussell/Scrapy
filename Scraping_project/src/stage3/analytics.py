@@ -14,9 +14,31 @@ import httpx
 from bs4 import BeautifulSoup
 
 from src.common.constants import REQUEST_TIMEOUT, DEFAULT_USER_AGENT
-from src.common.nlp import extract_keywords
 
 logger = logging.getLogger(__name__)
+
+
+def extract_keywords(text: str, max_keywords: int = 10) -> list:
+    """Extract keywords using YAKE."""
+    if not text or len(text) < 50:
+        return []
+
+    try:
+        import yake
+
+        kw_extractor = yake.KeywordExtractor(
+            lan="en",
+            n=3,
+            dedupLim=0.9,
+            top=max_keywords,
+        )
+
+        keywords = kw_extractor.extract_keywords(text[:5000])
+        return [kw[0] for kw in keywords]
+
+    except Exception as e:
+        logger.warning(f"YAKE failed: {e}")
+        return []
 
 
 def clean_html(html: str) -> tuple[str, str]:

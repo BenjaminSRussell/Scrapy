@@ -1,34 +1,31 @@
-# Ultra Scraping Pipeline - Core Dependencies
-
-# Web scraping
+# Core async framework
 scrapy>=2.11.0
+playwright>=1.40.0
 aiohttp>=3.9.0
-httpx>=0.25.0
-requests>=2.31.0
-beautifulsoup4>=4.12.0
-lxml>=4.9.0
+asyncio-throttle>=1.0.0
 
 # Data storage
-PyYAML>=6.0.1
-jsonlines>=4.0.0
-pandas>=2.1.0
-pyarrow>=14.0.0
 deltalake>=0.14.0
+pyarrow>=14.0.0
 
-# NLP - YAKE + DeBerta only
+# NLP & ML
 transformers>=4.35.0
 torch>=2.1.0
 yake>=0.6.0
 
-# Media processing
+# OCR & Media
 easyocr>=1.7.0
 openai-whisper>=20231117
-ffmpeg-python>=0.2.0
+pdf2image>=1.16.0
+PyPDF2>=3.0.0
+pillow>=10.0.0
+
+# Web parsing
+beautifulsoup4>=4.12.0
+lxml>=4.9.0
+httpx>=0.25.0
 
 # Utilities
-psutil>=5.9.0
-pydantic>=2.5.0
-
-# Testing
-pytest>=7.4.0
-pytest-asyncio>=0.21.0
+pyyaml>=6.0
+tqdm>=4.66.0
+python-dotenv>=1.0.0

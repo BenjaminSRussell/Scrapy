@@ -40,12 +40,14 @@ class DeltaLakeManager:
         self.base_path = DELTA_LAKE
         self.base_path.mkdir(parents=True, exist_ok=True)
 
-        # Stage-specific tables with relationships
+        # Stage-specific tables with intelligent routing
         self.tables = {
             'stage1_discovery': self.base_path / 'stage1_discovery',
             'stage1_errors': self.base_path / 'stage1_errors',
+            'stage1_js_render_queue': self.base_path / 'stage1_js_render_queue',
             'stage2_page_analysis': self.base_path / 'stage2_page_analysis',
             'stage3_analytics': self.base_path / 'stage3_analytics',
+            'stage4_large_docs': self.base_path / 'stage4_large_docs',
             'stage4_summaries': self.base_path / 'stage4_summaries',
         }
 
