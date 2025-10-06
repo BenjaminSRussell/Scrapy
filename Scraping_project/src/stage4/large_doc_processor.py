@@ -1,12 +1,11 @@
-"""
-Stage 4: Large Document Processor
+"""Stage 4: Large Document Processor
 Handles heavyweight summarization of large documents using powerful LLMs.
 Processes documents from stage4_large_docs queue.
 """
 
 import logging
-from typing import Dict, Any, Optional
 from datetime import datetime
+from typing import Any
 
 from src.common.delta_lake import get_delta_manager
 
@@ -85,7 +84,7 @@ class LargeDocProcessor:
         except Exception as e:
             logger.error(f"Queue processing failed: {e}", exc_info=True)
 
-    def _process_document(self, doc: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    def _process_document(self, doc: dict[str, Any]) -> dict[str, Any] | None:
         """Process a single large document."""
         url = doc.get('url')
         text = doc.get('text', '')
@@ -152,7 +151,7 @@ class LargeDocProcessor:
 
         return chunks
 
-    def _summarize_chunk(self, text: str) -> Optional[str]:
+    def _summarize_chunk(self, text: str) -> str | None:
         """Summarize a single chunk of text."""
         if not text or len(text) < 100:
             return None

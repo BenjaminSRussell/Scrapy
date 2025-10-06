@@ -1,15 +1,14 @@
-"""
-JavaScript Rendering Bot - Handles JS-heavy pages with Playwright.
+"""JavaScript Rendering Bot - Handles JS-heavy pages with Playwright.
 """
 
 import asyncio
-import logging
 import hashlib
+import logging
 from datetime import datetime
-from typing import Dict, Any
+from typing import Any
 
-from playwright.async_api import async_playwright, Browser
 from bs4 import BeautifulSoup
+from playwright.async_api import Browser, async_playwright
 
 from src.common.delta_lake import get_delta_manager
 
@@ -77,7 +76,7 @@ class JSBot:
         self.delta.write('stage1_js_render_queue', updated_queue, mode='overwrite', async_write=False)
         logger.info(f"Marked {len(completed_hashes)} items as completed")
 
-    async def _render_page(self, browser: Browser, record: Dict[str, Any]) -> Dict[str, Any]:
+    async def _render_page(self, browser: Browser, record: dict[str, Any]) -> dict[str, Any]:
         """Render single page with JavaScript and extract all discovered links."""
         url = record.get('url')
         url_hash = record.get('url_hash')

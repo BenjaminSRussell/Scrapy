@@ -1,5 +1,4 @@
-"""
-Scrapy settings for uconn_scraper project
+"""Scrapy settings for uconn_scraper project
 
 This file contains base Scrapy settings. Runtime-configurable settings are loaded
 from config/development.yml or config/production.yml (see src/orchestrator/config.py)
@@ -13,8 +12,8 @@ Configuration precedence (highest to lowest):
 For more info: https://docs.scrapy.org/en/latest/topics/settings.html
 """
 
-import os
 import logging
+import os
 from pathlib import Path
 
 import yaml

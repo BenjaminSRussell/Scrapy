@@ -1,10 +1,9 @@
-"""
-Stage 2: Deep page analysis - word count, content size, errors, PDF+OCR+text, YAKE keywords.
+"""Stage 2: Deep page analysis - word count, content size, errors, PDF+OCR+text, YAKE keywords.
 """
 
-import re
 import logging
-from typing import Dict, List, Any
+import re
+from typing import Any
 
 import httpx
 from bs4 import BeautifulSoup
@@ -18,7 +17,7 @@ class PageAnalyzer:
     def __init__(self):
         self.client = httpx.Client(timeout=30, follow_redirects=True)
 
-    def analyze(self, url: str, is_heavy: bool = False) -> Dict[str, Any]:
+    def analyze(self, url: str, is_heavy: bool = False) -> dict[str, Any]:
         """Complete page analysis."""
         try:
             response = self.client.get(url)
@@ -44,7 +43,7 @@ class PageAnalyzer:
         except Exception as e:
             return self._error_record(url, 0, f'unknown: {str(e)}')
 
-    def _error_record(self, url: str, error_code: int, error_msg: str) -> Dict[str, Any]:
+    def _error_record(self, url: str, error_code: int, error_msg: str) -> dict[str, Any]:
         """Create error record."""
         is_404 = error_code == 404
         is_server_error = 500 <= error_code < 600
@@ -64,7 +63,7 @@ class PageAnalyzer:
             'has_ocr': False,
         }
 
-    def _analyze_html(self, url: str, html: str, is_heavy: bool) -> Dict[str, Any]:
+    def _analyze_html(self, url: str, html: str, is_heavy: bool) -> dict[str, Any]:
         """Analyze HTML page."""
         soup = BeautifulSoup(html, 'html.parser')
 
@@ -107,7 +106,7 @@ class PageAnalyzer:
             'ocr_text': '',
         }
 
-    def _analyze_pdf(self, url: str, pdf_content: bytes, is_heavy: bool) -> Dict[str, Any]:
+    def _analyze_pdf(self, url: str, pdf_content: bytes, is_heavy: bool) -> dict[str, Any]:
         """Analyze PDF with text extraction + OCR."""
         text_extracted = ''
         ocr_text = ''
@@ -115,8 +114,9 @@ class PageAnalyzer:
 
         # Try text extraction first
         try:
-            import PyPDF2
             import io
+
+            import PyPDF2
 
             pdf_file = io.BytesIO(pdf_content)
             reader = PyPDF2.PdfReader(pdf_file)
@@ -131,8 +131,9 @@ class PageAnalyzer:
         # If text extraction failed or minimal text, try OCR
         if len(text_extracted) < 100:
             try:
-                import easyocr
                 import io
+
+                import easyocr
                 from pdf2image import convert_from_bytes
 
                 reader = easyocr.Reader(['en'], gpu=False)
@@ -176,7 +177,7 @@ class PageAnalyzer:
             'keywords': keywords,
         }
 
-    def _analyze_binary(self, url: str, content: bytes, content_type: str, is_heavy: bool) -> Dict[str, Any]:
+    def _analyze_binary(self, url: str, content: bytes, content_type: str, is_heavy: bool) -> dict[str, Any]:
         """Analyze binary/image files with OCR."""
         ocr_text = ''
         has_ocr = False
@@ -184,8 +185,9 @@ class PageAnalyzer:
         # Try OCR on images
         if any(img_type in content_type for img_type in ['image', 'jpeg', 'jpg', 'png', 'gif', 'webp']):
             try:
-                import easyocr
                 import io
+
+                import easyocr
                 from PIL import Image
 
                 reader = easyocr.Reader(['en'], gpu=False)
@@ -221,7 +223,7 @@ class PageAnalyzer:
             'keywords': keywords,
         }
 
-    def _extract_keywords(self, text: str, is_heavy: bool) -> List[str]:
+    def _extract_keywords(self, text: str, is_heavy: bool) -> list[str]:
         """Extract keywords using YAKE."""
         if not text or len(text) < 50:
             return []
@@ -252,7 +254,7 @@ class PageAnalyzer:
         self.client.close()
 
 
-def analyze_url(url: str, is_heavy: bool = False) -> Dict[str, Any]:
+def analyze_url(url: str, is_heavy: bool = False) -> dict[str, Any]:
     """Convenience function to analyze a single URL."""
     analyzer = PageAnalyzer()
     try:

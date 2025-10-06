@@ -1,5 +1,4 @@
-"""
-Organized Delta Lake with separate tables per stage.
+"""Organized Delta Lake with separate tables per stage.
 Concurrent queue system for multiple requests.
 """
 
@@ -27,8 +26,7 @@ logger = logging.getLogger(__name__)
 
 
 class DeltaLakeManager:
-    """
-    Manages Delta Lake with organized stage-based tables.
+    """Manages Delta Lake with organized stage-based tables.
     Supports concurrent writes with queue system.
     """
 
@@ -123,14 +121,14 @@ class DeltaLakeManager:
         logger.info(f"✅ Wrote {len(data)} records to {table_name}")
 
     def write(self, table_name: str, data: list[dict[str, Any]], mode: str = "append", async_write: bool = True):
-        """
-        Write data to Delta Lake table.
+        """Write data to Delta Lake table.
 
         Args:
             table_name: 'stage1_discovery', 'stage2_analytics', or 'stage3_summaries'
             data: List of dictionaries
             mode: 'append' or 'overwrite'
             async_write: If True, queue for background write. If False, write immediately.
+
         """
         if async_write:
             # Queue for background processing

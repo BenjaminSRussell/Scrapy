@@ -1,5 +1,4 @@
-"""
-Stage 2: Analytics & Data Extraction
+"""Stage 2: Analytics & Data Extraction
 - Loads full webpage
 - Removes useless content
 - Extracts best information
@@ -9,11 +8,11 @@ Stage 2: Analytics & Data Extraction
 """
 
 import logging
-from typing import Optional
+
 import httpx
 from bs4 import BeautifulSoup
 
-from src.common.constants import REQUEST_TIMEOUT, DEFAULT_USER_AGENT
+from src.common.constants import DEFAULT_USER_AGENT, REQUEST_TIMEOUT
 
 logger = logging.getLogger(__name__)
 
@@ -42,11 +41,11 @@ def extract_keywords(text: str, max_keywords: int = 10) -> list:
 
 
 def clean_html(html: str) -> tuple[str, str]:
-    """
-    Remove all useless content from HTML and extract the best information.
+    """Remove all useless content from HTML and extract the best information.
 
     Returns:
         (title, cleaned_text)
+
     """
     soup = BeautifulSoup(html, 'html.parser')
 
@@ -73,12 +72,13 @@ def clean_html(html: str) -> tuple[str, str]:
     return title_text, text
 
 
-def process_image_ocr(image_url: str) -> Optional[str]:
+def process_image_ocr(image_url: str) -> str | None:
     """Extract text from image using OCR."""
     try:
-        import easyocr
         import tempfile
         from pathlib import Path
+
+        import easyocr
 
         # Download image
         with httpx.Client(timeout=REQUEST_TIMEOUT) as client:
@@ -107,12 +107,13 @@ def process_image_ocr(image_url: str) -> Optional[str]:
         return None
 
 
-def process_audio_whisper(audio_url: str) -> Optional[str]:
+def process_audio_whisper(audio_url: str) -> str | None:
     """Transcribe audio using Whisper."""
     try:
-        import whisper
         import tempfile
         from pathlib import Path
+
+        import whisper
 
         # Download audio
         with httpx.Client(timeout=REQUEST_TIMEOUT * 2) as client:
@@ -141,13 +142,14 @@ def process_audio_whisper(audio_url: str) -> Optional[str]:
         return None
 
 
-def process_video_whisper(video_url: str) -> Optional[str]:
+def process_video_whisper(video_url: str) -> str | None:
     """Extract audio from video and transcribe."""
     try:
-        import whisper
-        import ffmpeg
         import tempfile
         from pathlib import Path
+
+        import ffmpeg
+        import whisper
 
         # Download video
         with httpx.Client(timeout=REQUEST_TIMEOUT * 3) as client:
@@ -184,8 +186,7 @@ def process_video_whisper(video_url: str) -> Optional[str]:
 
 
 def analyze_url(url: str, metadata: dict) -> dict:
-    """
-    Analyze a URL and extract all useful data.
+    """Analyze a URL and extract all useful data.
 
     Returns analytics data ready for stage 3 summarization.
     """

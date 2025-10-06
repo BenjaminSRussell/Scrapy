@@ -1,21 +1,19 @@
-"""
-Ultimate Scout Spider - Most advanced URL discovery system.
+"""Ultimate Scout Spider - Most advanced URL discovery system.
 Detects JS-heavy pages and routes to specialized renderer.
 """
 
-import signal
 import hashlib
 import logging
 import re
+import signal
 from datetime import datetime
 from pathlib import Path
-from urllib.parse import urlparse, urljoin
-from typing import Set
+from urllib.parse import urljoin, urlparse
 
 import scrapy
 from scrapy.http import Response
 from scrapy.spidermiddlewares.httperror import HttpError
-from twisted.internet.error import DNSLookupError, TimeoutError, TCPTimedOutError
+from twisted.internet.error import DNSLookupError, TCPTimedOutError, TimeoutError
 
 from src.common.delta_lake import get_delta_manager
 from src.stage1.ultra_discovery import UltraDiscovery
@@ -48,7 +46,7 @@ class ScoutSpider(scrapy.Spider):
         super().__init__(*args, **kwargs)
         self.seed_file = seed_file or str(Path(__file__).parent.parent.parent / "data" / "raw" / "uconn_urls.csv")
         
-        self.url_hashes: Set[str] = set()
+        self.url_hashes: set[str] = set()
         self.discovered_records = []
         self.error_records = []
         self.js_render_queue = []

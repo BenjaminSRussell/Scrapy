@@ -1,5 +1,4 @@
-"""
-Stage 3 Asynchronous Worker
+"""Stage 3 Asynchronous Worker
 Similarity detection & summarization for quality documents.
 Uses datasketch MinHash for deduplication and BART for summarization.
 """
@@ -7,7 +6,7 @@ Uses datasketch MinHash for deduplication and BART for summarization.
 import asyncio
 import logging
 from datetime import datetime
-from typing import Dict, Any, List, Optional
+from typing import Any
 
 from datasketch import MinHash, MinHashLSH
 
@@ -20,12 +19,12 @@ class Stage3Worker:
     """Async worker for Stage 3 similarity detection & summarization."""
 
     def __init__(self, max_concurrent: int = 20, batch_size: int = 50):
-        """
-        Initialize Stage 3 worker.
+        """Initialize Stage 3 worker.
 
         Args:
             max_concurrent: Max concurrent summarization tasks
             batch_size: Number of documents to process per batch
+
         """
         self.max_concurrent = max_concurrent
         self.batch_size = batch_size
@@ -100,12 +99,12 @@ class Stage3Worker:
 
         logger.info("Stage 3 Worker completed all batches")
 
-    async def _deduplicate_documents(self, documents: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """
-        Use MinHash LSH to detect and remove near-duplicate documents.
+    async def _deduplicate_documents(self, documents: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Use MinHash LSH to detect and remove near-duplicate documents.
 
         Returns:
             List of unique documents
+
         """
         logger.info(f"Running similarity detection on {len(documents)} documents")
 
@@ -146,7 +145,7 @@ class Stage3Worker:
         logger.info(f"Deduplication complete: {len(unique_docs)} unique out of {len(documents)}")
         return unique_docs
 
-    async def _summarize_document(self, doc: Dict[str, Any]) -> Dict[str, Any]:
+    async def _summarize_document(self, doc: dict[str, Any]) -> dict[str, Any]:
         """Summarize single document using BART."""
         url = doc.get('url')
         url_hash = doc.get('url_hash')
@@ -189,8 +188,7 @@ class Stage3Worker:
                 }
 
     def _generate_summary_sync(self, text: str, max_length: int = 150) -> str:
-        """
-        Generate summary using BART (synchronous, CPU-bound).
+        """Generate summary using BART (synchronous, CPU-bound).
 
         Args:
             text: Input text to summarize
@@ -198,6 +196,7 @@ class Stage3Worker:
 
         Returns:
             Summary text
+
         """
         try:
             from transformers import pipeline
@@ -244,12 +243,12 @@ class Stage3Worker:
 
         return truncated + "..."
 
-    def _extract_key_facts(self, text: str, keywords: List[str]) -> List[str]:
-        """
-        Extract key facts from text using keywords.
+    def _extract_key_facts(self, text: str, keywords: list[str]) -> list[str]:
+        """Extract key facts from text using keywords.
 
         Returns:
             List of key fact sentences
+
         """
         sentences = text.split('.')
         key_facts = []

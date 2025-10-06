@@ -1,11 +1,10 @@
-"""
-Stage 2: Intelligent Page Analysis with Quality Control and Triage.
+"""Stage 2: Intelligent Page Analysis with Quality Control and Triage.
 Routes massive documents to separate queue for Stage 4 processing.
 """
 
-import re
 import logging
-from typing import Dict, Any
+import re
+from typing import Any
 
 import httpx
 from bs4 import BeautifulSoup
@@ -27,7 +26,7 @@ class IntelligentAnalyzer:
         self.MIN_TEXT_TO_HTML_RATIO = 0.1
         self.MASSIVE_DOC_THRESHOLD = 50000  # 50k characters (roughly 8-10k words)
 
-    def analyze(self, url: str, is_heavy: bool = False) -> Dict[str, Any]:
+    def analyze(self, url: str, is_heavy: bool = False) -> dict[str, Any]:
         """Complete analysis with QC and triage."""
         try:
             response = self.client.get(url)
@@ -51,7 +50,7 @@ class IntelligentAnalyzer:
         except Exception as e:
             return self._error_record(url, 0, f'unknown: {str(e)}')
 
-    def _analyze_html(self, url: str, html: str, is_heavy: bool) -> Dict[str, Any]:
+    def _analyze_html(self, url: str, html: str, is_heavy: bool) -> dict[str, Any]:
         """Analyze HTML with quality control."""
         soup = BeautifulSoup(html, 'html.parser')
 
@@ -109,7 +108,7 @@ class IntelligentAnalyzer:
             'quality_score': self._calculate_quality_score(word_count, text_to_html_ratio),
         }
 
-    def _analyze_pdf(self, url: str, pdf_content: bytes, is_heavy: bool) -> Dict[str, Any]:
+    def _analyze_pdf(self, url: str, pdf_content: bytes, is_heavy: bool) -> dict[str, Any]:
         """Analyze PDF with text + OCR."""
         text_extracted = ''
         ocr_text = ''
@@ -117,8 +116,9 @@ class IntelligentAnalyzer:
 
         # Try text extraction
         try:
-            import PyPDF2
             import io
+
+            import PyPDF2
 
             pdf_file = io.BytesIO(pdf_content)
             reader = PyPDF2.PdfReader(pdf_file)
@@ -175,15 +175,16 @@ class IntelligentAnalyzer:
             'quality_score': self._calculate_quality_score(word_count, 1.0),
         }
 
-    def _analyze_binary(self, url: str, content: bytes, content_type: str, is_heavy: bool) -> Dict[str, Any]:
+    def _analyze_binary(self, url: str, content: bytes, content_type: str, is_heavy: bool) -> dict[str, Any]:
         """Analyze images with OCR."""
         ocr_text = ''
         has_ocr = False
 
         if any(img_type in content_type for img_type in ['image', 'jpeg', 'jpg', 'png', 'webp']):
             try:
-                import easyocr
                 import io
+
+                import easyocr
                 from PIL import Image
 
                 reader = easyocr.Reader(['en'], gpu=False)
@@ -212,7 +213,7 @@ class IntelligentAnalyzer:
             'quality_score': self._calculate_quality_score(word_count, 1.0),
         }
 
-    def _error_record(self, url: str, error_code: int, error_msg: str) -> Dict[str, Any]:
+    def _error_record(self, url: str, error_code: int, error_msg: str) -> dict[str, Any]:
         """Create error record."""
         return {
             'url': url,
@@ -283,7 +284,7 @@ class IntelligentAnalyzer:
         self.client.close()
 
 
-def analyze_url(url: str, is_heavy: bool = False) -> Dict[str, Any]:
+def analyze_url(url: str, is_heavy: bool = False) -> dict[str, Any]:
     """Convenience function."""
     analyzer = IntelligentAnalyzer()
     try:

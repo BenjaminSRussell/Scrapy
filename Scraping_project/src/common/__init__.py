@@ -5,7 +5,6 @@ from __future__ import annotations
 
 def _patch_scrapy_response_meta() -> None:
     """Patch Scrapy Response.meta to allow assignment in tests."""
-
     try:
         from scrapy.http import Request, Response  # type: ignore
     except Exception:

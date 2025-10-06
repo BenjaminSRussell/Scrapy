@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""
-Health Check Endpoint
+"""Health Check Endpoint
 Verifies that the pipeline components are healthy and accessible.
 """
 

@@ -1,5 +1,4 @@
-"""
-Ultra-Aggressive URL Discovery Methods
+"""Ultra-Aggressive URL Discovery Methods
 Ensures NO URL is missed - extracts from every possible source
 """
 
@@ -13,8 +12,7 @@ from scrapy.http import Response
 
 
 class UltraDiscovery:
-    """
-    Extreme URL discovery - extracts URLs from every conceivable source.
+    """Extreme URL discovery - extracts URLs from every conceivable source.
     Use when you absolutely cannot miss ANY URL.
     """
 
@@ -89,8 +87,7 @@ class UltraDiscovery:
         yield from self._generate_from_patterns()
 
         # Return unique URLs
-        for url in self.discovered_urls:
-            yield url
+        yield from self.discovered_urls
 
     def _extract_from_standard_tags(self) -> Iterator[str]:
         """Extract from standard HTML tags"""
@@ -370,7 +367,7 @@ class UltraDiscovery:
         parsed = urlparse(self.base_url)
         params = parse_qs(parsed.query)
 
-        for key, values in params.items():
+        for _key, values in params.items():
             for value in values:
                 # Check if parameter value is a URL
                 if value.startswith(('http://', 'https://', 'www.', '/')):
@@ -444,8 +441,7 @@ class UltraDiscovery:
 
 
 def extract_all_urls(response: Response) -> Iterator[str]:
-    """
-    Convenience function to extract ALL URLs from a response.
+    """Convenience function to extract ALL URLs from a response.
 
     Usage in discovery spider:
         from src.stage1.ultra_discovery import extract_all_urls

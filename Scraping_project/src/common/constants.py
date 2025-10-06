@@ -1,5 +1,4 @@
-"""
-Simplified constants - Delta Lake in root data/ folder only.
+"""Simplified constants - Delta Lake in root data/ folder only.
 """
 
 from pathlib import Path

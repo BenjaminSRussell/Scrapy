@@ -1,5 +1,4 @@
-"""
-Stage 2 Asynchronous Worker
+"""Stage 2 Asynchronous Worker
 High-concurrency worker for page analysis & quality control.
 Downloads and analyzes URLs from stage1_discovery table.
 """
@@ -7,7 +6,7 @@ Downloads and analyzes URLs from stage1_discovery table.
 import asyncio
 import logging
 from datetime import datetime
-from typing import Dict, Any, List
+from typing import Any
 
 import aiohttp
 from bs4 import BeautifulSoup
@@ -21,12 +20,12 @@ class Stage2Worker:
     """Async worker for Stage 2 page analysis with quality control."""
 
     def __init__(self, max_concurrent: int = 50, batch_size: int = 100):
-        """
-        Initialize Stage 2 worker.
+        """Initialize Stage 2 worker.
 
         Args:
             max_concurrent: Max concurrent HTTP requests
             batch_size: Number of URLs to process per batch
+
         """
         self.max_concurrent = max_concurrent
         self.batch_size = batch_size
@@ -87,7 +86,7 @@ class Stage2Worker:
 
         logger.info("Stage 2 Worker completed all batches")
 
-    async def _analyze_url(self, record: Dict[str, Any]) -> Dict[str, Any]:
+    async def _analyze_url(self, record: dict[str, Any]) -> dict[str, Any]:
         """Analyze single URL with quality control and triage."""
         url = record.get('url')
         url_hash = record.get('url_hash')
@@ -114,7 +113,7 @@ class Stage2Worker:
                             # Other content types - minimal processing
                             return self._minimal_record(url, url_hash, content_type)
 
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 return self._error_record(url, url_hash, 0, 'timeout')
             except aiohttp.ClientError as e:
                 return self._error_record(url, url_hash, 0, f'client_error: {type(e).__name__}')
@@ -122,7 +121,7 @@ class Stage2Worker:
                 logger.error(f"Failed to analyze {url}: {e}")
                 return self._error_record(url, url_hash, 0, f'error: {str(e)}')
 
-    async def _analyze_html(self, url: str, url_hash: str, html: str, is_heavy: bool) -> Dict[str, Any]:
+    async def _analyze_html(self, url: str, url_hash: str, html: str, is_heavy: bool) -> dict[str, Any]:
         """Analyze HTML content with quality control."""
         soup = BeautifulSoup(html, 'html.parser')
 
@@ -166,23 +165,23 @@ class Stage2Worker:
         quality_score = self._calculate_quality_score(word_count, text_to_html_ratio)
 
         return {
-            'url': url,
-            'url_hash': url_hash,
-            'title': title,
-            'word_count': word_count,
-            'content_length': content_length,
-            'html_length': html_length,
-            'text_to_html_ratio': round(text_to_html_ratio, 3),
-            'is_low_quality': is_low_quality,
-            'is_massive_doc': is_massive_doc,
-            'quality_score': quality_score,
-            'text_content': text[:10000] if not is_low_quality else '',  # First 10k chars
-            'keywords': keywords,
+            'url': url or '',
+            'url_hash': url_hash or '',
+            'title': title or '',
+            'word_count': word_count or 0,
+            'content_length': content_length or 0,
+            'html_length': html_length or 0,
+            'text_to_html_ratio': round(text_to_html_ratio, 3) if text_to_html_ratio else 0.0,
+            'is_low_quality': is_low_quality if is_low_quality is not None else True,
+            'is_massive_doc': is_massive_doc if is_massive_doc is not None else False,
+            'quality_score': quality_score if quality_score is not None else 0.0,
+            'text_content': text[:10000] if (not is_low_quality and text) else '',
+            'keywords': keywords if keywords else [''],  # Empty string to avoid null type in PyArrow
             'has_error': False,
             'processed_at': datetime.now().isoformat(),
         }
 
-    async def _extract_keywords_async(self, text: str, is_heavy: bool) -> List[str]:
+    async def _extract_keywords_async(self, text: str, is_heavy: bool) -> list[str]:
         """Extract keywords using YAKE in async context."""
         if not text or len(text) < 50:
             return []
@@ -196,7 +195,7 @@ class Stage2Worker:
             logger.warning(f"YAKE extraction failed: {e}")
             return []
 
-    def _extract_keywords_sync(self, text: str, is_heavy: bool) -> List[str]:
+    def _extract_keywords_sync(self, text: str, is_heavy: bool) -> list[str]:
         """Synchronous YAKE keyword extraction."""
         try:
             import yake
@@ -243,7 +242,7 @@ class Stage2Worker:
         except Exception as e:
             logger.error(f"Failed to route to Stage 4: {e}")
 
-    def _route_pdf_to_stage4(self, url: str, url_hash: str) -> Dict[str, Any]:
+    def _route_pdf_to_stage4(self, url: str, url_hash: str) -> dict[str, Any]:
         """Route PDF to Stage 4 and create minimal record."""
         record = {
             'url': url,
@@ -259,41 +258,61 @@ class Stage2Worker:
         self.delta.write('stage4_large_docs', [record], mode='append', async_write=True)
 
         return {
-            'url': url,
-            'url_hash': url_hash,
+            'url': url or '',
+            'url_hash': url_hash or '',
             'title': 'PDF Document',
             'word_count': 0,
+            'content_length': 0,
+            'html_length': 0,
+            'text_to_html_ratio': 0.0,
+            'is_low_quality': True,
+            'is_massive_doc': False,
+            'quality_score': 0.0,
+            'text_content': '',
+            'keywords': [''],  # Empty string to avoid null type
             'is_pdf': True,
             'routed_to_stage4': True,
             'has_error': False,
             'processed_at': datetime.now().isoformat(),
         }
 
-    def _minimal_record(self, url: str, url_hash: str, content_type: str) -> Dict[str, Any]:
+    def _minimal_record(self, url: str, url_hash: str, content_type: str) -> dict[str, Any]:
         """Create minimal record for non-HTML/PDF content."""
         return {
-            'url': url,
-            'url_hash': url_hash,
+            'url': url or '',
+            'url_hash': url_hash or '',
             'title': 'Binary/Other Content',
-            'content_type': content_type,
+            'content_type': content_type or '',
             'word_count': 0,
+            'content_length': 0,
+            'html_length': 0,
+            'text_to_html_ratio': 0.0,
             'is_low_quality': True,
-            'quality_score': 0,
+            'is_massive_doc': False,
+            'quality_score': 0.0,
+            'text_content': '',
+            'keywords': [''],  # Empty string to avoid null type
             'has_error': False,
             'processed_at': datetime.now().isoformat(),
         }
 
-    def _error_record(self, url: str, url_hash: str, error_code: int, error_msg: str) -> Dict[str, Any]:
+    def _error_record(self, url: str, url_hash: str, error_code: int, error_msg: str) -> dict[str, Any]:
         """Create error record."""
         return {
-            'url': url,
-            'url_hash': url_hash,
+            'url': url or '',
+            'url_hash': url_hash or '',
             'title': 'Error',
             'has_error': True,
-            'error_code': error_code,
-            'error_message': error_msg,
+            'error_code': error_code or 0,
+            'error_message': error_msg or '',
             'word_count': 0,
+            'content_length': 0,
+            'html_length': 0,
+            'text_to_html_ratio': 0.0,
             'is_low_quality': True,
-            'quality_score': 0,
+            'is_massive_doc': False,
+            'quality_score': 0.0,
+            'text_content': '',
+            'keywords': [''],  # Empty string to avoid null type
             'processed_at': datetime.now().isoformat(),
         }

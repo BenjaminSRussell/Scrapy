@@ -1,6 +1,7 @@
 """Tests for Stage 3 worker."""
 
 import pytest
+
 from src.stage3.stage3_worker import Stage3Worker
 
 

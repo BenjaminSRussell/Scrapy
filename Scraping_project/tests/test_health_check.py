@@ -1,7 +1,8 @@
 """Tests for health check script."""
 
 import pytest
-from health_check import check_file_structure, check_dependencies
+
+from health_check import check_dependencies, check_file_structure
 
 
 def test_file_structure():

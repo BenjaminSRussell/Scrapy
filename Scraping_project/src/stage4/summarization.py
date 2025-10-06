@@ -1,5 +1,4 @@
-"""
-Stage 3: Heavy Summarization
+"""Stage 3: Heavy Summarization
 Takes all data from Stage 2 and creates concise summaries with key facts.
 Outputs to Delta Lake AND final JSONL file.
 """
@@ -7,16 +6,14 @@ Outputs to Delta Lake AND final JSONL file.
 import json
 import logging
 from pathlib import Path
-from typing import Optional
 
 from src.common.constants import DATA_DIR
 
 logger = logging.getLogger(__name__)
 
 
-def summarize_with_heavy_model(text: str, max_length: int = 150) -> Optional[str]:
-    """
-    Use heavy model (BART/T5) to summarize text.
+def summarize_with_heavy_model(text: str, max_length: int = 150) -> str | None:
+    """Use heavy model (BART/T5) to summarize text.
 
     Args:
         text: Combined text from stage 2
@@ -24,6 +21,7 @@ def summarize_with_heavy_model(text: str, max_length: int = 150) -> Optional[str
 
     Returns:
         Concise summary paragraph
+
     """
     try:
         from transformers import pipeline
@@ -59,8 +57,7 @@ def summarize_with_heavy_model(text: str, max_length: int = 150) -> Optional[str
 
 
 def extract_key_facts(text: str, summary: str, categories: list[str]) -> list[str]:
-    """
-    Extract key facts from the text.
+    """Extract key facts from the text.
 
     Uses the summary and categories to identify the most important information.
     """
@@ -91,11 +88,11 @@ def extract_key_facts(text: str, summary: str, categories: list[str]) -> list[st
 
 
 def create_final_summary(analytics_data: dict) -> dict:
-    """
-    Create final summary from stage 2 analytics data.
+    """Create final summary from stage 2 analytics data.
 
     Returns:
         Summary dict ready for JSONL output and Delta Lake
+
     """
     url = analytics_data.get('url')
     combined_text = analytics_data.get('combined_text', '')
@@ -139,9 +136,8 @@ def create_final_summary(analytics_data: dict) -> dict:
     return final
 
 
-def save_to_jsonl(summaries: list[dict], output_file: Optional[Path] = None):
-    """
-    Save final summaries to JSONL file.
+def save_to_jsonl(summaries: list[dict], output_file: Path | None = None):
+    """Save final summaries to JSONL file.
 
     One line per URL with summary paragraph and key facts.
     """

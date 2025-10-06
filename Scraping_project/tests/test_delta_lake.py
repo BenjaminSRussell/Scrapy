@@ -1,6 +1,7 @@
 """Tests for Delta Lake manager."""
 
 import pytest
+
 from src.common.delta_lake import DeltaLakeManager
 
 
