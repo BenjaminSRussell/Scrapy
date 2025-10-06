@@ -6,7 +6,7 @@ scrape_configs:
   # Scrape pipeline metrics
   - job_name: 'scraping_pipeline'
     static_configs:
-      - targets: ['host.docker.internal:9090']
+      - targets: ['metrics-exporter:8000']
         labels:
           service: 'pipeline'
 

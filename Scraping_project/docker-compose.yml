@@ -1,5 +1,3 @@
-version: '3.8'
-
 # ==================================================================
 # UConn Scraping Pipeline - Complete Infrastructure Stack
 # ==================================================================
@@ -61,7 +59,7 @@ services:
     image: prom/prometheus:latest
     container_name: scraping_prometheus
     ports:
-      - "9090:9090"
+      - "9091:9090"
     volumes:
       - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
       - prometheus_data:/prometheus
@@ -95,12 +93,48 @@ services:
     volumes:
       - grafana_data:/var/lib/grafana
       - ./monitoring/grafana_datasource.yml:/etc/grafana/provisioning/datasources/datasource.yml
-      - ./monitoring/grafana_dashboard.json:/etc/grafana/provisioning/dashboards/dashboard.json
+      - ./monitoring/grafana_dashboard.json:/etc/garafana/provisioning/dashboards/dashboard.json
     restart: unless-stopped
     networks:
       - scraping_network
     depends_on:
       - prometheus
+
+  # ============================================
+  # Application Services
+  # ============================================
+
+  pipeline:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: scraping_pipeline
+    restart: unless-stopped
+    volumes:
+      - poetry_cache:/app/.venv
+    networks:
+      - scraping_network
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      metrics-exporter:
+        condition: service_started
+
+  metrics-exporter:
+    build:
+      context: .
+      dockerfile: monitoring/Dockerfile.metrics
+    container_name: scraping_metrics_exporter
+    ports:
+      - "8000:8000"
+    command: python metrics_exporter.py --port 8000
+    restart: unless-stopped
+    volumes:
+      - poetry_cache:/app/.venv
+    networks:
+      - scraping_network
 
   # Redis Exporter - Export Redis metrics to Prometheus
   redis-exporter:
@@ -138,14 +172,13 @@ services:
 volumes:
   redis_data:
     driver: local
-
   postgres_data:
     driver: local
-
   prometheus_data:
     driver: local
-
   grafana_data:
+    driver: local
+  poetry_cache:
     driver: local
 
 # ============================================
