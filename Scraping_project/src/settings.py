@@ -96,6 +96,25 @@ PLAYWRIGHT_BROWSER_TYPE = _scrapy_config.get('playwright_browser_type', 'chromiu
 PLAYWRIGHT_LAUNCH_OPTIONS = _scrapy_config.get('playwright_launch_options', {'headless': True})
 
 # ============================================================================
+# Extensions Configuration
+# ============================================================================
+# Enable custom extensions (order matters - lower numbers are loaded first)
+EXTENSIONS = _scrapy_config.get('extensions', {
+    'src.scrapy_prometheus.PrometheusExtension': 500,
+})
+
+# ============================================================================
+# Prometheus Metrics Configuration
+# ============================================================================
+# Enable Prometheus metrics exporter
+PROMETHEUS_ENABLED = _scrapy_config.get('prometheus_enabled', True)
+
+# Metrics endpoint configuration
+PROMETHEUS_PORT = _scrapy_config.get('prometheus_port', 9410)
+PROMETHEUS_HOST = _scrapy_config.get('prometheus_host', '0.0.0.0')  # Listen on all interfaces
+PROMETHEUS_PATH = _scrapy_config.get('prometheus_path', 'metrics')
+
+# ============================================================================
 # Kafka Configuration
 # ============================================================================
 # Kafka pipeline for real-time event streaming of scraped items

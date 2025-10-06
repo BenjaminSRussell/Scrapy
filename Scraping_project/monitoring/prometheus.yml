@@ -3,6 +3,22 @@ global:
   evaluation_interval: 15s
 
 scrape_configs:
+  # Scrape Scrapy application metrics
+  - job_name: 'scrapy_app'
+    static_configs:
+      - targets: ['scrapy-app:9410']
+        labels:
+          service: 'scrapy'
+          component: 'scraper'
+
+  # Scrape Kafka to Delta Lake ingestor metrics
+  - job_name: 'kafka_ingestor'
+    static_configs:
+      - targets: ['ingestor:8001']
+        labels:
+          service: 'ingestor'
+          component: 'kafka-delta'
+
   # Scrape pipeline metrics
   - job_name: 'scraping_pipeline'
     static_configs:

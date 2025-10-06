@@ -51,6 +51,83 @@ services:
       - scraping_network
 
   # ============================================
+  # Kafka Streaming Infrastructure
+  # ============================================
+
+  # Zookeeper - Coordination service for Kafka
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.6.0
+    container_name: scraping_zookeeper
+    ports:
+      - "2181:2181"
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+      ZOOKEEPER_SYNC_LIMIT: 5
+    volumes:
+      - zookeeper_data:/var/lib/zookeeper/data
+      - zookeeper_logs:/var/lib/zookeeper/log
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "echo", "ruok", "|", "nc", "localhost", "2181"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - scraping_network
+
+  # Kafka - Distributed event streaming platform
+  kafka:
+    image: confluentinc/cp-kafka:7.6.0
+    container_name: scraping_kafka
+    ports:
+      - "9092:9092"
+      - "9093:9093"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+
+      # Listener configuration for both internal and external access
+      KAFKA_LISTENERS: INTERNAL://0.0.0.0:9092,EXTERNAL://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:9092,EXTERNAL://localhost:9093
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+
+      # Topic configuration
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_DELETE_TOPIC_ENABLE: "true"
+      KAFKA_NUM_PARTITIONS: 3
+      KAFKA_DEFAULT_REPLICATION_FACTOR: 1
+
+      # Performance tuning
+      KAFKA_LOG_RETENTION_HOURS: 168  # 7 days
+      KAFKA_LOG_SEGMENT_BYTES: 1073741824  # 1GB
+      KAFKA_LOG_RETENTION_CHECK_INTERVAL_MS: 300000
+      KAFKA_COMPRESSION_TYPE: snappy
+
+      # JVM settings
+      KAFKA_HEAP_OPTS: "-Xmx1G -Xms1G"
+
+      # Offsets topic configuration
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+    networks:
+      - scraping_network
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+
+  # ============================================
   # Monitoring Stack
   # ============================================
 
@@ -104,6 +181,79 @@ services:
   # Application Services
   # ============================================
 
+  # Scrapy Application - Web scraping with Kafka integration
+  scrapy-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: scraping_scrapy_app
+    ports:
+      - "9410:9410"  # Prometheus metrics endpoint
+    environment:
+      # Database connections
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=scraping_pipeline
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+
+      # Kafka configuration
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      - KAFKA_TOPIC=scraped-items
+
+      # Scrapy settings
+      - SCRAPY_SETTINGS_MODULE=src.settings
+      - ENV=development
+    volumes:
+      # Mount source code for development (hot reload)
+      - ./src:/app/src:ro
+      - ./config:/app/config:ro
+      - ./data:/app/data
+    restart: unless-stopped
+    networks:
+      - scraping_network
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      metrics-exporter:
+        condition: service_started
+
+  # Kafka to Delta Lake Ingestor - Consumes Kafka messages and writes to Delta Lake
+  ingestor:
+    build:
+      context: .
+      dockerfile: Dockerfile.ingestor
+    container_name: scraping_ingestor
+    environment:
+      # Kafka configuration
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      - KAFKA_TOPIC=scraped-items
+      - KAFKA_GROUP_ID=delta-ingestor
+      - KAFKA_AUTO_OFFSET_RESET=earliest
+
+      # Delta Lake configuration
+      - DELTA_TABLE_PATH=/data/delta_lake/scraped_items
+
+      # Processing configuration
+      - BATCH_SIZE=1000
+      - BATCH_TIMEOUT_SECONDS=30
+    volumes:
+      - ./data:/data
+      - ./src:/app/src:ro
+    restart: unless-stopped
+    networks:
+      - scraping_network
+    depends_on:
+      kafka:
+        condition: service_healthy
+
+  # Legacy pipeline service (renamed for clarity)
   pipeline:
     build:
       context: .
@@ -169,6 +319,12 @@ volumes:
   redis_data:
     driver: local
   postgres_data:
+    driver: local
+  zookeeper_data:
+    driver: local
+  zookeeper_logs:
+    driver: local
+  kafka_data:
     driver: local
   prometheus_data:
     driver: local
