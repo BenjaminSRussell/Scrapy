@@ -26,20 +26,50 @@ class ScoutSpider(scrapy.Spider):
 
     name = "scout"
 
+    # Extensions to ignore when following links (static assets, media, documents)
+    IGNORED_EXTENSIONS = [
+        # Images
+        '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.svg', '.webp', '.ico', '.tiff',
+        # Stylesheets and scripts (already loaded by browser, not useful for crawling)
+        '.css', '.js', '.map',
+        # Archives
+        '.zip', '.rar', '.7z', '.tar', '.gz', '.bz2',
+        # Documents (will be discovered and queued for later processing, not crawled)
+        '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
+        # Media files
+        '.mp3', '.mp4', '.avi', '.mov', '.wmv', '.flv', '.webm', '.m4a', '.wav',
+        # Fonts
+        '.woff', '.woff2', '.ttf', '.eot', '.otf',
+        # Other binary formats
+        '.exe', '.dmg', '.pkg', '.deb', '.rpm',
+    ]
+
     custom_settings = {
-        'CONCURRENT_REQUESTS': 256,
-        'CONCURRENT_REQUESTS_PER_DOMAIN': 128,
+        # Maximum concurrency - push computational limits
+        'CONCURRENT_REQUESTS': 512,  # Increased from 256
+        'CONCURRENT_REQUESTS_PER_DOMAIN': 256,  # Increased from 128
         'DOWNLOAD_DELAY': 0,
-        'DOWNLOAD_TIMEOUT': 30,
+        'DOWNLOAD_TIMEOUT': 45,  # Increased from 30
         'ROBOTSTXT_OBEY': False,
         'COOKIES_ENABLED': False,
         'HTTPCACHE_ENABLED': False,
         'RETRY_ENABLED': True,
-        'RETRY_TIMES': 2,
+        'RETRY_TIMES': 3,  # Increased from 2
+
+        # Autothrottle - aggressive settings
         'AUTOTHROTTLE_ENABLED': True,
         'AUTOTHROTTLE_START_DELAY': 0,
-        'AUTOTHROTTLE_MAX_DELAY': 0.5,
-        'AUTOTHROTTLE_TARGET_CONCURRENCY': 256,
+        'AUTOTHROTTLE_MAX_DELAY': 0.3,  # Decreased from 0.5
+        'AUTOTHROTTLE_TARGET_CONCURRENCY': 512,  # Increased from 256
+
+        # Reactor settings for high performance
+        'REACTOR_THREADPOOL_MAXSIZE': 64,  # Increased thread pool
+        'DNS_TIMEOUT': 10,
+
+        # Memory optimizations
+        'MEMUSAGE_ENABLED': True,
+        'MEMUSAGE_LIMIT_MB': 8192,  # 8GB limit
+        'MEMUSAGE_WARNING_MB': 6144,  # 6GB warning
     }
 
     def __init__(self, seed_file=None, *args, **kwargs):
@@ -75,6 +105,14 @@ class ScoutSpider(scrapy.Spider):
         """Create normalized hash for deduplication."""
         normalized = url.lower().rstrip('/')
         return hashlib.sha256(normalized.encode()).hexdigest()[:16]
+
+    def _has_ignored_extension(self, url: str) -> bool:
+        """Check if URL has an extension that should be ignored."""
+        parsed = urlparse(url)
+        path = parsed.path.lower()
+
+        # Check if path ends with any ignored extension
+        return any(path.endswith(ext) for ext in self.IGNORED_EXTENSIONS)
 
     def _load_seed_urls(self):
         """Load seed URLs without pre-adding to hash set."""
@@ -183,6 +221,11 @@ class ScoutSpider(scrapy.Spider):
 
         # Follow discovered URLs
         for new_url in discovered_urls:
+            # Skip URLs with ignored extensions
+            if self._has_ignored_extension(new_url):
+                logger.debug(f"Skipping static/media file: {new_url[:80]}")
+                continue
+
             url_hash = self._hash_url(new_url)
             if url_hash not in self.url_hashes:
                 self.url_hashes.add(url_hash)

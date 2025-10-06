@@ -157,30 +157,187 @@ class DeltaLakeManager:
         data = self.read(table_name)
         return len(data)
 
-    def checkpoint(self):
-        """Wait for queue to finish and checkpoint all tables."""
-        logger.info("Waiting for queue to finish...")
-        self.write_queue.join()  # Wait for all tasks
+    def checkpoint(self, timeout: int = 30):
+        """Wait for queue to finish and checkpoint all tables with timeout.
+
+        Args:
+            timeout: Maximum seconds to wait for queue to finish (default: 30)
+        """
+        import time
+
+        logger.info(f"Waiting for queue to finish (timeout: {timeout}s)...")
+
+        # Try to join queue with timeout
+        start_time = time.time()
+        while not self.write_queue.empty() and (time.time() - start_time) < timeout:
+            try:
+                self.write_queue.join()
+                break
+            except Exception as e:
+                logger.warning(f"Queue join error: {e}")
+                time.sleep(0.1)
+
+        elapsed = time.time() - start_time
+        remaining = self.write_queue.qsize()
+
+        if remaining > 0:
+            logger.warning(f"⚠️  Queue not empty after {elapsed:.1f}s: {remaining} tasks remaining (forcing shutdown)")
+        else:
+            logger.info(f"✅ Queue emptied in {elapsed:.1f}s")
 
         logger.info("Checkpointing all Delta tables...")
         for name, table_path in self.tables.items():
             try:
                 if (table_path / "_delta_log").exists():
                     table = DeltaTable(str(table_path))
-                    table.vacuum(retention_hours=168)  # 7 days
-                    logger.info(f"✅ Checkpointed {name}")
+                    # Skip vacuum during shutdown (too slow)
+                    # table.vacuum(retention_hours=168)
+                    logger.info(f"✅ Verified {name}")
             except Exception as e:
                 logger.error(f"Failed to checkpoint {name}: {e}")
 
-    def _shutdown_handler(self, signum, frame):
-        """Handle shutdown gracefully."""
-        logger.info("Shutdown signal received, checkpointing Delta Lake...")
+    def force_shutdown(self, timeout: int = 15):
+        """Force shutdown with aggressive timeout."""
+        logger.warning(f"⚠️  FORCE SHUTDOWN initiated (timeout: {timeout}s)")
+
+        # Signal worker to stop
         self.shutdown_event.set()
-        self.write_queue.put(None)  # Signal worker to stop
-        if self.worker_thread:
-            self.worker_thread.join(timeout=10)
-        self.checkpoint()
-        sys.exit(0)
+        self.write_queue.put(None)
+
+        # Wait for worker with timeout
+        if self.worker_thread and self.worker_thread.is_alive():
+            self.worker_thread.join(timeout=timeout)
+
+            if self.worker_thread.is_alive():
+                logger.error("❌ Worker thread did not stop in time - forcing exit")
+
+        # Quick checkpoint without vacuum
+        self.checkpoint(timeout=5)
+        logger.info("🛑 Force shutdown complete")
+
+    def _shutdown_handler(self, signum, frame):
+        """Handle shutdown gracefully with timeout."""
+        logger.info("🛑 Shutdown signal received, saving Delta Lake data...")
+
+        try:
+            self.force_shutdown(timeout=15)
+        except Exception as e:
+            logger.error(f"Error during shutdown: {e}")
+        finally:
+            logger.info("✅ Shutdown complete")
+            sys.exit(0)
+
+    def list_tables(self) -> list[dict[str, Any]]:
+        """List all tables with statistics."""
+        tables_info = []
+
+        for table_name, table_path in self.tables.items():
+            parquet_files = list(table_path.glob("*.parquet"))
+
+            info = {
+                'name': table_name,
+                'path': str(table_path),
+                'exists': (table_path / "_delta_log").exists(),
+                'parquet_files': len(parquet_files),
+                'row_count': 0
+            }
+
+            if info['exists']:
+                try:
+                    data = self.read(table_name)
+                    info['row_count'] = len(data)
+                except Exception as e:
+                    info['error'] = str(e)
+
+            tables_info.append(info)
+
+        return tables_info
+
+    def export(self, table_name: str, output_path: str, format: str = 'csv'):
+        """Export table to file.
+
+        Args:
+            table_name: Name of table to export
+            output_path: Output file path
+            format: Output format ('csv', 'json', 'parquet')
+        """
+        try:
+            import duckdb
+            from pathlib import Path
+        except ImportError:
+            raise ImportError("Export requires duckdb. Install: pip install duckdb")
+
+        table_path = self.tables.get(table_name)
+        if not table_path:
+            raise ValueError(f"Unknown table: {table_name}")
+
+        if not (table_path / "_delta_log").exists():
+            raise ValueError(f"No data in table: {table_name}")
+
+        parquet_files = list(table_path.glob("*.parquet"))
+        if not parquet_files:
+            raise ValueError(f"No parquet files in table: {table_name}")
+
+        con = duckdb.connect(database=':memory:')
+        query = f"SELECT * FROM read_parquet('{table_path}/*.parquet', union_by_name=True)"
+        result_df = con.execute(query).fetchdf()
+
+        if result_df.empty:
+            raise ValueError(f"Table {table_name} is empty")
+
+        output_path = Path(output_path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        if format == 'csv':
+            result_df.to_csv(output_path, index=False)
+        elif format == 'json':
+            result_df.to_json(output_path, orient='records', lines=True)
+        elif format == 'parquet':
+            result_df.to_parquet(output_path, index=False)
+        else:
+            raise ValueError(f"Unsupported format: {format}")
+
+        con.close()
+        logger.info(f"✅ Exported {table_name} to {output_path} ({format})")
+
+        return {
+            'table': table_name,
+            'output': str(output_path),
+            'format': format,
+            'rows': len(result_df),
+            'columns': len(result_df.columns),
+            'size_mb': output_path.stat().st_size / 1024 / 1024
+        }
+
+    def export_all(self, output_dir: str, format: str = 'csv') -> list[dict[str, Any]]:
+        """Export all tables to directory.
+
+        Args:
+            output_dir: Output directory path
+            format: Output format ('csv', 'json', 'parquet')
+
+        Returns:
+            List of export results
+        """
+        from pathlib import Path
+
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        results = []
+        for table_name in self.tables.keys():
+            try:
+                output_path = output_dir / f"{table_name}.{format}"
+                result = self.export(table_name, str(output_path), format)
+                results.append(result)
+            except Exception as e:
+                logger.warning(f"Failed to export {table_name}: {e}")
+                results.append({
+                    'table': table_name,
+                    'error': str(e)
+                })
+
+        return results
 
 
 # Global singleton
