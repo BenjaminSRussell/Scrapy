@@ -10,7 +10,7 @@ import re
 from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlparse, urljoin
-from typing import Set, Dict, Any
+from typing import Set
 
 import scrapy
 from scrapy.http import Response

@@ -6,13 +6,12 @@ import asyncio
 import logging
 import hashlib
 from datetime import datetime
-from typing import List, Dict, Any
+from typing import Dict, Any
 
-from playwright.async_api import async_playwright, Page, Browser
+from playwright.async_api import async_playwright, Browser
 from bs4 import BeautifulSoup
 
 from src.common.delta_lake import get_delta_manager
-from src.stage1.ultra_discovery import UltraDiscovery
 
 logger = logging.getLogger(__name__)
 

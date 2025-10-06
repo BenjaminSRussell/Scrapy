@@ -5,8 +5,7 @@ Routes massive documents to separate queue for Stage 4 processing.
 
 import re
 import logging
-from typing import Dict, Any, Optional
-from urllib.parse import urlparse
+from typing import Dict, Any
 
 import httpx
 from bs4 import BeautifulSoup

@@ -9,8 +9,7 @@ import signal
 import sys
 import threading
 from datetime import datetime
-from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 try:
     import pyarrow as pa

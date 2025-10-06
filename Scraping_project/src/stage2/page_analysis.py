@@ -4,10 +4,7 @@ Stage 2: Deep page analysis - word count, content size, errors, PDF+OCR+text, YA
 
 import re
 import logging
-import mimetypes
-from pathlib import Path
-from typing import Dict, List, Any, Optional
-from urllib.parse import urlparse
+from typing import Dict, List, Any
 
 import httpx
 from bs4 import BeautifulSoup
