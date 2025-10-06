@@ -11,7 +11,7 @@ COPY pyproject.toml poetry.lock* ./
 
 # Install dependencies
 # We need to handle the case where poetry.lock doesn't exist
-RUN if [ -f poetry.lock ]; then poetry install --without-groups dev; else poetry install --without-groups dev --no-root; fi
+RUN poetry install --without dev --no-root
 
 # Stage 2: Create the final image
 FROM python:3.10-slim
