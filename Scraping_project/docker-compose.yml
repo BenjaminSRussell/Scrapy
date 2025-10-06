@@ -110,8 +110,6 @@ services:
       dockerfile: Dockerfile
     container_name: scraping_pipeline
     restart: unless-stopped
-    volumes:
-      - poetry_cache:/app/.venv
     networks:
       - scraping_network
     depends_on:
@@ -131,8 +129,6 @@ services:
       - "8000:8000"
     command: python metrics_exporter.py --port 8000
     restart: unless-stopped
-    volumes:
-      - poetry_cache:/app/.venv
     networks:
       - scraping_network
 
@@ -177,8 +173,6 @@ volumes:
   prometheus_data:
     driver: local
   grafana_data:
-    driver: local
-  poetry_cache:
     driver: local
 
 # ============================================

@@ -1,0 +1,20 @@
+# Include all application dependencies
+-r requirements.in
+
+# Development & Testing
+pytest>=8.3.2
+pytest-asyncio>=0.23.8
+pytest-cov>=4.1.0
+pytest-html>=3.1.0
+pytest-mock>=3.10.0
+pytest-timeout>=2.3.1
+
+# Code Quality
+black>=24.0.0
+isort>=5.13.0
+flake8>=7.0.0
+mypy>=1.13.0
+ruff>=0.9.0
+
+# Security
+pip-audit>=2.7.0

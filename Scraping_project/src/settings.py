@@ -45,6 +45,7 @@ ROBOTSTXT_OBEY = _scrapy_config.get('robotstxt_obey', False)
 # Configure pipelines
 ITEM_PIPELINES = _scrapy_config.get('item_pipelines', {
     # No pipelines needed - stage 1 saves directly to Delta Lake
+    # 'src.pipelines.KafkaPipeline': 300,  # Uncomment to enable Kafka streaming
 })
 
 # Configure request fingerprinting (from YAML or default)
@@ -93,3 +94,43 @@ FEED_EXPORT_ENCODING = _scrapy_config.get('feed_export_encoding', 'utf-8')
 # DOWNLOAD_HANDLERS = _scrapy_config.get('download_handlers', {})
 PLAYWRIGHT_BROWSER_TYPE = _scrapy_config.get('playwright_browser_type', 'chromium')
 PLAYWRIGHT_LAUNCH_OPTIONS = _scrapy_config.get('playwright_launch_options', {'headless': True})
+
+# ============================================================================
+# Kafka Configuration
+# ============================================================================
+# Kafka pipeline for real-time event streaming of scraped items
+# Security best practice: Never hardcode credentials! Load from environment variables.
+
+# Required: Kafka broker addresses (comma-separated host:port pairs)
+KAFKA_BOOTSTRAP_SERVERS = _scrapy_config.get(
+    'kafka_bootstrap_servers',
+    os.getenv('KAFKA_BOOTSTRAP_SERVERS', 'localhost:9092')
+)
+
+# Required: Target topic for scraped items
+KAFKA_TOPIC = _scrapy_config.get(
+    'kafka_topic',
+    os.getenv('KAFKA_TOPIC', 'scraped-items')
+)
+
+# Optional: Additional producer configuration
+# For production, consider tuning these parameters:
+# - acks: 'all' for maximum durability (trades off throughput)
+# - compression.type: 'lz4' or 'zstd' for better compression (CPU vs bandwidth tradeoff)
+# - max.in.flight.requests.per.connection: 1 for strict ordering (trades off throughput)
+KAFKA_PRODUCER_CONFIG = _scrapy_config.get('kafka_producer_config', {})
+
+# Security credentials (MUST be loaded from environment variables, never hardcode!)
+# Supported authentication mechanisms:
+# - SASL/PLAIN: Username/password authentication
+# - SASL/SCRAM-SHA-256: More secure hashed authentication
+# - SASL/SCRAM-SHA-512: Even more secure hashed authentication
+# - SSL: Certificate-based authentication
+#
+# Example environment variables:
+# export KAFKA_SECURITY_PROTOCOL='SASL_SSL'
+# export KAFKA_SASL_MECHANISM='SCRAM-SHA-256'
+# export KAFKA_SASL_USERNAME='your-username'
+# export KAFKA_SASL_PASSWORD='your-password'
+#
+# The KafkaPipeline will automatically load these from os.getenv() at runtime.

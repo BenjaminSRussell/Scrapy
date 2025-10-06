@@ -39,6 +39,9 @@ dependencies = [
     "psycopg2-binary>=2.9.0",  # PostgreSQL adapter
     "redis>=5.0.0",  # Redis for distributed queues and caching
 
+    # Message Queue - Kafka for event streaming
+    "confluent-kafka>=2.3.0",  # High-performance Kafka client (librdkafka wrapper)
+
     # Monitoring
     "prometheus-client>=0.20.0",  # Prometheus metrics exporter
 

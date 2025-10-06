@@ -1,25 +1,10 @@
-# Stage 1: Build the project with dependencies
-FROM python:3.10-slim as builder
-
-WORKDIR /app
-
-# Install poetry
-RUN pip install poetry
-
-# Copy dependency definition files from the project root
-COPY pyproject.toml poetry.lock* ./
-
-# Install dependencies
-RUN poetry install --without dev --no-root
-
-# Stage 2: Create the final image
 FROM python:3.10-slim
 
 WORKDIR /app
 
-# Copy the installed dependencies from the builder stage
-COPY --from=builder /app/.venv /.venv
-ENV PATH="/app/.venv/bin:$PATH"
+# Copy requirements and install dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy the application code required by the metrics exporter
 COPY src ./src

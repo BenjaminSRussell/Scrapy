@@ -5,12 +5,31 @@ Mass web scraping with **ultra-aggressive URL discovery**, **media processing** 
 ## Quick Start
 
 ```bash
-# Install
+# Install dependencies
 pip install -r requirements.txt
 brew install ffmpeg  # macOS (or apt-get on Linux)
 
 # Run
 python run_pipeline.py
+```
+
+## Development Setup
+
+```bash
+# Create virtual environment
+python -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+
+# Install development dependencies
+pip install -r dev-requirements.txt
+
+# Run tests
+pytest
+
+# Run linters
+ruff check .
+black --check .
+mypy src/
 ```
 
 ## Architecture
@@ -87,6 +106,19 @@ Edit `config/settings.yml` to control:
 - Media processing limits
 - OCR/Whisper models
 - Concurrent requests
+
+## Dependency Management
+
+This project uses pip-tools for dependency management:
+
+```bash
+# Update dependencies after modifying .in files
+pip-compile requirements.in
+pip-compile dev-requirements.in
+
+# Sync your environment with locked dependencies
+pip-sync requirements.txt  # or dev-requirements.txt for development
+```
 
 ## Requirements
 

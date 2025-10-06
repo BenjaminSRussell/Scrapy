@@ -53,7 +53,7 @@ async def run_scrapy_crawler():
     # Stream output in real-time
     async def log_stream(stream, prefix):
         async for line in stream:
-            logger.info(f"[{prefix}] {line.decode().strip()}")
+            logger.info(f"[{prefix}] {line.decode(errors='ignore').strip()}")
 
     await asyncio.gather(
         log_stream(process.stdout, "SCRAPY"),
