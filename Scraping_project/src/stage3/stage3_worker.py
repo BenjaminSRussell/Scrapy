@@ -188,7 +188,7 @@ class Stage3Worker:
                 }
 
     def _generate_summary_sync(self, text: str, max_length: int = 150) -> str:
-        """Generate summary using BART (synchronous, CPU-bound).
+        """Generate summary using DistilBART (synchronous, CPU-bound).
 
         Args:
             text: Input text to summarize
@@ -201,10 +201,10 @@ class Stage3Worker:
         try:
             from transformers import pipeline
 
-            # Use BART for summarization
+            # Use lightweight DistilBART for fast summarization
             summarizer = pipeline(
                 "summarization",
-                model="facebook/bart-large-cnn",
+                model="sshleifer/distilbart-cnn-12-6",
                 device=-1  # CPU
             )
 

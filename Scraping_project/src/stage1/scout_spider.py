@@ -98,6 +98,34 @@ class ScoutSpider(scrapy.Spider):
         depth = response.meta.get('depth', 0)
         url_hash = self._hash_url(response.url)
 
+        # Check Content-Type - only process HTML
+        content_type = response.headers.get('Content-Type', b'').decode('utf-8', errors='ignore').lower()
+
+        if 'text/html' not in content_type and 'application/xhtml' not in content_type:
+            # Not HTML - skip processing
+            logger.debug(f"Skipping non-HTML content: {content_type} for {response.url[:80]}")
+
+            # Record as discovered but non-HTML
+            record = {
+                'url': response.url,
+                'url_hash': url_hash,
+                'depth': depth,
+                'status_code': response.status,
+                'content_type': content_type,
+                'content_size': len(response.body),
+                'is_heavy': False,
+                'discovered_count': 0,
+                'requires_js': False,
+                'is_non_html': True,
+                'timestamp': str(datetime.now())
+            }
+            self.discovered_records.append(record)
+
+            if len(self.discovered_records) >= 100:
+                self._flush_batch()
+
+            return  # Stop processing non-HTML content
+
         # Detect if page requires JavaScript rendering
         requires_js = self._detect_js_requirement(response)
 
