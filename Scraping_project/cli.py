@@ -186,15 +186,22 @@ def cmd_export(args):
     if args.table:
         logger.info(f"Exporting table: {args.table}")
         result = manager.export(args.table, args.output, format=args.format)
-        logger.info(f"✅ Exported: {result}")
+        if 'error' in result:
+            raise RuntimeError(f"Export failed for table {args.table}: {result['error']}")
+        logger.info(f"✅ Exported to {result.get('path')}")
     else:
         logger.info(f"Exporting all tables to: {args.output}")
         results = manager.export_all(args.output, format=args.format)
+        has_errors = False
         for r in results:
             if 'error' in r:
                 logger.warning(f"  ✗ {r['table']}: {r['error']}")
+                has_errors = True
             else:
                 logger.info(f"  ✓ {r['table']}: {r['rows']} rows, {r['size_mb']:.2f} MB")
+
+        if has_errors:
+            raise RuntimeError("One or more table exports failed.")
 
 
 def cmd_health(args):
