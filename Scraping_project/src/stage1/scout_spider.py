@@ -288,7 +288,7 @@ class ScoutSpider(scrapy.Spider):
         scripts = response.css('script::text').getall()
         
         api_patterns = [
-            r'["\']/(api|graphql|rest|v\d+)/[^"\']+["\']',
+            r'["\']/(api|graphql|rest|v\d+)(/[^"\']*)?["\']',
             r'endpoint\s*[:=]\s*["\']([^"\']+)["\']',
             r'baseURL\s*[:=]\s*["\']([^"\']+)["\']',
         ]
