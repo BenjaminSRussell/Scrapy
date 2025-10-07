@@ -167,12 +167,13 @@ class IntelligentRetryMiddleware(RetryMiddleware):
             Delay in seconds
         """
         delay = self.backoff_base ** retry_count
-        delay = min(delay, self.backoff_max)
 
         # Add small random jitter to prevent thundering herd
         import random
         jitter = random.uniform(0, 0.1 * delay)
         delay += jitter
+
+        delay = min(delay, self.backoff_max)
 
         return delay
 
