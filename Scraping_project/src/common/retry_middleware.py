@@ -7,6 +7,7 @@ Implements smart retry logic:
 """
 
 import logging
+import random
 import time
 
 from scrapy import Request, Spider
@@ -169,7 +170,6 @@ class IntelligentRetryMiddleware(RetryMiddleware):
         delay = self.backoff_base ** retry_count
 
         # Add small random jitter to prevent thundering herd
-        import random
         jitter = random.uniform(0, 0.1 * delay)
         delay += jitter
 
