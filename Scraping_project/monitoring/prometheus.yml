@@ -20,7 +20,7 @@ alerting:
 # Load recording and alerting rules
 rule_files:
   - '/etc/prometheus/recording_rules.yml'
-  # - '/etc/prometheus/alerting_rules.yml'  # Uncomment when ready
+  - '/etc/prometheus/alerting_rules.yml'
 
 scrape_configs:
   # Scrape Scrapy application metrics - Real-time scraping metrics

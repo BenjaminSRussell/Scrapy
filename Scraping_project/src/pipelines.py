@@ -10,7 +10,13 @@ import re
 from datetime import datetime
 from typing import Any
 
-from confluent_kafka import Producer
+try:
+    from confluent_kafka import Producer
+    KAFKA_AVAILABLE = True
+except ImportError:
+    KAFKA_AVAILABLE = False
+    Producer = None
+
 from itemadapter import ItemAdapter
 from scrapy import Spider, signals
 from scrapy.crawler import Crawler
@@ -298,6 +304,11 @@ class KafkaPipeline:
         Raises:
             NotConfigured: If required settings are missing
         """
+        # Check if Kafka is available
+        if not KAFKA_AVAILABLE:
+            logger.warning("Kafka pipeline disabled - confluent_kafka not installed")
+            raise NotConfigured('confluent_kafka library not available')
+
         # Load required settings
         bootstrap_servers = crawler.settings.get('KAFKA_BOOTSTRAP_SERVERS')
         if not bootstrap_servers:

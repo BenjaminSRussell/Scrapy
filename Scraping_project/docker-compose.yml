@@ -144,6 +144,7 @@ services:
     volumes:
       - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
       - ./monitoring/recording_rules.yml:/etc/prometheus/recording_rules.yml
+      - ./monitoring/alerting_rules.yml:/etc/prometheus/alerting_rules.yml
       - prometheus_a_data:/prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
@@ -173,6 +174,7 @@ services:
     volumes:
       - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
       - ./monitoring/recording_rules.yml:/etc/prometheus/recording_rules.yml
+      - ./monitoring/alerting_rules.yml:/etc/prometheus/alerting_rules.yml
       - prometheus_b_data:/prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
@@ -262,10 +264,14 @@ services:
       - GF_INSTALL_PLUGINS=redis-datasource
       - GF_SERVER_ROOT_URL=http://localhost:3000
       - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_PATHS_PROVISIONING=/etc/grafana/provisioning
+      - GF_LOG_LEVEL=info
     volumes:
       - grafana_data:/var/lib/grafana
       - ./monitoring/grafana_datasource.yml:/etc/grafana/provisioning/datasources/datasource.yml
-      - ./monitoring/grafana_dashboard.json:/etc/grafana/provisioning/dashboards/dashboard.json
+      - ./monitoring/grafana_dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml
+      - ./monitoring/grafana_dashboard.json:/etc/grafana/provisioning/dashboards/pipeline_dashboard.json
+      - ./monitoring/grafana_kafka_realtime_dashboard.json:/etc/grafana/provisioning/dashboards/kafka_dashboard.json
     restart: unless-stopped
     networks:
       - scraping_network
@@ -273,6 +279,7 @@ services:
       - prometheus-a
       - prometheus-b
       - alertmanager-1
+      - redis
 
   # ============================================
   # Application Services

@@ -24,7 +24,14 @@ import logging
 import time
 from typing import Any, Dict
 
-from prometheus_client import Counter, Gauge, Histogram, start_http_server
+try:
+    from prometheus_client import Counter, Gauge, Histogram, start_http_server
+    PROMETHEUS_AVAILABLE = True
+except ImportError:
+    PROMETHEUS_AVAILABLE = False
+    Counter = Gauge = Histogram = None
+    start_http_server = None
+
 from scrapy import Spider, signals
 from scrapy.crawler import Crawler
 from scrapy.exceptions import NotConfigured, DropItem
@@ -33,82 +40,90 @@ from scrapy.http import Request, Response
 logger = logging.getLogger(__name__)
 
 
-# Define Prometheus metrics
-ITEMS_SCRAPED = Counter(
-    'scrapy_items_scraped_total',
-    'Total number of items scraped',
-    ['spider']
-)
+# Define Prometheus metrics only if available
+if PROMETHEUS_AVAILABLE:
+    ITEMS_SCRAPED = Counter(
+        'scrapy_items_scraped_total',
+        'Total number of items scraped',
+        ['spider']
+    )
 
-ITEMS_DROPPED = Counter(
-    'scrapy_items_dropped_total',
-    'Total number of items dropped',
-    ['spider']
-)
+    ITEMS_DROPPED = Counter(
+        'scrapy_items_dropped_total',
+        'Total number of items dropped',
+        ['spider']
+    )
 
-REQUESTS_TOTAL = Counter(
-    'scrapy_requests_total',
-    'Total number of requests made',
-    ['spider', 'method']
-)
+    REQUESTS_TOTAL = Counter(
+        'scrapy_requests_total',
+        'Total number of requests made',
+        ['spider', 'method']
+    )
 
-RESPONSES_TOTAL = Counter(
-    'scrapy_responses_total',
-    'Total number of responses received',
-    ['spider', 'status_code']
-)
+    RESPONSES_TOTAL = Counter(
+        'scrapy_responses_total',
+        'Total number of responses received',
+        ['spider', 'status_code']
+    )
 
-RESPONSE_TIME = Histogram(
-    'scrapy_response_time_seconds',
-    'Response time in seconds',
-    ['spider'],
-    buckets=(0.1, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0, float('inf'))
-)
+    RESPONSE_TIME = Histogram(
+        'scrapy_response_time_seconds',
+        'Response time in seconds',
+        ['spider'],
+        buckets=(0.1, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0, float('inf'))
+    )
 
-SPIDER_OPENED = Gauge(
-    'scrapy_spider_opened',
-    'Number of spiders currently running',
-    ['spider']
-)
+    SPIDER_OPENED = Gauge(
+        'scrapy_spider_opened',
+        'Number of spiders currently running',
+        ['spider']
+    )
 
-SPIDER_CLOSED = Counter(
-    'scrapy_spider_closed_total',
-    'Total number of spiders closed',
-    ['spider', 'reason']
-)
+    SPIDER_CLOSED = Counter(
+        'scrapy_spider_closed_total',
+        'Total number of spiders closed',
+        ['spider', 'reason']
+    )
 
-SPIDER_ERRORS = Counter(
-    'scrapy_spider_errors_total',
-    'Total number of spider errors',
-    ['spider', 'exception_type']
-)
+    SPIDER_ERRORS = Counter(
+        'scrapy_spider_errors_total',
+        'Total number of spider errors',
+        ['spider', 'exception_type']
+    )
 
-REQUESTS_DROPPED = Counter(
-    'scrapy_requests_dropped_total',
-    'Total number of requests dropped',
-    ['spider', 'reason']
-)
+    REQUESTS_DROPPED = Counter(
+        'scrapy_requests_dropped_total',
+        'Total number of requests dropped',
+        ['spider', 'reason']
+    )
 
-DOWNLOADER_REQUEST_BYTES = Counter(
-    'scrapy_downloader_request_bytes_total',
-    'Total bytes sent in requests',
-    ['spider']
-)
+    DOWNLOADER_REQUEST_BYTES = Counter(
+        'scrapy_downloader_request_bytes_total',
+        'Total bytes sent in requests',
+        ['spider']
+    )
 
-DOWNLOADER_RESPONSE_BYTES = Counter(
-    'scrapy_downloader_response_bytes_total',
-    'Total bytes received in responses',
-    ['spider']
-)
+    DOWNLOADER_RESPONSE_BYTES = Counter(
+        'scrapy_downloader_response_bytes_total',
+        'Total bytes received in responses',
+        ['spider']
+    )
 
-CRAWL_DURATION = Gauge(
-    'scrapy_crawl_duration_seconds',
-    'Duration of the current crawl in seconds',
-    ['spider']
-)
+    CRAWL_DURATION = Gauge(
+        'scrapy_crawl_duration_seconds',
+        'Duration of the current crawl in seconds',
+        ['spider']
+    )
 
-# Track crawl start times for duration calculation
-CRAWL_START_TIMES: Dict[str, float] = {}
+    # Track crawl start times for duration calculation
+    CRAWL_START_TIMES: Dict[str, float] = {}
+else:
+    # Dummy variables when Prometheus is not available
+    ITEMS_SCRAPED = ITEMS_DROPPED = REQUESTS_TOTAL = RESPONSES_TOTAL = None
+    RESPONSE_TIME = SPIDER_OPENED = SPIDER_CLOSED = SPIDER_ERRORS = None
+    REQUESTS_DROPPED = DOWNLOADER_REQUEST_BYTES = DOWNLOADER_RESPONSE_BYTES = None
+    CRAWL_DURATION = None
+    CRAWL_START_TIMES: Dict[str, float] = {}
 
 
 class PrometheusExtension:
@@ -138,6 +153,11 @@ class PrometheusExtension:
         Raises:
             NotConfigured: If extension is disabled or required settings missing
         """
+        # Check if Prometheus is available
+        if not PROMETHEUS_AVAILABLE:
+            logger.warning("Prometheus extension disabled - prometheus_client not installed")
+            raise NotConfigured('prometheus_client library not available')
+
         # Check if extension is enabled
         if not crawler.settings.getbool('PROMETHEUS_ENABLED', True):
             raise NotConfigured('Prometheus extension is disabled')

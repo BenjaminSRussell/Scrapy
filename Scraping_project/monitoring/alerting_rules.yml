@@ -1,0 +1,399 @@
+# ==================================================================
+# Prometheus Alerting Rules for Scrapy Pipeline
+# ==================================================================
+# These rules define alerts for critical conditions in the pipeline
+# Alerts are sent to Alertmanager for routing and notification
+# ==================================================================
+
+groups:
+  # ============================================
+  # Kafka Infrastructure Alerts
+  # ============================================
+  - name: kafka_infrastructure
+    interval: 30s
+    rules:
+      # Critical: Kafka broker is down
+      - alert: KafkaBrokerDown
+        expr: up{job="kafka_jmx"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: kafka
+        annotations:
+          summary: "Kafka broker is down"
+          description: "Kafka broker has been down for more than 1 minute. This will halt all real-time data ingestion."
+          impact: "Critical - No new data can be published to Kafka"
+          action: "Check Kafka broker logs: docker-compose logs kafka"
+
+      # Critical: Multiple active controllers (split brain)
+      - alert: KafkaMultipleControllers
+        expr: kafka_controller_activecontrollercount > 1
+        for: 1m
+        labels:
+          severity: critical
+          component: kafka
+        annotations:
+          summary: "Multiple Kafka controllers detected"
+          description: "Kafka has {{ $value }} active controllers. Should only have 1."
+          impact: "Critical - Potential split-brain condition"
+          action: "Restart Kafka cluster in controlled manner"
+
+      # Critical: No active controller
+      - alert: KafkaNoActiveController
+        expr: kafka_controller_activecontrollercount < 1
+        for: 1m
+        labels:
+          severity: critical
+          component: kafka
+        annotations:
+          summary: "No active Kafka controller"
+          description: "Kafka cluster has no active controller."
+          impact: "Critical - Cluster cannot function without controller"
+          action: "Check Zookeeper connectivity and Kafka broker logs"
+
+      # Critical: Under-replicated partitions
+      - alert: KafkaUnderReplicatedPartitions
+        expr: kafka_server_replicamanager_underreplicatedpartitions > 0
+        for: 5m
+        labels:
+          severity: critical
+          component: kafka
+        annotations:
+          summary: "Kafka has under-replicated partitions"
+          description: "{{ $value }} partitions are under-replicated."
+          impact: "High - Data may be at risk if broker fails"
+          action: "Check broker health and network connectivity"
+
+      # Critical: Offline partitions
+      - alert: KafkaOfflinePartitions
+        expr: kafka_controller_offlinepartitionscount > 0
+        for: 1m
+        labels:
+          severity: critical
+          component: kafka
+        annotations:
+          summary: "Kafka has offline partitions"
+          description: "{{ $value }} partitions are offline."
+          impact: "Critical - Data loss or unavailability"
+          action: "Immediate investigation required. Check broker logs."
+
+      # Warning: High consumer lag
+      - alert: KafkaHighConsumerLag
+        expr: kafka_consumer_records_lag > 10000
+        for: 5m
+        labels:
+          severity: warning
+          component: kafka
+        annotations:
+          summary: "High Kafka consumer lag detected"
+          description: "Consumer {{ $labels.client_id }} has lag of {{ $value }} messages on topic {{ $labels.topic }}."
+          impact: "Medium - Data processing delayed"
+          action: "Scale up consumers or investigate processing bottleneck"
+
+      # Warning: Very high consumer lag (critical threshold)
+      - alert: KafkaVeryHighConsumerLag
+        expr: kafka_consumer_records_lag > 100000
+        for: 5m
+        labels:
+          severity: critical
+          component: kafka
+        annotations:
+          summary: "Very high Kafka consumer lag"
+          description: "Consumer {{ $labels.client_id }} has lag of {{ $value }} messages."
+          impact: "High - Significant data processing backlog"
+          action: "Immediate action: scale consumers or pause producers"
+
+  # ============================================
+  # Scrapy Application Alerts
+  # ============================================
+  - name: scrapy_application
+    interval: 30s
+    rules:
+      # Critical: Scrapy app is down
+      - alert: ScrapyAppDown
+        expr: up{job="scrapy_app"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          component: scrapy
+        annotations:
+          summary: "Scrapy application is down"
+          description: "Scrapy app has been unreachable for more than 2 minutes."
+          impact: "Critical - No web scraping is occurring"
+          action: "Check Scrapy container: docker-compose logs scrapy-app"
+
+      # Warning: No items being scraped
+      - alert: ScrapyNoItemsScraped
+        expr: rate(scrapy_items_scraped_total[5m]) == 0
+        for: 10m
+        labels:
+          severity: warning
+          component: scrapy
+        annotations:
+          summary: "Scrapy is not scraping any items"
+          description: "Spider {{ $labels.spider }} has not scraped any items in 10 minutes."
+          impact: "Medium - Data collection stalled"
+          action: "Check spider logs and website availability"
+
+      # Critical: High error rate
+      - alert: ScrapyHighErrorRate
+        expr: |
+          sum(rate(scrapy_responses_total{status_code=~"[45].."}[5m])) by (spider)
+          /
+          sum(rate(scrapy_responses_total[5m])) by (spider) > 0.2
+        for: 5m
+        labels:
+          severity: critical
+          component: scrapy
+        annotations:
+          summary: "High error rate in Scrapy spider"
+          description: "Spider {{ $labels.spider }} has {{ $value | humanizePercentage }} error rate."
+          impact: "High - Most requests are failing"
+          action: "Check for IP blocks, website changes, or network issues"
+
+      # Warning: Elevated error rate
+      - alert: ScrapyElevatedErrorRate
+        expr: |
+          sum(rate(scrapy_responses_total{status_code=~"[45].."}[5m])) by (spider)
+          /
+          sum(rate(scrapy_responses_total[5m])) by (spider) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          component: scrapy
+        annotations:
+          summary: "Elevated error rate in Scrapy spider"
+          description: "Spider {{ $labels.spider }} has {{ $value | humanizePercentage }} error rate."
+          impact: "Medium - Significant number of failed requests"
+          action: "Monitor spider behavior and investigate errors"
+
+      # Warning: High item drop rate
+      - alert: ScrapyHighItemDropRate
+        expr: |
+          rate(scrapy_items_dropped_total[5m])
+          /
+          (rate(scrapy_items_scraped_total[5m]) + rate(scrapy_items_dropped_total[5m])) > 0.3
+        for: 10m
+        labels:
+          severity: warning
+          component: scrapy
+        annotations:
+          summary: "High item drop rate"
+          description: "Spider {{ $labels.spider }} is dropping {{ $value | humanizePercentage }} of items."
+          impact: "Medium - Data quality issues"
+          action: "Check validation pipeline and data quality"
+
+      # Warning: Slow response times
+      - alert: ScrapySlowResponses
+        expr: histogram_quantile(0.95, rate(scrapy_response_time_seconds_bucket[5m])) > 10
+        for: 10m
+        labels:
+          severity: warning
+          component: scrapy
+        annotations:
+          summary: "Slow response times detected"
+          description: "Spider {{ $labels.spider }} p95 response time is {{ $value }}s."
+          impact: "Medium - Scraping performance degraded"
+          action: "Check network latency and target website performance"
+
+      # Critical: Too many 403 responses (blocked)
+      - alert: ScrapyBlocked
+        expr: rate(scrapy_responses_total{status_code="403"}[5m]) > 1
+        for: 5m
+        labels:
+          severity: critical
+          component: scrapy
+        annotations:
+          summary: "Scrapy spider appears to be blocked"
+          description: "Spider {{ $labels.spider }} receiving {{ $value }} 403 responses/sec."
+          impact: "High - IP address may be blocked"
+          action: "Rotate proxies, adjust user-agent, or reduce request rate"
+
+  # ============================================
+  # Kafka Pipeline Alerts
+  # ============================================
+  - name: kafka_pipeline
+    interval: 30s
+    rules:
+      # Critical: Kafka pipeline is down
+      - alert: KafkaPipelineDown
+        expr: up{job="kafka_ingestor"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          component: ingestor
+        annotations:
+          summary: "Kafka to Delta Lake pipeline is down"
+          description: "Kafka ingestor has been unreachable for more than 2 minutes."
+          impact: "Critical - Data not being persisted to Delta Lake"
+          action: "Check ingestor: docker-compose logs kafka-delta-ingestor"
+
+      # Critical: High message failure rate
+      - alert: KafkaHighMessageFailureRate
+        expr: rate(ingestor_records_failed_total[5m]) > 10
+        for: 5m
+        labels:
+          severity: critical
+          component: ingestor
+        annotations:
+          summary: "High Kafka message processing failure rate"
+          description: "{{ $value }} messages/sec are failing to process."
+          impact: "High - Data loss occurring"
+          action: "Check ingestor logs for errors and Delta Lake connectivity"
+
+      # Warning: Slow Delta Lake writes
+      - alert: SlowDeltaLakeWrites
+        expr: histogram_quantile(0.95, rate(ingestor_batch_write_latency_ms_bucket[5m])) > 5000
+        for: 10m
+        labels:
+          severity: warning
+          component: ingestor
+        annotations:
+          summary: "Slow Delta Lake write performance"
+          description: "P95 batch write latency is {{ $value }}ms."
+          impact: "Medium - Ingestion performance degraded"
+          action: "Check Delta Lake storage performance and network"
+
+  # ============================================
+  # Infrastructure Alerts
+  # ============================================
+  - name: infrastructure
+    interval: 30s
+    rules:
+      # Critical: Redis is down
+      - alert: RedisDown
+        expr: up{job="redis"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: redis
+        annotations:
+          summary: "Redis is down"
+          description: "Redis has been unreachable for more than 1 minute."
+          impact: "Critical - Queue system and circuit breakers offline"
+          action: "Restart Redis: docker-compose restart redis"
+
+      # Warning: High Redis memory usage
+      - alert: RedisHighMemory
+        expr: redis_memory_used_bytes / redis_memory_max_bytes > 0.9
+        for: 5m
+        labels:
+          severity: warning
+          component: redis
+        annotations:
+          summary: "Redis memory usage high"
+          description: "Redis is using {{ $value | humanizePercentage }} of max memory."
+          impact: "Medium - Risk of evictions or OOM"
+          action: "Review queue sizes and consider scaling Redis"
+
+      # Critical: PostgreSQL is down
+      - alert: PostgresDown
+        expr: up{job="postgres"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: postgres
+        annotations:
+          summary: "PostgreSQL is down"
+          description: "PostgreSQL has been unreachable for more than 1 minute."
+          impact: "High - Metrics storage offline"
+          action: "Restart PostgreSQL: docker-compose restart postgres"
+
+      # Warning: High PostgreSQL connection usage
+      - alert: PostgresHighConnections
+        expr: |
+          pg_stat_database_numbackends
+          /
+          pg_settings_max_connections > 0.8
+        for: 5m
+        labels:
+          severity: warning
+          component: postgres
+        annotations:
+          summary: "PostgreSQL connection usage high"
+          description: "PostgreSQL is using {{ $value | humanizePercentage }} of max connections."
+          impact: "Medium - Risk of connection exhaustion"
+          action: "Review connection pooling and close idle connections"
+
+  # ============================================
+  # Prometheus & Monitoring Alerts
+  # ============================================
+  - name: monitoring
+    interval: 1m
+    rules:
+      # Warning: Prometheus is approaching storage capacity
+      - alert: PrometheusStorageNearFull
+        expr: |
+          (1 - (prometheus_tsdb_storage_blocks_bytes / prometheus_tsdb_retention_limit_bytes)) < 0.1
+        for: 30m
+        labels:
+          severity: warning
+          component: prometheus
+        annotations:
+          summary: "Prometheus storage nearly full"
+          description: "Prometheus has less than 10% storage available."
+          impact: "Medium - Risk of data loss"
+          action: "Increase retention limit or reduce scrape frequency"
+
+      # Critical: Prometheus scrape failures
+      - alert: PrometheusScrapeFailures
+        expr: up == 0
+        for: 5m
+        labels:
+          severity: warning
+          component: prometheus
+        annotations:
+          summary: "Prometheus cannot scrape target"
+          description: "Target {{ $labels.job }} ({{ $labels.instance }}) is unreachable."
+          impact: "Medium - Missing metrics for this target"
+          action: "Check target health and network connectivity"
+
+  # ============================================
+  # Business Logic / Data Quality Alerts
+  # ============================================
+  - name: data_quality
+    interval: 1m
+    rules:
+      # Warning: Scraping throughput significantly decreased
+      - alert: ScrapingThroughputDropped
+        expr: |
+          (
+            sum(rate(scrapy_items_scraped_total[5m]))
+            /
+            sum(rate(scrapy_items_scraped_total[5m] offset 1h))
+          ) < 0.5
+        for: 15m
+        labels:
+          severity: warning
+          component: pipeline
+        annotations:
+          summary: "Scraping throughput has dropped significantly"
+          description: "Current throughput is {{ $value | humanizePercentage }} of 1 hour ago."
+          impact: "Medium - Reduced data collection rate"
+          action: "Investigate spider performance and target site availability"
+
+      # Info: Circuit breakers open
+      - alert: CircuitBreakersOpen
+        expr: circuit_breaker_open_count > 0
+        for: 10m
+        labels:
+          severity: info
+          component: pipeline
+        annotations:
+          summary: "Circuit breakers are open"
+          description: "{{ $value }} circuit breakers are currently open."
+          impact: "Low - Some domains are temporarily blocked"
+          action: "Normal operation - circuits will auto-recover"
+
+      # Warning: Low Delta Lake write rate
+      - alert: LowDeltaLakeWrites
+        expr: rate(ingestor_delta_commits_total[5m]) == 0
+        for: 15m
+        labels:
+          severity: warning
+          component: ingestor
+        annotations:
+          summary: "No Delta Lake commits in 15 minutes"
+          description: "No data is being written to Delta Lake."
+          impact: "Medium - Data persistence stalled"
+          action: "Check Kafka consumer and Delta Lake connectivity"

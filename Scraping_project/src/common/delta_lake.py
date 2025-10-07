@@ -44,6 +44,7 @@ class DeltaLakeManager:
             'stage1_js_render_queue': self.base_path / 'stage1_js_render_queue',
             'stage2_page_analysis': self.base_path / 'stage2_page_analysis',
             'stage3_analytics': self.base_path / 'stage3_analytics',
+            'stage3_summaries': self.base_path / 'stage3_summaries',
             'stage4_large_docs': self.base_path / 'stage4_large_docs',
             'stage4_summaries': self.base_path / 'stage4_summaries',
         }
