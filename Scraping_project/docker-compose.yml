@@ -170,7 +170,7 @@ services:
     image: prom/prometheus:latest
     container_name: scraping_prometheus_b
     ports:
-      - "9092:9090"
+      - "9097:9090"
     volumes:
       - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
       - ./monitoring/recording_rules.yml:/etc/prometheus/recording_rules.yml
@@ -368,7 +368,7 @@ services:
       target: kafka-delta-ingest
     container_name: scraping_kafka_delta_ingestor
     command: >
-      ingest scraped-items s3://delta-lake/scraped_data
+      ingest scraped-items ./data/delta_lake/scraped_data
       --kafka kafka:9092
       --app-id scrapy-ingestor
       --auto-offset-reset earliest
@@ -378,13 +378,6 @@ services:
     env_file:
       - .env
     environment:
-      # AWS S3 configuration (pointing to MinIO for local development)
-      - AWS_ENDPOINT_URL=${AWS_ENDPOINT_URL:-http://minio:9000}
-      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-minioadmin}
-      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-minioadmin123}
-      - AWS_REGION=${AWS_REGION:-us-east-1}
-      - AWS_ALLOW_HTTP=${AWS_ALLOW_HTTP:-true}
-
       # StatsD metrics configuration
       - STATSD_HOST=${STATSD_HOST:-statsd-exporter}
       - STATSD_PORT=${STATSD_PORT:-9125}
@@ -457,10 +450,16 @@ services:
     container_name: scraping_metrics_exporter
     ports:
       - "8000:8000"
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
     command: python metrics_exporter.py --port 8000
     restart: unless-stopped
     networks:
       - scraping_network
+    depends_on:
+      redis:
+        condition: service_healthy
 
   # Redis Exporter - Export Redis metrics to Prometheus
   redis-exporter:

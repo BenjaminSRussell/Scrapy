@@ -1,20 +1,131 @@
 use anyhow::{Context, Result};
-use arrow::array::{RecordBatch, StringArray};
-use arrow::datatypes::{DataType, Field, Schema};
-use cadence::{StatsdClient, UdpMetricSink};
+use cadence::{Counted, CountedExt, StatsdClient, UdpMetricSink};
 use clap::{Parser, Subcommand};
-use deltalake::arrow::array::StructArray;
+use deltalake::arrow::array::{RecordBatch, StringArray};
+use deltalake::arrow::datatypes::Schema;
+use deltalake::delta_datafusion::DataFusionMixins;
+use deltalake::kernel::{DataType as DeltaDataType, StructField};
 use deltalake::writer::{DeltaWriter, RecordBatchWriter};
 use deltalake::{DeltaTable, DeltaTableBuilder};
 use rdkafka::config::ClientConfig;
 use rdkafka::consumer::{Consumer, StreamConsumer};
 use rdkafka::Message;
+use redis::{aio::ConnectionManager, AsyncCommands};
 use serde_json::Value;
-use std::collections::HashMap;
 use std::net::UdpSocket;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tracing::{error, info, warn};
+
+/// ScrapyMetrics tracks spider metrics in Redis following Scrapy signal patterns
+#[derive(Clone)]
+struct ScrapyMetrics {
+    redis: ConnectionManager,
+    spider_name: String,
+}
+
+impl ScrapyMetrics {
+    async fn new(redis_url: &str, spider_name: String) -> Result<Self> {
+        let client = redis::Client::open(redis_url)?;
+        let redis = ConnectionManager::new(client).await?;
+        Ok(Self { redis, spider_name })
+    }
+
+    /// Signal: spider_opened - Initialize crawl session
+    async fn spider_opened(&mut self) -> Result<()> {
+        let start_time = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
+        self.redis
+            .hset::<_, _, _, ()>(&format!("stats:{}:summary", self.spider_name), "start_time", start_time)
+            .await?;
+        info!("Spider opened: {}", self.spider_name);
+        Ok(())
+    }
+
+    /// Signal: response_received - Track HTTP status codes and response latency
+    async fn response_received(&mut self, status_code: u16) -> Result<()> {
+        self.redis
+            .hincr::<_, _, _, i64>(&format!("stats:{}:status_codes", self.spider_name), status_code.to_string(), 1)
+            .await?;
+        Ok(())
+    }
+
+    /// Signal: item_scraped - Primary throughput metric
+    async fn item_scraped(&mut self) -> Result<()> {
+        self.redis
+            .hincr::<_, _, _, i64>(&format!("stats:{}:summary", self.spider_name), "items_scraped", 1)
+            .await?;
+
+        // Add to time-series for graphing
+        let timestamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
+        let current_count: i64 = self.redis
+            .hget(&format!("stats:{}:summary", self.spider_name), "items_scraped")
+            .await
+            .unwrap_or(0);
+
+        self.redis
+            .zadd::<_, _, _, ()>(&format!("stats:{}:timeseries:items_scraped", self.spider_name), current_count, timestamp)
+            .await?;
+        Ok(())
+    }
+
+    /// Signal: item_dropped - Monitor data quality
+    async fn item_dropped(&mut self, reason: &str) -> Result<()> {
+        self.redis
+            .hincr::<_, _, _, i64>(&format!("stats:{}:summary", self.spider_name), "items_dropped", 1)
+            .await?;
+
+        // Track drop reason
+        self.redis
+            .hincr::<_, _, _, i64>(&format!("stats:{}:drop_reasons", self.spider_name), reason, 1)
+            .await?;
+        Ok(())
+    }
+
+    /// Signal: spider_error - Flag critical failures
+    async fn spider_error(&mut self, error_type: &str, error_msg: &str) -> Result<()> {
+        self.redis
+            .hincr::<_, _, _, i64>(&format!("stats:{}:summary", self.spider_name), "total_errors", 1)
+            .await?;
+
+        // Track error type
+        self.redis
+            .hincr::<_, _, _, i64>(&format!("stats:{}:error_types", self.spider_name), error_type, 1)
+            .await?;
+
+        // Store recent error (capped list of 100)
+        let error_entry = format!("{}: {}", error_type, error_msg);
+        self.redis
+            .lpush::<_, _, ()>(&format!("stats:{}:errors", self.spider_name), &error_entry)
+            .await?;
+        self.redis
+            .ltrim::<_, ()>(&format!("stats:{}:errors", self.spider_name), 0, 99)
+            .await?;
+        Ok(())
+    }
+
+    /// Signal: request_dropped - Track dropped requests
+    #[allow(dead_code)]
+    async fn request_dropped(&mut self) -> Result<()> {
+        self.redis
+            .hincr::<_, _, _, i64>(&format!("stats:{}:summary", self.spider_name), "requests_dropped", 1)
+            .await?;
+        Ok(())
+    }
+
+    /// Signal: spider_closed - Finalize crawl session
+    #[allow(dead_code)]
+    async fn spider_closed(&mut self, reason: &str) -> Result<()> {
+        let finish_time = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
+        self.redis
+            .hset::<_, _, _, ()>(&format!("stats:{}:summary", self.spider_name), "finish_time", finish_time)
+            .await?;
+        self.redis
+            .hset::<_, _, _, ()>(&format!("stats:{}:summary", self.spider_name), "finish_reason", reason)
+            .await?;
+        info!("Spider closed: {} (reason: {})", self.spider_name, reason);
+        Ok(())
+    }
+}
 
 #[derive(Parser)]
 #[command(name = "kafka-delta-ingest")]
@@ -31,7 +142,7 @@ enum Commands {
         /// Kafka topic to consume from
         topic: String,
 
-        /// Delta Lake table path (e.g., s3://bucket/path or /local/path)
+        /// Delta Lake table path (e.g., /path/to/delta-table or s3://bucket/path)
         #[arg(value_name = "TABLE_PATH")]
         table_path: String,
 
@@ -127,6 +238,14 @@ async fn ingest(
     let sink = UdpMetricSink::from(&format!("{}:{}", statsd_host, statsd_port), socket)?;
     let metrics = StatsdClient::from_sink("kafka_delta_ingest", sink);
 
+    // Initialize Redis-based Scrapy metrics
+    let redis_url = std::env::var("REDIS_URL").unwrap_or_else(|_| "redis://localhost:6379".to_string());
+    let spider_name = format!("{}_spider", topic.replace('-', "_"));
+    let mut scrapy_metrics = ScrapyMetrics::new(&redis_url, spider_name).await?;
+
+    // Signal: spider_opened
+    scrapy_metrics.spider_opened().await?;
+
     // Create Kafka consumer
     let consumer: StreamConsumer = ClientConfig::new()
         .set("bootstrap.servers", kafka_brokers)
@@ -145,7 +264,7 @@ async fn ingest(
 
     // Load or create Delta table
     let delta_table = load_or_create_table(table_path).await?;
-    let schema = delta_table.get_schema()?.clone();
+    let schema = delta_table.snapshot()?.arrow_schema()?.clone();
 
     info!("Delta table loaded/created successfully");
     info!("Schema: {:?}", schema);
@@ -159,6 +278,9 @@ async fn ingest(
                 if let Some(payload) = message.payload() {
                     match serde_json::from_slice::<Value>(payload) {
                         Ok(json_value) => {
+                            // Signal: response_received - Track HTTP status (default 200 for successful parse)
+                            scrapy_metrics.response_received(200).await.ok();
+
                             buffer.push(json_value);
                             metrics.incr("messages.received").ok();
 
@@ -169,7 +291,7 @@ async fn ingest(
                             if should_write {
                                 info!("Writing batch of {} messages to Delta Lake", buffer.len());
 
-                                match write_batch(&delta_table, &schema, &buffer, &metrics).await {
+                                match write_batch(&delta_table, &schema, &buffer, &metrics, &mut scrapy_metrics).await {
                                     Ok(()) => {
                                         info!("Successfully wrote {} records", buffer.len());
                                         metrics.count("records.written", buffer.len() as i64).ok();
@@ -179,6 +301,9 @@ async fn ingest(
                                     Err(e) => {
                                         error!("Failed to write batch: {}", e);
                                         metrics.incr("errors.write_failed").ok();
+
+                                        // Signal: spider_error
+                                        scrapy_metrics.spider_error("write_failed", &e.to_string()).await.ok();
                                     }
                                 }
                             }
@@ -186,6 +311,12 @@ async fn ingest(
                         Err(e) => {
                             warn!("Failed to parse message as JSON: {}", e);
                             metrics.incr("errors.parse_failed").ok();
+
+                            // Signal: item_dropped
+                            scrapy_metrics.item_dropped("parse_failed").await.ok();
+
+                            // Signal: spider_error
+                            scrapy_metrics.spider_error("parse_error", &e.to_string()).await.ok();
                         }
                     }
                 }
@@ -193,6 +324,9 @@ async fn ingest(
             Err(e) => {
                 warn!("Kafka error: {}", e);
                 metrics.incr("errors.kafka").ok();
+
+                // Signal: spider_error
+                scrapy_metrics.spider_error("kafka_error", &e.to_string()).await.ok();
             }
         }
     }
@@ -208,21 +342,19 @@ async fn load_or_create_table(table_path: &str) -> Result<DeltaTable> {
         Err(_) => {
             info!("Creating new Delta table at: {}", table_path);
 
-            // Define schema for scraped items
-            let schema = Arc::new(Schema::new(vec![
-                Field::new("url", DataType::Utf8, false),
-                Field::new("title", DataType::Utf8, true),
-                Field::new("content", DataType::Utf8, true),
-                Field::new("scraped_at_utc", DataType::Utf8, false),
-                Field::new("spider_name", DataType::Utf8, false),
-                Field::new("pipeline_version", DataType::Utf8, true),
-            ]));
+            // Define schema for scraped items using Delta kernel types
+            let fields = vec![
+                StructField::new("url", DeltaDataType::STRING, false),
+                StructField::new("title", DeltaDataType::STRING, true),
+                StructField::new("content", DeltaDataType::STRING, true),
+                StructField::new("scraped_at_utc", DeltaDataType::STRING, false),
+                StructField::new("spider_name", DeltaDataType::STRING, false),
+                StructField::new("pipeline_version", DeltaDataType::STRING, true),
+            ];
 
-            DeltaTableBuilder::from_uri(table_path)
-                .with_columns(schema.fields().clone())
-                .build()
-                .context("Failed to create Delta table")?
-                .create()
+            deltalake::operations::create::CreateBuilder::new()
+                .with_location(table_path)
+                .with_columns(fields)
                 .await
                 .context("Failed to create Delta table")
         }
@@ -234,6 +366,7 @@ async fn write_batch(
     schema: &Schema,
     records: &[Value],
     metrics: &StatsdClient,
+    scrapy_metrics: &mut ScrapyMetrics,
 ) -> Result<()> {
     if records.is_empty() {
         return Ok(());
@@ -254,6 +387,9 @@ async fn write_batch(
         scraped_ats.push(record.get("scraped_at_utc").and_then(|v| v.as_str()).unwrap_or(""));
         spider_names.push(record.get("spider_name").and_then(|v| v.as_str()).unwrap_or(""));
         pipeline_versions.push(record.get("pipeline_version").and_then(|v| v.as_str()));
+
+        // Signal: item_scraped for each successfully written item
+        scrapy_metrics.item_scraped().await.ok();
     }
 
     let batch = RecordBatch::try_new(
@@ -271,7 +407,8 @@ async fn write_batch(
     // Write to Delta Lake
     let mut writer = RecordBatchWriter::for_table(table)?;
     writer.write(batch).await?;
-    writer.flush_and_commit(table).await?;
+    let mut table_mut = table.clone();
+    writer.flush_and_commit(&mut table_mut).await?;
 
     metrics.incr("batches.written").ok();
 

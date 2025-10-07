@@ -22,7 +22,7 @@ Usage:
 import logging
 import sys
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 from urllib.parse import urlparse
 
 # Add project root to path
@@ -301,7 +301,7 @@ class ErrorAnalyzer:
 
         return "\n".join(f"• {rec}" for rec in recommendations) if recommendations else "No specific recommendations available"
 
-    def analyze(self, min_errors: int = 10, n_clusters: Optional[int] = None) -> dict[str, Any]:
+    def analyze(self, min_errors: int = 10, n_clusters: int | None = None) -> dict[str, Any]:
         """Perform ML-based error analysis.
 
         Args:

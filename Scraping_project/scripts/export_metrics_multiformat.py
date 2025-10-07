@@ -167,7 +167,7 @@ def main():
         metrics = exporter.query_metrics(query)
 
         if not metrics:
-            print(f"  ⚠️  No data returned")
+            print("  ⚠️  No data returned")
             continue
 
         print(f"  Found {len(metrics)} metric(s)")

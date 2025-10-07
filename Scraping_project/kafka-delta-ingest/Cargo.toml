@@ -2,48 +2,54 @@
 name = "kafka-delta-ingest"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.90"
 
 [dependencies]
-# Kafka client
-rdkafka = { version = "0.36", features = ["cmake-build", "ssl", "sasl", "zstd"] }
+# Kafka client - Latest stable version with all features
+rdkafka = { version = "0.38", features = ["cmake-build", "ssl", "sasl", "zstd"] }
 
-# Delta Lake
-deltalake = { version = "0.17", features = ["s3", "datafusion"] }
+# Delta Lake - Latest version with DataFusion support
+deltalake = { version = "0.28", features = ["datafusion"] }
 
-# Arrow for data processing
-arrow = "51"
-arrow-schema = "51"
+# Arrow - Explicit version matching deltalake
+arrow = "55"
 
-# Async runtime
-tokio = { version = "1", features = ["full"] }
+# Time handling - Latest stable
+chrono = "0.4"
+
+# Async runtime - Latest stable with full features
+tokio = { version = "1.47", features = ["full"] }
 futures = "0.3"
 
-# Serialization
+# Serialization - Latest stable
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 
-# CLI
-clap = { version = "4", features = ["derive"] }
+# CLI - Latest stable
+clap = { version = "4.5", features = ["derive"] }
 
-# Logging
+# Logging - Latest stable
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
-# Error handling
+# Error handling - Latest stable
 anyhow = "1.0"
 thiserror = "1.0"
 
-# Metrics (StatsD)
-cadence = "1.0"
+# Metrics (StatsD) - Latest stable
+cadence = "1.6"
 
-# Environment
+# Redis - Latest stable with async support
+redis = { version = "0.27", features = ["tokio-comp", "connection-manager"] }
+
+# Environment variables - Latest stable
 dotenv = "0.15"
-
-# AWS S3
-aws-config = "1.1"
-aws-sdk-s3 = "1.15"
 
 [profile.release]
 opt-level = 3
-lto = true
-codegen-units = 1
+lto = "thin"  # Use thin LTO instead of full LTO (much faster linking)
+codegen-units = 16  # Parallel codegen (faster build, slightly larger binary)
+
+[profile.dev]
+opt-level = 0
+debug = true

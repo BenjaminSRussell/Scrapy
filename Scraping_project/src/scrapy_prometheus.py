@@ -22,7 +22,7 @@ All metrics are consolidated in this single extension for efficient Prometheus s
 
 import logging
 import time
-from typing import Any, Dict
+from typing import Any
 
 try:
     from prometheus_client import Counter, Gauge, Histogram, start_http_server
@@ -34,7 +34,7 @@ except ImportError:
 
 from scrapy import Spider, signals
 from scrapy.crawler import Crawler
-from scrapy.exceptions import NotConfigured, DropItem
+from scrapy.exceptions import DropItem, NotConfigured
 from scrapy.http import Request, Response
 
 logger = logging.getLogger(__name__)
@@ -116,14 +116,14 @@ if PROMETHEUS_AVAILABLE:
     )
 
     # Track crawl start times for duration calculation
-    CRAWL_START_TIMES: Dict[str, float] = {}
+    CRAWL_START_TIMES: dict[str, float] = {}
 else:
     # Dummy variables when Prometheus is not available
     ITEMS_SCRAPED = ITEMS_DROPPED = REQUESTS_TOTAL = RESPONSES_TOTAL = None
     RESPONSE_TIME = SPIDER_OPENED = SPIDER_CLOSED = SPIDER_ERRORS = None
     REQUESTS_DROPPED = DOWNLOADER_REQUEST_BYTES = DOWNLOADER_RESPONSE_BYTES = None
     CRAWL_DURATION = None
-    CRAWL_START_TIMES: Dict[str, float] = {}
+    CRAWL_START_TIMES: dict[str, float] = {}
 
 
 class PrometheusExtension:

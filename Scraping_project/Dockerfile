@@ -13,14 +13,17 @@
 # ============================================
 # Stage 1: Rust Ingestor Builder
 # ============================================
-FROM rust:1.75-slim-bookworm AS kafka-delta-ingest-builder
+FROM rust:bookworm AS kafka-delta-ingest-builder
 
 # Install system dependencies required for building
 RUN apt-get update && apt-get install -y --no-install-recommends \
     pkg-config \
     libssl-dev \
+    libsasl2-dev \
     cmake \
     g++ \
+    clang \
+    libclang-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Set working directory
@@ -56,6 +59,7 @@ FROM debian:bookworm-slim AS kafka-delta-ingest
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     libssl3 \
+    libsasl2-2 \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user for security
