@@ -8,7 +8,7 @@ import re
 import signal
 from datetime import datetime
 from pathlib import Path
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urljoin, urlparse, urlunsplit
 
 import scrapy
 from scrapy.http import Response
@@ -110,8 +110,20 @@ class ScoutSpider(scrapy.Spider):
 
     def _hash_url(self, url: str) -> str:
         """Create normalized hash for deduplication."""
-        normalized = url.lower().rstrip('/')
-        return hashlib.sha256(normalized.encode()).hexdigest()[:16]
+        # Previous method was too simplistic and could merge query parameter URLs
+        # e.g., http://example.com/page?a=1 and http://example.com/page?a=2
+        parts = urlparse(url)
+        normalized_path = parts.path.rstrip('/') if parts.path else ''
+
+        # Reconstruct with normalized path, preserving query and fragment
+        normalized_url = urlunsplit((
+            parts.scheme.lower(),
+            parts.netloc.lower(),
+            normalized_path,
+            parts.query,
+            parts.fragment
+        ))
+        return hashlib.sha256(normalized_url.encode()).hexdigest()[:16]
 
     def _has_ignored_extension(self, url: str) -> bool:
         """Check if URL has an extension that should be ignored."""
