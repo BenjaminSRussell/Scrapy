@@ -139,7 +139,7 @@ class IntelligentRetryMiddleware(RetryMiddleware):
             # Schedule retry after delay
             if spider:
                 from twisted.internet import reactor
-                deferred = reactor.callLater(
+                reactor.callLater(
                     delay,
                     spider.crawler.engine.schedule,
                     retry_request,
