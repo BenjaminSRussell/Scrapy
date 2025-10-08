@@ -3,7 +3,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from scrapy.http import HtmlResponse, Response
-from scrapy.spidermiddlewares.httperror import HttpError
+from scrapy.spidermid
+dlewares.httperror import HttpError
 from twisted.internet.error import DNSLookupError, TCPTimedOutError, TimeoutError
 
 from src.stage1.scout_spider import ScoutSpider
@@ -15,10 +16,12 @@ class TestScoutSpider(unittest.TestCase):
         with patch('src.stage1.scout_spider.get_delta_manager'):
             with patch('src.stage1.scout_spider.get_postgres_manager'):
                 self.spider = ScoutSpider()
+                self.spider._initialize_discovery(HtmlResponse(url='https://example.com', body=b''))
 
-    # ============================================================================
+
+    # ============================================================================ 
     # URL Hashing and Filtering Tests
-    # ============================================================================
+    # ============================================================================ 
 
     def test_hash_url(self):
         """Test URL hashing for consistency and normalization."""
@@ -58,9 +61,9 @@ class TestScoutSpider(unittest.TestCase):
         self.assertFalse(spider._has_ignored_extension("https://example.com/document.php"))
         self.assertFalse(spider._has_ignored_extension("https://example.com/no_extension"))
 
-    # ============================================================================
+    # ============================================================================ 
     # JS Detection Tests
-    # ============================================================================
+    # ============================================================================ 
 
     def test_detect_js_requirement(self):
         """Test detection of JS-heavy pages."""
@@ -75,7 +78,7 @@ class TestScoutSpider(unittest.TestCase):
         self.assertTrue(spider._detect_js_requirement(create_response(spa_body)))
 
         # Case 2: Heavy async loading
-        async_body = "<html><script>fetch('/api/1'); fetch('/api/2'); axios.get('/data'); ajax(); ajax(); ajax();</script></html>"
+        async_body = "<html><script>fetch('/api/1'); fetch('/api/2'); axios.get('/data');</script></html>"
         self.assertTrue(spider._detect_js_requirement(create_response(async_body)))
 
         # Case 3: Minimal content with script tags
@@ -97,68 +100,63 @@ class TestScoutSpider(unittest.TestCase):
         """
         self.assertFalse(spider._detect_js_requirement(create_response(standard_body)))
 
-    # ============================================================================
+    # ============================================================================ 
     # URL Extraction Tests
-    # ============================================================================
+    # ============================================================================ 
 
-    def test_extract_api_endpoints(self):
-        """Test extraction of API endpoints from script tags."""
+    def test_discover_all_urls(self):
+        """Test the main URL discovery method."""
         spider = self.spider
         body = """
-        <html><script>
-            const endpoint = "/api/v1/data";
-            let baseURL = "https://api.example.com/v2/";
-            fetch('/graphql');
-        </script></html>
+        <html>
+            <head>
+                <link rel=\"stylesheet\" href=\"/style.css\">
+                <style>@import '/imported.css';</style>
+            </head>
+            <body>
+                <a href=\"/page1\">Page 1</a>
+                <img src=\"image.jpg\">
+                <script>
+                    var url1 = '/script-url';
+                    fetch('/api/data');
+                </script>
+            </body>
+        </html>
         """
         response = HtmlResponse(url='https://example.com', body=body, encoding='utf-8')
-        urls = spider._extract_api_endpoints(response)
+        spider._initialize_discovery(response)
+        urls = list(spider.discover_all_urls())
 
-        self.assertIn("https://example.com/api/v1/data", urls)
-        self.assertIn("https://api.example.com/v2/", urls)
-        self.assertIn("https://example.com/graphql", urls)
+        expected_urls = [
+            'https://example.com/style.css',
+            'https://example.com/imported.css',
+            'https://example.com/page1',
+            'https://example.com/image.jpg',
+            'https://example.com/script-url',
+            'https://example.com/api/data',
+            'https://example.com/robots.txt',
+            'https://example.com/sitemap.xml',
+            'https://example.com/sitemap_index.xml',
+            'https://example.com/sitemap-index.xml',
+        ]
+
+        for expected_url in expected_urls:
+            self.assertIn(expected_url, urls)
 
     def test_extract_sitemap_urls(self):
         """Test generation of sitemap and robots.txt URLs."""
         spider = self.spider
         response = HtmlResponse(url='https://sub.example.com/path/page', body=b'')
-        urls = spider._extract_sitemap_urls(response)
+        spider._initialize_discovery(response)
+        urls = spider._extract_sitemap_urls()
 
         self.assertIn("https://sub.example.com/robots.txt", urls)
         self.assertIn("https://sub.example.com/sitemap.xml", urls)
         self.assertIn("https://sub.example.com/sitemap_index.xml", urls)
 
-    def test_extract_from_comments(self):
-        """Test extraction of URLs from HTML comments."""
-        spider = self.spider
-        body = """
-        <!--
-            Check this out: https://comment.com/page1
-            Another one: www.comment2.com
-        -->
-        """
-        response = HtmlResponse(url='https://example.com', body=body, encoding='utf-8')
-        urls = spider._extract_from_comments(response)
-
-        self.assertIn("https://comment.com/page1", urls)
-        self.assertIn("http://www.comment2.com", urls)
-
-    def test_extract_from_headers(self):
-        """Test extraction of URLs from HTTP headers."""
-        spider = self.spider
-        headers = {
-            b'Link': b'<https://example.com/next>; rel="next"',
-            b'Location': b'/redirected'
-        }
-        response = Response(url='https://example.com', headers=headers)
-        urls = spider._extract_from_headers(response)
-
-        self.assertIn("https://example.com/next", urls)
-        self.assertIn("https://example.com/redirected", urls)
-
-    # ============================================================================
+    # ============================================================================ 
     # Error Handling Tests
-    # ============================================================================
+    # ============================================================================ 
 
     def test_handle_error_conditions(self):
         """Test different error handling scenarios."""

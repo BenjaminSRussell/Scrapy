@@ -82,7 +82,7 @@ services:
     container_name: scraping_kafka
     ports:
       - "9092:9092"
-      - "9093:9093"
+      - "9094:9093"
       - "9999:9999"  # JMX metrics port
     environment:
       KAFKA_BROKER_ID: 1
@@ -90,7 +90,7 @@ services:
 
       # Listener configuration for both internal and external access
       KAFKA_LISTENERS: INTERNAL://0.0.0.0:9092,EXTERNAL://0.0.0.0:9093
-      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:9092,EXTERNAL://localhost:9093
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:9092,EXTERNAL://localhost:9094
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
 
@@ -270,8 +270,7 @@ services:
       - grafana_data:/var/lib/grafana
       - ./monitoring/grafana_datasource.yml:/etc/grafana/provisioning/datasources/datasource.yml
       - ./monitoring/grafana_dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml
-      - ./monitoring/grafana_dashboard.json:/etc/grafana/provisioning/dashboards/pipeline_dashboard.json
-      - ./monitoring/grafana_kafka_realtime_dashboard.json:/etc/grafana/provisioning/dashboards/kafka_dashboard.json
+      - ./monitoring/dashboards:/etc/grafana/provisioning/dashboards
     restart: unless-stopped
     networks:
       - scraping_network

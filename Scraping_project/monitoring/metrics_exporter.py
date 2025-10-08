@@ -9,6 +9,7 @@ Exports metrics about:
 """
 
 import logging
+import os
 import sys
 import time
 from pathlib import Path
@@ -119,8 +120,8 @@ class MetricsExporter:
 
         redis_config = config.redis_config
         self.redis = get_redis_manager(
-            host=redis_config.get('host', 'localhost'),
-            port=redis_config.get('port', 6379),
+            host=os.environ.get('REDIS_HOST', redis_config.get('host', 'localhost')),
+            port=int(os.environ.get('REDIS_PORT', redis_config.get('port', 6379))),
             db=redis_config.get('db', 0),
             password=redis_config.get('password'),
         )
