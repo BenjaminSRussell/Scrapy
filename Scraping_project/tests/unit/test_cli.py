@@ -1,10 +1,12 @@
 import sys
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
+
 import pytest
 
 # Add project root to path to allow importing 'cli'
 sys.path.insert(0, 'Scraping_project')
 import cli
+
 
 def test_cli_help_exits_cleanly():
     """Verify that `cli.py --help` exits with code 0."""

@@ -3,8 +3,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from scrapy.http import HtmlResponse, Response
-from scrapy.spidermid
-dlewares.httperror import HttpError
+from scrapy.spidermiddlewares.httperror import HttpError
 from twisted.internet.error import DNSLookupError, TCPTimedOutError, TimeoutError
 
 from src.stage1.scout_spider import ScoutSpider

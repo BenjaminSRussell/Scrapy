@@ -118,10 +118,8 @@ class IntelligentRetryMiddleware(RetryMiddleware):
             # Extract reason message
             if isinstance(reason, Response):
                 reason_msg = response_status_message(reason.status)
-                status = reason.status
             else:
                 reason_msg = str(reason)
-                status = None
 
             logger.info(
                 f"Retry {retries}/{max_retry_times} for {request.url[:80]} "
