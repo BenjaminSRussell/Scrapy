@@ -255,40 +255,37 @@ class DeltaLakeManager:
 
     def export(self, table_name: str, output_path: str, format: str = 'csv'):
         """Export table to file.
-
         Args:
             table_name: Name of table to export
             output_path: Output file path
             format: Output format ('csv', 'json', 'parquet')
         """
-        try:
-            from pathlib import Path
-
-            import duckdb
-        except ImportError:
-            raise ImportError("Export requires duckdb. Install: pip install duckdb") from None
+        from pathlib import Path
+        import pandas as pd
+        import pyarrow as pa
+        from deltalake import DeltaTable
 
         table_path = self.tables.get(table_name)
         if not table_path:
             raise ValueError(f"Unknown table: {table_name}")
 
+        # Gracefully handle non-existent tables
         if not (table_path / "_delta_log").exists():
-            raise ValueError(f"No data in table: {table_name}")
+            logger.warning(f"No data in table: {table_name}, exporting empty file.")
+            # Create an empty PyArrow table to ensure downstream compatibility
+            pa_table = pa.Table.from_pylist([])
+        else:
+            # Read data using deltalake to respect the transaction log
+            table = DeltaTable(str(table_path))
+            pa_table = table.to_pyarrow_table()
 
-        parquet_files = list(table_path.glob("*.parquet"))
-        if not parquet_files:
-            raise ValueError(f"No parquet files in table: {table_name}")
-
-        con = duckdb.connect(database=':memory:')
-        query = f"SELECT * FROM read_parquet('{table_path}/*.parquet', union_by_name=True)"
-        result_df = con.execute(query).fetchdf()
-
-        if result_df.empty:
-            raise ValueError(f"Table {table_name} is empty")
+        # Convert to Pandas DataFrame for flexible export
+        result_df = pa_table.to_pandas()
 
         output_path = Path(output_path)
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
+        # Export to requested format
         if format == 'csv':
             result_df.to_csv(output_path, index=False)
         elif format == 'json':
@@ -298,7 +295,6 @@ class DeltaLakeManager:
         else:
             raise ValueError(f"Unsupported format: {format}")
 
-        con.close()
         logger.info(f"✅ Exported {table_name} to {output_path} ({format})")
 
         return {
@@ -307,7 +303,7 @@ class DeltaLakeManager:
             'format': format,
             'rows': len(result_df),
             'columns': len(result_df.columns),
-            'size_mb': output_path.stat().st_size / 1024 / 1024
+            'size_mb': output_path.stat().st_size / (1024 * 1024) if output_path.exists() else 0,
         }
 
     def export_all(self, output_dir: str, format: str = 'csv') -> list[dict[str, Any]]:
