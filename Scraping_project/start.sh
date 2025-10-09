@@ -25,9 +25,17 @@ if ! docker info &> /dev/null; then
 fi
 
 echo "Building and starting all services..."
-docker compose up --build || {
+docker compose up --build -d || {
     echo "Error: Failed to build and start services"
     exit 1
+}
+
+echo "Waiting for services to be ready..."
+sleep 10
+
+echo "Loading seed URLs from uconn_urls.csv..."
+docker compose exec -T scrapy-app python scripts/load_seeds.py || {
+    echo "Warning: Failed to load seed URLs, but continuing..."
 }
 
 echo "Attaching to logs..."

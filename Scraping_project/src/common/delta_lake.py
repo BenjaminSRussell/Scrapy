@@ -39,6 +39,7 @@ class DeltaLakeManager:
 
         # Stage-specific tables with intelligent routing
         self.tables = {
+            'seed_urls': self.base_path / 'seed_urls',
             'stage1_discovery': self.base_path / 'stage1_discovery',
             'stage1_errors': self.base_path / 'stage1_errors',
             'stage1_js_render_queue': self.base_path / 'stage1_js_render_queue',

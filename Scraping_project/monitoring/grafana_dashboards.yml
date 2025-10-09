@@ -1,7 +1,7 @@
 apiVersion: 1
 
 providers:
-  - name: 'UConn Scraping Pipeline - Enhanced Live Dashboard'
+  - name: 'UConn Scraping Pipeline - Unified Dashboard'
     orgId: 1
     type: file
     disableDeletion: false
@@ -9,4 +9,4 @@ providers:
     allowUiUpdates: true
     options:
       path: /etc/grafana/provisioning/dashboards
-      foldersFromFilesStructure: true
+      foldersFromFilesStructure: false

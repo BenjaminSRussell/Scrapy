@@ -140,8 +140,40 @@ class MetricsExporter:
         start_http_server(self.port)
         logger.info(f"Metrics server started on http://localhost:{self.port}/metrics")
 
+        # Wait for scraping to start before collecting metrics
+        self._wait_for_scraping_to_start()
+
         # Run update loop
         self._update_loop()
+
+    def _wait_for_scraping_to_start(self):
+        """Wait until scraping activity is detected before starting metrics collection."""
+        logger.info("Waiting for scraping to start...")
+
+        while True:
+            try:
+                # Check if there are any seed URLs or discovered URLs
+                seed_records = self.delta.read('seed_urls')
+                if seed_records and len(seed_records) > 0:
+                    logger.info(f"Scraping activity detected! Found {len(seed_records)} seed URLs")
+                    logger.info("Starting metrics collection...")
+                    return
+            except Exception as e:
+                logger.debug(f"No scraping activity yet (seed_urls table not found or empty): {e}")
+
+            try:
+                # Also check if any stage1_discovery records exist
+                discovery_records = self.delta.read('stage1_discovery')
+                if discovery_records and len(discovery_records) > 0:
+                    logger.info(f"Scraping activity detected! Found {len(discovery_records)} discovered URLs")
+                    logger.info("Starting metrics collection...")
+                    return
+            except Exception as e:
+                logger.debug(f"No discovery activity yet: {e}")
+
+            # Check every 10 seconds
+            logger.info("No scraping activity detected yet. Waiting...")
+            time.sleep(10)
 
     def _update_loop(self):
         """Continuously update metrics."""

@@ -115,15 +115,24 @@ if PROMETHEUS_AVAILABLE:
         ['spider']
     )
 
+    URLS_SKIPPED = Counter(
+        'scrapy_urls_skipped_total',
+        'Total number of URLs skipped by type',
+        ['spider', 'skip_reason']
+    )
+
     # Track crawl start times for duration calculation
     CRAWL_START_TIMES: dict[str, float] = {}
+    # Track skipped URL tallies for live display
+    SKIPPED_URL_TALLIES: dict[str, dict[str, int]] = {}
 else:
     # Dummy variables when Prometheus is not available
     ITEMS_SCRAPED = ITEMS_DROPPED = REQUESTS_TOTAL = RESPONSES_TOTAL = None
     RESPONSE_TIME = SPIDER_OPENED = SPIDER_CLOSED = SPIDER_ERRORS = None
     REQUESTS_DROPPED = DOWNLOADER_REQUEST_BYTES = DOWNLOADER_RESPONSE_BYTES = None
-    CRAWL_DURATION = None
+    CRAWL_DURATION = URLS_SKIPPED = None
     CRAWL_START_TIMES: dict[str, float] = {}
+    SKIPPED_URL_TALLIES: dict[str, dict[str, int]] = {}
 
 
 class PrometheusExtension:
@@ -206,6 +215,9 @@ class PrometheusExtension:
         # Record crawl start time
         CRAWL_START_TIMES[spider.name] = time.time()
 
+        # Initialize skipped URL tallies for this spider
+        SKIPPED_URL_TALLIES[spider.name] = {}
+
         SPIDER_OPENED.labels(spider=spider.name).set(1)
         logger.info(f"Spider opened: {spider.name} at {time.strftime('%Y-%m-%d %H:%M:%S')}")
 
@@ -223,6 +235,13 @@ class PrometheusExtension:
             logger.info(f"Spider {spider.name} crawl duration: {duration:.2f} seconds")
             del CRAWL_START_TIMES[spider.name]
 
+        # Log final skipped URL tally
+        if spider.name in SKIPPED_URL_TALLIES and SKIPPED_URL_TALLIES[spider.name]:
+            total_skipped = sum(SKIPPED_URL_TALLIES[spider.name].values())
+            tally_str = ', '.join([f"{reason}: {count}" for reason, count in sorted(SKIPPED_URL_TALLIES[spider.name].items())])
+            logger.info(f"📊 FINAL SKIPPED URLs SUMMARY - Total: {total_skipped} | {tally_str}")
+            del SKIPPED_URL_TALLIES[spider.name]
+
         SPIDER_OPENED.labels(spider=spider.name).set(0)
         SPIDER_CLOSED.labels(spider=spider.name, reason=reason).inc()
         logger.info(f"Spider closed: {spider.name}, reason: {reason}")
@@ -235,6 +254,16 @@ class PrometheusExtension:
             spider: Spider instance
         """
         ITEMS_SCRAPED.labels(spider=spider.name).inc()
+
+        # Track skipped URLs if the item has skip_reason
+        if isinstance(item, dict) and item.get('skip_reason'):
+            skip_reason = item['skip_reason']
+            URLS_SKIPPED.labels(spider=spider.name, skip_reason=skip_reason).inc()
+
+            # Update tally
+            if spider.name not in SKIPPED_URL_TALLIES:
+                SKIPPED_URL_TALLIES[spider.name] = {}
+            SKIPPED_URL_TALLIES[spider.name][skip_reason] = SKIPPED_URL_TALLIES[spider.name].get(skip_reason, 0) + 1
 
     def item_dropped(self, item: Any, spider: Spider, exception: Exception):
         """Called when item is dropped - Track drop reasons for data quality monitoring.
@@ -296,6 +325,19 @@ class PrometheusExtension:
                 drop_reason = 'duplicate'
 
         REQUESTS_DROPPED.labels(spider=spider.name, reason=drop_reason).inc()
+        URLS_SKIPPED.labels(spider=spider.name, skip_reason=drop_reason).inc()
+
+        # Update tally
+        if spider.name not in SKIPPED_URL_TALLIES:
+            SKIPPED_URL_TALLIES[spider.name] = {}
+        SKIPPED_URL_TALLIES[spider.name][drop_reason] = SKIPPED_URL_TALLIES[spider.name].get(drop_reason, 0) + 1
+
+        # Log running tally every 100 skipped URLs
+        total_skipped = sum(SKIPPED_URL_TALLIES[spider.name].values())
+        if total_skipped % 100 == 0:
+            tally_str = ', '.join([f"{reason}: {count}" for reason, count in sorted(SKIPPED_URL_TALLIES[spider.name].items())])
+            logger.info(f"🔄 SKIPPED URLs - Total: {total_skipped} | {tally_str}")
+
         logger.debug(f"Request dropped in {spider.name}: {drop_reason} - {request.url}")
 
     def response_received(self, response: Response, request: Request, spider: Spider):

@@ -23,12 +23,23 @@ rule_files:
   - '/etc/prometheus/alerting_rules.yml'
 
 scrape_configs:
-  # Scrape Scrapy application metrics - Real-time scraping metrics
+  # Scrape Scrapy application metrics - Multiple instances for extreme throughput
   - job_name: 'scrapy_app'
     scrape_interval: 10s  # Frequent scraping for real-time monitoring
     scrape_timeout: 5s
     static_configs:
-      - targets: ['scrapy-app:9410']
+      - targets:
+          - 'scrapy-app:9410'
+          - 'scrapy-app:9411'
+          - 'scrapy-app:9412'
+          - 'scrapy-app:9413'
+          - 'scrapy-app:9414'
+          - 'scrapy-app:9415'
+          - 'scrapy-app:9416'
+          - 'scrapy-app:9417'
+          - 'scrapy-app:9418'
+          - 'scrapy-app:9419'
+          - 'scrapy-app:9420'
         labels:
           service: 'scrapy'
           component: 'scraper'
@@ -42,12 +53,15 @@ scrape_configs:
           service: 'ingestor'
           component: 'kafka-delta'
 
-  # Scrape pipeline metrics
+  # Scrape pipeline metrics - Delta Lake, queues, circuit breakers
   - job_name: 'scraping_pipeline'
+    scrape_interval: 5s  # Match metrics exporter update interval
+    scrape_timeout: 3s
     static_configs:
-      - targets: ['metrics-exporter:8000']
+      - targets: ['metrics-exporter:9090']
         labels:
           service: 'pipeline'
+          component: 'metrics'
 
   # Scrape Redis metrics
   - job_name: 'redis'

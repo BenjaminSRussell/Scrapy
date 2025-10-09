@@ -17,6 +17,12 @@ import logging
 import signal
 import sys
 
+# Install the asyncio reactor BEFORE any other Twisted imports
+# This prevents reactor conflicts
+import asyncio
+from twisted.internet import asyncioreactor
+asyncioreactor.install(asyncio.new_event_loop())
+
 from scrapy.crawler import CrawlerRunner
 from scrapy.utils.log import configure_logging
 from scrapy.utils.project import get_project_settings
@@ -126,6 +132,11 @@ class ScrapyRunner:
             if reactor.running:
                 reactor.stop()
 
+    def _start_spiders_when_running(self):
+        """Helper to start spiders after reactor is running."""
+        deferred = self.run_spiders()
+        deferred.addErrback(lambda failure: logger.error(f"Spider execution failed: {failure}"))
+
     def start(self):
         """Start the Scrapy runner and Twisted reactor."""
         logger.info("Starting Scrapy application...")
@@ -133,11 +144,8 @@ class ScrapyRunner:
         # Set up signal handlers for graceful shutdown
         self.setup_signal_handlers()
 
-        # Schedule the spider crawls
-        deferred = self.run_spiders()
-
-        # Add error handler
-        deferred.addErrback(lambda failure: logger.error(f"Spider execution failed: {failure}"))
+        # Schedule the spider crawls to run when reactor starts
+        reactor.callWhenRunning(self._start_spiders_when_running)
 
         # Start the Twisted reactor
         # The reactor is Scrapy's event loop that manages all async operations

@@ -261,7 +261,7 @@ services:
     environment:
       - GF_SECURITY_ADMIN_USER=admin
       - GF_SECURITY_ADMIN_PASSWORD=admin
-      - GF_INSTALL_PLUGINS=redis-datasource
+      - GF_PLUGINS_PREINSTALL=redis-datasource
       - GF_SERVER_ROOT_URL=http://localhost:3000
       - GF_USERS_ALLOW_SIGN_UP=false
       - GF_PATHS_PROVISIONING=/etc/grafana/provisioning
@@ -285,14 +285,16 @@ services:
   # ============================================
 
   # Scrapy Application - Web scraping with Kafka integration
+  # MULTIPLE INSTANCES for maximum throughput
   scrapy-app:
     build:
       context: .
       dockerfile: Dockerfile
       target: crawler
     container_name: scraping_scrapy_app
+    command: python run_multiple_scouts.py
     ports:
-      - "9410:9410"  # Prometheus metrics endpoint
+      - "9410-9420:9410-9420"  # Prometheus metrics endpoints for multiple instances
     env_file:
       - .env
     environment:
@@ -319,12 +321,24 @@ services:
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-minioadmin123}
       - AWS_REGION=${AWS_REGION:-us-east-1}
       - AWS_ALLOW_HTTP=${AWS_ALLOW_HTTP:-true}
+
+      # Number of concurrent scout instances (default: CPU count)
+      - SCOUT_INSTANCES=${SCOUT_INSTANCES:-8}
     volumes:
       # Mount source code for development (hot reload)
       - ./src:/app/src:ro
       - ./config:/app/config:ro
       - ./data:/app/data
+      - ./run_multiple_scouts.py:/app/run_multiple_scouts.py:ro
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '8.0'
+          memory: 16G
+        reservations:
+          cpus: '4.0'
+          memory: 8G
     networks:
       - scraping_network
     depends_on:
@@ -387,6 +401,12 @@ services:
     volumes:
       - ./data:/delta
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /delta/delta_lake/scraped_data/_delta_log || exit 0"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
     networks:
       - scraping_network
     depends_on:
@@ -423,24 +443,6 @@ services:
   #     kafka:
   #       condition: service_healthy
 
-  # Legacy pipeline service (renamed for clarity)
-  pipeline:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      target: crawler
-    container_name: scraping_pipeline
-    restart: unless-stopped
-    networks:
-      - scraping_network
-    depends_on:
-      redis:
-        condition: service_healthy
-      postgres:
-        condition: service_healthy
-      metrics-exporter:
-        condition: service_started
-
   metrics-exporter:
     build:
       context: .
@@ -448,11 +450,15 @@ services:
       target: metrics
     container_name: scraping_metrics_exporter
     ports:
-      - "8000:8000"
+      - "9090:9090"
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-    command: python metrics_exporter.py --port 8000
+    volumes:
+      - ./data:/app/data
+      - ./src:/app/src:ro
+      - ./config:/app/config:ro
+    command: python metrics_exporter.py --port 9090 --interval 5
     restart: unless-stopped
     networks:
       - scraping_network

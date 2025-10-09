@@ -7,7 +7,6 @@ import hashlib
 import json
 import logging
 import re
-import signal
 from collections.abc import Iterator
 from datetime import datetime
 from pathlib import Path
@@ -52,31 +51,44 @@ class ScoutSpider(scrapy.Spider):
     ]
 
     custom_settings = {
-        # Maximum concurrency - push computational limits
-        'CONCURRENT_REQUESTS': 256,
-        'CONCURRENT_REQUESTS_PER_DOMAIN': 128,
-        'DOWNLOAD_DELAY': 0.1,
-        'DOWNLOAD_TIMEOUT': 30,
+        # EXTREME concurrency - maximum resource utilization
+        'CONCURRENT_REQUESTS': 2048,  # Increased from 1024
+        'CONCURRENT_REQUESTS_PER_DOMAIN': 768,  # Increased from 512
+        # Remove CONCURRENT_REQUESTS_PER_IP to avoid conflicts with priority queue
+        'DOWNLOAD_DELAY': 0.005,  # Reduced from 0.01 for even faster speed
+        'DOWNLOAD_TIMEOUT': 15,  # Reduced from 20 to fail faster
         'ROBOTSTXT_OBEY': False,
         'COOKIES_ENABLED': False,
         'HTTPCACHE_ENABLED': False,
         'RETRY_ENABLED': True,
-        'RETRY_TIMES': 2,
+        'RETRY_TIMES': 2,  # Reduced from 3 to fail faster
 
-        # Autothrottle - aggressive settings
+        # Autothrottle - extremely aggressive settings
         'AUTOTHROTTLE_ENABLED': True,
-        'AUTOTHROTTLE_START_DELAY': 1,
-        'AUTOTHROTTLE_MAX_DELAY': 5,
-        'AUTOTHROTTLE_TARGET_CONCURRENCY': 256,
+        'AUTOTHROTTLE_START_DELAY': 0.005,  # Reduced from 0.01
+        'AUTOTHROTTLE_MAX_DELAY': 1.5,  # Reduced from 2
+        'AUTOTHROTTLE_TARGET_CONCURRENCY': 2048,  # Increased from 1024
 
-        # Reactor settings for high performance
-        'REACTOR_THREADPOOL_MAXSIZE': 64,
-        'DNS_TIMEOUT': 10,
+        # Reactor settings for extreme performance
+        'REACTOR_THREADPOOL_MAXSIZE': 256,  # Increased from 128
+        'DNS_TIMEOUT': 8,  # Reduced from 10
 
-        # Memory optimizations
+        # Memory optimizations - increase limits
         'MEMUSAGE_ENABLED': True,
-        'MEMUSAGE_LIMIT_MB': 4096,
-        'MEMUSAGE_WARNING_MB': 3072,
+        'MEMUSAGE_LIMIT_MB': 10240,  # Increased to 10GB
+        'MEMUSAGE_WARNING_MB': 8192,  # Increased to 8GB
+
+        # Scheduler configuration for high-throughput
+        'SCHEDULER_DISK_QUEUE': 'scrapy.squeues.PickleFifoDiskQueue',
+        'SCHEDULER_PRIORITY_QUEUE': 'scrapy.pqueues.ScrapyPriorityQueue',
+
+        # Depth limit to prevent going too deep
+        'DEPTH_LIMIT': 5,  # Limit crawl depth to 5 levels
+        'DEPTH_PRIORITY': 1,  # Enable depth-based priority
+
+        # Connection pool settings for better performance
+        'DOWNLOAD_MAXSIZE': 10485760,  # 10MB max download size
+        'DOWNLOAD_WARNSIZE': 5242880,  # 5MB warning size
     }
 
     # Comprehensive URL pattern
@@ -109,6 +121,17 @@ class ScoutSpider(scrapy.Spider):
         self.js_render_queue = []
         self.sitemaps_parsed: set[str] = set()
 
+        # Skip tracking counters for live metrics
+        self.skip_counters = {
+            'images': 0,
+            'static_assets': 0,
+            'documents': 0,
+            'media_files': 0,
+            'archives': 0,
+            'duplicates': 0,
+            'invalid_urls': 0,
+        }
+
         self.delta = get_delta_manager()
         self.postgres = get_postgres_manager()
         self._load_existing_urls()
@@ -117,8 +140,10 @@ class ScoutSpider(scrapy.Spider):
         self.perf_urls_processed = 0
         self.perf_last_log = datetime.now()
 
-        signal.signal(signal.SIGINT, self._graceful_shutdown)
-        signal.signal(signal.SIGTERM, self._graceful_shutdown)
+        # NOTE: Don't register signal handlers here - let Scrapy/Twisted handle graceful shutdown
+        # The closed() method will be called automatically on shutdown
+        # signal.signal(signal.SIGINT, self._graceful_shutdown)
+        # signal.signal(signal.SIGTERM, self._graceful_shutdown)
 
         self.start_urls = self._load_seed_urls()
         logger.info(f"Scout loaded {len(self.start_urls)} seeds, {len(self.url_hashes)} existing URLs")
@@ -126,6 +151,50 @@ class ScoutSpider(scrapy.Spider):
     def _hash_url(self, url: str) -> str:
         """Hashes a URL using SHA256 for efficient storage and lookup."""
         return hashlib.sha256(url.encode('utf-8')).hexdigest()
+
+    def _categorize_skip_reason(self, url: str) -> str:
+        """Categorize the reason a URL was skipped for metrics tracking."""
+        url_lower = url.lower()
+
+        # Check for images
+        if any(url_lower.endswith(ext) for ext in ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.svg', '.webp', '.ico', '.tiff']):
+            return 'images'
+
+        # Check for static assets (CSS, JS)
+        if any(url_lower.endswith(ext) for ext in ['.css', '.js', '.map']):
+            return 'static_assets'
+
+        # Check for documents
+        if any(url_lower.endswith(ext) for ext in ['.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx']):
+            return 'documents'
+
+        # Check for media files
+        if any(url_lower.endswith(ext) for ext in ['.mp3', '.mp4', '.avi', '.mov', '.wmv', '.flv', '.webm', '.m4a', '.wav']):
+            return 'media_files'
+
+        # Check for archives
+        if any(url_lower.endswith(ext) for ext in ['.zip', '.rar', '.7z', '.tar', '.gz', '.bz2']):
+            return 'archives'
+
+        # Check for fonts
+        if any(url_lower.endswith(ext) for ext in ['.woff', '.woff2', '.ttf', '.eot', '.otf']):
+            return 'static_assets'
+
+        # Default to static assets
+        return 'static_assets'
+
+    def _track_skip(self, url: str, reason: str = None):
+        """Track a skipped URL for metrics."""
+        if reason is None:
+            reason = self._categorize_skip_reason(url)
+
+        self.skip_counters[reason] = self.skip_counters.get(reason, 0) + 1
+
+        # Log progress every 500 skips
+        total_skips = sum(self.skip_counters.values())
+        if total_skips % 500 == 0:
+            skip_summary = ', '.join([f"{k}: {v}" for k, v in sorted(self.skip_counters.items(), key=lambda x: -x[1])])
+            logger.info(f"⏭️  SKIP STATS - Total: {total_skips} | {skip_summary}")
 
     def _initialize_discovery(self, response: Response):
         """Initializes the discovery process for a given response."""
@@ -163,8 +232,35 @@ class ScoutSpider(scrapy.Spider):
         url_hash = self._hash_url(response.url)
 
         content_type = response.headers.get('Content-Type', b'').decode('utf-8', errors='ignore').lower()
+
+        # Yield item for ALL discovered resources (PDFs, images, documents, etc.)
+        discovered_item = {
+            'url': response.url,
+            'url_hash': url_hash,
+            'depth': depth,
+            'status_code': response.status,
+            'content_type': content_type,
+            'content_size': len(response.body),
+            'discovered_at': datetime.now().isoformat(),
+            'discovery_type': 'html' if ('text/html' in content_type or 'application/xhtml' in content_type) else 'resource',
+        }
+
+        # Check for document types (PDFs, Word docs, etc.)
+        if any(ext in response.url.lower() for ext in ['.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx']):
+            discovered_item['resource_type'] = 'document'
+            discovered_item['file_extension'] = response.url.lower().split('.')[-1]
+        elif any(ext in response.url.lower() for ext in ['.jpg', '.jpeg', '.png', '.gif', '.svg', '.webp']):
+            discovered_item['resource_type'] = 'image'
+        elif any(ext in response.url.lower() for ext in ['.js', '.css']):
+            discovered_item['resource_type'] = 'asset'
+        else:
+            discovered_item['resource_type'] = 'page'
+
+        # Yield item to Kafka for ALL resources
+        yield discovered_item
+
         if 'text/html' not in content_type and 'application/xhtml' not in content_type:
-            logger.debug(f"Skipping non-HTML content: {content_type} for {response.url[:80]}")
+            logger.debug(f"Non-HTML content discovered: {content_type} for {response.url[:80]}")
             self._record_non_html(response, url_hash, depth, content_type)
             return
 
@@ -188,22 +284,43 @@ class ScoutSpider(scrapy.Spider):
         logger.info(f"[D{depth}] {response.url[:80]} -> {len(discovered_urls)} URLs")
 
         for new_url in discovered_urls:
-            if self._has_ignored_extension(new_url):
-                logger.debug(f"Skipping static/media file: {new_url[:80]}")
-                continue
-
             new_url_hash = self._hash_url(new_url)
             if new_url_hash not in self.url_hashes:
                 self.url_hashes.add(new_url_hash)
-                priority = 0 if urlparse(response.url).netloc == urlparse(new_url).netloc else -1
-                yield scrapy.Request(
-                    new_url,
-                    callback=self.parse,
-                    errback=self.handle_error,
-                    meta={'depth': depth + 1},
-                    priority=priority,
-                    dont_filter=False  # Rely on Scrapy's duplicate filter
-                )
+
+                # Check if it's a static file - track it but don't crawl deeply
+                is_static = any(new_url.lower().endswith(ext) for ext in self.IGNORED_EXTENSIONS)
+
+                if is_static:
+                    # Track skip reason for metrics
+                    skip_reason = self._categorize_skip_reason(new_url)
+                    self._track_skip(new_url, skip_reason)
+
+                    # Yield metadata about static files without crawling them
+                    static_item = {
+                        'url': new_url,
+                        'url_hash': new_url_hash,
+                        'depth': depth + 1,
+                        'discovery_type': 'static_resource',
+                        'resource_type': 'static',
+                        'file_extension': new_url.lower().split('.')[-1] if '.' in new_url else 'unknown',
+                        'discovered_at': datetime.now().isoformat(),
+                        'parent_url': response.url,
+                        'skip_reason': skip_reason,
+                    }
+                    yield static_item
+                    logger.debug(f"Skipped {skip_reason}: {new_url[:80]}")
+                else:
+                    # Crawl HTML and API endpoints
+                    priority = 0 if urlparse(response.url).netloc == urlparse(new_url).netloc else -1
+                    yield scrapy.Request(
+                        new_url,
+                        callback=self.parse,
+                        errback=self.handle_error,
+                        meta={'depth': depth + 1},
+                        priority=priority,
+                        dont_filter=False  # Rely on Scrapy's duplicate filter
+                    )
 
     def discover_all_urls(self) -> Iterator[str]:
         """Extract URLs from ALL possible sources"""
@@ -241,6 +358,15 @@ class ScoutSpider(scrapy.Spider):
 
         url = url.split('#')[0]
         if len(url) > 2000:
+            return
+
+        # Filter out obviously invalid URLs (common false positives)
+        invalid_patterns = [
+            '/schema.org', '/w.org', '/text/javascript', '/application/json',
+            'uconn.edu', 'e.co'  # These are being extracted incorrectly
+        ]
+        if any(url.endswith(pattern) or pattern in url.split('/')[-1] for pattern in invalid_patterns):
+            logger.debug(f"Skipping invalid URL pattern: {url}")
             return
 
         self.discovered_urls.add(url)
@@ -398,8 +524,12 @@ class ScoutSpider(scrapy.Spider):
         srcsets = self.response.css('img::attr(srcset), source::attr(srcset)').getall()
         for srcset in srcsets:
             for part in srcset.split(','):
-                url = part.strip().split()[0]
-                self._add_url(url)
+                part = part.strip()
+                if part:  # Check if part is not empty
+                    parts = part.split()
+                    if parts:  # Check if split result is not empty
+                        url = parts[0]
+                        self._add_url(url)
         return iter(())
 
     def _extract_from_headers(self) -> Iterator[str]:
@@ -461,7 +591,7 @@ class ScoutSpider(scrapy.Spider):
         return urls
 
     def handle_error(self, failure):
-        """Handle errors."""
+        """Handle errors and send to Kafka for monitoring."""
         url = failure.request.url
         if failure.check(HttpError):
             error_type, error_code, error_message = 'HttpError', failure.value.response.status, f"HTTP {failure.value.response.status}"
@@ -471,6 +601,22 @@ class ScoutSpider(scrapy.Spider):
             error_type, error_code, error_message = 'TimeoutError', 0, "Request timeout"
         else:
             error_type, error_code, error_message = failure.type.__name__, 0, str(failure.value)
+
+        # Create error item for Kafka monitoring
+        error_item = {
+            'url': url,
+            'url_hash': self._hash_url(url),
+            'error_type': error_type,
+            'error_code': error_code,
+            'error_message': error_message,
+            'depth': failure.request.meta.get('depth', 0),
+            'timestamp': datetime.now().isoformat(),
+            'discovery_type': 'error',
+            'is_functional': False,
+        }
+
+        # Yield error to Kafka for real-time monitoring
+        return error_item
 
         error_record = {'url': url, 'url_hash': self._hash_url(url), 'error_type': error_type, 'error_code': error_code, 'depth': failure.request.meta.get('depth', 0), 'timestamp': str(datetime.now())}
         self.error_records.append(error_record)
@@ -525,20 +671,28 @@ class ScoutSpider(scrapy.Spider):
             self.perf_urls_processed = 0
 
     def closed(self, reason):
-        """Save remaining data on close."""
-        logger.info(f"Scout closing: {reason}. Total unique URLs: {len(self.url_hashes)}")
-        self._save_batch()
-        self._save_js_queue()
-        self.delta.checkpoint()
-        logger.info("All data saved successfully.")
+        """Save remaining data on close.
 
-    def _graceful_shutdown(self, signum, frame):
-        """Handle SIGINT/SIGTERM for graceful shutdown."""
-        logger.warning(f"Received signal {signum}, saving data...")
+        This method is called by Scrapy when the spider is shutting down,
+        including when Ctrl+C is pressed. Scrapy ensures all pipelines have
+        finished processing before calling this method.
+        """
+        logger.info(f"Scout closing: {reason}. Total unique URLs: {len(self.url_hashes)}")
+
+        # Log final skip statistics
+        total_skips = sum(self.skip_counters.values())
+        if total_skips > 0:
+            logger.info(f"📊 FINAL SKIP STATISTICS - Total Skipped: {total_skips}")
+            for skip_type, count in sorted(self.skip_counters.items(), key=lambda x: -x[1]):
+                if count > 0:
+                    percentage = (count / total_skips) * 100
+                    logger.info(f"   • {skip_type}: {count:,} ({percentage:.1f}%)")
+
+        logger.info("Saving remaining batches to Delta Lake...")
         self._save_batch()
         self._save_js_queue()
         self.delta.checkpoint()
-        logger.info("Data saved, exiting.")
+        logger.info("✅ All data saved successfully. Spider shutdown complete.")
 
     def _record_non_html(self, response, url_hash, depth, content_type):
         record = {'url': response.url, 'url_hash': url_hash, 'depth': depth, 'status_code': response.status, 'content_type': content_type, 'content_size': len(response.body), 'is_heavy': False, 'discovered_count': 0, 'requires_js': False, 'is_non_html': True, 'timestamp': str(datetime.now())}
