@@ -100,9 +100,8 @@ class ScoutSpider(scrapy.Spider):
         r'(?:url|href|src|endpoint|api|link)\s*[:=]\s*["\']([^"\"]+)["\"]',
     ]
 
-    def __init__(self, seed_file=None, *args, **kwargs):
+    def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.seed_file = seed_file or str(Path(__file__).parent.parent.parent / "data" / "raw" / "uconn_urls.csv")
 
         self.url_hashes: set[str] = set()
         self.discovered_records = []
@@ -124,53 +123,38 @@ class ScoutSpider(scrapy.Spider):
         self.start_urls = self._load_seed_urls()
         logger.info(f"Scout loaded {len(self.start_urls)} seeds, {len(self.url_hashes)} existing URLs")
 
+    def _hash_url(self, url: str) -> str:
+        """Hashes a URL using SHA256 for efficient storage and lookup."""
+        return hashlib.sha256(url.encode('utf-8')).hexdigest()
+
     def _initialize_discovery(self, response: Response):
-        """Initialize response-specific variables for discovery."""
+        """Initializes the discovery process for a given response."""
         self.response = response
         self.base_url = response.url
-        self.discovered_urls = set()
+        self.discovered_urls: set[str] = set()
 
     def _load_existing_urls(self):
-        """Load existing URL hashes from Delta Lake for deduplication."""
-        try:
-            existing = self.delta.read('stage1_discovery')
-            for record in existing:
-                url_hash = self._hash_url(record.get('url', ''))
-                self.url_hashes.add(url_hash)
-            logger.info(f"Loaded {len(self.url_hashes)} existing URL hashes")
-        except Exception as e:
-            logger.warning(f"No existing URLs: {e}")
-
-    def _hash_url(self, url: str) -> str:
-        """Create a consistent, normalized hash for a URL."""
-        # Normalize: lowercase, remove trailing slash, remove www.
-        normalized = url.lower().rstrip('/')
-        if urlparse(normalized).netloc.startswith('www.'):
-            normalized = normalized.replace('www.', '', 1)
-        return hashlib.sha256(normalized.encode()).hexdigest()[:16]
-
-    def _has_ignored_extension(self, url: str) -> bool:
-        """Check if URL has an extension that should be ignored."""
-        parsed = urlparse(url)
-        path = parsed.path.lower()
-        return any(path.endswith(ext) for ext in self.IGNORED_EXTENSIONS)
+        """Load already discovered URLs from Delta Lake to prevent re-crawling."""
+        # Disabled to always start from the beginning of the seed list
+        pass
 
     def _load_seed_urls(self):
-        """Load seed URLs without pre-adding to hash set."""
-        seed_path = Path(self.seed_file)
-        if not seed_path.exists():
-            logger.error(f"Seed file not found: {self.seed_file}")
+        """Load seed URLs from the 'seed_urls' Delta Lake table."""
+        try:
+            seed_records = self.delta.read('seed_urls')
+            urls = [record['url'] for record in seed_records]
+            
+            # Deduplicate against already scraped URLs
+            new_urls = []
+            for url in urls:
+                url_hash = self._hash_url(url)
+                if url_hash not in self.url_hashes:
+                    new_urls.append(url)
+            
+            return new_urls
+        except Exception as e:
+            logger.error(f"Could not load seed URLs from Delta Lake: {e}")
             return []
-
-        urls = []
-        with open(seed_path) as f:
-            for line in f:
-                line = line.strip()
-                if line and line.startswith('http'):
-                    url_hash = self._hash_url(line)
-                    if url_hash not in self.url_hashes:
-                        urls.append(line)
-        return urls
 
     def parse(self, response: Response):
         """Parse response with JS detection and advanced URL extraction."""

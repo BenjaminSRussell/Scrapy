@@ -261,7 +261,7 @@ class DeltaLakeManager:
             format: Output format ('csv', 'json', 'parquet')
         """
         from pathlib import Path
-        import pandas as pd
+
         import pyarrow as pa
         from deltalake import DeltaTable
 

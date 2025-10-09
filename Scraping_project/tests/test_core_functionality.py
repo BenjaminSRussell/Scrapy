@@ -9,6 +9,7 @@ Tests the essential components of the pipeline:
 6. ML error analyzer
 """
 
+import importlib.util
 import os
 import tempfile
 from pathlib import Path
@@ -100,11 +101,8 @@ class TestPostgresManager:
                 os.environ['DB_PASSWORD'] = old_password
 
     def test_postgres_manager_with_credentials(self):
-        """Test PostgreSQL manager initialization with credentials."""
         # Skip if psycopg2 not available
-        try:
-            import psycopg2
-        except ImportError:
+        if not importlib.util.find_spec("psycopg2"):
             pytest.skip("psycopg2 not installed")
 
         from src.common.postgres_manager import PostgresManager

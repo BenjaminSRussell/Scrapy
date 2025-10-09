@@ -19,17 +19,17 @@ Usage:
     python scripts/ml_error_analyzer.py --clusters 5
 """
 
+import logging
 import sys
 from pathlib import Path
+from typing import Any
+from urllib.parse import urlparse
+
+from src.common.postgres_manager import get_postgres_manager
 
 # Add project root to path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
-
-import logging
-from typing import Any
-from urllib.parse import urlparse
-from src.common.postgres_manager import get_postgres_manager
 
 try:
     import pandas as pd

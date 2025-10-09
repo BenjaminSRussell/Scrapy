@@ -1,8 +1,7 @@
 import unittest
 from unittest.mock import MagicMock, patch
 
-import pytest
-from scrapy.http import HtmlResponse, Response
+from scrapy.http import HtmlResponse
 from scrapy.spidermiddlewares.httperror import HttpError
 from twisted.internet.error import DNSLookupError, TCPTimedOutError, TimeoutError
 

@@ -1,10 +1,11 @@
+import shutil
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock
+
 import pandas as pd
-import tempfile
-import shutil
 
 # Ensure project root is in Python path
 project_root = Path(__file__).resolve().parents[2]
@@ -17,6 +18,7 @@ sys.modules['deltalake'] = mock_deltalake_module
 sys.modules['pyarrow'] = mock_pyarrow_module
 
 from src.common.delta_lake import DeltaLakeManager
+
 
 class TestDeltaLakeManager(unittest.TestCase):
 

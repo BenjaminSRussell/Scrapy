@@ -169,7 +169,7 @@ async def run_stage3_continuous(num_workers: int = 50, poll_interval: int = 5):
             if quality_docs:
                 logger.info(f"Stage 3 found {len(quality_docs)} quality documents to process")
 
-                tasks = [worker._process_document(doc) for doc in quality_docs[:50]]
+                tasks = [worker._summarize_document(doc) for doc in quality_docs[:50]]
                 results = await asyncio.gather(*tasks, return_exceptions=True)
 
                 valid_results = [r for r in results if isinstance(r, dict) and not isinstance(r, Exception)]
@@ -482,9 +482,10 @@ def cmd_reset(args):
 def cmd_export(args):
     """Export Delta Lake tables."""
     try:
-        import duckdb
+        import pandas as pd
+        from deltalake import DeltaTable
     except ImportError:
-        print("❌ ERROR: Missing dependencies. Install with: pip install duckdb pandas")
+        print("❌ ERROR: Missing dependencies. Install with: pip install deltalake pandas")
         sys.exit(1)
 
     project_root = Path(__file__).parent
@@ -500,7 +501,6 @@ def cmd_export(args):
         print("\n📚 Available Delta Lake tables:")
         print("-" * 80)
 
-        con = duckdb.connect(database=':memory:')
         available_tables = [d.name for d in delta_lake_path.iterdir() if d.is_dir()]
 
         for name in sorted(available_tables):
@@ -509,15 +509,14 @@ def cmd_export(args):
 
             if parquet_files:
                 try:
-                    query = f"SELECT COUNT(*) as count FROM read_parquet('{table_path}/*.parquet', union_by_name=True)"
-                    count = con.execute(query).fetchone()[0]
+                    dt = DeltaTable(str(table_path))
+                    count = len(dt.to_pyarrow_table())
                     print(f"  ✓ {name:30} ({count:,} rows, {len(parquet_files)} files)")
                 except Exception as e:
                     print(f"  ✗ {name:30} (error: {e})")
             else:
                 print(f"  ⚠ {name:30} (empty)")
 
-        con.close()
         print("-" * 80)
         return
 
@@ -541,7 +540,7 @@ def cmd_export(args):
 
 def _export_table(table_name: str, format: str, delta_lake_path: Path, export_path: Path, output_file: str = None):
     """Export a single table."""
-    import duckdb
+    from deltalake import DeltaTable
 
     table_path = delta_lake_path / table_name
 
@@ -549,17 +548,12 @@ def _export_table(table_name: str, format: str, delta_lake_path: Path, export_pa
         print(f"❌ Table '{table_name}' not found")
         return False
 
-    parquet_files = list(table_path.glob("*.parquet"))
-    if not parquet_files:
-        print(f"❌ No data in '{table_name}'")
-        return False
-
     try:
-        con = duckdb.connect(database=':memory:')
         print(f"\n🔎 Reading '{table_name}'...")
-
-        query = f"SELECT * FROM read_parquet('{table_path}/*.parquet', union_by_name=True)"
-        result_df = con.execute(query).fetchdf()
+        
+        # Read Delta table directly
+        dt = DeltaTable(str(table_path))
+        result_df = dt.to_pyarrow_table().to_pandas()
 
         if result_df.empty:
             print(f"⚠️  No data in '{table_name}'")
@@ -580,7 +574,6 @@ def _export_table(table_name: str, format: str, delta_lake_path: Path, export_pa
             result_df.to_parquet(output_file, index=False)
 
         print(f"✅ Exported to: {output_file} ({output_file.stat().st_size / 1024 / 1024:.2f} MB)")
-        con.close()
         return True
 
     except Exception as e:
@@ -606,7 +599,6 @@ def cmd_validate(args):
     deps = [
         ('scrapy', 'Scrapy'),
         ('deltalake', 'Delta Lake'),
-        ('duckdb', 'DuckDB'),
         ('httpx', 'HTTPX'),
         ('datasketch', 'datasketch'),
         ('transformers', 'Transformers'),
