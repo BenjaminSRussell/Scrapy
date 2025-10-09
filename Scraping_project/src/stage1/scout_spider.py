@@ -9,7 +9,6 @@ import logging
 import re
 from collections.abc import Iterator
 from datetime import datetime
-from pathlib import Path
 from urllib.parse import parse_qs, unquote, urljoin, urlparse
 
 import scrapy
