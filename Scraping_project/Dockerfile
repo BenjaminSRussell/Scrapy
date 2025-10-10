@@ -6,7 +6,6 @@
 # - kafka-delta-ingest: Final Rust ingestor runtime image
 # - crawler-base: Python dependency builder for Scrapy
 # - crawler: Final Scrapy crawler runtime image
-# - ingestor: Python-based Kafka->Delta ingestor
 # - metrics: Metrics exporter service
 # ==================================================================
 
@@ -158,52 +157,10 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
 
 # Default command - run the Scrapy application
 # This can be overridden in docker-compose.yml or at runtime
-CMD ["python", "run.py"]
+CMD ["python", "cli.py", "scrapy"]
 
 # ============================================
-# Stage 5: Python Kafka->Delta Ingestor
-# ============================================
-FROM python:3.12-slim-bookworm AS ingestor
-
-# Set working directory
-WORKDIR /app
-
-# Install system dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install Python dependencies
-RUN pip install --no-cache-dir \
-    confluent-kafka>=2.3.0 \
-    deltalake>=1.1.0 \
-    pyarrow>=17.0.0 \
-    pandas>=2.0.0 \
-    prometheus-client>=0.20.0 \
-    python-dotenv>=1.0.0
-
-# Create non-root user
-RUN useradd -m -u 1000 ingestor && \
-    chown -R ingestor:ingestor /app
-
-# Copy ingestor script
-COPY --chown=ingestor:ingestor src/consumers/kafka_delta_ingestor.py .
-
-# Create necessary directories
-RUN mkdir -p /data && \
-    chown -R ingestor:ingestor /data
-
-# Switch to non-root user
-USER ingestor
-
-# Expose Prometheus metrics port
-EXPOSE 8001
-
-# Run the ingestor
-CMD ["python", "kafka_delta_ingestor.py"]
-
-# ============================================
-# Stage 6: Metrics Exporter
+# Stage 5: Metrics Exporter
 # ============================================
 FROM python:3.12-slim AS metrics
 

@@ -6,7 +6,7 @@ Run multiple concurrent scout spider instances for maximum throughput
 import logging
 import multiprocessing as mp
 import os
-import sys
+
 from scrapy.crawler import CrawlerProcess
 from scrapy.utils.project import get_project_settings
 
@@ -50,9 +50,9 @@ def main():
     num_instances = int(os.getenv('SCOUT_INSTANCES', mp.cpu_count()))
 
     logger.info(f"Launching {num_instances} concurrent scout spider instances")
-    logger.info(f"Each instance will use extreme concurrency settings:")
-    logger.info(f"  - CONCURRENT_REQUESTS: 1024")
-    logger.info(f"  - CONCURRENT_REQUESTS_PER_DOMAIN: 512")
+    logger.info("Each instance will use extreme concurrency settings:")
+    logger.info("  - CONCURRENT_REQUESTS: 1024")
+    logger.info("  - CONCURRENT_REQUESTS_PER_DOMAIN: 512")
     logger.info(f"  - Total theoretical max: {num_instances * 1024} concurrent requests")
 
     # Create processes for each spider instance

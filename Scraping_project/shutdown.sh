@@ -130,8 +130,10 @@ if [ -d ".venv" ]; then
     # Run health check to see Delta Lake status
     print_info "Checking Delta Lake table statistics..."
 
-    if [ -f "run_pipeline.py" ]; then
-        python run_pipeline.py health 2>&1 | grep -E "stage[0-9]|records|✅|✗" || print_warning "Could not retrieve Delta Lake stats"
+    if [ -f "cli.py" ]; then
+        python cli.py health 2>&1 | grep -E "stage[0-9]|records|✅|✗" || print_warning "Could not retrieve Delta Lake stats"
+    else
+        print_warning "CLI not found, skipping Delta Lake check"
     fi
 else
     print_warning "Virtual environment not found, skipping Delta Lake check"

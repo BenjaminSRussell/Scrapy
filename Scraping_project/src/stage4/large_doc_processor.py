@@ -1,13 +1,30 @@
 """Stage 4: Large Document Processor
 Handles heavyweight summarization of large documents using powerful LLMs.
 Processes documents from stage4_large_docs queue.
+Enhanced: Fetches content on-demand using httpx instead of relying on stored text.
 """
 
 import logging
 from datetime import datetime
 from typing import Any
 
+import httpx
+from bs4 import BeautifulSoup
+from tenacity import retry, stop_after_attempt, wait_exponential
+
 from src.common.delta_lake import get_delta_manager
+
+# Import Prometheus metrics for monitoring
+try:
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+    from monitoring.metrics_exporter import stage4_http_failures_total, stage4_http_requests_total
+    PROMETHEUS_AVAILABLE = True
+except ImportError:
+    stage4_http_requests_total = None
+    stage4_http_failures_total = None
+    PROMETHEUS_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +40,18 @@ class LargeDocProcessor:
         # Chunk settings for very large docs
         self.CHUNK_SIZE = 5000  # characters per chunk
         self.OVERLAP = 500  # overlap between chunks
+
+        # Enhanced: Create httpx client with User-Agent and timeouts
+        self.http_client = httpx.Client(
+            headers={'User-Agent': 'MyScraper/1.0 (Educational Research Bot)'},
+            timeout=httpx.Timeout(30.0),
+            follow_redirects=True
+        )
+
+    def __del__(self):
+        """Clean up httpx client on deletion."""
+        if hasattr(self, 'http_client'):
+            self.http_client.close()
 
     def _load_model(self):
         """Lazy load the heavyweight model."""
@@ -42,6 +71,223 @@ class LargeDocProcessor:
         except Exception as e:
             logger.error(f"Failed to load model: {e}")
             raise
+
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
+    def _fetch_content(self, url: str, is_pdf: bool = False) -> tuple[str, str]:
+        """Fetch content from URL with retry logic.
+
+        Returns:
+            tuple: (text_content, content_type)
+        """
+        try:
+            # Increment total requests counter
+            if PROMETHEUS_AVAILABLE and stage4_http_requests_total:
+                stage4_http_requests_total.inc()
+
+            response = self.http_client.get(url)
+            response.raise_for_status()
+
+            content_type = response.headers.get('Content-Type', '').lower()
+
+            # Handle PDF documents
+            if 'application/pdf' in content_type or is_pdf:
+                return self._extract_pdf_text(response.content), 'pdf'
+
+            # Handle Word documents (.docx)
+            elif 'application/vnd.openxmlformats-officedocument.wordprocessingml' in content_type or url.lower().endswith('.docx'):
+                return self._extract_docx_text(response.content), 'docx'
+
+            # Handle PowerPoint documents (.pptx)
+            elif 'application/vnd.openxmlformats-officedocument.presentationml' in content_type or url.lower().endswith('.pptx'):
+                return self._extract_pptx_text(response.content), 'pptx'
+
+            # Handle Excel documents (.xlsx)
+            elif 'application/vnd.openxmlformats-officedocument.spreadsheetml' in content_type or url.lower().endswith('.xlsx'):
+                return self._extract_xlsx_text(response.content), 'xlsx'
+
+            # Handle legacy Word documents (.doc)
+            elif 'application/msword' in content_type or url.lower().endswith('.doc'):
+                return self._extract_doc_text(response.content), 'doc'
+
+            # Handle HTML documents
+            elif 'text/html' in content_type:
+                return self._extract_html_text(response.text), 'html'
+
+            # Handle plain text
+            elif 'text/plain' in content_type:
+                return response.text, 'txt'
+
+            else:
+                logger.warning(f"Unsupported content type: {content_type} for {url}")
+                return "", "unknown"
+
+        except httpx.HTTPStatusError as e:
+            # Increment failure counter
+            if PROMETHEUS_AVAILABLE and stage4_http_failures_total:
+                stage4_http_failures_total.labels(error_type='HTTPStatusError').inc()
+            logger.error(f"HTTP error fetching {url}: {e.response.status_code}")
+            raise
+        except httpx.RequestError as e:
+            # Increment failure counter
+            if PROMETHEUS_AVAILABLE and stage4_http_failures_total:
+                stage4_http_failures_total.labels(error_type='RequestError').inc()
+            logger.error(f"Request error fetching {url}: {e}")
+            raise
+        except Exception as e:
+            # Increment failure counter
+            if PROMETHEUS_AVAILABLE and stage4_http_failures_total:
+                stage4_http_failures_total.labels(error_type='UnknownError').inc()
+            logger.error(f"Unexpected error fetching {url}: {e}")
+            raise
+
+    def _extract_html_text(self, html: str) -> str:
+        """Extract clean text from HTML."""
+        try:
+            soup = BeautifulSoup(html, 'html.parser')
+
+            # Remove noise
+            for tag in soup(['script', 'style', 'nav', 'header', 'footer', 'aside', 'iframe']):
+                tag.decompose()
+
+            # Extract text
+            text = soup.get_text(separator=' ', strip=True)
+            text = ' '.join(text.split())  # Clean whitespace
+
+            return text
+        except Exception as e:
+            logger.error(f"Failed to extract HTML text: {e}")
+            return ""
+
+    def _extract_pdf_text(self, pdf_content: bytes) -> str:
+        """Extract text from PDF using pypdf."""
+        try:
+            from io import BytesIO
+
+            from pypdf import PdfReader
+
+            pdf_file = BytesIO(pdf_content)
+            reader = PdfReader(pdf_file)
+
+            text_parts = []
+            for page in reader.pages:
+                text_parts.append(page.extract_text())
+
+            return ' '.join(text_parts)
+
+        except ImportError:
+            logger.error("pypdf not installed - cannot extract PDF text")
+            return ""
+        except Exception as e:
+            logger.error(f"Failed to extract PDF text: {e}")
+            return ""
+
+    def _extract_docx_text(self, docx_content: bytes) -> str:
+        """Extract text from DOCX using python-docx."""
+        try:
+            from io import BytesIO
+
+            from docx import Document
+
+            docx_file = BytesIO(docx_content)
+            doc = Document(docx_file)
+
+            text_parts = []
+            for paragraph in doc.paragraphs:
+                text_parts.append(paragraph.text)
+
+            # Also extract text from tables
+            for table in doc.tables:
+                for row in table.rows:
+                    for cell in row.cells:
+                        text_parts.append(cell.text)
+
+            return '\n'.join(text_parts)
+
+        except ImportError:
+            logger.error("python-docx not installed - cannot extract DOCX text")
+            return ""
+        except Exception as e:
+            logger.error(f"Failed to extract DOCX text: {e}")
+            return ""
+
+    def _extract_pptx_text(self, pptx_content: bytes) -> str:
+        """Extract text from PPTX using python-pptx."""
+        try:
+            from io import BytesIO
+
+            from pptx import Presentation
+
+            pptx_file = BytesIO(pptx_content)
+            prs = Presentation(pptx_file)
+
+            text_parts = []
+            for slide in prs.slides:
+                for shape in slide.shapes:
+                    if hasattr(shape, "text"):
+                        text_parts.append(shape.text)
+
+            return '\n'.join(text_parts)
+
+        except ImportError:
+            logger.error("python-pptx not installed - cannot extract PPTX text")
+            return ""
+        except Exception as e:
+            logger.error(f"Failed to extract PPTX text: {e}")
+            return ""
+
+    def _extract_xlsx_text(self, xlsx_content: bytes) -> str:
+        """Extract text from XLSX using openpyxl."""
+        try:
+            from io import BytesIO
+
+            from openpyxl import load_workbook
+
+            xlsx_file = BytesIO(xlsx_content)
+            wb = load_workbook(xlsx_file, data_only=True)
+
+            text_parts = []
+            for sheet in wb.worksheets:
+                for row in sheet.iter_rows():
+                    for cell in row:
+                        if cell.value:
+                            text_parts.append(str(cell.value))
+
+            return '\n'.join(text_parts)
+
+        except ImportError:
+            logger.error("openpyxl not installed - cannot extract XLSX text")
+            return ""
+        except Exception as e:
+            logger.error(f"Failed to extract XLSX text: {e}")
+            return ""
+
+    def _extract_doc_text(self, doc_content: bytes) -> str:
+        """Extract text from legacy .doc files using textract or antiword."""
+        try:
+            import tempfile
+            from io import BytesIO
+
+            import textract
+
+            # textract requires a file path, so write to temp file
+            with tempfile.NamedTemporaryFile(suffix='.doc', delete=False) as tmp:
+                tmp.write(doc_content)
+                tmp_path = tmp.name
+
+            text = textract.process(tmp_path).decode('utf-8')
+
+            # Clean up temp file
+            import os
+            os.unlink(tmp_path)
+
+            return text
+
+        except ImportError:
+            logger.error("textract not installed - cannot extract .doc text. Install: apt-get install antiword")
+            return ""
+        except Exception as e:
+            logger.error(f"Failed to extract .doc text: {e}")
+            return ""
 
     def process_queue(self):
         """Process all pending large documents in queue."""
@@ -87,10 +333,24 @@ class LargeDocProcessor:
     def _process_document(self, doc: dict[str, Any]) -> dict[str, Any] | None:
         """Process a single large document."""
         url = doc.get('url')
-        text = doc.get('text', '')
-        word_count = doc.get('word_count', 0)
+        is_pdf = doc.get('is_pdf', False)
 
-        logger.info(f"Processing large doc ({word_count} words): {url[:80]}")
+        logger.info(f"Processing large doc: {url[:80]}")
+
+        # Enhanced: Fetch content on-demand instead of using stored text
+        try:
+            text, content_type = self._fetch_content(url, is_pdf)
+
+            if not text:
+                logger.warning(f"No text extracted from {url}")
+                return None
+
+            word_count = len(text.split())
+            logger.info(f"Fetched {word_count} words from {url[:80]} (type: {content_type})")
+
+        except Exception as e:
+            logger.error(f"Failed to fetch content from {url}: {e}")
+            return None
 
         # Split into chunks if necessary
         chunks = self._split_into_chunks(text)

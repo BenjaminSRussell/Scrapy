@@ -7,6 +7,7 @@ import hashlib
 import json
 import logging
 import re
+import time
 from collections.abc import Iterator
 from datetime import datetime
 from urllib.parse import parse_qs, unquote, urljoin, urlparse
@@ -22,6 +23,21 @@ from twisted.internet.error import (
 
 from src.common.delta_lake import get_delta_manager
 from src.common.postgres_manager import get_postgres_manager
+from src.items import OffsiteCandidateItem
+
+# Import Prometheus metrics for dashboard updates
+try:
+    from src.scrapy_prometheus import (
+        AVERAGE_FILE_SIZE_BYTES,
+        NEW_URLS_FOUND_PER_MINUTE,
+        OFFSITE_LINKS_FOUND,
+    )
+    PROMETHEUS_AVAILABLE = True
+except ImportError:
+    NEW_URLS_FOUND_PER_MINUTE = None
+    AVERAGE_FILE_SIZE_BYTES = None
+    OFFSITE_LINKS_FOUND = None
+    PROMETHEUS_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +46,12 @@ class ScoutSpider(scrapy.Spider):
     """Ultimate URL discovery scout with JS detection and intelligent routing."""
 
     name = "scout"
+
+    # Restrict crawling to uconn.edu domain only
+    allowed_domains = ["uconn.edu"]
+
+    # Handle redirects automatically to uncover more content
+    handle_httpstatus_list = [301, 302, 303, 307, 308]
 
     # Extensions to ignore when following links (static assets, media, documents)
     IGNORED_EXTENSIONS = [
@@ -51,10 +73,10 @@ class ScoutSpider(scrapy.Spider):
 
     custom_settings = {
         # EXTREME concurrency - maximum resource utilization
-        'CONCURRENT_REQUESTS': 2048,  # Increased from 1024
-        'CONCURRENT_REQUESTS_PER_DOMAIN': 768,  # Increased from 512
+        'CONCURRENT_REQUESTS': 1024,  # Increased from 1024
+        'CONCURRENT_REQUESTS_PER_DOMAIN': 512,  # Increased from 512
         # Remove CONCURRENT_REQUESTS_PER_IP to avoid conflicts with priority queue
-        'DOWNLOAD_DELAY': 0.005,  # Reduced from 0.01 for even faster speed
+        'DOWNLOAD_DELAY': 0.01,  # Reduced from 0.01 for even faster speed
         'DOWNLOAD_TIMEOUT': 15,  # Reduced from 20 to fail faster
         'ROBOTSTXT_OBEY': False,
         'COOKIES_ENABLED': False,
@@ -69,7 +91,7 @@ class ScoutSpider(scrapy.Spider):
         'AUTOTHROTTLE_TARGET_CONCURRENCY': 2048,  # Increased from 1024
 
         # Reactor settings for extreme performance
-        'REACTOR_THREADPOOL_MAXSIZE': 256,  # Increased from 128
+        'REACTOR_THREADPOOL_MAXSIZE': 128,  # Increased from 128
         'DNS_TIMEOUT': 8,  # Reduced from 10
 
         # Memory optimizations - increase limits
@@ -82,7 +104,7 @@ class ScoutSpider(scrapy.Spider):
         'SCHEDULER_PRIORITY_QUEUE': 'scrapy.pqueues.ScrapyPriorityQueue',
 
         # Depth limit to prevent going too deep
-        'DEPTH_LIMIT': 5,  # Limit crawl depth to 5 levels
+        'DEPTH_LIMIT': 10,  # Limit crawl depth to 5 levels
         'DEPTH_PRIORITY': 1,  # Enable depth-based priority
 
         # Connection pool settings for better performance
@@ -138,6 +160,17 @@ class ScoutSpider(scrapy.Spider):
         self.perf_start_time = datetime.now()
         self.perf_urls_processed = 0
         self.perf_last_log = datetime.now()
+
+        # New dashboard metrics tracking with sliding window
+        self.start_time = time.time()
+        self.new_urls_count = 0
+        self.total_file_size = 0
+
+        # Sliding window for real-time metrics (last 60 seconds)
+        from collections import deque
+        self.url_discovery_window = deque(maxlen=60)  # Store (timestamp, count) tuples
+        self.file_size_window = deque(maxlen=100)  # Store recent file sizes
+        self.last_metric_update = time.time()
 
         # NOTE: Don't register signal handlers here - let Scrapy/Twisted handle graceful shutdown
         # The closed() method will be called automatically on shutdown
@@ -277,6 +310,12 @@ class ScoutSpider(scrapy.Spider):
         self.perf_urls_processed += 1
         self._maybe_log_performance()
 
+        # Update dashboard metrics
+        self.new_urls_count += len(discovered_urls)
+        self.total_file_size += content_size
+        self._current_content_size = content_size  # Store for sliding window
+        self._update_dashboard_metrics()
+
         if len(self.discovered_records) >= 50:
             self._save_batch()
 
@@ -287,39 +326,64 @@ class ScoutSpider(scrapy.Spider):
             if new_url_hash not in self.url_hashes:
                 self.url_hashes.add(new_url_hash)
 
-                # Check if it's a static file - track it but don't crawl deeply
-                is_static = any(new_url.lower().endswith(ext) for ext in self.IGNORED_EXTENSIONS)
+                # Check if URL is external (not uconn.edu)
+                is_external = self._is_external_url(new_url)
 
-                if is_static:
-                    # Track skip reason for metrics
-                    skip_reason = self._categorize_skip_reason(new_url)
-                    self._track_skip(new_url, skip_reason)
+                if is_external:
+                    # Two-Pipeline System: External URLs -> OffsiteCandidateItem
+                    # Extract anchor text and context
+                    anchor_text, context = self._extract_context(response, new_url)
 
-                    # Yield metadata about static files without crawling them
-                    static_item = {
-                        'url': new_url,
-                        'url_hash': new_url_hash,
-                        'depth': depth + 1,
-                        'discovery_type': 'static_resource',
-                        'resource_type': 'static',
-                        'file_extension': new_url.lower().split('.')[-1] if '.' in new_url else 'unknown',
-                        'discovered_at': datetime.now().isoformat(),
-                        'parent_url': response.url,
-                        'skip_reason': skip_reason,
-                    }
-                    yield static_item
-                    logger.debug(f"Skipped {skip_reason}: {new_url[:80]}")
-                else:
-                    # Crawl HTML and API endpoints
-                    priority = 0 if urlparse(response.url).netloc == urlparse(new_url).netloc else -1
-                    yield scrapy.Request(
-                        new_url,
-                        callback=self.parse,
-                        errback=self.handle_error,
-                        meta={'depth': depth + 1},
-                        priority=priority,
-                        dont_filter=False  # Rely on Scrapy's duplicate filter
+                    # Create OffsiteCandidateItem instead of crawling
+                    offsite_item = OffsiteCandidateItem(
+                        source_page=response.url,
+                        external_url=new_url,
+                        anchor_text=anchor_text,
+                        context=context,
+                        discovered_at=datetime.now().isoformat()
                     )
+                    yield offsite_item
+
+                    # Increment Prometheus metric
+                    if PROMETHEUS_AVAILABLE and OFFSITE_LINKS_FOUND:
+                        OFFSITE_LINKS_FOUND.labels(spider=self.name).inc()
+
+                    logger.debug(f"External link found: {new_url[:80]}")
+                else:
+                    # Internal URL (uconn.edu) - proceed with existing logic
+                    # Check if it's a static file - track it but don't crawl deeply
+                    is_static = any(new_url.lower().endswith(ext) for ext in self.IGNORED_EXTENSIONS)
+
+                    if is_static:
+                        # Track skip reason for metrics
+                        skip_reason = self._categorize_skip_reason(new_url)
+                        self._track_skip(new_url, skip_reason)
+
+                        # Yield metadata about static files without crawling them
+                        static_item = {
+                            'url': new_url,
+                            'url_hash': new_url_hash,
+                            'depth': depth + 1,
+                            'discovery_type': 'static_resource',
+                            'resource_type': 'static',
+                            'file_extension': new_url.lower().split('.')[-1] if '.' in new_url else 'unknown',
+                            'discovered_at': datetime.now().isoformat(),
+                            'parent_url': response.url,
+                            'skip_reason': skip_reason,
+                        }
+                        yield static_item
+                        logger.debug(f"Skipped {skip_reason}: {new_url[:80]}")
+                    else:
+                        # Crawl HTML and API endpoints
+                        priority = 0 if urlparse(response.url).netloc == urlparse(new_url).netloc else -1
+                        yield scrapy.Request(
+                            new_url,
+                            callback=self.parse,
+                            errback=self.handle_error,
+                            meta={'depth': depth + 1},
+                            priority=priority,
+                            dont_filter=False  # Rely on Scrapy's duplicate filter
+                        )
 
     def discover_all_urls(self) -> Iterator[str]:
         """Extract URLs from ALL possible sources"""
@@ -338,6 +402,7 @@ class ScoutSpider(scrapy.Spider):
         yield from self._extract_from_encoded()
         yield from self._extract_from_query_params()
         yield from self._extract_sitemap_urls()
+        yield from self._extract_from_raw_regex()  # New: regex search on raw HTML
         yield from self.discovered_urls
 
     def _add_url(self, url: str):
@@ -390,6 +455,19 @@ class ScoutSpider(scrapy.Spider):
             self._add_url(href)
         for src in self.response.css('img::attr(src), source::attr(src), track::attr(src), script::attr(src), link[rel="stylesheet"]::attr(href), video::attr(src), audio::attr(src), object::attr(data), embed::attr(src)').getall():
             self._add_url(src)
+
+        # Enhanced: Extract from <link> tags (all types, not just stylesheets)
+        for link_href in self.response.css('link::attr(href)').getall():
+            self._add_url(link_href)
+
+        # Enhanced: Extract from all <script> src attributes
+        for script_src in self.response.css('script::attr(src)').getall():
+            self._add_url(script_src)
+
+        # Enhanced: Extract from data-* attributes (data-href, data-url, data-src)
+        for data_attr in self.response.xpath('//@data-href | //@data-url | //@data-src | //@data-link').getall():
+            self._add_url(data_attr)
+
         return iter(())
 
     def _extract_from_inline_scripts(self) -> Iterator[str]:
@@ -578,6 +656,141 @@ class ScoutSpider(scrapy.Spider):
                     pass
         return iter(())
 
+    def _is_valid_url(self, url: str) -> bool:
+        """Validate that a URL is legitimate and not from example/commented code.
+
+        Filters out:
+        - Example domains (example.com, localhost, etc.)
+        - Invalid schemes
+        - Obviously malformed URLs
+        """
+        url_lower = url.lower()
+
+        # Filter example/placeholder domains
+        invalid_domains = [
+            'example.com', 'example.org', 'example.net',
+            'localhost', '127.0.0.1', '0.0.0.0',
+            'test.com', 'dummy.com', 'placeholder.com',
+            'your-domain.com', 'yourdomain.com'
+        ]
+
+        for domain in invalid_domains:
+            if domain in url_lower:
+                return False
+
+        # Filter invalid schemes
+        if url_lower.startswith(('javascript:', 'data:', 'mailto:', 'tel:', 'ftp:')):
+            return False
+
+        # Must be HTTP(S) or start with /
+        if not (url.startswith(('http://', 'https://', '/'))):
+            return False
+
+        # Filter common false positives from code examples
+        code_patterns = [
+            'api.example', 'https://example', 'http://localhost',
+            'http://test', 'https://test', '//example',
+            'schema.org', 'w3.org/2000', 'w3.org/1999'
+        ]
+
+        for pattern in code_patterns:
+            if pattern in url_lower:
+                return False
+
+        return True
+
+    def _is_external_url(self, url: str) -> bool:
+        """Check if a URL is external (not uconn.edu).
+
+        Args:
+            url: The URL to check
+
+        Returns:
+            True if the URL is external to uconn.edu, False otherwise
+        """
+        try:
+            parsed = urlparse(url)
+            domain = parsed.netloc.lower()
+
+            # Remove port if present
+            if ':' in domain:
+                domain = domain.split(':')[0]
+
+            # Check if it's a uconn.edu domain
+            return not (domain.endswith('uconn.edu') or domain == 'uconn.edu')
+        except Exception:
+            return False
+
+    def _extract_context(self, response: Response, url: str) -> tuple[str, str]:
+        """Extract anchor text and surrounding context for a URL.
+
+        Args:
+            response: The response object containing the URL
+            url: The URL to extract context for
+
+        Returns:
+            Tuple of (anchor_text, context)
+        """
+        anchor_text = ""
+        context = ""
+
+        try:
+            # Try to find the anchor element containing this URL
+            anchors = response.css(f'a[href="{url}"]')
+            if anchors:
+                # Get the text content of the anchor
+                anchor_text = anchors[0].css('::text').get() or ""
+                anchor_text = anchor_text.strip()
+
+                # Try to get the parent paragraph for context
+                parent_p = anchors[0].xpath('./ancestor::p[1]//text()').getall()
+                if parent_p:
+                    context = ' '.join([t.strip() for t in parent_p if t.strip()])
+                    # Limit context to 500 characters
+                    if len(context) > 500:
+                        context = context[:500] + "..."
+        except Exception as e:
+            logger.debug(f"Failed to extract context for {url}: {e}")
+
+        return anchor_text, context
+
+    def _extract_from_raw_regex(self) -> Iterator[str]:
+        """Extract URLs from raw HTML using regex search with validation.
+        This catches URLs embedded in JavaScript code, HTML comments, and other places
+        that CSS selectors might miss. Now includes validation to avoid false positives.
+        """
+        try:
+            raw_html = self.response.text
+            discovered_urls = set()
+
+            # Search for URLs in the raw HTML (including JS code and comments)
+            for match in self.URL_REGEX.finditer(raw_html):
+                url = match.group(0)
+                if self._is_valid_url(url):
+                    discovered_urls.add(url)
+
+            # Also search HTML comments specifically
+            comment_pattern = re.compile(r'<!--(.*?)-->', re.DOTALL)
+            for comment_match in comment_pattern.finditer(raw_html):
+                comment_text = comment_match.group(1)
+                # Skip comments that look like documentation or examples
+                if any(marker in comment_text.lower() for marker in ['example', 'todo', 'fixme', 'sample']):
+                    continue
+
+                for url_match in self.URL_REGEX.finditer(comment_text):
+                    url = url_match.group(0)
+                    if self._is_valid_url(url):
+                        discovered_urls.add(url)
+
+            # Add validated URLs
+            for url in discovered_urls:
+                self._add_url(url)
+
+        except Exception as e:
+            logger.debug(f"Regex extraction failed: {e}")
+
+        return iter(())
+
     def _extract_sitemap_urls(self) -> list:
         """Extract from robots.txt and sitemaps."""
         urls = []
@@ -591,40 +804,58 @@ class ScoutSpider(scrapy.Spider):
 
     def handle_error(self, failure):
         """Handle errors and send to Kafka for monitoring."""
-        url = failure.request.url
+        # Enhanced: Capture request URL and failure value for better diagnostics
+        url = failure.request.url if hasattr(failure, 'request') else 'unknown'
+        failure_value = str(failure.value) if hasattr(failure, 'value') else 'unknown error'
+
         if failure.check(HttpError):
             error_type, error_code, error_message = 'HttpError', failure.value.response.status, f"HTTP {failure.value.response.status}"
         elif failure.check(DNSLookupError):
-            error_type, error_code, error_message = 'DNSLookupError', 0, "DNS lookup failed"
+            error_type, error_code, error_message = 'DNSLookupError', 0, f"DNS lookup failed: {failure_value}"
         elif failure.check(TimeoutError, TCPTimedOutError):
-            error_type, error_code, error_message = 'TimeoutError', 0, "Request timeout"
+            error_type, error_code, error_message = 'TimeoutError', 0, f"Request timeout: {failure_value}"
         else:
-            error_type, error_code, error_message = failure.type.__name__, 0, str(failure.value)
+            error_type, error_code, error_message = failure.type.__name__, 0, failure_value
 
-        # Create error item for Kafka monitoring
-        error_item = {
+        # Enhanced logging with request URL and failure value
+        logger.error(f"Request failed: {url} | Error: {error_type} | Message: {error_message}")
+
+        timestamp = datetime.now().isoformat()
+        error_record = {
             'url': url,
             'url_hash': self._hash_url(url),
             'error_type': error_type,
             'error_code': error_code,
-            'error_message': error_message,
             'depth': failure.request.meta.get('depth', 0),
-            'timestamp': datetime.now().isoformat(),
+            'timestamp': timestamp,
+            'error_message': error_message,
+        }
+
+        # Add error record for batch persistence
+        self.error_records.append(error_record)
+
+        if self.postgres:
+            try:
+                self.postgres.log_error(
+                    stage='stage1',
+                    url=url,
+                    error_type=error_type,
+                    error_message=error_message,
+                    stack_trace=failure.getTraceback(),
+                    http_status_code=error_code if error_code > 0 else None,
+                )
+            except Exception as e:
+                logger.debug(f"Failed to log error to PostgreSQL: {e}")
+
+        # Create error item for Kafka monitoring
+        error_item = {
+            **error_record,
             'discovery_type': 'error',
             'is_functional': False,
         }
 
         # Yield error to Kafka for real-time monitoring
         return error_item
-
-        error_record = {'url': url, 'url_hash': self._hash_url(url), 'error_type': error_type, 'error_code': error_code, 'depth': failure.request.meta.get('depth', 0), 'timestamp': str(datetime.now())}
-        self.error_records.append(error_record)
-
-        if self.postgres:
-            try:
-                self.postgres.log_error(stage='stage1', url=url, error_type=error_type, error_message=error_message, stack_trace=failure.getTraceback(), http_status_code=error_code if error_code > 0 else None)
-            except Exception as e:
-                logger.debug(f"Failed to log error to PostgreSQL: {e}")
 
     def _save_batch(self):
         """Save batches to Delta Lake."""
@@ -668,6 +899,52 @@ class ScoutSpider(scrapy.Spider):
                     logger.debug(f"Failed to log performance to PostgreSQL: {e}")
             self.perf_last_log = now
             self.perf_urls_processed = 0
+
+    def _update_dashboard_metrics(self):
+        """Update Prometheus dashboard metrics using sliding window for real-time tracking.
+
+        Uses a 60-second sliding window instead of lifetime average to show
+        real-time performance changes and bursts.
+        """
+        if not PROMETHEUS_AVAILABLE:
+            return
+
+        try:
+            current_time = time.time()
+
+            # Add current discovery count to sliding window
+            self.url_discovery_window.append((current_time, self.new_urls_count))
+
+            # Add current file size to sliding window
+            if hasattr(self, '_current_content_size'):
+                self.file_size_window.append(self._current_content_size)
+
+            # Only update metrics every second to avoid overhead
+            if current_time - self.last_metric_update < 1.0:
+                return
+
+            self.last_metric_update = current_time
+
+            # Calculate URLs per minute using sliding window (last 60 seconds)
+            cutoff_time = current_time - 60.0
+            recent_discoveries = [count for ts, count in self.url_discovery_window if ts >= cutoff_time]
+
+            if recent_discoveries:
+                # Sum URLs discovered in last 60 seconds
+                urls_in_window = sum(recent_discoveries)
+                # Calculate rate per minute based on actual window size
+                window_size_minutes = min(60.0, current_time - self.start_time) / 60.0
+                if window_size_minutes > 0:
+                    urls_per_minute = urls_in_window / window_size_minutes
+                    NEW_URLS_FOUND_PER_MINUTE.labels(spider=self.name).set(urls_per_minute)
+
+            # Calculate average file size from recent samples
+            if self.file_size_window:
+                avg_file_size = sum(self.file_size_window) / len(self.file_size_window)
+                AVERAGE_FILE_SIZE_BYTES.labels(spider=self.name).set(avg_file_size)
+
+        except Exception as e:
+            logger.debug(f"Failed to update dashboard metrics: {e}")
 
     def closed(self, reason):
         """Save remaining data on close.

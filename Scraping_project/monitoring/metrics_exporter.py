@@ -8,10 +8,12 @@ Exports metrics about:
 - Circuit breaker status
 """
 
+import json
 import logging
 import os
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
 
 from prometheus_client import Counter, Gauge, Histogram, start_http_server
@@ -101,6 +103,18 @@ delta_lake_size_bytes = Gauge(
     ['table']
 )
 
+# Stage 4 metrics for large document processing
+stage4_http_requests_total = Counter(
+    'stage4_http_requests_total',
+    'Total HTTP requests made by Stage 4 processor'
+)
+
+stage4_http_failures_total = Counter(
+    'stage4_http_failures_total',
+    'Total HTTP request failures in Stage 4',
+    ['error_type']
+)
+
 
 class MetricsExporter:
     """Exports pipeline metrics to Prometheus."""
@@ -130,7 +144,12 @@ class MetricsExporter:
 
         # Track previous counts for rate calculation
         self.previous_counts = {}
+        self.previous_error_counts = {}
         self.last_update_time = time.time()
+        exports_dir = Path(__file__).parent.parent / 'exports'
+        exports_dir.mkdir(parents=True, exist_ok=True)
+        self.error_summary_path = exports_dir / 'stage1_errors_summary.json'
+        self._last_error_summary_fingerprint: tuple | None = None
 
         logger.info(f"Metrics exporter initialized on port {port} with {update_interval}s update interval")
 
@@ -182,6 +201,7 @@ class MetricsExporter:
                 self._update_queue_metrics()
                 self._update_circuit_breaker_metrics()
                 self._update_delta_lake_metrics()
+                self._update_error_metrics()
                 self._update_throughput_metrics()
 
                 logger.debug("Metrics updated successfully")
@@ -223,7 +243,9 @@ class MetricsExporter:
             tables = [
                 'stage1_discovery',
                 'stage1_errors',
+                'stage1_js_render_queue',
                 'stage2_page_analysis',
+                'stage3_analytics',
                 'stage3_summaries',
                 'stage4_large_docs',
                 'stage4_summaries',
@@ -280,13 +302,18 @@ class MetricsExporter:
                         records = self.delta.read(table)
                         current_count = len(records) if records else 0
 
-                        # Get previous count
-                        previous_count = self.previous_counts.get(table, current_count)
+                        previous_count = self.previous_counts.get(table)
+                        if previous_count is None:
+                            delta_count = current_count
+                            rate = 0.0
+                        else:
+                            delta_count = current_count - previous_count
+                            rate = delta_count / time_delta if time_delta > 0 else 0.0
 
-                        # Calculate rate (records per second)
-                        if time_delta > 0:
-                            rate = (current_count - previous_count) / time_delta
-                            urls_processed_per_second.labels(stage=stage).set(max(0, rate))
+                        if delta_count > 0:
+                            urls_processed_total.labels(stage=stage).inc(delta_count)
+
+                        urls_processed_per_second.labels(stage=stage).set(max(0.0, rate))
 
                         # Update previous count
                         self.previous_counts[table] = current_count
@@ -298,6 +325,67 @@ class MetricsExporter:
 
         except Exception as e:
             logger.error(f"Error updating throughput metrics: {e}")
+
+    def _update_error_metrics(self):
+        """Update error counters by stage and type."""
+        try:
+            error_stage = 'stage1'
+            records = self.delta.read('stage1_errors')
+            current_counts: dict[str, int] = {}
+
+            if records:
+                for record in records:
+                    error_type = record.get('error_type') or 'unknown'
+                    current_counts[error_type] = current_counts.get(error_type, 0) + 1
+
+            previous_counts = self.previous_error_counts.get(error_stage, {})
+
+            for error_type, count in current_counts.items():
+                previous = previous_counts.get(error_type, 0)
+                delta = count - previous
+                if delta > 0:
+                    errors_total.labels(stage=error_stage, error_type=error_type).inc(delta)
+
+            # Ensure we remember zero-state types as well
+            self.previous_error_counts[error_stage] = current_counts
+            self._write_error_summary(current_counts)
+
+        except Exception as e:
+            logger.debug(f"Could not update error metrics: {e}")
+
+    def _write_error_summary(self, counts: dict[str, int]):
+        """Persist a simplified error summary for dashboard consumption."""
+        try:
+            total_errors = sum(counts.values())
+            top_errors = sorted(counts.items(), key=lambda item: item[1], reverse=True)
+            summary = {
+                'generated_at': datetime.utcnow().isoformat() + 'Z',
+                'total_errors': total_errors,
+                'error_types': [
+                    {
+                        'type': error_type,
+                        'count': count,
+                        'percentage': round((count / total_errors) * 100, 2) if total_errors else 0.0,
+                    }
+                    for error_type, count in top_errors
+                ],
+            }
+
+            fingerprint = (
+                total_errors,
+                tuple((error_type, count) for error_type, count in top_errors),
+            )
+
+            if fingerprint == self._last_error_summary_fingerprint:
+                return
+
+            with self.error_summary_path.open('w', encoding='utf-8') as fp:
+                json.dump(summary, fp, indent=2)
+
+            self._last_error_summary_fingerprint = fingerprint
+
+        except Exception as e:
+            logger.debug(f"Failed to write error summary: {e}")
 
 
 def main():

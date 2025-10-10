@@ -121,6 +121,30 @@ if PROMETHEUS_AVAILABLE:
         ['spider', 'skip_reason']
     )
 
+    NEW_URLS_FOUND_PER_MINUTE = Gauge(
+        'scrapy_new_urls_found_per_minute',
+        'Rate of new URLs discovered per minute',
+        ['spider']
+    )
+
+    AVERAGE_FILE_SIZE_BYTES = Gauge(
+        'scrapy_average_file_size_bytes',
+        'Average file size of downloaded responses',
+        ['spider']
+    )
+
+    OFFSITE_LINKS_FOUND = Counter(
+        'scrapy_offsite_links_found_total',
+        'Total number of offsite/external links discovered',
+        ['spider']
+    )
+
+    OFFSITE_CANDIDATES_SAVED = Counter(
+        'scrapy_offsite_candidates_saved_total',
+        'Total number of offsite candidates saved to Delta Lake',
+        ['spider']
+    )
+
     # Track crawl start times for duration calculation
     CRAWL_START_TIMES: dict[str, float] = {}
     # Track skipped URL tallies for live display
@@ -131,6 +155,8 @@ else:
     RESPONSE_TIME = SPIDER_OPENED = SPIDER_CLOSED = SPIDER_ERRORS = None
     REQUESTS_DROPPED = DOWNLOADER_REQUEST_BYTES = DOWNLOADER_RESPONSE_BYTES = None
     CRAWL_DURATION = URLS_SKIPPED = None
+    NEW_URLS_FOUND_PER_MINUTE = AVERAGE_FILE_SIZE_BYTES = None
+    OFFSITE_LINKS_FOUND = OFFSITE_CANDIDATES_SAVED = None
     CRAWL_START_TIMES: dict[str, float] = {}
     SKIPPED_URL_TALLIES: dict[str, dict[str, int]] = {}
 

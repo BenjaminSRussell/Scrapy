@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Unified Pipeline CLI - Single entry point for all operations
 
-This consolidates run.py and run_pipeline.py into a single CLI tool.
+Provides commands for running Scrapy, orchestrating the full pipeline,
+and handling operational utilities from one tool.
 
 Commands:
   scrapy      Run Scrapy spiders (simple Docker entrypoint)
@@ -32,7 +33,7 @@ logger = logging.getLogger(__name__)
 
 
 # ============================================================================
-# SCRAPY COMMAND (from run.py)
+# SCRAPY COMMAND (Docker entrypoint)
 # ============================================================================
 
 def cmd_scrapy(args):
@@ -98,7 +99,7 @@ def cmd_scrapy(args):
 
 
 # ============================================================================
-# PIPELINE COMMAND (from run_pipeline.py)
+# PIPELINE COMMAND (multi-stage pipeline)
 # ============================================================================
 
 async def run_scrapy_crawler():
@@ -227,6 +228,152 @@ def cmd_setup(args):
     logger.info("✅ Setup complete")
 
 
+def cmd_reset(args):
+    """Reset Delta Lake tables and re-seed from CSV."""
+    import hashlib
+    import shutil
+
+    import pandas as pd
+
+    from src.common.constants import DELTA_LAKE
+    from src.common.delta_lake import get_delta_manager
+
+    logger.info("🔥 RESETTING DELTA LAKE...")
+    logger.warning("This will DELETE all data in Delta Lake tables!")
+
+    if not args.force:
+        confirmation = input("Are you sure? Type 'yes' to continue: ")
+        if confirmation.lower() != 'yes':
+            logger.info("Reset cancelled.")
+            return
+
+    # Delete all Delta Lake tables
+    if DELTA_LAKE.exists():
+        logger.info(f"Deleting Delta Lake directory: {DELTA_LAKE}")
+        shutil.rmtree(DELTA_LAKE)
+        logger.info("✅ Delta Lake wiped")
+
+    # Recreate Delta Lake manager (will recreate directories)
+    logger.info("Recreating Delta Lake structure...")
+    manager = get_delta_manager()
+    logger.info("✅ Delta Lake structure recreated")
+
+    # Re-seed from CSV
+    csv_path = Path(__file__).parent / 'data' / 'raw' / 'uconn_urls.csv'
+    if not csv_path.exists():
+        logger.error(f"Seed file not found: {csv_path}")
+        return
+
+    logger.info(f"Loading seed URLs from: {csv_path}")
+    df = pd.read_csv(csv_path)
+
+    # Add url_hash column
+    df['url_hash'] = df['url'].apply(lambda url: hashlib.sha256(url.encode('utf-8')).hexdigest())
+    df['added_at'] = pd.Timestamp.now().isoformat()
+
+    seed_records = df.to_dict('records')
+    logger.info(f"Seeding {len(seed_records)} URLs...")
+
+    manager.write('seed_urls', seed_records, mode='overwrite', async_write=False)
+    logger.info("✅ Seed URLs loaded")
+    logger.info("🎉 Reset complete!")
+
+
+def cmd_clean(args):
+    """Clean temporary files and caches."""
+    import shutil
+
+    logger.info("🧹 Cleaning temporary files...")
+
+    cleaned = []
+
+    # Find and delete __pycache__ directories
+    for pycache in Path(__file__).parent.rglob('__pycache__'):
+        shutil.rmtree(pycache)
+        cleaned.append(str(pycache))
+
+    # Find and delete .pyc files
+    for pyc_file in Path(__file__).parent.rglob('*.pyc'):
+        pyc_file.unlink()
+        cleaned.append(str(pyc_file))
+
+    # Find and delete .DS_Store files (macOS)
+    for ds_store in Path(__file__).parent.rglob('.DS_Store'):
+        ds_store.unlink()
+        cleaned.append(str(ds_store))
+
+    # Clean Scrapy .scrapy directories
+    for scrapy_dir in Path(__file__).parent.rglob('.scrapy'):
+        if scrapy_dir.is_dir():
+            shutil.rmtree(scrapy_dir)
+            cleaned.append(str(scrapy_dir))
+
+    logger.info(f"✅ Cleaned {len(cleaned)} files/directories")
+    if args.verbose:
+        for item in cleaned[:20]:  # Show first 20
+            logger.info(f"  - {item}")
+        if len(cleaned) > 20:
+            logger.info(f"  ... and {len(cleaned) - 20} more")
+
+
+def cmd_validate(args):
+    """Validate Delta Lake tables."""
+    from src.common.delta_lake import get_delta_manager
+
+    logger.info("🔍 Validating Delta Lake tables...")
+    manager = get_delta_manager()
+
+    tables = manager.list_tables()
+    issues = []
+
+    for table in tables:
+        logger.info(f"\nValidating: {table['name']}")
+        logger.info(f"  Exists: {table['exists']}")
+        logger.info(f"  Row count: {table['row_count']}")
+        logger.info(f"  Parquet files: {table['parquet_files']}")
+
+        # Check for issues
+        if table['exists'] and table['row_count'] == 0:
+            issue = f"{table['name']}: Table exists but has 0 rows"
+            issues.append(issue)
+            logger.warning(f"  ⚠️  {issue}")
+
+        if table['parquet_files'] > 0 and not table['exists']:
+            issue = f"{table['name']}: Has parquet files but no Delta log"
+            issues.append(issue)
+            logger.warning(f"  ⚠️  {issue}")
+
+        if 'error' in table:
+            issue = f"{table['name']}: Error reading table - {table['error']}"
+            issues.append(issue)
+            logger.error(f"  ❌ {issue}")
+
+        # Sample data validation
+        if table['exists'] and table['row_count'] > 0:
+            try:
+                sample = manager.read(table['name'])[:5]  # Read first 5 records
+                if sample:
+                    logger.info(f"  Sample record keys: {list(sample[0].keys())}")
+                    logger.info("  ✅ Schema appears valid")
+                else:
+                    issue = f"{table['name']}: Could not read sample data"
+                    issues.append(issue)
+                    logger.warning(f"  ⚠️  {issue}")
+            except Exception as e:
+                issue = f"{table['name']}: Error reading sample - {str(e)}"
+                issues.append(issue)
+                logger.error(f"  ❌ {issue}")
+
+    logger.info("\n" + "=" * 60)
+    if issues:
+        logger.warning(f"⚠️  Found {len(issues)} issues:")
+        for issue in issues:
+            logger.warning(f"  - {issue}")
+    else:
+        logger.info("✅ All tables validated successfully!")
+    logger.info("=" * 60)
+
+
 # ============================================================================
 # MAIN CLI
 # ============================================================================
@@ -274,6 +421,20 @@ def main():
     # Setup command
     setup_parser = subparsers.add_parser('setup', help='Setup models')
     setup_parser.set_defaults(func=cmd_setup)
+
+    # Reset command
+    reset_parser = subparsers.add_parser('reset', help='Reset Delta Lake and re-seed')
+    reset_parser.add_argument('--force', action='store_true', help='Skip confirmation prompt')
+    reset_parser.set_defaults(func=cmd_reset)
+
+    # Clean command
+    clean_parser = subparsers.add_parser('clean', help='Clean temporary files')
+    clean_parser.add_argument('--verbose', action='store_true', help='Show all cleaned files')
+    clean_parser.set_defaults(func=cmd_clean)
+
+    # Validate command
+    validate_parser = subparsers.add_parser('validate', help='Validate Delta Lake tables')
+    validate_parser.set_defaults(func=cmd_validate)
 
     # Parse and execute
     args = parser.parse_args()

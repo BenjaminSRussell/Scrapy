@@ -22,6 +22,8 @@ from scrapy import Spider, signals
 from scrapy.crawler import Crawler
 from scrapy.exceptions import DropItem, NotConfigured
 
+from src.items import OffsiteCandidateItem
+
 logger = logging.getLogger(__name__)
 
 
@@ -471,3 +473,115 @@ class KafkaPipeline:
             # Don't raise - allow item to continue through pipeline
 
         return item
+
+
+class OffsiteCandidatePipeline:
+    """Pipeline for processing external URLs discovered during crawling.
+
+    This pipeline handles OffsiteCandidateItem objects, which represent URLs
+    that point outside the primary crawl domain (e.g., external links from uconn.edu).
+    It batches these items and saves them to Delta Lake for future classification.
+
+    Features:
+    - Batch processing for efficient Delta Lake writes
+    - Only processes OffsiteCandidateItem objects (ignores other item types)
+    - Saves to stage1_offsite_candidates Delta table
+    - Graceful shutdown with data flushing
+    """
+
+    BATCH_SIZE = 100  # Number of items to batch before writing
+
+    def __init__(self):
+        """Initialize the offsite candidate pipeline."""
+        from src.common.delta_lake import get_delta_manager
+        self.delta = get_delta_manager()
+        self.batch = []
+        self.items_processed = 0
+
+    @classmethod
+    def from_crawler(cls, crawler: Crawler) -> 'OffsiteCandidatePipeline':
+        """Factory method to create pipeline instance from crawler.
+
+        Args:
+            crawler: Scrapy crawler instance
+
+        Returns:
+            Configured OffsiteCandidatePipeline instance
+        """
+        pipeline = cls()
+
+        # Connect lifecycle methods to Scrapy signals
+        crawler.signals.connect(pipeline.spider_closed, signal=signals.spider_closed)
+
+        return pipeline
+
+    def process_item(self, item: Any, spider: Spider) -> Any:
+        """Process offsite candidate items and batch them for Delta Lake.
+
+        Args:
+            item: The scraped item (only processes OffsiteCandidateItem)
+            spider: The spider that yielded the item
+
+        Returns:
+            The original item (to allow subsequent pipelines to process it)
+        """
+        # Only process OffsiteCandidateItem objects
+        if not isinstance(item, OffsiteCandidateItem):
+            return item
+
+        # Convert item to dictionary
+        adapter = ItemAdapter(item)
+        item_dict = adapter.asdict()
+
+        # Add to batch
+        self.batch.append(item_dict)
+        self.items_processed += 1
+
+        # Save batch if it reaches BATCH_SIZE
+        if len(self.batch) >= self.BATCH_SIZE:
+            self._save_batch()
+
+        # Log progress every 500 items
+        if self.items_processed % 500 == 0:
+            logger.info(f"Processed {self.items_processed} offsite candidates")
+
+        return item
+
+    def _save_batch(self):
+        """Save current batch to Delta Lake."""
+        if not self.batch:
+            return
+
+        batch_size = len(self.batch)
+
+        try:
+            self.delta.write('stage1_offsite_candidates', self.batch, mode='append')
+            logger.info(f"✅ Saved {batch_size} offsite candidates to Delta Lake")
+
+            # Increment Prometheus metric
+            try:
+                from src.scrapy_prometheus import OFFSITE_CANDIDATES_SAVED
+                if OFFSITE_CANDIDATES_SAVED:
+                    OFFSITE_CANDIDATES_SAVED.labels(spider='scout').inc(batch_size)
+            except ImportError:
+                pass
+
+            self.batch = []
+        except Exception as e:
+            logger.error(f"Failed to save offsite candidates batch: {e}")
+
+    def spider_closed(self, spider: Spider) -> None:
+        """Flush remaining batch when spider closes.
+
+        Args:
+            spider: The spider that was closed
+        """
+        logger.info(f"Closing OffsiteCandidatePipeline for spider: {spider.name}")
+
+        # Save any remaining items in the batch
+        if self.batch:
+            self._save_batch()
+
+        logger.info(
+            f"OffsiteCandidatePipeline stats - Total processed: {self.items_processed}"
+        )

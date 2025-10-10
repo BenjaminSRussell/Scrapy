@@ -23,6 +23,7 @@ class JSBot:
         self.max_concurrent = max_concurrent
         self.delta = get_delta_manager()
         self.semaphore = asyncio.Semaphore(max_concurrent)
+        self.intercepted_urls = []  # Store URLs from API calls
 
     async def process_queue(self):
         """Process pending pages in JS render queue."""
@@ -86,15 +87,21 @@ class JSBot:
             try:
                 page = await browser.new_page()
 
+                # Enhanced: Set up network interception to capture API calls
+                await self._setup_network_interception(page)
+
                 # Navigate with timeout
                 await page.goto(url, timeout=30000, wait_until='networkidle')
 
-                # Wait for dynamic content
-                await page.wait_for_timeout(2000)
+                # Enhanced: Use explicit wait for key element instead of fixed timeout
+                try:
+                    # Wait for either footer or main content to be visible
+                    await page.wait_for_selector('footer, main, #content, .content', timeout=5000)
+                except Exception:
+                    logger.debug(f"No footer/main element found for {url}, proceeding anyway")
 
-                # Scroll to trigger lazy loading
-                await page.evaluate('window.scrollTo(0, document.body.scrollHeight)')
-                await page.wait_for_timeout(1000)
+                # Enhanced: Simulate scrolling to trigger infinite-scrolling mechanisms
+                await self._simulate_scrolling(page)
 
                 # Get rendered HTML
                 html = await page.content()
@@ -124,6 +131,11 @@ class JSBot:
                     src = img['src']
                     if src.startswith('http'):
                         discovered_urls.append(src)
+
+                # Enhanced: Add URLs from intercepted API calls
+                discovered_urls.extend(self.intercepted_urls)
+                # Clear intercepted URLs for next page
+                self.intercepted_urls = []
 
                 # Deduplicate
                 discovered_urls = list(set(discovered_urls))
@@ -157,6 +169,74 @@ class JSBot:
             except Exception as e:
                 logger.error(f"Failed to render {url}: {e}")
                 return None
+
+    async def _simulate_scrolling(self, page):
+        """Simulate scrolling to the bottom of the page to trigger infinite-scrolling."""
+        try:
+            # Get initial height
+            previous_height = await page.evaluate('document.body.scrollHeight')
+
+            # Scroll multiple times to trigger lazy loading
+            for _ in range(5):
+                # Scroll to bottom
+                await page.evaluate('window.scrollTo(0, document.body.scrollHeight)')
+
+                # Wait for content to load
+                await page.wait_for_timeout(500)
+
+                # Check if new content was loaded
+                new_height = await page.evaluate('document.body.scrollHeight')
+                if new_height == previous_height:
+                    # No new content, stop scrolling
+                    break
+                previous_height = new_height
+
+        except Exception as e:
+            logger.debug(f"Scrolling simulation failed: {e}")
+
+    async def _setup_network_interception(self, page):
+        """Set up network interception to capture API calls and extract URLs from JSON responses."""
+        async def handle_response(response):
+            try:
+                # Only process JSON responses
+                content_type = response.headers.get('content-type', '')
+                if 'application/json' in content_type:
+                    try:
+                        json_data = await response.json()
+                        # Recursively search for URLs in JSON
+                        urls = self._extract_urls_from_json(json_data)
+                        self.intercepted_urls.extend(urls)
+                    except Exception as e:
+                        logger.debug(f"Failed to parse JSON response: {e}")
+            except Exception as e:
+                logger.debug(f"Response handler error: {e}")
+
+        # Listen to all responses
+        page.on('response', handle_response)
+
+    def _extract_urls_from_json(self, obj, depth=0):
+        """Recursively extract URLs from JSON object."""
+        urls = []
+        if depth > 10:  # Prevent infinite recursion
+            return urls
+
+        if isinstance(obj, dict):
+            for key, value in obj.items():
+                # Check if key suggests a URL
+                if any(url_key in key.lower() for url_key in ['url', 'href', 'link', 'src', 'endpoint', 'api']):
+                    if isinstance(value, str) and (value.startswith('http') or value.startswith('/')):
+                        urls.append(value)
+                # Recurse into nested objects
+                if isinstance(value, (dict, list)):
+                    urls.extend(self._extract_urls_from_json(value, depth + 1))
+        elif isinstance(obj, list):
+            for item in obj:
+                urls.extend(self._extract_urls_from_json(item, depth + 1))
+        elif isinstance(obj, str):
+            if obj.startswith(('http://', 'https://', '/')):
+                urls.append(obj)
+
+        return urls
 
 
 async def run_js_bot():

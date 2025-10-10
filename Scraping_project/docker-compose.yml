@@ -379,7 +379,7 @@ services:
       context: .
       dockerfile: Dockerfile
       target: kafka-delta-ingest
-    container_name: scraping_kafka_delta_ingestor
+    container_name: scraping_kafka_delta_ingest
     command: >
       ingest scraped-items ./data/delta_lake/scraped_data
       --kafka kafka:9092
@@ -416,32 +416,6 @@ services:
         condition: service_healthy
       statsd-exporter:
         condition: service_started
-
-  # Python-based Kafka to Delta Lake Ingestor (Alternative/Backup)
-  # Uncomment to use Python ingestor instead of Rust version
-  # ingestor:
-  #   build:
-  #     context: .
-  #     dockerfile: Dockerfile
-  #     target: ingestor
-  #   container_name: scraping_ingestor
-  #   environment:
-  #     - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
-  #     - KAFKA_TOPIC=scraped-items
-  #     - KAFKA_GROUP_ID=delta-ingestor
-  #     - KAFKA_AUTO_OFFSET_RESET=earliest
-  #     - DELTA_TABLE_PATH=/data/delta_lake/scraped_items
-  #     - BATCH_SIZE=1000
-  #     - BATCH_TIMEOUT_SECONDS=30
-  #   volumes:
-  #     - ./data:/data
-  #     - ./src:/app/src:ro
-  #   restart: unless-stopped
-  #   networks:
-  #     - scraping_network
-  #   depends_on:
-  #     kafka:
-  #       condition: service_healthy
 
   metrics-exporter:
     build:

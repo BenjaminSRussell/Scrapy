@@ -256,10 +256,11 @@ class Stage2Worker:
 
     async def _route_to_stage4(self, url: str, url_hash: str, text: str, word_count: int, content_length: int):
         """Route large document to Stage 4 for heavyweight processing."""
+        # Enhanced: Remove 'text' key to decouple architecture - Stage 4 will fetch on-demand
         record = {
             'url': url,
             'url_hash': url_hash,
-            'text': text,
+            # 'text': text,  # Removed - Stage 4 will fetch content on-demand
             'word_count': word_count,
             'content_length': content_length,
             'status': 'pending',
@@ -273,10 +274,11 @@ class Stage2Worker:
 
     def _route_pdf_to_stage4(self, url: str, url_hash: str) -> dict[str, Any]:
         """Route PDF to Stage 4 and create minimal record."""
+        # Enhanced: Remove 'text' key - Stage 4 will fetch content on-demand
         record = {
             'url': url,
             'url_hash': url_hash,
-            'text': '',
+            # 'text': '',  # Removed - Stage 4 will fetch content on-demand
             'word_count': 0,
             'content_length': 0,
             'status': 'pending',

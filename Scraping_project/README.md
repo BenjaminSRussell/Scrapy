@@ -58,7 +58,7 @@ HTTP:9410  JMX:9999    StatsD:UDP         Parquet + _delta_log
 ## 📦 Project Structure
 
 ```
-├── cli.py                      # Unified CLI (replaces run.py + run_pipeline.py)
+├── cli.py                      # Unified CLI entrypoint for Scrapy + pipeline
 ├── src/
 │   ├── pipelines.py           # Kafka pipeline with lifecycle management
 │   ├── scrapy_prometheus.py   # All Scrapy metrics (13 signals)

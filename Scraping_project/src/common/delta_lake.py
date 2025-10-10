@@ -43,6 +43,7 @@ class DeltaLakeManager:
             'stage1_discovery': self.base_path / 'stage1_discovery',
             'stage1_errors': self.base_path / 'stage1_errors',
             'stage1_js_render_queue': self.base_path / 'stage1_js_render_queue',
+            'stage1_offsite_candidates': self.base_path / 'stage1_offsite_candidates',
             'stage2_page_analysis': self.base_path / 'stage2_page_analysis',
             'stage3_analytics': self.base_path / 'stage3_analytics',
             'stage3_summaries': self.base_path / 'stage3_summaries',
@@ -102,6 +103,22 @@ class DeltaLakeManager:
         if not table_path:
             raise ValueError(f"Unknown table: {table_name}")
 
+        # Enhanced: Extract domain from URLs for partitioning (for discovery tables)
+        if table_name in ['stage1_discovery', 'stage2_page_analysis']:
+            from urllib.parse import urlparse
+            for record in data:
+                if 'url' in record and 'domain' not in record:
+                    try:
+                        parsed = urlparse(record['url'])
+                        # Extract domain without subdomain (e.g., 'uconn.edu' from 'www.uconn.edu')
+                        domain_parts = parsed.netloc.split('.')
+                        if len(domain_parts) >= 2:
+                            record['domain'] = '.'.join(domain_parts[-2:])
+                        else:
+                            record['domain'] = parsed.netloc or 'unknown'
+                    except Exception:
+                        record['domain'] = 'unknown'
+
         # Add metadata
         for record in data:
             if '_ingestion_time' not in record:
@@ -112,15 +129,43 @@ class DeltaLakeManager:
         # Convert to PyArrow Table
         table = pa.Table.from_pylist(data)
 
-        # Write to Delta Lake
+        # Enhanced: Configure storage and write optimizations
+        storage_options = {
+            # Enable zstd compression for better compression ratios
+            'parquet.compression': 'ZSTD',
+            # Enable statistics for better query performance
+            'parquet.enable.statistics': 'true',
+            # Set row group size for better parallelism
+            'parquet.block.size': '134217728',  # 128MB
+        }
+
+        # Enhanced: Partition by domain for discovery tables
+        partition_by = None
+        if table_name in ['stage1_discovery', 'stage2_page_analysis']:
+            partition_by = ['domain']
+
+        # Write to Delta Lake with optimizations
+        # Note: partition_overwrite_mode is a PySpark config, not available in deltalake-rs
+        # The deltalake library handles partition overwrites automatically based on mode
         write_deltalake(
             str(table_path),
             table,
             mode=mode,
-            schema_mode="merge" if mode == "append" else "overwrite"
+            schema_mode="merge" if mode == "append" else "overwrite",
+            # Enhanced: Add storage options for compression
+            storage_options=storage_options,
+            # Enhanced: Partition by domain
+            partition_by=partition_by
         )
 
         logger.info(f"✅ Wrote {len(data)} records to {table_name}")
+
+        # Enhanced: Auto-optimize after write for discovery tables
+        if table_name in ['stage1_discovery', 'stage2_page_analysis'] and len(data) >= 1000:
+            try:
+                self._optimize_table(table_name)
+            except Exception as e:
+                logger.debug(f"Auto-optimization skipped for {table_name}: {e}")
 
     def write(self, table_name: str, data: list[dict[str, Any]], mode: str = "append", async_write: bool = True):
         """Write data to Delta Lake table.
@@ -158,6 +203,36 @@ class DeltaLakeManager:
         """Get record count for a table."""
         data = self.read(table_name)
         return len(data)
+
+    def _optimize_table(self, table_name: str):
+        """Optimize Delta table with compaction and Z-ordering.
+
+        Enhanced: Performs file compaction and Z-ordering on url_hash and discovered_at
+        for better query performance.
+        """
+        table_path = self.tables.get(table_name)
+        if not table_path or not (table_path / "_delta_log").exists():
+            return
+
+        try:
+            dt = DeltaTable(str(table_path))
+
+            # Perform compaction (combine small files)
+            logger.info(f"Optimizing {table_name} with compaction...")
+            dt.optimize.compact()
+
+            # Enhanced: Z-order by url_hash and timestamp for co-location
+            # This improves query performance for lookups by URL hash and time-based queries
+            logger.info(f"Z-ordering {table_name} by url_hash and discovered_at...")
+            if table_name == 'stage1_discovery':
+                dt.optimize.z_order(['url_hash', 'discovered_at'])
+            elif table_name == 'stage2_page_analysis':
+                dt.optimize.z_order(['url_hash', 'processed_at'])
+
+            logger.info(f"✅ Optimized {table_name}")
+
+        except Exception as e:
+            logger.warning(f"Optimization failed for {table_name}: {e}")
 
     def checkpoint(self, timeout: int = 30):
         """Wait for queue to finish and checkpoint all tables with timeout.
