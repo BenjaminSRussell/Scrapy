@@ -240,9 +240,23 @@ class JSBot:
 
 
 async def run_js_bot():
-    """Run the JS rendering bot."""
+    """Run the JS rendering bot in continuous mode."""
     bot = JSBot(headless=True, max_concurrent=10)
-    await bot.process_queue()
+
+    logger.info("JS Bot starting in continuous mode...")
+    while True:
+        try:
+            await bot.process_queue()
+            # Wait 30 seconds before checking for new work
+            logger.info("Waiting 30 seconds before next check...")
+            await asyncio.sleep(30)
+        except KeyboardInterrupt:
+            logger.info("JS Bot shutting down...")
+            break
+        except Exception as e:
+            logger.error(f"Error in JS Bot loop: {e}")
+            # Wait a bit before retrying on error
+            await asyncio.sleep(10)
 
 
 if __name__ == '__main__':

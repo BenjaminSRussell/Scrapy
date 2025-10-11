@@ -98,6 +98,57 @@ def cmd_scrapy(args):
     runner.start()
 
 
+def cmd_deep_dive(args):
+    """Run the deep dive spider for thorough, respectful crawling."""
+    from scrapy.crawler import CrawlerRunner
+    from scrapy.utils.log import configure_logging
+    from scrapy.utils.project import get_project_settings
+    from twisted.internet import defer, reactor
+
+    class ScrapyRunner:
+        """Orchestrates Scrapy spiders."""
+
+        def __init__(self):
+            self.settings = get_project_settings()
+            configure_logging(self.settings)
+            self.runner = CrawlerRunner(self.settings)
+            self.shutdown_requested = False
+
+        def setup_signal_handlers(self):
+            """Set up graceful shutdown."""
+            def signal_handler(signum, frame):
+                sig_name = signal.Signals(signum).name
+                logger.info(f"Received {sig_name}, shutting down...")
+                self.shutdown_requested = True
+                if reactor.running:
+                    reactor.callFromThread(reactor.stop)
+
+            signal.signal(signal.SIGTERM, signal_handler)
+            signal.signal(signal.SIGINT, signal_handler)
+
+        @defer.inlineCallbacks
+        def run_spider(self):
+            """Run deep dive spider."""
+            logger.info("Starting deep dive spider...")
+            try:
+                yield self.runner.crawl('deep_dive')
+                logger.info("Deep dive spider completed")
+            finally:
+                if reactor.running:
+                    reactor.stop()
+
+        def start(self):
+            """Start runner and reactor."""
+            self.setup_signal_handlers()
+            deferred = self.run_spider()
+            deferred.addErrback(lambda f: logger.error(f"Failed: {f}"))
+            reactor.run()
+
+    # Run
+    runner = ScrapyRunner()
+    runner.start()
+
+
 # ============================================================================
 # PIPELINE COMMAND (multi-stage pipeline)
 # ============================================================================
@@ -391,6 +442,10 @@ def main():
     scrapy_parser = subparsers.add_parser('scrapy', help='Run Scrapy spiders')
     scrapy_parser.add_argument('--spiders', nargs='+', help='Spider names')
     scrapy_parser.set_defaults(func=cmd_scrapy)
+
+    # Deep dive command
+    deep_dive_parser = subparsers.add_parser('deep_dive', help='Run deep dive spider (conservative crawling)')
+    deep_dive_parser.set_defaults(func=cmd_deep_dive)
 
     # Pipeline command
     pipeline_parser = subparsers.add_parser('pipeline', help='Run full pipeline')

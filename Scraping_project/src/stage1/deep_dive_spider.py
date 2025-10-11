@@ -1,4 +1,4 @@
-"""Ultimate Scout Spider - Most advanced URL discovery system.
+"""Deep Dive Spider - Conservative, thorough crawling with Redis de-duplication.
 Detects JS-heavy pages and routes to specialized renderer.
 """
 
@@ -44,10 +44,10 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
-class ScoutSpider(scrapy.Spider):
-    """Ultimate URL discovery scout with JS detection and intelligent routing."""
+class DeepDiveSpider(scrapy.Spider):
+    """Deep dive spider with conservative, respectful crawling settings."""
 
-    name = "scout"
+    name = "deep_dive"
 
     # Restrict crawling to uconn.edu domain only
     allowed_domains = ["uconn.edu"]
@@ -74,42 +74,41 @@ class ScoutSpider(scrapy.Spider):
     ]
 
     custom_settings = {
-        # EXTREME concurrency - maximum resource utilization
-        'CONCURRENT_REQUESTS': 1024,  # Increased from 1024
-        'CONCURRENT_REQUESTS_PER_DOMAIN': 512,  # Increased from 512
-        # Remove CONCURRENT_REQUESTS_PER_IP to avoid conflicts with priority queue
-        'DOWNLOAD_DELAY': 0.01,  # Reduced from 0.01 for even faster speed
-        'DOWNLOAD_TIMEOUT': 15,  # Reduced from 20 to fail faster
-        'ROBOTSTXT_OBEY': False,
-        'COOKIES_ENABLED': False,
+        # Conservative concurrency - respectful crawling
+        'CONCURRENT_REQUESTS': 32,
+        'CONCURRENT_REQUESTS_PER_DOMAIN': 8,  # Conservative to avoid overwhelming servers
+        'DOWNLOAD_DELAY': 0.25,  # 250ms delay between requests
+        'DOWNLOAD_TIMEOUT': 30,
+        'ROBOTSTXT_OBEY': True,  # Respect robots.txt
+        'COOKIES_ENABLED': True,
         'HTTPCACHE_ENABLED': False,
         'RETRY_ENABLED': True,
-        'RETRY_TIMES': 2,  # Reduced from 3 to fail faster
+        'RETRY_TIMES': 3,
 
-        # Autothrottle - extremely aggressive settings
+        # Autothrottle - conservative settings
         'AUTOTHROTTLE_ENABLED': True,
-        'AUTOTHROTTLE_START_DELAY': 0.005,  # Reduced from 0.01
-        'AUTOTHROTTLE_MAX_DELAY': 1.5,  # Reduced from 2
-        'AUTOTHROTTLE_TARGET_CONCURRENCY': 2048,  # Increased from 1024
+        'AUTOTHROTTLE_START_DELAY': 0.25,
+        'AUTOTHROTTLE_MAX_DELAY': 10,
+        'AUTOTHROTTLE_TARGET_CONCURRENCY': 2.0,
 
-        # Reactor settings for extreme performance
-        'REACTOR_THREADPOOL_MAXSIZE': 128,  # Increased from 128
-        'DNS_TIMEOUT': 8,  # Reduced from 10
+        # Reactor settings
+        'REACTOR_THREADPOOL_MAXSIZE': 20,
+        'DNS_TIMEOUT': 15,
 
-        # Memory optimizations - increase limits
+        # Memory optimizations
         'MEMUSAGE_ENABLED': True,
-        'MEMUSAGE_LIMIT_MB': 10240,  # Increased to 10GB
-        'MEMUSAGE_WARNING_MB': 8192,  # Increased to 8GB
+        'MEMUSAGE_LIMIT_MB': 4096,  # 4GB limit
+        'MEMUSAGE_WARNING_MB': 3072,  # 3GB warning
 
-        # Scheduler configuration for high-throughput
+        # Scheduler configuration
         'SCHEDULER_DISK_QUEUE': 'scrapy.squeues.PickleFifoDiskQueue',
         'SCHEDULER_PRIORITY_QUEUE': 'scrapy.pqueues.ScrapyPriorityQueue',
 
-        # Depth limit to prevent going too deep
-        'DEPTH_LIMIT': 10,  # Limit crawl depth to 5 levels
-        'DEPTH_PRIORITY': 1,  # Enable depth-based priority
+        # Depth limit
+        'DEPTH_LIMIT': 15,  # Allow deeper crawling for thorough analysis
+        'DEPTH_PRIORITY': 1,
 
-        # Connection pool settings for better performance
+        # Connection pool settings
         'DOWNLOAD_MAXSIZE': 10485760,  # 10MB max download size
         'DOWNLOAD_WARNSIZE': 5242880,  # 5MB warning size
     }
@@ -147,8 +146,8 @@ class ScoutSpider(scrapy.Spider):
             db=0,
             decode_responses=False  # We'll work with bytes for efficiency
         )
-        # Use a Redis set for URL hashes instead of in-memory set
-        self.url_hashes_key = 'scout:url_hashes'
+        # Use a different Redis key for deep_dive spider to track separately
+        self.url_hashes_key = 'deep_dive:url_hashes'
 
         self.discovered_records = []
         self.error_records = []
@@ -192,7 +191,7 @@ class ScoutSpider(scrapy.Spider):
 
         self.start_urls = self._load_seed_urls()
         url_count = self.redis_client.scard(self.url_hashes_key)
-        logger.info(f"Scout loaded {len(self.start_urls)} seeds, {url_count} existing URLs in Redis")
+        logger.info(f"Deep Dive loaded {len(self.start_urls)} seeds, {url_count} existing URLs in Redis")
 
     def _hash_url(self, url: str) -> str:
         """Hashes a URL using SHA256 for efficient storage and lookup."""
@@ -258,7 +257,7 @@ class ScoutSpider(scrapy.Spider):
         try:
             seed_records = self.delta.read('seed_urls')
             urls = [record['url'] for record in seed_records]
-
+            
             # Deduplicate against already scraped URLs using Redis
             new_urls = []
             for url in urls:
@@ -266,7 +265,7 @@ class ScoutSpider(scrapy.Spider):
                 # Check if URL hash exists in Redis set
                 if not self.redis_client.sismember(self.url_hashes_key, url_hash):
                     new_urls.append(url)
-
+            
             return new_urls
         except Exception as e:
             logger.error(f"Could not load seed URLs from Delta Lake: {e}")
@@ -971,7 +970,7 @@ class ScoutSpider(scrapy.Spider):
         finished processing before calling this method.
         """
         url_count = self.redis_client.scard(self.url_hashes_key)
-        logger.info(f"Scout closing: {reason}. Total unique URLs in Redis: {url_count}")
+        logger.info(f"Deep Dive closing: {reason}. Total unique URLs in Redis: {url_count}")
 
         # Log final skip statistics
         total_skips = sum(self.skip_counters.values())

@@ -63,7 +63,7 @@ def seed_lake():
 
     # Read CSV
     try:
-        df = pd.read_csv(csv_path)
+        df = pd.read_csv(csv_path, header=None, names=['url'])
         logger.info(f"Loaded {len(df)} URLs from CSV")
     except Exception as e:
         logger.error(f"❌ Failed to read CSV: {e}")

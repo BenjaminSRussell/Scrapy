@@ -361,3 +361,27 @@ class Stage2Worker:
                 )
             except Exception as e:
                 logger.debug(f"Failed to log error to PostgreSQL: {e}")
+
+
+async def run_stage2_worker():
+    """Run Stage 2 worker in continuous mode."""
+    logger.info("Stage 2 Worker starting in continuous mode...")
+
+    while True:
+        try:
+            worker = Stage2Worker(max_concurrent=50, batch_size=100)
+            await worker.run()
+            # Wait 30 seconds before checking for new work
+            logger.info("Waiting 30 seconds before next check...")
+            await asyncio.sleep(30)
+        except KeyboardInterrupt:
+            logger.info("Stage 2 Worker shutting down...")
+            break
+        except Exception as e:
+            logger.error(f"Error in Stage 2 Worker loop: {e}")
+            # Wait a bit before retrying on error
+            await asyncio.sleep(10)
+
+
+if __name__ == '__main__':
+    asyncio.run(run_stage2_worker())

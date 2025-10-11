@@ -215,3 +215,27 @@ class Stage3Worker:
                 break
 
         return facts if facts else [s.strip() for s in sentences[:3] if s.strip()]
+
+
+async def run_stage3_worker():
+    """Run Stage 3 worker in continuous mode."""
+    logger.info("Stage 3 Worker starting in continuous mode...")
+
+    while True:
+        try:
+            worker = Stage3Worker(max_concurrent=20, batch_size=50)
+            await worker.run()
+            # Wait 30 seconds before checking for new work
+            logger.info("Waiting 30 seconds before next check...")
+            await asyncio.sleep(30)
+        except KeyboardInterrupt:
+            logger.info("Stage 3 Worker shutting down...")
+            break
+        except Exception as e:
+            logger.error(f"Error in Stage 3 Worker loop: {e}")
+            # Wait a bit before retrying on error
+            await asyncio.sleep(10)
+
+
+if __name__ == '__main__':
+    asyncio.run(run_stage3_worker())
