@@ -1,0 +1,102 @@
+{{- if .Values.kafkaDeltaIngestor.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "scraping-pipeline.fullname" . }}-delta-ingestor
+  labels:
+    {{- include "scraping-pipeline.labels" . | nindent 4 }}
+    app.kubernetes.io/component: delta-ingestor
+spec:
+  replicas: {{ .Values.kafkaDeltaIngestor.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "scraping-pipeline.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: delta-ingestor
+  template:
+    metadata:
+      labels:
+        {{- include "scraping-pipeline.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: delta-ingestor
+    spec:
+      terminationGracePeriodSeconds: {{ .Values.kafkaDeltaIngestor.terminationGracePeriodSeconds }}
+      initContainers:
+      - name: wait-for-kafka
+        image: busybox:1.36
+        command:
+        - sh
+        - -c
+        - |
+          for i in $(seq 1 30); do
+            nc -z {{ include "scraping-pipeline.fullname" . }}-kafka {{ .Values.kafka.service.internal }} && exit 0
+            echo "Waiting for Kafka..."
+            sleep 5
+          done
+          echo "Kafka bootstrap brokers unavailable" >&2
+          exit 1
+      containers:
+      - name: kafka-delta-ingestor
+        image: "{{ .Values.kafkaDeltaIngestor.image.repository }}:{{ .Values.kafkaDeltaIngestor.image.tag }}"
+        imagePullPolicy: {{ .Values.kafkaDeltaIngestor.image.pullPolicy }}
+        command:
+        - ingest
+        - {{ .Values.kafkaDeltaIngestor.config.topic | quote }}
+        - "/delta/delta_lake/scraped_data"
+        - --kafka
+        - "{{ default (printf "%s-kafka:%d" (include "scraping-pipeline.fullname" .) .Values.kafka.service.internal) .Values.kafkaDeltaIngestor.config.kafkaBootstrap }}"
+        - --app-id
+        - {{ .Values.kafkaDeltaIngestor.config.appId | quote }}
+        - --auto-offset-reset
+        - {{ .Values.kafkaDeltaIngestor.config.autoOffsetReset | quote }}
+        - --allowed-latency
+        - {{ .Values.kafkaDeltaIngestor.config.allowedLatency | quote }}
+        - --max-messages-per-batch
+        - {{ .Values.kafkaDeltaIngestor.config.maxMessagesPerBatch | quote }}
+        - --transform
+        - "date: substr(scraped_at_utc, `0`, `10`)"
+        envFrom:
+        - configMapRef:
+            name: {{ include "scraping-pipeline.fullname" . }}-app-env
+        - secretRef:
+            name: {{ .Values.postgresql.auth.existingSecret }}
+        env:
+        - name: RUST_LOG
+          value: {{ default "info" .Values.kafkaDeltaIngestor.env.RUST_LOG | quote }}
+        - name: RUST_BACKTRACE
+          value: {{ default "1" .Values.kafkaDeltaIngestor.env.RUST_BACKTRACE | quote }}
+        livenessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - pgrep -f ingest
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - test -w /delta
+          initialDelaySeconds: 20
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        lifecycle:
+          preStop:
+            exec:
+              command:
+              - /bin/sh
+              - -c
+              - echo "Draining Kafka consumer" && sleep 20
+        resources:
+          {{- toYaml .Values.kafkaDeltaIngestor.resources | nindent 10 }}
+        volumeMounts:
+        - name: delta-data
+          mountPath: /delta
+      volumes:
+      - name: delta-data
+        persistentVolumeClaim:
+          claimName: {{ include "scraping-pipeline.fullname" . }}-delta-lake
+{{- end }}

@@ -1,0 +1,27 @@
+{{- if and .Values.exporters.kafkaJmx.enabled .Values.configMaps.prometheus.create }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "scraping-pipeline.fullname" . }}-kafka-jmx-config
+  labels:
+    {{- include "scraping-pipeline.labels" . | nindent 4 }}
+    app.kubernetes.io/component: kafka-jmx-exporter
+data:
+  config.yml: |
+{{ (.Files.Get "files/monitoring/kafka_jmx_config.yml") | indent 4 }}
+{{- end }}
+
+{{- if and .Values.exporters.statsd.enabled .Values.configMaps.prometheus.create }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "scraping-pipeline.fullname" . }}-statsd-config
+  labels:
+    {{- include "scraping-pipeline.labels" . | nindent 4 }}
+    app.kubernetes.io/component: statsd-exporter
+data:
+  statsd_mapping.yml: |
+{{ (.Files.Get "files/monitoring/statsd_mapping.yml") | indent 4 }}
+{{- end }}

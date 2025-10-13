@@ -45,10 +45,8 @@ spec:
           timeoutSeconds: 3
           failureThreshold: 5
         readinessProbe:
-          exec:
-            command:
-            - redis-cli
-            - ping
+          tcpSocket:
+            port: 6379
           initialDelaySeconds: 5
           periodSeconds: 5
           timeoutSeconds: 3

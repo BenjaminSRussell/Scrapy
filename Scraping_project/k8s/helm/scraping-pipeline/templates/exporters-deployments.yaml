@@ -1,0 +1,305 @@
+{{- $redisService := printf "%s-redis" (include "scraping-pipeline.fullname" .) }}
+{{- $postgresService := printf "%s-postgresql" (include "scraping-pipeline.fullname" .) }}
+{{- $kafkaService := printf "%s-kafka" (include "scraping-pipeline.fullname" .) }}
+
+{{- if .Values.exporters.redis.enabled }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "scraping-pipeline.fullname" . }}-redis-exporter
+  labels:
+    {{- include "scraping-pipeline.labels" . | nindent 4 }}
+    app.kubernetes.io/component: redis-exporter
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "scraping-pipeline.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: redis-exporter
+  template:
+    metadata:
+      labels:
+        {{- include "scraping-pipeline.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: redis-exporter
+    spec:
+      containers:
+      - name: redis-exporter
+        image: "{{ .Values.exporters.redis.image.repository }}:{{ .Values.exporters.redis.image.tag }}"
+        ports:
+        - name: http
+          containerPort: {{ .Values.exporters.redis.service.port }}
+          protocol: TCP
+        env:
+        - name: REDIS_ADDR
+          value: "redis://{{ $redisService }}:{{ .Values.redis.service.port }}"
+        livenessProbe:
+          httpGet:
+            path: /metrics
+            port: http
+          initialDelaySeconds: 15
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /metrics
+            port: http
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        resources:
+          {{- toYaml .Values.exporters.redis.resources | nindent 10 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "scraping-pipeline.fullname" . }}-redis-exporter
+  labels:
+    {{- include "scraping-pipeline.labels" . | nindent 4 }}
+    app.kubernetes.io/component: redis-exporter
+spec:
+  ports:
+  - port: {{ .Values.exporters.redis.service.port }}
+    targetPort: http
+    protocol: TCP
+    name: http
+  selector:
+    {{- include "scraping-pipeline.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: redis-exporter
+{{- end }}
+
+{{- if .Values.exporters.postgres.enabled }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "scraping-pipeline.fullname" . }}-postgres-exporter
+  labels:
+    {{- include "scraping-pipeline.labels" . | nindent 4 }}
+    app.kubernetes.io/component: postgres-exporter
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "scraping-pipeline.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: postgres-exporter
+  template:
+    metadata:
+      labels:
+        {{- include "scraping-pipeline.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: postgres-exporter
+    spec:
+      containers:
+      - name: postgres-exporter
+        image: "{{ .Values.exporters.postgres.image.repository }}:{{ .Values.exporters.postgres.image.tag }}"
+        ports:
+        - name: http
+          containerPort: {{ .Values.exporters.postgres.service.port }}
+          protocol: TCP
+        env:
+        - name: DATA_SOURCE_NAME
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.postgresql.auth.existingSecret }}
+              key: DATA_SOURCE_NAME
+        livenessProbe:
+          httpGet:
+            path: /metrics
+            port: http
+          initialDelaySeconds: 15
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /metrics
+            port: http
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        resources:
+          {{- toYaml .Values.exporters.postgres.resources | nindent 10 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "scraping-pipeline.fullname" . }}-postgres-exporter
+  labels:
+    {{- include "scraping-pipeline.labels" . | nindent 4 }}
+    app.kubernetes.io/component: postgres-exporter
+spec:
+  ports:
+  - port: {{ .Values.exporters.postgres.service.port }}
+    targetPort: http
+    protocol: TCP
+    name: http
+  selector:
+    {{- include "scraping-pipeline.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: postgres-exporter
+{{- end }}
+
+{{- if .Values.exporters.kafkaJmx.enabled }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "scraping-pipeline.fullname" . }}-kafka-jmx-exporter
+  labels:
+    {{- include "scraping-pipeline.labels" . | nindent 4 }}
+    app.kubernetes.io/component: kafka-jmx-exporter
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "scraping-pipeline.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: kafka-jmx-exporter
+  template:
+    metadata:
+      labels:
+        {{- include "scraping-pipeline.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: kafka-jmx-exporter
+    spec:
+      containers:
+      - name: kafka-jmx-exporter
+        image: "{{ .Values.exporters.kafkaJmx.image.repository }}:{{ .Values.exporters.kafkaJmx.image.tag }}"
+        args:
+        - "{{ .Values.exporters.kafkaJmx.service.port }}"
+        - "/config/config.yml"
+        ports:
+        - name: http
+          containerPort: {{ .Values.exporters.kafkaJmx.service.port }}
+          protocol: TCP
+        env:
+        - name: SERVICE_PORT
+          value: "{{ .Values.exporters.kafkaJmx.service.port }}"
+        - name: JMX_HOST
+          value: "{{ $kafkaService }}"
+        - name: JMX_PORT
+          value: "{{ .Values.kafka.service.jmx }}"
+        volumeMounts:
+        - name: kafka-jmx-config
+          mountPath: /config
+        livenessProbe:
+          httpGet:
+            path: /metrics
+            port: http
+          initialDelaySeconds: 20
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /metrics
+            port: http
+          initialDelaySeconds: 15
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        resources:
+          {{- toYaml .Values.exporters.kafkaJmx.resources | nindent 10 }}
+      volumes:
+      - name: kafka-jmx-config
+        configMap:
+          name: {{ include "scraping-pipeline.fullname" . }}-kafka-jmx-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "scraping-pipeline.fullname" . }}-kafka-jmx-exporter
+  labels:
+    {{- include "scraping-pipeline.labels" . | nindent 4 }}
+    app.kubernetes.io/component: kafka-jmx-exporter
+spec:
+  ports:
+  - port: {{ .Values.exporters.kafkaJmx.service.port }}
+    targetPort: http
+    protocol: TCP
+    name: http
+  selector:
+    {{- include "scraping-pipeline.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: kafka-jmx-exporter
+{{- end }}
+
+{{- if .Values.exporters.statsd.enabled }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "scraping-pipeline.fullname" . }}-statsd-exporter
+  labels:
+    {{- include "scraping-pipeline.labels" . | nindent 4 }}
+    app.kubernetes.io/component: statsd-exporter
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "scraping-pipeline.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: statsd-exporter
+  template:
+    metadata:
+      labels:
+        {{- include "scraping-pipeline.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: statsd-exporter
+    spec:
+      containers:
+      - name: statsd-exporter
+        image: "{{ .Values.exporters.statsd.image.repository }}:{{ .Values.exporters.statsd.image.tag }}"
+        args:
+        - "--statsd.mapping-config=/etc/statsd/statsd_mapping.yml"
+        ports:
+        - name: metrics
+          containerPort: {{ .Values.exporters.statsd.service.metricsPort }}
+          protocol: TCP
+        - name: statsd
+          containerPort: {{ .Values.exporters.statsd.service.statsdPort }}
+          protocol: UDP
+        livenessProbe:
+          httpGet:
+            path: /metrics
+            port: metrics
+          initialDelaySeconds: 15
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /metrics
+            port: metrics
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        volumeMounts:
+        - name: statsd-config
+          mountPath: /etc/statsd
+        resources:
+          {{- toYaml .Values.exporters.statsd.resources | nindent 10 }}
+      volumes:
+      - name: statsd-config
+        configMap:
+          name: {{ include "scraping-pipeline.fullname" . }}-statsd-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "scraping-pipeline.fullname" . }}-statsd-exporter
+  labels:
+    {{- include "scraping-pipeline.labels" . | nindent 4 }}
+    app.kubernetes.io/component: statsd-exporter
+spec:
+  ports:
+  - port: {{ .Values.exporters.statsd.service.metricsPort }}
+    targetPort: metrics
+    protocol: TCP
+    name: metrics
+  - port: {{ .Values.exporters.statsd.service.statsdPort }}
+    targetPort: statsd
+    protocol: UDP
+    name: statsd
+  selector:
+    {{- include "scraping-pipeline.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: statsd-exporter
+{{- end }}

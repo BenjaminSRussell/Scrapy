@@ -1,0 +1,314 @@
+{{- if .Values.networkPolicy.enabled }}
+{{- $fullname := include "scraping-pipeline.fullname" . }}
+{{- $metricsStart := int .Values.scrapyApp.service.ports.metricsStart }}
+{{- $metricsEnd := add (int .Values.scrapyApp.service.ports.metricsEnd) 1 }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $fullname }}-default-deny
+  labels:
+    {{- include "scraping-pipeline.labels" . | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes:
+{{- range .Values.networkPolicy.policyTypes }}
+  - {{ . }}
+{{- end }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $fullname }}-allow-dns
+  labels:
+    {{- include "scraping-pipeline.labels" . | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes:
+  - Egress
+  egress:
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+      podSelector:
+        matchLabels:
+          k8s-app: kube-dns
+    ports:
+    - protocol: UDP
+      port: 53
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $fullname }}-core-egress
+  labels:
+    {{- include "scraping-pipeline.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchExpressions:
+    - key: app.kubernetes.io/component
+      operator: In
+      values:
+      - scrapy
+      - stage2
+      - stage3
+      - delta-ingestor
+      - metrics-exporter
+      - grafana
+      - prometheus
+  policyTypes:
+  - Egress
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/component: redis
+    ports:
+    - protocol: TCP
+      port: {{ .Values.redis.service.port }}
+  - to:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/component: postgres
+    ports:
+    - protocol: TCP
+      port: {{ .Values.postgresql.service.port }}
+  - to:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/component: kafka
+    ports:
+    - protocol: TCP
+      port: {{ .Values.kafka.service.internal }}
+  - to:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/component: statsd-exporter
+    ports:
+    - protocol: UDP
+      port: {{ .Values.exporters.statsd.service.statsdPort }}
+    - protocol: TCP
+      port: {{ .Values.exporters.statsd.service.metricsPort }}
+  - to:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/component: prometheus
+    ports:
+    - protocol: TCP
+      port: {{ .Values.prometheus.service.port }}
+  - to:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/component: alertmanager
+    ports:
+    - protocol: TCP
+      port: {{ .Values.alertmanager.service.port }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $fullname }}-prometheus-scrape
+  labels:
+    {{- include "scraping-pipeline.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: prometheus
+  policyTypes:
+  - Egress
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/component: scrapy
+    ports:
+{{- range $port := untilStep $metricsStart $metricsEnd 1 }}
+    - protocol: TCP
+      port: {{ $port }}
+{{- end }}
+  - to:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/component: metrics-exporter
+    ports:
+    - protocol: TCP
+      port: {{ .Values.metricsExporter.service.port }}
+  - to:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/component: redis-exporter
+    ports:
+    - protocol: TCP
+      port: {{ .Values.exporters.redis.service.port }}
+  - to:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/component: postgres-exporter
+    ports:
+    - protocol: TCP
+      port: {{ .Values.exporters.postgres.service.port }}
+  - to:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/component: kafka-jmx-exporter
+    ports:
+    - protocol: TCP
+      port: {{ .Values.exporters.kafkaJmx.service.port }}
+  - to:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/component: statsd-exporter
+    ports:
+    - protocol: TCP
+      port: {{ .Values.exporters.statsd.service.metricsPort }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $fullname }}-redis-ingress
+  labels:
+    {{- include "scraping-pipeline.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: redis
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector:
+        matchExpressions:
+        - key: app.kubernetes.io/component
+          operator: In
+          values:
+          - scrapy
+          - stage2
+          - stage3
+          - metrics-exporter
+          - redis-exporter
+    ports:
+    - protocol: TCP
+      port: {{ .Values.redis.service.port }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $fullname }}-postgres-ingress
+  labels:
+    {{- include "scraping-pipeline.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: postgres
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector:
+        matchExpressions:
+        - key: app.kubernetes.io/component
+          operator: In
+          values:
+          - scrapy
+          - stage2
+          - stage3
+          - metrics-exporter
+          - grafana
+    ports:
+    - protocol: TCP
+      port: {{ .Values.postgresql.service.port }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $fullname }}-kafka-ingress
+  labels:
+    {{- include "scraping-pipeline.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: kafka
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector:
+        matchExpressions:
+        - key: app.kubernetes.io/component
+          operator: In
+          values:
+          - kafka
+          - delta-ingestor
+          - scrapy
+          - stage2
+          - stage3
+    ports:
+    - protocol: TCP
+      port: {{ .Values.kafka.service.internal }}
+    - protocol: TCP
+      port: {{ .Values.kafka.service.jmx }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $fullname }}-kafka-egress
+  labels:
+    {{- include "scraping-pipeline.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: kafka
+  policyTypes:
+  - Egress
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/component: zookeeper
+    ports:
+    - protocol: TCP
+      port: {{ .Values.zookeeper.service.port }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $fullname }}-zookeeper-ingress
+  labels:
+    {{- include "scraping-pipeline.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: zookeeper
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/component: kafka
+    ports:
+    - protocol: TCP
+      port: {{ .Values.zookeeper.service.port }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $fullname }}-alertmanager-ingress
+  labels:
+    {{- include "scraping-pipeline.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: alertmanager
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/component: prometheus
+    ports:
+    - protocol: TCP
+      port: {{ .Values.alertmanager.service.port }}
+{{- end }}

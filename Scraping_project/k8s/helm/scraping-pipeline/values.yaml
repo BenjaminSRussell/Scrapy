@@ -6,6 +6,14 @@ global:
   imagePullSecrets: []
   storageClass: ""
 
+namespaceQuota:
+  enabled: true
+  hard:
+    requests.cpu: "8"
+    requests.memory: "32Gi"
+    limits.cpu: "16"
+    limits.memory: "64Gi"
+
 # ============================================
 # Stateful Services - Redis
 # ============================================
@@ -13,10 +21,11 @@ redis:
   enabled: true
   image:
     repository: redis
-    tag: "7-alpine"
+    tag: "7.4.2-alpine3.21"
     pullPolicy: IfNotPresent
 
   service:
+    name: redis
     type: ClusterIP
     port: 6379
 
@@ -45,17 +54,18 @@ postgresql:
   enabled: true
   image:
     repository: postgres
-    tag: "16-alpine"
+    tag: "16.6-alpine3.21"
     pullPolicy: IfNotPresent
 
   service:
+    name: postgresql
     type: ClusterIP
     port: 5432
 
   persistence:
     enabled: true
     storageClass: ""
-    size: 20Gi
+    size: 50Gi
 
   resources:
     limits:
@@ -82,6 +92,7 @@ zookeeper:
     repository: confluentinc/cp-zookeeper
     tag: "7.6.0"
     pullPolicy: IfNotPresent
+  replicas: 3
 
   service:
     type: ClusterIP
@@ -118,6 +129,7 @@ kafka:
     pullPolicy: IfNotPresent
 
   service:
+    name: kafka
     type: ClusterIP
     internal: 9092
     external: 9094
@@ -152,10 +164,11 @@ minio:
   enabled: true
   image:
     repository: minio/minio
-    tag: "latest"
+    tag: "RELEASE.2025-01-11T23-14-25Z"
     pullPolicy: IfNotPresent
 
   service:
+    name: minio
     type: ClusterIP
     api: 9000
     console: 9001
@@ -186,12 +199,12 @@ prometheus:
   replicas: 2  # High availability
   image:
     repository: prom/prometheus
-    tag: "latest"
+    tag: "v3.1.0"
     pullPolicy: IfNotPresent
 
   service:
     type: ClusterIP
-    port: 9090
+    port: 9100
 
   persistence:
     enabled: true
@@ -216,7 +229,7 @@ alertmanager:
   replicas: 3  # High availability cluster
   image:
     repository: prom/alertmanager
-    tag: "latest"
+    tag: "v0.28.1"
     pullPolicy: IfNotPresent
 
   service:
@@ -241,7 +254,7 @@ grafana:
   enabled: true
   image:
     repository: grafana/grafana
-    tag: "latest"
+    tag: "11.4.0"
     pullPolicy: IfNotPresent
 
   service:
@@ -271,11 +284,13 @@ grafana:
 # ============================================
 scrapyApp:
   enabled: true
-  replicaCount: 1
+  replicaCount: 3
   image:
     repository: ""  # Set your registry/image
     tag: "latest"
     pullPolicy: Always
+
+  terminationGracePeriodSeconds: 120
 
   service:
     type: ClusterIP
@@ -285,16 +300,22 @@ scrapyApp:
 
   resources:
     limits:
-      cpu: 8000m
-      memory: 16Gi
+      cpu: 1000m
+      memory: 1Gi
     requests:
-      cpu: 4000m
-      memory: 8Gi
+      cpu: 250m
+      memory: 256Mi
 
   env:
     SCOUT_INSTANCES: "8"
     SCRAPY_SETTINGS_MODULE: "src.settings"
     ENV: "production"
+
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 75
 
   persistence:
     deltaLake:
@@ -311,13 +332,17 @@ stage2Worker:
     tag: "latest"
     pullPolicy: Always
 
+  terminationGracePeriodSeconds: 120
+
   resources:
     limits:
-      cpu: 2000m
-      memory: 4Gi
-    requests:
       cpu: 1000m
-      memory: 2Gi
+      memory: 1Gi
+    requests:
+      cpu: 250m
+      memory: 256Mi
+
+  queueName: "stage2_queue"
 
 stage3Worker:
   enabled: true
@@ -327,13 +352,17 @@ stage3Worker:
     tag: "latest"
     pullPolicy: Always
 
+  terminationGracePeriodSeconds: 120
+
   resources:
     limits:
-      cpu: 2000m
-      memory: 4Gi
-    requests:
       cpu: 1000m
-      memory: 2Gi
+      memory: 1Gi
+    requests:
+      cpu: 250m
+      memory: 256Mi
+
+  queueName: "stage3_queue"
 
 kafkaDeltaIngestor:
   enabled: true
@@ -342,6 +371,8 @@ kafkaDeltaIngestor:
     repository: ""  # Set your registry/image
     tag: "latest"
     pullPolicy: Always
+
+  terminationGracePeriodSeconds: 120
 
   resources:
     limits:
@@ -359,6 +390,10 @@ kafkaDeltaIngestor:
     allowedLatency: 60
     maxMessagesPerBatch: 1000
 
+  env:
+    RUST_LOG: "info"
+    RUST_BACKTRACE: "1"
+
 metricsExporter:
   enabled: true
   replicaCount: 1
@@ -369,7 +404,7 @@ metricsExporter:
 
   service:
     type: ClusterIP
-    port: 9090
+    port: 9100
 
   resources:
     limits:
@@ -380,7 +415,7 @@ metricsExporter:
       memory: 1Gi
 
   config:
-    port: 9090
+    port: 9100
     interval: 5
 
 # ============================================
@@ -391,7 +426,7 @@ exporters:
     enabled: true
     image:
       repository: oliver006/redis_exporter
-      tag: "latest"
+      tag: "v1.67.0-alpine"
     service:
       port: 9121
     resources:
@@ -405,8 +440,8 @@ exporters:
   postgres:
     enabled: true
     image:
-      repository: prometheuscommunity/postgres-exporter
-      tag: "latest"
+      repository: prometheuscommunity/postgres_exporter
+      tag: "v0.16.0"
     service:
       port: 9187
     resources:
@@ -421,7 +456,7 @@ exporters:
     enabled: true
     image:
       repository: bitnami/jmx-exporter
-      tag: "latest"
+      tag: "1.0.1"
     service:
       port: 5556
     resources:
@@ -436,7 +471,7 @@ exporters:
     enabled: true
     image:
       repository: prom/statsd-exporter
-      tag: "latest"
+      tag: "v0.28.1"
     service:
       metricsPort: 9102
       statsdPort: 9125
@@ -485,9 +520,18 @@ secrets:
     region: "us-east-1"
 
 # ============================================
+# Application Environment (.env replacement)
+# ============================================
+appEnv:
+  enabled: true
+  extra: {}
+
+# ============================================
 # ConfigMaps
 # ============================================
 configMaps:
+  application:
+    create: true
   prometheus:
     create: true
   alertmanager:
@@ -499,13 +543,15 @@ configMaps:
 # Ingress Configuration
 # ============================================
 ingress:
-  enabled: false
+  enabled: true
   className: "nginx"
-  annotations: {}
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+    nginx.ingress.kubernetes.io/use-regex: "true"
   hosts:
-    - host: scraping-pipeline.example.com
+    - host: grafana.local
       paths:
-        - path: /grafana
+        - path: /grafana(/|$)(.*)
           pathType: Prefix
           service: grafana
           port: 3000

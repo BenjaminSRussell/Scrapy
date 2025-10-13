@@ -1,0 +1,34 @@
+{{- if .Values.podDisruptionBudget.enabled }}
+{{- if .Values.postgresql.enabled }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "scraping-pipeline.fullname" . }}-postgresql-pdb
+  labels:
+    {{- include "scraping-pipeline.labels" . | nindent 4 }}
+    app.kubernetes.io/component: postgres
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      {{- include "scraping-pipeline.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: postgres
+{{- end }}
+{{- if .Values.kafka.enabled }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "scraping-pipeline.fullname" . }}-kafka-pdb
+  labels:
+    {{- include "scraping-pipeline.labels" . | nindent 4 }}
+    app.kubernetes.io/component: kafka
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      {{- include "scraping-pipeline.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: kafka
+{{- end }}
+{{- end }}

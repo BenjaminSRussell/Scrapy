@@ -6,18 +6,22 @@ metadata:
   labels:
     {{- include "scraping-pipeline.labels" . | nindent 4 }}
     app.kubernetes.io/component: scrapy
+    app: scrapy-runner
 spec:
   replicas: {{ .Values.scrapyApp.replicaCount }}
   selector:
     matchLabels:
       {{- include "scraping-pipeline.selectorLabels" . | nindent 6 }}
       app.kubernetes.io/component: scrapy
+      app: scrapy-runner
   template:
     metadata:
       labels:
         {{- include "scraping-pipeline.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: scrapy
+        app: scrapy-runner
     spec:
+      terminationGracePeriodSeconds: {{ .Values.scrapyApp.terminationGracePeriodSeconds }}
       containers:
       - name: scrapy
         image: "{{ .Values.scrapyApp.image.repository }}:{{ .Values.scrapyApp.image.tag }}"
@@ -29,47 +33,12 @@ spec:
           containerPort: {{ $port }}
           protocol: TCP
         {{- end }}
+        envFrom:
+        - configMapRef:
+            name: {{ include "scraping-pipeline.fullname" . }}-app-env
+        - secretRef:
+            name: {{ .Values.postgresql.auth.existingSecret }}
         env:
-        - name: PYTHONPATH
-          value: "/app"
-        - name: REDIS_HOST
-          value: "{{ include "scraping-pipeline.fullname" . }}-redis"
-        - name: REDIS_PORT
-          value: "6379"
-        - name: POSTGRES_HOST
-          value: "{{ include "scraping-pipeline.fullname" . }}-postgresql"
-        - name: POSTGRES_PORT
-          value: "5432"
-        - name: POSTGRES_DB
-          value: {{ .Values.postgresql.auth.database | quote }}
-        - name: POSTGRES_USER
-          value: {{ .Values.postgresql.auth.username | quote }}
-        - name: POSTGRES_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: {{ .Values.postgresql.auth.existingSecret }}
-              key: {{ .Values.postgresql.auth.secretKeys.userPasswordKey }}
-        - name: DB_HOST
-          value: "{{ include "scraping-pipeline.fullname" . }}-postgresql"
-        - name: DB_PORT
-          value: "5432"
-        - name: DB_NAME
-          value: {{ .Values.postgresql.auth.database | quote }}
-        - name: DB_USER
-          value: {{ .Values.postgresql.auth.username | quote }}
-        - name: DB_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: {{ .Values.postgresql.auth.existingSecret }}
-              key: {{ .Values.postgresql.auth.secretKeys.userPasswordKey }}
-        - name: KAFKA_BOOTSTRAP_SERVERS
-          value: "{{ include "scraping-pipeline.fullname" . }}-kafka:9092"
-        - name: KAFKA_TOPIC
-          value: "scraped-items"
-        - name: SCRAPY_SETTINGS_MODULE
-          value: {{ .Values.scrapyApp.env.SCRAPY_SETTINGS_MODULE | quote }}
-        - name: ENV
-          value: {{ .Values.scrapyApp.env.ENV | quote }}
         - name: AWS_ENDPOINT_URL
           value: "http://{{ include "scraping-pipeline.fullname" . }}-minio:9000"
         - name: AWS_ACCESS_KEY_ID
@@ -82,12 +51,35 @@ spec:
             secretKeyRef:
               name: {{ .Values.minio.auth.existingSecret }}
               key: {{ .Values.minio.auth.rootPasswordKey }}
-        - name: AWS_REGION
-          value: {{ .Values.secrets.aws.region | quote }}
-        - name: AWS_ALLOW_HTTP
-          value: "true"
         - name: SCOUT_INSTANCES
           value: {{ .Values.scrapyApp.env.SCOUT_INSTANCES | quote }}
+        livenessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - pgrep -f run_multiple_scouts.py
+          initialDelaySeconds: 20
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - python -c "import os,socket; socket.create_connection((os.environ.get('REDIS_HOST','localhost'), int(os.environ.get('REDIS_PORT','6379'))), 5)"
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        lifecycle:
+          preStop:
+            exec:
+              command:
+              - /bin/sh
+              - -c
+              - python -c "import sys; sys.path.insert(0, '/app'); from drain_lake import LakeDrainer; LakeDrainer().drain_transient_queues()" || true; sleep 10
         resources:
           {{- toYaml .Values.scrapyApp.resources | nindent 10 }}
         volumeMounts:
@@ -105,6 +97,7 @@ metadata:
   labels:
     {{- include "scraping-pipeline.labels" . | nindent 4 }}
     app.kubernetes.io/component: scrapy
+    app: scrapy-runner
 spec:
   type: {{ .Values.scrapyApp.service.type }}
   ports:
@@ -117,4 +110,5 @@ spec:
   selector:
     {{- include "scraping-pipeline.selectorLabels" . | nindent 4 }}
     app.kubernetes.io/component: scrapy
+    app: scrapy-runner
 {{- end }}

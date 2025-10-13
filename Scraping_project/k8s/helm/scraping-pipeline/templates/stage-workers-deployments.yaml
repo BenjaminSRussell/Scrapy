@@ -1,0 +1,151 @@
+{{- if .Values.stage2Worker.enabled }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "scraping-pipeline.fullname" . }}-stage2
+  labels:
+    {{- include "scraping-pipeline.labels" . | nindent 4 }}
+    app.kubernetes.io/component: stage2
+    app: stage2-worker
+spec:
+  replicas: {{ .Values.stage2Worker.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "scraping-pipeline.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: stage2
+      app: stage2-worker
+  template:
+    metadata:
+      labels:
+        {{- include "scraping-pipeline.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: stage2
+        app: stage2-worker
+    spec:
+      terminationGracePeriodSeconds: {{ .Values.stage2Worker.terminationGracePeriodSeconds }}
+      containers:
+      - name: stage2-worker
+        image: "{{ .Values.stage2Worker.image.repository }}:{{ .Values.stage2Worker.image.tag }}"
+        imagePullPolicy: {{ .Values.stage2Worker.image.pullPolicy }}
+        command: ["python", "-u", "src/stage2/stage2_worker.py"]
+        envFrom:
+        - configMapRef:
+            name: {{ include "scraping-pipeline.fullname" . }}-app-env
+        - secretRef:
+            name: {{ .Values.postgresql.auth.existingSecret }}
+        env:
+        - name: QUEUE_NAME
+          value: {{ .Values.stage2Worker.queueName | quote }}
+        livenessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - pgrep -f stage2_worker.py
+          initialDelaySeconds: 20
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - python -c "import os,socket; socket.create_connection((os.environ.get('POSTGRES_HOST','localhost'), int(os.environ.get('POSTGRES_PORT','5432'))), 5)"
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        lifecycle:
+          preStop:
+            exec:
+              command:
+              - /bin/sh
+              - -c
+              - python -c "import sys; sys.path.insert(0, '/app'); from drain_lake import LakeDrainer; LakeDrainer().drain_transient_queues()" || true; sleep 10
+        resources:
+          {{- toYaml .Values.stage2Worker.resources | nindent 10 }}
+        volumeMounts:
+        - name: delta-data
+          mountPath: /app/data
+      volumes:
+      - name: delta-data
+        persistentVolumeClaim:
+          claimName: {{ include "scraping-pipeline.fullname" . }}-delta-lake
+{{- end }}
+
+{{- if .Values.stage3Worker.enabled }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "scraping-pipeline.fullname" . }}-stage3
+  labels:
+    {{- include "scraping-pipeline.labels" . | nindent 4 }}
+    app.kubernetes.io/component: stage3
+    app: stage3-worker
+spec:
+  replicas: {{ .Values.stage3Worker.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "scraping-pipeline.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: stage3
+      app: stage3-worker
+  template:
+    metadata:
+      labels:
+        {{- include "scraping-pipeline.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: stage3
+        app: stage3-worker
+    spec:
+      terminationGracePeriodSeconds: {{ .Values.stage3Worker.terminationGracePeriodSeconds }}
+      containers:
+      - name: stage3-worker
+        image: "{{ .Values.stage3Worker.image.repository }}:{{ .Values.stage3Worker.image.tag }}"
+        imagePullPolicy: {{ .Values.stage3Worker.image.pullPolicy }}
+        command: ["python", "-u", "src/stage3/stage3_worker.py"]
+        envFrom:
+        - configMapRef:
+            name: {{ include "scraping-pipeline.fullname" . }}-app-env
+        - secretRef:
+            name: {{ .Values.postgresql.auth.existingSecret }}
+        env:
+        - name: QUEUE_NAME
+          value: {{ .Values.stage3Worker.queueName | quote }}
+        livenessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - pgrep -f stage3_worker.py
+          initialDelaySeconds: 20
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - python -c "import os,socket; socket.create_connection((os.environ.get('POSTGRES_HOST','localhost'), int(os.environ.get('POSTGRES_PORT','5432'))), 5)"
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        lifecycle:
+          preStop:
+            exec:
+              command:
+              - /bin/sh
+              - -c
+              - python -c "import sys; sys.path.insert(0, '/app'); from drain_lake import LakeDrainer; LakeDrainer().drain_transient_queues()" || true; sleep 10
+        resources:
+          {{- toYaml .Values.stage3Worker.resources | nindent 10 }}
+        volumeMounts:
+        - name: delta-data
+          mountPath: /app/data
+      volumes:
+      - name: delta-data
+        persistentVolumeClaim:
+          claimName: {{ include "scraping-pipeline.fullname" . }}-delta-lake
+{{- end }}

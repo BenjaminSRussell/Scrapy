@@ -1,0 +1,33 @@
+{{- if and .Values.appEnv.enabled .Values.configMaps.application.create }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "scraping-pipeline.fullname" . }}-app-env
+  labels:
+    {{- include "scraping-pipeline.labels" . | nindent 4 }}
+    app.kubernetes.io/component: configuration
+data:
+  PYTHONPATH: "/app"
+  REDIS_HOST: "{{ include "scraping-pipeline.fullname" . }}-redis"
+  REDIS_PORT: "{{ .Values.redis.service.port }}"
+  POSTGRES_HOST: "{{ include "scraping-pipeline.fullname" . }}-postgresql"
+  POSTGRES_PORT: "{{ .Values.postgresql.service.port }}"
+  POSTGRES_DB: {{ .Values.postgresql.auth.database | quote }}
+  POSTGRES_USER: {{ .Values.postgresql.auth.username | quote }}
+  DB_HOST: "{{ include "scraping-pipeline.fullname" . }}-postgresql"
+  DB_PORT: "{{ .Values.postgresql.service.port }}"
+  DB_NAME: {{ .Values.postgresql.auth.database | quote }}
+  DB_USER: {{ .Values.postgresql.auth.username | quote }}
+  REDIS_URL: "redis://{{ include "scraping-pipeline.fullname" . }}-redis:{{ .Values.redis.service.port }}"
+  KAFKA_BOOTSTRAP_SERVERS: "{{ include "scraping-pipeline.fullname" . }}-kafka:{{ .Values.kafka.service.internal }}"
+  KAFKA_TOPIC: {{ .Values.kafkaDeltaIngestor.config.topic | quote }}
+  SCRAPY_SETTINGS_MODULE: {{ .Values.scrapyApp.env.SCRAPY_SETTINGS_MODULE | quote }}
+  ENV: {{ .Values.scrapyApp.env.ENV | quote }}
+  AWS_REGION: {{ .Values.secrets.aws.region | quote }}
+  AWS_ALLOW_HTTP: "true"
+  STATSD_HOST: "{{ include "scraping-pipeline.fullname" . }}-statsd-exporter"
+  STATSD_PORT: "{{ .Values.exporters.statsd.service.statsdPort }}"
+{{- range $key, $value := .Values.appEnv.extra }}
+  {{ $key }}: {{ $value | quote }}
+{{- end }}
+{{- end }}

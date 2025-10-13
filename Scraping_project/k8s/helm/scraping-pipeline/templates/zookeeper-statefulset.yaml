@@ -1,0 +1,122 @@
+{{- if .Values.zookeeper.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "scraping-pipeline.fullname" . }}-zookeeper-headless
+  labels:
+    {{- include "scraping-pipeline.labels" . | nindent 4 }}
+    app.kubernetes.io/component: zookeeper
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: true
+  ports:
+  - port: {{ .Values.zookeeper.service.port }}
+    name: client
+    targetPort: client
+    protocol: TCP
+  selector:
+    {{- include "scraping-pipeline.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: zookeeper
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "scraping-pipeline.fullname" . }}-zookeeper
+  labels:
+    {{- include "scraping-pipeline.labels" . | nindent 4 }}
+    app.kubernetes.io/component: zookeeper
+spec:
+  type: {{ .Values.zookeeper.service.type }}
+  ports:
+  - port: {{ .Values.zookeeper.service.port }}
+    name: client
+    targetPort: client
+    protocol: TCP
+  selector:
+    {{- include "scraping-pipeline.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: zookeeper
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "scraping-pipeline.fullname" . }}-zookeeper
+  labels:
+    {{- include "scraping-pipeline.labels" . | nindent 4 }}
+    app.kubernetes.io/component: zookeeper
+spec:
+  serviceName: {{ include "scraping-pipeline.fullname" . }}-zookeeper-headless
+  replicas: {{ .Values.zookeeper.replicas }}
+  selector:
+    matchLabels:
+      {{- include "scraping-pipeline.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: zookeeper
+  template:
+    metadata:
+      labels:
+        {{- include "scraping-pipeline.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: zookeeper
+    spec:
+      containers:
+      - name: zookeeper
+        image: "{{ .Values.zookeeper.image.repository }}:{{ .Values.zookeeper.image.tag }}"
+        imagePullPolicy: {{ .Values.zookeeper.image.pullPolicy }}
+        ports:
+        - name: client
+          containerPort: {{ .Values.zookeeper.service.port }}
+          protocol: TCP
+        env:
+        - name: ZOOKEEPER_CLIENT_PORT
+          value: {{ .Values.zookeeper.env.ZOOKEEPER_CLIENT_PORT | quote }}
+        - name: ZOOKEEPER_TICK_TIME
+          value: {{ .Values.zookeeper.env.ZOOKEEPER_TICK_TIME | quote }}
+        - name: ZOOKEEPER_SYNC_LIMIT
+          value: {{ .Values.zookeeper.env.ZOOKEEPER_SYNC_LIMIT | quote }}
+        livenessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - "echo ruok | nc 127.0.0.1 {{ .Values.zookeeper.service.port }}"
+          initialDelaySeconds: 15
+          periodSeconds: 10
+          timeoutSeconds: 5
+        readinessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - "echo ruok | nc 127.0.0.1 {{ .Values.zookeeper.service.port }}"
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 5
+        volumeMounts:
+        - name: data
+          mountPath: /var/lib/zookeeper/data
+        - name: logs
+          mountPath: /var/lib/zookeeper/log
+        resources:
+          {{- toYaml .Values.zookeeper.resources | nindent 10 }}
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      {{- if .Values.zookeeper.persistence.data.storageClass }}
+      storageClassName: {{ .Values.zookeeper.persistence.data.storageClass | quote }}
+      {{- end }}
+      resources:
+        requests:
+          storage: {{ .Values.zookeeper.persistence.data.size }}
+  - metadata:
+      name: logs
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      {{- if .Values.zookeeper.persistence.logs.storageClass }}
+      storageClassName: {{ .Values.zookeeper.persistence.logs.storageClass | quote }}
+      {{- end }}
+      resources:
+        requests:
+          storage: {{ .Values.zookeeper.persistence.logs.size }}
+{{- end }}

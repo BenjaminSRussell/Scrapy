@@ -1,0 +1,209 @@
+{{- if .Values.grafana.enabled }}
+{{- $fullname := include "scraping-pipeline.fullname" . }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $fullname }}-grafana-datasource
+  labels:
+    {{- include "scraping-pipeline.labels" . | nindent 4 }}
+    app.kubernetes.io/component: grafana
+    grafana_datasource: "1"
+data:
+  datasource.yml: |
+    apiVersion: 1
+    datasources:
+      - name: Prometheus
+        type: prometheus
+        access: proxy
+        url: http://{{ $fullname }}-prometheus:{{ .Values.prometheus.service.port }}
+        isDefault: true
+        editable: true
+        jsonData:
+          timeInterval: 5s
+          queryTimeout: 60s
+      - name: Redis
+        type: redis-datasource
+        access: proxy
+        url: redis://{{ $fullname }}-redis:{{ .Values.redis.service.port }}
+        editable: true
+        jsonData:
+          client: standalone
+          poolSize: 5
+          timeout: 10
+          pingInterval: 0
+      - name: PostgreSQL
+        type: postgres
+        access: proxy
+        url: {{ $fullname }}-postgresql:{{ .Values.postgresql.service.port }}
+        database: {{ .Values.postgresql.auth.database }}
+        user: {{ .Values.postgresql.auth.username }}
+        secureJsonData:
+          password: $__env{DB_PASSWORD}
+        jsonData:
+          sslmode: disable
+          postgresVersion: 1600
+          maxOpenConns: 100
+          maxIdleConns: 100
+          connMaxLifetime: 14400
+        editable: true
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $fullname }}-grafana-dashboard-config
+  labels:
+    {{- include "scraping-pipeline.labels" . | nindent 4 }}
+    app.kubernetes.io/component: grafana
+data:
+  dashboards.yml: |
+{{ (.Files.Get "files/monitoring/grafana_dashboards.yml") | indent 4 }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $fullname }}-grafana-dashboard-unified
+  labels:
+    {{- include "scraping-pipeline.labels" . | nindent 4 }}
+    app.kubernetes.io/component: grafana
+data:
+  unified_dashboard.json: |
+{{ (.Files.Get "files/monitoring/dashboards/unified_dashboard.json") | indent 4 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $fullname }}-grafana
+  labels:
+    {{- include "scraping-pipeline.labels" . | nindent 4 }}
+    app.kubernetes.io/component: grafana
+spec:
+  type: {{ .Values.grafana.service.type }}
+  ports:
+  - port: {{ .Values.grafana.service.port }}
+    targetPort: http
+    protocol: TCP
+    name: http
+  selector:
+    {{- include "scraping-pipeline.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: grafana
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $fullname }}-grafana
+  labels:
+    {{- include "scraping-pipeline.labels" . | nindent 4 }}
+    app.kubernetes.io/component: grafana
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "scraping-pipeline.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: grafana
+  template:
+    metadata:
+      labels:
+        {{- include "scraping-pipeline.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: grafana
+    spec:
+      containers:
+      - name: grafana
+        image: "{{ .Values.grafana.image.repository }}:{{ .Values.grafana.image.tag }}"
+        imagePullPolicy: {{ .Values.grafana.image.pullPolicy }}
+        ports:
+        - name: http
+          containerPort: {{ .Values.grafana.service.port }}
+          protocol: TCP
+        env:
+        - name: GF_SECURITY_ADMIN_USER
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.grafana.auth.existingSecret }}
+              key: {{ .Values.grafana.auth.adminUserKey }}
+        - name: GF_SECURITY_ADMIN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.grafana.auth.existingSecret }}
+              key: {{ .Values.grafana.auth.adminPasswordKey }}
+        - name: GF_PLUGINS_PREINSTALL
+          value: "redis-datasource"
+        - name: GF_SERVER_ROOT_URL
+          value: "%(protocol)s://%(domain)s/grafana/"
+        - name: GF_SERVER_SERVE_FROM_SUB_PATH
+          value: "true"
+        - name: GF_USERS_ALLOW_SIGN_UP
+          value: "false"
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.postgresql.auth.existingSecret }}
+              key: DB_PASSWORD
+        livenessProbe:
+          httpGet:
+            path: /api/health
+            port: http
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /api/health
+            port: http
+          initialDelaySeconds: 20
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        volumeMounts:
+        - name: datasources
+          mountPath: /etc/grafana/provisioning/datasources
+        - name: dashboards-config
+          mountPath: /etc/grafana/provisioning/dashboards
+        - name: dashboards
+          mountPath: /var/lib/grafana/dashboards
+        - name: storage
+          mountPath: /var/lib/grafana
+        resources:
+          {{- toYaml .Values.grafana.resources | nindent 10 }}
+      volumes:
+      - name: datasources
+        configMap:
+          name: {{ $fullname }}-grafana-datasource
+      - name: dashboards-config
+        configMap:
+          name: {{ $fullname }}-grafana-dashboard-config
+      - name: dashboards
+        configMap:
+          name: {{ $fullname }}-grafana-dashboard-unified
+          items:
+          - key: unified_dashboard.json
+            path: unified_dashboard.json
+      {{- if .Values.grafana.persistence.enabled }}
+      - name: storage
+        persistentVolumeClaim:
+          claimName: {{ $fullname }}-grafana
+      {{- else }}
+      - name: storage
+        emptyDir: {}
+      {{- end }}
+---
+{{- if .Values.grafana.persistence.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ $fullname }}-grafana
+  labels:
+    {{- include "scraping-pipeline.labels" . | nindent 4 }}
+    app.kubernetes.io/component: grafana
+spec:
+  accessModes:
+  - ReadWriteOnce
+  {{- if .Values.grafana.persistence.storageClass }}
+  storageClassName: {{ .Values.grafana.persistence.storageClass | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.grafana.persistence.size }}
+{{- end }}
+{{- end }}

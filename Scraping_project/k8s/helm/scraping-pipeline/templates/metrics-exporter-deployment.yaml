@@ -1,0 +1,84 @@
+{{- if .Values.metricsExporter.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "scraping-pipeline.fullname" . }}-metrics-exporter
+  labels:
+    {{- include "scraping-pipeline.labels" . | nindent 4 }}
+    app.kubernetes.io/component: metrics-exporter
+spec:
+  replicas: {{ .Values.metricsExporter.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "scraping-pipeline.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: metrics-exporter
+  template:
+    metadata:
+      labels:
+        {{- include "scraping-pipeline.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: metrics-exporter
+    spec:
+      containers:
+      - name: metrics-exporter
+        image: "{{ .Values.metricsExporter.image.repository }}:{{ .Values.metricsExporter.image.tag }}"
+        imagePullPolicy: {{ .Values.metricsExporter.image.pullPolicy }}
+        command:
+        - python
+        - metrics_exporter.py
+        - --port
+        - "{{ .Values.metricsExporter.config.port }}"
+        - --interval
+        - "{{ .Values.metricsExporter.config.interval }}"
+        ports:
+        - name: http
+          containerPort: {{ .Values.metricsExporter.service.port }}
+          protocol: TCP
+        livenessProbe:
+          httpGet:
+            path: /metrics
+            port: http
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /metrics
+            port: http
+          initialDelaySeconds: 15
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        envFrom:
+        - configMapRef:
+            name: {{ include "scraping-pipeline.fullname" . }}-app-env
+        - secretRef:
+            name: {{ .Values.postgresql.auth.existingSecret }}
+        resources:
+          {{- toYaml .Values.metricsExporter.resources | nindent 10 }}
+        volumeMounts:
+        - name: delta-data
+          mountPath: /app/data
+      volumes:
+      - name: delta-data
+        persistentVolumeClaim:
+          claimName: {{ include "scraping-pipeline.fullname" . }}-delta-lake
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "scraping-pipeline.fullname" . }}-metrics-exporter
+  labels:
+    {{- include "scraping-pipeline.labels" . | nindent 4 }}
+    app.kubernetes.io/component: metrics-exporter
+spec:
+  type: {{ .Values.metricsExporter.service.type }}
+  ports:
+  - port: {{ .Values.metricsExporter.service.port }}
+    targetPort: http
+    protocol: TCP
+    name: http
+  selector:
+    {{- include "scraping-pipeline.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: metrics-exporter
+{{- end }}

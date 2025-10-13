@@ -24,7 +24,6 @@ This guide walks through deploying the UConn Scraping Pipeline to Kubernetes usi
 - **PostgreSQL**: Metrics database
 - **Zookeeper**: Kafka coordination
 - **Kafka**: Event streaming
-- **MinIO**: S3-compatible object storage
 - **Prometheus** (2 replicas): Metrics collection (HA)
 - **Alertmanager** (3 replicas): Alert management (HA cluster)
 - **Grafana**: Dashboards and visualization
@@ -96,10 +95,6 @@ kubectl config set-context --current --namespace=scraping-pipeline
 kubectl create secret generic postgres-credentials \
   --from-literal=password='YOUR_SECURE_PASSWORD_HERE'
 
-# MinIO credentials
-kubectl create secret generic minio-credentials \
-  --from-literal=root-user='minioadmin' \
-  --from-literal=root-password='YOUR_SECURE_PASSWORD_HERE'
 
 # Grafana credentials
 kubectl create secret generic grafana-credentials \
@@ -248,7 +243,6 @@ scraping-pipeline-redis-0               1/1     Running   0          5m
 scraping-pipeline-postgresql-0          1/1     Running   0          5m
 scraping-pipeline-zookeeper-0           1/1     Running   0          5m
 scraping-pipeline-kafka-0               1/1     Running   0          4m
-scraping-pipeline-minio-0               1/1     Running   0          4m
 scraping-pipeline-prometheus-a-0        1/1     Running   0          3m
 scraping-pipeline-prometheus-b-0        1/1     Running   0          3m
 scraping-pipeline-alertmanager-0        1/1     Running   0          3m

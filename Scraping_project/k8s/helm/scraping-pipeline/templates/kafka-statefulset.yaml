@@ -124,6 +124,7 @@ metadata:
 spec:
   type: ClusterIP
   clusterIP: None  # Headless service for StatefulSet
+  publishNotReadyAddresses: true
   ports:
   - port: {{ .Values.kafka.service.internal }}
     targetPort: internal
@@ -133,6 +134,24 @@ spec:
     targetPort: jmx
     protocol: TCP
     name: jmx
+  selector:
+    {{- include "scraping-pipeline.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: kafka
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "scraping-pipeline.fullname" . }}-kafka-external
+  labels:
+    {{- include "scraping-pipeline.labels" . | nindent 4 }}
+    app.kubernetes.io/component: kafka
+spec:
+  type: {{ .Values.kafka.service.type }}
+  ports:
+  - port: {{ .Values.kafka.service.external }}
+    targetPort: external
+    protocol: TCP
+    name: external
   selector:
     {{- include "scraping-pipeline.selectorLabels" . | nindent 4 }}
     app.kubernetes.io/component: kafka

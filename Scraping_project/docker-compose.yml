@@ -13,7 +13,7 @@ services:
 
   # Redis - Message queues, priority queue, circuit breaker
   redis:
-    image: redis:7-alpine
+    image: redis:7.4.2-alpine3.21
     container_name: scraping_redis
     ports:
       - "6379:6379"
@@ -31,7 +31,7 @@ services:
 
   # PostgreSQL - Analytics database for metrics
   postgres:
-    image: postgres:16-alpine
+    image: postgres:16.6-alpine3.21
     container_name: scraping_postgres
     ports:
       - "5432:5432"
@@ -138,7 +138,7 @@ services:
 
   # Prometheus Replica A - Primary metrics collector
   prometheus-a:
-    image: prom/prometheus:latest
+    image: prom/prometheus:v3.1.0
     container_name: scraping_prometheus_a
     ports:
       - "9091:9090"
@@ -168,7 +168,7 @@ services:
 
   # Prometheus Replica B - Secondary metrics collector (HA)
   prometheus-b:
-    image: prom/prometheus:latest
+    image: prom/prometheus:v3.1.0
     container_name: scraping_prometheus_b
     ports:
       - "9097:9090"
@@ -198,7 +198,7 @@ services:
 
   # Alertmanager Replica 1
   alertmanager-1:
-    image: prom/alertmanager:latest
+    image: prom/alertmanager:v0.28.1
     container_name: scraping_alertmanager_1
     ports:
       - "9093:9093"
@@ -217,7 +217,7 @@ services:
 
   # Alertmanager Replica 2
   alertmanager-2:
-    image: prom/alertmanager:latest
+    image: prom/alertmanager:v0.28.1
     container_name: scraping_alertmanager_2
     ports:
       - "9095:9093"
@@ -236,7 +236,7 @@ services:
 
   # Alertmanager Replica 3
   alertmanager-3:
-    image: prom/alertmanager:latest
+    image: prom/alertmanager:v0.28.1
     container_name: scraping_alertmanager_3
     ports:
       - "9096:9093"
@@ -255,7 +255,7 @@ services:
 
   # Grafana - Visualization and dashboards
   grafana:
-    image: grafana/grafana:latest
+    image: grafana/grafana:11.4.0
     container_name: scraping_grafana
     ports:
       - "3000:3000"
@@ -510,7 +510,7 @@ services:
 
   # Redis Exporter - Export Redis metrics to Prometheus
   redis-exporter:
-    image: oliver006/redis_exporter:latest
+    image: oliver006/redis_exporter:v1.67.0-alpine
     container_name: scraping_redis_exporter
     ports:
       - "9121:9121"
@@ -525,7 +525,7 @@ services:
 
   # PostgreSQL Exporter - Export PostgreSQL metrics to Prometheus
   postgres-exporter:
-    image: prometheuscommunity/postgres-exporter:latest
+    image: prometheuscommunity/postgres_exporter:v0.16.0
     container_name: scraping_postgres_exporter
     ports:
       - "9187:9187"
@@ -540,7 +540,7 @@ services:
 
   # Kafka JMX Exporter - Export Kafka JMX metrics to Prometheus
   kafka-jmx-exporter:
-    image: bitnami/jmx-exporter:latest
+    image: bitnami/jmx-exporter:1.0.1
     container_name: scraping_kafka_jmx_exporter
     ports:
       - "5556:5556"
@@ -563,7 +563,7 @@ services:
   # StatsD Exporter - Convert StatsD metrics to Prometheus format
   # Used by kafka-delta-ingest daemon to expose metrics
   statsd-exporter:
-    image: prom/statsd-exporter:latest
+    image: prom/statsd-exporter:v0.28.1
     container_name: scraping_statsd_exporter
     ports:
       - "9102:9102"  # Prometheus metrics endpoint

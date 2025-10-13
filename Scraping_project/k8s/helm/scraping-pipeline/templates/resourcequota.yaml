@@ -1,0 +1,13 @@
+{{- if .Values.namespaceQuota.enabled }}
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: {{ include "scraping-pipeline.fullname" . }}-quota
+  labels:
+    {{- include "scraping-pipeline.labels" . | nindent 4 }}
+spec:
+  hard:
+    {{- range $key, $value := .Values.namespaceQuota.hard }}
+    {{ $key }}: {{ $value | quote }}
+    {{- end }}
+{{- end }}
