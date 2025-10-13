@@ -15,12 +15,13 @@ try:
     import pyarrow as pa
     import pyarrow.csv as pa_csv
     import pyarrow.parquet as pq
-    from deltalake import DeltaTable, write_deltalake
+    from deltalake import DeltaTable, write_deltalake, WriterProperties
     DELTA_AVAILABLE = True
 except ImportError:
     DELTA_AVAILABLE = False
     DeltaTable = None
     write_deltalake = None
+    WriterProperties = None
     pa = None
     pa_csv = None
     pq = None
@@ -223,15 +224,16 @@ class DeltaLakeManager:
         if table_name in ['stage1_discovery', 'stage2_page_analysis']:
             partition_by = ['domain']
 
-        # Write to Delta Lake with compression enabled via write_options
-        # Note: storage_options doesn't work for compression - use write_options instead
+        # Write to Delta Lake with compression enabled via WriterProperties
+        # Enable ZSTD compression to reduce disk space usage
+        writer_props = WriterProperties(compression="ZSTD")
+
         write_deltalake(
             str(table_path),
             table,
             mode=mode,
             schema_mode="merge" if mode == "append" else "overwrite",
-            # Enable ZSTD compression to reduce disk space usage
-            writer_properties={"compression": "ZSTD"},
+            writer_properties=writer_props,
             # Partition by domain
             partition_by=partition_by
         )

@@ -136,7 +136,8 @@ class MetricsExporter:
         self.previous_counts = {}
         self.previous_error_counts = {}
         self.last_update_time = time.time()
-        exports_dir = Path(__file__).parent.parent / 'exports'
+        # Use /app/exports instead of trying to go to parent (which would be /)
+        exports_dir = Path('/app/exports')
         exports_dir.mkdir(parents=True, exist_ok=True)
         self.error_summary_path = exports_dir / 'stage1_errors_summary.json'
         self._last_error_summary_fingerprint: tuple | None = None

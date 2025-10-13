@@ -47,7 +47,13 @@ secrets/
 credentials/
 
 # Local Data (exclude from image)
-data/
+data/cache/
+data/config/
+data/delta_lake/
+data/exports/
+data/logs/
+data/temp/
+data/warehouse/
 
 # Docker
 Dockerfile*

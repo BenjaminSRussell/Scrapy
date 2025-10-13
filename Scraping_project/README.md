@@ -6,27 +6,56 @@ Production-ready web scraping pipeline with real-time metrics, Kafka streaming, 
 
 ## 🚀 Quick Start
 
-1.  **Start the entire pipeline in the background:**
+1.  **Boot the local stack (no data reset):**
     ```bash
-    docker-compose up -d
+    python start.py
     ```
 
-2.  **Load seed URLs into the queue:**
+2.  **(Optional) Reset Delta Lake and reload seeds:**
+    ```bash
+    python start.py --reset-delta
+    ```
+
+3.  **Load additional seed URLs into the queue:**
     ```bash
     docker-compose exec scrapy-app python cli.py load_seeds
     ```
 
-3.  **View the Grafana dashboards:**
+4.  **View the Grafana dashboards:**
     [http://localhost:3000](http://localhost:3000) (admin / admin)
 
 ## ⚙️ Lifecycle Management
 
-Use `docker-compose` to manage the application lifecycle:
+*   **Start locally (docker-compose):** `python start.py`
+*   **Stop locally:** `python shutdown.py`
+*   **Stop locally and wipe project data:** `python shutdown.py --purge-data`
+*   **Force a Delta Lake reset + reseed:** `python start.py --reset-delta`
+*   **Start on Kubernetes (single release):**
+    ```bash
+    python start.py --env k8s --stage pipeline
+    ```
+*   **Start on Kubernetes (isolated stage clusters):**
+    ```bash
+    # Stage 1 / Scrapy discovery
+    python start.py --env k8s --stage stage1
 
-*   **Start services:** `docker-compose up -d`
-*   **Stop services:** `docker-compose down`
+    # Stage 2 workers (disables Scrapy and Stage 3 in this release)
+    python start.py --env k8s --stage stage2 --set stage2Worker.image.repository=ghcr.io/you/stage2 --set stage2Worker.image.tag=latest
+
+    # Deploy all three stages into separate namespaces
+    python start.py --env k8s --stage all-stages --release-prefix scraping --namespace-prefix scraping
+    ```
+    Each stage gets its own namespace (`<prefix>-stageX`) and Helm release (`<prefix>-stageX`). Use `--release`/`--namespace` when deploying a single stage to override the defaults.
+
+*   **Stop a Kubernetes release:** `python shutdown.py --env k8s --release scraping-pipeline --namespace scraping`
+*   **Stop a stage-specific release:** `python shutdown.py --env k8s --stage stage1` (adjust stage as needed)
+
+For day-to-day troubleshooting you can still interact with Compose directly:
+
+*   **Manual start:** `docker-compose up -d`
+*   **Manual stop:** `docker-compose down`
 *   **View logs:** `docker-compose logs -f`
-*   **Run a command in the Scrapy container:** `docker-compose exec scrapy-app <command>`
+*   **Run inside the Scrapy container:** `docker-compose exec scrapy-app <command>`
 
 ## 📊 Architecture
 
@@ -168,6 +197,35 @@ REDIS_HOST=redis
 # 1. Update .env (remove AWS_ENDPOINT_URL, add real credentials)
 # 2. Create S3 bucket with versioning enabled
 # 3. Update docker-compose.yml table path to s3://your-bucket/path
+```
+
+### Kubernetes staged deployments
+
+When deploying to Kubernetes, the Helm chart defaults to a full pipeline release (`scraping-pipeline` in namespace `scraping`). To run each pipeline stage in its own cluster slice:
+
+```bash
+# Stage 1 only (Scrapy discovery)
+python start.py --env k8s --stage stage1 \
+  --set scrapyApp.image.repository=ghcr.io/you/scrapy \
+  --set scrapyApp.image.tag=prod
+
+# Stage 2 workers
+python start.py --env k8s --stage stage2 \
+  --set stage2Worker.image.repository=ghcr.io/you/stage2 \
+  --set stage2Worker.image.tag=prod
+
+# Stage 3 workers
+python start.py --env k8s --stage stage3 \
+  --set stage3Worker.image.repository=ghcr.io/you/stage3 \
+  --set stage3Worker.image.tag=prod
+```
+
+Use `--stage all-stages` together with `--release-prefix`/`--namespace-prefix` to spin up one release per stage automatically. Make sure you supply valid container image references for each stage.
+
+To remove a staged deployment:
+
+```bash
+python shutdown.py --env k8s --stage stage1
 ```
 
 

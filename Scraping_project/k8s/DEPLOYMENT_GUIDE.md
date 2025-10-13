@@ -271,11 +271,7 @@ kubectl port-forward svc/scraping-pipeline-prometheus-a 9090:9090 -n scraping-pi
 # Open http://localhost:9090
 ```
 
-#### MinIO Console
-```bash
-kubectl port-forward svc/scraping-pipeline-minio 9001:9001 -n scraping-pipeline
-# Open http://localhost:9001
-```
+
 
 ### 9. Initialize Delta Lake
 

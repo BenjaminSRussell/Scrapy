@@ -13,10 +13,6 @@ kubectl create secret generic postgres-credentials \
   --from-literal=password='YOUR_PASSWORD' \
   -n scraping-pipeline
 
-kubectl create secret generic minio-credentials \
-  --from-literal=root-user='minioadmin' \
-  --from-literal=root-password='YOUR_PASSWORD' \
-  -n scraping-pipeline
 
 kubectl create secret generic grafana-credentials \
   --from-literal=admin-user='admin' \
@@ -59,7 +55,7 @@ k8s/
 - **PostgreSQL**: Metrics database (1 replica)
 - **Zookeeper**: Kafka coordination (1 replica)
 - **Kafka**: Event streaming (1+ replicas)
-- **MinIO**: S3 object storage (1+ replicas)
+
 - **Prometheus**: Metrics collection (2 replicas for HA)
 - **Alertmanager**: Alert management (3 replicas for HA)
 - **Grafana**: Dashboards (1 replica)

@@ -316,7 +316,7 @@ def cmd_reset(args):
         return
 
     logger.info(f"Loading seed URLs from: {csv_path}")
-    df = pd.read_csv(csv_path)
+    df = pd.read_csv(csv_path, header=None, names=['url'])
 
     # Add url_hash column
     df['url_hash'] = df['url'].apply(lambda url: hashlib.sha256(url.encode('utf-8')).hexdigest())

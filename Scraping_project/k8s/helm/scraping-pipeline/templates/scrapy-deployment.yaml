@@ -39,18 +39,7 @@ spec:
         - secretRef:
             name: {{ .Values.postgresql.auth.existingSecret }}
         env:
-        - name: AWS_ENDPOINT_URL
-          value: "http://{{ include "scraping-pipeline.fullname" . }}-minio:9000"
-        - name: AWS_ACCESS_KEY_ID
-          valueFrom:
-            secretKeyRef:
-              name: {{ .Values.minio.auth.existingSecret }}
-              key: {{ .Values.minio.auth.rootUserKey }}
-        - name: AWS_SECRET_ACCESS_KEY
-          valueFrom:
-            secretKeyRef:
-              name: {{ .Values.minio.auth.existingSecret }}
-              key: {{ .Values.minio.auth.rootPasswordKey }}
+
         - name: SCOUT_INSTANCES
           value: {{ .Values.scrapyApp.env.SCOUT_INSTANCES | quote }}
         livenessProbe:

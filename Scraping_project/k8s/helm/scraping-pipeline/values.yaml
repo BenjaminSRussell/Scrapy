@@ -157,39 +157,7 @@ kafka:
     compressionType: "snappy"
     heapOpts: "-Xmx1G -Xms1G"
 
-# ============================================
-# MinIO - S3-compatible Object Storage
-# ============================================
-minio:
-  enabled: true
-  image:
-    repository: minio/minio
-    tag: "RELEASE.2025-01-11T23-14-25Z"
-    pullPolicy: IfNotPresent
 
-  service:
-    name: minio
-    type: ClusterIP
-    api: 9000
-    console: 9001
-
-  persistence:
-    enabled: true
-    storageClass: ""
-    size: 100Gi
-
-  resources:
-    limits:
-      cpu: 2000m
-      memory: 4Gi
-    requests:
-      cpu: 1000m
-      memory: 2Gi
-
-  auth:
-    existingSecret: "minio-credentials"
-    rootUserKey: "root-user"
-    rootPasswordKey: "root-password"
 
 # ============================================
 # Monitoring Stack
@@ -440,8 +408,8 @@ exporters:
   postgres:
     enabled: true
     image:
-      repository: prometheuscommunity/postgres_exporter
-      tag: "v0.16.0"
+      repository: quay.io/prometheuscommunity/postgres-exporter
+      tag: "v0.18.1"
     service:
       port: 9187
     resources:
@@ -456,7 +424,7 @@ exporters:
     enabled: true
     image:
       repository: bitnami/jmx-exporter
-      tag: "1.0.1"
+      tag: "latest"
     service:
       port: 5556
     resources:
@@ -471,7 +439,7 @@ exporters:
     enabled: true
     image:
       repository: prom/statsd-exporter
-      tag: "v0.28.1"
+      tag: "v0.28.0"
     service:
       metricsPort: 9102
       statsdPort: 9125
@@ -506,9 +474,6 @@ secrets:
   postgres:
     password: "changeme"
 
-  minio:
-    rootUser: "minioadmin"
-    rootPassword: "changeme"
 
   grafana:
     adminUser: "admin"

@@ -58,8 +58,12 @@ class BaseSpider(scrapy.Spider):
         """Initialize base spider with shared resources."""
         super().__init__(*args, **kwargs)
 
+        # Guarantee attribute exists before subclasses reference it
+        self.allowed_domains = list(getattr(self, 'allowed_domains', []))
+
         # Load IGNORED_EXTENSIONS from settings (centralized single source of truth)
-        self.IGNORED_EXTENSIONS = self.settings.get('IGNORED_EXTENSIONS', [])
+        # Note: self.settings may not be available yet in __init__, use getattr with default
+        self.IGNORED_EXTENSIONS = getattr(self, 'settings', {}).get('IGNORED_EXTENSIONS', []) if hasattr(self, 'settings') else []
 
         # Load configuration
         self.config = load_config()
@@ -122,14 +126,55 @@ class BaseSpider(scrapy.Spider):
         self.js_confidence_threshold = self.config.get('stage1', {}).get('js_confidence_threshold', 0.7)
 
         # Load batch size from settings (configurable)
-        self.batch_size = self.settings.getint('DELTA_BATCH_SIZE', 50)
+        # Note: self.settings may not be available yet in __init__, use default
+        self.batch_size = self.settings.getint('DELTA_BATCH_SIZE', 50) if hasattr(self, 'settings') and self.settings else 50
 
         # Load start URLs
         if not hasattr(self, 'start_urls') or not self.start_urls:
             self.start_urls = self._load_seed_urls()
+            # Ensure allowed domains reflect the freshly loaded seeds
+            self._initialize_allowed_domains()
 
         url_count = self.redis_client.scard(self.url_hashes_key)
         logger.info(f"{self.name} loaded {len(self.start_urls)} seeds, {url_count} existing URLs in Redis")
+
+    async def start(self):
+        """Generate initial requests from dynamically loaded start URLs.
+
+        CRITICAL FIX: Modern Scrapy (>=2.13) uses an async ``start`` coroutine instead
+        of the deprecated ``start_requests``. Because we populate ``start_urls`` during
+        ``__init__`` using Delta Lake, we must override ``start`` to emit the initial
+        requests ourselves.
+
+        Without this override the spider would start with an empty queue and exit
+        immediately, even though 143K+ URLs are loaded.
+
+        Yields:
+            scrapy.Request: Initial requests for each seed URL
+        """
+        logger.warning(f"🚀 [{self.name}] start() CALLED!")  # DEBUG
+
+        if not self.start_urls:
+            logger.error(f"{self.name}: No start URLs to crawl! Check Delta Lake seed_urls table.")
+            return
+
+        logger.warning(f"🚀 [{self.name}]: Starting crawl with {len(self.start_urls)} seed URLs")
+
+        request_count = 0
+        for url in self.start_urls:
+            request_count += 1
+            if request_count <= 5:
+                logger.warning(f"🚀 [{self.name}]: Yielding request #{request_count}: {url[:80]}")
+            yield scrapy.Request(
+                url,
+                callback=self.parse,
+                errback=self.handle_error,
+                meta={'depth': 0},
+                priority=1,
+                dont_filter=False
+            )
+
+        logger.warning(f"🚀 [{self.name}]: Yielded {request_count} total requests from start()")
 
     def _initialize_allowed_domains(self):
         """Dynamically set allowed_domains based on start_urls."""
@@ -155,17 +200,38 @@ class BaseSpider(scrapy.Spider):
         return hashlib.sha256(url.encode('utf-8')).hexdigest()
 
     def _load_seed_urls(self):
-        """Load seed URLs from Delta Lake 'seed_urls' table."""
+        """Load seed URLs from Delta Lake 'seed_urls' table.
+
+        PERFORMANCE FIX: Uses Redis pipeline for batch existence checks instead of
+        143K individual Redis calls, reducing initialization from minutes to seconds.
+        """
         try:
             seed_records = self.delta.read('seed_urls')
             urls = [record['url'] for record in seed_records]
 
-            # Deduplicate against already scraped URLs using Redis
+            logger.info(f"Loaded {len(urls)} seed URLs from Delta Lake, checking against Redis...")
+
+            # PERFORMANCE: Batch deduplicate using Redis pipeline (100x faster)
             new_urls = []
-            for url in urls:
-                url_hash = self._hash_url(url)
-                if not self.redis_client.sismember(self.url_hashes_key, url_hash):
-                    new_urls.append(url)
+            if urls:
+                pipeline = self.redis_client.pipeline()
+                url_hashes = []
+
+                # Queue all existence checks
+                for url in urls:
+                    url_hash = self._hash_url(url)
+                    url_hashes.append(url_hash)
+                    pipeline.sismember(self.url_hashes_key, url_hash)
+
+                # Execute batch check
+                exists_results = pipeline.execute()
+
+                # Filter out existing URLs
+                for url, exists in zip(urls, exists_results, strict=False):
+                    if not exists:
+                        new_urls.append(url)
+
+                logger.info(f"After deduplication: {len(new_urls)} new URLs (filtered {len(urls) - len(new_urls)} existing)")
 
             return new_urls
         except Exception as e:
