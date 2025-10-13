@@ -2,21 +2,31 @@
 
 Production-ready web scraping pipeline with real-time metrics, Kafka streaming, and Delta Lake storage.
 
+[![CI](https://github.com/benjaminrussell/Scraping_project/actions/workflows/main.yml/badge.svg)](https://github.com/benjaminrussell/Scraping_project/actions/workflows/main.yml)
+
 ## 🚀 Quick Start
 
-```bash
-# 1. Start complete pipeline
-./scripts/startup-pipeline.sh
+1.  **Start the entire pipeline in the background:**
+    ```bash
+    docker-compose up -d
+    ```
 
-# 2. Verify Kafka metrics
-./scripts/verify-kafka-metrics.sh
+2.  **Load seed URLs into the queue:**
+    ```bash
+    docker-compose exec scrapy-app python cli.py load_seeds
+    ```
 
-# 3. Test end-to-end
-./scripts/test-pipeline.sh
+3.  **View the Grafana dashboards:**
+    [http://localhost:3000](http://localhost:3000) (admin / admin)
 
-# 4. View Grafana dashboards
-open http://localhost:3000  # admin / admin
-```
+## ⚙️ Lifecycle Management
+
+Use `docker-compose` to manage the application lifecycle:
+
+*   **Start services:** `docker-compose up -d`
+*   **Stop services:** `docker-compose down`
+*   **View logs:** `docker-compose logs -f`
+*   **Run a command in the Scrapy container:** `docker-compose exec scrapy-app <command>`
 
 ## 📊 Architecture
 
