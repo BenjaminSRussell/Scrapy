@@ -3,9 +3,9 @@
 K6: Benchmarks to ensure system meets performance targets.
 """
 
-import pytest
-import time
 from concurrent.futures import ThreadPoolExecutor
+
+import pytest
 
 
 @pytest.mark.performance
@@ -186,8 +186,9 @@ class TestMemoryUsage:
 
     def test_spider_memory_footprint(self):
         """Test spider memory usage is reasonable."""
-        import psutil
         import os
+
+        import psutil
 
         process = psutil.Process(os.getpid())
         initial_memory = process.memory_info().rss / 1024 / 1024  # MB

@@ -41,9 +41,10 @@ services:
       POSTGRES_PASSWORD: postgres
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./docker/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d pipeline_metrics"]
       interval: 10s
       timeout: 3s
       retries: 5
@@ -310,6 +311,13 @@ services:
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=postgres
 
+      # PostgresManager environment variables
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=pipeline_metrics
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
+
       # Kafka configuration
       - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
       - KAFKA_TOPIC=scraped-items
@@ -354,44 +362,6 @@ services:
       metrics-exporter:
         condition: service_started
 
-  # JavaScript Bot - Renders JS-heavy pages with Playwright
-  js-bot:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      target: crawler
-    container_name: scraping_js_bot
-    command: python -u src/stage1/js_bot.py
-    env_file:
-      - .env
-    environment:
-      - PYTHONPATH=/app
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - POSTGRES_HOST=postgres
-      - POSTGRES_PORT=5432
-      - POSTGRES_DB=pipeline_metrics
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
-      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
-      - AWS_ENDPOINT_URL=${AWS_ENDPOINT_URL:-http://minio:9000}
-      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-minioadmin}
-      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-minioadmin123}
-      - AWS_REGION=${AWS_REGION:-us-east-1}
-    volumes:
-      - ./src:/app/src:ro
-      - delta_data:/app/data
-    restart: unless-stopped
-    networks:
-      - scraping_network
-    depends_on:
-      redis:
-        condition: service_healthy
-      postgres:
-        condition: service_healthy
-      kafka:
-        condition: service_healthy
-
   # Stage 2 Worker - Page analysis and quality control
   stage2-worker:
     build:
@@ -411,6 +381,12 @@ services:
       - POSTGRES_DB=pipeline_metrics
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=postgres
+      # PostgresManager environment variables
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=pipeline_metrics
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
       - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
       - AWS_ENDPOINT_URL=${AWS_ENDPOINT_URL:-http://minio:9000}
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-minioadmin}
@@ -449,6 +425,12 @@ services:
       - POSTGRES_DB=pipeline_metrics
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=postgres
+      # PostgresManager environment variables
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=pipeline_metrics
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
       - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
       - AWS_ENDPOINT_URL=${AWS_ENDPOINT_URL:-http://minio:9000}
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-minioadmin}

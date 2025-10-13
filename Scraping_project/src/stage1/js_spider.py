@@ -16,9 +16,9 @@ REPLACES:
 
 import hashlib
 import logging
+from collections.abc import Iterator
 from datetime import datetime
-from typing import Iterator
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urljoin
 
 import scrapy
 from scrapy.http import Response
@@ -237,25 +237,25 @@ class JavaScriptSpider(scrapy.Spider):
     def _handle_response(self, response, intercepted_urls: list):
         """Handle network responses to capture API URLs.
 
-        K5: Captures JSON API endpoints discovered during rendering.
+        Captures JSON API endpoints discovered during rendering.
         """
         try:
             content_type = response.headers.get('content-type', '')
             if 'application/json' in content_type:
                 # Add API endpoint URL
                 intercepted_urls.append(response.url)
-                logger.debug(f"[K5] Captured API URL: {response.url[:80]}")
+                logger.debug(f"[JAVASCRIPT] Captured API URL: {response.url[:80]}")
         except Exception as e:
-            logger.debug(f"[K5] Response handler error: {e}")
+            logger.debug(f"[JAVASCRIPT] Response handler error: {e}")
 
     def _extract_urls_from_rendered_html(self, response: Response) -> list[str]:
         """Extract URLs from fully rendered HTML.
 
-        K5: Extracts links, scripts, images, and API endpoints from DOM.
+        Extracts links, scripts, images, and API endpoints from DOM.
         """
         urls = []
 
-        # Links
+        # Links (a tags and link tags)
         for link in response.css('a::attr(href), link::attr(href)').getall():
             absolute_url = urljoin(response.url, link)
             if absolute_url.startswith('http'):
@@ -281,16 +281,34 @@ class JavaScriptSpider(scrapy.Spider):
 
     def handle_error(self, failure):
         """Handle rendering errors."""
-        logger.error(f"[K5] Rendering failed: {failure.getErrorMessage()} for {failure.request.url[:80]}")
+        logger.error(f"[JAVASCRIPT] Rendering failed: {failure.getErrorMessage()} for {failure.request.url[:80]}")
 
     def closed(self, reason):
         """Called when spider closes.
 
-        K5: Update queue status in Delta Lake to mark items as completed.
+        REFACTORED: Update queue status in Delta Lake to mark items as completed.
         """
-        logger.info(f"[K5] JSSpider closing: {reason}")
-        logger.info(f"[K5] Rendered {self.rendered_count} pages successfully")
+        logger.info(f"[JAVASCRIPT] Spider closing: {reason}")
+        logger.info(f"[JAVASCRIPT] Rendered {self.rendered_count} pages successfully")
 
-        # TODO: Update queue status in Delta Lake (mark completed)
-        # This would require tracking which URLs were successfully rendered
-        # and updating the stage1_js_render_queue table
+        # Update queue status for completed URLs
+        if self.completed_urls:
+            try:
+                # Read all queue data
+                all_queue_data = self.delta.read('js_spider_queue')
+
+                # Create set of completed URLs for faster lookup
+                completed_set = set(self.completed_urls)
+
+                # Update status for completed items
+                for record in all_queue_data:
+                    if record.get('url') in completed_set:
+                        record['status'] = 'completed'
+                        record['completed_at'] = datetime.now().isoformat()
+
+                # Write back to Delta Lake
+                self.delta.write('js_spider_queue', all_queue_data, mode='overwrite', async_write=False)
+                logger.info(f"[JAVASCRIPT] Marked {len(self.completed_urls)} items as completed in queue")
+
+            except Exception as e:
+                logger.error(f"[JAVASCRIPT] Failed to update queue status: {e}")

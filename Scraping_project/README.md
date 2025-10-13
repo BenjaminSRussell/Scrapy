@@ -71,10 +71,6 @@ HTTP:9410  JMX:9999    StatsD:UDP         Parquet + _delta_log
 
 ## 📚 Documentation
 
-### Quick References
-- **[FINAL_SUMMARY.md](FINAL_SUMMARY.md)** - Implementation summary & metrics list
-- **[KAFKA_REALTIME_SETUP.md](KAFKA_REALTIME_SETUP.md)** - Kafka→Prometheus setup
-
 ### Architecture & Design
 - **[ADR-0001: Stage 1 Split](docs/adr/ADR-0001-stage1-layout.md)** - Decision record for splitting Stage 1 into Scout, JS Render, and Depth components.
 - **[Stage 1 to Stage 2 Interface Contract](docs/contracts/stage1_to_stage2.md)** - Data contract for items passed from Stage 1 to Stage 2.
@@ -86,11 +82,6 @@ HTTP:9410  JMX:9999    StatsD:UDP         Parquet + _delta_log
 - **[ScoutSpider Runbook](docs/runbooks/scout_spider.md)** - Runbook for the `ScoutSpider`.
 - **[DepthSpider Runbook](docs/runbooks/depth_spider.md)** - Runbook for the `DepthSpider`.
 - **[Delta/Compose Troubleshooting](docs/ops/delta_troubleshooting.md)** - Troubleshooting guide for Delta Lake and Docker Compose.
-
-### Legacy Guides
-- **[DEPLOYMENT.md](DEPLOYMENT.md)** - Complete deployment guide
-- **[OPERATIONS.md](OPERATIONS.md)** - Operational runbook
-- **[IMPLEMENTATION_COMPLETE.md](IMPLEMENTATION_COMPLETE.md)** - Technical implementation notes
 
 ## 🛠️ CLI Usage
 
@@ -172,7 +163,7 @@ REDIS_HOST=redis
 # 3. Update docker-compose.yml table path to s3://your-bucket/path
 ```
 
-See **[DEPLOYMENT.md](DEPLOYMENT.md)** for complete guide.
+
 
 ## 🐛 Troubleshooting
 
@@ -187,7 +178,7 @@ docker-compose ps
 docker-compose logs -f kafka-delta-ingestor
 ```
 
-See **[OPERATIONS.md](OPERATIONS.md)** for complete troubleshooting.
+
 
 ## 🏥 Development
 

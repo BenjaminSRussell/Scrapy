@@ -1,6 +1,8 @@
 """Stage 2 Asynchronous Worker
 High-concurrency worker for page analysis & quality control.
-Downloads and analyzes URLs from stage1_discovery table.
+
+REFACTORED: Reads from stage2_queue table (populated by ScoutSpider).
+Downloads and analyzes URLs queued for Stage 2 processing.
 """
 
 import asyncio
@@ -45,33 +47,33 @@ class Stage2Worker:
         self.perf_urls_processed = 0
 
     async def run(self):
-        """Main worker loop - process all pending URLs."""
-        logger.info(f"Stage 2 Worker starting with {self.max_concurrent} concurrent workers")
+        """Main worker loop - process all pending URLs from stage2_queue.
 
-        # Read all URLs from stage1_discovery
-        all_urls = self.delta.read('stage1_discovery')
+        REFACTORED: Reads from stage2_queue table instead of stage1_discovery.
+        """
+        logger.info(f"[STAGE2] Worker starting with {self.max_concurrent} concurrent workers")
 
-        if not all_urls:
-            logger.warning("No URLs found in stage1_discovery")
+        # Read all URLs from stage2_queue (populated by ScoutSpider)
+        try:
+            all_queue_items = self.delta.read('stage2_queue')
+        except Exception as e:
+            logger.warning(f"[STAGE2] No URLs found in stage2_queue: {e}")
             return
 
-        # Read already processed URLs from stage2_page_analysis
-        try:
-            processed = self.delta.read('stage2_page_analysis')
-            processed_hashes = {r['url_hash'] for r in processed}
-        except Exception:
-            processed_hashes = set()
+        if not all_queue_items:
+            logger.warning("[STAGE2] No URLs found in stage2_queue")
+            return
 
-        # Filter to pending URLs only
+        # Filter to pending items only (status='pending')
         pending = [
-            url for url in all_urls
-            if url.get('url_hash') not in processed_hashes
+            item for item in all_queue_items
+            if item.get('status') == 'pending'
         ]
 
-        logger.info(f"Found {len(pending)} pending URLs to analyze (out of {len(all_urls)} total)")
+        logger.info(f"[STAGE2] Found {len(pending)} pending URLs to analyze (out of {len(all_queue_items)} total)")
 
         if not pending:
-            logger.info("No pending URLs to process")
+            logger.info("[STAGE2] No pending URLs to process")
             return
 
         # Process in batches
@@ -95,7 +97,11 @@ class Stage2Worker:
             # Save to Delta Lake
             if valid_results:
                 self.delta.write('stage2_page_analysis', valid_results, mode='append', async_write=False)
-                logger.info(f"Saved {len(valid_results)} analysis results")
+                logger.info(f"[STAGE2] Saved {len(valid_results)} analysis results")
+
+            # Update queue status for processed items
+            if valid_results:
+                self._update_queue_status(all_queue_items, [r['url'] for r in valid_results])
 
             # Log performance to PostgreSQL
             if self.postgres and len(valid_results) > 0:
@@ -109,7 +115,32 @@ class Stage2Worker:
                 except Exception as e:
                     logger.debug(f"Failed to log performance to PostgreSQL: {e}")
 
-        logger.info("Stage 2 Worker completed all batches")
+        logger.info("[STAGE2] Worker completed all batches")
+
+    def _update_queue_status(self, all_queue_items: list, completed_urls: list):
+        """Update queue status for completed items.
+
+        REFACTORED: Marks items as 'completed' in stage2_queue after processing.
+
+        Args:
+            all_queue_items: All queue items from stage2_queue
+            completed_urls: List of URLs that were successfully processed
+        """
+        try:
+            completed_set = set(completed_urls)
+
+            # Update status for completed items
+            for item in all_queue_items:
+                if item.get('url') in completed_set:
+                    item['status'] = 'completed'
+                    item['completed_at'] = datetime.now().isoformat()
+
+            # Write back to Delta Lake
+            self.delta.write('stage2_queue', all_queue_items, mode='overwrite', async_write=False)
+            logger.info(f"[STAGE2] Marked {len(completed_urls)} items as completed in queue")
+
+        except Exception as e:
+            logger.error(f"[STAGE2] Failed to update queue status: {e}")
 
     async def _analyze_url(self, record: dict[str, Any]) -> dict[str, Any]:
         """Analyze single URL with quality control and triage."""

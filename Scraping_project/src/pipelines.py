@@ -480,6 +480,139 @@ class KafkaPipeline:
         return item
 
 
+class QueueItemPipeline:
+    """Pipeline for routing queue items to appropriate Delta Lake tables.
+
+    REFACTORED: Handles queue items from ScoutSpider dual-queueing strategy.
+    Routes items based on target_spider or target_stage fields:
+    - target_spider='javascript' → js_spider_queue
+    - target_stage='stage2' → stage2_queue
+
+    Features:
+    - Batch processing for efficient Delta Lake writes
+    - Automatic routing based on item metadata
+    - Graceful shutdown with data flushing
+    """
+
+    BATCH_SIZE = 100  # Number of items to batch before writing
+
+    def __init__(self):
+        """Initialize the queue item pipeline."""
+        from src.common.delta_lake import get_delta_manager
+        self.delta = get_delta_manager()
+        self.js_queue_batch = []
+        self.stage2_queue_batch = []
+        self.items_processed = 0
+
+    @classmethod
+    def from_crawler(cls, crawler: Crawler) -> 'QueueItemPipeline':
+        """Factory method to create pipeline instance from crawler.
+
+        Args:
+            crawler: Scrapy crawler instance
+
+        Returns:
+            Configured QueueItemPipeline instance
+        """
+        pipeline = cls()
+
+        # Connect lifecycle methods to Scrapy signals
+        crawler.signals.connect(pipeline.spider_closed, signal=signals.spider_closed)
+
+        return pipeline
+
+    def process_item(self, item: Any, spider: Spider) -> Any:
+        """Process queue items and route to appropriate table.
+
+        Args:
+            item: The scraped item (dict with target_spider or target_stage)
+            spider: The spider that yielded the item
+
+        Returns:
+            The original item (to allow subsequent pipelines to process it)
+        """
+        # Only process dict items with queue routing metadata
+        if not isinstance(item, dict):
+            return item
+
+        # Check if item has routing metadata
+        target_spider = item.get('target_spider')
+        target_stage = item.get('target_stage')
+
+        # Route to appropriate queue
+        if target_spider == 'javascript':
+            self.js_queue_batch.append(item)
+            self.items_processed += 1
+
+            # Save batch if it reaches BATCH_SIZE
+            if len(self.js_queue_batch) >= self.BATCH_SIZE:
+                self._save_js_queue_batch()
+
+        elif target_stage == 'stage2':
+            self.stage2_queue_batch.append(item)
+            self.items_processed += 1
+
+            # Save batch if it reaches BATCH_SIZE
+            if len(self.stage2_queue_batch) >= self.BATCH_SIZE:
+                self._save_stage2_queue_batch()
+
+        # Log progress every 500 items
+        if self.items_processed % 500 == 0:
+            logger.info(
+                f"[QUEUE] Processed {self.items_processed} queue items "
+                f"(JS: {len(self.js_queue_batch)}, Stage2: {len(self.stage2_queue_batch)})"
+            )
+
+        return item
+
+    def _save_js_queue_batch(self):
+        """Save current JS queue batch to Delta Lake."""
+        if not self.js_queue_batch:
+            return
+
+        batch_size = len(self.js_queue_batch)
+
+        try:
+            self.delta.write('js_spider_queue', self.js_queue_batch, mode='append')
+            logger.info(f"✅ Saved {batch_size} items to js_spider_queue")
+            self.js_queue_batch = []
+        except Exception as e:
+            logger.error(f"Failed to save JS queue batch: {e}")
+
+    def _save_stage2_queue_batch(self):
+        """Save current Stage 2 queue batch to Delta Lake."""
+        if not self.stage2_queue_batch:
+            return
+
+        batch_size = len(self.stage2_queue_batch)
+
+        try:
+            self.delta.write('stage2_queue', self.stage2_queue_batch, mode='append')
+            logger.info(f"✅ Saved {batch_size} items to stage2_queue")
+            self.stage2_queue_batch = []
+        except Exception as e:
+            logger.error(f"Failed to save Stage 2 queue batch: {e}")
+
+    def spider_closed(self, spider: Spider) -> None:
+        """Flush remaining batches when spider closes.
+
+        Args:
+            spider: The spider that was closed
+        """
+        logger.info(f"[QUEUE] Closing QueueItemPipeline for spider: {spider.name}")
+
+        # Save any remaining items in both batches
+        if self.js_queue_batch:
+            self._save_js_queue_batch()
+
+        if self.stage2_queue_batch:
+            self._save_stage2_queue_batch()
+
+        logger.info(
+            f"[QUEUE] Pipeline stats - Total processed: {self.items_processed}"
+        )
+
+
 class OffsiteCandidatePipeline:
     """Pipeline for processing external URLs discovered during crawling.
 

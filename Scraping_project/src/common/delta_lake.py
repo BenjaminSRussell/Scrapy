@@ -61,7 +61,6 @@ class DeltaLakeManager:
             'seed_urls': self.base_path / 'seed_urls',
             'stage1_discovery': self.base_path / 'stage1_discovery',
             'stage1_errors': self.base_path / 'stage1_errors',
-            'stage1_js_render_queue': self.base_path / 'stage1_js_render_queue',
             'stage1_offsite_candidates': self.base_path / 'stage1_offsite_candidates',
             'js_spider_queue': self.base_path / 'js_spider_queue',
             'stage2_queue': self.base_path / 'stage2_queue',

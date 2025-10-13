@@ -233,7 +233,8 @@ class MetricsExporter:
             tables = [
                 'stage1_discovery',
                 'stage1_errors',
-                'stage1_js_render_queue',
+                'js_spider_queue',
+                'stage2_queue',
                 'stage2_page_analysis',
                 'stage3_analytics',
                 'stage3_summaries',

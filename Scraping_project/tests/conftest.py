@@ -12,20 +12,19 @@ import asyncio
 import os
 import shutil
 import tempfile
+from collections.abc import Generator
 from pathlib import Path
-from typing import Generator
 
 import pytest
 import redis
 from playwright.async_api import async_playwright
 from scrapy.http import HtmlResponse, Request
+from twisted.internet import reactor
 from twisted.web import server, static
-from twisted.internet import reactor, defer
 
 from src.common.config import get_config
 from src.common.delta_lake import DeltaLakeManager
 from src.common.postgres_manager import PostgresManager
-
 
 # ============================================================================
 # Session-level fixtures (shared across all tests)
@@ -375,8 +374,8 @@ def mock_spider_crawler(mock_scrapy_settings):
 
     K6: Allows testing spider.__init__() without full Scrapy engine.
     """
-    from scrapy.crawler import Crawler
     from scrapy import Spider
+    from scrapy.crawler import Crawler
 
     crawler = Crawler(Spider, settings=mock_scrapy_settings)
     return crawler

@@ -8,7 +8,6 @@ from scrapy.crawler import CrawlerRunner
 from twisted.internet import defer, reactor
 
 from src.stage1.scout_spider import ScoutSpider
-from src.stage1.deep_dive_spider import DeepDiveSpider
 
 
 @pytest.mark.integration
@@ -161,10 +160,10 @@ class TestQueueFlow:
             }
         ]
 
-        delta_sandbox.write('stage1_js_render_queue', js_items, mode='overwrite')
+        delta_sandbox.write('js_spider_queue', js_items, mode='overwrite')
 
         # Read back
-        queue = delta_sandbox.read('stage1_js_render_queue')
+        queue = delta_sandbox.read('js_spider_queue')
         assert len(queue) == 1
         assert queue[0]['status'] == 'pending'
 

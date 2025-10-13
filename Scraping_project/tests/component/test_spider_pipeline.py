@@ -4,10 +4,10 @@ K6: Tests spider and pipeline working together.
 """
 
 import pytest
-from scrapy.http import HtmlResponse, Request
+from scrapy.http import Request
 
-from src.stage1.scout_spider import ScoutSpider
 from src.stage1.deep_dive_spider import DeepDiveSpider
+from src.stage1.scout_spider import ScoutSpider
 
 
 @pytest.mark.component

@@ -117,7 +117,7 @@ def main():
                     skipped_count += 1
 
         logger.info("=" * 70)
-        logger.info(f"✅ Vacuum complete!")
+        logger.info("✅ Vacuum complete!")
         logger.info(f"   Tables vacuumed: {vacuumed_count}")
         logger.info(f"   Tables skipped: {skipped_count}")
         logger.info("=" * 70)

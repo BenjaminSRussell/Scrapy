@@ -13,8 +13,8 @@ Performance Target: >100 URLs/sec discovery rate
 """
 
 import logging
+from collections.abc import Iterator
 from datetime import datetime
-from typing import Iterator
 
 import scrapy
 from scrapy.http import Response

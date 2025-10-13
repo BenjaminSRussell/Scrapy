@@ -86,7 +86,6 @@ class BaseSpider(scrapy.Spider):
         # Initialize data structures
         self.discovered_records = []
         self.error_records = []
-        self.js_render_queue = []
         self.sitemaps_parsed: set[str] = set()
 
         # Skip tracking counters for live metrics
@@ -119,8 +118,7 @@ class BaseSpider(scrapy.Spider):
         self.file_size_window = deque(maxlen=100)  # Recent file sizes
         self.last_metric_update = time.time()
 
-        # Initialize JS detector with confidence threshold
-        self.js_detector = JSDetector()
+        # JS detection confidence threshold (JSDetector is instantiated per-response)
         self.js_confidence_threshold = self.config.get('stage1', {}).get('js_confidence_threshold', 0.7)
 
         # Load batch size from settings (configurable)
@@ -224,9 +222,8 @@ class BaseSpider(scrapy.Spider):
         # Record discovery
         self._record_discovery(response, url_hash, depth, content_size, is_heavy, len(discovered_urls), requires_js)
 
-        # Queue for JS rendering if confidence exceeds threshold
-        if requires_js and confidence >= self.js_confidence_threshold:
-            self._queue_for_js_rendering(response.url, url_hash, depth, confidence)
+        # Note: JavaScript queueing is handled by ScoutSpider's dual-queueing strategy
+        # BaseSpider no longer queues JS pages directly
 
         # Update performance tracking
         self.perf_urls_processed += 1
@@ -275,7 +272,8 @@ class BaseSpider(scrapy.Spider):
         Returns:
             Tuple of (requires_js: bool, confidence: float)
         """
-        result = self.js_detector.requires_js_rendering(response)
+        detector = JSDetector(response)
+        result = detector.requires_js_rendering()
         return result['requires_js'], result['confidence']
 
     def _extract_urls(self, response: Response) -> list[str]:
@@ -539,18 +537,6 @@ class BaseSpider(scrapy.Spider):
         }
         self.discovered_records.append(record)
 
-    def _queue_for_js_rendering(self, url: str, url_hash: str, depth: int, confidence: float):
-        """Queue page for JavaScript rendering."""
-        record = {
-            'url': url,
-            'url_hash': url_hash,
-            'depth': depth,
-            'confidence': confidence,
-            'status': 'pending',
-            'queued_at': datetime.now().isoformat(),
-        }
-        self.js_render_queue.append(record)
-        logger.info(f"🎭 Queued for JS rendering (confidence: {confidence:.2f}): {url[:80]}")
 
     def _save_batch(self):
         """Save batched records to Delta Lake."""
@@ -561,14 +547,6 @@ class BaseSpider(scrapy.Spider):
                 self.discovered_records = []
             except Exception as e:
                 logger.error(f"Failed to save discovery records: {e}")
-
-        if self.js_render_queue:
-            try:
-                self.delta.write('stage1_js_render_queue', self.js_render_queue)
-                logger.info(f"🎭 Saved {len(self.js_render_queue)} JS render queue records")
-                self.js_render_queue = []
-            except Exception as e:
-                logger.error(f"Failed to save JS render queue: {e}")
 
     def _maybe_log_performance(self):
         """Log performance metrics periodically."""

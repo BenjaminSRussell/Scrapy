@@ -3,8 +3,9 @@
 K6: Ensures Stage 1 output matches Stage 2 expectations.
 """
 
-import pytest
 from datetime import datetime
+
+import pytest
 
 
 @pytest.mark.contract
@@ -175,7 +176,8 @@ class TestDeltaLakeContract:
         required_tables = [
             'stage1_discovery',
             'stage1_errors',
-            'stage1_js_render_queue',
+            'js_spider_queue',
+            'stage2_queue',
             'seed_urls',
         ]
 
@@ -264,8 +266,8 @@ class TestMetricsContract:
         """Contract - Prometheus metrics must be exported."""
         try:
             from src.scrapy_prometheus import (
-                NEW_URLS_FOUND_PER_MINUTE,
                 AVERAGE_FILE_SIZE_BYTES,
+                NEW_URLS_FOUND_PER_MINUTE,
                 OFFSITE_LINKS_FOUND,
             )
 

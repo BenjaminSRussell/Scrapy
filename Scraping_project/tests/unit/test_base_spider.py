@@ -4,7 +4,6 @@ K6: Tests core spider functionality in isolation.
 """
 
 import pytest
-from scrapy.http import HtmlResponse, Request
 
 from src.stage1.base_spider import BaseSpider
 
