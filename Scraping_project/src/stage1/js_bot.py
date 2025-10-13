@@ -1,5 +1,9 @@
 """JavaScript Rendering Bot - Handles JS-heavy pages with Playwright.
 
+⚠️ DEPRECATED (K5): This standalone worker is deprecated in favor of js_spider.py.
+Use JSSpider (src/stage1/js_spider.py) instead, which integrates with Scrapy.
+This file will be removed in the next release.
+
 IMPROVEMENTS:
 - Persistent browser instance across batches (no restart overhead)
 - Request interception to block unnecessary resources (images, CSS, fonts)

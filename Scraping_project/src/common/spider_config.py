@@ -59,13 +59,19 @@ def get_spider_settings(spider_name: str) -> dict:
         'SCHEDULER_DISK_QUEUE': 'scrapy.squeues.PickleFifoDiskQueue',
         'SCHEDULER_PRIORITY_QUEUE': 'scrapy.pqueues.ScrapyPriorityQueue',
 
-        # Depth limit
+        # Depth limit (K4: DepthMiddleware configuration)
         'DEPTH_LIMIT': spider_config.get('depth_limit', 10),
         'DEPTH_PRIORITY': 1,
+        'DEPTH_STATS_VERBOSE': True,  # Enable detailed depth statistics
 
         # Download size limits
         'DOWNLOAD_MAXSIZE': 10485760,  # 10MB
         'DOWNLOAD_WARNSIZE': 5242880,  # 5MB
+
+        # K4: Enable DepthMiddleware explicitly (built-in Scrapy middleware)
+        'SPIDER_MIDDLEWARES': {
+            'scrapy.spidermiddlewares.depth.DepthMiddleware': 900,
+        },
     }
 
     return settings

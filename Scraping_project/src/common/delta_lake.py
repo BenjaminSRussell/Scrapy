@@ -35,7 +35,15 @@ class DeltaLakeManager:
     Supports concurrent writes with queue system.
     """
 
-    def __init__(self):
+    def __init__(self, base_path: str | None = None, start_workers: bool = True):
+        """Initialize DeltaLakeManager.
+
+        Args:
+            base_path: Optional base path for Delta tables (overrides config)
+            start_workers: If True, start background worker threads and register
+                          signal handlers. Set to False for testing to avoid
+                          background threads and signal handler conflicts.
+        """
         if not DELTA_AVAILABLE:
             raise ImportError("Delta Lake not available. Install: pip install deltalake pyarrow")
 
@@ -43,8 +51,9 @@ class DeltaLakeManager:
         config = get_config()
 
         # Get base_path from config (defaults to ./data/delta_lake if not specified)
-        base_path_str = config.get('delta_lake.base_path', './data/delta_lake')
-        self.base_path = Path(base_path_str)
+        if base_path is None:
+            base_path = config.get('delta_lake.base_path', './data/delta_lake')
+        self.base_path = Path(base_path)
         self.base_path.mkdir(parents=True, exist_ok=True)
 
         # Stage-specific tables with intelligent routing
@@ -54,6 +63,8 @@ class DeltaLakeManager:
             'stage1_errors': self.base_path / 'stage1_errors',
             'stage1_js_render_queue': self.base_path / 'stage1_js_render_queue',
             'stage1_offsite_candidates': self.base_path / 'stage1_offsite_candidates',
+            'js_spider_queue': self.base_path / 'js_spider_queue',
+            'stage2_queue': self.base_path / 'stage2_queue',
             'stage2_page_analysis': self.base_path / 'stage2_page_analysis',
             'stage3_analytics': self.base_path / 'stage3_analytics',
             'stage3_summaries': self.base_path / 'stage3_summaries',
@@ -80,14 +91,19 @@ class DeltaLakeManager:
         self.maintenance_worker_thread = None
         self.shutdown_event = threading.Event()
 
-        # Start background workers
-        self._start_worker()
-        self._start_maintenance_worker()
+        # Track whether workers are started (for proper cleanup)
+        self._workers_started = start_workers
 
-        # Register shutdown handlers (only on main thread to prevent subprocess crashes)
-        if threading.current_thread() is threading.main_thread():
-            signal.signal(signal.SIGINT, self._shutdown_handler)
-            signal.signal(signal.SIGTERM, self._shutdown_handler)
+        # Conditionally start background workers
+        if start_workers:
+            self._start_worker()
+            self._start_maintenance_worker()
+
+            # Register shutdown handlers (only on main thread to prevent subprocess crashes)
+            if threading.current_thread() is threading.main_thread():
+                signal.signal(signal.SIGINT, self._shutdown_handler)
+                signal.signal(signal.SIGTERM, self._shutdown_handler)
+                logger.info("Signal handlers registered for graceful shutdown")
 
     def _start_worker(self):
         """Start background worker for concurrent writes."""
@@ -380,35 +396,82 @@ class DeltaLakeManager:
             except Exception as e:
                 logger.error(f"Failed to checkpoint {name}: {e}")
 
-    def force_shutdown(self, timeout: int = 15):
-        """Force shutdown with aggressive timeout."""
-        logger.warning(f"⚠️  FORCE SHUTDOWN initiated (timeout: {timeout}s)")
+    def shutdown(self, timeout: int = 15):
+        """Gracefully shutdown worker threads and save pending data.
 
-        # Signal worker to stop
+        This is the unified shutdown method that handles:
+        1. Setting shutdown event to signal workers to stop
+        2. Unblocking worker queues with None sentinel values
+        3. Joining worker threads with timeout
+        4. Checkpointing pending data
+
+        Args:
+            timeout: Maximum seconds to wait for workers to finish (default: 15)
+
+        Note:
+            Can be called multiple times safely (idempotent).
+        """
+        # Skip if workers were never started (e.g., in tests)
+        if not self._workers_started:
+            logger.debug("Workers were not started, skipping shutdown")
+            return
+
+        # Skip if already shut down
+        if self.shutdown_event.is_set():
+            logger.debug("Already shut down, skipping")
+            return
+
+        logger.info(f"🛑 Shutting down DeltaLakeManager (timeout: {timeout}s)...")
+
+        # Signal workers to stop
         self.shutdown_event.set()
-        self.write_queue.put(None)
 
-        # Wait for worker with timeout
-        if self.worker_thread and self.worker_thread.is_alive():
-            self.worker_thread.join(timeout=timeout)
-
-            if self.worker_thread.is_alive():
-                logger.error("❌ Worker thread did not stop in time - forcing exit")
-
-        # Quick checkpoint without vacuum
-        self.checkpoint(timeout=5)
-        logger.info("🛑 Force shutdown complete")
-
-    def _shutdown_handler(self, signum, frame):
-        """Handle shutdown gracefully with timeout."""
-        logger.info("🛑 Shutdown signal received, saving Delta Lake data...")
+        # Unblock queues with sentinel values
+        try:
+            self.write_queue.put(None, timeout=1)
+        except queue.Full:
+            logger.warning("Write queue full, worker may be blocked")
 
         try:
-            self.force_shutdown(timeout=15)
+            self.maintenance_queue.put(None, timeout=1)
+        except queue.Full:
+            logger.warning("Maintenance queue full, worker may be blocked")
+
+        # Join worker threads with timeout
+        threads_to_join = [
+            (self.worker_thread, "write worker"),
+            (self.maintenance_worker_thread, "maintenance worker"),
+        ]
+
+        for thread, name in threads_to_join:
+            if thread and thread.is_alive():
+                logger.debug(f"Waiting for {name} to finish...")
+                thread.join(timeout=timeout / 2)  # Split timeout between workers
+
+                if thread.is_alive():
+                    logger.warning(f"⚠️  {name} did not stop in time")
+                else:
+                    logger.info(f"✅ {name} stopped gracefully")
+
+        # Checkpoint pending data with shorter timeout
+        self.checkpoint(timeout=min(timeout, 5))
+
+        logger.info("✅ DeltaLakeManager shutdown complete")
+
+    def _shutdown_handler(self, signum, frame):
+        """Handle shutdown signals (SIGINT, SIGTERM) gracefully.
+
+        This is registered as a signal handler and calls the unified shutdown() method.
+        """
+        signal_name = signal.Signals(signum).name
+        logger.info(f"🛑 {signal_name} received, initiating graceful shutdown...")
+
+        try:
+            self.shutdown(timeout=15)
         except Exception as e:
-            logger.error(f"Error during shutdown: {e}")
+            logger.error(f"Error during shutdown: {e}", exc_info=True)
         finally:
-            logger.info("✅ Shutdown complete")
+            logger.info("✅ Shutdown handler complete")
             sys.exit(0)
 
     def list_tables(self) -> list[dict[str, Any]]:
@@ -428,8 +491,7 @@ class DeltaLakeManager:
 
             if info['exists']:
                 try:
-                    data = self.read(table_name)
-                    info['row_count'] = len(data)
+                    info['row_count'] = self.count(table_name)
                 except Exception as e:
                     info['error'] = str(e)
 
@@ -527,9 +589,22 @@ class DeltaLakeManager:
 _delta_manager = None
 
 
-def get_delta_manager() -> DeltaLakeManager:
-    """Get or create global Delta Lake manager."""
+def get_delta_manager(base_path: str | None = None, start_workers: bool = True) -> DeltaLakeManager:
+    """Get or create global Delta Lake manager.
+
+    Args:
+        base_path: Optional base path for Delta tables (overrides config)
+        start_workers: If True, start background worker threads and register
+                      signal handlers. Set to False for testing.
+
+    Returns:
+        Singleton DeltaLakeManager instance
+
+    Note:
+        Once created, the singleton instance persists. Subsequent calls with
+        different parameters will return the existing instance without modification.
+    """
     global _delta_manager
     if _delta_manager is None:
-        _delta_manager = DeltaLakeManager()
+        _delta_manager = DeltaLakeManager(base_path=base_path, start_workers=start_workers)
     return _delta_manager

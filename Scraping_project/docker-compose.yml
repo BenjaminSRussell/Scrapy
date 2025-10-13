@@ -36,7 +36,7 @@ services:
     ports:
       - "5432:5432"
     environment:
-      POSTGRES_DB: scraping_pipeline
+      POSTGRES_DB: pipeline_metrics
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
     volumes:
@@ -306,7 +306,7 @@ services:
       - REDIS_PORT=6379
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
-      - POSTGRES_DB=scraping_pipeline
+      - POSTGRES_DB=pipeline_metrics
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=postgres
 
@@ -331,7 +331,7 @@ services:
       # Mount source code for development (hot reload)
       - ./src:/app/src:ro
       - ./config:/app/config:ro
-      - ./data:/app/data
+      - delta_data:/app/data
       - ./run_multiple_scouts.py:/app/run_multiple_scouts.py:ro
     restart: unless-stopped
     deploy:
@@ -370,7 +370,7 @@ services:
       - REDIS_PORT=6379
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
-      - POSTGRES_DB=scraping_pipeline
+      - POSTGRES_DB=pipeline_metrics
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=postgres
       - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
@@ -380,7 +380,7 @@ services:
       - AWS_REGION=${AWS_REGION:-us-east-1}
     volumes:
       - ./src:/app/src:ro
-      - ./data:/app/data
+      - delta_data:/app/data
     restart: unless-stopped
     networks:
       - scraping_network
@@ -408,7 +408,7 @@ services:
       - REDIS_PORT=6379
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
-      - POSTGRES_DB=scraping_pipeline
+      - POSTGRES_DB=pipeline_metrics
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=postgres
       - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
@@ -418,7 +418,7 @@ services:
       - AWS_REGION=${AWS_REGION:-us-east-1}
     volumes:
       - ./src:/app/src:ro
-      - ./data:/app/data
+      - delta_data:/app/data
     restart: unless-stopped
     networks:
       - scraping_network
@@ -446,7 +446,7 @@ services:
       - REDIS_PORT=6379
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
-      - POSTGRES_DB=scraping_pipeline
+      - POSTGRES_DB=pipeline_metrics
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=postgres
       - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
@@ -456,7 +456,7 @@ services:
       - AWS_REGION=${AWS_REGION:-us-east-1}
     volumes:
       - ./src:/app/src:ro
-      - ./data:/app/data
+      - delta_data:/app/data
     restart: unless-stopped
     networks:
       - scraping_network
@@ -516,7 +516,7 @@ services:
       - RUST_LOG=${RUST_LOG:-info}
       - RUST_BACKTRACE=${RUST_BACKTRACE:-1}
     volumes:
-      - ./data:/delta
+      - delta_data:/delta
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "test -f /delta/delta_lake/scraped_data/_delta_log || exit 0"]
@@ -547,7 +547,7 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
     volumes:
-      - ./data:/app/data
+      - delta_data:/app/data
       - ./src:/app/src:ro
       - ./config:/app/config:ro
     command: python metrics_exporter.py --port 9090 --interval 5
@@ -641,6 +641,8 @@ volumes:
   kafka_data:
     driver: local
   minio_data:
+    driver: local
+  delta_data:
     driver: local
   prometheus_a_data:
     driver: local

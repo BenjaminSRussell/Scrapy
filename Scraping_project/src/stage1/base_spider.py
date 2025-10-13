@@ -294,7 +294,12 @@ class BaseSpider(scrapy.Spider):
         return list(extractor.discover_all_urls(response))
 
     def _process_discovered_urls(self, response: Response, discovered_urls: list[str], depth: int) -> Iterator:
-        """Process discovered URLs with batch Redis operations.
+        """Process discovered URLs with batch Redis operations and link triage (K3/C1).
+
+        K3 REFINEMENT: Apply link triage per C1 spec:
+        - Only HTML candidates are queued for crawling
+        - Offsite links are logged and saved (not followed)
+        - Static resources are tracked via counters and metadata
 
         IMPROVEMENT: Uses Redis pipeline for batch operations to reduce round-trips.
         """
@@ -326,41 +331,59 @@ class BaseSpider(scrapy.Spider):
         if new_urls:
             pipeline.execute()
 
-        # Process new URLs
+        # K3: Link triage - categorize and process based on type
+        html_candidates = []
+        offsite_urls = []
+        static_urls = []
+
         for url in new_urls:
             url_hash = url_hash_map[url]
             is_external = self._is_external_url(url)
 
             if is_external:
-                # Yield offsite candidate item
-                yield self._create_offsite_item(response, url)
-
-                # Increment Prometheus metric
-                if PROMETHEUS_AVAILABLE and OFFSITE_LINKS_FOUND:
-                    OFFSITE_LINKS_FOUND.labels(spider=self.name).inc()
-
-                logger.debug(f"External link found: {url[:80]}")
+                # Offsite link - log and save, do NOT follow
+                offsite_urls.append(url)
             else:
-                # Internal URL - process based on type
+                # Internal URL - triage by type
                 is_static = any(url.lower().endswith(ext) for ext in self.IGNORED_EXTENSIONS)
 
                 if is_static:
-                    # Track and yield static resource metadata
-                    skip_reason = self._categorize_skip_reason(url)
-                    self._track_skip(url, skip_reason)
-                    yield self._create_static_item(url, url_hash, depth, response.url, skip_reason)
-                    logger.debug(f"Skipped {skip_reason}: {url[:80]}")
+                    # Static resource - track but don't crawl
+                    static_urls.append((url, url_hash))
                 else:
-                    # Crawl HTML and API endpoints
-                    priority = 0 if urlparse(response.url).netloc == urlparse(url).netloc else -1
-                    yield scrapy.Request(
-                        url,
-                        callback=self.parse,
-                        errback=self.handle_error,
-                        meta={'depth': depth + 1},
-                        priority=priority,
-                        dont_filter=False
-                    )
+                    # HTML candidate - queue for crawling
+                    html_candidates.append((url, url_hash))
+
+        # Process offsite links (logged/not followed per K3)
+        for url in offsite_urls:
+            # Yield offsite candidate item
+            yield self._create_offsite_item(response, url)
+
+            # Increment Prometheus metric
+            if PROMETHEUS_AVAILABLE and OFFSITE_LINKS_FOUND:
+                OFFSITE_LINKS_FOUND.labels(spider=self.name).inc()
+
+            logger.debug(f"[K3 OFFSITE] External link found (not following): {url[:80]}")
+
+        # Process static resources (counters rise per K3)
+        for url, url_hash in static_urls:
+            skip_reason = self._categorize_skip_reason(url)
+            self._track_skip(url, skip_reason)
+            yield self._create_static_item(url, url_hash, depth, response.url, skip_reason)
+            logger.debug(f"[K3 STATIC] Skipped {skip_reason}: {url[:80]}")
+
+        # Process HTML candidates (only these are queued per K3)
+        for url, url_hash in html_candidates:
+            priority = 0 if urlparse(response.url).netloc == urlparse(url).netloc else -1
+            yield scrapy.Request(
+                url,
+                callback=self.parse,
+                errback=self.handle_error,
+                meta={'depth': depth + 1},
+                priority=priority,
+                dont_filter=False
+            )
+            logger.debug(f"[K3 HTML] Queued HTML candidate: {url[:80]}")
 
     def _create_offsite_item(self, response: Response, url: str) -> OffsiteCandidateItem:
         """Create an offsite candidate item with context."""

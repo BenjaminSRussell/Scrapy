@@ -75,6 +75,13 @@ RETRY_TIMES = _scrapy_config.get('retry_times', 2)
 # Log level (from YAML)
 LOG_LEVEL = _scrapy_config.get('log_level', 'INFO')
 
+# ============================================================================
+# Spider Close Settings (K2: Safety hotfix)
+# ============================================================================
+# Global timeout for spider execution (dev: 5-10 min, prod: longer)
+# Ensures graceful shutdown and prevents infinite crawling
+CLOSESPIDER_TIMEOUT = _scrapy_config.get('closespider_timeout', 600)  # 10 minutes default for dev
+
 # Enable and configure the AutoThrottle extension (disabled by default)
 # AutoThrottle dynamically adjusts concurrency based on server response times
 AUTOTHROTTLE_ENABLED = _scrapy_config.get('autothrottle_enabled', True)
