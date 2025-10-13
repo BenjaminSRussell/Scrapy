@@ -43,7 +43,6 @@ HTTP:9410  JMX:9999    StatsD:UDP         Parquet + _delta_log
 - **High-Performance Ingest**: Rust-based Kafka→Delta Lake
 - **HA Monitoring**: Prometheus (2 replicas) + Alertmanager (3 nodes)
 - **Multi-Stage Delta Lake**: Separate tables per pipeline stage
-- **Cloud-Ready**: MinIO (local) or AWS S3 (production)
 
 ## 🔗 Service URLs
 
@@ -53,7 +52,6 @@ HTTP:9410  JMX:9999    StatsD:UDP         Parquet + _delta_log
 | Prometheus A | http://localhost:9091 | - |
 | Scrapy Metrics | http://localhost:9410/metrics | - |
 | Kafka JMX | http://localhost:5556/metrics | - |
-| MinIO Console | http://localhost:9001 | minioadmin / minioadmin123 |
 
 ## 📦 Project Structure
 

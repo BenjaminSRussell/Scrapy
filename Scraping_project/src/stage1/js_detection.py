@@ -15,6 +15,20 @@ logger = logging.getLogger(__name__)
 class JSDetector:
     """Advanced JavaScript requirement detection."""
 
+    # Confidence score constants (named for readability and easy tuning)
+    FRAMEWORK_CONFIDENCE = 0.4
+    BUNDLED_APP_CONFIDENCE = 0.3
+    STATE_OBJECT_CONFIDENCE = 0.2
+    ASYNC_LOADING_CONFIDENCE = 0.2
+    MINIMAL_CONTENT_CONFIDENCE = 0.3
+    EMPTY_BODY_CONFIDENCE = 0.4
+    CONFIDENCE_THRESHOLD = 0.5
+
+    # Pre-compiled regex patterns (compiled once for performance)
+    TAG_STRIP_PATTERN = re.compile(r'<[^>]+>')
+    SCRIPT_STRIP_PATTERN = re.compile(r'<script[^>]*>.*?</script>', flags=re.DOTALL | re.IGNORECASE)
+    STYLE_STRIP_PATTERN = re.compile(r'<style[^>]*>.*?</style>', flags=re.DOTALL | re.IGNORECASE)
+
     # SPA Framework indicators
     SPA_FRAMEWORKS = {
         'react': [
@@ -101,32 +115,32 @@ class JSDetector:
         # 1. Check for SPA frameworks
         framework_result = self._detect_spa_framework()
         if framework_result['detected']:
-            confidence += 0.4
+            confidence += self.FRAMEWORK_CONFIDENCE
             detected_framework = framework_result['framework']
             reasons.append(f"Detected {framework_result['framework']} framework")
 
         # 2. Check for bundled application code
         bundled_result = self._detect_bundled_app()
         if bundled_result['detected']:
-            confidence += 0.3
+            confidence += self.BUNDLED_APP_CONFIDENCE
             reasons.append(f"Found bundled app: {bundled_result['files']}")
 
         # 3. Check for state hydration
         state_result = self._detect_state_objects()
         if state_result['detected']:
-            confidence += 0.2
+            confidence += self.STATE_OBJECT_CONFIDENCE
             reasons.append(f"Found state object: {state_result['objects']}")
 
         # 4. Check for heavy async loading
         async_result = self._detect_async_loading()
         if async_result['heavy']:
-            confidence += 0.2
+            confidence += self.ASYNC_LOADING_CONFIDENCE
             reasons.append(f"Heavy async loading: {async_result['count']} indicators")
 
         # 5. Check for minimal initial content
         content_result = self._check_minimal_content()
         if content_result['minimal']:
-            confidence += 0.3
+            confidence += self.MINIMAL_CONTENT_CONFIDENCE
             reasons.append(
                 f"Minimal initial content: {content_result['text_length']} chars"
             )
@@ -134,14 +148,14 @@ class JSDetector:
         # 6. Check for empty body with scripts
         empty_result = self._check_empty_body()
         if empty_result['empty']:
-            confidence += 0.4
+            confidence += self.EMPTY_BODY_CONFIDENCE
             reasons.append("Empty body with script tags (classic SPA)")
 
         # Cap confidence at 1.0
         confidence = min(confidence, 1.0)
 
-        # Determine if rendering required (confidence > 0.5)
-        requires_js = confidence > 0.5
+        # Determine if rendering required (using named threshold constant)
+        requires_js = confidence > self.CONFIDENCE_THRESHOLD
 
         return {
             'requires_js': requires_js,
@@ -258,12 +272,12 @@ class JSDetector:
         if not body:
             return {'empty': False}
 
-        # Remove script and style tags
-        body_text = re.sub(r'<script[^>]*>.*?</script>', '', body, flags=re.DOTALL | re.IGNORECASE)
-        body_text = re.sub(r'<style[^>]*>.*?</style>', '', body_text, flags=re.DOTALL | re.IGNORECASE)
+        # Remove script and style tags using pre-compiled patterns (faster)
+        body_text = self.SCRIPT_STRIP_PATTERN.sub('', body)
+        body_text = self.STYLE_STRIP_PATTERN.sub('', body_text)
 
         # Remove HTML tags and check remaining text
-        body_text = re.sub(r'<[^>]+>', '', body_text)
+        body_text = self.TAG_STRIP_PATTERN.sub('', body_text)
         body_text = body_text.strip()
 
         # Empty if less than 100 chars

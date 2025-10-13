@@ -1,13 +1,3 @@
-"""Prometheus Metrics Exporter for the Scraping Pipeline.
-
-Exports metrics about:
-- Queue depths
-- Processing throughput
-- Error rates
-- Consumer lag
-- Circuit breaker status
-"""
-
 import json
 import logging
 import os

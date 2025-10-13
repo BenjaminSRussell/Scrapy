@@ -79,8 +79,13 @@ class DataValidationPipeline:
         """
         adapter = ItemAdapter(item)
 
+        # Conditional validation: OffsiteCandidateItem uses 'external_url' instead of 'url'
+        required_fields = self.required_fields
+        if isinstance(item, OffsiteCandidateItem):
+            required_fields = ['external_url']
+
         # Check required fields
-        for field in self.required_fields:
+        for field in required_fields:
             if field not in adapter:
                 self.items_dropped += 1
                 raise DropItem(
@@ -584,4 +589,156 @@ class OffsiteCandidatePipeline:
 
         logger.info(
             f"OffsiteCandidatePipeline stats - Total processed: {self.items_processed}"
+        )
+
+
+class GrafanaSummaryPipeline:
+    """Pipeline for generating random summaries of scraped content for Grafana monitoring.
+
+    This pipeline samples scraped items from Stage 3 and generates periodic summaries
+    that are exposed via Prometheus metrics for long-term qualitative monitoring in Grafana.
+
+    Features:
+    - Random sampling (every 1000th item or configurable rate)
+    - Batch summarization (generates summary after N samples)
+    - Prometheus integration via CRAWLER_CONTENT_SUMMARY metric
+    - Text truncation for manageable summary size
+    """
+
+    SAMPLE_RATE = 1000  # Process every 1000th item
+    BATCH_SIZE = 10  # Generate summary after 10 samples
+    MAX_CONTENT_LENGTH = 500  # Maximum characters per sample
+
+    def __init__(self):
+        """Initialize the Grafana summary pipeline."""
+        self.items_processed = 0
+        self.sampled_content = []
+        import random
+        self.random = random
+
+    @classmethod
+    def from_crawler(cls, crawler: Crawler) -> 'GrafanaSummaryPipeline':
+        """Factory method to create pipeline instance from crawler.
+
+        Args:
+            crawler: Scrapy crawler instance
+
+        Returns:
+            Configured GrafanaSummaryPipeline instance
+        """
+        pipeline = cls()
+        crawler.signals.connect(pipeline.spider_closed, signal=signals.spider_closed)
+        return pipeline
+
+    def process_item(self, item: Any, spider: Spider) -> Any:
+        """Sample and summarize items for Grafana monitoring.
+
+        Args:
+            item: The scraped item
+            spider: The spider that yielded the item
+
+        Returns:
+            The original item (to allow subsequent pipelines to process it)
+        """
+        # Only process items from Stage 3 (check for stage3-specific fields or item types)
+        # For now, process all items except OffsiteCandidateItem
+        if isinstance(item, OffsiteCandidateItem):
+            return item
+
+        self.items_processed += 1
+
+        # Random sampling: process every SAMPLE_RATE items
+        if self.items_processed % self.SAMPLE_RATE == 0:
+            # Extract text content from item
+            adapter = ItemAdapter(item)
+            text_content = self._extract_text_content(adapter)
+
+            if text_content:
+                # Truncate content to MAX_CONTENT_LENGTH
+                truncated_content = text_content[:self.MAX_CONTENT_LENGTH]
+                if len(text_content) > self.MAX_CONTENT_LENGTH:
+                    truncated_content += "..."
+
+                self.sampled_content.append(truncated_content)
+                logger.debug(f"Sampled content from item #{self.items_processed}")
+
+                # Generate summary when batch size is reached
+                if len(self.sampled_content) >= self.BATCH_SIZE:
+                    self._generate_and_export_summary(spider)
+
+        return item
+
+    def _extract_text_content(self, adapter: ItemAdapter) -> str:
+        """Extract text content from item.
+
+        Args:
+            adapter: ItemAdapter wrapping the item
+
+        Returns:
+            Extracted text content or empty string
+        """
+        # Try common text field names
+        text_fields = ['text', 'content', 'body', 'description', 'summary', 'title']
+
+        for field in text_fields:
+            if field in adapter and adapter.get(field):
+                value = adapter.get(field)
+                if isinstance(value, str):
+                    return value.strip()
+
+        # If no text field found, try to get URL as fallback
+        if 'url' in adapter:
+            return f"URL: {adapter.get('url')}"
+
+        return ""
+
+    def _generate_and_export_summary(self, spider: Spider):
+        """Generate summary from sampled content and export to Prometheus.
+
+        Args:
+            spider: The spider instance
+        """
+        if not self.sampled_content:
+            return
+
+        # Generate simple summary by concatenating samples
+        summary = " | ".join(self.sampled_content)
+
+        # Truncate summary if too long (Prometheus label values should be reasonably short)
+        MAX_SUMMARY_LENGTH = 2000
+        if len(summary) > MAX_SUMMARY_LENGTH:
+            summary = summary[:MAX_SUMMARY_LENGTH] + "..."
+
+        # Export to Prometheus
+        try:
+            from src.scrapy_prometheus import CRAWLER_CONTENT_SUMMARY
+            if CRAWLER_CONTENT_SUMMARY:
+                # Note: Prometheus Gauge doesn't accept string values directly
+                # Instead, we'll set a numeric value and log the summary
+                # For actual text display in Grafana, you'd typically use an Info metric
+                # or store the summary in a separate system
+                CRAWLER_CONTENT_SUMMARY.labels(spider=spider.name).set(len(self.sampled_content))
+                logger.info(
+                    f"📊 Content Summary ({len(self.sampled_content)} samples): {summary[:200]}..."
+                )
+        except ImportError:
+            pass
+
+        # Clear sampled content
+        self.sampled_content = []
+
+    def spider_closed(self, spider: Spider) -> None:
+        """Generate final summary when spider closes.
+
+        Args:
+            spider: The spider that was closed
+        """
+        logger.info(f"Closing GrafanaSummaryPipeline for spider: {spider.name}")
+
+        # Generate summary from remaining samples
+        if self.sampled_content:
+            self._generate_and_export_summary(spider)
+
+        logger.info(
+            f"GrafanaSummaryPipeline stats - Total items processed: {self.items_processed}"
         )

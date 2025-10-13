@@ -1,12 +1,5 @@
-"""Advanced Sitemap Parser - Recursively discovers nested sitemaps.
+"""Advanced Sitemap Parser - Recursively discovers nested sitemaps."""
 
-IMPROVEMENTS:
-- Handles compressed sitemaps (.xml.gz)
-- Prioritizes robots.txt over guessing paths
-- Robust error handling for malformed XML
-"""
-
-import gzip
 import logging
 import xml.etree.ElementTree as ET
 from collections.abc import Iterator
@@ -45,37 +38,27 @@ class SitemapParser:
     async def discover_all_urls(self) -> list[str]:
         """Discover all URLs from sitemaps (including nested).
 
-        IMPROVEMENT: Prioritizes robots.txt, then tries common paths.
-
         Returns:
             List of discovered URLs
         """
         parsed = urlparse(self.base_url)
         base = f"{parsed.scheme}://{parsed.netloc}"
 
-        # IMPROVEMENT: Prioritize robots.txt (standard mechanism)
-        robots_sitemaps = await self._get_sitemaps_from_robots(base)
-
-        # Try common sitemap locations (including .gz variants)
-        common_sitemap_urls = [
+        # Try common sitemap locations
+        sitemap_urls = [
             urljoin(base, '/sitemap.xml'),
-            urljoin(base, '/sitemap.xml.gz'),  # Compressed variant
             urljoin(base, '/sitemap_index.xml'),
-            urljoin(base, '/sitemap_index.xml.gz'),
             urljoin(base, '/sitemap-index.xml'),
-            urljoin(base, '/sitemap-index.xml.gz'),
             urljoin(base, '/sitemaps/sitemap.xml'),
             urljoin(base, '/sitemap/sitemap.xml'),
         ]
 
-        # Combine: robots.txt first, then common paths
-        sitemap_urls = robots_sitemaps + common_sitemap_urls
+        # Also check robots.txt for sitemap references
+        robots_sitemaps = await self._get_sitemaps_from_robots(base)
+        sitemap_urls.extend(robots_sitemaps)
 
-        # IMPROVEMENT: Process all sitemaps with proper User-Agent header
-        headers = {
-            'User-Agent': 'SitemapParser/1.0 (compatible; web crawler)'
-        }
-        async with httpx.AsyncClient(timeout=self.timeout, headers=headers) as client:
+        # Process all sitemaps
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
             for sitemap_url in sitemap_urls:
                 await self._parse_sitemap_recursive(
                     client, sitemap_url, depth=0
@@ -142,52 +125,28 @@ class SitemapParser:
                 logger.warning(f"Sitemap returned {response.status_code}: {sitemap_url}")
                 return
 
-            # IMPROVEMENT: Handle compressed sitemaps (.gz)
-            content = response.content
-            if sitemap_url.endswith('.gz') or response.headers.get('content-encoding') == 'gzip':
-                try:
-                    content = gzip.decompress(content)
-                    logger.debug(f"Decompressed gzipped sitemap: {sitemap_url}")
-                except Exception as e:
-                    logger.warning(f"Failed to decompress sitemap: {sitemap_url} - {e}")
-                    return
+            # Parse XML
+            root = ET.fromstring(response.content)
 
-            # Try to parse as XML first
-            try:
-                root = ET.fromstring(content)
+            # Check if this is a sitemap index (contains nested sitemaps)
+            if self._is_sitemap_index(root):
+                logger.info(f"Found sitemap index: {sitemap_url}")
+                nested_sitemaps = self._extract_nested_sitemaps(root)
 
-                # Check if this is a sitemap index (contains nested sitemaps)
-                if self._is_sitemap_index(root):
-                    logger.info(f"Found sitemap index: {sitemap_url}")
-                    nested_sitemaps = self._extract_nested_sitemaps(root)
+                # Recursively parse nested sitemaps
+                for nested_url in nested_sitemaps:
+                    await self._parse_sitemap_recursive(
+                        client, nested_url, depth + 1
+                    )
 
-                    # Recursively parse nested sitemaps
-                    for nested_url in nested_sitemaps:
-                        await self._parse_sitemap_recursive(
-                            client, nested_url, depth + 1
-                        )
+            else:
+                # Regular sitemap with URLs
+                urls = self._extract_urls_from_sitemap(root)
+                self.discovered_urls.update(urls)
+                logger.info(f"Extracted {len(urls)} URLs from {sitemap_url}")
 
-                else:
-                    # Regular sitemap with URLs
-                    urls = self._extract_urls_from_sitemap(root)
-                    self.discovered_urls.update(urls)
-                    logger.info(f"Extracted {len(urls)} URLs from {sitemap_url}")
-
-            except ET.ParseError as e:
-                # IMPROVEMENT: Fallback to plain-text sitemap parsing
-                content_type = response.headers.get('content-type', '').lower()
-                if 'text/plain' in content_type or 'text/html' in content_type:
-                    logger.info(f"XML parsing failed, trying plain-text format: {sitemap_url}")
-                    try:
-                        text_content = content.decode('utf-8')
-                        urls = self._extract_from_plain_text(text_content)
-                        self.discovered_urls.update(urls)
-                        logger.info(f"Extracted {len(urls)} URLs from plain-text sitemap: {sitemap_url}")
-                    except Exception as text_error:
-                        logger.warning(f"Plain-text parsing also failed for {sitemap_url}: {text_error}")
-                else:
-                    logger.warning(f"Failed to parse sitemap XML: {sitemap_url} - {e}")
-
+        except ET.ParseError as e:
+            logger.warning(f"Failed to parse sitemap XML: {sitemap_url} - {e}")
         except Exception as e:
             logger.warning(f"Error processing sitemap: {sitemap_url} - {e}")
 

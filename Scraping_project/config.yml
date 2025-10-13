@@ -25,26 +25,15 @@ postgres:
 # Stage 1: Discovery Settings
 # ============================================
 stage1:
-  # Scrapy Spider Settings
-  concurrent_requests: 512
-  concurrent_requests_per_domain: 256
-  download_timeout: 45
-  retry_times: 3
-  depth_limit: 5  # 0 = unlimited
-  closespider_pagecount: 0  # 0 = unlimited
+  # Target domains (dynamically populated from start_urls if not specified)
+  allowed_domains:
+    - uconn.edu
 
-  # Memory limits
-  memory_limit_mb: 8192
-  memory_warning_mb: 6144
-
-  # Autothrottle
-  autothrottle_enabled: true
-  autothrottle_start_delay: 0
-  autothrottle_max_delay: 0.3
-  autothrottle_target_concurrency: 512
+  # JS Detection
+  js_confidence_threshold: 0.7  # Only queue pages with JS confidence > 0.7
 
   # Batch sizes
-  batch_size: 100  # URLs to batch before writing to Delta Lake
+  batch_size: 50  # URLs to batch before writing to Delta Lake
   js_queue_batch_size: 50  # JS render queue batch size
 
   # Circuit Breaker Settings
@@ -67,6 +56,58 @@ stage1:
     - event
     - news
     - archive
+
+  # Spider-Specific Settings
+  spiders:
+    scout:
+      # Aggressive spider settings
+      concurrent_requests: 1024
+      concurrent_requests_per_domain: 512
+      download_delay: 0.01
+      download_timeout: 15
+      retry_times: 2
+      depth_limit: 10
+      robotstxt_obey: false
+      cookies_enabled: false
+
+      # Autothrottle
+      autothrottle_enabled: true
+      autothrottle_start_delay: 0.005
+      autothrottle_max_delay: 1.5
+      autothrottle_target_concurrency: 2048
+
+      # Memory limits
+      memory_limit_mb: 10240
+      memory_warning_mb: 8192
+
+      # Reactor settings
+      reactor_threadpool_maxsize: 128
+      dns_timeout: 8
+
+    deep_dive:
+      # Conservative spider settings
+      concurrent_requests: 32
+      concurrent_requests_per_domain: 8
+      download_delay: 0.25
+      download_timeout: 30
+      retry_times: 3
+      depth_limit: 10
+      robotstxt_obey: true
+      cookies_enabled: true
+
+      # Autothrottle
+      autothrottle_enabled: true
+      autothrottle_start_delay: 0.25
+      autothrottle_max_delay: 10
+      autothrottle_target_concurrency: 2.0
+
+      # Memory limits
+      memory_limit_mb: 4096
+      memory_warning_mb: 3072
+
+      # Reactor settings
+      reactor_threadpool_maxsize: 20
+      dns_timeout: 15
 
 # ============================================
 # Stage 2: Analysis Settings
@@ -129,6 +170,7 @@ delta_lake:
   base_path: ./data/delta_lake
   checkpoint_interval: 100  # Checkpoint every N writes
   force_shutdown_timeout: 15  # Seconds before forced shutdown
+  queue_maxsize: 1000  # Maximum queue size to prevent memory overload
 
   # Table Names
   tables:

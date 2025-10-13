@@ -265,7 +265,6 @@ class LargeDocProcessor:
         """Extract text from legacy .doc files using textract or antiword."""
         try:
             import tempfile
-            from io import BytesIO
 
             import textract
 

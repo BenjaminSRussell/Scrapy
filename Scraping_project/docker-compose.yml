@@ -298,6 +298,9 @@ services:
     env_file:
       - .env
     environment:
+      # Python path
+      - PYTHONPATH=/app
+
       # Database connections
       - REDIS_HOST=redis
       - REDIS_PORT=6379
@@ -362,6 +365,7 @@ services:
     env_file:
       - .env
     environment:
+      - PYTHONPATH=/app
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - POSTGRES_HOST=postgres
@@ -399,6 +403,7 @@ services:
     env_file:
       - .env
     environment:
+      - PYTHONPATH=/app
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - POSTGRES_HOST=postgres
@@ -436,6 +441,7 @@ services:
     env_file:
       - .env
     environment:
+      - PYTHONPATH=/app
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - POSTGRES_HOST=postgres
@@ -537,6 +543,7 @@ services:
     ports:
       - "9090:9090"
     environment:
+      - PYTHONPATH=/app
       - REDIS_HOST=redis
       - REDIS_PORT=6379
     volumes:

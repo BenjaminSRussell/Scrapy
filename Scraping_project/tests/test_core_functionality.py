@@ -126,9 +126,8 @@ class TestPostgresManager:
     def test_log_performance_metric(self):
         """Test logging performance metrics."""
         # Skip if psycopg2 not available
-        try:
-            import psycopg2
-        except ImportError:
+        import importlib.util
+        if importlib.util.find_spec("psycopg2") is None:
             pytest.skip("psycopg2 not installed")
 
         # This test just verifies the method exists and has correct signature

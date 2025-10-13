@@ -145,6 +145,12 @@ if PROMETHEUS_AVAILABLE:
         ['spider']
     )
 
+    CRAWLER_CONTENT_SUMMARY = Gauge(
+        'scrapy_crawler_content_summary',
+        'Sample summary of scraped content for qualitative monitoring',
+        ['spider']
+    )
+
     # Track crawl start times for duration calculation
     CRAWL_START_TIMES: dict[str, float] = {}
     # Track skipped URL tallies for live display
@@ -157,6 +163,7 @@ else:
     CRAWL_DURATION = URLS_SKIPPED = None
     NEW_URLS_FOUND_PER_MINUTE = AVERAGE_FILE_SIZE_BYTES = None
     OFFSITE_LINKS_FOUND = OFFSITE_CANDIDATES_SAVED = None
+    CRAWLER_CONTENT_SUMMARY = None
     CRAWL_START_TIMES: dict[str, float] = {}
     SKIPPED_URL_TALLIES: dict[str, dict[str, int]] = {}
 

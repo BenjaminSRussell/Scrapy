@@ -48,6 +48,8 @@ ITEM_PIPELINES = _scrapy_config.get('item_pipelines', {
     'src.pipelines.DataCleansingPipeline': 200,    # Second: Cleanse and normalize data
     'src.pipelines.MetadataPipeline': 250,          # Third: Add operational metadata
     'src.pipelines.KafkaPipeline': 300,             # Fourth: Serialize and publish to Kafka
+    'src.pipelines.OffsiteCandidatePipeline': 800,  # Fifth: Process and save offsite candidates
+    'src.pipelines.GrafanaSummaryPipeline': 900,    # Sixth: Generate content summaries for Grafana
 })
 
 # Configure request fingerprinting (from YAML or default)
@@ -155,3 +157,29 @@ KAFKA_PRODUCER_CONFIG = _scrapy_config.get('kafka_producer_config', {})
 # export KAFKA_SASL_PASSWORD='your-password'
 #
 # The KafkaPipeline will automatically load these from os.getenv() at runtime.
+
+# ============================================================================
+# Spider Configuration - Centralized Settings
+# ============================================================================
+
+# File extensions to ignore during crawling (single source of truth)
+# Spiders will skip following links to these file types
+IGNORED_EXTENSIONS = [
+    # Images
+    '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.svg', '.webp', '.ico', '.tiff',
+    # Stylesheets and scripts
+    '.css', '.js', '.map',
+    # Archives
+    '.zip', '.rar', '.7z', '.tar', '.gz', '.bz2',
+    # Documents (queued for later processing, not crawled)
+    '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
+    # Media files
+    '.mp3', '.mp4', '.avi', '.mov', '.wmv', '.flv', '.webm', '.m4a', '.wav',
+    # Fonts
+    '.woff', '.woff2', '.ttf', '.eot', '.otf',
+    # Other binary formats
+    '.exe', '.dmg', '.pkg', '.deb', '.rpm',
+]
+
+# Batch size for Delta Lake writes (number of records before writing)
+DELTA_BATCH_SIZE = _scrapy_config.get('delta_batch_size', 50)

@@ -148,6 +148,9 @@ RUN mkdir -p /app/data /app/logs && \
 # Switch to non-root user
 USER scrapy
 
+# Set PYTHONPATH to include /app so that 'src' module can be imported
+ENV PYTHONPATH=/app:${PYTHONPATH}
+
 # Expose Prometheus metrics port
 EXPOSE 9410
 
@@ -179,6 +182,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the application code required by the metrics exporter
 COPY src ./src
 COPY monitoring/. .
+
+# Set PYTHONPATH to include /app so that 'src' module can be imported
+ENV PYTHONPATH=/app:${PYTHONPATH}
 
 # Command to run the metrics exporter
 CMD ["python", "metrics_exporter.py"]

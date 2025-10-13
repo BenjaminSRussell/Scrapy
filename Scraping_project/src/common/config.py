@@ -195,6 +195,19 @@ def get_config(config_path: str | None = None) -> Config:
     return _config
 
 
+def load_config(config_path: str | None = None) -> dict[str, Any]:
+    """Load configuration and return as dictionary.
+
+    Args:
+        config_path: Optional path to config file
+
+    Returns:
+        Configuration dictionary
+    """
+    config = get_config(config_path)
+    return config._config
+
+
 def reload_config():
     """Reload global configuration from file."""
     global _config
