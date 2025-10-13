@@ -31,7 +31,7 @@ Use `docker-compose` to manage the application lifecycle:
 ## 📊 Architecture
 
 ```
-Scrapy → Kafka → kafka-delta-ingest (Rust) → Delta Lake (MinIO/S3)
+Scrapy → Kafka → kafka-delta-ingest (Rust) → Delta Lake (S3)
    │        │                │                       │
    │        │                │                       │
    ▼        ▼                ▼                       ▼
@@ -153,10 +153,7 @@ python cli.py drain
 KAFKA_BOOTSTRAP_SERVERS=kafka:9092
 KAFKA_TOPIC=scraped-items
 
-# Cloud Storage (MinIO local, or AWS S3 production)
-AWS_ENDPOINT_URL=http://minio:9000      # Remove for real S3
-AWS_ACCESS_KEY_ID=minioadmin
-AWS_SECRET_ACCESS_KEY=minioadmin123
+# Cloud Storage
 AWS_REGION=us-east-1
 
 # Database

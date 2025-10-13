@@ -70,17 +70,20 @@ class ScoutSpider(BaseSpider):
         logger.info(f"[SCOUT] Initialized with allowed_domains={self.allowed_domains}")
 
     def parse(self, response: Response) -> Iterator:
-        """OVERRIDDEN: Dual-queueing strategy for scout spider.
+        """OVERRIDDEN: Dual-queueing strategy for scout spider with batch Redis operations.
 
         Flow:
         1. Check if content is HTML
         2. Extract all URLs (using BaseSpider._extract_urls)
-        3. Categorize URLs:
+        3. Batch deduplicate URLs using Redis pipeline
+        4. Categorize URLs:
            - External → Log via BaseSpider._create_offsite_item
            - Static assets → Discard
            - HTML pages → Queue for JS + Stage 2
            - Other pages → Queue for Stage 2 only
-        4. Follow HTML links for continued discovery
+        5. Follow HTML links for continued discovery
+
+        PERFORMANCE: Uses batch Redis operations (pipeline) instead of per-URL calls.
         """
         # Fast content-type check
         content_type = response.headers.get('Content-Type', b'').decode('utf-8', errors='ignore').lower()
@@ -93,19 +96,38 @@ class ScoutSpider(BaseSpider):
         # Extract all URLs using BaseSpider method
         discovered_urls = self._extract_urls(response)
 
-        # Process each discovered URL
+        if not discovered_urls:
+            return
+
+        # BATCH REDIS OPERATIONS: Check all URLs at once
+        pipeline = self.redis_client.pipeline()
+        url_hash_map = {}
+
+        # First pass: hash all URLs and check existence in batch
         for url in discovered_urls:
-            # Check if already processed (uses BaseSpider Redis dedup)
             url_hash = self._hash_url(url)
+            url_hash_map[url] = url_hash
+            pipeline.sismember(self.url_hashes_key, url_hash)
 
-            # Use BaseSpider pipeline for batch Redis operations
-            # But for scout, we need immediate dedup checks
-            if self._is_duplicate_scout(url_hash):
-                continue
+        # Execute batch check
+        existence_results = pipeline.execute()
 
-            # Mark as seen
-            self._mark_seen_scout(url_hash)
+        # Second pass: add new URLs in batch
+        new_urls = []
+        for url, exists in zip(discovered_urls, existence_results, strict=False):
+            if not exists:
+                url_hash = url_hash_map[url]
+                pipeline.sadd(self.url_hashes_key, url_hash)
+                new_urls.append(url)
 
+        # Execute batch add
+        if new_urls:
+            pipeline.execute()
+
+        # Process new URLs only
+        depth = response.meta.get('depth', 0)
+
+        for url in new_urls:
             # Categorize and route
             if self._is_external_url(url):
                 # Offsite link - use BaseSpider method
@@ -135,14 +157,7 @@ class ScoutSpider(BaseSpider):
                     self.scout_stats['html_queued_js'] += 1
                     self.scout_stats['pages_queued_stage2'] += 1
 
-                else:
-                    # Non-HTML page (PDF, DOC, etc.) - queue for Stage 2 only
-                    yield self._queue_for_stage2(url, response.url, content_hint)
-                    self.scout_stats['pages_queued_stage2'] += 1
-
-                # Follow HTML links to continue discovery
-                if content_hint == 'html':
-                    depth = response.meta.get('depth', 0)
+                    # Follow HTML links to continue discovery
                     yield scrapy.Request(
                         url,
                         callback=self.parse,
@@ -152,18 +167,16 @@ class ScoutSpider(BaseSpider):
                         dont_filter=False,
                     )
 
+                else:
+                    # Non-HTML page (PDF, DOC, etc.) - queue for Stage 2 only
+                    yield self._queue_for_stage2(url, response.url, content_hint)
+                    self.scout_stats['pages_queued_stage2'] += 1
+
         # Log progress periodically
         total_discovered = sum(self.scout_stats.values())
         if total_discovered % 100 == 0:
             self._log_scout_stats()
 
-    def _is_duplicate_scout(self, url_hash: str) -> bool:
-        """Check if URL has been seen before (immediate check for scout)."""
-        return bool(self.redis_client.sismember(self.url_hashes_key, url_hash))
-
-    def _mark_seen_scout(self, url_hash: str):
-        """Mark URL as seen in Redis (immediate write for scout)."""
-        self.redis_client.sadd(self.url_hashes_key, url_hash)
 
     def _is_static_asset(self, url: str) -> bool:
         """Check if URL is a static asset to discard."""

@@ -1,0 +1,120 @@
+{{- if .Values.scrapyApp.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "scraping-pipeline.fullname" . }}-scrapy
+  labels:
+    {{- include "scraping-pipeline.labels" . | nindent 4 }}
+    app.kubernetes.io/component: scrapy
+spec:
+  replicas: {{ .Values.scrapyApp.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "scraping-pipeline.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: scrapy
+  template:
+    metadata:
+      labels:
+        {{- include "scraping-pipeline.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: scrapy
+    spec:
+      containers:
+      - name: scrapy
+        image: "{{ .Values.scrapyApp.image.repository }}:{{ .Values.scrapyApp.image.tag }}"
+        imagePullPolicy: {{ .Values.scrapyApp.image.pullPolicy }}
+        command: ["python", "run_multiple_scouts.py"]
+        ports:
+        {{- range $port := untilStep (int .Values.scrapyApp.service.ports.metricsStart) (int .Values.scrapyApp.service.ports.metricsEnd) 1 }}
+        - name: metrics-{{ $port }}
+          containerPort: {{ $port }}
+          protocol: TCP
+        {{- end }}
+        env:
+        - name: PYTHONPATH
+          value: "/app"
+        - name: REDIS_HOST
+          value: "{{ include "scraping-pipeline.fullname" . }}-redis"
+        - name: REDIS_PORT
+          value: "6379"
+        - name: POSTGRES_HOST
+          value: "{{ include "scraping-pipeline.fullname" . }}-postgresql"
+        - name: POSTGRES_PORT
+          value: "5432"
+        - name: POSTGRES_DB
+          value: {{ .Values.postgresql.auth.database | quote }}
+        - name: POSTGRES_USER
+          value: {{ .Values.postgresql.auth.username | quote }}
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.postgresql.auth.existingSecret }}
+              key: {{ .Values.postgresql.auth.secretKeys.userPasswordKey }}
+        - name: DB_HOST
+          value: "{{ include "scraping-pipeline.fullname" . }}-postgresql"
+        - name: DB_PORT
+          value: "5432"
+        - name: DB_NAME
+          value: {{ .Values.postgresql.auth.database | quote }}
+        - name: DB_USER
+          value: {{ .Values.postgresql.auth.username | quote }}
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.postgresql.auth.existingSecret }}
+              key: {{ .Values.postgresql.auth.secretKeys.userPasswordKey }}
+        - name: KAFKA_BOOTSTRAP_SERVERS
+          value: "{{ include "scraping-pipeline.fullname" . }}-kafka:9092"
+        - name: KAFKA_TOPIC
+          value: "scraped-items"
+        - name: SCRAPY_SETTINGS_MODULE
+          value: {{ .Values.scrapyApp.env.SCRAPY_SETTINGS_MODULE | quote }}
+        - name: ENV
+          value: {{ .Values.scrapyApp.env.ENV | quote }}
+        - name: AWS_ENDPOINT_URL
+          value: "http://{{ include "scraping-pipeline.fullname" . }}-minio:9000"
+        - name: AWS_ACCESS_KEY_ID
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.minio.auth.existingSecret }}
+              key: {{ .Values.minio.auth.rootUserKey }}
+        - name: AWS_SECRET_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.minio.auth.existingSecret }}
+              key: {{ .Values.minio.auth.rootPasswordKey }}
+        - name: AWS_REGION
+          value: {{ .Values.secrets.aws.region | quote }}
+        - name: AWS_ALLOW_HTTP
+          value: "true"
+        - name: SCOUT_INSTANCES
+          value: {{ .Values.scrapyApp.env.SCOUT_INSTANCES | quote }}
+        resources:
+          {{- toYaml .Values.scrapyApp.resources | nindent 10 }}
+        volumeMounts:
+        - name: delta-data
+          mountPath: /app/data
+      volumes:
+      - name: delta-data
+        persistentVolumeClaim:
+          claimName: {{ include "scraping-pipeline.fullname" . }}-delta-lake
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "scraping-pipeline.fullname" . }}-scrapy
+  labels:
+    {{- include "scraping-pipeline.labels" . | nindent 4 }}
+    app.kubernetes.io/component: scrapy
+spec:
+  type: {{ .Values.scrapyApp.service.type }}
+  ports:
+  {{- range $port := untilStep (int .Values.scrapyApp.service.ports.metricsStart) (int .Values.scrapyApp.service.ports.metricsEnd) 1 }}
+  - port: {{ $port }}
+    targetPort: metrics-{{ $port }}
+    protocol: TCP
+    name: metrics-{{ $port }}
+  {{- end }}
+  selector:
+    {{- include "scraping-pipeline.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: scrapy
+{{- end }}

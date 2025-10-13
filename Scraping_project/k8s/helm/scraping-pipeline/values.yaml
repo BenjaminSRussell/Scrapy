@@ -1,0 +1,528 @@
+# Default values for scraping-pipeline
+
+global:
+  # Container registry settings
+  imageRegistry: ""
+  imagePullSecrets: []
+  storageClass: ""
+
+# ============================================
+# Stateful Services - Redis
+# ============================================
+redis:
+  enabled: true
+  image:
+    repository: redis
+    tag: "7-alpine"
+    pullPolicy: IfNotPresent
+
+  service:
+    type: ClusterIP
+    port: 6379
+
+  persistence:
+    enabled: true
+    storageClass: ""
+    size: 10Gi
+
+  resources:
+    limits:
+      cpu: 1000m
+      memory: 2Gi
+    requests:
+      cpu: 500m
+      memory: 1Gi
+
+  config:
+    maxmemory: "2gb"
+    maxmemoryPolicy: "allkeys-lru"
+    appendonly: "yes"
+
+# ============================================
+# Stateful Services - PostgreSQL
+# ============================================
+postgresql:
+  enabled: true
+  image:
+    repository: postgres
+    tag: "16-alpine"
+    pullPolicy: IfNotPresent
+
+  service:
+    type: ClusterIP
+    port: 5432
+
+  persistence:
+    enabled: true
+    storageClass: ""
+    size: 20Gi
+
+  resources:
+    limits:
+      cpu: 2000m
+      memory: 4Gi
+    requests:
+      cpu: 1000m
+      memory: 2Gi
+
+  auth:
+    database: pipeline_metrics
+    username: postgres
+    # Password should be set via secret or external secret manager
+    existingSecret: "postgres-credentials"
+    secretKeys:
+      userPasswordKey: "password"
+
+# ============================================
+# Kafka Streaming Infrastructure
+# ============================================
+zookeeper:
+  enabled: true
+  image:
+    repository: confluentinc/cp-zookeeper
+    tag: "7.6.0"
+    pullPolicy: IfNotPresent
+
+  service:
+    type: ClusterIP
+    port: 2181
+
+  persistence:
+    data:
+      enabled: true
+      storageClass: ""
+      size: 10Gi
+    logs:
+      enabled: true
+      storageClass: ""
+      size: 5Gi
+
+  resources:
+    limits:
+      cpu: 1000m
+      memory: 2Gi
+    requests:
+      cpu: 500m
+      memory: 1Gi
+
+  env:
+    ZOOKEEPER_CLIENT_PORT: "2181"
+    ZOOKEEPER_TICK_TIME: "2000"
+    ZOOKEEPER_SYNC_LIMIT: "5"
+
+kafka:
+  enabled: true
+  image:
+    repository: confluentinc/cp-kafka
+    tag: "7.6.0"
+    pullPolicy: IfNotPresent
+
+  service:
+    type: ClusterIP
+    internal: 9092
+    external: 9094
+    jmx: 9999
+
+  persistence:
+    enabled: true
+    storageClass: ""
+    size: 50Gi
+
+  resources:
+    limits:
+      cpu: 2000m
+      memory: 4Gi
+    requests:
+      cpu: 1000m
+      memory: 2Gi
+
+  config:
+    brokerId: 1
+    numPartitions: 3
+    defaultReplicationFactor: 1
+    logRetentionHours: 168
+    logSegmentBytes: 1073741824
+    compressionType: "snappy"
+    heapOpts: "-Xmx1G -Xms1G"
+
+# ============================================
+# MinIO - S3-compatible Object Storage
+# ============================================
+minio:
+  enabled: true
+  image:
+    repository: minio/minio
+    tag: "latest"
+    pullPolicy: IfNotPresent
+
+  service:
+    type: ClusterIP
+    api: 9000
+    console: 9001
+
+  persistence:
+    enabled: true
+    storageClass: ""
+    size: 100Gi
+
+  resources:
+    limits:
+      cpu: 2000m
+      memory: 4Gi
+    requests:
+      cpu: 1000m
+      memory: 2Gi
+
+  auth:
+    existingSecret: "minio-credentials"
+    rootUserKey: "root-user"
+    rootPasswordKey: "root-password"
+
+# ============================================
+# Monitoring Stack
+# ============================================
+prometheus:
+  enabled: true
+  replicas: 2  # High availability
+  image:
+    repository: prom/prometheus
+    tag: "latest"
+    pullPolicy: IfNotPresent
+
+  service:
+    type: ClusterIP
+    port: 9090
+
+  persistence:
+    enabled: true
+    storageClass: ""
+    size: 30Gi
+
+  resources:
+    limits:
+      cpu: 2000m
+      memory: 8Gi
+    requests:
+      cpu: 1000m
+      memory: 4Gi
+
+  config:
+    retentionTime: "30d"
+    scrapeInterval: "15s"
+    evaluationInterval: "15s"
+
+alertmanager:
+  enabled: true
+  replicas: 3  # High availability cluster
+  image:
+    repository: prom/alertmanager
+    tag: "latest"
+    pullPolicy: IfNotPresent
+
+  service:
+    type: ClusterIP
+    port: 9093
+    clusterPort: 9094
+
+  persistence:
+    enabled: true
+    storageClass: ""
+    size: 5Gi
+
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 250m
+      memory: 256Mi
+
+grafana:
+  enabled: true
+  image:
+    repository: grafana/grafana
+    tag: "latest"
+    pullPolicy: IfNotPresent
+
+  service:
+    type: LoadBalancer  # Expose externally
+    port: 3000
+
+  persistence:
+    enabled: true
+    storageClass: ""
+    size: 10Gi
+
+  resources:
+    limits:
+      cpu: 1000m
+      memory: 2Gi
+    requests:
+      cpu: 500m
+      memory: 1Gi
+
+  auth:
+    existingSecret: "grafana-credentials"
+    adminUserKey: "admin-user"
+    adminPasswordKey: "admin-password"
+
+# ============================================
+# Application Services
+# ============================================
+scrapyApp:
+  enabled: true
+  replicaCount: 1
+  image:
+    repository: ""  # Set your registry/image
+    tag: "latest"
+    pullPolicy: Always
+
+  service:
+    type: ClusterIP
+    ports:
+      metricsStart: 9410
+      metricsEnd: 9420
+
+  resources:
+    limits:
+      cpu: 8000m
+      memory: 16Gi
+    requests:
+      cpu: 4000m
+      memory: 8Gi
+
+  env:
+    SCOUT_INSTANCES: "8"
+    SCRAPY_SETTINGS_MODULE: "src.settings"
+    ENV: "production"
+
+  persistence:
+    deltaLake:
+      enabled: true
+      storageClass: ""
+      accessMode: ReadWriteMany
+      size: 200Gi
+
+stage2Worker:
+  enabled: true
+  replicaCount: 3
+  image:
+    repository: ""  # Set your registry/image
+    tag: "latest"
+    pullPolicy: Always
+
+  resources:
+    limits:
+      cpu: 2000m
+      memory: 4Gi
+    requests:
+      cpu: 1000m
+      memory: 2Gi
+
+stage3Worker:
+  enabled: true
+  replicaCount: 2
+  image:
+    repository: ""  # Set your registry/image
+    tag: "latest"
+    pullPolicy: Always
+
+  resources:
+    limits:
+      cpu: 2000m
+      memory: 4Gi
+    requests:
+      cpu: 1000m
+      memory: 2Gi
+
+kafkaDeltaIngestor:
+  enabled: true
+  replicaCount: 2
+  image:
+    repository: ""  # Set your registry/image
+    tag: "latest"
+    pullPolicy: Always
+
+  resources:
+    limits:
+      cpu: 2000m
+      memory: 4Gi
+    requests:
+      cpu: 1000m
+      memory: 2Gi
+
+  config:
+    topic: "scraped-items"
+    kafkaBootstrap: "kafka:9092"
+    appId: "scrapy-ingestor"
+    autoOffsetReset: "earliest"
+    allowedLatency: 60
+    maxMessagesPerBatch: 1000
+
+metricsExporter:
+  enabled: true
+  replicaCount: 1
+  image:
+    repository: ""  # Set your registry/image
+    tag: "latest"
+    pullPolicy: Always
+
+  service:
+    type: ClusterIP
+    port: 9090
+
+  resources:
+    limits:
+      cpu: 1000m
+      memory: 2Gi
+    requests:
+      cpu: 500m
+      memory: 1Gi
+
+  config:
+    port: 9090
+    interval: 5
+
+# ============================================
+# Exporters for Monitoring
+# ============================================
+exporters:
+  redis:
+    enabled: true
+    image:
+      repository: oliver006/redis_exporter
+      tag: "latest"
+    service:
+      port: 9121
+    resources:
+      limits:
+        cpu: 200m
+        memory: 256Mi
+      requests:
+        cpu: 100m
+        memory: 128Mi
+
+  postgres:
+    enabled: true
+    image:
+      repository: prometheuscommunity/postgres-exporter
+      tag: "latest"
+    service:
+      port: 9187
+    resources:
+      limits:
+        cpu: 200m
+        memory: 256Mi
+      requests:
+        cpu: 100m
+        memory: 128Mi
+
+  kafkaJmx:
+    enabled: true
+    image:
+      repository: bitnami/jmx-exporter
+      tag: "latest"
+    service:
+      port: 5556
+    resources:
+      limits:
+        cpu: 200m
+        memory: 256Mi
+      requests:
+        cpu: 100m
+        memory: 128Mi
+
+  statsd:
+    enabled: true
+    image:
+      repository: prom/statsd-exporter
+      tag: "latest"
+    service:
+      metricsPort: 9102
+      statsdPort: 9125
+    resources:
+      limits:
+        cpu: 200m
+        memory: 256Mi
+      requests:
+        cpu: 100m
+        memory: 128Mi
+
+# ============================================
+# Shared Delta Lake Volume
+# ============================================
+deltaLake:
+  persistence:
+    enabled: true
+    storageClass: ""
+    accessMode: ReadWriteMany
+    size: 500Gi
+
+# ============================================
+# Secrets Management
+# ============================================
+secrets:
+  # Set to true to use external secrets (e.g., AWS Secrets Manager, Vault)
+  useExternalSecrets: false
+  externalSecretsProvider: ""
+
+  # If useExternalSecrets is false, secrets will be created from these values
+  # WARNING: In production, use external secrets or sealed secrets
+  postgres:
+    password: "changeme"
+
+  minio:
+    rootUser: "minioadmin"
+    rootPassword: "changeme"
+
+  grafana:
+    adminUser: "admin"
+    adminPassword: "changeme"
+
+  aws:
+    accessKeyId: ""
+    secretAccessKey: ""
+    region: "us-east-1"
+
+# ============================================
+# ConfigMaps
+# ============================================
+configMaps:
+  prometheus:
+    create: true
+  alertmanager:
+    create: true
+  grafana:
+    create: true
+
+# ============================================
+# Ingress Configuration
+# ============================================
+ingress:
+  enabled: false
+  className: "nginx"
+  annotations: {}
+  hosts:
+    - host: scraping-pipeline.example.com
+      paths:
+        - path: /grafana
+          pathType: Prefix
+          service: grafana
+          port: 3000
+  tls: []
+
+# ============================================
+# Network Policies
+# ============================================
+networkPolicy:
+  enabled: false
+  policyTypes:
+    - Ingress
+    - Egress
+
+# ============================================
+# Pod Disruption Budgets
+# ============================================
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1

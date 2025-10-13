@@ -1,0 +1,18 @@
+{{- if .Values.deltaLake.persistence.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "scraping-pipeline.fullname" . }}-delta-lake
+  labels:
+    {{- include "scraping-pipeline.labels" . | nindent 4 }}
+    app.kubernetes.io/component: storage
+spec:
+  accessModes:
+    - {{ .Values.deltaLake.persistence.accessMode }}
+  {{- if .Values.deltaLake.persistence.storageClass }}
+  storageClassName: {{ .Values.deltaLake.persistence.storageClass | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.deltaLake.persistence.size }}
+{{- end }}
