@@ -8,7 +8,7 @@ import threading
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
-from src.common.config import get_config
+from src.common.config import Config
 try:
     import pyarrow as pa
     import pyarrow.csv as pa_csv
@@ -607,3 +607,157 @@ class DeltaLakeManager:
             # Gracefully shut down workers to prevent resource leaks
             cls._instance.shutdown()
         cls._instance = None
+
+# =====================================================================================
+# In-Memory Test Backend
+# =====================================================================================
+
+class InMemoryDeltaManager:
+    """In-memory mock of DeltaLakeManager for testing."""
+
+    def __init__(self, **kwargs):
+        """Initialize in-memory tables dictionary."""
+        self.tables: dict[str, list[dict[str, Any]]] = {}
+        self.history: dict[str, list[list[dict[str, Any]]]] = {}
+        # Mimic table paths for compatibility if needed
+        self.table_paths = {
+            'seed_urls': Path('./data/delta_lake/seed_urls'),
+            'stage1_discovery': Path('./data/delta_lake/stage1_discovery'),
+        }
+
+    def write(self, table_name: str, rows: list[dict[str, Any]], mode: str = "append", **kwargs):
+        """Write rows to an in-memory table."""
+        if not rows:
+            return
+
+        if table_name not in self.tables:
+            self.tables[table_name] = []
+
+        if mode == "append":
+            self.tables[table_name].extend(rows)
+        elif mode == "overwrite":
+            self.tables[table_name] = rows
+        else:
+            raise ValueError(f"Unsupported mode: {mode}")
+
+        if table_name not in self.history:
+            self.history[table_name] = []
+        self.history[table_name].append(list(self.tables[table_name]))
+
+    def _get_version(self, table_name: str, version: int | None = None) -> list[dict[str, Any]]:
+        """Return a specific version of a table from history."""
+        if version is None:
+            return self.tables.get(table_name, [])
+        if table_name not in self.history or version >= len(self.history[table_name]):
+            raise ValueError(f"Version {version} not available for table {table_name}")
+        return self.history[table_name][version]
+
+    def read(self, table_name: str, filter: Any = None, columns: list[str] | None = None, version: int | None = None) -> list[dict]:
+        """Read rows from in-memory table, with optional column selection."""
+        if table_name not in self.tables:
+            raise ValueError(f"Unknown table: {table_name}")
+
+        data = self._get_version(table_name, version)
+
+        if filter:
+            key, value = filter.split("=")
+            key = key.strip()
+            value = value.strip().strip("'")
+            data = [row for row in data if row.get(key) == value]
+
+        if columns:
+            return [{col: row.get(col) for col in columns} for row in data]
+        return data
+
+    def list_tables(self) -> list[str]:
+        """List all in-memory tables."""
+        return list(self.tables.keys())
+
+    def table_exists(self, name: str) -> bool:
+        """Check if table exists in memory."""
+        return name in self.tables
+
+    def delete_table(self, name: str):
+        """Delete an in-memory table."""
+        if name in self.tables:
+            del self.tables[name]
+
+    def get_table_schema(self, name: str) -> dict[str, str]:
+        """Return a dummy schema for an in-memory table."""
+        if not self.table_exists(name) or not self.tables[name]:
+            return {}
+        # Infer schema from the first record
+        first_record = self.tables[name][0]
+        return {key: str(type(value).__name__) for key, value in first_record.items()}
+
+    def get_table_history(self, name: str) -> list[dict]:
+        """Return dummy history for an in--memory table."""
+        if not self.table_exists(name):
+            return []
+
+        return [
+            {
+                'timestamp': datetime.now(UTC).isoformat(),
+                'operation': 'WRITE',
+                'operationParameters': {'mode': 'Append', 'partitionBy': '[]'},
+                'user': 'test-user',
+            }
+            for _ in self.history.get(name, [])
+        ]
+
+    def add_to_batch(self, table: str, rows: list[dict]):
+        """In-memory batch write is just a synchronous write."""
+        self.write(table, rows, mode="append")
+
+    def flush_all(self):
+        """No-op for in-memory backend as writes are synchronous."""
+        pass
+
+    def flush_batch(self, table_name: str):
+        """No-op for in-memory backend as writes are synchronous."""
+        pass
+
+    def flush_all_batches(self):
+        """No-op for in-memory backend as writes are synchronous."""
+        pass
+
+    def count(self, table_name: str) -> int:
+        """Return row count for an in-memory table."""
+        return len(self.tables.get(table_name, []))
+
+
+# =====================================================================================
+# Singleton & Factory
+# =====================================================================================
+import os
+from contextlib import contextmanager
+
+def get_delta_manager(mode: str | None = None, **kwargs) -> DeltaLakeManager | InMemoryDeltaManager:
+    """Factory to get a Delta Lake manager based on mode."""
+    mode = mode or os.getenv("DELTA_BACKEND", "memory")
+    if mode == "memory":
+        return InMemoryDeltaManager(**kwargs)
+
+    # In production, use the singleton for efficiency
+    # Pass start_workers=False for test environments
+    if 'start_workers' not in kwargs:
+        kwargs['start_workers'] = True # Default to starting workers for prod
+    return DeltaLakeManager.get_instance(**kwargs)
+
+
+@contextmanager
+def delta_session(mode: str | None = None, **kwargs):
+    """Context manager for a Delta Lake session."""
+    mgr = get_delta_manager(mode, **kwargs)
+    try:
+        yield mgr
+    finally:
+        # Attempt to flush if the manager supports it
+        if hasattr(mgr, 'flush_all'):
+            try:
+                mgr.flush_all()
+            except Exception as e:
+                logger.error(f"Failed to flush delta session: {e}", exc_info=True)
+        # Reset singleton instance if it was used
+        if isinstance(mgr, DeltaLakeManager):
+            DeltaLakeManager.reset_instance()

@@ -75,20 +75,9 @@ def delta_sandbox(test_config) -> Generator[DeltaLakeManager, None, None]:
     Yields:
         DeltaLakeManager configured for test isolation
     """
-    # Create temporary directory for test
-    test_dir = tempfile.mkdtemp(prefix="delta_test_")
-
-    try:
-        # Create Delta Lake manager with test directory
-        # IMPORTANT: start_workers=False to avoid background threads and signal handlers in tests
-        delta = DeltaLakeManager(base_path=test_dir, start_workers=False)
-
-        yield delta
-
-    finally:
-        # Cleanup: remove temporary directory
-        if os.path.exists(test_dir):
-            shutil.rmtree(test_dir)
+    # Use the factory to get an in-memory manager for tests
+    from src.common.delta_lake import get_delta_manager
+    yield get_delta_manager("memory")
 
 
 @pytest.fixture(scope="function")
