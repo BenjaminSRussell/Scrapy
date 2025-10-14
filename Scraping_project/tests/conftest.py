@@ -392,6 +392,35 @@ def mock_spider_crawler(mock_scrapy_settings):
     return crawler
 
 
+@pytest.fixture(scope="function")
+def test_spider():
+    """
+    Provide a minimal instantiable spider for unit tests.
+    Avoids ValueError: BaseSpider must have a name.
+    """
+    from unittest.mock import MagicMock, patch
+
+    # Patch all external dependencies instantiated in BaseSpider.__init__
+    with patch('src.stage1.base_spider.redis.Redis') as mock_redis, \
+         patch('src.stage1.base_spider.DeltaLakeManager.get_instance') as mock_delta, \
+         patch('src.stage1.base_spider.PostgresManager.get_instance') as mock_postgres:
+
+        # Configure mocks to satisfy __init__ calls
+        mock_redis.return_value.scard.return_value = 0
+        mock_delta.return_value.read.return_value = []
+
+        from src.stage1.base_spider import BaseSpider
+
+        class TestSpider(BaseSpider):
+            name = "test_spider"
+            def start_requests(self):
+                if False:
+                    yield
+                return []
+
+        return TestSpider()
+
+
 # ============================================================================
 # Performance testing fixtures (K6)
 # ============================================================================
