@@ -79,27 +79,27 @@ groups:
 
       # Warning: High consumer lag
       - alert: KafkaHighConsumerLag
-        expr: kafka_consumer_records_lag > 10000
+        expr: max_over_time(kafka_consumergroup_lag_max[5m]) > 10000
         for: 5m
         labels:
           severity: warning
           component: kafka
         annotations:
-          summary: "High Kafka consumer lag detected"
-          description: "Consumer {{ $labels.client_id }} has lag of {{ $value }} messages on topic {{ $labels.topic }}."
+          summary: "High Kafka consumer group lag detected"
+          description: "Consumer group {{ $labels.group }} on topic {{ $labels.topic }} has a max lag of {{ $value }} messages on at least one partition."
           impact: "Medium - Data processing delayed"
           action: "Scale up consumers or investigate processing bottleneck"
 
       # Warning: Very high consumer lag (critical threshold)
       - alert: KafkaVeryHighConsumerLag
-        expr: kafka_consumer_records_lag > 100000
+        expr: max_over_time(kafka_consumergroup_lag_max[5m]) > 100000
         for: 5m
         labels:
           severity: critical
           component: kafka
         annotations:
-          summary: "Very high Kafka consumer lag"
-          description: "Consumer {{ $labels.client_id }} has lag of {{ $value }} messages."
+          summary: "Very high Kafka consumer group lag"
+          description: "Consumer group {{ $labels.group }} on topic {{ $labels.topic }} has a max lag of {{ $value }} messages."
           impact: "High - Significant data processing backlog"
           action: "Immediate action: scale consumers or pause producers"
 

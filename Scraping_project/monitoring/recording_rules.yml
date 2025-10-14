@@ -112,6 +112,30 @@ groups:
       - record: delta:batch_size:avg
         expr: rate(delta_batch_size_sum[5m]) / rate(delta_batch_size_count[5m])
 
+      # --- Consumer Group Lag Aggregation ---
+      # The 'group' label is extracted from 'client_id' assuming the convention '{group}-{identifier}'.
+      # This is necessary because the JMX metric only provides per-partition lag via client_id.
+
+      # Max lag per consumer group (worst partition) - FOR SLO ALERTS
+      - record: kafka_consumergroup_lag_max
+        expr: |
+          max by (topic, group) (
+            label_replace(
+              kafka_consumer_records_lag,
+              "group", "$1", "client_id", "([^-]+).*"
+            )
+          )
+
+      # Sum of lags per consumer group (total debt) - FOR DASHBOARDS
+      - record: kafka_consumergroup_lag_sum
+        expr: |
+          sum by (topic, group) (
+            label_replace(
+              kafka_consumer_records_lag,
+              "group", "$1", "client_id", "([^-]+).*"
+            )
+          )
+
   # ============================================
   # System Resource Metrics
   # ============================================
