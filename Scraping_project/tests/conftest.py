@@ -30,7 +30,7 @@ from scrapy.http import HtmlResponse, Request
 from twisted.internet import reactor
 from twisted.web import server, static
 
-from src.common.config import get_config
+from src.common.config import Config
 from src.common.delta_lake import DeltaLakeManager
 from src.common.postgres_manager import PostgresManager
 
@@ -52,11 +52,11 @@ def test_config() -> dict:
 
     Returns configuration with test-specific overrides.
     """
-    config = get_config()
+    config = Config.get_instance()
     # Override with test-specific settings
     config.set('delta_lake.base_path', './data/test_delta_lake')
     config.set('postgres.database', 'pipeline_metrics_test')
-    return config._config
+    return config.get_raw_config()
 
 
 # ============================================================================
@@ -437,3 +437,15 @@ def pytest_configure(config):
     config.addinivalue_line("markers", "component: marks tests as component tests")
     config.addinivalue_line("markers", "contract: marks tests as contract tests")
     config.addinivalue_line("markers", "performance: marks tests as performance tests")
+
+
+# ============================================================================
+# Singleton Reset Fixture
+# ============================================================================
+
+@pytest.fixture(autouse=True)
+def reset_singletons():
+    """Reset singletons before each test to ensure isolation."""
+    Config.reset_instance()
+    DeltaLakeManager.reset_instance()
+    PostgresManager.reset_instance()

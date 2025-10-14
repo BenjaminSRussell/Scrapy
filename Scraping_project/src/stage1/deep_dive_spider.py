@@ -2,7 +2,7 @@
 
 import logging
 
-from src.common.config import load_config
+from src.common.config import Config
 from src.common.spider_config import get_spider_settings
 from src.stage1.base_spider import BaseSpider
 
@@ -21,7 +21,8 @@ class DeepDiveSpider(BaseSpider):
         """Initialize with optional domain allowlist overrides."""
         super().__init__(*args, **kwargs)
 
-        config = load_config()
+        config_instance = Config.get_instance()
+        config = config_instance._config
         stage1_config = config.get('stage1', {})
         configured_domains = stage1_config.get('allowed_domains', [])
 

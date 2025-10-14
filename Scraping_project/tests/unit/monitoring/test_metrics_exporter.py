@@ -109,9 +109,11 @@ def fake_backends(monkeypatch):
     redis_backend = FakeRedisManager()
     delta_backend = FakeDeltaManager()
 
-    monkeypatch.setattr(exporter_module, 'get_config', lambda: FakeConfig())
+    # Patch the get_instance methods on the classes themselves
+    monkeypatch.setattr(exporter_module.Config, 'get_instance', lambda cls, config_path=None: FakeConfig())
     monkeypatch.setattr(exporter_module, 'get_redis_manager', lambda **kwargs: redis_backend)
-    monkeypatch.setattr(exporter_module, 'get_delta_manager', lambda: delta_backend)
+    monkeypatch.setattr(exporter_module.DeltaLakeManager, 'get_instance', lambda cls, base_path=None, start_workers=True: delta_backend)
+
 
     return redis_backend, delta_backend
 

@@ -15,9 +15,9 @@ from scrapy.http import Response
 from scrapy.spidermiddlewares.httperror import HttpError
 from twisted.internet.error import DNSLookupError, TCPTimedOutError, TimeoutError
 
-from src.common.config import load_config
-from src.common.delta_lake import get_delta_manager
-from src.common.postgres_manager import get_postgres_manager
+from src.common.config import Config
+from src.common.delta_lake import DeltaLakeManager
+from src.common.postgres_manager import PostgresManager
 from src.common.url_extractor import URLExtractor
 from src.items import OffsiteCandidateItem
 from src.stage1.js_detection import JSDetector
@@ -61,7 +61,8 @@ class BaseSpider(scrapy.Spider):
         self.IGNORED_EXTENSIONS = getattr(self, 'settings', {}).get('IGNORED_EXTENSIONS', []) if hasattr(self, 'settings') else []
 
         # Load configuration
-        self.config = load_config()
+        config_instance = Config.get_instance()
+        self.config = config_instance._config
 
         # Shared Redis client for URL de-duplication
         redis_config = self.config.get('redis', {})
@@ -95,8 +96,8 @@ class BaseSpider(scrapy.Spider):
         }
 
         # Initialize managers
-        self.delta = get_delta_manager()
-        self.postgres = get_postgres_manager()
+        self.delta = DeltaLakeManager.get_instance()
+        self.postgres = PostgresManager.get_instance()
 
         # Performance metrics
         self.perf_start_time = datetime.now()

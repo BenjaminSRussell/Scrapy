@@ -283,9 +283,9 @@ kubectl exec -it deployment/scraping-pipeline-scrapy -n scraping-pipeline -- bas
 
 # Inside pod
 python << EOF
-from src.common.delta_lake import get_delta_manager
+from src.common.delta_lake import DeltaLakeManager
 
-delta = get_delta_manager()
+delta = DeltaLakeManager.get_instance()
 seed_urls = [
     {'url': 'https://example.com', 'priority': 1}
 ]

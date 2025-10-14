@@ -1,11 +1,12 @@
 """Helpers for assembling Scrapy settings from config.yml."""
 
-from src.common.config import load_config
+from src.common.config import Config
 
 
 def get_spider_settings(spider_name: str) -> dict:
     """Return the custom_settings block for the requested spider."""
-    config = load_config()
+    config_instance = Config.get_instance()
+    config = config_instance.get_raw_config()
     stage1_config = config.get('stage1', {})
     spider_config = stage1_config.get('spiders', {}).get(spider_name, {})
 

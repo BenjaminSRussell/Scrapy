@@ -400,29 +400,32 @@ class PostgresManager:
             self.connection_pool.closeall()
             logger.info("PostgreSQL connection pool closed")
 
+    # Class-level instance for singleton pattern
+    _instance: "PostgresManager | None" = None
 
-# Global singleton
-_postgres_manager: PostgresManager | None = None
-
-
-def get_postgres_manager() -> PostgresManager | None:
-    """Get or create global PostgreSQL manager.
-
-    Returns:
-        PostgresManager instance or None if credentials not configured
-    """
-    global _postgres_manager
-
-    if _postgres_manager is None:
-        # Only create if password is available
-        if os.getenv('DB_PASSWORD'):
-            try:
-                _postgres_manager = PostgresManager()
-            except Exception as e:
-                logger.warning(f"PostgreSQL not available: {e}")
+    @classmethod
+    def get_instance(cls) -> "PostgresManager | None":
+        """
+        Get or create global PostgreSQL manager.
+        Returns:
+            PostgresManager instance or None if credentials not configured
+        """
+        if cls._instance is None:
+            # Only create if password is available
+            if os.getenv('DB_PASSWORD'):
+                try:
+                    cls._instance = cls()
+                except Exception as e:
+                    logger.warning(f"PostgreSQL not available: {e}")
+                    return None
+            else:
+                logger.info("PostgreSQL disabled - DB_PASSWORD not set")
                 return None
-        else:
-            logger.info("PostgreSQL disabled - DB_PASSWORD not set")
-            return None
+        return cls._instance
 
-    return _postgres_manager
+    @classmethod
+    def reset_instance(cls):
+        """Reset the singleton instance (useful for testing)."""
+        if cls._instance:
+            cls._instance.close()
+        cls._instance = None
