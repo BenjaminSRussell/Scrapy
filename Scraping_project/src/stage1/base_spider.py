@@ -46,12 +46,20 @@ class BaseSpider(scrapy.Spider):
     - name: Spider name
     - custom_settings: Spider-specific settings dict
     """
+    name = "base"
 
     # Follow standard redirect status codes
     handle_httpstatus_list = [301, 302, 303, 307, 308]
 
+    @classmethod
+    def test_factory(cls, **kw):
+        """Return a bare instance for tests."""
+        return cls(name=kw.pop("name", "test_base"), **kw)
+
     def __init__(self, *args, **kwargs):
         """Initialize base spider with shared resources."""
+        # Allow name to be overridden for testing
+        self.name = kwargs.pop("name", self.name)
         super().__init__(*args, **kwargs)
 
         # Limit crawl to uconn.edu domains (including subdomains)

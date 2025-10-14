@@ -42,6 +42,21 @@ class IntelligentRetryMiddleware(RetryMiddleware):
         # Per-domain retry tracking
         self.domain_retry_counts = {}
         self.domain_last_retry = {}
+        self._rng = random.Random(42)
+
+    def _calculate_backoff_delay(self, attempt: int, base: float | None = None,
+                                 max_backoff: float | None = None, jitter: float | None = None) -> float:
+        base = base if base is not None else getattr(self, "base_backoff", 0.5)
+        max_backoff = max_backoff if max_backoff is not None else getattr(self, "max_backoff", 60.0)
+        # exponential
+        delay = base * (2 ** (attempt - 1))
+        # deterministic jitter without importing random here:
+        # use a pre-seeded RNG on the instance, created in __init__ once.
+        j = 0.0
+        if jitter:
+            j = (self._rng.random() * 2 - 1.0) * jitter  # [-jitter, +jitter]
+        delay = min(max(delay + j, 0.0), max_backoff)
+        return delay
 
     def _classify_status(self, status: int) -> str:
         """Classify HTTP status code.
