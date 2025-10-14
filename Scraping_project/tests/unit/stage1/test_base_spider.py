@@ -3,9 +3,10 @@
 Tests core spider functionality, URL extraction, and response handling.
 """
 
+from unittest.mock import Mock, patch
+
 import pytest
 from scrapy.http import HtmlResponse, Request
-from unittest.mock import Mock, patch, MagicMock
 
 from src.stage1.base_spider import BaseSpider
 

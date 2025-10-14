@@ -3,9 +3,9 @@
 Tests real Redis operations with actual Redis instance.
 """
 
-import pytest
 import time
-import json
+
+import pytest
 
 from src.common.redis_manager import RedisManager
 

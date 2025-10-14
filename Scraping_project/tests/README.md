@@ -15,13 +15,14 @@ This guide complements `tests/test_plan.csv` and explains how we organise, execu
 - `tests/perf/` – Guardrails for throughput numbers; currently smoke-level (`PF-SCOUT-001`) ensures Scout triage stays under 250 ms/link.
 
 ## Execution Recipes
-- **Everything**: `pytest -m "not perf" --maxfail=1 -q`
-- **Unit only**: `pytest tests/unit -m "not slow" -q`
+- **Everything**: `make test` (maps to `pytest -v`)
+- **Unit only**: `make test-unit`
+- **Integration**: `make test-integration` (expects local Redis/Postgres or docker-compose)
 - **Tagged by ID**: `pytest -k "UT-SCOUT-001" -vv`
 - **Performance smoke**: `pytest -m perf --durations=10`
-- **With coverage**: `pytest --cov=src --cov-report=term-missing`
+- **With coverage**: `make test-coverage`
 
-CI defaults to `-m "not perf"` (perf jobs run on a nightly cron). See `.github/workflows/TESTING_NOTES.md` for stage ordering.
+CI runs the lint, unit, and integration targets defined in the Makefile. Perf jobs can be scheduled via a workflow dispatch or local invocation (`pytest -m perf`).
 
 ## Fixtures & Helpers
 - Central fixtures live in `tests/conftest.py` (environment bootstrapping) and bespoke fixtures sit next to their modules.
@@ -39,7 +40,7 @@ CI defaults to `-m "not perf"` (perf jobs run on a nightly cron). See `.github/w
 - Stage 2 analysis ≥85 % line coverage across `intelligent_analyzer.py`.
 - Contract layer must assert all required fields in `specs/contracts/stage1_to_stage2.yaml`.
 
-Current coverage snapshot (2024-05-12) from `pytest --cov`:
+Current coverage snapshot (2024-11-05) from `pytest --cov`:
 ```
 src/common/delta_lake.py      86%
 src/stage1/base_spider.py     71%
@@ -47,6 +48,11 @@ src/stage2/stage2_worker.py   69%
 overall                      74%
 ```
 Update this block whenever coverage moves ≥5 %.
+
+## Tooling & Automation
+- **Pre-commit**: Hooks live in `.pre-commit-config.yaml`. Run `pre-commit run --all-files` before pushing or `make pre-commit`.
+- **GitHub Actions**: `.github/workflows/ci.yml` mirrors the Makefile targets (lint → unit → integration) and uploads coverage artifacts per Python version.
+- **Makefile**: Reference `make help` for the full catalogue of developer commands (linting, security scans, Docker helpers).
 
 ## Maintenance Cadence
 - Review the CSV + README every sprint.

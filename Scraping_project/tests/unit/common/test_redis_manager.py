@@ -3,9 +3,10 @@
 Tests Redis connection management, queue operations, and caching functionality.
 """
 
-import pytest
-from unittest.mock import Mock, patch, MagicMock
 import json
+from unittest.mock import patch
+
+import pytest
 
 from src.common.redis_manager import RedisManager
 

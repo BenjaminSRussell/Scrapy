@@ -7,18 +7,15 @@ on:
     branches: [ main ]
 
 jobs:
-  test-and-lint:
+  smoke:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-
-      - name: Build and start services
-        run: docker-compose up -d --build
-
-      - name: Run linting
-        run: docker-compose exec scrapy-app ruff check .
-
-      - name: Run tests
-        run: docker-compose exec scrapy-app pytest
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+      - name: Install dependencies
+        run: make install-dev
+      - name: Run quick lint & test
+        run: make quick-check

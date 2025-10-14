@@ -14,9 +14,17 @@ import shutil
 import tempfile
 from collections.abc import Generator
 from pathlib import Path
+from typing import Any
 
 import pytest
-import redis
+
+try:  # pragma: no cover - optional dependency guard
+    import redis  # type: ignore
+except ImportError:  # pragma: no cover
+    try:
+        import fakeredis as redis  # type: ignore
+    except ImportError:
+        redis = None
 from playwright.async_api import async_playwright
 from scrapy.http import HtmlResponse, Request
 from twisted.internet import reactor
@@ -297,11 +305,14 @@ def test_html_response() -> HtmlResponse:
 # ============================================================================
 
 @pytest.fixture(scope="session")
-def redis_client(test_config) -> Generator[redis.Redis, None, None]:
+def redis_client(test_config) -> Generator[Any, None, None]:
     """Create Redis client for test queue operations.
 
     K6: Session-scoped Redis client for message queue testing.
     """
+    if redis is None:
+        pytest.skip("Redis client not available; install redis or fakeredis")
+
     redis_config = test_config.get('redis', {})
     client = redis.Redis(
         host=redis_config.get('host', 'localhost'),
@@ -318,7 +329,7 @@ def redis_client(test_config) -> Generator[redis.Redis, None, None]:
 
 
 @pytest.fixture(scope="function")
-def redis_clean(redis_client) -> redis.Redis:
+def redis_clean(redis_client) -> Any:
     """Clean Redis state for each test.
 
     K6: Function-scoped fixture that flushes test DB before each test.

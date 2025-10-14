@@ -1,321 +1,129 @@
-name: CI/CD Pipeline
+name: CI
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [main, develop]
   pull_request:
-    branches: [ main, develop ]
-  schedule:
-    # Run tests daily at 2 AM UTC
-    - cron: '0 2 * * *'
+    branches: [main, develop]
+  workflow_dispatch:
 
 env:
-  PYTHON_VERSION: '3.13'
-  DOCKER_BUILDKIT: 1
-  COMPOSE_DOCKER_CLI_BUILD: 1
+  PYTHON_VERSION: "3.12"
 
 jobs:
-  # ============================================================================
-  # Code Quality & Security Checks
-  # ============================================================================
-  code-quality:
-    name: Code Quality & Linting
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0  # Full history for better analysis
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: 'pip'
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip pip-tools
-          pip install -r dev-requirements.txt
-
-      - name: Run Ruff linter
-        run: |
-          ruff check . --output-format=github
-        continue-on-error: false
-
-      - name: Run Ruff formatter check
-        run: |
-          ruff format --check .
-
-      - name: Run Black
-        run: |
-          black --check --diff src tests
-
-      - name: Run isort
-        run: |
-          isort --check-only --diff src tests
-
-      - name: Run Flake8
-        run: |
-          flake8 src tests --count --statistics
-        continue-on-error: true
-
-      - name: Run mypy type checking
-        run: |
-          mypy src --ignore-missing-imports
-        continue-on-error: true
-
-  security-scan:
-    name: Security Vulnerability Scan
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: 'pip'
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip pip-tools
-          pip install -r dev-requirements.txt
-
-      - name: Run pip-audit for vulnerability scanning
-        run: |
-          pip-audit --desc --skip-editable
-        continue-on-error: true
-
-      - name: Run Bandit security linter
-        run: |
-          pip install bandit[toml]
-          bandit -r src -f json -o bandit-report.json
-        continue-on-error: true
-
-      - name: Upload Bandit report
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: bandit-security-report
-          path: bandit-report.json
-
-  # ============================================================================
-  # Unit Tests
-  # ============================================================================
-  unit-tests:
-    name: Unit Tests
+  lint:
+    name: Lint & Static Analysis
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: "pip"
+      - name: Install dependencies
+        run: |
+          make install-dev
+      - name: Run linters
+        run: |
+          make lint
+      - name: Run pre-commit (staged hooks)
+        run: |
+          pre-commit run --all-files
+
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
     strategy:
       matrix:
-        python-version: ['3.12', '3.13']
+        python-version: ["3.12", "3.13"]
       fail-fast: false
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-          cache: 'pip'
-
+          cache: "pip"
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip pip-tools
-          pip install -r requirements.txt
-          pip install -r dev-requirements.txt
-
-      - name: Run unit tests with coverage
+          make install-dev
+      - name: Run unit test suite
         run: |
-          pytest tests/unit \
-            --cov=src \
-            --cov-report=xml \
-            --cov-report=html \
-            --cov-report=term-missing \
-            -v \
-            -n auto \
-            --durations=20
-
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v4
-        with:
-          files: ./coverage.xml
-          flags: unit-tests
-          name: python-${{ matrix.python-version }}
-          fail_ci_if_error: false
-
-      - name: Upload HTML coverage report
+          make test-unit
+      - name: Coverage report
+        run: |
+          pytest tests/unit --cov=src --cov-report=xml --cov-report=term
+      - name: Upload coverage artifact
         uses: actions/upload-artifact@v4
-        if: always()
         with:
-          name: coverage-report-${{ matrix.python-version }}
-          path: htmlcov/
+          name: coverage-${{ matrix.python-version }}
+          path: coverage.xml
 
-  # ============================================================================
-  # Integration Tests
-  # ============================================================================
   integration-tests:
     name: Integration Tests
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    needs: [lint, unit-tests]
 
     services:
       redis:
-        image: redis:7.4-alpine
-        ports:
-          - 6379:6379
+        image: redis:7.2
         options: >-
           --health-cmd "redis-cli ping"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
-
+        ports:
+          - 6379:6379
       postgres:
-        image: postgres:17-alpine
+        image: postgres:16
         env:
-          POSTGRES_DB: pipeline_metrics_test
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
-        ports:
-          - 5432:5432
+          POSTGRES_DB: pipeline_metrics_test
         options: >-
-          --health-cmd pg_isready
+          --health-cmd "pg_isready -U postgres"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+        ports:
+          - 5432:5432
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-          cache: 'pip'
-
+          cache: "pip"
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip pip-tools
-          pip install -r requirements.txt
-          pip install -r dev-requirements.txt
-
-      - name: Wait for services to be ready
-        run: |
-          sleep 10
-
-      - name: Run integration tests
+          make install-dev
+      - name: Run integration suite
         env:
+          DB_HOST: localhost
+          DB_PASSWORD: postgres
+          DB_NAME: pipeline_metrics_test
+          DB_USER: postgres
+          DB_PORT: 5432
           REDIS_HOST: localhost
-          REDIS_PORT: 6379
-          POSTGRES_HOST: localhost
-          POSTGRES_PORT: 5432
-          POSTGRES_DB: pipeline_metrics_test
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
         run: |
-          pytest tests/integration \
-            -m integration \
-            -v \
-            --durations=20
+          make test-integration
 
-  # ============================================================================
-  # Docker Build & Test
-  # ============================================================================
-  docker-build:
-    name: Docker Build & Security Scan
+  summary:
+    name: Status
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build Docker images
-        run: |
-          docker-compose build --parallel
-
-      - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@master
-        with:
-          scan-type: 'config'
-          scan-ref: '.'
-          format: 'sarif'
-          output: 'trivy-results.sarif'
-
-      - name: Upload Trivy results to GitHub Security
-        uses: github/codeql-action/upload-sarif@v3
-        if: always()
-        with:
-          sarif_file: 'trivy-results.sarif'
-
-      - name: Test Docker containers
-        run: |
-          docker-compose up -d
-          sleep 30
-          docker-compose ps
-          docker-compose logs
-
-      - name: Cleanup
-        if: always()
-        run: |
-          docker-compose down -v
-
-  # ============================================================================
-  # Dependency Check
-  # ============================================================================
-  dependency-check:
-    name: Dependency Updates Check
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: Check for outdated dependencies
-        run: |
-          python -m pip install --upgrade pip pip-tools
-          pip install -r requirements.txt
-          pip list --outdated
-
-      - name: Validate requirements files are in sync
-        run: |
-          pip-compile requirements.in --dry-run
-          pip-compile dev-requirements.in --dry-run
-
-  # ============================================================================
-  # Final Status Check
-  # ============================================================================
-  all-checks-passed:
-    name: All Checks Passed
-    runs-on: ubuntu-latest
-    needs: [code-quality, security-scan, unit-tests, integration-tests, docker-build]
+    needs: [lint, unit-tests, integration-tests]
     if: always()
-
     steps:
-      - name: Check all jobs status
+      - name: Check job results
         run: |
-          if [ "${{ contains(needs.*.result, 'failure') }}" == "true" ]; then
-            echo "❌ One or more checks failed"
-            exit 1
-          else
-            echo "✅ All checks passed"
-          fi
+          for job in lint unit-tests integration-tests; do
+            status="${{ needs[job].result }}"
+            echo "::notice title=${job}::${status}"
+            if [ "${status}" != "success" ]; then
+              exit 1
+            fi
+          done

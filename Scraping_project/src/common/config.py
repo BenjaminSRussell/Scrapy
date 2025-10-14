@@ -157,13 +157,6 @@ def get_config(config_path: str | None = None) -> Config:
 
 def load_config(config_path: str | None = None) -> dict[str, Any]:
     """Return the raw config dictionary via the shared Config instance."""
-
-    Args:
-        config_path: Optional path to config file
-
-    Returns:
-        Configuration dictionary
-    """
     config = get_config(config_path)
     return config._config
 

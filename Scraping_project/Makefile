@@ -45,11 +45,11 @@ test: ## Run all tests
 
 test-unit: ## Run unit tests only
 	@echo "$(BLUE)Running unit tests...$(NC)"
-	pytest tests/unit -v -m unit
+	pytest tests/unit -v
 
 test-integration: ## Run integration tests (requires services)
 	@echo "$(BLUE)Running integration tests...$(NC)"
-	pytest tests/integration -v -m integration
+	pytest tests/integration -v
 
 test-fast: ## Run fast tests only (excluding slow)
 	@echo "$(BLUE)Running fast tests...$(NC)"
