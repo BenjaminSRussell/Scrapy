@@ -12,8 +12,8 @@ from typing import Any
 from datasketch import MinHash, MinHashLSH
 
 from src.common.constants import SUMMARY_LIMITS
-from src.common.delta_lake import get_delta_manager
-from src.common.postgres_manager import get_postgres_manager
+from src.common.delta_lake import DeltaLakeManager
+from src.common.postgres_manager import PostgresManager
 
 logger = logging.getLogger(__name__)
 
@@ -26,8 +26,8 @@ class Stage3Worker:
         self.max_concurrent = max_concurrent
         self.batch_size = batch_size
         self.semaphore = asyncio.Semaphore(max_concurrent)
-        self.delta = get_delta_manager()
-        self.postgres = get_postgres_manager()
+        self.delta = DeltaLakeManager.get_instance()
+        self.postgres = PostgresManager.get_instance()
         self.SIMILARITY_THRESHOLD = 0.3
 
     async def run(self):

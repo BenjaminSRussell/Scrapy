@@ -9,6 +9,7 @@ This module provides:
 
 import hashlib
 import logging
+import json
 from datetime import datetime
 from typing import Any
 from urllib.parse import urlparse
@@ -388,7 +389,6 @@ class RedisManager:
             data['timestamp'] = str(datetime.now())
 
         # Push to list (FIFO using LPUSH + RPOP)
-        import json
         self.redis.lpush(key, json.dumps(data))
 
     def pop_from_queue(self, queue_name: str, timeout: int = 0) -> dict[str, Any] | None:
@@ -409,7 +409,6 @@ class RedisManager:
             result = self.redis.rpop(key)
 
         if result:
-            import json
             if isinstance(result, tuple):
                 # brpop returns (key, value)
                 return json.loads(result[1])
@@ -493,10 +492,8 @@ class RedisManager:
         self.redis.delete(queue_key)
         logger.warning("Priority queue cleared")
 
-
 # Global instance
 _redis_manager: RedisManager | None = None
-
 
 def get_redis_manager(
     host: str = "localhost",
