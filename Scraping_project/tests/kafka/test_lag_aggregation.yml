@@ -1,0 +1,44 @@
+rule_files:
+  - ../../monitoring/recording_rules.yml
+  - ../../monitoring/alerting_rules.yml
+
+evaluation_interval: 1m
+
+tests:
+  - name: Kafka Lag Aggregation Semantics
+    interval: 1m
+    input_series:
+      - series: 'kafka_consumer_records_lag{client_id="g1-consumer-1", topic="t1", partition="0"}'
+        values: '0+0x10'
+      - series: 'kafka_consumer_records_lag{client_id="g1-consumer-2", topic="t1", partition="1"}'
+        values: '2+0x10'
+      - series: 'kafka_consumer_records_lag{client_id="g1-consumer-3", topic="t1", partition="2"}'
+        values: '20000+0x10'
+
+    promql_expr_test:
+      - expr: kafka_consumergroup_lag_max{topic="t1", group="g1"}
+        eval_time: 5m
+        exp_samples:
+          - labels: '{__name__="kafka_consumergroup_lag_max", topic="t1", group="g1"}'
+            value: 20000
+
+      - expr: kafka_consumergroup_lag_sum{topic="t1", group="g1"}
+        eval_time: 5m
+        exp_samples:
+          - labels: '{__name__="kafka_consumergroup_lag_sum", topic="t1", group="g1"}'
+            value: 20002
+
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: KafkaHighConsumerLag
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              component: kafka
+              topic: t1
+              group: g1
+            exp_annotations:
+              summary: "High Kafka consumer group lag detected"
+              description: "Consumer group g1 on topic t1 has a max lag of 20000 messages on at least one partition."
+              impact: "Medium - Data processing delayed"
+              action: "Scale up consumers or investigate processing bottleneck"

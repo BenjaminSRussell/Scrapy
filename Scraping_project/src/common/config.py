@@ -140,29 +140,28 @@ class Config:
         """Return message queue configuration block."""
         return self.get_section('message_queues')
 
+    # Class-level instance for singleton pattern
+    _instance: "Config | None" = None
 
-# Global configuration instance
-_config: Config | None = None
+    @classmethod
+    def get_instance(cls, config_path: str | None = None) -> "Config":
+        """
+        Return the shared Config instance, creating it on first use.
 
+        Note:
+            Once created, the singleton instance persists. Subsequent calls with
+            different parameters will return the existing instance without
+            modification.
+        """
+        if cls._instance is None:
+            cls._instance = cls(config_path)
+        return cls._instance
 
-def get_config(config_path: str | None = None) -> Config:
-    """Return the shared Config instance, creating it on first use."""
-    global _config
+    @classmethod
+    def reset_instance(cls):
+        """Reset the singleton instance (useful for testing)."""
+        cls._instance = None
 
-    if _config is None:
-        _config = Config(config_path)
-
-    return _config
-
-
-def load_config(config_path: str | None = None) -> dict[str, Any]:
-    """Return the raw config dictionary via the shared Config instance."""
-    config = get_config(config_path)
-    return config._config
-
-
-def reload_config():
-    """Reload global configuration from file."""
-    global _config
-    if _config:
-        _config.reload()
+    def get_raw_config(self) -> dict[str, Any]:
+        """Return the raw configuration dictionary."""
+        return self._config

@@ -13,7 +13,7 @@ from pathlib import Path
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent))
 
-from src.common.config import get_config
+from src.common.config import Config
 from src.common.redis_manager import get_redis_manager
 
 logging.basicConfig(
@@ -28,7 +28,7 @@ class LakeDrainer:
 
     def __init__(self):
         """Initialize drainer with config."""
-        self.config = get_config()
+        self.config = Config.get_instance()
 
         redis_config = self.config.redis_config
         self.redis = get_redis_manager(

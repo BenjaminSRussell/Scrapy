@@ -33,7 +33,7 @@ def fix_kafka_panel(dashboard):
                     logger.info(f"    Fixed: {old_expr} -> {target['expr']}")
                 elif old_expr == 'kafka_consumer_lag':
                     target['expr'] = 'kafka_consumer_records_lag'
-                    target['legendFormat'] = '{{consumer_group}}-{{topic}}-p{{partition}}'
+                    target['legendFormat'] = '{{client_id}}-{{topic}}-p{{partition}}'
                     logger.info(f"    Fixed: {old_expr} -> kafka_consumer_records_lag")
 
             # Update description

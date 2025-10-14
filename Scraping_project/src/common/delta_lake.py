@@ -8,8 +8,23 @@ import threading
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
-
 from src.common.config import get_config
+try:
+    import pyarrow as pa
+    import pyarrow.csv as pa_csv
+    import pyarrow.parquet as pq
+    from deltalake import DeltaTable, WriterProperties, write_deltalake
+    DELTA_AVAILABLE = True
+except ImportError:
+    DELTA_AVAILABLE = False
+    DeltaTable = None
+    write_deltalake = None
+    WriterProperties = None
+    pa = None
+    pa_csv = None
+    pq = None
+
+from src.common.config import Config
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +37,7 @@ class DeltaLakeManager:
         # Heavy imports are lazy-loaded in methods that require them
 
         # Load configuration
-        config = get_config()
+        config = Config.get_instance()
 
         # Get base_path from config (defaults to ./data/delta_lake if not specified)
         if base_path is None:
@@ -558,27 +573,37 @@ class DeltaLakeManager:
 
         return results
 
+    # Class-level instance for singleton pattern
+    _instance: "DeltaLakeManager | None" = None
 
-# Global singleton
-_delta_manager = None
+    @classmethod
+    def get_instance(
+        cls, base_path: str | None = None, start_workers: bool = True
+    ) -> "DeltaLakeManager":
+        """
+        Get or create global Delta Lake manager.
 
+        Args:
+            base_path: Optional base path for Delta tables (overrides config)
+            start_workers: If True, start background worker threads and register
+                           signal handlers. Set to False for testing.
 
-def get_delta_manager(base_path: str | None = None, start_workers: bool = True) -> DeltaLakeManager:
-    """Get or create global Delta Lake manager.
+        Returns:
+            Singleton DeltaLakeManager instance
 
-    Args:
-        base_path: Optional base path for Delta tables (overrides config)
-        start_workers: If True, start background worker threads and register
-                      signal handlers. Set to False for testing.
+        Note:
+            Once created, the singleton instance persists. Subsequent calls with
+            different parameters will return the existing instance without
+            modification.
+        """
+        if cls._instance is None:
+            cls._instance = cls(base_path=base_path, start_workers=start_workers)
+        return cls._instance
 
-    Returns:
-        Singleton DeltaLakeManager instance
-
-    Note:
-        Once created, the singleton instance persists. Subsequent calls with
-        different parameters will return the existing instance without modification.
-    """
-    global _delta_manager
-    if _delta_manager is None:
-        _delta_manager = DeltaLakeManager(base_path=base_path, start_workers=start_workers)
-    return _delta_manager
+    @classmethod
+    def reset_instance(cls):
+        """Reset the singleton instance (useful for testing)."""
+        if cls._instance:
+            # Gracefully shut down workers to prevent resource leaks
+            cls._instance.shutdown()
+        cls._instance = None

@@ -232,8 +232,8 @@ def cmd_drain(args):
 
 def cmd_export(args):
     """Export Delta Lake tables."""
-    from src.common.delta_lake import get_delta_manager
-    manager = get_delta_manager()
+    from src.common.delta_lake import DeltaLakeManager
+    manager = DeltaLakeManager.get_instance()
 
     if args.table:
         logger.info(f"Exporting table: {args.table}")
@@ -258,8 +258,8 @@ def cmd_export(args):
 
 def cmd_health(args):
     """Check pipeline health."""
-    from src.common.delta_lake import get_delta_manager
-    manager = get_delta_manager()
+    from src.common.delta_lake import DeltaLakeManager
+    manager = DeltaLakeManager.get_instance()
 
     logger.info("Pipeline Health Check")
     logger.info("=" * 60)
@@ -287,7 +287,7 @@ def cmd_reset(args):
     import pandas as pd
 
     from src.common.constants import DELTA_LAKE
-    from src.common.delta_lake import get_delta_manager
+    from src.common.delta_lake import DeltaLakeManager
 
     logger.info("🔥 RESETTING DELTA LAKE...")
     logger.warning("This will DELETE all data in Delta Lake tables!")
@@ -306,7 +306,7 @@ def cmd_reset(args):
 
     # Recreate Delta Lake manager (will recreate directories)
     logger.info("Recreating Delta Lake structure...")
-    manager = get_delta_manager()
+    manager = DeltaLakeManager.get_instance()
     logger.info("✅ Delta Lake structure recreated")
 
     # Re-seed from CSV
@@ -369,10 +369,10 @@ def cmd_clean(args):
 
 def cmd_validate(args):
     """Validate Delta Lake tables."""
-    from src.common.delta_lake import get_delta_manager
+    from src.common.delta_lake import DeltaLakeManager
 
     logger.info("🔍 Validating Delta Lake tables...")
-    manager = get_delta_manager()
+    manager = DeltaLakeManager.get_instance()
 
     tables = manager.list_tables()
     issues = []

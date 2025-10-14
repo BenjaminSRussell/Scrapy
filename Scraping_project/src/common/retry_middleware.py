@@ -43,6 +43,21 @@ class IntelligentRetryMiddleware(RetryMiddleware):
         self.domain_retry_counts = {}
         self.domain_last_retry = {}
 
+    def _classify_status(self, status: int) -> str:
+        """Classify HTTP status code.
+
+        Args:
+            status: HTTP status code
+
+        Returns:
+            'retry', 'fail', or 'pass'
+        """
+        if status in self.TRANSIENT_STATUS_CODES:
+            return 'retry'
+        if status in self.PERMANENT_STATUS_CODES:
+            return 'fail'
+        return 'pass'
+
     def process_response(self, request: Request, response: Response, spider: Spider):
         """Process response and determine if retry needed.
 
@@ -54,19 +69,18 @@ class IntelligentRetryMiddleware(RetryMiddleware):
         Returns:
             Response or new Request (for retry)
         """
-        # Check if this is a permanent error
-        if response.status in self.PERMANENT_STATUS_CODES:
+        action = self._classify_status(response.status)
+
+        if action == 'retry':
+            return self._retry_with_backoff(request, response, spider)
+
+        if action == 'fail':
             logger.info(
                 f"Permanent error {response.status} for {request.url[:80]}, "
                 f"not retrying"
             )
-            return response  # Don't retry
+            return response
 
-        # Check if this is a transient error that should retry
-        if response.status in self.TRANSIENT_STATUS_CODES:
-            return self._retry_with_backoff(request, response, spider)
-
-        # Success or other status - pass through
         return response
 
     def process_exception(self, request: Request, exception: Exception, spider: Spider):
@@ -113,7 +127,7 @@ class IntelligentRetryMiddleware(RetryMiddleware):
 
         if retries <= max_retry_times:
             # Calculate exponential backoff delay
-            delay = self._calculate_backoff_delay(retries)
+            delay = self._compute_backoff(retries)
 
             # Extract reason message
             if isinstance(reason, Response):
@@ -154,7 +168,7 @@ class IntelligentRetryMiddleware(RetryMiddleware):
             )
             return None
 
-    def _calculate_backoff_delay(self, retry_count: int) -> float:
+    def _compute_backoff(self, retry_count: int) -> float:
         """Calculate exponential backoff delay.
 
         Formula: min(backoff_base^retry_count, backoff_max)
@@ -253,10 +267,10 @@ class CircuitBreakerMiddleware:
             Middleware instance
         """
         # Get Redis manager
-        from src.common.config import get_config
+        from src.common.config import Config
         from src.common.redis_manager import get_redis_manager
 
-        config = get_config()
+        config = Config.get_instance()
         redis_config = config.redis_config
 
         redis_manager = get_redis_manager(
