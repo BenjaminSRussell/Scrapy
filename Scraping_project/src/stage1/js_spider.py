@@ -11,6 +11,7 @@ from scrapy.http import Response
 
 from src.common.config import load_config
 from src.common.delta_lake import get_delta_manager
+from src.stage1.base_spider import BaseSpider
 from src.common.spider_config import get_spider_settings
 
 logger = logging.getLogger(__name__)
@@ -217,7 +218,7 @@ class JavaScriptSpider(scrapy.Spider):
             if absolute_url.startswith('http'):
                 urls.append(absolute_url)
 
-        return urls
+        return [BaseSpider.normalize_url(url) for url in urls]
 
     def _hash_url(self, url: str) -> str:
         """Hash URL using SHA256 for consistency with base_spider."""

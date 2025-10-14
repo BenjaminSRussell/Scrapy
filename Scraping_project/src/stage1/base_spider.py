@@ -7,7 +7,7 @@ import time
 from collections import deque
 from collections.abc import Iterator
 from datetime import datetime
-from urllib.parse import urlparse
+from urllib.parse import ParseResult, parse_qs, urlencode, urlparse
 
 import redis
 import scrapy
@@ -156,6 +156,51 @@ class BaseSpider(scrapy.Spider):
         """Return the full SHA256 hash of a URL for deduplication."""
         return hashlib.sha256(url.encode('utf-8')).hexdigest()
 
+    @staticmethod
+    def normalize_url(url: str) -> str:
+        """Normalize a URL for consistency.
+
+        - Lowercase scheme and hostname
+        - Remove fragment
+        - Remove common tracking parameters
+        """
+        try:
+            parsed = urlparse(url)
+
+            # Reconstruct query string without tracking parameters
+            query_params = parse_qs(parsed.query)
+
+            # List of trackers to remove (case-insensitive)
+            trackers_to_remove = [
+                'utm_source', 'utm_medium', 'utm_campaign',
+                'utm_term', 'utm_content', 'gclid', 'fbclid'
+            ]
+
+            # Filter out tracking parameters
+            filtered_params = {
+                k: v for k, v in query_params.items()
+                if k.lower() not in trackers_to_remove
+            }
+
+            # Rebuild the URL
+            new_query = urlencode(filtered_params, doseq=True)
+
+            # Create a new ParseResult tuple
+            normalized = ParseResult(
+                scheme=parsed.scheme.lower(),
+                netloc=parsed.netloc.lower(),
+                path=parsed.path,
+                params=parsed.params,
+                query=new_query,
+                fragment=""  # Remove fragment
+            )
+
+            return normalized.geturl()
+
+        except Exception:
+            # If parsing fails, return the original URL
+            return url
+
     def _load_seed_urls(self):
         """Return new seed URLs from Delta Lake that are not already in Redis."""
         try:
@@ -302,7 +347,8 @@ class BaseSpider(scrapy.Spider):
             base_url=response.url,
             allowed_domains=self.allowed_domains
         )
-        return list(extractor.discover_all_urls(response))
+        discovered_urls = extractor.discover_all_urls(response)
+        return [self.normalize_url(url) for url in discovered_urls]
 
     def _process_discovered_urls(self, response: Response, discovered_urls: list[str], depth: int) -> Iterator:
         """Deduplicate discovered URLs, track skips, and queue new crawl requests."""
