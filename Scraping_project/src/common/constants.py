@@ -29,6 +29,14 @@ MAX_CONCURRENT_REQUESTS: Final[int] = 16
 MAX_PAGE_SIZE: Final[int] = 5 * 1024 * 1024  # 5MB
 MIN_CONTENT_LENGTH: Final[int] = 100
 
+# Summarization limits
+SUMMARY_LIMITS: Final[dict[str, int]] = {
+    "min_length": 30,
+    "max_length": 150,
+    "chunk_size": 1024,  # BART model limit
+    "extractive_max_sentences": 5,
+}
+
 # Logging
 LOG_FORMAT: Final[str] = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 
