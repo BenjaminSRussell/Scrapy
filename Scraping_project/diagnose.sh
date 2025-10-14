@@ -12,8 +12,8 @@ docker-compose ps --format "table {{.Name}}\t{{.Status}}" | head -20
 echo ""
 echo "2. Seed URLs in Docker Volume:"
 docker-compose exec -T scrapy-app python -c "
-from src.common.delta_lake import get_delta_manager
-dm = get_delta_manager(start_workers=False)
+from src.common.delta_lake import DeltaLakeManager
+dm = DeltaLakeManager.get_instance(start_workers=False)
 count = dm.count('seed_urls')
 print(f'  Seed URLs: {count}')
 " 2>/dev/null || echo "  ERROR: Could not check seed URLs"

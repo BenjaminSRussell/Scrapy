@@ -10,8 +10,8 @@ from prometheus_client import Counter, Gauge, Histogram, start_http_server
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.common.config import get_config
-from src.common.delta_lake import get_delta_manager
+from src.common.config import Config
+from src.common.delta_lake import DeltaLakeManager
 from src.common.redis_manager import get_redis_manager
 
 logging.basicConfig(
@@ -121,7 +121,7 @@ class MetricsExporter:
         self.update_interval = update_interval
 
         # Initialize managers
-        config = get_config()
+        config = Config.get_instance()
 
         redis_config = config.redis_config
         self.redis = get_redis_manager(
@@ -131,7 +131,7 @@ class MetricsExporter:
             password=redis_config.get('password'),
         )
 
-        self.delta = get_delta_manager()
+        self.delta = DeltaLakeManager.get_instance()
 
         # Track previous counts for rate calculation
         self.previous_counts = {}

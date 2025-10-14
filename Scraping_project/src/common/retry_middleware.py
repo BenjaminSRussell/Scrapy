@@ -267,10 +267,10 @@ class CircuitBreakerMiddleware:
             Middleware instance
         """
         # Get Redis manager
-        from src.common.config import get_config
+        from src.common.config import Config
         from src.common.redis_manager import get_redis_manager
 
-        config = get_config()
+        config = Config.get_instance()
         redis_config = config.redis_config
 
         redis_manager = get_redis_manager(
