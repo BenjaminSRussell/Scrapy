@@ -415,4 +415,6 @@ async def run_stage2_worker():
 
 
 if __name__ == '__main__':
+    from src.common.logging_utils import setup_logging
+    setup_logging()
     asyncio.run(run_stage2_worker())

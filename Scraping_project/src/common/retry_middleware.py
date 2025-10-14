@@ -18,53 +18,76 @@ from scrapy.utils.response import response_status_message
 logger = logging.getLogger(__name__)
 
 
+# --- Centralized Retry Logic ---
+
+RETRYABLE_STATUS = {408, 429, 500, 502, 503, 504}
+"""Set of HTTP status codes that are considered transient and retryable."""
+
+PERMANENT_FAIL_STATUS = {400, 401, 403, 404, 410}
+"""Set of HTTP status codes that indicate a permanent failure and should not be retried."""
+
+
+def classify_status(status_code: int) -> str:
+    """Classify an HTTP status code into 'retry', 'fail', or 'success'.
+
+    Args:
+        status_code: The HTTP status code.
+
+    Returns:
+        'retry' if the status is in RETRYABLE_STATUS.
+        'fail' if the status is in PERMANENT_FAIL_STATUS.
+        'success' for all other codes (e.g., 2xx).
+    """
+    if status_code in RETRYABLE_STATUS:
+        return 'retry'
+    if status_code in PERMANENT_FAIL_STATUS:
+        return 'fail'
+    return 'success'
+
+
+def calculate_backoff(attempt: int, base: float = 2.0, max_delay: float = 300.0) -> float:
+    """Calculate exponential backoff delay with jitter.
+
+    Formula: min(base^attempt + jitter, max_delay)
+
+    Args:
+        attempt: The current retry attempt number (1-indexed).
+        base: The base for the exponential calculation.
+        max_delay: The maximum possible delay.
+
+    Returns:
+        The calculated delay in seconds.
+    """
+    delay = base ** attempt
+    # Add small random jitter to prevent thundering herd
+    jitter = random.uniform(0, 0.1 * delay)
+    delay += jitter
+    return min(delay, max_delay)
+
+
 class IntelligentRetryMiddleware(RetryMiddleware):
     """Enhanced retry middleware with exponential backoff."""
 
-    # Transient errors - should retry
-    TRANSIENT_STATUS_CODES = {408, 429, 500, 502, 503, 504}
-
-    # Permanent errors - do NOT retry
-    PERMANENT_STATUS_CODES = {400, 401, 403, 404, 410}
-
     def __init__(self, settings):
-        """Initialize middleware.
-
-        Args:
-            settings: Scrapy settings
-        """
+        """Initialize middleware."""
         super().__init__(settings)
-
         # Exponential backoff configuration
-        self.backoff_base = settings.getint('RETRY_BACKOFF_BASE', 2)
-        self.backoff_max = settings.getint('RETRY_BACKOFF_MAX', 300)  # 5 minutes max
-
-        # Per-domain retry tracking
-        self.domain_retry_counts = {}
-        self.domain_last_retry = {}
+        self.backoff_base = settings.getfloat('RETRY_BACKOFF_BASE', 2.0)
+        self.backoff_max = settings.getfloat('RETRY_BACKOFF_MAX', 300.0)
 
     def process_response(self, request: Request, response: Response, spider: Spider):
-        """Process response and determine if retry needed.
+        """Process response and determine if retry is needed based on status classification."""
+        status_action = classify_status(response.status)
 
-        Args:
-            request: Scrapy request
-            response: Scrapy response
-            spider: Scrapy spider
+        if status_action == 'retry':
+            logger.debug(f"Transient error {response.status} for {request.url[:80]}, retrying...")
+            return self._retry_with_backoff(request, response, spider)
 
-        Returns:
-            Response or new Request (for retry)
-        """
-        # Check if this is a permanent error
-        if response.status in self.PERMANENT_STATUS_CODES:
+        if status_action == 'fail':
             logger.info(
-                f"Permanent error {response.status} for {request.url[:80]}, "
-                f"not retrying"
+                f"Permanent error {response.status} for {request.url[:80]}, not retrying."
             )
             return response  # Don't retry
-
-        # Check if this is a transient error that should retry
-        if response.status in self.TRANSIENT_STATUS_CODES:
-            return self._retry_with_backoff(request, response, spider)
 
         # Success or other status - pass through
         return response
@@ -98,22 +121,13 @@ class IntelligentRetryMiddleware(RetryMiddleware):
         reason: any = None,
         spider: Spider = None,
     ) -> Request | None:
-        """Retry request with exponential backoff.
-
-        Args:
-            request: Request to retry
-            reason: Reason for retry (Response or exception)
-            spider: Spider instance
-
-        Returns:
-            New Request with backoff delay or None if max retries exceeded
-        """
+        """Retry request with exponential backoff."""
         retries = request.meta.get('retry_times', 0) + 1
         max_retry_times = self.max_retry_times
 
         if retries <= max_retry_times:
-            # Calculate exponential backoff delay
-            delay = self._calculate_backoff_delay(retries)
+            # Calculate exponential backoff delay using the centralized function
+            delay = calculate_backoff(retries, self.backoff_base, self.backoff_max)
 
             # Extract reason message
             if isinstance(reason, Response):
@@ -153,27 +167,6 @@ class IntelligentRetryMiddleware(RetryMiddleware):
                 f"Max retries ({max_retry_times}) exceeded for {request.url[:80]}"
             )
             return None
-
-    def _calculate_backoff_delay(self, retry_count: int) -> float:
-        """Calculate exponential backoff delay.
-
-        Formula: min(backoff_base^retry_count, backoff_max)
-
-        Args:
-            retry_count: Current retry attempt (1-indexed)
-
-        Returns:
-            Delay in seconds
-        """
-        delay = self.backoff_base ** retry_count
-
-        # Add small random jitter to prevent thundering herd
-        jitter = random.uniform(0, 0.1 * delay)
-        delay += jitter
-
-        delay = min(delay, self.backoff_max)
-
-        return delay
 
 
 class RateLimitMiddleware:

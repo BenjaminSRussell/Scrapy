@@ -40,113 +40,124 @@ from scrapy.http import Request, Response
 logger = logging.getLogger(__name__)
 
 
+def format_metric(name: str, prefix: str = "scrapy") -> str:
+    """Formats a metric name with a standard prefix.
+    Args:
+        name: The base name of the metric.
+        prefix: The prefix to use (defaults to 'scrapy').
+    Returns:
+        The formatted metric name.
+    """
+    return f"{prefix}_{name}"
+
+
 # Define Prometheus metrics only if available
 if PROMETHEUS_AVAILABLE:
     ITEMS_SCRAPED = Counter(
-        'scrapy_items_scraped_total',
+        format_metric('items_scraped_total'),
         'Total number of items scraped',
         ['spider']
     )
 
     ITEMS_DROPPED = Counter(
-        'scrapy_items_dropped_total',
+        format_metric('items_dropped_total'),
         'Total number of items dropped',
         ['spider']
     )
 
     REQUESTS_TOTAL = Counter(
-        'scrapy_requests_total',
+        format_metric('requests_total'),
         'Total number of requests made',
         ['spider', 'method']
     )
 
     RESPONSES_TOTAL = Counter(
-        'scrapy_responses_total',
+        format_metric('responses_total'),
         'Total number of responses received',
         ['spider', 'status_code']
     )
 
     RESPONSE_TIME = Histogram(
-        'scrapy_response_time_seconds',
+        format_metric('response_time_seconds'),
         'Response time in seconds',
         ['spider'],
         buckets=(0.1, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0, float('inf'))
     )
 
     SPIDER_OPENED = Gauge(
-        'scrapy_spider_opened',
+        format_metric('spider_opened'),
         'Number of spiders currently running',
         ['spider']
     )
 
     SPIDER_CLOSED = Counter(
-        'scrapy_spider_closed_total',
+        format_metric('spider_closed_total'),
         'Total number of spiders closed',
         ['spider', 'reason']
     )
 
     SPIDER_ERRORS = Counter(
-        'scrapy_spider_errors_total',
+        format_metric('spider_errors_total'),
         'Total number of spider errors',
         ['spider', 'exception_type']
     )
 
     REQUESTS_DROPPED = Counter(
-        'scrapy_requests_dropped_total',
+        format_metric('requests_dropped_total'),
         'Total number of requests dropped',
         ['spider', 'reason']
     )
 
     DOWNLOADER_REQUEST_BYTES = Counter(
-        'scrapy_downloader_request_bytes_total',
+        format_metric('downloader_request_bytes_total'),
         'Total bytes sent in requests',
         ['spider']
     )
 
     DOWNLOADER_RESPONSE_BYTES = Counter(
-        'scrapy_downloader_response_bytes_total',
+        format_metric('downloader_response_bytes_total'),
         'Total bytes received in responses',
         ['spider']
     )
 
     CRAWL_DURATION = Gauge(
-        'scrapy_crawl_duration_seconds',
+        format_metric('crawl_duration_seconds'),
         'Duration of the current crawl in seconds',
         ['spider']
     )
 
     URLS_SKIPPED = Counter(
-        'scrapy_urls_skipped_total',
+        format_metric('urls_skipped_total'),
         'Total number of URLs skipped by type',
         ['spider', 'skip_reason']
     )
 
     NEW_URLS_FOUND_PER_MINUTE = Gauge(
-        'scrapy_new_urls_found_per_minute',
+        format_metric('new_urls_found_per_minute'),
         'Rate of new URLs discovered per minute',
         ['spider']
     )
 
     AVERAGE_FILE_SIZE_BYTES = Gauge(
-        'scrapy_average_file_size_bytes',
+        format_metric('average_file_size_bytes'),
         'Average file size of downloaded responses',
         ['spider']
     )
 
     OFFSITE_LINKS_FOUND = Counter(
-        'scrapy_offsite_links_found_total',
+        format_metric('offsite_links_found_total'),
         'Total number of offsite/external links discovered',
         ['spider']
     )
 
     OFFSITE_CANDIDATES_SAVED = Counter(
-        'scrapy_offsite_candidates_saved_total',
+        format_metric('offsite_candidates_saved_total'),
         'Total number of offsite candidates saved to Delta Lake',
         ['spider']
     )
 
     CRAWLER_CONTENT_SUMMARY = Gauge(
-        'scrapy_crawler_content_summary',
+        format_metric('crawler_content_summary'),
         'Sample summary of scraped content for qualitative monitoring',
         ['spider']
     )
