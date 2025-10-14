@@ -1,0 +1,148 @@
+name: CD - Build and Push Images
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        if: secrets.GHCR_PAT != ''
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GHCR_PAT }}
+
+      - name: Extract metadata for kafka-delta-ingest image
+        id: meta-kafka-delta-ingest
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}/kafka-delta-ingest
+          tags: |
+            type=ref,event=tag
+            type=sha
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push kafka-delta-ingest image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./Scraping_project
+          file: ./Scraping_project/Dockerfile
+          target: kafka-delta-ingest
+          push: ${{ secrets.GHCR_PAT != '' }}
+          tags: ${{ steps.meta-kafka-delta-ingest.outputs.tags }}
+          labels: ${{ steps.meta-kafka-delta-ingest.outputs.labels }}
+
+      - name: Smoke test kafka-delta-ingest image
+        if: secrets.GHCR_PAT != ''
+        run: |
+          docker run --rm ghcr.io/${{ github.repository }}/kafka-delta-ingest:${{ github.ref_name }} kafka-delta-ingest --help
+
+      - name: Generate SBOM for kafka-delta-ingest image
+        if: secrets.GHCR_PAT != ''
+        uses: anchore/syft-action@v0
+        with:
+          image: ghcr.io/${{ github.repository }}/kafka-delta-ingest:${{ github.ref_name }}
+          format: spdx-json
+          output: sbom-kafka-delta-ingest.spdx.json
+
+      - name: Upload kafka-delta-ingest SBOM
+        if: secrets.GHCR_PAT != ''
+        uses: actions/upload-artifact@v3
+        with:
+          name: sbom-kafka-delta-ingest
+          path: sbom-kafka-delta-ingest.spdx.json
+
+      - name: Extract metadata for crawler image
+        id: meta-crawler
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}/crawler
+          tags: |
+            type=ref,event=tag
+            type=sha
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push crawler image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./Scraping_project
+          file: ./Scraping_project/Dockerfile
+          target: crawler
+          push: ${{ secrets.GHCR_PAT != '' }}
+          tags: ${{ steps.meta-crawler.outputs.tags }}
+          labels: ${{ steps.meta-crawler.outputs.labels }}
+
+      - name: Smoke test crawler image
+        if: secrets.GHCR_PAT != ''
+        run: |
+          docker run --rm ghcr.io/${{ github.repository }}/crawler:${{ github.ref_name }} python cli.py --help
+
+      - name: Generate SBOM for crawler image
+        if: secrets.GHCR_PAT != ''
+        uses: anchore/syft-action@v0
+        with:
+          image: ghcr.io/${{ github.repository }}/crawler:${{ github.ref_name }}
+          format: spdx-json
+          output: sbom-crawler.spdx.json
+
+      - name: Upload crawler SBOM
+        if: secrets.GHCR_PAT != ''
+        uses: actions/upload-artifact@v3
+        with:
+          name: sbom-crawler
+          path: sbom-crawler.spdx.json
+
+      - name: Extract metadata for metrics image
+        id: meta-metrics
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}/metrics
+          tags: |
+            type=ref,event=tag
+            type=sha
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push metrics image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./Scraping_project
+          file: ./Scraping_project/Dockerfile
+          target: metrics
+          push: ${{ secrets.GHCR_PAT != '' }}
+          tags: ${{ steps.meta-metrics.outputs.tags }}
+          labels: ${{ steps.meta-metrics.outputs.labels }}
+
+      - name: Smoke test metrics image
+        if: secrets.GHCR_PAT != ''
+        run: |
+          docker run --rm ghcr.io/${{ github.repository }}/metrics:${{ github.ref_name }} python metrics_exporter.py --help
+
+      - name: Generate SBOM for metrics image
+        if: secrets.GHCR_PAT != ''
+        uses: anchore/syft-action@v0
+        with:
+          image: ghcr.io/${{ github.repository }}/metrics:${{ github.ref_name }}
+          format: spdx-json
+          output: sbom-metrics.spdx.json
+
+      - name: Upload metrics SBOM
+        if: secrets.GHCR_PAT != ''
+        uses: actions/upload-artifact@v3
+        with:
+          name: sbom-metrics
+          path: sbom-metrics.spdx.json

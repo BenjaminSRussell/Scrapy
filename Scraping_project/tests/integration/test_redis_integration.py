@@ -18,7 +18,7 @@ class TestRedisIntegration:
     def test_queue_operations_end_to_end(self, redis_clean):
         """Test complete queue workflow."""
         manager = RedisManager(
-            host='localhost',
+            host='127.0.0.1',
             port=6379,
             db=redis_clean.connection_pool.connection_kwargs['db']
         )
@@ -34,11 +34,11 @@ class TestRedisIntegration:
             manager.push_to_queue('test_pipeline', item)
 
         # Verify queue length
-        assert manager.queue_length('test_pipeline') == 10
+        assert manager.get_queue_length('test_pipeline') == 10
 
         # Pop and process items
         processed = []
-        while manager.queue_length('test_pipeline') > 0:
+        while manager.get_queue_length('test_pipeline') > 0:
             item = manager.pop_from_queue('test_pipeline')
             if item:
                 processed.append(item)
@@ -50,7 +50,7 @@ class TestRedisIntegration:
     def test_cache_expiration_timing(self, redis_clean):
         """Test cache TTL expiration with real timing."""
         manager = RedisManager(
-            host='localhost',
+            host='127.0.0.1',
             port=6379,
             db=redis_clean.connection_pool.connection_kwargs['db']
         )
@@ -75,7 +75,7 @@ class TestRedisIntegration:
     def test_rate_limiting_enforcement(self, redis_clean):
         """Test rate limiting prevents excess requests."""
         manager = RedisManager(
-            host='localhost',
+            host='127.0.0.1',
             port=6379,
             db=redis_clean.connection_pool.connection_kwargs['db']
         )
@@ -109,7 +109,7 @@ class TestRedisIntegration:
         import threading
 
         manager = RedisManager(
-            host='localhost',
+            host='127.0.0.1',
             port=6379,
             db=redis_clean.connection_pool.connection_kwargs['db']
         )
@@ -150,7 +150,7 @@ class TestRedisIntegration:
     def test_large_data_serialization(self, redis_clean):
         """Test handling of large data structures."""
         manager = RedisManager(
-            host='localhost',
+            host='127.0.0.1',
             port=6379,
             db=redis_clean.connection_pool.connection_kwargs['db']
         )
@@ -180,7 +180,7 @@ class TestRedisIntegration:
         # Create multiple managers
         managers = [
             RedisManager(
-                host='localhost',
+                host='127.0.0.1',
                 port=6379,
                 db=redis_clean.connection_pool.connection_kwargs['db']
             )
@@ -198,7 +198,7 @@ class TestRedisIntegration:
     def test_pipeline_with_error_recovery(self, redis_clean):
         """Test error recovery in pipeline operations."""
         manager = RedisManager(
-            host='localhost',
+            host='127.0.0.1',
             port=6379,
             db=redis_clean.connection_pool.connection_kwargs['db']
         )
@@ -212,7 +212,7 @@ class TestRedisIntegration:
         processed = []
         failed = []
 
-        while manager.queue_length('error_queue') > 0:
+        while manager.get_queue_length('error_queue') > 0:
             item = manager.pop_from_queue('error_queue')
             if item:
                 try:
@@ -228,4 +228,4 @@ class TestRedisIntegration:
 
         # Verify processing results
         assert len(processed) > 0
-        assert manager.queue_length('error_queue_retry') == len(failed)
+        assert manager.get_queue_length('error_queue_retry') == len(failed)

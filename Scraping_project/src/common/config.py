@@ -45,7 +45,7 @@ class Config:
         """Return baseline configuration when no file is present."""
         return {
             'redis': {
-                'host': 'localhost',
+                'host': '127.0.0.1',  # Force IPv4 for local Redis
                 'port': 6379,
                 'db': 0,
                 'password': None,
