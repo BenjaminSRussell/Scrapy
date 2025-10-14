@@ -8,7 +8,6 @@ import threading
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
-from src.common.config import get_config
 try:
     import pyarrow as pa
     import pyarrow.csv as pa_csv
@@ -168,7 +167,11 @@ class DeltaLakeManager:
 
         table_path = self.tables.get(table_name)
         if not table_path:
-            raise ValueError(f"Unknown table: {table_name}")
+            # Dynamically create table path if it doesn't exist
+            table_path = self.base_path / table_name
+            table_path.mkdir(parents=True, exist_ok=True)
+            self.tables[table_name] = table_path
+            logger.info(f"Dynamically created new table path for: {table_name}")
 
         # Enhanced: Extract domain from URLs for partitioning (for discovery tables)
         if table_name in ['stage1_discovery', 'stage2_page_analysis']:

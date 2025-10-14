@@ -3,7 +3,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pandas as pd
 
@@ -11,48 +11,34 @@ import pandas as pd
 project_root = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(project_root))
 
-# Mock deltalake and pyarrow before importing DeltaLakeManager
-mock_deltalake_module = MagicMock()
-mock_pyarrow_module = MagicMock()
-mock_pyarrow_csv_module = MagicMock()
-mock_pyarrow_parquet_module = MagicMock()
-sys.modules['deltalake'] = mock_deltalake_module
-sys.modules['pyarrow'] = mock_pyarrow_module
-sys.modules['pyarrow.csv'] = mock_pyarrow_csv_module
-sys.modules['pyarrow.parquet'] = mock_pyarrow_parquet_module
-
-from src.common.delta_lake import DeltaLakeManager  # noqa: E402
+from src.common.delta_lake import DeltaLakeManager
 
 
 class TestDeltaLakeManager(unittest.TestCase):
 
     def setUp(self):
         self.tmpdir = tempfile.mkdtemp()
-        self.manager = DeltaLakeManager()
-        self.manager.base_path = Path(self.tmpdir)
-        # Update the tables dictionary to use the temp path
-        for table_name in list(self.manager.tables.keys()):
-            self.manager.tables[table_name] = self.manager.base_path / table_name
-        # Reset mocks before each test
-        mock_deltalake_module.reset_mock()
-        mock_pyarrow_module.reset_mock()
-        mock_pyarrow_csv_module.reset_mock()
-        mock_pyarrow_parquet_module.reset_mock()
-
+        # Instantiate the real manager; test methods will patch its dependencies
+        # start_workers=False is crucial for tests to avoid background threads
+        self.manager = DeltaLakeManager(base_path=self.tmpdir, start_workers=False)
 
     def tearDown(self):
+        # Gracefully shut down to ensure no resources are left hanging
+        self.manager.shutdown()
         shutil.rmtree(self.tmpdir)
 
-    def test_export_empty_table(self):
+    @patch('deltalake.DeltaTable')
+    @patch('src.common.delta_lake.pa')
+    def test_export_empty_table(self, mock_pa, mock_delta_table):
         """Test that exporting an empty table handles gracefully."""
         table_name = 'stage1_discovery'
-        # Do not create _delta_log to simulate non-existent table
+        # Simulate an empty/non-existent table by not creating a _delta_log
 
-        # Configure the mock pyarrow module to return an empty table
+        # Configure mock for pyarrow to return an empty table
         mock_arrow_table = MagicMock()
         mock_arrow_table.num_rows = 0
         mock_arrow_table.schema = MagicMock()
-        mock_pyarrow_module.Table.from_pylist.return_value = mock_arrow_table
+        mock_pa.Table.from_pylist.return_value = mock_arrow_table
 
         output_path = Path(self.tmpdir) / "output.csv"
         result = self.manager.export(table_name, str(output_path))
@@ -61,27 +47,29 @@ class TestDeltaLakeManager(unittest.TestCase):
         self.assertEqual(result['table'], table_name)
         self.assertEqual(result['rows'], 0)
         self.assertEqual(result['columns'], 0)
+        # Check that we did not try to read from a delta table because _delta_log doesn't exist
+        mock_delta_table.assert_not_called()
 
-    def test_export_non_empty_table(self):
+    @patch('src.common.delta_lake.pa_csv')
+    @patch('deltalake.DeltaTable')
+    def test_export_non_empty_table(self, mock_delta_table, mock_pa_csv):
         """Test exporting a non-empty table."""
         table_name = 'stage1_discovery'
         table_path = self.manager.tables[table_name]
         (table_path / "_delta_log").mkdir(parents=True, exist_ok=True)
 
-        # Configure the mock deltalake module to return a non-empty table
+        # Configure mock for deltalake to return a non-empty table
         df = pd.DataFrame([{'col1': 'a', 'col2': 1}])
         mock_table_instance = MagicMock()
-        mock_arrow_table = MagicMock()
-        mock_arrow_table.num_rows = len(df)
-        mock_arrow_table.schema = MagicMock()
-        # Set __len__ to return the number of columns
-        type(mock_arrow_table.schema).__len__ = lambda x: len(df.columns)
-        mock_arrow_table.to_pandas.return_value = df
+        # Import pyarrow here, as it's mocked at the module level
+        import pyarrow as pa
+        mock_arrow_table = pa.Table.from_pandas(df)
+
         mock_table_instance.to_pyarrow_table.return_value = mock_arrow_table
-        mock_deltalake_module.DeltaTable.return_value = mock_table_instance
+        mock_delta_table.return_value = mock_table_instance
 
         output_path = Path(self.tmpdir) / "output.csv"
-        result = self.manager.export(table_name, str(output_path))
+        result = self.manager.export(table_name, str(output_path), format='csv')
 
         # Verify the result dictionary
         self.assertEqual(result['table'], table_name)
