@@ -1,0 +1,42 @@
+name: CI Kafka Alerts
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test-kafka-alerts:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v3
+        with:
+          python-version: '3.x'
+
+      - name: Install dependencies
+        run: |
+          pip install pyyaml
+
+      - name: Start mock metrics server
+        run: |
+          python3 Scraping_project/tests/observability/_mock_metrics_server.py &
+          sleep 3 # Give the server a moment to start
+
+      - name: Run tests
+        run: |
+          python3 -m unittest Scraping_project/tests/observability/test_kafka_lag_alert.py
+          python3 -m unittest Scraping_project/tests/observability/test_recording_rules.py
+
+      - name: Archive rules for inspection
+        uses: actions/upload-artifact@v3
+        with:
+          name: prometheus-rules
+          path: |
+            Scraping_project/monitoring/alerting_rules.yml
+            Scraping_project/monitoring/recording_rules.yml

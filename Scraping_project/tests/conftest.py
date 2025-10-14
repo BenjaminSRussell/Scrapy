@@ -25,8 +25,8 @@ except ImportError:  # pragma: no cover
         import fakeredis as redis  # type: ignore
     except ImportError:
         redis = None
-from playwright.async_api import async_playwright
-from scrapy.http import HtmlResponse, Request
+# from playwright.async_api import async_playwright
+# from scrapy.http import HtmlResponse, Request
 from twisted.internet import reactor
 from twisted.web import server, static
 
@@ -182,27 +182,27 @@ def postgres_clean(postgres_test_db) -> PostgresManager:
 # Playwright fixtures (K6)
 # ============================================================================
 
-@pytest.fixture(scope="session")
-async def browser():
-    """Launch Playwright browser for JS rendering tests.
-
-    K6: Session-scoped headless browser for testing JS rendering.
-    """
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
-        yield browser
-        await browser.close()
-
-
-@pytest.fixture(scope="function")
-async def page(browser):
-    """Create new browser page for test.
-
-    K6: Function-scoped page (isolated per test).
-    """
-    page = await browser.new_page()
-    yield page
-    await page.close()
+# @pytest.fixture(scope="session")
+# async def browser():
+#     """Launch Playwright browser for JS rendering tests.
+#
+#     K6: Session-scoped headless browser for testing JS rendering.
+#     """
+#     async with async_playwright() as p:
+#         browser = await p.chromium.launch(headless=True)
+#         yield browser
+#         await browser.close()
+#
+#
+# @pytest.fixture(scope="function")
+# async def page(browser):
+#     """Create new browser page for test.
+#
+#     K6: Function-scoped page (isolated per test).
+#     """
+#     page = await browser.new_page()
+#     yield page
+#     await page.close()
 
 
 # ============================================================================

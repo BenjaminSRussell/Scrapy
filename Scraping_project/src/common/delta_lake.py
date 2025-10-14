@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from src.common.config import Config
+
 try:
     import pyarrow as pa
     import pyarrow.csv as pa_csv

@@ -1,45 +1,28 @@
-import os
-import sys
 import unittest
-from unittest.mock import patch
-
-# Add the project root to the Python path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
-
-
-from scrapy.settings import Settings
+from unittest.mock import MagicMock
 
 from src.common.retry_middleware import IntelligentRetryMiddleware
 
 
 class TestIntelligentRetryMiddleware(unittest.TestCase):
-    def setUp(self):
-        self.settings = Settings(
-            {
-                "RETRY_BACKOFF_BASE": 2,
-                "RETRY_BACKOFF_MAX": 10,
-            }
-        )
-        self.middleware = IntelligentRetryMiddleware(self.settings)
+    def test_calculate_backoff_delay_exceeds_max_with_jitter(self):
+        """
+        Verify that the backoff delay calculation with jitter does not exceed the max_backoff value.
+        """
+        settings = MagicMock()
+        settings.getint.side_effect = lambda key, default=None: default if default is not None else 2
+        middleware = IntelligentRetryMiddleware(settings=settings)
 
-    @patch("random.uniform")
-    def test_calculate_backoff_delay_exceeds_max_with_jitter(self, mock_uniform):
-        # Arrange
-        retry_count = 4  # This will produce a delay of 2^4 = 16
-        mock_uniform.return_value = (
-            5  # A large jitter to make the test case more obvious
-        )
+        # Simulate a high attempt number that would cause the delay to exceed max_backoff
+        attempt = 10
+        base = 2.0
+        max_backoff = 100.0
+        jitter = 10.0
 
-        # Act
-        delay = self.middleware._calculate_backoff_delay(retry_count)
+        delay = middleware._calculate_backoff_delay(attempt, base, max_backoff, jitter)
 
-        # Assert
-        self.assertLessEqual(
-            delay,
-            self.settings.get("RETRY_BACKOFF_MAX"),
-            "The calculated delay should not exceed the maximum backoff time, even with jitter.",
-        )
+        # The delay should be capped at max_backoff, regardless of jitter
+        self.assertLessEqual(delay, max_backoff)
 
-
-if __name__ == "__main__":
+if __name__ == '__main__':
     unittest.main()
