@@ -1,27 +1,32 @@
-"""Stage 3: Heavy Summarization
-Takes all data from Stage 2 and creates concise summaries with key facts.
-Outputs to Delta Lake AND final JSONL file.
+"""Stage 4: Abstractive Summarization
+
+This stage uses a heavy transformer model (e.g., BART) to generate
+abstractive summaries from the text content processed in previous stages.
+Abstractive summarization means the model generates new sentences to capture
+the meaning of the source text, rather than simply extracting existing sentences.
+
+The process is computationally intensive and is designed to produce high-quality,
+concise summaries for the most important documents.
 """
 
 import json
 import logging
 from pathlib import Path
 
-from src.common.constants import DATA_DIR
+from src.common.constants import DATA_DIR, SUMMARY_LIMITS
 
 logger = logging.getLogger(__name__)
 
 
-def summarize_with_heavy_model(text: str, max_length: int = 150) -> str | None:
-    """Use heavy model (BART/T5) to summarize text.
+def summarize_with_heavy_model(text: str) -> str | None:
+    """Use a heavy model (BART) to create an abstractive summary of the text.
 
     Args:
-        text: Combined text from stage 2
-        max_length: Maximum summary length in words
+        text: The input text to summarize.
 
     Returns:
-        Concise summary paragraph
-
+        A concise, abstractive summary paragraph, or a fallback summary if
+        an error occurs.
     """
     try:
         from transformers import pipeline
@@ -33,19 +38,19 @@ def summarize_with_heavy_model(text: str, max_length: int = 150) -> str | None:
             device=-1  # CPU
         )
 
-        # Limit input text
-        max_input = 1024  # BART limit
+        # Limit input text to the model's max input size
+        max_input = SUMMARY_LIMITS["chunk_size"]
         if len(text) > max_input:
             text = text[:max_input]
 
         summary = summarizer(
             text,
-            max_length=max_length,
-            min_length=30,
-            do_sample=False
+            max_length=SUMMARY_LIMITS["max_length"],
+            min_length=SUMMARY_LIMITS["min_length"],
+            do_sample=False,
         )
 
-        return summary[0]['summary_text']
+        return summary[0]["summary_text"]
 
     except ImportError:
         logger.warning("Transformers not installed for summarization")

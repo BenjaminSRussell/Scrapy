@@ -11,6 +11,7 @@ from typing import Any
 
 from datasketch import MinHash, MinHashLSH
 
+from src.common.constants import SUMMARY_LIMITS
 from src.common.delta_lake import get_delta_manager
 from src.common.postgres_manager import get_postgres_manager
 
@@ -151,7 +152,12 @@ class Stage3Worker:
         return unique_docs
 
     async def _summarize_document(self, doc: dict[str, Any]) -> dict[str, Any]:
-        """Summarize a single document."""
+        """Performs simple extractive summarization on a document.
+
+        This method extracts the first N sentences from the document's text
+        content to create a concise, extractive summary. The number of
+        sentences is defined by `SUMMARY_LIMITS["extractive_max_sentences"]`.
+        """
         async with self.semaphore:
             try:
                 url = doc.get('url', '')
@@ -159,7 +165,8 @@ class Stage3Worker:
                 url_hash = doc.get('url_hash', '')
 
                 # Simple extractive summary (first sentences)
-                sentences = text.split('.')[:5]  # First 5 sentences
+                max_s = SUMMARY_LIMITS["extractive_max_sentences"]
+                sentences = text.split('.')[:max_s]
                 summary = '. '.join(s.strip() for s in sentences if s.strip()) + '.'
 
                 return {
