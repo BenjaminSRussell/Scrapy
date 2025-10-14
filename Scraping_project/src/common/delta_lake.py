@@ -8,7 +8,7 @@ import threading
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
-from src.common.config import get_config
+
 try:
     import pyarrow as pa
     import pyarrow.csv as pa_csv
