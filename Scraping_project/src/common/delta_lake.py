@@ -8,7 +8,7 @@ import threading
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
-
+from src.common.config import get_config
 try:
     import pyarrow as pa
     import pyarrow.csv as pa_csv
@@ -34,8 +34,7 @@ class DeltaLakeManager:
 
     def __init__(self, base_path: str | None = None, start_workers: bool = True):
         """Prepare table directories and, optionally, start queue workers."""
-        if not DELTA_AVAILABLE:
-            raise ImportError("Delta Lake not available. Install: pip install deltalake pyarrow")
+        # Heavy imports are lazy-loaded in methods that require them
 
         # Load configuration
         config = Config.get_instance()
@@ -71,7 +70,7 @@ class DeltaLakeManager:
         self.write_queue = queue.Queue(maxsize=queue_maxsize)
 
         # Schema cache to prevent schema drift
-        self.schema_cache: dict[str, pa.Schema] = {}
+        self.schema_cache = {}
 
         # Maintenance queue for async optimization tasks
         self.maintenance_queue = queue.Queue()
@@ -146,10 +145,8 @@ class DeltaLakeManager:
                 table_name, data, mode = task
 
                 try:
-                    # Perform write
+                    # Perform write (exception handled internally by _write_sync)
                     self._write_sync(table_name, data, mode)
-                except Exception as e:
-                    logger.error(f"Write failed for {table_name}: {e}", exc_info=True)
                 finally:
                     # Always call task_done() to prevent deadlocks in checkpoint()
                     self.write_queue.task_done()
@@ -158,6 +155,11 @@ class DeltaLakeManager:
                 continue
             except Exception as e:
                 logger.error(f"Queue worker error: {e}", exc_info=True)
+
+    def _handle_writer_exception(self, e: Exception, table_name: str):
+        """Unified exception handler for all write paths."""
+        logger.error(f"Write failed for {table_name}: {e}", exc_info=True)
+        # Optional: Add metrics or circuit breaker logic here in the future
 
     def _write_sync(self, table_name: str, data: list[dict[str, Any]], mode: str = "append"):
         """Synchronous write to Delta table."""
@@ -198,36 +200,43 @@ class DeltaLakeManager:
             if '_stage' not in record:
                 record['_stage'] = table_name
 
-        # Get or create schema for this table to prevent schema drift
-        if table_name not in self.schema_cache:
-            # First write: infer and cache the schema
-            table = pa.Table.from_pylist(data)
-            self.schema_cache[table_name] = table.schema
-            logger.debug(f"Cached schema for {table_name}: {table.schema}")
-        else:
-            # Subsequent writes: use cached schema to enforce consistency
-            table = pa.Table.from_pylist(data, schema=self.schema_cache[table_name])
+        try:
+            # Lazy-load heavy libraries on first use
+            from deltalake import WriterProperties, write_deltalake
+            import pyarrow as pa
 
-        # Enhanced: Partition by domain for discovery tables
-        partition_by = None
-        if table_name in ['stage1_discovery', 'stage2_page_analysis']:
-            partition_by = ['domain']
+            # Get or create schema for this table to prevent schema drift
+            if table_name not in self.schema_cache:
+                # First write: infer and cache the schema
+                table = pa.Table.from_pylist(data)
+                self.schema_cache[table_name] = table.schema
+                logger.debug(f"Cached schema for {table_name}: {table.schema}")
+            else:
+                # Subsequent writes: use cached schema to enforce consistency
+                table = pa.Table.from_pylist(data, schema=self.schema_cache[table_name])
 
-        # Write to Delta Lake with compression enabled via WriterProperties
-        # Enable ZSTD compression to reduce disk space usage
-        writer_props = WriterProperties(compression="ZSTD")
+            # Enhanced: Partition by domain for discovery tables
+            partition_by = None
+            if table_name in ['stage1_discovery', 'stage2_page_analysis']:
+                partition_by = ['domain']
 
-        write_deltalake(
-            str(table_path),
-            table,
-            mode=mode,
-            schema_mode="merge" if mode == "append" else "overwrite",
-            writer_properties=writer_props,
-            # Partition by domain
-            partition_by=partition_by
-        )
+            # Write to Delta Lake with compression enabled via WriterProperties
+            # Enable ZSTD compression to reduce disk space usage
+            writer_props = WriterProperties(compression="ZSTD")
 
-        logger.info(f"✅ Wrote {len(data)} records to {table_name}")
+            write_deltalake(
+                str(table_path),
+                table,
+                mode=mode,
+                schema_mode="merge" if mode == "append" else "overwrite",
+                writer_properties=writer_props,
+                # Partition by domain
+                partition_by=partition_by
+            )
+
+            logger.info(f"✅ Wrote {len(data)} records to {table_name}")
+        except Exception as e:
+            self._handle_writer_exception(e, table_name)
 
         # Enhanced: Queue optimization task instead of blocking the write path
         if table_name in ['stage1_discovery', 'stage2_page_analysis'] and len(data) >= 1000:
@@ -245,6 +254,8 @@ class DeltaLakeManager:
 
     def read(self, table_name: str, filters: Any = None, columns: list[str] | None = None) -> list[dict]:
         """Read rows from a Delta table into a list of dictionaries."""
+        from deltalake import DeltaTable
+
         table_path = self.tables.get(table_name)
         if not table_path:
             raise ValueError(f"Unknown table: {table_name}")
@@ -260,6 +271,8 @@ class DeltaLakeManager:
 
     def count(self, table_name: str) -> int:
         """Get record count for a table using metadata (efficient, no data loading)."""
+        from deltalake import DeltaTable
+
         table_path = self.tables.get(table_name)
         if not table_path:
             raise ValueError(f"Unknown table: {table_name}")
@@ -274,6 +287,8 @@ class DeltaLakeManager:
 
     def _optimize_table(self, table_name: str):
         """Compact files and apply Z-ordering to improve read performance."""
+        from deltalake import DeltaTable
+
         table_path = self.tables.get(table_name)
         if not table_path or not (table_path / "_delta_log").exists():
             return
@@ -304,6 +319,8 @@ class DeltaLakeManager:
             retention_hours: Retention period in hours (default: 168 = 7 days)
             enforce_retention_duration: If False, allows retention < 168 hours (DANGEROUS!)
         """
+        from deltalake import DeltaTable
+
         table_path = self.tables.get(table_name)
         if not table_path or not (table_path / "_delta_log").exists():
             return
@@ -474,6 +491,11 @@ class DeltaLakeManager:
             output_path: Output file path
             format: Output format ('csv', 'json', 'parquet')
         """
+        import pyarrow as pa
+        import pyarrow.csv as pa_csv
+        import pyarrow.parquet as pq
+        from deltalake import DeltaTable
+
         table_path = self.tables.get(table_name)
         if not table_path:
             raise ValueError(f"Unknown table: {table_name}")
