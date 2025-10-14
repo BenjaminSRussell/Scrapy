@@ -15,6 +15,8 @@ import tempfile
 from collections.abc import Generator
 from pathlib import Path
 from typing import Any
+import contextlib
+import fakeredis
 
 import pytest
 
@@ -293,28 +295,50 @@ def test_html_response() -> HtmlResponse:
 # Redis/Queue fixtures (K6)
 # ============================================================================
 
-@pytest.fixture(scope="session")
-def redis_client(test_config) -> Generator[Any, None, None]:
-    """Create Redis client for test queue operations.
-
-    K6: Session-scoped Redis client for message queue testing.
+@pytest.fixture(autouse=True, scope="session")
+def _force_test_redis_defaults():
     """
-    if redis is None:
-        pytest.skip("Redis client not available; install redis or fakeredis")
+    Default tests to fakeredis by setting a sentinel REDIS_URL.
+    Real Redis can still be used by exporting USE_REAL_REDIS=1.
+    """
+    use_real = os.getenv("USE_REAL_REDIS") == "1"
+    if not use_real:
+        # Signal to app layer to use fakeredis path
+        os.environ.setdefault("REDIS_URL", "fakeredis://")
+    yield
 
-    redis_config = test_config.get('redis', {})
-    client = redis.Redis(
-        host=redis_config.get('host', 'localhost'),
-        port=redis_config.get('port', 6379),
-        db=redis_config.get('db', 0) + 10,  # Use separate DB for tests
-        decode_responses=True
-    )
+@pytest.fixture(scope="function")
+def redis_client(monkeypatch):
+    """
+    Provide a fake Redis client and monkeypatch the factory used by the app.
+    Adjust the import path below to your actual client factory.
+    """
+    # ---- Adjust these imports to your codebase ----
+    try:
+        from src.common import redis_manager
+    except Exception:
+        redis_manager = None
 
-    yield client
+    fake = fakeredis.FakeStrictRedis(decode_responses=True)
 
-    # Cleanup: flush test database
-    client.flushdb()
-    client.close()
+    # The logic below is adapted for this project.
+    # The primary mechanism is patching redis.Redis/StrictRedis, which is
+    # used by the RedisManager to create a client.
+    # This covers all uses of the manager.
+
+    # Also guard tests that import redis.StrictRedis directly
+    try:
+        import redis
+        monkeypatch.setattr(redis, "StrictRedis", lambda *a, **k: fake, raising=True)
+        monkeypatch.setattr(redis, "Redis",       lambda *a, **k: fake, raising=True)
+    except Exception:
+        pass
+
+    yield fake
+
+    # Clean between tests
+    with contextlib.suppress(Exception):
+        fake.flushall()
 
 
 @pytest.fixture(scope="function")
@@ -323,7 +347,7 @@ def redis_clean(redis_client) -> Any:
 
     K6: Function-scoped fixture that flushes test DB before each test.
     """
-    redis_client.flushdb()
+    redis_client.flushall()
     return redis_client
 
 

@@ -1,8 +1,10 @@
 """Load pipeline configuration from YAML with sensible defaults."""
 
 import logging
+import os
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 import yaml
 
@@ -102,7 +104,22 @@ class Config:
 
     @property
     def redis_config(self) -> dict[str, Any]:
-        """Return Redis configuration block."""
+        """Return Redis configuration, prioritizing REDIS_URL env var."""
+        redis_url = os.getenv("REDIS_URL")
+        if redis_url:
+            if redis_url == "fakeredis://":
+                # Use default config for fakeredis, but signal its use
+                config = self.get_section('redis').copy()
+                config['is_fake'] = True
+                return config
+
+            parsed = urlparse(redis_url)
+            return {
+                'host': parsed.hostname,
+                'port': parsed.port,
+                'db': int(parsed.path.lstrip('/')) if parsed.path else 0,
+                'password': parsed.password,
+            }
         return self.get_section('redis')
 
     @property
