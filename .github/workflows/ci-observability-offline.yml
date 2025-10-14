@@ -1,0 +1,39 @@
+name: CI Observability Offline
+
+on:
+  pull_request:
+    paths:
+      - 'Scraping_project/monitoring/**'
+
+jobs:
+  lint-observability:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check for promtool
+        id: promtool_check
+        run: command -v promtool &> /dev/null && echo "promtool_exists=true" >> $GITHUB_OUTPUT || echo "promtool_exists=false" >> $GITHUB_OUTPUT
+
+      - name: Run promtool to check rules
+        if: steps.promtool_check.outputs.promtool_exists == 'true'
+        uses: cpanato/promtool@v2.0.0
+        with:
+          command: check rules
+          args: Scraping_project/monitoring/alerting/*.yml
+
+      - name: Run Python Prometheus rule validation (fallback)
+        if: steps.promtool_check.outputs.promtool_exists == 'false'
+        run: python Scraping_project/tests/observability/test_prometheus_rules.py
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python dependencies
+        run: pip install PyYAML
+
+      - name: Run Grafana datasource validation
+        run: python Scraping_project/tests/observability/test_grafana_datasource.py
