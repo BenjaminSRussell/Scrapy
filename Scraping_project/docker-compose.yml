@@ -259,6 +259,15 @@ services:
       - ./monitoring/grafana_datasource.yml:/etc/grafana/provisioning/datasources/datasource.yml
       - ./monitoring/grafana_dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml
       - ./monitoring/dashboards:/etc/grafana/provisioning/dashboards
+    command: >
+      bash -c "
+        echo 'Waiting for dashboards to be available...'
+        while ! find /etc/grafana/provisioning/dashboards -mindepth 1 -maxdepth 1 -name '*.json' | read; do
+          sleep 1
+        done
+        echo 'Dashboards found. Starting Grafana.'
+        /run.sh
+      "
     restart: unless-stopped
     networks:
       - scraping_network
