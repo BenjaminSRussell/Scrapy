@@ -46,6 +46,13 @@ class RedisManager:
             password: Redis password (if required)
             max_connections: Maximum connections in pool
         """
+        # Add resilient socket options for production environments
+        socket_opts = {
+            "socket_keepalive": True,
+            "retry_on_timeout": True,
+            "socket_connect_timeout": 5.0,
+            "socket_timeout": 5.0,
+        }
         self.pool = redis.ConnectionPool(
             host=host,
             port=port,
@@ -53,6 +60,7 @@ class RedisManager:
             password=password,
             max_connections=max_connections,
             decode_responses=True,  # Auto-decode bytes to strings
+            **socket_opts,
         )
         self.redis = redis.Redis(connection_pool=self.pool)
         self._test_connection()
