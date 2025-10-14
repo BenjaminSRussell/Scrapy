@@ -25,8 +25,8 @@ except ImportError:  # pragma: no cover
         import fakeredis as redis  # type: ignore
     except ImportError:
         redis = None
-from playwright.async_api import async_playwright
-from scrapy.http import HtmlResponse, Request
+# from playwright.async_api import async_playwright
+# from scrapy.http import HtmlResponse, Request
 from twisted.internet import reactor
 from twisted.web import server, static
 
@@ -75,20 +75,9 @@ def delta_sandbox(test_config) -> Generator[DeltaLakeManager, None, None]:
     Yields:
         DeltaLakeManager configured for test isolation
     """
-    # Create temporary directory for test
-    test_dir = tempfile.mkdtemp(prefix="delta_test_")
-
-    try:
-        # Create Delta Lake manager with test directory
-        # IMPORTANT: start_workers=False to avoid background threads and signal handlers in tests
-        delta = DeltaLakeManager(base_path=test_dir, start_workers=False)
-
-        yield delta
-
-    finally:
-        # Cleanup: remove temporary directory
-        if os.path.exists(test_dir):
-            shutil.rmtree(test_dir)
+    # Use the factory to get an in-memory manager for tests
+    from src.common.delta_lake import get_delta_manager
+    yield get_delta_manager("memory")
 
 
 @pytest.fixture(scope="function")
@@ -193,27 +182,27 @@ def postgres_clean(postgres_test_db) -> PostgresManager:
 # Playwright fixtures (K6)
 # ============================================================================
 
-@pytest.fixture(scope="session")
-async def browser():
-    """Launch Playwright browser for JS rendering tests.
-
-    K6: Session-scoped headless browser for testing JS rendering.
-    """
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
-        yield browser
-        await browser.close()
-
-
-@pytest.fixture(scope="function")
-async def page(browser):
-    """Create new browser page for test.
-
-    K6: Function-scoped page (isolated per test).
-    """
-    page = await browser.new_page()
-    yield page
-    await page.close()
+# @pytest.fixture(scope="session")
+# async def browser():
+#     """Launch Playwright browser for JS rendering tests.
+#
+#     K6: Session-scoped headless browser for testing JS rendering.
+#     """
+#     async with async_playwright() as p:
+#         browser = await p.chromium.launch(headless=True)
+#         yield browser
+#         await browser.close()
+#
+#
+# @pytest.fixture(scope="function")
+# async def page(browser):
+#     """Create new browser page for test.
+#
+#     K6: Function-scoped page (isolated per test).
+#     """
+#     page = await browser.new_page()
+#     yield page
+#     await page.close()
 
 
 # ============================================================================

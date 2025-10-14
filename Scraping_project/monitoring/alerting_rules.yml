@@ -103,6 +103,20 @@ groups:
           impact: "High - Significant data processing backlog"
           action: "Immediate action: scale consumers or pause producers"
 
+      # Critical: Consumer Lag SLO Violation
+      - alert: KafkaConsumerLagSLO
+        expr: max_over_time(kafka_consumergroup_lag_max[5m]) > 250000
+        for: 15m
+        labels:
+          severity: critical
+          component: kafka
+          slo: "true"
+        annotations:
+          summary: "Kafka consumer lag has breached the SLO"
+          description: "Consumer group {{ $labels.group }} on topic {{ $labels.topic }} has a max lag of {{ $value }} messages for over 15 minutes, violating the SLO."
+          impact: "Critical - Service Level Objective for data processing timeliness is not being met."
+          action: "Immediately investigate consumer performance, consider scaling up consumers or pausing producers if necessary."
+
   # ============================================
   # Scrapy Application Alerts
   # ============================================

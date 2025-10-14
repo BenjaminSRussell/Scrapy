@@ -16,8 +16,10 @@ class TestBaseSpiderInit:
 
     @pytest.mark.unit
     @pytest.mark.stage1
-    def test_init_with_defaults(self, mock_spider_crawler):
+    @patch('src.stage1.base_spider.redis.Redis')
+    def test_init_with_defaults(self, mock_redis, mock_spider_crawler):
         """Test spider initialization with default parameters."""
+        mock_redis.return_value.scard.return_value = 0
         spider = BaseSpider()
 
         assert spider.name is not None
