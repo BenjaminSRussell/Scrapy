@@ -1,0 +1,72 @@
+# Scraping_project/monitoring/alerting/rules.yml
+apiVersion: 1
+
+groups:
+  - name: Kafka Alerts
+    # Evaluate rules every 10 seconds
+    interval: 10s
+    rules:
+      - # Alert definition
+        # UID can be used to reference this alert in other parts of Grafana
+        # If not specified, one will be generated automatically
+        uid: kafka_high_consumer_lag
+        # Title of the alert
+        title: Kafka High Consumer Lag
+        # Condition for the alert to fire
+        condition: B
+        # Alert queries
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: P846C49B2003B53C6
+            model:
+              expr: kafka_consumer_records_lag > 100
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+              type: query
+          - refId: B
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 0
+                      - 0
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - B
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              datasource:
+                name: Expression
+                type: __expr__
+                uid: __expr__
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              reducer: last
+              refId: B
+              type: classic_conditions
+        # How long the condition must be true for the alert to fire
+        for: 1m
+        # How often to evaluate the alert rule
+        every: 10s
+        # Labels to attach to the alert
+        labels:
+          severity: warning
+          component: kafka
+        # Annotations to attach to the alert
+        annotations:
+          summary: High Kafka consumer lag detected
+          description: "Consumer {{ $labels.client_id }} has a lag of {{ $values.A }} messages on topic {{ $labels.topic }}."

@@ -258,6 +258,7 @@ services:
       - grafana_data:/var/lib/grafana
       - ./monitoring/grafana_datasource.yml:/etc/grafana/provisioning/datasources/datasource.yml
       - ./monitoring/grafana_dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml
+      - ./monitoring/alerting:/etc/grafana/provisioning/alerting
       - ./monitoring/dashboards:/etc/grafana/provisioning/dashboards
     command: >
       bash -c "
