@@ -1,0 +1,723 @@
+{
+  "title": "Unified Dashboard",
+  "panels": [
+    {
+      "id": 1,
+      "title": "Kafka Consumer Lag",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "targets": [
+        {
+          "expr": "kafka_consumer_records_lag",
+          "legendFormat": "{{client_id}}-{{topic}}-p{{partition}}"
+        }
+      ],
+      "description": "Consumer lag in records for Kafka consumers (correct metric: kafka_consumer_records_lag)"
+    },
+    {
+      "id": 2,
+      "title": "Off-site Links Found Rate",
+      "description": "Rate of external/offsite links discovered per second",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      },
+      "targets": [
+        {
+          "expr": "rate(scrapy_offsite_links_found_total[5m])",
+          "legendFormat": "{{spider}} - Offsite Links/sec",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10,
+            "showPoints": "never"
+          }
+        }
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi"
+        },
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "mean"
+          ]
+        }
+      }
+    },
+    {
+      "id": 3,
+      "title": "Total Off-site Candidates",
+      "description": "Total number of offsite URLs saved to Delta Lake",
+      "type": "stat",
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 12,
+        "y": 8
+      },
+      "targets": [
+        {
+          "expr": "scrapy_offsite_candidates_saved_total",
+          "legendFormat": "Saved",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "graphMode": "area",
+        "colorMode": "value",
+        "textMode": "value_and_name",
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "blue"
+              },
+              {
+                "value": 100,
+                "color": "green"
+              },
+              {
+                "value": 1000,
+                "color": "yellow"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 4,
+      "title": "Scraping Speed Comparison",
+      "description": "Comparison of onsite crawling speed vs offsite link discovery",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 18,
+        "y": 8
+      },
+      "targets": [
+        {
+          "expr": "rate(scrapy_items_scraped_total{spider=\"scout\"}[5m])",
+          "legendFormat": "Onsite Pages Scraped/sec",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(scrapy_offsite_links_found_total{spider=\"scout\"}[5m])",
+          "legendFormat": "Offsite Links Found/sec",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 20,
+            "showPoints": "never"
+          }
+        }
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 5,
+      "title": "Off-site Links Found Rate",
+      "description": "Rate of external/offsite links discovered per second",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 16
+      },
+      "targets": [
+        {
+          "expr": "rate(scrapy_offsite_links_found_total[5m])",
+          "legendFormat": "{{spider}} - Offsite Links/sec",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10,
+            "showPoints": "never"
+          }
+        }
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi"
+        },
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "mean"
+          ]
+        }
+      }
+    },
+    {
+      "id": 6,
+      "title": "Total Off-site Candidates",
+      "description": "Total number of offsite URLs saved to Delta Lake",
+      "type": "stat",
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 12,
+        "y": 16
+      },
+      "targets": [
+        {
+          "expr": "scrapy_offsite_candidates_saved_total",
+          "legendFormat": "Saved",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "graphMode": "area",
+        "colorMode": "value",
+        "textMode": "value_and_name",
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "blue"
+              },
+              {
+                "value": 100,
+                "color": "green"
+              },
+              {
+                "value": 1000,
+                "color": "yellow"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 7,
+      "title": "Scraping Speed Comparison",
+      "description": "Comparison of onsite crawling speed vs offsite link discovery",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 18,
+        "y": 16
+      },
+      "targets": [
+        {
+          "expr": "rate(scrapy_items_scraped_total{spider=\"scout\"}[5m])",
+          "legendFormat": "Onsite Pages Scraped/sec",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(scrapy_offsite_links_found_total{spider=\"scout\"}[5m])",
+          "legendFormat": "Offsite Links Found/sec",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 20,
+            "showPoints": "never"
+          }
+        }
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 8,
+      "title": "Off-site Links Found Rate",
+      "description": "Rate of external/offsite links discovered per second",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 24
+      },
+      "targets": [
+        {
+          "expr": "rate(scrapy_offsite_links_found_total[5m])",
+          "legendFormat": "{{spider}} - Offsite Links/sec",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10,
+            "showPoints": "never"
+          }
+        }
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi"
+        },
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "mean"
+          ]
+        }
+      }
+    },
+    {
+      "id": 9,
+      "title": "Total Off-site Candidates",
+      "description": "Total number of offsite URLs saved to Delta Lake",
+      "type": "stat",
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 12,
+        "y": 24
+      },
+      "targets": [
+        {
+          "expr": "scrapy_offsite_candidates_saved_total",
+          "legendFormat": "Saved",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "graphMode": "area",
+        "colorMode": "value",
+        "textMode": "value_and_name",
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "blue"
+              },
+              {
+                "value": 100,
+                "color": "green"
+              },
+              {
+                "value": 1000,
+                "color": "yellow"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 10,
+      "title": "Scraping Speed Comparison",
+      "description": "Comparison of onsite crawling speed vs offsite link discovery",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 18,
+        "y": 24
+      },
+      "targets": [
+        {
+          "expr": "rate(scrapy_items_scraped_total{spider=\"scout\"}[5m])",
+          "legendFormat": "Onsite Pages Scraped/sec",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(scrapy_offsite_links_found_total{spider=\"scout\"}[5m])",
+          "legendFormat": "Offsite Links Found/sec",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 20,
+            "showPoints": "never"
+          }
+        }
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 11,
+      "title": "Off-site Links Found Rate",
+      "description": "Rate of external/offsite links discovered per second",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 32
+      },
+      "targets": [
+        {
+          "expr": "rate(scrapy_offsite_links_found_total[5m])",
+          "legendFormat": "{{spider}} - Offsite Links/sec",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10,
+            "showPoints": "never"
+          }
+        }
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi"
+        },
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "mean"
+          ]
+        }
+      }
+    },
+    {
+      "id": 12,
+      "title": "Total Off-site Candidates",
+      "description": "Total number of offsite URLs saved to Delta Lake",
+      "type": "stat",
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 12,
+        "y": 32
+      },
+      "targets": [
+        {
+          "expr": "scrapy_offsite_candidates_saved_total",
+          "legendFormat": "Saved",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "graphMode": "area",
+        "colorMode": "value",
+        "textMode": "value_and_name",
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "blue"
+              },
+              {
+                "value": 100,
+                "color": "green"
+              },
+              {
+                "value": 1000,
+                "color": "yellow"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 13,
+      "title": "Scraping Speed Comparison",
+      "description": "Comparison of onsite crawling speed vs offsite link discovery",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 18,
+        "y": 32
+      },
+      "targets": [
+        {
+          "expr": "rate(scrapy_items_scraped_total{spider=\"scout\"}[5m])",
+          "legendFormat": "Onsite Pages Scraped/sec",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(scrapy_offsite_links_found_total{spider=\"scout\"}[5m])",
+          "legendFormat": "Offsite Links Found/sec",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 20,
+            "showPoints": "never"
+          }
+        }
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 14,
+      "title": "Off-site Links Found Rate",
+      "description": "Rate of external/offsite links discovered per second",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 40
+      },
+      "targets": [
+        {
+          "expr": "rate(scrapy_offsite_links_found_total[5m])",
+          "legendFormat": "{{spider}} - Offsite Links/sec",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10,
+            "showPoints": "never"
+          }
+        }
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi"
+        },
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "mean"
+          ]
+        }
+      }
+    },
+    {
+      "id": 15,
+      "title": "Total Off-site Candidates",
+      "description": "Total number of offsite URLs saved to Delta Lake",
+      "type": "stat",
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 12,
+        "y": 40
+      },
+      "targets": [
+        {
+          "expr": "scrapy_offsite_candidates_saved_total",
+          "legendFormat": "Saved",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "graphMode": "area",
+        "colorMode": "value",
+        "textMode": "value_and_name",
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "blue"
+              },
+              {
+                "value": 100,
+                "color": "green"
+              },
+              {
+                "value": 1000,
+                "color": "yellow"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 16,
+      "title": "Scraping Speed Comparison",
+      "description": "Comparison of onsite crawling speed vs offsite link discovery",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 18,
+        "y": 40
+      },
+      "targets": [
+        {
+          "expr": "rate(scrapy_items_scraped_total{spider=\"scout\"}[5m])",
+          "legendFormat": "Onsite Pages Scraped/sec",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(scrapy_offsite_links_found_total{spider=\"scout\"}[5m])",
+          "legendFormat": "Offsite Links Found/sec",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 20,
+            "showPoints": "never"
+          }
+        }
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      }
+    }
+  ],
+  "version": 6
+}
