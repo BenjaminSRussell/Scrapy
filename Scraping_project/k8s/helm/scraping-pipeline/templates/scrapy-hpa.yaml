@@ -20,4 +20,141 @@ spec:
       target:
         type: Utilization
         averageUtilization: {{ .Values.scrapyApp.autoscaling.targetCPUUtilizationPercentage }}
+  {{- if .Values.scrapyApp.autoscaling.targetMemoryUtilizationPercentage }}
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: {{ .Values.scrapyApp.autoscaling.targetMemoryUtilizationPercentage }}
+  {{- end }}
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: {{ .Values.scrapyApp.autoscaling.scaleDownStabilizationWindowSeconds | default 300 }}
+      policies:
+      - type: Percent
+        value: 50
+        periodSeconds: 60
+      - type: Pods
+        value: 2
+        periodSeconds: 60
+      selectPolicy: Min
+    scaleUp:
+      stabilizationWindowSeconds: {{ .Values.scrapyApp.autoscaling.scaleUpStabilizationWindowSeconds | default 60 }}
+      policies:
+      - type: Percent
+        value: 100
+        periodSeconds: 30
+      - type: Pods
+        value: 4
+        periodSeconds: 30
+      selectPolicy: Max
+{{- end }}
+
+{{- if and .Values.stage2Worker.enabled .Values.stage2Worker.autoscaling.enabled }}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "scraping-pipeline.fullname" . }}-stage2
+  labels:
+    {{- include "scraping-pipeline.labels" . | nindent 4 }}
+    app.kubernetes.io/component: stage2
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "scraping-pipeline.fullname" . }}-stage2
+  minReplicas: {{ .Values.stage2Worker.autoscaling.minReplicas }}
+  maxReplicas: {{ .Values.stage2Worker.autoscaling.maxReplicas }}
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: {{ .Values.stage2Worker.autoscaling.targetCPUUtilizationPercentage }}
+  {{- if .Values.stage2Worker.autoscaling.targetMemoryUtilizationPercentage }}
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: {{ .Values.stage2Worker.autoscaling.targetMemoryUtilizationPercentage }}
+  {{- end }}
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: {{ .Values.stage2Worker.autoscaling.scaleDownStabilizationWindowSeconds | default 300 }}
+      policies:
+      - type: Percent
+        value: 50
+        periodSeconds: 60
+      - type: Pods
+        value: 1
+        periodSeconds: 60
+      selectPolicy: Min
+    scaleUp:
+      stabilizationWindowSeconds: {{ .Values.stage2Worker.autoscaling.scaleUpStabilizationWindowSeconds | default 60 }}
+      policies:
+      - type: Percent
+        value: 100
+        periodSeconds: 30
+      - type: Pods
+        value: 2
+        periodSeconds: 30
+      selectPolicy: Max
+{{- end }}
+
+{{- if and .Values.stage3Worker.enabled .Values.stage3Worker.autoscaling.enabled }}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "scraping-pipeline.fullname" . }}-stage3
+  labels:
+    {{- include "scraping-pipeline.labels" . | nindent 4 }}
+    app.kubernetes.io/component: stage3
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "scraping-pipeline.fullname" . }}-stage3
+  minReplicas: {{ .Values.stage3Worker.autoscaling.minReplicas }}
+  maxReplicas: {{ .Values.stage3Worker.autoscaling.maxReplicas }}
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: {{ .Values.stage3Worker.autoscaling.targetCPUUtilizationPercentage }}
+  {{- if .Values.stage3Worker.autoscaling.targetMemoryUtilizationPercentage }}
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: {{ .Values.stage3Worker.autoscaling.targetMemoryUtilizationPercentage }}
+  {{- end }}
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: {{ .Values.stage3Worker.autoscaling.scaleDownStabilizationWindowSeconds | default 300 }}
+      policies:
+      - type: Percent
+        value: 50
+        periodSeconds: 60
+      - type: Pods
+        value: 1
+        periodSeconds: 60
+      selectPolicy: Min
+    scaleUp:
+      stabilizationWindowSeconds: {{ .Values.stage3Worker.autoscaling.scaleUpStabilizationWindowSeconds | default 60 }}
+      policies:
+      - type: Percent
+        value: 100
+        periodSeconds: 30
+      - type: Pods
+        value: 2
+        periodSeconds: 30
+      selectPolicy: Max
 {{- end }}

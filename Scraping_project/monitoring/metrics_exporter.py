@@ -109,12 +109,13 @@ stage4_http_failures_total = Counter(
 class MetricsExporter:
     """Exports pipeline metrics to Prometheus."""
 
-    def __init__(self, port: int = 9090, update_interval: int = 5):
+    def __init__(self, port: int = 9090, update_interval: int = 5, exports_dir: str | Path | None = None):
         """Initialize exporter.
 
         Args:
             port: Port to expose metrics on
             update_interval: Seconds between metric updates (default: 5 for live stats)
+            exports_dir: Optional override for error summary directory (defaults to /app/exports)
         """
         self.port = port
         self.update_interval = update_interval
@@ -136,10 +137,10 @@ class MetricsExporter:
         self.previous_counts = {}
         self.previous_error_counts = {}
         self.last_update_time = time.time()
-        # Use /app/exports instead of trying to go to parent (which would be /)
-        exports_dir = Path('/app/exports')
-        exports_dir.mkdir(parents=True, exist_ok=True)
-        self.error_summary_path = exports_dir / 'stage1_errors_summary.json'
+        # Persist summaries in the shared exports folder
+        exports_root = Path(exports_dir) if exports_dir is not None else Path('/app/exports')
+        exports_root.mkdir(parents=True, exist_ok=True)
+        self.error_summary_path = exports_root / 'stage1_errors_summary.json'
         self._last_error_summary_fingerprint: tuple | None = None
 
         logger.info(f"Metrics exporter initialized on port {port} with {update_interval}s update interval")

@@ -1,0 +1,194 @@
+---
+# Standalone Grafana deployment. Port-forward with:
+# kubectl port-forward svc/grafana 3000:3000 (admin/admin)
+
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: grafana-storage
+  labels:
+    app: grafana
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-datasources
+  labels:
+    app: grafana
+data:
+  datasources.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Prometheus
+        type: prometheus
+        access: proxy
+        url: http://scraping-pipeline-prometheus:9100
+        isDefault: true
+        editable: true
+        jsonData:
+          timeInterval: 5s
+          queryTimeout: 60s
+
+      - name: Redis
+        type: redis-datasource
+        access: proxy
+        url: redis://scraping-pipeline-redis:6379
+        editable: true
+        jsonData:
+          client: standalone
+          poolSize: 5
+          timeout: 10
+          pingInterval: 0
+
+      - name: PostgreSQL
+        type: postgres
+        access: proxy
+        url: scraping-pipeline-postgresql:5432
+        database: pipeline_metrics
+        user: postgres
+        secureJsonData:
+          password: postgres
+        jsonData:
+          sslmode: disable
+          postgresVersion: 1600
+          maxOpenConns: 100
+          maxIdleConns: 100
+          connMaxLifetime: 14400
+        editable: true
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana
+  labels:
+    app: grafana
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: grafana
+  template:
+    metadata:
+      labels:
+        app: grafana
+    spec:
+      securityContext:
+        fsGroup: 472
+        runAsUser: 472
+      containers:
+      - name: grafana
+        image: grafana/grafana:11.4.0
+        imagePullPolicy: IfNotPresent
+        ports:
+        - name: http
+          containerPort: 3000
+          protocol: TCP
+        env:
+        - name: GF_SECURITY_ADMIN_USER
+          value: "admin"
+        - name: GF_SECURITY_ADMIN_PASSWORD
+          value: "admin"
+
+        - name: GF_SECURITY_DISABLE_INITIAL_ADMIN_CREATION
+          value: "false"
+        - name: GF_SECURITY_PASSWORD_POLICY
+          value: "none"
+        - name: GF_AUTH_DISABLE_LOGIN_FORM
+          value: "false"
+        - name: GF_AUTH_BASIC_ENABLED
+          value: "true"
+
+        - name: GF_SERVER_DOMAIN
+          value: "localhost"
+        - name: GF_SERVER_HTTP_PORT
+          value: "3000"
+        - name: GF_SERVER_ROOT_URL
+          value: "%(protocol)s://%(domain)s:%(http_port)s/"
+        - name: GF_SERVER_SERVE_FROM_SUB_PATH
+          value: "false"
+        - name: GF_SERVER_ENFORCE_DOMAIN
+          value: "false"
+
+        - name: GF_USERS_ALLOW_SIGN_UP
+          value: "false"
+        - name: GF_USERS_ALLOW_ORG_CREATE
+          value: "false"
+
+        - name: GF_AUTH_ANONYMOUS_ENABLED
+          value: "false"
+
+        - name: GF_INSTALL_PLUGINS
+          value: "redis-datasource"
+
+        - name: GF_PATHS_PROVISIONING
+          value: "/etc/grafana/provisioning"
+
+        - name: GF_LOG_LEVEL
+          value: "info"
+        - name: GF_LOG_MODE
+          value: "console"
+
+        livenessProbe:
+          httpGet:
+            path: /api/health
+            port: 3000
+          initialDelaySeconds: 60
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 10
+
+        readinessProbe:
+          httpGet:
+            path: /api/health
+            port: 3000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 10
+
+        volumeMounts:
+        - name: storage
+          mountPath: /var/lib/grafana
+        - name: datasources
+          mountPath: /etc/grafana/provisioning/datasources
+
+        resources:
+          limits:
+            cpu: 500m
+            memory: 512Mi
+          requests:
+            cpu: 100m
+            memory: 128Mi
+
+      volumes:
+      - name: storage
+        persistentVolumeClaim:
+          claimName: grafana-storage
+      - name: datasources
+        configMap:
+          name: grafana-datasources
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana
+  labels:
+    app: grafana
+spec:
+  type: ClusterIP
+  ports:
+  - port: 3000
+    targetPort: 3000
+    protocol: TCP
+    name: http
+  selector:
+    app: grafana

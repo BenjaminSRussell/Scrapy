@@ -21,7 +21,7 @@ redis:
   enabled: true
   image:
     repository: redis
-    tag: "7.4.2-alpine3.21"
+    tag: "7.4-alpine"
     pullPolicy: IfNotPresent
 
   service:
@@ -54,7 +54,7 @@ postgresql:
   enabled: true
   image:
     repository: postgres
-    tag: "16.6-alpine3.21"
+    tag: "17-alpine"
     pullPolicy: IfNotPresent
 
   service:
@@ -90,7 +90,7 @@ zookeeper:
   enabled: true
   image:
     repository: confluentinc/cp-zookeeper
-    tag: "7.6.0"
+    tag: "7.9.1"
     pullPolicy: IfNotPresent
   replicas: 3
 
@@ -125,7 +125,7 @@ kafka:
   enabled: true
   image:
     repository: confluentinc/cp-kafka
-    tag: "7.6.0"
+    tag: "7.9.1"
     pullPolicy: IfNotPresent
 
   service:
@@ -167,7 +167,7 @@ prometheus:
   replicas: 2  # High availability
   image:
     repository: prom/prometheus
-    tag: "v3.1.0"
+    tag: "v3.2.1"
     pullPolicy: IfNotPresent
 
   service:
@@ -222,7 +222,7 @@ grafana:
   enabled: true
   image:
     repository: grafana/grafana
-    tag: "11.4.0"
+    tag: "11.6.1"
     pullPolicy: IfNotPresent
 
   service:
@@ -284,6 +284,9 @@ scrapyApp:
     minReplicas: 3
     maxReplicas: 10
     targetCPUUtilizationPercentage: 75
+    targetMemoryUtilizationPercentage: 80
+    scaleUpStabilizationWindowSeconds: 60
+    scaleDownStabilizationWindowSeconds: 300
 
   persistence:
     deltaLake:
@@ -312,6 +315,15 @@ stage2Worker:
 
   queueName: "stage2_queue"
 
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 8
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 75
+    scaleUpStabilizationWindowSeconds: 60
+    scaleDownStabilizationWindowSeconds: 300
+
 stage3Worker:
   enabled: true
   replicaCount: 2
@@ -331,6 +343,15 @@ stage3Worker:
       memory: 256Mi
 
   queueName: "stage3_queue"
+
+  autoscaling:
+    enabled: true
+    minReplicas: 1
+    maxReplicas: 6
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 75
+    scaleUpStabilizationWindowSeconds: 60
+    scaleDownStabilizationWindowSeconds: 300
 
 kafkaDeltaIngestor:
   enabled: true
@@ -477,7 +498,7 @@ secrets:
 
   grafana:
     adminUser: "admin"
-    adminPassword: "changeme"
+    adminPassword: "admin"
 
   aws:
     accessKeyId: ""

@@ -17,6 +17,8 @@ spec:
       app: stage2-worker
   template:
     metadata:
+      annotations:
+        cluster-autoscaler.kubernetes.io/safe-to-evict: "true"
       labels:
         {{- include "scraping-pipeline.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: stage2
@@ -93,6 +95,8 @@ spec:
       app: stage3-worker
   template:
     metadata:
+      annotations:
+        cluster-autoscaler.kubernetes.io/safe-to-evict: "true"
       labels:
         {{- include "scraping-pipeline.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: stage3

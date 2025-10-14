@@ -5,16 +5,15 @@ Unified entry-point for starting the scraping pipeline locally or on Kubernetes.
 
 from __future__ import annotations
 
-import os
 import argparse
+import os
 import shutil
 import subprocess
 import sys
 import textwrap
 import time
+from collections.abc import Iterable, Sequence
 from pathlib import Path
-from typing import Iterable, List, Sequence
-
 
 REQUIRED_TOOLS = {
     "local": ("docker", "docker-compose"),
@@ -22,7 +21,7 @@ REQUIRED_TOOLS = {
 }
 
 LOCAL_GRAFANA_URL = "http://localhost:3000"
-LOCAL_PROMETHEUS_URLS: List[str] = [
+LOCAL_PROMETHEUS_URLS: list[str] = [
     "http://localhost:9091",
     "http://localhost:9097",
 ]
@@ -228,11 +227,31 @@ def start_local(args: argparse.Namespace) -> None:
     else:
         print("Skipping Delta Lake reset. Use '--reset-delta' to wipe and reseed.")
 
-    grafana_msg = f"Grafana dashboard: {LOCAL_GRAFANA_URL}"
-    prometheus_msg = "Prometheus replicas: " + ", ".join(LOCAL_PROMETHEUS_URLS)
-    print("Local environment started successfully!")
-    print(grafana_msg)
-    print(prometheus_msg)
+    print("\n" + "="*70)
+    print("Local Environment Started Successfully!")
+    print("="*70)
+    print(f"\n📊 Grafana Dashboard: {LOCAL_GRAFANA_URL}")
+    print("   - Default credentials: admin / (password from .env GRAFANA_ADMIN_PASSWORD)")
+    print("   - View real-time metrics, dashboards, and alerts")
+    print(f"\n📈 Prometheus Replicas (HA Setup):")
+    for idx, url in enumerate(LOCAL_PROMETHEUS_URLS, 1):
+        print(f"   - Replica {idx}: {url}")
+    print(f"\n📝 Viewing Logs:")
+    print("   - All services:        docker-compose logs -f")
+    print("   - Scrapy app:          docker-compose logs -f scrapy-app")
+    print("   - Stage 2 worker:      docker-compose logs -f stage2-worker")
+    print("   - Stage 3 worker:      docker-compose logs -f stage3-worker")
+    print("   - Stage 4 worker:      docker-compose logs -f stage4-worker")
+    print("   - Kafka:               docker-compose logs -f kafka")
+    print("   - Redis:               docker-compose logs -f redis")
+    print("   - PostgreSQL:          docker-compose logs -f postgres")
+    print("   - Grafana:             docker-compose logs -f grafana")
+    print(f"\n🔧 Other Useful Commands:")
+    print("   - Check service status: docker-compose ps")
+    print("   - Stop all services:    docker-compose down")
+    print("   - Restart a service:    docker-compose restart <service-name>")
+    print("   - View resource usage:  docker stats")
+    print("="*70 + "\n")
 
 
 def prompt_prerequisites() -> None:
@@ -270,7 +289,7 @@ def deploy_helm_release(
         print(f"Helm chart not found at: {chart}", file=sys.stderr)
         sys.exit(1)
     ensure_files_exist(values_files)
-    command: List[str] = [
+    command: list[str] = [
         "helm",
         "upgrade",
         "--install",
@@ -286,6 +305,42 @@ def deploy_helm_release(
         if item:
             command.extend(["--set", item])
     run_command(command)
+
+
+def wait_for_pods_ready(namespace: str, timeout: int = 300) -> None:
+    """Wait for all pods in namespace to be ready."""
+    print(f"Waiting for pods in namespace '{namespace}' to be ready (timeout={timeout}s)...")
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        result = subprocess.run(
+            ("kubectl", "get", "pods", "--namespace", namespace, "-o", "jsonpath={.items[*].status.conditions[?(@.type=='Ready')].status}"),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode == 0:
+            statuses = result.stdout.strip().split()
+            if statuses and all(status == "True" for status in statuses):
+                print(f"All pods in namespace '{namespace}' are ready!")
+                return
+        time.sleep(5)
+    print(f"WARNING: Not all pods became ready within {timeout}s. Check status with: kubectl get pods -n {namespace}")
+
+
+def verify_hpa_status(namespace: str) -> None:
+    """Verify HPA status and display metrics."""
+    print(f"\nChecking HorizontalPodAutoscalers in namespace '{namespace}'...")
+    result = subprocess.run(
+        ("kubectl", "get", "hpa", "--namespace", namespace),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode == 0 and result.stdout.strip():
+        print("HPA Status:")
+        print(result.stdout)
+    else:
+        print("No HPAs found or error retrieving HPA status.")
 
 
 def start_k8s(args: argparse.Namespace) -> None:
@@ -305,7 +360,33 @@ def start_k8s(args: argparse.Namespace) -> None:
         namespace = args.namespace or PIPELINE_NAMESPACE
         print(f"Deploying the full pipeline as Helm release '{release}' in namespace '{namespace}'...")
         deploy_helm_release(args.chart, release, namespace, values_files, additional_sets)
-        print(f"Monitor pods with: kubectl get pods --namespace {namespace} --watch")
+        print(f"\nDeployment complete! Waiting for pods to be ready...")
+        wait_for_pods_ready(namespace, timeout=300)
+        verify_hpa_status(namespace)
+        print(f"\n{'='*70}")
+        print(f"Kubernetes Deployment Summary")
+        print(f"{'='*70}")
+        print(f"Release: {release}")
+        print(f"Namespace: {namespace}")
+        print(f"\n📊 Accessing Services:")
+        print(f"   - Grafana:     kubectl port-forward -n {namespace} svc/{release}-grafana 3000:3000")
+        print(f"                  Then open: http://localhost:3000")
+        print(f"   - Prometheus:  kubectl port-forward -n {namespace} svc/{release}-prometheus 9090:9090")
+        print(f"                  Then open: http://localhost:9090")
+        print(f"\n📝 Viewing Logs:")
+        print(f"   - Scrapy app:     kubectl logs -n {namespace} -l app.kubernetes.io/component=scrapy --tail=100 -f")
+        print(f"   - Stage 2 worker: kubectl logs -n {namespace} -l app.kubernetes.io/component=stage2-worker --tail=100 -f")
+        print(f"   - Stage 3 worker: kubectl logs -n {namespace} -l app.kubernetes.io/component=stage3-worker --tail=100 -f")
+        print(f"   - All pods:       kubectl logs -n {namespace} --all-containers=true --tail=50 -f")
+        print(f"\n🔧 Managing Deployment:")
+        print(f"   - View pods:       kubectl get pods -n {namespace}")
+        print(f"   - View HPAs:       kubectl get hpa -n {namespace}")
+        print(f"   - View services:   kubectl get svc -n {namespace}")
+        print(f"   - Watch pods:      kubectl get pods -n {namespace} --watch")
+        print(f"   - Scale scrapy:    kubectl scale deployment/{release}-scrapy -n {namespace} --replicas=5")
+        print(f"   - Describe pod:    kubectl describe pod -n {namespace} <pod-name>")
+        print(f"   - Execute in pod:  kubectl exec -n {namespace} -it <pod-name> -- /bin/bash")
+        print(f"{'='*70}\n")
         return
 
     stages = ["stage1", "stage2", "stage3"] if args.stage == "all-stages" else [args.stage]
@@ -323,9 +404,20 @@ def start_k8s(args: argparse.Namespace) -> None:
         )
         set_args = list(defaults.get("set_overrides", ()))
         set_args.extend(additional_sets)
-        print(f"Deploying stage '{stage}' as Helm release '{release}' in namespace '{namespace}'...")
+        print(f"\nDeploying stage '{stage}' as Helm release '{release}' in namespace '{namespace}'...")
         deploy_helm_release(args.chart, release, namespace, values_files, set_args)
-        print(f"Monitor pods with: kubectl get pods --namespace {namespace} --watch")
+        wait_for_pods_ready(namespace, timeout=180)
+        verify_hpa_status(namespace)
+        print(f"\n{'='*70}")
+        print(f"Stage '{stage}' Deployment Complete")
+        print(f"{'='*70}")
+        print(f"Release: {release}")
+        print(f"Namespace: {namespace}")
+        print(f"\n📝 Monitoring:")
+        print(f"   - View pods:  kubectl get pods -n {namespace}")
+        print(f"   - View logs:  kubectl logs -n {namespace} --all-containers=true --tail=100 -f")
+        print(f"   - Watch:      kubectl get pods -n {namespace} --watch")
+        print(f"{'='*70}\n")
 
 
 def main() -> None:

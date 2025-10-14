@@ -16,6 +16,11 @@ spec:
       app: scrapy-runner
   template:
     metadata:
+      annotations:
+        cluster-autoscaler.kubernetes.io/safe-to-evict: "true"
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9410"
+        prometheus.io/path: "/metrics"
       labels:
         {{- include "scraping-pipeline.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: scrapy

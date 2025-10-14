@@ -18,3 +18,7 @@ ruff>=0.9.0
 
 # Security
 pip-audit>=2.7.0
+
+# Kubernetes Development Tools
+pykube-ng>=23.6.0  # Kubernetes API client for testing
+kubernetes-validate>=1.34.0  # Kubernetes manifest validation

@@ -1,10 +1,4 @@
-"""Advanced Sitemap Parser - Recursively discovers nested sitemaps.
-
-IMPROVEMENTS:
-- Handles compressed sitemaps (.xml.gz)
-- Prioritizes robots.txt over guessing paths
-- Robust error handling for malformed XML
-"""
+"""Parse sitemaps (including nested and gzipped variants) to collect URLs."""
 
 import gzip
 import logging
@@ -18,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 class SitemapParser:
-    """Intelligent sitemap parser with recursive discovery."""
+    """Recursively walk sitemap indexes and return discovered URLs."""
 
     # XML namespaces commonly used in sitemaps
     NAMESPACES = {
@@ -29,13 +23,7 @@ class SitemapParser:
     }
 
     def __init__(self, base_url: str, timeout: int = 30, max_depth: int = 5):
-        """Initialize sitemap parser.
-
-        Args:
-            base_url: Base URL of the site
-            timeout: HTTP request timeout
-            max_depth: Maximum recursion depth for nested sitemaps
-        """
+        """Store crawl settings and per-run caches."""
         self.base_url = base_url
         self.timeout = timeout
         self.max_depth = max_depth
@@ -43,23 +31,15 @@ class SitemapParser:
         self.discovered_urls: set[str] = set()
 
     async def discover_all_urls(self) -> list[str]:
-        """Discover all URLs from sitemaps (including nested).
-
-        IMPROVEMENT: Prioritizes robots.txt, then tries common paths.
-
-        Returns:
-            List of discovered URLs
-        """
+        """Return every URL advertised by the site's sitemap footprint."""
         parsed = urlparse(self.base_url)
         base = f"{parsed.scheme}://{parsed.netloc}"
 
-        # IMPROVEMENT: Prioritize robots.txt (standard mechanism)
         robots_sitemaps = await self._get_sitemaps_from_robots(base)
 
-        # Try common sitemap locations (including .gz variants)
         common_sitemap_urls = [
             urljoin(base, '/sitemap.xml'),
-            urljoin(base, '/sitemap.xml.gz'),  # Compressed variant
+            urljoin(base, '/sitemap.xml.gz'),
             urljoin(base, '/sitemap_index.xml'),
             urljoin(base, '/sitemap_index.xml.gz'),
             urljoin(base, '/sitemap-index.xml'),
@@ -68,10 +48,8 @@ class SitemapParser:
             urljoin(base, '/sitemap/sitemap.xml'),
         ]
 
-        # Combine: robots.txt first, then common paths
         sitemap_urls = robots_sitemaps + common_sitemap_urls
 
-        # IMPROVEMENT: Process all sitemaps with proper User-Agent header
         headers = {
             'User-Agent': 'SitemapParser/1.0 (compatible; web crawler)'
         }
@@ -84,14 +62,7 @@ class SitemapParser:
         return list(self.discovered_urls)
 
     async def _get_sitemaps_from_robots(self, base_url: str) -> list[str]:
-        """Extract sitemap URLs from robots.txt.
-
-        Args:
-            base_url: Base URL of site
-
-        Returns:
-            List of sitemap URLs
-        """
+        """Return sitemap URLs declared in robots.txt."""
         robots_url = urljoin(base_url, '/robots.txt')
         sitemaps = []
 
@@ -116,19 +87,11 @@ class SitemapParser:
         sitemap_url: str,
         depth: int = 0,
     ):
-        """Recursively parse sitemap and nested sitemaps.
-
-        Args:
-            client: HTTP client
-            sitemap_url: URL of sitemap to parse
-            depth: Current recursion depth
-        """
-        # Check depth limit
+        """Walk a sitemap (and any nested indexes) while honoring depth."""
         if depth > self.max_depth:
             logger.warning(f"Max sitemap depth reached: {sitemap_url}")
             return
 
-        # Check if already visited
         if sitemap_url in self.visited_sitemaps:
             return
 
@@ -142,7 +105,7 @@ class SitemapParser:
                 logger.warning(f"Sitemap returned {response.status_code}: {sitemap_url}")
                 return
 
-            # IMPROVEMENT: Handle compressed sitemaps (.gz)
+            # Support gzipped sitemap payloads
             content = response.content
             if sitemap_url.endswith('.gz') or response.headers.get('content-encoding') == 'gzip':
                 try:
@@ -174,7 +137,7 @@ class SitemapParser:
                     logger.info(f"Extracted {len(urls)} URLs from {sitemap_url}")
 
             except ET.ParseError as e:
-                # IMPROVEMENT: Fallback to plain-text sitemap parsing
+                # Fall back to plain-text parsing if needed
                 content_type = response.headers.get('content-type', '').lower()
                 if 'text/plain' in content_type or 'text/html' in content_type:
                     logger.info(f"XML parsing failed, trying plain-text format: {sitemap_url}")
@@ -192,19 +155,10 @@ class SitemapParser:
             logger.warning(f"Error processing sitemap: {sitemap_url} - {e}")
 
     def _is_sitemap_index(self, root: ET.Element) -> bool:
-        """Check if XML is a sitemap index (contains nested sitemaps).
-
-        Args:
-            root: XML root element
-
-        Returns:
-            True if sitemap index
-        """
-        # Check for <sitemapindex> tag
+        """Return True when the document describes nested sitemaps."""
         if root.tag.endswith('sitemapindex'):
             return True
 
-        # Check for <sitemap> children (indicates index)
         for ns in ['', '{http://www.sitemaps.org/schemas/sitemap/0.9}']:
             if root.find(f'{ns}sitemap') is not None:
                 return True
@@ -212,17 +166,9 @@ class SitemapParser:
         return False
 
     def _extract_nested_sitemaps(self, root: ET.Element) -> list[str]:
-        """Extract nested sitemap URLs from sitemap index.
-
-        Args:
-            root: XML root element
-
-        Returns:
-            List of nested sitemap URLs
-        """
+        """Return nested sitemap URLs declared in an index file."""
         sitemaps = []
 
-        # Try with and without namespace
         for ns in ['', '{http://www.sitemaps.org/schemas/sitemap/0.9}']:
             for sitemap in root.findall(f'{ns}sitemap'):
                 loc = sitemap.find(f'{ns}loc')
@@ -230,7 +176,6 @@ class SitemapParser:
                     sitemap_url = loc.text.strip()
                     sitemaps.append(sitemap_url)
 
-                    # Log lastmod if available
                     lastmod = sitemap.find(f'{ns}lastmod')
                     if lastmod is not None and lastmod.text:
                         logger.debug(f"Sitemap {sitemap_url} last modified: {lastmod.text}")
@@ -238,17 +183,9 @@ class SitemapParser:
         return sitemaps
 
     def _extract_urls_from_sitemap(self, root: ET.Element) -> set[str]:
-        """Extract URLs from regular sitemap.
-
-        Args:
-            root: XML root element
-
-        Returns:
-            Set of URLs
-        """
+        """Return URL entries referenced by a standard sitemap file."""
         urls = set()
 
-        # Try with and without namespace
         for ns in ['', '{http://www.sitemaps.org/schemas/sitemap/0.9}']:
             for url_elem in root.findall(f'{ns}url'):
                 loc = url_elem.find(f'{ns}loc')
@@ -256,7 +193,6 @@ class SitemapParser:
                     url = loc.text.strip()
                     urls.add(url)
 
-                    # Extract metadata (optional)
                     lastmod = url_elem.find(f'{ns}lastmod')
                     priority = url_elem.find(f'{ns}priority')
                     changefreq = url_elem.find(f'{ns}changefreq')
@@ -273,16 +209,7 @@ class SitemapParser:
         return urls
 
     def _extract_from_plain_text(self, text: str) -> set[str]:
-        """Extract URLs from plain text sitemap (non-XML).
-
-        Some sites serve plain text sitemaps with one URL per line.
-
-        Args:
-            text: Plain text content
-
-        Returns:
-            Set of URLs
-        """
+        """Return URLs from a plain-text sitemap (one per line)."""
         urls = set()
 
         for line in text.split('\n'):
@@ -297,20 +224,12 @@ class SitemapIntegration:
     """Integrate sitemap discovery with Scrapy spider."""
 
     def __init__(self, spider):
-        """Initialize with Scrapy spider instance.
-
-        Args:
-            spider: Scrapy spider instance
-        """
+        """Bind a spider instance and prepare the parser helper."""
         self.spider = spider
         self.parser = SitemapParser(spider.start_urls[0] if spider.start_urls else "")
 
     async def discover_sitemap_urls(self) -> list[str]:
-        """Discover all URLs from sitemaps.
-
-        Returns:
-            List of URLs to crawl
-        """
+        """Return sitemap-derived URLs for the given spider."""
         try:
             urls = await self.parser.discover_all_urls()
             logger.info(f"Sitemap discovery: found {len(urls)} URLs")
@@ -320,14 +239,7 @@ class SitemapIntegration:
             return []
 
     def generate_scrapy_requests(self, urls: list[str]) -> Iterator:
-        """Generate Scrapy requests from sitemap URLs.
-
-        Args:
-            urls: List of URLs from sitemap
-
-        Yields:
-            Scrapy Request objects
-        """
+        """Yield Scrapy requests for each sitemap URL."""
         import scrapy
 
         for url in urls:
@@ -343,21 +255,12 @@ class SitemapIntegration:
 
 # Synchronous wrapper for use in Scrapy
 def discover_sitemaps_sync(base_url: str, timeout: int = 30) -> list[str]:
-    """Synchronous wrapper for sitemap discovery.
-
-    Args:
-        base_url: Base URL of site
-        timeout: HTTP timeout
-
-    Returns:
-        List of discovered URLs
-    """
+    """Run sitemap discovery in a temporary event loop."""
     import asyncio
 
     parser = SitemapParser(base_url, timeout=timeout)
 
     try:
-        # Run async function in new event loop
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         urls = loop.run_until_complete(parser.discover_all_urls())

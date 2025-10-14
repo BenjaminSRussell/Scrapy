@@ -2,8 +2,8 @@
 """
 Simple test to verify start_requests() is called
 """
-import sys
 import logging
+import sys
 
 logging.basicConfig(
     level=logging.WARNING,
@@ -12,6 +12,7 @@ logging.basicConfig(
 
 from scrapy.crawler import CrawlerProcess
 from scrapy.utils.project import get_project_settings
+
 
 def main():
     print("=== Starting Simple Spider Test ===")

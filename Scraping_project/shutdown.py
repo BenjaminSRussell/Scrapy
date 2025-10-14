@@ -9,8 +9,7 @@ import argparse
 import shutil
 import subprocess
 import sys
-from typing import Iterable, List, Sequence, Tuple
-
+from collections.abc import Iterable, Sequence
 
 REQUIRED_TOOLS = {
     "local": ("docker-compose",),
@@ -30,9 +29,12 @@ INFRA_VOLUMES = [
     "grafana_data",
 ]
 
-PROJECT_DATA_VOLUMES = [
-    "delta_data",
+STATEFUL_SERVICE_VOLUMES = [
     "postgres_data",
+]
+
+DELTA_LAKE_VOLUMES = [
+    "delta_data",
 ]
 
 PIPELINE_RELEASE = "scraping-pipeline"
@@ -91,7 +93,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--purge-data",
         action="store_true",
-        help="Also remove project data volumes (Delta Lake, Postgres) during local shutdown.",
+        help="Also remove Delta Lake volumes during local shutdown.",
+    )
+    parser.add_argument(
+        "--skip-images",
+        action="store_true",
+        help="Skip Docker image removal (only stop containers and remove volumes).",
     )
     return parser.parse_args()
 
@@ -122,7 +129,7 @@ def run_command(command: Iterable[str]) -> subprocess.CompletedProcess:
         sys.exit(exc.returncode or 1)
 
 
-def list_docker_volumes() -> List[str]:
+def list_docker_volumes() -> list[str]:
     result = subprocess.run(
         ("docker", "volume", "ls", "--format", "{{.Name}}"),
         capture_output=True,
@@ -148,7 +155,7 @@ def prune_local_volumes(purge_data: bool) -> None:
     if not existing:
         return
 
-    def matching_names(base: str) -> List[str]:
+    def matching_names(base: str) -> list[str]:
         suffix = f"_{base}"
         return [
             name
@@ -157,8 +164,9 @@ def prune_local_volumes(purge_data: bool) -> None:
         ]
 
     removable = list(INFRA_VOLUMES)
+    removable.extend(STATEFUL_SERVICE_VOLUMES)
     if purge_data:
-        removable.extend(PROJECT_DATA_VOLUMES)
+        removable.extend(DELTA_LAKE_VOLUMES)
 
     for base in removable:
         matches = matching_names(base)
@@ -167,35 +175,265 @@ def prune_local_volumes(purge_data: bool) -> None:
             remove_volume(name)
 
 
-def shutdown_local(purge_data: bool) -> None:
-    prompt_lines = [
-        "This will stop all local containers and remove Docker volumes that store logs,",
-        "metrics, and broker state. Delta Lake/Postgres data are retained unless",
-        "you supply '--purge-data'.",
-        "Type 'yes' to proceed: ",
+def remove_leftover_containers() -> None:
+    result = subprocess.run(
+        ("docker", "ps", "-a", "--format", "{{.ID}} {{.Names}}"),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0 or not result.stdout.strip():
+        return
+
+    prefixes = ("scraping_", "scraping-")
+    for line in result.stdout.splitlines():
+        parts = line.strip().split(maxsplit=1)
+        if len(parts) != 2:
+            continue
+        container_id, name = parts
+        if not name.startswith(prefixes):
+            continue
+        print(f"Removing Docker container '{name}'...")
+        result = subprocess.run(
+            ("docker", "rm", "-f", container_id),
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0 and "No such container" not in (result.stderr or ""):
+            print(
+                f"  Warning: unable to remove container '{name}': {result.stderr.strip()}",
+                file=sys.stderr,
+            )
+
+
+def containers_using_image(image_ref: str) -> list[tuple[str, str]]:
+    result = subprocess.run(
+        (
+            "docker",
+            "ps",
+            "-a",
+            "--filter",
+            f"ancestor={image_ref}",
+            "--format",
+            "{{.ID}} {{.Names}}",
+        ),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    containers: list[tuple[str, str]] = []
+    if result.returncode != 0 or not result.stdout.strip():
+        return containers
+
+    for line in result.stdout.splitlines():
+        parts = line.strip().split(maxsplit=1)
+        if len(parts) != 2:
+            continue
+        containers.append((parts[0], parts[1]))
+    return containers
+
+
+def display_name_for_image(image_ref: str) -> str:
+    result = subprocess.run(
+        (
+            "docker",
+            "image",
+            "inspect",
+            image_ref,
+            "--format",
+            "{{if .RepoTags}}{{range $index, $tag := .RepoTags}}{{if $index}}, {{end}}{{$tag}}{{end}}{{end}}",
+        ),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode == 0 and result.stdout.strip():
+        return result.stdout.strip()
+    return image_ref
+
+
+def remove_service_images() -> None:
+    result = subprocess.run(
+        ("docker-compose", "images", "--quiet"),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        return
+
+    image_ids = {line.strip() for line in result.stdout.splitlines() if line.strip()}
+    for image_id in image_ids:
+        display = display_name_for_image(image_id)
+        print(f"Removing Docker image '{display}'...")
+        result = subprocess.run(
+            ("docker", "image", "rm", image_id),
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode == 0:
+            continue
+
+        stderr = (result.stderr or "").strip()
+        if "No such image" in stderr:
+            continue
+
+        if "used by running container" in stderr or "is using its referenced image" in stderr:
+            containers = containers_using_image(image_id)
+            if not containers:
+                print(f"  Warning: image still in use: {stderr}", file=sys.stderr)
+                continue
+
+            prefixes = ("scraping_", "scraping-")
+            removable = [item for item in containers if item[1].startswith(prefixes)]
+            external = [item for item in containers if item not in removable]
+
+            for container_id, name in removable:
+                print(f"  Removing container '{name}' still using image '{display}'...")
+                rm_result = subprocess.run(
+                    ("docker", "rm", "-f", container_id),
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                if rm_result.returncode != 0 and "No such container" not in (rm_result.stderr or ""):
+                    print(
+                        f"    Warning: unable to remove container '{name}': {rm_result.stderr.strip()}",
+                        file=sys.stderr,
+                    )
+
+            if removable:
+                retry = subprocess.run(
+                    ("docker", "image", "rm", image_id),
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                if retry.returncode == 0:
+                    continue
+                stderr = (retry.stderr or "").strip()
+
+            if external:
+                offenders = ", ".join(name for _, name in external)
+                k8s_offenders = [name for _, name in external if name.startswith("k8s_")]
+                if k8s_offenders:
+                    print(
+                        f"  Skipping removal of image '{display}' because Kubernetes-managed containers "
+                        f"still depend on it: {', '.join(k8s_offenders)}.",
+                        file=sys.stderr,
+                    )
+                    print(
+                        "  Run 'python shutdown.py --env k8s' (or use Helm manually) to uninstall the cluster release, "
+                        "then re-run the shutdown if you want these images removed.",
+                        file=sys.stderr,
+                    )
+                else:
+                    print(
+                        f"  Skipping removal of image '{display}' because external containers "
+                        f"still depend on it: {offenders}",
+                        file=sys.stderr,
+                    )
+                continue
+
+        print(
+            f"  Warning: unable to remove image '{display}': {stderr}",
+            file=sys.stderr,
+        )
+
+
+def detect_running_k8s_release() -> None:
+    result = subprocess.run(
+        ("docker", "ps", "--format", "{{.Names}} {{.Image}}"),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0 or not result.stdout.strip():
+        return
+
+    offenders: list[str] = []
+    for line in result.stdout.splitlines():
+        parts = line.strip().split(maxsplit=1)
+        if len(parts) != 2:
+            continue
+        name, image = parts
+        if not name.startswith("k8s_"):
+            continue
+        if "scraping-pipeline" in name or "scraping" in image:
+            offenders.append(f"{name} ({image})")
+
+    if offenders:
+        print(
+            "Detected Kubernetes-managed containers for the scraping pipeline still running:",
+            file=sys.stderr,
+        )
+        for offender in offenders:
+            print(f"  - {offender}", file=sys.stderr)
+        print(
+            "Use 'python shutdown.py --env k8s' to uninstall the Kubernetes release (or "
+            "helm/kubectl manually) before rerunning the local shutdown to remove shared images.",
+            file=sys.stderr,
+        )
+
+
+def shutdown_local(purge_data: bool, skip_images: bool) -> None:
+    prompt_parts = [
+        "This will stop all local containers and clear Docker volumes for caches,",
+        "brokers, metrics, and Postgres.",
     ]
-    prompt = "\n".join(prompt_lines)
+    if not skip_images:
+        prompt_parts.append("Docker images will also be removed.")
+    if purge_data:
+        prompt_parts.append("Delta Lake storage will be removed (--purge-data).")
+    else:
+        prompt_parts.append("Delta Lake storage is preserved (use --purge-data to remove).")
+
+    prompt_parts.append("\nType 'yes' to proceed: ")
+    prompt = " ".join(prompt_parts)
+
     confirmation = input(prompt).strip().lower()
     if confirmation != "yes":
         print("Local shutdown aborted.")
         sys.exit(0)
 
     print("Stopping local environment with docker-compose down...")
-    run_command(("docker-compose", "down"))
+    run_command(("docker-compose", "down", "--remove-orphans"))
+
+    print("Removing any leftover project containers...")
+    remove_leftover_containers()
+
+    if not skip_images:
+        print("Removing cached project images (this may take a moment)...")
+        try:
+            remove_service_images()
+        except Exception as e:
+            print(f"Warning: Some images could not be removed: {e}", file=sys.stderr)
+            print("You can manually remove images later with: docker image prune", file=sys.stderr)
+    else:
+        print("Skipping Docker image removal (--skip-images flag was used).")
+
+    detect_running_k8s_release()
 
     print("Cleaning up infrastructure volumes...")
     prune_local_volumes(purge_data)
-    print("Local environment shut down successfully.")
+    print("\n" + "="*70)
+    print("Local Environment Shut Down Successfully!")
+    print("="*70)
+    if skip_images:
+        print("Note: Docker images were not removed. Run without --skip-images to remove them.")
+    print("="*70 + "\n")
 
 
-def build_k8s_targets(args: argparse.Namespace) -> Sequence[Tuple[str, str, str]]:
+def build_k8s_targets(args: argparse.Namespace) -> Sequence[tuple[str, str, str]]:
     if args.stage == "pipeline":
         release = args.release or PIPELINE_RELEASE
         namespace = args.namespace or PIPELINE_NAMESPACE
         return [("pipeline", release, namespace)]
 
     stages = ["stage1", "stage2", "stage3"] if args.stage == "all-stages" else [args.stage]
-    targets: List[Tuple[str, str, str]] = []
+    targets: list[tuple[str, str, str]] = []
     for stage in stages:
         defaults = K8S_STAGE_DEFAULTS[stage]
         release = (
@@ -240,7 +478,7 @@ def main() -> None:
     ensure_tools_available(args.env)
 
     if args.env == "local":
-        shutdown_local(args.purge_data)
+        shutdown_local(args.purge_data, args.skip_images)
     else:
         shutdown_k8s(args)
 

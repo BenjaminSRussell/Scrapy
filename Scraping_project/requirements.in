@@ -38,6 +38,7 @@ confluent-kafka>=2.3.0  # High-performance Kafka client (librdkafka wrapper)
 
 # Monitoring
 prometheus-client>=0.20.0  # Prometheus metrics exporter
+kubernetes>=32.0.0  # Kubernetes Python client for health checks and service discovery
 
 # Machine Learning
 scikit-learn>=1.3.0  # ML for error analysis

@@ -1,4 +1,4 @@
-"""Configuration Loader - Single source of truth for all pipeline settings."""
+"""Load pipeline configuration from YAML with sensible defaults."""
 
 import logging
 from pathlib import Path
@@ -13,13 +13,8 @@ class Config:
     """Configuration manager for the scraping pipeline."""
 
     def __init__(self, config_path: str | None = None):
-        """Load configuration from YAML file.
-
-        Args:
-            config_path: Path to config.yml (defaults to project root)
-        """
+        """Load configuration from YAML file."""
         if config_path is None:
-            # Default to config.yml in project root
             project_root = Path(__file__).parent.parent.parent
             config_path = project_root / "config.yml"
 
@@ -45,7 +40,7 @@ class Config:
             self._config = self._get_default_config()
 
     def _get_default_config(self) -> dict[str, Any]:
-        """Get default configuration if file doesn't exist."""
+        """Return baseline configuration when no file is present."""
         return {
             'redis': {
                 'host': 'localhost',
@@ -69,21 +64,7 @@ class Config:
         }
 
     def get(self, key_path: str, default: Any = None) -> Any:
-        """Get configuration value using dot notation.
-
-        Args:
-            key_path: Dot-separated path (e.g., 'redis.host')
-            default: Default value if key not found
-
-        Returns:
-            Configuration value
-
-        Example:
-            >>> config.get('redis.host')
-            'localhost'
-            >>> config.get('stage1.concurrent_requests')
-            512
-        """
+        """Return a value using dot notation, or the provided default."""
         keys = key_path.split('.')
         value = self._config
 
@@ -96,37 +77,23 @@ class Config:
         return value
 
     def get_section(self, section: str) -> dict[str, Any]:
-        """Get entire configuration section.
-
-        Args:
-            section: Section name (e.g., 'redis', 'stage1')
-
-        Returns:
-            Dictionary of section configuration
-        """
+        """Return a nested configuration dictionary."""
         return self._config.get(section, {})
 
     def set(self, key_path: str, value: Any):
-        """Set configuration value (runtime only, not persisted).
-
-        Args:
-            key_path: Dot-separated path
-            value: Value to set
-        """
+        """Set a configuration value for the current process."""
         keys = key_path.split('.')
         config = self._config
 
-        # Navigate to parent
         for key in keys[:-1]:
             if key not in config:
                 config[key] = {}
             config = config[key]
 
-        # Set value
         config[keys[-1]] = value
 
     def reload(self):
-        """Reload configuration from file."""
+        """Reload configuration from disk."""
         self._load_config()
 
     # ============================================
@@ -135,42 +102,42 @@ class Config:
 
     @property
     def redis_config(self) -> dict[str, Any]:
-        """Get Redis configuration."""
+        """Return Redis configuration block."""
         return self.get_section('redis')
 
     @property
     def postgres_config(self) -> dict[str, Any]:
-        """Get PostgreSQL configuration."""
+        """Return PostgreSQL configuration block."""
         return self.get_section('postgres')
 
     @property
     def stage1_config(self) -> dict[str, Any]:
-        """Get Stage 1 configuration."""
+        """Return Stage 1 configuration block."""
         return self.get_section('stage1')
 
     @property
     def stage2_config(self) -> dict[str, Any]:
-        """Get Stage 2 configuration."""
+        """Return Stage 2 configuration block."""
         return self.get_section('stage2')
 
     @property
     def stage3_config(self) -> dict[str, Any]:
-        """Get Stage 3 configuration."""
+        """Return Stage 3 configuration block."""
         return self.get_section('stage3')
 
     @property
     def stage4_config(self) -> dict[str, Any]:
-        """Get Stage 4 configuration."""
+        """Return Stage 4 configuration block."""
         return self.get_section('stage4')
 
     @property
     def delta_lake_config(self) -> dict[str, Any]:
-        """Get Delta Lake configuration."""
+        """Return Delta Lake configuration block."""
         return self.get_section('delta_lake')
 
     @property
     def message_queue_config(self) -> dict[str, Any]:
-        """Get message queue configuration."""
+        """Return message queue configuration block."""
         return self.get_section('message_queues')
 
 
@@ -179,14 +146,7 @@ _config: Config | None = None
 
 
 def get_config(config_path: str | None = None) -> Config:
-    """Get global configuration instance.
-
-    Args:
-        config_path: Optional path to config file
-
-    Returns:
-        Config instance
-    """
+    """Return the shared Config instance, creating it on first use."""
     global _config
 
     if _config is None:
@@ -196,7 +156,7 @@ def get_config(config_path: str | None = None) -> Config:
 
 
 def load_config(config_path: str | None = None) -> dict[str, Any]:
-    """Load configuration and return as dictionary.
+    """Return the raw config dictionary via the shared Config instance."""
 
     Args:
         config_path: Optional path to config file

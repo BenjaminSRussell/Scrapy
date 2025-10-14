@@ -1,8 +1,4 @@
-"""Base Spider - Shared crawling logic for all Stage 1 spiders.
-
-This base class contains all common functionality between ScoutSpider and DeepDiveSpider,
-eliminating code duplication and providing a single source of truth for core crawling logic.
-"""
+"""Shared crawling logic for Stage 1 spiders."""
 
 import hashlib
 import logging
@@ -51,28 +47,23 @@ class BaseSpider(scrapy.Spider):
     - custom_settings: Spider-specific settings dict
     """
 
-    # Handle redirects automatically
+    # Follow standard redirect status codes
     handle_httpstatus_list = [301, 302, 303, 307, 308]
 
     def __init__(self, *args, **kwargs):
         """Initialize base spider with shared resources."""
         super().__init__(*args, **kwargs)
 
-        # Guarantee attribute exists before subclasses reference it
-        self.allowed_domains = list(getattr(self, 'allowed_domains', []))
+        # Limit crawl to uconn.edu domains (including subdomains)
+        self.allowed_domains = ['uconn.edu']
 
-        # Load IGNORED_EXTENSIONS from settings (centralized single source of truth)
-        # Note: self.settings may not be available yet in __init__, use getattr with default
+        # Grab IGNORED_EXTENSIONS from settings when available
         self.IGNORED_EXTENSIONS = getattr(self, 'settings', {}).get('IGNORED_EXTENSIONS', []) if hasattr(self, 'settings') else []
 
         # Load configuration
         self.config = load_config()
 
-        # Extract allowed domains from start URLs dynamically
-        if hasattr(self, 'start_urls') and self.start_urls:
-            self._initialize_allowed_domains()
-
-        # Initialize Redis client for URL de-duplication
+        # Shared Redis client for URL de-duplication
         redis_config = self.config.get('redis', {})
         redis_host = os.getenv('REDIS_HOST', redis_config.get('host', 'localhost'))
         redis_port = int(os.getenv('REDIS_PORT', redis_config.get('port', 6379)))
@@ -84,7 +75,7 @@ class BaseSpider(scrapy.Spider):
             decode_responses=False  # Work with bytes for efficiency
         )
 
-        # Use a Redis set for URL hashes with spider-specific key
+        # Spider-specific Redis key storing URL hashes
         self.url_hashes_key = f'{self.name}:url_hashes'
 
         # Initialize data structures
@@ -92,7 +83,7 @@ class BaseSpider(scrapy.Spider):
         self.error_records = []
         self.sitemaps_parsed: set[str] = set()
 
-        # Skip tracking counters for live metrics
+        # Track skipped URLs by type for metrics
         self.skip_counters = {
             'images': 0,
             'static_assets': 0,
@@ -112,46 +103,31 @@ class BaseSpider(scrapy.Spider):
         self.perf_urls_processed = 0
         self.perf_last_log = datetime.now()
 
-        # Dashboard metrics tracking with per-page deltas (FIXED)
+        # Track per-page metrics for dashboard updates
         self.start_time = time.time()
-        self.total_urls_discovered = 0  # Renamed from new_urls_count for clarity
+        self.total_urls_discovered = 0
         self.total_file_size = 0
 
         # Sliding windows for rate calculations
-        self.url_discovery_window = deque(maxlen=60)  # (timestamp, count) tuples
-        self.file_size_window = deque(maxlen=100)  # Recent file sizes
+        self.url_discovery_window = deque(maxlen=60)
+        self.file_size_window = deque(maxlen=100)
         self.last_metric_update = time.time()
 
-        # JS detection confidence threshold (JSDetector is instantiated per-response)
+        # Minimum JS detector confidence before flagging a page
         self.js_confidence_threshold = self.config.get('stage1', {}).get('js_confidence_threshold', 0.7)
 
-        # Load batch size from settings (configurable)
-        # Note: self.settings may not be available yet in __init__, use default
+        # Batch size falls back to 50 if settings unavailable
         self.batch_size = self.settings.getint('DELTA_BATCH_SIZE', 50) if hasattr(self, 'settings') and self.settings else 50
 
-        # Load start URLs
+        # Ensure we have start URLs loaded from Delta
         if not hasattr(self, 'start_urls') or not self.start_urls:
             self.start_urls = self._load_seed_urls()
-            # Ensure allowed domains reflect the freshly loaded seeds
-            self._initialize_allowed_domains()
 
         url_count = self.redis_client.scard(self.url_hashes_key)
         logger.info(f"{self.name} loaded {len(self.start_urls)} seeds, {url_count} existing URLs in Redis")
 
     async def start(self):
-        """Generate initial requests from dynamically loaded start URLs.
-
-        CRITICAL FIX: Modern Scrapy (>=2.13) uses an async ``start`` coroutine instead
-        of the deprecated ``start_requests``. Because we populate ``start_urls`` during
-        ``__init__`` using Delta Lake, we must override ``start`` to emit the initial
-        requests ourselves.
-
-        Without this override the spider would start with an empty queue and exit
-        immediately, even though 143K+ URLs are loaded.
-
-        Yields:
-            scrapy.Request: Initial requests for each seed URL
-        """
+        """Emit initial requests for the dynamically loaded start URLs."""
         logger.warning(f"🚀 [{self.name}] start() CALLED!")  # DEBUG
 
         if not self.start_urls:
@@ -176,42 +152,19 @@ class BaseSpider(scrapy.Spider):
 
         logger.warning(f"🚀 [{self.name}]: Yielded {request_count} total requests from start()")
 
-    def _initialize_allowed_domains(self):
-        """Dynamically set allowed_domains based on start_urls."""
-        if not hasattr(self, 'allowed_domains') or not self.allowed_domains:
-            domains = set()
-            for url in self.start_urls:
-                try:
-                    parsed = urlparse(url)
-                    if parsed.netloc:
-                        # Remove port if present
-                        domain = parsed.netloc.split(':')[0]
-                        domains.add(domain)
-                except Exception:
-                    pass
-            self.allowed_domains = list(domains)
-            logger.info(f"Dynamically set allowed_domains: {self.allowed_domains}")
-
     def _hash_url(self, url: str) -> str:
-        """Hash URL using SHA256 for efficient storage and lookup.
-
-        IMPORTANT: Returns full 64-character hash (not truncated) to avoid collisions.
-        """
+        """Return the full SHA256 hash of a URL for deduplication."""
         return hashlib.sha256(url.encode('utf-8')).hexdigest()
 
     def _load_seed_urls(self):
-        """Load seed URLs from Delta Lake 'seed_urls' table.
-
-        PERFORMANCE FIX: Uses Redis pipeline for batch existence checks instead of
-        143K individual Redis calls, reducing initialization from minutes to seconds.
-        """
+        """Return new seed URLs from Delta Lake that are not already in Redis."""
         try:
             seed_records = self.delta.read('seed_urls')
             urls = [record['url'] for record in seed_records]
 
             logger.info(f"Loaded {len(urls)} seed URLs from Delta Lake, checking against Redis...")
 
-            # PERFORMANCE: Batch deduplicate using Redis pipeline (100x faster)
+            # Batch deduplicate using a Redis pipeline
             new_urls = []
             if urls:
                 pipeline = self.redis_client.pipeline()
@@ -244,10 +197,7 @@ class BaseSpider(scrapy.Spider):
         pass
 
     def parse(self, response: Response):
-        """Parse response with JS detection and advanced URL extraction.
-
-        This is the main entry point for processing each crawled page.
-        """
+        """Handle each response, record metadata, and queue new work."""
         depth = response.meta.get('depth', 0)
         url_hash = self._hash_url(response.url)
         content_type = response.headers.get('Content-Type', b'').decode('utf-8', errors='ignore').lower()
@@ -276,26 +226,23 @@ class BaseSpider(scrapy.Spider):
             self._record_non_html(response, url_hash, depth, content_type)
             return
 
-        # Detect JS requirement using advanced JSDetector
+        # Check whether the page needs JavaScript rendering
         requires_js, confidence = self._detect_js_requirement(response)
 
-        # Extract URLs using URLExtractor
+        # Extract in-scope URLs
         discovered_urls = self._extract_urls(response)
 
         content_size = len(response.body)
         is_heavy = content_size > 1_000_000
 
-        # Record discovery
+        # Record discovery details
         self._record_discovery(response, url_hash, depth, content_size, is_heavy, len(discovered_urls), requires_js)
-
-        # Note: JavaScript queueing is handled by ScoutSpider's dual-queueing strategy
-        # BaseSpider no longer queues JS pages directly
 
         # Update performance tracking
         self.perf_urls_processed += 1
         self._maybe_log_performance()
 
-        # FIXED: Track per-page delta instead of accumulating
+        # Track this page in rolling windows
         page_url_count = len(discovered_urls)
         current_time = time.time()
 
@@ -310,7 +257,7 @@ class BaseSpider(scrapy.Spider):
         # Update dashboard metrics
         self._update_dashboard_metrics()
 
-        # Save batch if needed (configurable batch size)
+        # Flush batch when we hit the configured size
         if len(self.discovered_records) >= self.batch_size:
             self._save_batch()
 
@@ -358,15 +305,7 @@ class BaseSpider(scrapy.Spider):
         return list(extractor.discover_all_urls(response))
 
     def _process_discovered_urls(self, response: Response, discovered_urls: list[str], depth: int) -> Iterator:
-        """Process discovered URLs with batch Redis operations and link triage (K3/C1).
-
-        K3 REFINEMENT: Apply link triage per C1 spec:
-        - Only HTML candidates are queued for crawling
-        - Offsite links are logged and saved (not followed)
-        - Static resources are tracked via counters and metadata
-
-        IMPROVEMENT: Uses Redis pipeline for batch operations to reduce round-trips.
-        """
+        """Deduplicate discovered URLs, track skips, and queue new crawl requests."""
         if not discovered_urls:
             return
 
@@ -395,7 +334,7 @@ class BaseSpider(scrapy.Spider):
         if new_urls:
             pipeline.execute()
 
-        # K3: Link triage - categorize and process based on type
+        # Categorize URLs for downstream handling
         html_candidates = []
         offsite_urls = []
         static_urls = []
@@ -405,38 +344,36 @@ class BaseSpider(scrapy.Spider):
             is_external = self._is_external_url(url)
 
             if is_external:
-                # Offsite link - log and save, do NOT follow
+                # Record offsite links but do not follow them
                 offsite_urls.append(url)
             else:
-                # Internal URL - triage by type
+                # Internal URLs rely on the configured ignore list
                 is_static = any(url.lower().endswith(ext) for ext in self.IGNORED_EXTENSIONS)
 
                 if is_static:
-                    # Static resource - track but don't crawl
+                    # Static resource: publish metadata only
                     static_urls.append((url, url_hash))
                 else:
-                    # HTML candidate - queue for crawling
+                    # HTML candidate: queue for crawling
                     html_candidates.append((url, url_hash))
 
-        # Process offsite links (logged/not followed per K3)
+        # Emit offsite link items
         for url in offsite_urls:
-            # Yield offsite candidate item
             yield self._create_offsite_item(response, url)
 
-            # Increment Prometheus metric
             if PROMETHEUS_AVAILABLE and OFFSITE_LINKS_FOUND:
                 OFFSITE_LINKS_FOUND.labels(spider=self.name).inc()
 
             logger.debug(f"[K3 OFFSITE] External link found (not following): {url[:80]}")
 
-        # Process static resources (counters rise per K3)
+        # Track static resources
         for url, url_hash in static_urls:
             skip_reason = self._categorize_skip_reason(url)
             self._track_skip(url, skip_reason)
             yield self._create_static_item(url, url_hash, depth, response.url, skip_reason)
             logger.debug(f"[K3 STATIC] Skipped {skip_reason}: {url[:80]}")
 
-        # Process HTML candidates (only these are queued per K3)
+        # Queue HTML candidates for crawling
         for url, url_hash in html_candidates:
             priority = 0 if urlparse(response.url).netloc == urlparse(url).netloc else -1
             yield scrapy.Request(
@@ -546,10 +483,7 @@ class BaseSpider(scrapy.Spider):
             logger.info(f"⏭️  SKIP STATS - Total: {total_skips} | {skip_summary}")
 
     def _update_dashboard_metrics(self):
-        """Update Prometheus dashboard metrics with FIXED rate calculation.
-
-        FIXED: Uses sliding window for accurate rate calculation instead of accumulating forever.
-        """
+        """Update Prometheus gauges using the sliding windows."""
         if not PROMETHEUS_AVAILABLE:
             return
 
@@ -624,10 +558,7 @@ class BaseSpider(scrapy.Spider):
             self.perf_last_log = now
 
     def handle_error(self, failure):
-        """Handle crawl errors with improved logging levels.
-
-        IMPROVEMENT: Context-aware logging - INFO for expected errors, ERROR for critical ones.
-        """
+        """Log crawl errors with severity-aware messages."""
         request = failure.request
 
         # Categorize error

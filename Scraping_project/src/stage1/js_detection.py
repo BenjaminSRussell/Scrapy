@@ -1,8 +1,4 @@
-"""Advanced JavaScript Detection Heuristics.
-
-Detects single-page applications (SPAs) and JavaScript-heavy pages that
-require rendering with Playwright/Puppeteer.
-"""
+"""Detect whether a page needs JavaScript rendering."""
 
 import logging
 import re
@@ -13,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 
 class JSDetector:
-    """Advanced JavaScript requirement detection."""
+    """Heuristics for JavaScript-heavy pages."""
 
     # Confidence score constants (named for readability and easy tuning)
     FRAMEWORK_CONFIDENCE = 0.4
@@ -86,58 +82,44 @@ class JSDetector:
     ]
 
     def __init__(self, response: Response):
-        """Initialize detector with response.
-
-        Args:
-            response: Scrapy response object
-        """
+        """Cache response data for repeated checks."""
         self.response = response
         self.html = response.text
         self.html_lower = response.text.lower()
         self.url = response.url
 
     def requires_js_rendering(self) -> dict[str, any]:
-        """Determine if page requires JavaScript rendering.
-
-        Returns:
-            Dictionary with detection results:
-            {
-                'requires_js': bool,
-                'confidence': float (0.0-1.0),
-                'reasons': List[str],
-                'detected_framework': str or None,
-            }
-        """
+        """Return detection verdict, confidence, and supporting reasons."""
         reasons = []
         confidence = 0.0
         detected_framework = None
 
-        # 1. Check for SPA frameworks
+        # SPA frameworks
         framework_result = self._detect_spa_framework()
         if framework_result['detected']:
             confidence += self.FRAMEWORK_CONFIDENCE
             detected_framework = framework_result['framework']
             reasons.append(f"Detected {framework_result['framework']} framework")
 
-        # 2. Check for bundled application code
+        # Bundled application code
         bundled_result = self._detect_bundled_app()
         if bundled_result['detected']:
             confidence += self.BUNDLED_APP_CONFIDENCE
             reasons.append(f"Found bundled app: {bundled_result['files']}")
 
-        # 3. Check for state hydration
+        # State hydration
         state_result = self._detect_state_objects()
         if state_result['detected']:
             confidence += self.STATE_OBJECT_CONFIDENCE
             reasons.append(f"Found state object: {state_result['objects']}")
 
-        # 4. Check for heavy async loading
+        # Heavy async loading
         async_result = self._detect_async_loading()
         if async_result['heavy']:
             confidence += self.ASYNC_LOADING_CONFIDENCE
             reasons.append(f"Heavy async loading: {async_result['count']} indicators")
 
-        # 5. Check for minimal initial content
+        # Minimal initial content
         content_result = self._check_minimal_content()
         if content_result['minimal']:
             confidence += self.MINIMAL_CONTENT_CONFIDENCE
@@ -145,7 +127,7 @@ class JSDetector:
                 f"Minimal initial content: {content_result['text_length']} chars"
             )
 
-        # 6. Check for empty body with scripts
+        # Empty body with scripts
         empty_result = self._check_empty_body()
         if empty_result['empty']:
             confidence += self.EMPTY_BODY_CONFIDENCE
@@ -165,11 +147,7 @@ class JSDetector:
         }
 
     def _detect_spa_framework(self) -> dict[str, any]:
-        """Detect SPA framework indicators.
-
-        Returns:
-            {'detected': bool, 'framework': str or None}
-        """
+        """Return framework detection info based on SPA indicators."""
         for framework, indicators in self.SPA_FRAMEWORKS.items():
             matches = sum(1 for ind in indicators if ind.lower() in self.html_lower)
             if matches >= 2:  # Require at least 2 indicators
@@ -178,12 +156,7 @@ class JSDetector:
         return {'detected': False, 'framework': None}
 
     def _detect_bundled_app(self) -> dict[str, any]:
-        """Detect bundled application files (webpack, rollup, etc).
-
-        Returns:
-            {'detected': bool, 'files': List[str]}
-        """
-        # Extract script src attributes
+        """Return bundle detection info based on script filenames."""
         script_srcs = self.response.css('script::attr(src)').getall()
 
         bundled_files = []
@@ -195,10 +168,7 @@ class JSDetector:
 
         detected = len(bundled_files) > 0
 
-        return {
-            'detected': detected,
-            'files': bundled_files[:3],  # Return first 3
-        }
+        return {'detected': detected, 'files': bundled_files[:3]}
 
     def _detect_state_objects(self) -> dict[str, any]:
         """Detect client-side state hydration objects.
@@ -239,20 +209,13 @@ class JSDetector:
         }
 
     def _check_minimal_content(self) -> dict[str, any]:
-        """Check if page has minimal initial text content.
-
-        Returns:
-            {'minimal': bool, 'text_length': int}
-        """
-        # Extract visible text
+        """Return text-length info for fast-loading placeholder pages."""
         text_content = self.response.css('body ::text').getall()
         total_text = ''.join(text_content).strip()
         text_length = len(total_text)
 
-        # Check if there are script tags
         has_scripts = '<script' in self.html_lower
 
-        # Minimal if less than 200 chars and has scripts
         minimal = text_length < 200 and has_scripts
 
         return {
@@ -261,46 +224,30 @@ class JSDetector:
         }
 
     def _check_empty_body(self) -> dict[str, any]:
-        """Check for empty body with only div/script (classic SPA pattern).
-
-        Returns:
-            {'empty': bool}
-        """
-        # Look for body with just a root div and scripts
+        """Return whether the body is mostly empty aside from scripts."""
         body = self.response.css('body').get()
 
         if not body:
             return {'empty': False}
 
-        # Remove script and style tags using pre-compiled patterns (faster)
         body_text = self.SCRIPT_STRIP_PATTERN.sub('', body)
         body_text = self.STYLE_STRIP_PATTERN.sub('', body_text)
 
-        # Remove HTML tags and check remaining text
         body_text = self.TAG_STRIP_PATTERN.sub('', body_text)
         body_text = body_text.strip()
 
-        # Empty if less than 100 chars
         empty = len(body_text) < 100
 
         return {'empty': empty}
 
     def get_spa_root_selector(self) -> str or None:
-        """Get CSS selector for SPA root element.
-
-        Useful for waiting for content to load in Playwright.
-
-        Returns:
-            CSS selector or None
-        """
-        # Common SPA root selectors
+        """Return SPA root selector used by Playwright waits."""
         root_ids = ['root', 'app', '__next', '__nuxt', 'main']
 
         for root_id in root_ids:
             if f'id="{root_id}"' in self.html or f"id='{root_id}'" in self.html:
                 return f'#{root_id}'
 
-        # Check for common class names
         root_classes = ['app', 'application', 'spa-root', 'root']
 
         for root_class in root_classes:
@@ -311,27 +258,13 @@ class JSDetector:
 
 
 def detect_js_requirement(response: Response) -> bool:
-    """Simple boolean check if page requires JS rendering.
-
-    Args:
-        response: Scrapy response
-
-    Returns:
-        True if JS rendering required
-    """
+    """Return True when the page should be JS-rendered."""
     detector = JSDetector(response)
     result = detector.requires_js_rendering()
     return result['requires_js']
 
 
 def detect_js_with_details(response: Response) -> dict[str, any]:
-    """Detailed JS requirement detection.
-
-    Args:
-        response: Scrapy response
-
-    Returns:
-        Full detection results dictionary
-    """
+    """Return the full detection payload with reasons and confidence."""
     detector = JSDetector(response)
     return detector.requires_js_rendering()

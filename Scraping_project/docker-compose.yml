@@ -1,19 +1,12 @@
-# ==================================================================
-# UConn Scraping Pipeline - Complete Infrastructure Stack
-# ==================================================================
+# Scraping pipeline stack.
 # Quick start: docker-compose up -d
-# Stop all:    docker-compose down
-# View logs:   docker-compose logs -f
-# ==================================================================
+# Stop:        docker-compose down
+# Logs:        docker-compose logs -f
 
 services:
-  # ============================================
-  # Core Infrastructure
-  # ============================================
-
-  # Redis - Message queues, priority queue, circuit breaker
+  # Redis for queues and rate limiting
   redis:
-    image: redis:7.2.5-alpine
+    image: redis:7.4-alpine
     container_name: scraping_redis
     ports:
       - "6379:6379"
@@ -29,9 +22,9 @@ services:
     networks:
       - scraping_network
 
-  # PostgreSQL - Analytics database for metrics
+  # PostgreSQL backing metrics store
   postgres:
-    image: postgres:16.3-alpine
+    image: postgres:17-alpine
     container_name: scraping_postgres
     ports:
       - "5432:5432"
@@ -51,13 +44,9 @@ services:
     networks:
       - scraping_network
 
-  # ============================================
-  # Kafka Streaming Infrastructure
-  # ============================================
-
-  # Zookeeper - Coordination service for Kafka
+  # Zookeeper for Kafka
   zookeeper:
-    image: confluentinc/cp-zookeeper:7.6.0
+    image: confluentinc/cp-zookeeper:7.9.1
     container_name: scraping_zookeeper
     ports:
       - "2181:2181"
@@ -77,9 +66,9 @@ services:
     networks:
       - scraping_network
 
-  # Kafka - Distributed event streaming platform
+  # Kafka broker
   kafka:
-    image: confluentinc/cp-kafka:7.6.0
+    image: confluentinc/cp-kafka:7.9.1
     container_name: scraping_kafka
     ports:
       - "9092:9092"
@@ -89,31 +78,26 @@ services:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
 
-      # Listener configuration for both internal and external access
       KAFKA_LISTENERS: INTERNAL://0.0.0.0:9092,EXTERNAL://0.0.0.0:9093
       KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:9092,EXTERNAL://localhost:9094
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
 
-      # Topic configuration
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
       KAFKA_DELETE_TOPIC_ENABLE: "true"
       KAFKA_NUM_PARTITIONS: 3
       KAFKA_DEFAULT_REPLICATION_FACTOR: 1
 
-      # Performance tuning
-      KAFKA_LOG_RETENTION_HOURS: 168  # 7 days
-      KAFKA_LOG_SEGMENT_BYTES: 1073741824  # 1GB
+      KAFKA_LOG_RETENTION_HOURS: 168
+      KAFKA_LOG_SEGMENT_BYTES: 1073741824
       KAFKA_LOG_RETENTION_CHECK_INTERVAL_MS: 300000
       KAFKA_COMPRESSION_TYPE: snappy
 
-      # JVM settings with JMX enabled
       KAFKA_HEAP_OPTS: "-Xmx1G -Xms1G"
       KAFKA_JMX_PORT: 9999
       KAFKA_JMX_HOSTNAME: kafka
       KAFKA_JMX_OPTS: "-Dcom.sun.management.jmxremote -Dcom.sun.management.jmxremote.authenticate=false -Dcom.sun.management.jmxremote.ssl=false -Dcom.sun.management.jmxremote.local.only=false -Dcom.sun.management.jmxremote.rmi.port=9999"
 
-      # Offsets topic configuration
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
@@ -132,13 +116,9 @@ services:
       zookeeper:
         condition: service_healthy
 
-  # ============================================
-  # Monitoring Stack - High Availability Setup
-  # ============================================
-
-  # Prometheus Replica A - Primary metrics collector
+  # Prometheus replica A
   prometheus-a:
-    image: prom/prometheus:v3.1.0
+    image: prom/prometheus:v3.2.1
     container_name: scraping_prometheus_a
     ports:
       - "9091:9090"
@@ -166,9 +146,9 @@ services:
       postgres:
         condition: service_healthy
 
-  # Prometheus Replica B - Secondary metrics collector (HA)
+  # Prometheus replica B
   prometheus-b:
-    image: prom/prometheus:v3.1.0
+    image: prom/prometheus:v3.2.1
     container_name: scraping_prometheus_b
     ports:
       - "9097:9090"
@@ -196,7 +176,7 @@ services:
       postgres:
         condition: service_healthy
 
-  # Alertmanager Replica 1
+  # Alertmanager replica 1
   alertmanager-1:
     image: prom/alertmanager:v0.28.1
     container_name: scraping_alertmanager_1
@@ -215,7 +195,7 @@ services:
     networks:
       - scraping_network
 
-  # Alertmanager Replica 2
+  # Alertmanager replica 2
   alertmanager-2:
     image: prom/alertmanager:v0.28.1
     container_name: scraping_alertmanager_2
@@ -234,7 +214,7 @@ services:
     networks:
       - scraping_network
 
-  # Alertmanager Replica 3
+  # Alertmanager replica 3
   alertmanager-3:
     image: prom/alertmanager:v0.28.1
     container_name: scraping_alertmanager_3
@@ -253,17 +233,24 @@ services:
     networks:
       - scraping_network
 
-  # Grafana - Visualization and dashboards
+  # Grafana dashboards
   grafana:
-    image: grafana/grafana:11.4.0
+    image: grafana/grafana:11.6.1
     container_name: scraping_grafana
     ports:
       - "3000:3000"
     environment:
       - GF_SECURITY_ADMIN_USER=admin
-      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}
+      - GF_SECURITY_PASSWORD_POLICY=none
       - GF_PLUGINS_PREINSTALL=redis-datasource
-      - GF_SERVER_ROOT_URL=http://localhost:3000
+      - GF_SERVER_DOMAIN=localhost
+      - GF_SERVER_HTTP_PORT=3000
+      - GF_AUTH_BASIC_ENABLED=true
+      - GF_SERVER_ROOT_URL=%(protocol)s://%(domain)s:%(http_port)s/
+      - GF_SERVER_SERVE_FROM_SUB_PATH=false
+      - GF_SERVER_APP_SUB_URL=
+      - GF_SERVER_ENFORCE_DOMAIN=false
       - GF_USERS_ALLOW_SIGN_UP=false
       - GF_PATHS_PROVISIONING=/etc/grafana/provisioning
       - GF_LOG_LEVEL=info
@@ -281,12 +268,7 @@ services:
       - alertmanager-1
       - redis
 
-  # ============================================
-  # Application Services
-  # ============================================
-
-  # Scrapy Application - Web scraping with Kafka integration
-  # MULTIPLE INSTANCES for maximum throughput
+  # Scrapy workers
   scrapy-app:
     build:
       context: .
@@ -299,10 +281,7 @@ services:
     env_file:
       - .env
     environment:
-      # Python path
       - PYTHONPATH=/app
-
-      # Database connections
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - POSTGRES_HOST=postgres
@@ -310,28 +289,17 @@ services:
       - POSTGRES_DB=pipeline_metrics
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=postgres
-
-      # PostgresManager environment variables
       - DB_HOST=postgres
       - DB_PORT=5432
       - DB_NAME=pipeline_metrics
       - DB_USER=postgres
       - DB_PASSWORD=postgres
-
-      # Kafka configuration
       - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
       - KAFKA_TOPIC=scraped-items
-
-      # Scrapy settings
       - SCRAPY_SETTINGS_MODULE=src.settings
       - ENV=development
-
-
-
-      # Number of concurrent scout instances (default: CPU count)
       - SCOUT_INSTANCES=${SCOUT_INSTANCES:-8}
     volumes:
-      # Mount source code for development (hot reload)
       - ./src:/app/src:ro
       - ./config:/app/config:ro
       - ./data/raw:/app/data/raw:ro
@@ -358,7 +326,7 @@ services:
       metrics-exporter:
         condition: service_started
 
-  # Stage 2 Worker - Page analysis and quality control
+  # Stage 2 worker
   stage2-worker:
     build:
       context: .
@@ -377,7 +345,6 @@ services:
       - POSTGRES_DB=pipeline_metrics
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=postgres
-      # PostgresManager environment variables
       - DB_HOST=postgres
       - DB_PORT=5432
       - DB_NAME=pipeline_metrics
@@ -398,7 +365,7 @@ services:
       kafka:
         condition: service_healthy
 
-  # Stage 3 Worker - Summarization and similarity detection
+  # Stage 3 worker
   stage3-worker:
     build:
       context: .
@@ -417,7 +384,6 @@ services:
       - POSTGRES_DB=pipeline_metrics
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=postgres
-      # PostgresManager environment variables
       - DB_HOST=postgres
       - DB_PORT=5432
       - DB_NAME=pipeline_metrics
@@ -439,8 +405,46 @@ services:
       kafka:
         condition: service_healthy
 
+  # Stage 4 worker
+  stage4-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: crawler
+    container_name: scraping_stage4_worker
+    command: python -u src/stage4/large_doc_processor.py
+    env_file:
+      - .env
+    environment:
+      - PYTHONPATH=/app
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=pipeline_metrics
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=pipeline_metrics
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+    volumes:
+      - ./src:/app/src:ro
+      - delta_data:/app/data
+    restart: unless-stopped
+    networks:
+      - scraping_network
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
 
-  # Kafka to Delta Lake Ingestor (Rust) - High-performance streaming ingest
+  # Kafka to Delta Lake ingestor
   kafka-delta-ingestor:
     build:
       context: .
@@ -458,11 +462,8 @@ services:
     env_file:
       - .env
     environment:
-      # StatsD metrics configuration
       - STATSD_HOST=${STATSD_HOST:-statsd-exporter}
       - STATSD_PORT=${STATSD_PORT:-9125}
-
-      # Rust logging
       - RUST_LOG=${RUST_LOG:-info}
       - RUST_BACKTRACE=${RUST_BACKTRACE:-1}
     volumes:
@@ -506,7 +507,7 @@ services:
       redis:
         condition: service_healthy
 
-  # Redis Exporter - Export Redis metrics to Prometheus
+  # Redis exporter
   redis-exporter:
     image: oliver006/redis_exporter:v1.67.0-alpine
     container_name: scraping_redis_exporter
@@ -521,7 +522,7 @@ services:
       redis:
         condition: service_healthy
 
-  # PostgreSQL Exporter - Export PostgreSQL metrics to Prometheus
+  # PostgreSQL exporter
   postgres-exporter:
     image: quay.io/prometheuscommunity/postgres-exporter:v0.18.1
     container_name: scraping_postgres_exporter
@@ -536,7 +537,7 @@ services:
       postgres:
         condition: service_healthy
 
-  # Kafka JMX Exporter - Export Kafka JMX metrics to Prometheus
+  # Kafka JMX exporter
   kafka-jmx-exporter:
     image: bitnami/jmx-exporter:latest
     container_name: scraping_kafka_jmx_exporter
@@ -558,14 +559,13 @@ services:
       kafka:
         condition: service_healthy
 
-  # StatsD Exporter - Convert StatsD metrics to Prometheus format
-  # Used by kafka-delta-ingest daemon to expose metrics
+  # StatsD exporter used by kafka-delta-ingest
   statsd-exporter:
     image: prom/statsd-exporter:v0.28.0
     container_name: scraping_statsd_exporter
     ports:
-      - "9102:9102"  # Prometheus metrics endpoint
-      - "9125:9125/udp"  # StatsD UDP receiver
+      - "9102:9102"
+      - "9125:9125/udp"
     command:
       - "--statsd.mapping-config=/etc/statsd/statsd_mapping.yml"
     volumes:
@@ -574,9 +574,7 @@ services:
     networks:
       - scraping_network
 
-# ============================================
 # Volumes
-# ============================================
 volumes:
   redis_data:
     driver: local
@@ -603,9 +601,7 @@ volumes:
   grafana_data:
     driver: local
 
-# ============================================
 # Networks
-# ============================================
 networks:
   scraping_network:
     name: scraping_network

@@ -1,6 +1,4 @@
-"""Organized Delta Lake with separate tables per stage.
-Concurrent queue system for multiple requests.
-"""
+"""Manage Delta Lake tables with a queued writer."""
 
 import logging
 import queue
@@ -15,7 +13,7 @@ try:
     import pyarrow as pa
     import pyarrow.csv as pa_csv
     import pyarrow.parquet as pq
-    from deltalake import DeltaTable, write_deltalake, WriterProperties
+    from deltalake import DeltaTable, WriterProperties, write_deltalake
     DELTA_AVAILABLE = True
 except ImportError:
     DELTA_AVAILABLE = False
@@ -32,19 +30,10 @@ logger = logging.getLogger(__name__)
 
 
 class DeltaLakeManager:
-    """Manages Delta Lake with organized stage-based tables.
-    Supports concurrent writes with queue system.
-    """
+    """Handle Delta Lake writes, reads, and lightweight maintenance."""
 
     def __init__(self, base_path: str | None = None, start_workers: bool = True):
-        """Initialize DeltaLakeManager.
-
-        Args:
-            base_path: Optional base path for Delta tables (overrides config)
-            start_workers: If True, start background worker threads and register
-                          signal handlers. Set to False for testing to avoid
-                          background threads and signal handler conflicts.
-        """
+        """Prepare table directories and, optionally, start queue workers."""
         if not DELTA_AVAILABLE:
             raise ImportError("Delta Lake not available. Install: pip install deltalake pyarrow")
 
@@ -245,15 +234,7 @@ class DeltaLakeManager:
             self.maintenance_queue.put(('optimize', table_name))
 
     def write(self, table_name: str, data: list[dict[str, Any]], mode: str = "append", async_write: bool = True):
-        """Write data to Delta Lake table.
-
-        Args:
-            table_name: 'stage1_discovery', 'stage2_analytics', or 'stage3_summaries'
-            data: List of dictionaries
-            mode: 'append' or 'overwrite'
-            async_write: If True, queue for background write. If False, write immediately.
-
-        """
+        """Write data to a Delta table, optionally via the background queue."""
         if async_write:
             # Queue for background processing
             self.write_queue.put((table_name, data, mode))
@@ -263,16 +244,7 @@ class DeltaLakeManager:
             self._write_sync(table_name, data, mode)
 
     def read(self, table_name: str, filters: Any = None, columns: list[str] | None = None) -> list[dict]:
-        """Read data from Delta Lake table.
-
-        Args:
-            table_name: Name of table to read
-            filters: Optional filter expressions
-            columns: Optional list of column names to read (for selective column reads)
-
-        Returns:
-            List of dictionaries containing the data
-        """
+        """Read rows from a Delta table into a list of dictionaries."""
         table_path = self.tables.get(table_name)
         if not table_path:
             raise ValueError(f"Unknown table: {table_name}")
@@ -301,11 +273,7 @@ class DeltaLakeManager:
         return pa_table.num_rows
 
     def _optimize_table(self, table_name: str):
-        """Optimize Delta table with compaction and Z-ordering.
-
-        Enhanced: Performs file compaction and Z-ordering on url_hash and discovered_at
-        for better query performance.
-        """
+        """Compact files and apply Z-ordering to improve read performance."""
         table_path = self.tables.get(table_name)
         if not table_path or not (table_path / "_delta_log").exists():
             return
@@ -317,8 +285,6 @@ class DeltaLakeManager:
             logger.info(f"Optimizing {table_name} with compaction...")
             dt.optimize.compact()
 
-            # Enhanced: Z-order by url_hash and timestamp for co-location
-            # This improves query performance for lookups by URL hash and time-based queries
             logger.info(f"Z-ordering {table_name} by url_hash and discovered_at...")
             if table_name == 'stage1_discovery':
                 dt.optimize.z_order(['url_hash', 'discovered_at'])

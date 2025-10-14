@@ -1,16 +1,4 @@
-"""Scout Spider - High-speed reconnaissance and URL discovery.
-
-REFACTORED BEHAVIOR:
-- Extends BaseSpider for core functionality
-- Overrides parse() for dual-queueing strategy:
-  1. Queue HTML pages → JavaScriptSpider (for rendering)
-  2. Queue ALL pages → Stage 2 (for analysis)
-- Discard: Static assets only (images, CSS, JS files)
-- Offsite: Log but don't follow
-- Domain Filter: Only uconn.edu domains (from config.yml)
-
-Performance Target: >100 URLs/sec discovery rate
-"""
+"""Scout spider focused on fast URL discovery."""
 
 import logging
 from collections.abc import Iterator
@@ -26,14 +14,7 @@ logger = logging.getLogger(__name__)
 
 
 class ScoutSpider(BaseSpider):
-    """High-speed reconnaissance spider - optimized for URL discovery.
-
-    Inherits From:
-        BaseSpider - Core spider functionality (URL extraction, Redis dedup, etc.)
-
-    Overrides:
-        parse() - Implements dual-queueing strategy
-    """
+    """High-speed reconnaissance spider."""
 
     name = "scout"
 
@@ -70,21 +51,7 @@ class ScoutSpider(BaseSpider):
         logger.info(f"[SCOUT] Initialized with allowed_domains={self.allowed_domains}")
 
     def parse(self, response: Response) -> Iterator:
-        """OVERRIDDEN: Dual-queueing strategy for scout spider with batch Redis operations.
-
-        Flow:
-        1. Check if content is HTML
-        2. Extract all URLs (using BaseSpider._extract_urls)
-        3. Batch deduplicate URLs using Redis pipeline
-        4. Categorize URLs:
-           - External → Log via BaseSpider._create_offsite_item
-           - Static assets → Discard
-           - HTML pages → Queue for JS + Stage 2
-           - Other pages → Queue for Stage 2 only
-        5. Follow HTML links for continued discovery
-
-        PERFORMANCE: Uses batch Redis operations (pipeline) instead of per-URL calls.
-        """
+        """Dual-queue discovery handler using batch Redis operations."""
         # Fast content-type check
         content_type = response.headers.get('Content-Type', b'').decode('utf-8', errors='ignore').lower()
 
@@ -99,7 +66,7 @@ class ScoutSpider(BaseSpider):
         if not discovered_urls:
             return
 
-        # BATCH REDIS OPERATIONS: Check all URLs at once
+        # Check all URLs at once in Redis
         pipeline = self.redis_client.pipeline()
         url_hash_map = {}
 
@@ -150,7 +117,7 @@ class ScoutSpider(BaseSpider):
                 content_hint = self._guess_content_type(url)
 
                 if content_hint == 'html':
-                    # HTML page - queue for BOTH JavaScriptSpider AND Stage 2
+                    # HTML page - queue for JavaScriptSpider and Stage 2
                     yield self._queue_for_javascript_spider(url, response.url)
                     yield self._queue_for_stage2(url, response.url, content_hint)
 
@@ -184,14 +151,7 @@ class ScoutSpider(BaseSpider):
         return any(url_lower.endswith(ext) for ext in self.STATIC_EXTENSIONS)
 
     def _guess_content_type(self, url: str) -> str:
-        """Guess content type from URL for routing decisions.
-
-        Returns:
-            'html': HTML page (default)
-            'pdf': PDF document
-            'doc': Office document
-            'media': Media file (video/audio)
-        """
+        """Guess content type from URL for routing decisions."""
         url_lower = url.lower()
 
         if '.pdf' in url_lower:

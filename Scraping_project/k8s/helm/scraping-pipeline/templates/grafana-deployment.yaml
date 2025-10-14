@@ -126,12 +126,14 @@ spec:
             secretKeyRef:
               name: {{ .Values.grafana.auth.existingSecret }}
               key: {{ .Values.grafana.auth.adminPasswordKey }}
+        - name: GF_SECURITY_PASSWORD_POLICY
+          value: "none"
         - name: GF_PLUGINS_PREINSTALL
           value: "redis-datasource"
         - name: GF_SERVER_ROOT_URL
-          value: "%(protocol)s://%(domain)s/grafana/"
+          value: "%(protocol)s://%(domain)s:%(http_port)s/"
         - name: GF_SERVER_SERVE_FROM_SUB_PATH
-          value: "true"
+          value: "false"
         - name: GF_USERS_ALLOW_SIGN_UP
           value: "false"
         - name: DB_PASSWORD

@@ -1,21 +1,10 @@
-"""Spider configuration utility - Load spider settings from config.yml.
-
-This module provides utilities to generate Scrapy custom_settings
-dictionaries from the centralized config.yml file.
-"""
+"""Helpers for assembling Scrapy settings from config.yml."""
 
 from src.common.config import load_config
 
 
 def get_spider_settings(spider_name: str) -> dict:
-    """Generate Scrapy custom_settings dict for a spider from config.yml.
-
-    Args:
-        spider_name: Name of the spider (e.g., 'scout', 'deep_dive')
-
-    Returns:
-        Dictionary of Scrapy settings
-    """
+    """Return the custom_settings block for the requested spider."""
     config = load_config()
     stage1_config = config.get('stage1', {})
     spider_config = stage1_config.get('spiders', {}).get(spider_name, {})
@@ -59,7 +48,7 @@ def get_spider_settings(spider_name: str) -> dict:
         'SCHEDULER_DISK_QUEUE': 'scrapy.squeues.PickleFifoDiskQueue',
         'SCHEDULER_PRIORITY_QUEUE': 'scrapy.pqueues.ScrapyPriorityQueue',
 
-        # Depth limit (K4: DepthMiddleware configuration)
+        # Depth enforcement
         'DEPTH_LIMIT': spider_config.get('depth_limit', 10),
         'DEPTH_PRIORITY': 1,
         'DEPTH_STATS_VERBOSE': True,  # Enable detailed depth statistics
@@ -68,7 +57,7 @@ def get_spider_settings(spider_name: str) -> dict:
         'DOWNLOAD_MAXSIZE': 10485760,  # 10MB
         'DOWNLOAD_WARNSIZE': 5242880,  # 5MB
 
-        # K4: Enable DepthMiddleware explicitly (built-in Scrapy middleware)
+        # Enable DepthMiddleware explicitly
         'SPIDER_MIDDLEWARES': {
             'scrapy.spidermiddlewares.depth.DepthMiddleware': 900,
         },

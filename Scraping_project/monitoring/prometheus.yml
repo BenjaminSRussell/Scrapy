@@ -48,7 +48,7 @@ scrape_configs:
   # Scrape Kafka to Delta Lake ingestor metrics
   - job_name: 'kafka_ingestor'
     static_configs:
-      - targets: ['ingestor:8001']
+      - targets: ['kafka-delta-ingestor:8001']
         labels:
           service: 'ingestor'
           component: 'kafka-delta'

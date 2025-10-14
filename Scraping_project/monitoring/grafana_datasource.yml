@@ -39,7 +39,7 @@ datasources:
     type: postgres
     access: proxy
     url: postgres:5432
-    database: scraping_pipeline
+    database: pipeline_metrics
     user: postgres
     secureJsonData:
       password: postgres
