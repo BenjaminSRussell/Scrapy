@@ -1,6 +1,6 @@
-import pytest
 from src.common.config import Config
 from src.common.delta_lake import DeltaLakeManager
+
 
 def test_config_singleton_persists_state():
     """Verify that the Config singleton maintains state across calls."""
@@ -11,6 +11,7 @@ def test_config_singleton_persists_state():
     # Get a second instance and check if the value is the same
     config2 = Config.get_instance()
     assert config2.get("test.key") == "test_value"
+
 
 def test_config_singleton_reset():
     """Verify that resetting the Config singleton clears its state."""
@@ -24,6 +25,7 @@ def test_config_singleton_reset():
     # Get a new instance and check that the value is gone
     config2 = Config.get_instance()
     assert config2.get("test.key") is None
+
 
 def test_delta_lake_manager_singleton_bug():
     """
@@ -39,6 +41,7 @@ def test_delta_lake_manager_singleton_bug():
     manager2 = DeltaLakeManager.get_instance(start_workers=True)
     # The bug is that this will still be False, because it returns the first instance
     assert manager2._workers_started is False
+
 
 def test_delta_lake_manager_singleton_reset_allows_reinitialization():
     """

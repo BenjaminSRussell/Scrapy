@@ -157,11 +157,7 @@ def prune_local_volumes(purge_data: bool) -> None:
 
     def matching_names(base: str) -> list[str]:
         suffix = f"_{base}"
-        return [
-            name
-            for name in existing
-            if name == base or name.endswith(suffix)
-        ]
+        return [name for name in existing if name == base or name.endswith(suffix)]
 
     removable = list(INFRA_VOLUMES)
     removable.extend(STATEFUL_SERVICE_VOLUMES)
@@ -280,7 +276,10 @@ def remove_service_images() -> None:
         if "No such image" in stderr:
             continue
 
-        if "used by running container" in stderr or "is using its referenced image" in stderr:
+        if (
+            "used by running container" in stderr
+            or "is using its referenced image" in stderr
+        ):
             containers = containers_using_image(image_id)
             if not containers:
                 print(f"  Warning: image still in use: {stderr}", file=sys.stderr)
@@ -298,7 +297,9 @@ def remove_service_images() -> None:
                     capture_output=True,
                     text=True,
                 )
-                if rm_result.returncode != 0 and "No such container" not in (rm_result.stderr or ""):
+                if rm_result.returncode != 0 and "No such container" not in (
+                    rm_result.stderr or ""
+                ):
                     print(
                         f"    Warning: unable to remove container '{name}': {rm_result.stderr.strip()}",
                         file=sys.stderr,
@@ -317,7 +318,9 @@ def remove_service_images() -> None:
 
             if external:
                 offenders = ", ".join(name for _, name in external)
-                k8s_offenders = [name for _, name in external if name.startswith("k8s_")]
+                k8s_offenders = [
+                    name for _, name in external if name.startswith("k8s_")
+                ]
                 if k8s_offenders:
                     print(
                         f"  Skipping removal of image '{display}' because Kubernetes-managed containers "
@@ -388,7 +391,9 @@ def shutdown_local(purge_data: bool, skip_images: bool) -> None:
     if purge_data:
         prompt_parts.append("Delta Lake storage will be removed (--purge-data).")
     else:
-        prompt_parts.append("Delta Lake storage is preserved (use --purge-data to remove).")
+        prompt_parts.append(
+            "Delta Lake storage is preserved (use --purge-data to remove)."
+        )
 
     prompt_parts.append("\nType 'yes' to proceed: ")
     prompt = " ".join(prompt_parts)
@@ -410,7 +415,10 @@ def shutdown_local(purge_data: bool, skip_images: bool) -> None:
             remove_service_images()
         except Exception as e:
             print(f"Warning: Some images could not be removed: {e}", file=sys.stderr)
-            print("You can manually remove images later with: docker image prune", file=sys.stderr)
+            print(
+                "You can manually remove images later with: docker image prune",
+                file=sys.stderr,
+            )
     else:
         print("Skipping Docker image removal (--skip-images flag was used).")
 
@@ -418,12 +426,14 @@ def shutdown_local(purge_data: bool, skip_images: bool) -> None:
 
     print("Cleaning up infrastructure volumes...")
     prune_local_volumes(purge_data)
-    print("\n" + "="*70)
+    print("\n" + "=" * 70)
     print("Local Environment Shut Down Successfully!")
-    print("="*70)
+    print("=" * 70)
     if skip_images:
-        print("Note: Docker images were not removed. Run without --skip-images to remove them.")
-    print("="*70 + "\n")
+        print(
+            "Note: Docker images were not removed. Run without --skip-images to remove them."
+        )
+    print("=" * 70 + "\n")
 
 
 def build_k8s_targets(args: argparse.Namespace) -> Sequence[tuple[str, str, str]]:
@@ -432,7 +442,9 @@ def build_k8s_targets(args: argparse.Namespace) -> Sequence[tuple[str, str, str]
         namespace = args.namespace or PIPELINE_NAMESPACE
         return [("pipeline", release, namespace)]
 
-    stages = ["stage1", "stage2", "stage3"] if args.stage == "all-stages" else [args.stage]
+    stages = (
+        ["stage1", "stage2", "stage3"] if args.stage == "all-stages" else [args.stage]
+    )
     targets: list[tuple[str, str, str]] = []
     for stage in stages:
         defaults = K8S_STAGE_DEFAULTS[stage]
@@ -460,8 +472,7 @@ def shutdown_k8s(args: argparse.Namespace) -> None:
 
     for stage, release, namespace in targets:
         print(
-            f"WARNING: This will uninstall Helm release '{release}' from namespace '{namespace}' "
-            f"(stage: {stage})."
+            f"WARNING: This will uninstall Helm release '{release}' from namespace '{namespace}' (stage: {stage})."
         )
         confirmation = input(f"Type the release name '{release}' to confirm: ").strip()
         if confirmation != release:

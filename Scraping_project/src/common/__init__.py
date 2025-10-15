@@ -18,7 +18,10 @@ def _patch_scrapy_response_meta() -> None:
         return
 
     def _meta_get(instance: Response) -> dict:
-        return original_property.fget(instance)  # type: ignore[attr-defined]
+        fget = original_property.fget
+        if fget is None:
+            return {}
+        return fget(instance)  # type: ignore[attr-defined]
 
     def _meta_set(instance: Response, value: dict) -> None:
         if value is None:
@@ -29,7 +32,9 @@ def _patch_scrapy_response_meta() -> None:
             raise TypeError("Response.meta assignments must use a dict")
 
         if getattr(instance, "request", None) is None:
-            instance.request = Request(url=getattr(instance, "url", ""), dont_filter=True)
+            instance.request = Request(
+                url=getattr(instance, "url", ""), dont_filter=True
+            )
 
         instance.request.meta.clear()
         instance.request.meta.update(value_dict)

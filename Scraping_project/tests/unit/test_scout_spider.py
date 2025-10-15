@@ -11,15 +11,16 @@ from src.stage1.scout_spider import ScoutSpider
 class TestScoutSpider(unittest.TestCase):
     def setUp(self):
         # Patch dependencies for initialization
-        with patch('src.stage1.scout_spider.get_delta_manager'):
-            with patch('src.stage1.scout_spider.get_postgres_manager'):
+        with patch("src.stage1.scout_spider.get_delta_manager"):
+            with patch("src.stage1.scout_spider.get_postgres_manager"):
                 self.spider = ScoutSpider()
-                self.spider._initialize_discovery(HtmlResponse(url='https://example.com', body=b''))
+                self.spider._initialize_discovery(
+                    HtmlResponse(url="https://example.com", body=b"")
+                )
 
-
-    # ============================================================================ 
+    # ============================================================================
     # URL Hashing and Filtering Tests
-    # ============================================================================ 
+    # ============================================================================
 
     def test_hash_url(self):
         """Test URL hashing for consistency and normalization."""
@@ -43,7 +44,7 @@ class TestScoutSpider(unittest.TestCase):
 
         # Verify hash format
         self.assertEqual(len(hash1), 16)
-        self.assertTrue(all(c in '0123456789abcdef' for c in hash1))
+        self.assertTrue(all(c in "0123456789abcdef" for c in hash1))
 
     def test_has_ignored_extension(self):
         """Test filtering of URLs with ignored extensions."""
@@ -51,17 +52,25 @@ class TestScoutSpider(unittest.TestCase):
 
         # Ignored extensions
         self.assertTrue(spider._has_ignored_extension("https://example.com/image.jpg"))
-        self.assertTrue(spider._has_ignored_extension("https://example.com/document.PDF"))
-        self.assertTrue(spider._has_ignored_extension("https://example.com/archive.zip"))
+        self.assertTrue(
+            spider._has_ignored_extension("https://example.com/document.PDF")
+        )
+        self.assertTrue(
+            spider._has_ignored_extension("https://example.com/archive.zip")
+        )
 
         # Non-ignored extensions
         self.assertFalse(spider._has_ignored_extension("https://example.com/page.html"))
-        self.assertFalse(spider._has_ignored_extension("https://example.com/document.php"))
-        self.assertFalse(spider._has_ignored_extension("https://example.com/no_extension"))
+        self.assertFalse(
+            spider._has_ignored_extension("https://example.com/document.php")
+        )
+        self.assertFalse(
+            spider._has_ignored_extension("https://example.com/no_extension")
+        )
 
-    # ============================================================================ 
+    # ============================================================================
     # JS Detection Tests
-    # ============================================================================ 
+    # ============================================================================
 
     def test_detect_js_requirement(self):
         """Test detection of JS-heavy pages."""
@@ -69,7 +78,7 @@ class TestScoutSpider(unittest.TestCase):
 
         # Helper to create a Scrapy HtmlResponse
         def create_response(body: str) -> HtmlResponse:
-            return HtmlResponse(url='https://js-test.com', body=body, encoding='utf-8')
+            return HtmlResponse(url="https://js-test.com", body=body, encoding="utf-8")
 
         # Case 1: SPA indicators (React, Vue)
         spa_body = "<html><body><div id='app-root'></div><script src='app.js'></script></body></html>"
@@ -98,9 +107,9 @@ class TestScoutSpider(unittest.TestCase):
         """
         self.assertFalse(spider._detect_js_requirement(create_response(standard_body)))
 
-    # ============================================================================ 
+    # ============================================================================
     # URL Extraction Tests
-    # ============================================================================ 
+    # ============================================================================
 
     def test_discover_all_urls(self):
         """Test the main URL discovery method."""
@@ -121,21 +130,21 @@ class TestScoutSpider(unittest.TestCase):
             </body>
         </html>
         """
-        response = HtmlResponse(url='https://example.com', body=body, encoding='utf-8')
+        response = HtmlResponse(url="https://example.com", body=body, encoding="utf-8")
         spider._initialize_discovery(response)
         urls = list(spider.discover_all_urls())
 
         expected_urls = [
-            'https://example.com/style.css',
-            'https://example.com/imported.css',
-            'https://example.com/page1',
-            'https://example.com/image.jpg',
-            'https://example.com/script-url',
-            'https://example.com/api/data',
-            'https://example.com/robots.txt',
-            'https://example.com/sitemap.xml',
-            'https://example.com/sitemap_index.xml',
-            'https://example.com/sitemap-index.xml',
+            "https://example.com/style.css",
+            "https://example.com/imported.css",
+            "https://example.com/page1",
+            "https://example.com/image.jpg",
+            "https://example.com/script-url",
+            "https://example.com/api/data",
+            "https://example.com/robots.txt",
+            "https://example.com/sitemap.xml",
+            "https://example.com/sitemap_index.xml",
+            "https://example.com/sitemap-index.xml",
         ]
 
         for expected_url in expected_urls:
@@ -144,7 +153,7 @@ class TestScoutSpider(unittest.TestCase):
     def test_extract_sitemap_urls(self):
         """Test generation of sitemap and robots.txt URLs."""
         spider = self.spider
-        response = HtmlResponse(url='https://sub.example.com/path/page', body=b'')
+        response = HtmlResponse(url="https://sub.example.com/path/page", body=b"")
         spider._initialize_discovery(response)
         urls = spider._extract_sitemap_urls()
 
@@ -152,9 +161,9 @@ class TestScoutSpider(unittest.TestCase):
         self.assertIn("https://sub.example.com/sitemap.xml", urls)
         self.assertIn("https://sub.example.com/sitemap_index.xml", urls)
 
-    # ============================================================================ 
+    # ============================================================================
     # Error Handling Tests
-    # ============================================================================ 
+    # ============================================================================
 
     def test_handle_error_conditions(self):
         """Test different error handling scenarios."""
@@ -163,8 +172,8 @@ class TestScoutSpider(unittest.TestCase):
         # --- Test HttpError ---
         spider.error_records = []
         request_http = MagicMock()
-        request_http.url = 'https://http-error.com'
-        request_http.meta = {'depth': 1}
+        request_http.url = "https://http-error.com"
+        request_http.meta = {"depth": 1}
         response_http = MagicMock()
         response_http.status = 404
         failure_http = MagicMock()
@@ -176,15 +185,15 @@ class TestScoutSpider(unittest.TestCase):
         spider.handle_error(failure_http)
         self.assertEqual(len(spider.error_records), 1)
         record = spider.error_records[0]
-        self.assertEqual(record['error_type'], 'HttpError')
-        self.assertEqual(record['error_code'], 404)
-        self.assertEqual(record['url'], 'https://http-error.com')
+        self.assertEqual(record["error_type"], "HttpError")
+        self.assertEqual(record["error_code"], 404)
+        self.assertEqual(record["url"], "https://http-error.com")
 
         # --- Test DNSLookupError ---
         spider.error_records = []
         request_dns = MagicMock()
-        request_dns.url = 'https://dns-error.com'
-        request_dns.meta = {'depth': 2}
+        request_dns.url = "https://dns-error.com"
+        request_dns.meta = {"depth": 2}
         failure_dns = MagicMock()
         failure_dns.request = request_dns
         failure_dns.value = DNSLookupError()
@@ -193,23 +202,25 @@ class TestScoutSpider(unittest.TestCase):
         spider.handle_error(failure_dns)
         self.assertEqual(len(spider.error_records), 1)
         record = spider.error_records[0]
-        self.assertEqual(record['error_type'], 'DNSLookupError')
-        self.assertEqual(record['error_code'], 0)
+        self.assertEqual(record["error_type"], "DNSLookupError")
+        self.assertEqual(record["error_code"], 0)
 
         # --- Test TimeoutError ---
         spider.error_records = []
         request_timeout = MagicMock()
-        request_timeout.url = 'https://timeout-error.com'
-        request_timeout.meta = {'depth': 3}
+        request_timeout.url = "https://timeout-error.com"
+        request_timeout.meta = {"depth": 3}
         failure_timeout = MagicMock()
         failure_timeout.request = request_timeout
         failure_timeout.value = TimeoutError()
-        failure_timeout.check.side_effect = lambda *a: any(x in a for x in [TimeoutError, TCPTimedOutError])
+        failure_timeout.check.side_effect = lambda *a: any(
+            x in a for x in [TimeoutError, TCPTimedOutError]
+        )
 
         spider.handle_error(failure_timeout)
         self.assertEqual(len(spider.error_records), 1)
         record = spider.error_records[0]
-        self.assertEqual(record['error_type'], 'TimeoutError')
+        self.assertEqual(record["error_type"], "TimeoutError")
 
 
 if __name__ == "__main__":

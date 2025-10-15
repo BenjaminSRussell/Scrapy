@@ -24,8 +24,8 @@ from src.common.delta_lake import get_delta_manager
 # Setup logging
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
 )
 logger = logging.getLogger(__name__)
 
@@ -56,29 +56,33 @@ def load_seed_urls(csv_path: Path, manager) -> int:
     logger.info(f"Loading seed URLs from: {csv_path}")
 
     # Read CSV (no header, just URLs)
-    df = pd.read_csv(csv_path, header=None, names=['url'])
+    df = pd.read_csv(csv_path, header=None, names=["url"])
 
     # Remove duplicates and empty URLs
     original_count = len(df)
-    df = df.dropna(subset=['url'])
-    df = df[df['url'].str.strip() != '']
-    df = df.drop_duplicates(subset=['url'])
+    df = df.dropna(subset=["url"])
+    df = df[df["url"].str.strip() != ""]
+    df = df.drop_duplicates(subset=["url"])
 
-    logger.info(f"Loaded {original_count} URLs, {len(df)} unique URLs after deduplication")
+    logger.info(
+        f"Loaded {original_count} URLs, {len(df)} unique URLs after deduplication"
+    )
 
     # Add url_hash column (SHA256 hash of URL)
-    df['url_hash'] = df['url'].apply(lambda url: hashlib.sha256(url.encode('utf-8')).hexdigest())
+    df["url_hash"] = df["url"].apply(
+        lambda url: hashlib.sha256(url.encode("utf-8")).hexdigest()
+    )
 
     # Add timestamp
-    df['added_at'] = pd.Timestamp.now().isoformat()
+    df["added_at"] = pd.Timestamp.now().isoformat()
 
     # Convert to list of dictionaries
-    seed_records = df.to_dict('records')
+    seed_records = df.to_dict("records")
 
     logger.info(f"Seeding {len(seed_records)} URLs into Delta Lake...")
 
     # Write to Delta Lake (synchronous write to ensure completion)
-    manager.write('seed_urls', seed_records, mode='overwrite', async_write=False)
+    manager.write("seed_urls", seed_records, mode="overwrite", async_write=False)
 
     logger.info(f"✅ Seed URLs loaded: {len(seed_records)} records")
 
@@ -98,29 +102,25 @@ def validate_seed_urls(manager) -> dict:
 
     try:
         # Check if table exists
-        count = manager.count('seed_urls')
+        count = manager.count("seed_urls")
 
         if count == 0:
             logger.error("❌ seed_urls table exists but has 0 rows!")
-            return {'valid': False, 'count': 0, 'error': 'Empty table'}
+            return {"valid": False, "count": 0, "error": "Empty table"}
 
         # Read sample records
-        sample = manager.read('seed_urls', columns=['url', 'url_hash', 'added_at'])[:5]
+        sample = manager.read("seed_urls", columns=["url", "url_hash", "added_at"])[:5]
 
         logger.info(f"✅ seed_urls table validated: {count} records")
         logger.info("Sample records:")
         for i, record in enumerate(sample[:3], 1):
             logger.info(f"  {i}. {record.get('url', 'N/A')}")
 
-        return {
-            'valid': True,
-            'count': count,
-            'sample': sample
-        }
+        return {"valid": True, "count": count, "sample": sample}
 
     except Exception as e:
         logger.error(f"❌ Validation failed: {e}")
-        return {'valid': False, 'count': 0, 'error': str(e)}
+        return {"valid": False, "count": 0, "error": str(e)}
 
 
 def check_table_stats(manager):
@@ -132,14 +132,12 @@ def check_table_stats(manager):
     tables = manager.list_tables()
 
     for table in tables:
-        status = "✓" if table['exists'] else "✗"
+        status = "✓" if table["exists"] else "✗"
         logger.info(
-            f"{status} {table['name']}: "
-            f"{table['row_count']} rows, "
-            f"{table['parquet_files']} parquet files"
+            f"{status} {table['name']}: {table['row_count']} rows, {table['parquet_files']} parquet files"
         )
 
-        if 'error' in table:
+        if "error" in table:
             logger.warning(f"  ⚠️  Error: {table['error']}")
 
     logger.info("=" * 60 + "\n")
@@ -148,32 +146,26 @@ def check_table_stats(manager):
 def main():
     """Main entry point for reseed script."""
     parser = argparse.ArgumentParser(
-        description='Reseed Delta Lake with uconn_urls.csv',
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+        description="Reseed Delta Lake with uconn_urls.csv",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
 
     parser.add_argument(
-        '--csv',
-        default='data/raw/uconn_urls.csv',
-        help='Path to uconn_urls.csv file'
+        "--csv", default="data/raw/uconn_urls.csv", help="Path to uconn_urls.csv file"
     )
 
     parser.add_argument(
-        '--clear',
-        action='store_true',
-        help='Clear all Delta Lake tables before reseeding (WARNING: destructive!)'
+        "--clear",
+        action="store_true",
+        help="Clear all Delta Lake tables before reseeding (WARNING: destructive!)",
     )
 
     parser.add_argument(
-        '--no-validate',
-        action='store_true',
-        help='Skip validation after seeding'
+        "--no-validate", action="store_true", help="Skip validation after seeding"
     )
 
     parser.add_argument(
-        '--force',
-        action='store_true',
-        help='Skip confirmation prompts'
+        "--force", action="store_true", help="Skip confirmation prompts"
     )
 
     args = parser.parse_args()
@@ -197,7 +189,7 @@ def main():
             logger.warning("⚠️  This will DELETE all Delta Lake tables!")
             if not args.force:
                 confirmation = input("Are you sure? Type 'yes' to continue: ")
-                if confirmation.lower() != 'yes':
+                if confirmation.lower() != "yes":
                     logger.info("Operation cancelled.")
                     sys.exit(0)
 
@@ -215,8 +207,10 @@ def main():
         if not args.no_validate:
             validation = validate_seed_urls(manager)
 
-            if not validation['valid']:
-                logger.error(f"❌ Validation failed: {validation.get('error', 'Unknown error')}")
+            if not validation["valid"]:
+                logger.error(
+                    f"❌ Validation failed: {validation.get('error', 'Unknown error')}"
+                )
                 sys.exit(1)
 
             # Check all table statistics
@@ -239,5 +233,5 @@ def main():
         sys.exit(1)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

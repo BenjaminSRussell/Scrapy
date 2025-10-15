@@ -7,7 +7,7 @@ import json
 from unittest.mock import patch
 
 import pytest
-import redis
+import redis  # type: ignore[import-untyped]
 
 from src.common.redis_manager import RedisManager
 
@@ -18,10 +18,10 @@ class TestRedisManagerInit:
     @pytest.mark.unit
     def test_init_with_defaults(self):
         """Test initialization with default parameters."""
-        with patch('redis.ConnectionPool') as mock_pool:
-            manager = RedisManager()
+        with patch("redis.ConnectionPool") as mock_pool:
+            RedisManager()
             mock_pool.assert_called_with(
-                host='localhost',
+                host="localhost",
                 port=6379,
                 db=0,
                 password=None,
@@ -36,7 +36,7 @@ class TestRedisManagerInit:
     @pytest.mark.unit
     def test_connection_failure(self):
         """Test handling of Redis connection failure."""
-        with patch('redis.Redis') as mock_redis:
+        with patch("redis.Redis") as mock_redis:
             mock_redis.return_value.ping.side_effect = redis.exceptions.ConnectionError
             with pytest.raises(redis.exceptions.RedisError):
                 RedisManager()
@@ -49,67 +49,87 @@ class TestRedisManagerQueue:
     @pytest.mark.redis
     def test_push_to_queue(self, redis_clean):
         """Test pushing items to Redis queue."""
-        manager = RedisManager(host='127.0.0.1', port=6379, db=redis_clean.connection_pool.connection_kwargs['db'])
+        manager = RedisManager(
+            host="127.0.0.1",
+            port=6379,
+            db=redis_clean.connection_pool.connection_kwargs["db"],
+        )
 
-        test_item = {'url': 'https://example.com', 'depth': 1}
-        manager.push_to_queue('test_queue', test_item)
+        test_item = {"url": "https://example.com", "depth": 1}
+        manager.push_to_queue("test_queue", test_item)
 
         # Verify item was pushed
-        result = redis_clean.lrange('queue:test_queue', 0, -1)
+        result = redis_clean.lrange("queue:test_queue", 0, -1)
         assert len(result) == 1
         pushed_item = json.loads(result[0])
-        assert pushed_item['url'] == test_item['url']
-        assert pushed_item['depth'] == test_item['depth']
+        assert pushed_item["url"] == test_item["url"]
+        assert pushed_item["depth"] == test_item["depth"]
 
     @pytest.mark.unit
     @pytest.mark.redis
     def test_pop_from_queue(self, redis_clean):
         """Test popping items from Redis queue."""
-        manager = RedisManager(host='127.0.0.1', port=6379, db=redis_clean.connection_pool.connection_kwargs['db'])
+        manager = RedisManager(
+            host="127.0.0.1",
+            port=6379,
+            db=redis_clean.connection_pool.connection_kwargs["db"],
+        )
 
         # Push test item
-        test_item = {'url': 'https://example.com', 'depth': 1}
-        manager.push_to_queue('test_queue', test_item)
+        test_item = {"url": "https://example.com", "depth": 1}
+        manager.push_to_queue("test_queue", test_item)
 
         # Pop and verify
-        result = manager.pop_from_queue('test_queue')
-        assert result['url'] == test_item['url']
-        assert result['depth'] == test_item['depth']
+        result = manager.pop_from_queue("test_queue")
+        assert result["url"] == test_item["url"]
+        assert result["depth"] == test_item["depth"]
 
     @pytest.mark.unit
     @pytest.mark.redis
     def test_pop_from_empty_queue(self, redis_clean):
         """Test popping from empty queue returns None."""
-        manager = RedisManager(host='127.0.0.1', port=6379, db=redis_clean.connection_pool.connection_kwargs['db'])
+        manager = RedisManager(
+            host="127.0.0.1",
+            port=6379,
+            db=redis_clean.connection_pool.connection_kwargs["db"],
+        )
 
-        result = manager.pop_from_queue('empty_queue')
+        result = manager.pop_from_queue("empty_queue")
         assert result is None
 
     @pytest.mark.unit
     @pytest.mark.redis
     def test_get_queue_length(self, redis_clean):
         """Test getting queue length."""
-        manager = RedisManager(host='127.0.0.1', port=6379, db=redis_clean.connection_pool.connection_kwargs['db'])
+        manager = RedisManager(
+            host="127.0.0.1",
+            port=6379,
+            db=redis_clean.connection_pool.connection_kwargs["db"],
+        )
 
         # Push multiple items
         for i in range(5):
-            manager.push_to_queue('test_queue', {'id': i})
+            manager.push_to_queue("test_queue", {"id": i})
 
-        length = manager.get_queue_length('test_queue')
+        length = manager.get_queue_length("test_queue")
         assert length == 5
 
     @pytest.mark.unit
     @pytest.mark.redis
     def test_clear_queue(self, redis_clean):
         """Test clearing a queue."""
-        manager = RedisManager(host='127.0.0.1', port=6379, db=redis_clean.connection_pool.connection_kwargs['db'])
+        manager = RedisManager(
+            host="127.0.0.1",
+            port=6379,
+            db=redis_clean.connection_pool.connection_kwargs["db"],
+        )
 
         # Push items
         for i in range(5):
-            manager.push_to_queue('test_queue', {'id': i})
+            manager.push_to_queue("test_queue", {"id": i})
 
         # Clear queue
-        manager.clear_queue('test_queue')
+        manager.clear_queue("test_queue")
 
         # Verify empty
-        assert manager.get_queue_length('test_queue') == 0
+        assert manager.get_queue_length("test_queue") == 0

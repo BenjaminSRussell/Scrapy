@@ -5,13 +5,14 @@ import logging
 import os
 import time
 from collections import deque
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from datetime import datetime
+from typing import Any
 from urllib.parse import ParseResult, parse_qs, urlencode, urlparse
 
-import redis
+import redis  # type: ignore[import]
 import scrapy
-from scrapy.http import Response
+from scrapy.http import Request, Response
 from scrapy.spidermiddlewares.httperror import HttpError
 from twisted.internet.error import DNSLookupError, TCPTimedOutError, TimeoutError
 
@@ -29,6 +30,7 @@ try:
         NEW_URLS_FOUND_PER_MINUTE,
         OFFSITE_LINKS_FOUND,
     )
+
     PROMETHEUS_AVAILABLE = True
 except ImportError:
     NEW_URLS_FOUND_PER_MINUTE = None
@@ -46,6 +48,7 @@ class BaseSpider(scrapy.Spider):
     - name: Spider name
     - custom_settings: Spider-specific settings dict
     """
+
     name = "base"
 
     # Follow standard redirect status codes
@@ -63,44 +66,56 @@ class BaseSpider(scrapy.Spider):
         super().__init__(*args, **kwargs)
 
         # Limit crawl to uconn.edu domains (including subdomains)
-        self.allowed_domains = ['uconn.edu']
+        self.allowed_domains = ["uconn.edu"]
 
         # Grab IGNORED_EXTENSIONS from settings when available
-        self.IGNORED_EXTENSIONS = getattr(self, 'settings', {}).get('IGNORED_EXTENSIONS', []) if hasattr(self, 'settings') else []
+        self.IGNORED_EXTENSIONS = (
+            getattr(self, "settings", {}).get("IGNORED_EXTENSIONS", [])
+            if hasattr(self, "settings")
+            else []
+        )
+        # Maintain backward-compatible alias used in tests
+        self.ignored_extensions = list(self.IGNORED_EXTENSIONS)
 
         # Load configuration
         config_instance = Config.get_instance()
         self.config = config_instance._config
 
         # Shared Redis client for URL de-duplication
-        redis_config = self.config.get('redis', {})
-        redis_host = os.getenv('REDIS_HOST', redis_config.get('host', 'localhost'))
-        redis_port = int(os.getenv('REDIS_PORT', redis_config.get('port', 6379)))
+        redis_config = self.config.get("redis", {})
+        redis_host = os.getenv("REDIS_HOST", redis_config.get("host", "localhost"))
+        redis_port = int(os.getenv("REDIS_PORT", redis_config.get("port", 6379)))
 
-        self.redis_client = redis.Redis(
-            host=redis_host,
-            port=redis_port,
-            db=redis_config.get('db', 0),
-            decode_responses=False  # Work with bytes for efficiency
-        )
+        if os.getenv("REDIS_URL") == "fakeredis://":
+            import fakeredis
+
+            self.redis_client = fakeredis.FakeStrictRedis(decode_responses=False)
+        else:
+            self.redis_client = redis.Redis(
+                host=redis_host,
+                port=redis_port,
+                db=redis_config.get("db", 0),
+                decode_responses=False,  # Work with bytes for efficiency
+            )
 
         # Spider-specific Redis key storing URL hashes
-        self.url_hashes_key = f'{self.name}:url_hashes'
+        self.url_hashes_key = f"{self.name}:url_hashes"
 
         # Initialize data structures
         self.discovered_records = []
         self.error_records = []
         self.sitemaps_parsed: set[str] = set()
+        self._robots_parser = None
 
         # Track skipped URLs by type for metrics
         self.skip_counters = {
-            'images': 0,
-            'static_assets': 0,
-            'documents': 0,
-            'media_files': 0,
-            'archives': 0,
-            'duplicates': 0,
-            'invalid_urls': 0,
+            "images": 0,
+            "static_assets": 0,
+            "documents": 0,
+            "media_files": 0,
+            "archives": 0,
+            "duplicates": 0,
+            "invalid_urls": 0,
         }
 
         # Initialize managers
@@ -123,47 +138,66 @@ class BaseSpider(scrapy.Spider):
         self.last_metric_update = time.time()
 
         # Minimum JS detector confidence before flagging a page
-        self.js_confidence_threshold = self.config.get('stage1', {}).get('js_confidence_threshold', 0.7)
+        self.js_confidence_threshold = self.config.get("stage1", {}).get(
+            "js_confidence_threshold", 0.7
+        )
 
         # Batch size falls back to 50 if settings unavailable
-        self.batch_size = self.settings.getint('DELTA_BATCH_SIZE', 50) if hasattr(self, 'settings') and self.settings else 50
+        self.batch_size = (
+            self.settings.getint("DELTA_BATCH_SIZE", 50)
+            if hasattr(self, "settings") and self.settings
+            else 50
+        )
+
+        # Optional depth control (tests may set max_depth dynamically)
+        self.max_depth = getattr(self.settings, "MAX_DEPTH", None)
 
         # Ensure we have start URLs loaded from Delta
-        if not hasattr(self, 'start_urls') or not self.start_urls:
+        if not hasattr(self, "start_urls") or not self.start_urls:
             self.start_urls = self._load_seed_urls()
 
         url_count = self.redis_client.scard(self.url_hashes_key)
-        logger.info(f"{self.name} loaded {len(self.start_urls)} seeds, {url_count} existing URLs in Redis")
+        logger.info(
+            f"{self.name} loaded {len(self.start_urls)} seeds, {url_count} existing URLs in Redis"
+        )
 
     async def start(self):
         """Emit initial requests for the dynamically loaded start URLs."""
         logger.warning(f"🚀 [{self.name}] start() CALLED!")  # DEBUG
 
         if not self.start_urls:
-            logger.error(f"{self.name}: No start URLs to crawl! Check Delta Lake seed_urls table.")
+            logger.error(
+                f"{self.name}: No start URLs to crawl! Check Delta Lake seed_urls table."
+            )
             return
 
-        logger.warning(f"🚀 [{self.name}]: Starting crawl with {len(self.start_urls)} seed URLs")
+        logger.warning(
+            f"🚀 [{self.name}]: Starting crawl with {len(self.start_urls)} seed URLs"
+        )
 
         request_count = 0
         for url in self.start_urls:
             request_count += 1
             if request_count <= 5:
-                logger.warning(f"🚀 [{self.name}]: Yielding request #{request_count}: {url[:80]}")
+                logger.warning(
+                    f"🚀 [{self.name}]: Yielding request #{request_count}: {url[:80]}"
+                )
             yield scrapy.Request(
                 url,
                 callback=self.parse,
                 errback=self.handle_error,
-                meta={'depth': 0},
+                meta={"depth": 0},
                 priority=1,
-                dont_filter=False
+                dont_filter=False,
             )
 
-        logger.warning(f"🚀 [{self.name}]: Yielded {request_count} total requests from start()")
+        logger.warning(
+            f"🚀 [{self.name}]: Yielded {request_count} total requests from start()"
+        )
 
     def _hash_url(self, url: str) -> str:
         """Return the full SHA256 hash of a URL for deduplication."""
-        return hashlib.sha256(url.encode('utf-8')).hexdigest()
+        return hashlib.sha256(url.encode("utf-8")).hexdigest()
 
     @staticmethod
     def normalize_url(url: str) -> str:
@@ -181,13 +215,19 @@ class BaseSpider(scrapy.Spider):
 
             # List of trackers to remove (case-insensitive)
             trackers_to_remove = [
-                'utm_source', 'utm_medium', 'utm_campaign',
-                'utm_term', 'utm_content', 'gclid', 'fbclid'
+                "utm_source",
+                "utm_medium",
+                "utm_campaign",
+                "utm_term",
+                "utm_content",
+                "gclid",
+                "fbclid",
             ]
 
             # Filter out tracking parameters
             filtered_params = {
-                k: v for k, v in query_params.items()
+                k: v
+                for k, v in query_params.items()
                 if k.lower() not in trackers_to_remove
             }
 
@@ -201,7 +241,7 @@ class BaseSpider(scrapy.Spider):
                 path=parsed.path,
                 params=parsed.params,
                 query=new_query,
-                fragment=""  # Remove fragment
+                fragment="",  # Remove fragment
             )
 
             return normalized.geturl()
@@ -213,10 +253,12 @@ class BaseSpider(scrapy.Spider):
     def _load_seed_urls(self):
         """Return new seed URLs from Delta Lake that are not already in Redis."""
         try:
-            seed_records = self.delta.read('seed_urls')
-            urls = [record['url'] for record in seed_records]
+            seed_records = self.delta.read("seed_urls")
+            urls = [record["url"] for record in seed_records]
 
-            logger.info(f"Loaded {len(urls)} seed URLs from Delta Lake, checking against Redis...")
+            logger.info(
+                f"Loaded {len(urls)} seed URLs from Delta Lake, checking against Redis..."
+            )
 
             # Batch deduplicate using a Redis pipeline
             new_urls = []
@@ -238,7 +280,9 @@ class BaseSpider(scrapy.Spider):
                     if not exists:
                         new_urls.append(url)
 
-                logger.info(f"After deduplication: {len(new_urls)} new URLs (filtered {len(urls) - len(new_urls)} existing)")
+                logger.info(
+                    f"After deduplication: {len(new_urls)} new URLs (filtered {len(urls) - len(new_urls)} existing)"
+                )
 
             return new_urls
         except Exception as e:
@@ -250,88 +294,208 @@ class BaseSpider(scrapy.Spider):
         # Disabled to always start from the beginning
         pass
 
+    # ------------------------------------------------------------------
+    # Compatibility helpers used extensively by tests
+    # ------------------------------------------------------------------
+
+    def extract_links(self, response: Response) -> list[str]:
+        """Return normalized links from a response, filtering ignored extensions."""
+        candidate_urls = self._extract_urls(response)
+        ignored = [
+            ext.lower()
+            for ext in getattr(self, "ignored_extensions", self.IGNORED_EXTENSIONS)
+        ]
+        unique_links: set[str] = set()
+
+        for url in candidate_urls:
+            if not url:
+                continue
+
+            normalized_url = self.normalize_url(url)
+            lower_url = normalized_url.lower()
+
+            if any(lower_url.endswith(ext) for ext in ignored):
+                continue
+
+            scheme = urlparse(normalized_url).scheme
+            if scheme in {"mailto", "javascript"}:
+                continue
+
+            unique_links.add(normalized_url)
+
+        return list(unique_links)
+
+    def should_follow_link(self, request: Request) -> bool:
+        """Determine whether a link should be followed based on depth settings."""
+        max_depth = getattr(self, "max_depth", None)
+        if max_depth is None:
+            return True
+
+        current_depth = request.meta.get("depth", 0)
+        return current_depth < max_depth
+
+    def create_request(
+        self,
+        url: str,
+        parent: Request | None = None,
+        *,
+        callback: Callable[..., Any] | None = None,
+        errback: Callable[..., Any] | None = None,
+        meta: dict | None = None,
+        dont_filter: bool = False,
+        priority: int = 0,
+        **kwargs,
+    ) -> scrapy.Request:
+        """Create a follow-up request while propagating depth metadata."""
+
+        meta = dict(meta or {})
+
+        if parent is not None:
+            parent_depth = parent.meta.get("depth", 0)
+            meta.setdefault("depth", parent_depth + 1)
+            meta.setdefault("parent_url", parent.url)
+            meta.setdefault("referer", parent.url)
+        else:
+            meta.setdefault("depth", 0)
+
+        request = scrapy.Request(
+            url,
+            callback=callback or self.parse,
+            errback=errback or self.handle_error,
+            meta=meta,
+            dont_filter=dont_filter,
+            priority=priority,
+            **kwargs,
+        )
+        return request
+
+    def is_allowed_by_robots(self, url: str) -> bool:
+        """Basic robots.txt check (defaults to permissive)."""
+        parser = getattr(self, "_robots_parser", None)
+        if parser is None:
+            return True
+
+        user_agent = getattr(self, "user_agent", "*")
+        try:
+            return parser.can_fetch(user_agent, url)
+        except Exception:
+            return True
+
+    def parse_error(self, response: Response) -> dict[str, Any]:
+        """Record error responses for downstream analysis."""
+        error_record = {
+            "url": response.url,
+            "url_hash": self._hash_url(response.url),
+            "status": response.status,
+            "depth": response.meta.get("depth", 0),
+            "timestamp": datetime.now().isoformat(),
+        }
+        self.error_records.append(error_record)
+        logger.error(
+            "Error response received: %s for %s", response.status, response.url
+        )
+        return error_record
+
     def parse(self, response: Response):
         """Handle each response, record metadata, and queue new work."""
-        depth = response.meta.get('depth', 0)
+        depth = response.meta.get("depth", 0)
         url_hash = self._hash_url(response.url)
-        content_type = response.headers.get('Content-Type', b'').decode('utf-8', errors='ignore').lower()
+        content_type = (
+            response.headers.get("Content-Type", b"")
+            .decode("utf-8", errors="ignore")
+            .lower()
+        )
 
-        # Yield item for ALL discovered resources
+        results: list[Any] = []
+
         discovered_item = {
-            'url': response.url,
-            'url_hash': url_hash,
-            'depth': depth,
-            'status_code': response.status,
-            'content_type': content_type,
-            'content_size': len(response.body),
-            'discovered_at': datetime.now().isoformat(),
-            'discovery_type': 'html' if ('text/html' in content_type or 'application/xhtml' in content_type) else 'resource',
+            "url": response.url,
+            "url_hash": url_hash,
+            "depth": depth,
+            "status_code": response.status,
+            "content_type": content_type,
+            "content_size": len(response.body),
+            "discovered_at": datetime.now().isoformat(),
+            "discovery_type": (
+                "html"
+                if ("text/html" in content_type or "application/xhtml" in content_type)
+                else "resource"
+            ),
         }
+        discovered_item["resource_type"] = self._categorize_resource(
+            response.url, content_type
+        )
+        results.append(discovered_item)
 
-        # Categorize resource type
-        discovered_item['resource_type'] = self._categorize_resource(response.url, content_type)
-
-        # Yield item to pipeline
-        yield discovered_item
-
-        # Only process HTML pages
-        if 'text/html' not in content_type and 'application/xhtml' not in content_type:
-            logger.debug(f"Non-HTML content discovered: {content_type} for {response.url[:80]}")
+        if "text/html" not in content_type and "application/xhtml" not in content_type:
+            logger.debug(
+                f"Non-HTML content discovered: {content_type} for {response.url[:80]}"
+            )
             self._record_non_html(response, url_hash, depth, content_type)
-            return
+            return results
 
-        # Check whether the page needs JavaScript rendering
         requires_js, confidence = self._detect_js_requirement(response)
-
-        # Extract in-scope URLs
         discovered_urls = self._extract_urls(response)
 
         content_size = len(response.body)
         is_heavy = content_size > 1_000_000
+        self._record_discovery(
+            response,
+            url_hash,
+            depth,
+            content_size,
+            is_heavy,
+            len(discovered_urls),
+            requires_js,
+        )
 
-        # Record discovery details
-        self._record_discovery(response, url_hash, depth, content_size, is_heavy, len(discovered_urls), requires_js)
-
-        # Update performance tracking
         self.perf_urls_processed += 1
         self._maybe_log_performance()
 
-        # Track this page in rolling windows
         page_url_count = len(discovered_urls)
         current_time = time.time()
-
-        # Add to sliding window (timestamp, count)
         self.url_discovery_window.append((current_time, page_url_count))
         self.file_size_window.append(content_size)
 
-        # Update totals
         self.total_urls_discovered += page_url_count
         self.total_file_size += content_size
 
-        # Update dashboard metrics
-        self._update_dashboard_metrics()
+        if PROMETHEUS_AVAILABLE:
+            self._update_dashboard_metrics()
 
-        # Flush batch when we hit the configured size
+        logger.info(
+            f"[D{depth}] {response.url[:80]} -> {page_url_count} URLs (JS: {requires_js}, conf: {confidence:.2f})"
+        )
+
+        for produced in self._process_discovered_urls(response, discovered_urls, depth):
+            if produced is not None:
+                results.append(produced)
+
         if len(self.discovered_records) >= self.batch_size:
             self._save_batch()
+        if len(self.error_records) >= 50:
+            self._save_error_batch()
 
-        logger.info(f"[D{depth}] {response.url[:80]} -> {page_url_count} URLs (JS: {requires_js}, conf: {confidence:.2f})")
-
-        # Process discovered URLs with batch Redis operations
-        yield from self._process_discovered_urls(response, discovered_urls, depth)
+        return results
 
     def _categorize_resource(self, url: str, content_type: str) -> str:
         """Categorize the resource type based on URL and content type."""
         url_lower = url.lower()
 
-        if any(ext in url_lower for ext in ['.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx']):
-            return 'document'
-        elif any(ext in url_lower for ext in ['.jpg', '.jpeg', '.png', '.gif', '.svg', '.webp']):
-            return 'image'
-        elif any(ext in url_lower for ext in ['.js', '.css']):
-            return 'asset'
+        if any(
+            ext in url_lower
+            for ext in [".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx"]
+        ):
+            return "document"
+        elif any(
+            ext in url_lower
+            for ext in [".jpg", ".jpeg", ".png", ".gif", ".svg", ".webp"]
+        ):
+            return "image"
+        elif any(ext in url_lower for ext in [".js", ".css"]):
+            return "asset"
         else:
-            return 'page'
+            return "page"
 
     def _detect_js_requirement(self, response: Response) -> tuple[bool, float]:
         """Detect if page requires JavaScript rendering using JSDetector.
@@ -341,7 +505,7 @@ class BaseSpider(scrapy.Spider):
         """
         detector = JSDetector(response)
         result = detector.requires_js_rendering()
-        return result['requires_js'], result['confidence']
+        return result["requires_js"], result["confidence"]
 
     def _extract_urls(self, response: Response) -> list[str]:
         """Extract URLs using centralized URLExtractor.
@@ -353,13 +517,14 @@ class BaseSpider(scrapy.Spider):
             List of discovered URLs
         """
         extractor = URLExtractor(
-            base_url=response.url,
-            allowed_domains=self.allowed_domains
+            base_url=response.url, allowed_domains=self.allowed_domains
         )
         discovered_urls = extractor.discover_all_urls(response)
         return [self.normalize_url(url) for url in discovered_urls]
 
-    def _process_discovered_urls(self, response: Response, discovered_urls: list[str], depth: int) -> Iterator:
+    def _process_discovered_urls(
+        self, response: Response, discovered_urls: list[str], depth: int
+    ) -> Iterator:
         """Deduplicate discovered URLs, track skips, and queue new crawl requests."""
         if not discovered_urls:
             return
@@ -403,7 +568,9 @@ class BaseSpider(scrapy.Spider):
                 offsite_urls.append(url)
             else:
                 # Internal URLs rely on the configured ignore list
-                is_static = any(url.lower().endswith(ext) for ext in self.IGNORED_EXTENSIONS)
+                is_static = any(
+                    url.lower().endswith(ext) for ext in self.IGNORED_EXTENSIONS
+                )
 
                 if is_static:
                     # Static resource: publish metadata only
@@ -419,29 +586,37 @@ class BaseSpider(scrapy.Spider):
             if PROMETHEUS_AVAILABLE and OFFSITE_LINKS_FOUND:
                 OFFSITE_LINKS_FOUND.labels(spider=self.name).inc()
 
-            logger.debug(f"[K3 OFFSITE] External link found (not following): {url[:80]}")
+            logger.debug(
+                f"[K3 OFFSITE] External link found (not following): {url[:80]}"
+            )
 
         # Track static resources
         for url, url_hash in static_urls:
             skip_reason = self._categorize_skip_reason(url)
             self._track_skip(url, skip_reason)
-            yield self._create_static_item(url, url_hash, depth, response.url, skip_reason)
+            yield self._create_static_item(
+                url, url_hash, depth, response.url, skip_reason
+            )
             logger.debug(f"[K3 STATIC] Skipped {skip_reason}: {url[:80]}")
 
         # Queue HTML candidates for crawling
-        for url, url_hash in html_candidates:
-            priority = 0 if urlparse(response.url).netloc == urlparse(url).netloc else -1
+        for url, _url_hash in html_candidates:
+            priority = (
+                0 if urlparse(response.url).netloc == urlparse(url).netloc else -1
+            )
             yield scrapy.Request(
                 url,
                 callback=self.parse,
                 errback=self.handle_error,
-                meta={'depth': depth + 1},
+                meta={"depth": depth + 1},
                 priority=priority,
-                dont_filter=False
+                dont_filter=False,
             )
             logger.debug(f"[K3 HTML] Queued HTML candidate: {url[:80]}")
 
-    def _create_offsite_item(self, response: Response, url: str) -> OffsiteCandidateItem:
+    def _create_offsite_item(
+        self, response: Response, url: str
+    ) -> OffsiteCandidateItem:
         """Create an offsite candidate item with context."""
         anchor_text, context = self._extract_context(response, url)
         return OffsiteCandidateItem(
@@ -449,21 +624,23 @@ class BaseSpider(scrapy.Spider):
             external_url=url,
             anchor_text=anchor_text,
             context=context,
-            discovered_at=datetime.now().isoformat()
+            discovered_at=datetime.now().isoformat(),
         )
 
-    def _create_static_item(self, url: str, url_hash: str, depth: int, parent_url: str, skip_reason: str) -> dict:
+    def _create_static_item(
+        self, url: str, url_hash: str, depth: int, parent_url: str, skip_reason: str
+    ) -> dict:
         """Create metadata item for static resources."""
         return {
-            'url': url,
-            'url_hash': url_hash,
-            'depth': depth + 1,
-            'discovery_type': 'static_resource',
-            'resource_type': 'static',
-            'file_extension': url.lower().split('.')[-1] if '.' in url else 'unknown',
-            'discovered_at': datetime.now().isoformat(),
-            'parent_url': parent_url,
-            'skip_reason': skip_reason,
+            "url": url,
+            "url_hash": url_hash,
+            "depth": depth + 1,
+            "discovery_type": "static_resource",
+            "resource_type": "static",
+            "file_extension": url.lower().split(".")[-1] if "." in url else "unknown",
+            "discovered_at": datetime.now().isoformat(),
+            "parent_url": parent_url,
+            "skip_reason": skip_reason,
         }
 
     def _is_external_url(self, url: str) -> bool:
@@ -473,8 +650,8 @@ class BaseSpider(scrapy.Spider):
             domain = parsed.netloc.lower()
 
             # Remove port if present
-            if ':' in domain:
-                domain = domain.split(':')[0]
+            if ":" in domain:
+                domain = domain.split(":")[0]
 
             # Check against allowed domains
             for allowed in self.allowed_domains:
@@ -493,12 +670,12 @@ class BaseSpider(scrapy.Spider):
         try:
             anchors = response.css(f'a[href="{url}"]')
             if anchors:
-                anchor_text = anchors[0].css('::text').get() or ""
+                anchor_text = anchors[0].css("::text").get() or ""
                 anchor_text = anchor_text.strip()
 
-                parent_p = anchors[0].xpath('./ancestor::p[1]//text()').getall()
+                parent_p = anchors[0].xpath("./ancestor::p[1]//text()").getall()
                 if parent_p:
-                    context = ' '.join([t.strip() for t in parent_p if t.strip()])
+                    context = " ".join([t.strip() for t in parent_p if t.strip()])
                     if len(context) > 500:
                         context = context[:500] + "..."
         except Exception as e:
@@ -510,22 +687,57 @@ class BaseSpider(scrapy.Spider):
         """Categorize the reason a URL was skipped for metrics tracking."""
         url_lower = url.lower()
 
-        if any(url_lower.endswith(ext) for ext in ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.svg', '.webp', '.ico', '.tiff']):
-            return 'images'
-        elif any(url_lower.endswith(ext) for ext in ['.css', '.js', '.map']):
-            return 'static_assets'
-        elif any(url_lower.endswith(ext) for ext in ['.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx']):
-            return 'documents'
-        elif any(url_lower.endswith(ext) for ext in ['.mp3', '.mp4', '.avi', '.mov', '.wmv', '.flv', '.webm', '.m4a', '.wav']):
-            return 'media_files'
-        elif any(url_lower.endswith(ext) for ext in ['.zip', '.rar', '.7z', '.tar', '.gz', '.bz2']):
-            return 'archives'
-        elif any(url_lower.endswith(ext) for ext in ['.woff', '.woff2', '.ttf', '.eot', '.otf']):
-            return 'static_assets'
+        if any(
+            url_lower.endswith(ext)
+            for ext in [
+                ".jpg",
+                ".jpeg",
+                ".png",
+                ".gif",
+                ".bmp",
+                ".svg",
+                ".webp",
+                ".ico",
+                ".tiff",
+            ]
+        ):
+            return "images"
+        elif any(url_lower.endswith(ext) for ext in [".css", ".js", ".map"]):
+            return "static_assets"
+        elif any(
+            url_lower.endswith(ext)
+            for ext in [".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx"]
+        ):
+            return "documents"
+        elif any(
+            url_lower.endswith(ext)
+            for ext in [
+                ".mp3",
+                ".mp4",
+                ".avi",
+                ".mov",
+                ".wmv",
+                ".flv",
+                ".webm",
+                ".m4a",
+                ".wav",
+            ]
+        ):
+            return "media_files"
+        elif any(
+            url_lower.endswith(ext)
+            for ext in [".zip", ".rar", ".7z", ".tar", ".gz", ".bz2"]
+        ):
+            return "archives"
+        elif any(
+            url_lower.endswith(ext)
+            for ext in [".woff", ".woff2", ".ttf", ".eot", ".otf"]
+        ):
+            return "static_assets"
         else:
-            return 'static_assets'
+            return "static_assets"
 
-    def _track_skip(self, url: str, reason: str = None):
+    def _track_skip(self, url: str, reason: str | None = None):
         """Track a skipped URL for metrics."""
         if reason is None:
             reason = self._categorize_skip_reason(url)
@@ -534,7 +746,12 @@ class BaseSpider(scrapy.Spider):
 
         total_skips = sum(self.skip_counters.values())
         if total_skips % 500 == 0:
-            skip_summary = ', '.join([f"{k}: {v}" for k, v in sorted(self.skip_counters.items(), key=lambda x: -x[1])])
+            skip_summary = ", ".join(
+                [
+                    f"{k}: {v}"
+                    for k, v in sorted(self.skip_counters.items(), key=lambda x: -x[1])
+                ]
+            )
             logger.info(f"⏭️  SKIP STATS - Total: {total_skips} | {skip_summary}")
 
     def _update_dashboard_metrics(self):
@@ -546,7 +763,11 @@ class BaseSpider(scrapy.Spider):
 
         # Calculate rate from sliding window (URLs discovered in last 60 seconds)
         cutoff_time = current_time - 60
-        recent_urls = sum(count for timestamp, count in self.url_discovery_window if timestamp >= cutoff_time)
+        recent_urls = sum(
+            count
+            for timestamp, count in self.url_discovery_window
+            if timestamp >= cutoff_time
+        )
         urls_per_minute = recent_urls  # Already per minute due to 60-second window
 
         # Calculate average file size from window
@@ -564,41 +785,52 @@ class BaseSpider(scrapy.Spider):
 
         self.last_metric_update = current_time
 
-    def _record_discovery(self, response: Response, url_hash: str, depth: int,
-                         content_size: int, is_heavy: bool, url_count: int, requires_js: bool):
+    def _record_discovery(
+        self,
+        response: Response,
+        url_hash: str,
+        depth: int,
+        content_size: int,
+        is_heavy: bool,
+        url_count: int,
+        requires_js: bool,
+    ):
         """Record successful page discovery."""
         record = {
-            'url': response.url,
-            'url_hash': url_hash,
-            'depth': depth,
-            'status_code': response.status,
-            'content_size': content_size,
-            'is_heavy': is_heavy,
-            'urls_found': url_count,
-            'requires_js': requires_js,
-            'discovered_at': datetime.now().isoformat(),
+            "url": response.url,
+            "url_hash": url_hash,
+            "depth": depth,
+            "status_code": response.status,
+            "content_size": content_size,
+            "is_heavy": is_heavy,
+            "urls_found": url_count,
+            "requires_js": requires_js,
+            "discovered_at": datetime.now().isoformat(),
         }
         self.discovered_records.append(record)
 
-    def _record_non_html(self, response: Response, url_hash: str, depth: int, content_type: str):
+    def _record_non_html(
+        self, response: Response, url_hash: str, depth: int, content_type: str
+    ):
         """Record non-HTML resource discovery."""
         record = {
-            'url': response.url,
-            'url_hash': url_hash,
-            'depth': depth,
-            'content_type': content_type,
-            'content_size': len(response.body),
-            'discovered_at': datetime.now().isoformat(),
+            "url": response.url,
+            "url_hash": url_hash,
+            "depth": depth,
+            "content_type": content_type,
+            "content_size": len(response.body),
+            "discovered_at": datetime.now().isoformat(),
         }
         self.discovered_records.append(record)
-
 
     def _save_batch(self):
         """Save batched records to Delta Lake."""
         if self.discovered_records:
             try:
-                self.delta.write('stage1_discovery', self.discovered_records)
-                logger.info(f"💾 Saved {len(self.discovered_records)} discovery records")
+                self.delta.write("stage1_discovery", self.discovered_records)
+                logger.info(
+                    f"💾 Saved {len(self.discovered_records)} discovery records"
+                )
                 self.discovered_records = []
             except Exception as e:
                 logger.error(f"Failed to save discovery records: {e}")
@@ -609,7 +841,9 @@ class BaseSpider(scrapy.Spider):
         if (now - self.perf_last_log).seconds >= 10:
             elapsed = (now - self.perf_start_time).seconds or 1
             rate = self.perf_urls_processed / elapsed
-            logger.info(f"⚡ Performance: {self.perf_urls_processed} URLs @ {rate:.2f} URLs/sec")
+            logger.info(
+                f"⚡ Performance: {self.perf_urls_processed} URLs @ {rate:.2f} URLs/sec"
+            )
             self.perf_last_log = now
 
     def handle_error(self, failure):
@@ -617,9 +851,12 @@ class BaseSpider(scrapy.Spider):
         request = failure.request
 
         # Categorize error
+        error_code = 0
+
         if failure.check(HttpError):
             response = failure.value.response
             status = response.status
+            error_code = status
 
             # Log 404s at INFO level (expected)
             if status == 404:
@@ -632,24 +869,29 @@ class BaseSpider(scrapy.Spider):
             logger.error(f"DNS lookup failed: {request.url[:80]}")
         elif failure.check(TimeoutError, TCPTimedOutError):
             # Log timeouts at DEBUG on first attempt, ERROR after final retry
-            retry_count = request.meta.get('retry_times', 0)
-            max_retries = self.settings.get('RETRY_TIMES', 3)
+            retry_count = request.meta.get("retry_times", 0)
+            max_retries = self.settings.get("RETRY_TIMES", 3)
 
             if retry_count >= max_retries:
                 logger.error(f"Timeout after {retry_count} retries: {request.url[:80]}")
             else:
-                logger.debug(f"Timeout (retry {retry_count}/{max_retries}): {request.url[:80]}")
+                logger.debug(
+                    f"Timeout (retry {retry_count}/{max_retries}): {request.url[:80]}"
+                )
         else:
-            logger.error(f"Unknown error: {failure.getErrorMessage()} for {request.url[:80]}")
+            logger.error(
+                f"Unknown error: {failure.getErrorMessage()} for {request.url[:80]}"
+            )
 
         # Record error for analysis
         error_record = {
-            'url': request.url,
-            'url_hash': self._hash_url(request.url),
-            'error_type': failure.type.__name__,
-            'error_message': str(failure.value),
-            'depth': request.meta.get('depth', 0),
-            'timestamp': datetime.now().isoformat(),
+            "url": request.url,
+            "url_hash": self._hash_url(request.url),
+            "error_type": failure.type.__name__,
+            "error_message": str(failure.value),
+            "error_code": error_code,
+            "depth": request.meta.get("depth", 0),
+            "timestamp": datetime.now().isoformat(),
         }
         self.error_records.append(error_record)
 
@@ -661,7 +903,7 @@ class BaseSpider(scrapy.Spider):
         """Save error records to Delta Lake."""
         if self.error_records:
             try:
-                self.delta.write('stage1_errors', self.error_records)
+                self.delta.write("stage1_errors", self.error_records)
                 logger.info(f"💾 Saved {len(self.error_records)} error records")
                 self.error_records = []
             except Exception as e:
@@ -679,5 +921,10 @@ class BaseSpider(scrapy.Spider):
         logger.info(f"✅ Final stats: {self.perf_urls_processed} URLs processed")
         logger.info(f"✅ Total URLs discovered: {self.total_urls_discovered}")
 
-        skip_summary = ', '.join([f"{k}: {v}" for k, v in sorted(self.skip_counters.items(), key=lambda x: -x[1])])
+        skip_summary = ", ".join(
+            [
+                f"{k}: {v}"
+                for k, v in sorted(self.skip_counters.items(), key=lambda x: -x[1])
+            ]
+        )
         logger.info(f"⏭️  Final skip stats: {skip_summary}")

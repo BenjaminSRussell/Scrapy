@@ -13,6 +13,7 @@ Environment Variables:
 
 import logging
 import os
+from collections.abc import Sequence
 from contextlib import contextmanager
 from datetime import datetime
 from typing import Any
@@ -21,6 +22,7 @@ try:
     import psycopg2
     from psycopg2 import pool
     from psycopg2.extras import RealDictCursor
+
     POSTGRES_AVAILABLE = True
 except ImportError:
     POSTGRES_AVAILABLE = False
@@ -42,7 +44,7 @@ class PostgresManager:
         user: str | None = None,
         password: str | None = None,
         min_conn: int = 1,
-        max_conn: int = 10
+        max_conn: int = 10,
     ):
         """Initialize PostgreSQL manager with connection pool.
 
@@ -61,11 +63,11 @@ class PostgresManager:
             )
 
         # Load configuration from environment or defaults
-        self.host = host or os.getenv('DB_HOST', 'localhost')
-        self.port = port or int(os.getenv('DB_PORT', '5432'))
-        self.database = database or os.getenv('DB_NAME', 'pipeline_metrics')
-        self.user = user or os.getenv('DB_USER', 'postgres')
-        self.password = password or os.getenv('DB_PASSWORD')
+        self.host = host or os.getenv("DB_HOST", "localhost")
+        self.port = port or int(os.getenv("DB_PORT", "5432"))
+        self.database = database or os.getenv("DB_NAME", "pipeline_metrics")
+        self.user = user or os.getenv("DB_USER", "postgres")
+        self.password = password or os.getenv("DB_PASSWORD")
 
         if not self.password:
             raise ValueError(
@@ -81,9 +83,11 @@ class PostgresManager:
                 port=self.port,
                 database=self.database,
                 user=self.user,
-                password=self.password
+                password=self.password,
             )
-            logger.info(f"PostgreSQL connection pool created: {self.host}:{self.port}/{self.database}")
+            logger.info(
+                f"PostgreSQL connection pool created: {self.host}:{self.port}/{self.database}"
+            )
         except Exception as e:
             logger.error(f"Failed to create PostgreSQL connection pool: {e}")
             raise
@@ -114,7 +118,8 @@ class PostgresManager:
             cursor = conn.cursor()
 
             # Performance metrics table
-            cursor.execute("""
+            cursor.execute(
+                """
                 CREATE TABLE IF NOT EXISTS performance_metrics (
                     id SERIAL PRIMARY KEY,
                     stage VARCHAR(50) NOT NULL,
@@ -126,16 +131,20 @@ class PostgresManager:
                     memory_usage_mb FLOAT,
                     created_at TIMESTAMP NOT NULL DEFAULT NOW()
                 );
-            """)
+            """
+            )
 
             # Create index on stage and timestamp for faster queries
-            cursor.execute("""
+            cursor.execute(
+                """
                 CREATE INDEX IF NOT EXISTS idx_perf_stage_time
                 ON performance_metrics(stage, timestamp DESC);
-            """)
+            """
+            )
 
             # Error logs table
-            cursor.execute("""
+            cursor.execute(
+                """
                 CREATE TABLE IF NOT EXISTS error_logs (
                     id SERIAL PRIMARY KEY,
                     stage VARCHAR(50) NOT NULL,
@@ -148,16 +157,20 @@ class PostgresManager:
                     retry_count INTEGER DEFAULT 0,
                     created_at TIMESTAMP NOT NULL DEFAULT NOW()
                 );
-            """)
+            """
+            )
 
             # Create index on stage and timestamp for faster queries
-            cursor.execute("""
+            cursor.execute(
+                """
                 CREATE INDEX IF NOT EXISTS idx_error_stage_time
                 ON error_logs(stage, timestamp DESC);
-            """)
+            """
+            )
 
             # Error analysis reports table
-            cursor.execute("""
+            cursor.execute(
+                """
                 CREATE TABLE IF NOT EXISTS error_analysis_reports (
                     id SERIAL PRIMARY KEY,
                     analysis_timestamp TIMESTAMP NOT NULL DEFAULT NOW(),
@@ -173,10 +186,22 @@ class PostgresManager:
                     recommendations TEXT,
                     created_at TIMESTAMP NOT NULL DEFAULT NOW()
                 );
-            """)
+            """
+            )
 
             cursor.close()
             logger.info("Database schema initialized successfully")
+
+    def initialize_schema(self):
+        """Public helper to initialize the schema (used by tests)."""
+        self._initialize_schema()
+
+    def execute(self, query: str, params: Sequence[Any] | None = None):
+        """Execute an arbitrary SQL statement using the connection pool."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(query, params)
+            cursor.close()
 
     def log_performance_metric(
         self,
@@ -184,7 +209,7 @@ class PostgresManager:
         urls_processed: int,
         processing_time_seconds: float,
         worker_count: int | None = None,
-        memory_usage_mb: float | None = None
+        memory_usage_mb: float | None = None,
     ):
         """Log a performance metric for a pipeline stage.
 
@@ -195,7 +220,11 @@ class PostgresManager:
             worker_count: Number of workers used (optional)
             memory_usage_mb: Memory usage in MB (optional)
         """
-        throughput = urls_processed / processing_time_seconds if processing_time_seconds > 0 else 0
+        throughput = (
+            urls_processed / processing_time_seconds
+            if processing_time_seconds > 0
+            else 0
+        )
 
         with self.get_connection() as conn:
             cursor = conn.cursor()
@@ -205,7 +234,14 @@ class PostgresManager:
                     (stage, urls_processed, processing_time_seconds, throughput, worker_count, memory_usage_mb)
                 VALUES (%s, %s, %s, %s, %s, %s)
                 """,
-                (stage, urls_processed, processing_time_seconds, throughput, worker_count, memory_usage_mb)
+                (
+                    stage,
+                    urls_processed,
+                    processing_time_seconds,
+                    throughput,
+                    worker_count,
+                    memory_usage_mb,
+                ),
             )
             cursor.close()
 
@@ -222,7 +258,7 @@ class PostgresManager:
         error_message: str | None = None,
         stack_trace: str | None = None,
         http_status_code: int | None = None,
-        retry_count: int = 0
+        retry_count: int = 0,
     ):
         """Log an error that occurred during pipeline processing.
 
@@ -243,7 +279,15 @@ class PostgresManager:
                     (stage, url, error_type, error_message, stack_trace, http_status_code, retry_count)
                 VALUES (%s, %s, %s, %s, %s, %s, %s)
                 """,
-                (stage, url, error_type, error_message, stack_trace, http_status_code, retry_count)
+                (
+                    stage,
+                    url,
+                    error_type,
+                    error_message,
+                    stack_trace,
+                    http_status_code,
+                    retry_count,
+                ),
             )
             cursor.close()
 
@@ -254,7 +298,7 @@ class PostgresManager:
         stage: str | None = None,
         start_time: datetime | None = None,
         end_time: datetime | None = None,
-        limit: int = 1000
+        limit: int = 1000,
     ) -> list[dict[str, Any]]:
         """Retrieve performance metrics with optional filtering.
 
@@ -268,7 +312,7 @@ class PostgresManager:
             List of performance metric records
         """
         query = "SELECT * FROM performance_metrics WHERE 1=1"
-        params = []
+        params: list[Any] = []
 
         if stage:
             query += " AND stage = %s"
@@ -299,7 +343,7 @@ class PostgresManager:
         error_type: str | None = None,
         start_time: datetime | None = None,
         end_time: datetime | None = None,
-        limit: int = 1000
+        limit: int = 1000,
     ) -> list[dict[str, Any]]:
         """Retrieve error logs with optional filtering.
 
@@ -314,7 +358,7 @@ class PostgresManager:
             List of error log records
         """
         query = "SELECT * FROM error_logs WHERE 1=1"
-        params = []
+        params: list[Any] = []
 
         if stage:
             query += " AND stage = %s"
@@ -344,10 +388,7 @@ class PostgresManager:
         return [dict(row) for row in results]
 
     def save_error_analysis(
-        self,
-        total_errors: int,
-        num_clusters: int,
-        cluster_data: list[dict[str, Any]]
+        self, total_errors: int, num_clusters: int, cluster_data: list[dict[str, Any]]
     ):
         """Save error analysis results to the database.
 
@@ -379,20 +420,22 @@ class PostgresManager:
                     (
                         total_errors,
                         num_clusters,
-                        cluster['cluster_id'],
-                        cluster['cluster_size'],
-                        cluster['cluster_percentage'],
-                        cluster.get('common_error_type'),
-                        cluster.get('common_url_pattern'),
-                        cluster.get('avg_http_status'),
-                        cluster['summary'],
-                        cluster.get('recommendations')
-                    )
+                        cluster["cluster_id"],
+                        cluster["cluster_size"],
+                        cluster["cluster_percentage"],
+                        cluster.get("common_error_type"),
+                        cluster.get("common_url_pattern"),
+                        cluster.get("avg_http_status"),
+                        cluster["summary"],
+                        cluster.get("recommendations"),
+                    ),
                 )
 
             cursor.close()
 
-        logger.info(f"Saved error analysis: {num_clusters} clusters from {total_errors} errors")
+        logger.info(
+            f"Saved error analysis: {num_clusters} clusters from {total_errors} errors"
+        )
 
     def close(self):
         """Close all connections in the pool."""
@@ -412,7 +455,7 @@ class PostgresManager:
         """
         if cls._instance is None:
             # Only create if password is available
-            if os.getenv('DB_PASSWORD'):
+            if os.getenv("DB_PASSWORD"):
                 try:
                     cls._instance = cls()
                 except Exception as e:
@@ -429,3 +472,21 @@ class PostgresManager:
         if cls._instance:
             cls._instance.close()
         cls._instance = None
+
+
+# Module-level convenience accessor
+_postgres_manager: PostgresManager | None = None
+
+
+def get_postgres_manager(**kwargs) -> PostgresManager | None:
+    """Return a cached PostgresManager instance, creating it on first use."""
+    global _postgres_manager
+
+    if _postgres_manager is None:
+        try:
+            _postgres_manager = PostgresManager(**kwargs)
+        except Exception as exc:  # pragma: no cover - defensive guard
+            logger.warning(f"Postgres manager unavailable: {exc}")
+            return None
+
+    return _postgres_manager

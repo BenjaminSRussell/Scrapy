@@ -21,6 +21,7 @@ import pytest
 # Delta Lake Tests
 # ============================================================================
 
+
 class TestDeltaLake:
     """Test Delta Lake manager core functionality."""
 
@@ -37,49 +38,61 @@ class TestDeltaLake:
         manager = DeltaLakeManager()
         # Manager initialized successfully
         assert manager.base_path is not None
-        assert 'stage1_discovery' in manager.tables
-        assert 'stage2_page_analysis' in manager.tables
+        assert "stage1_discovery" in manager.tables
+        assert "stage2_page_analysis" in manager.tables
 
     def test_write_and_read_data(self, temp_delta_path):
         """Test writing and reading data from Delta Lake."""
         from src.common.delta_lake import DeltaLakeManager
 
-        with patch('src.common.constants.DELTA_LAKE', temp_delta_path):
+        with patch("src.common.constants.DELTA_LAKE", temp_delta_path):
             manager = DeltaLakeManager()
 
             # Write test data with unique URL to avoid conflicts
             import uuid
+
             unique_id = str(uuid.uuid4())
             test_data = [
-                {'url': f'https://testwrite_{unique_id}.com', 'url_hash': f'hash_{unique_id}_1', 'depth': 0},
-                {'url': f'https://testwrite_{unique_id}_2.com', 'url_hash': f'hash_{unique_id}_2', 'depth': 1}
+                {
+                    "url": f"https://testwrite_{unique_id}.com",
+                    "url_hash": f"hash_{unique_id}_1",
+                    "depth": 0,
+                },
+                {
+                    "url": f"https://testwrite_{unique_id}_2.com",
+                    "url_hash": f"hash_{unique_id}_2",
+                    "depth": 1,
+                },
             ]
 
-            manager.write('stage1_discovery', test_data, mode='append', async_write=False)
+            manager.write(
+                "stage1_discovery", test_data, mode="append", async_write=False
+            )
 
             # Read data back
-            results = manager.read('stage1_discovery')
+            results = manager.read("stage1_discovery")
 
             # Verify our data is in there (might have old data too)
             assert len(results) >= 2
-            our_results = [r for r in results if unique_id in r['url']]
+            our_results = [r for r in results if unique_id in r["url"]]
             assert len(our_results) == 2
 
     def test_list_tables(self, temp_delta_path):
         """Test listing Delta Lake tables."""
         from src.common.delta_lake import DeltaLakeManager
 
-        with patch('src.common.constants.DELTA_LAKE', temp_delta_path):
+        with patch("src.common.constants.DELTA_LAKE", temp_delta_path):
             manager = DeltaLakeManager()
 
             tables = manager.list_tables()
             assert len(tables) > 0
-            assert any(t['name'] == 'stage1_discovery' for t in tables)
+            assert any(t["name"] == "stage1_discovery" for t in tables)
 
 
 # ============================================================================
 # PostgreSQL Manager Tests
 # ============================================================================
+
 
 class TestPostgresManager:
     """Test PostgreSQL manager functionality."""
@@ -89,16 +102,16 @@ class TestPostgresManager:
         from src.common.postgres_manager import get_postgres_manager
 
         # Clear password env var
-        old_password = os.environ.get('DB_PASSWORD')
-        if 'DB_PASSWORD' in os.environ:
-            del os.environ['DB_PASSWORD']
+        old_password = os.environ.get("DB_PASSWORD")
+        if "DB_PASSWORD" in os.environ:
+            del os.environ["DB_PASSWORD"]
 
         try:
             manager = get_postgres_manager()
             assert manager is None  # Should return None, not raise
         finally:
             if old_password:
-                os.environ['DB_PASSWORD'] = old_password
+                os.environ["DB_PASSWORD"] = old_password
 
     def test_postgres_manager_with_credentials(self):
         # Skip if psycopg2 not available
@@ -111,22 +124,23 @@ class TestPostgresManager:
         # We can't actually connect without a real database
         try:
             manager = PostgresManager(
-                host='localhost',
+                host="localhost",
                 port=5432,
-                database='test_db',
-                user='test_user',
-                password='test_password'
+                database="test_db",
+                user="test_user",
+                password="test_password",
             )
             # If it gets this far, initialization worked
-            assert manager.host == 'localhost'
+            assert manager.host == "localhost"
         except Exception as e:
             # Expected if no database available
-            assert 'connection' in str(e).lower() or 'password' in str(e).lower()
+            assert "connection" in str(e).lower() or "password" in str(e).lower()
 
     def test_log_performance_metric(self):
         """Test logging performance metrics."""
         # Skip if psycopg2 not available
         import importlib.util
+
         if importlib.util.find_spec("psycopg2") is None:
             pytest.skip("psycopg2 not installed")
 
@@ -134,12 +148,13 @@ class TestPostgresManager:
         from src.common.postgres_manager import PostgresManager
 
         # Check method exists
-        assert hasattr(PostgresManager, 'log_performance_metric')
+        assert hasattr(PostgresManager, "log_performance_metric")
 
 
 # ============================================================================
 # Stage 2 Worker Tests
 # ============================================================================
+
 
 class TestStage2Worker:
     """Test Stage 2 worker functionality."""
@@ -156,7 +171,10 @@ class TestStage2Worker:
         """Test Stage 2 worker can initialize."""
         from src.stage2.stage2_worker import Stage2Worker
 
-        with patch('src.stage2.stage2_worker.get_delta_manager', return_value=mock_delta_manager):
+        with patch(
+            "src.stage2.stage2_worker.get_delta_manager",
+            return_value=mock_delta_manager,
+        ):
             worker = Stage2Worker(max_concurrent=50, batch_size=100)
 
             assert worker.max_concurrent == 50
@@ -169,7 +187,10 @@ class TestStage2Worker:
 
         from src.stage2.stage2_worker import Stage2Worker
 
-        with patch('src.stage2.stage2_worker.get_delta_manager', return_value=mock_delta_manager):
+        with patch(
+            "src.stage2.stage2_worker.get_delta_manager",
+            return_value=mock_delta_manager,
+        ):
             worker = Stage2Worker()
 
             html = """
@@ -186,18 +207,23 @@ class TestStage2Worker:
             </html>
             """
 
-            result = asyncio.run(worker._analyze_html('https://test.com', 'abc123', html, False))
+            result = asyncio.run(
+                worker._analyze_html("https://test.com", "abc123", html, False)
+            )
 
-            assert result['url'] == 'https://test.com'
-            assert result['word_count'] >= 50
-            assert not result['is_low_quality']
-            assert result['title'] == 'Test Page'
+            assert result["url"] == "https://test.com"
+            assert result["word_count"] >= 50
+            assert not result["is_low_quality"]
+            assert result["title"] == "Test Page"
 
     def test_quality_score_calculation(self, mock_delta_manager):
         """Test quality score calculation."""
         from src.stage2.stage2_worker import Stage2Worker
 
-        with patch('src.stage2.stage2_worker.get_delta_manager', return_value=mock_delta_manager):
+        with patch(
+            "src.stage2.stage2_worker.get_delta_manager",
+            return_value=mock_delta_manager,
+        ):
             worker = Stage2Worker()
 
             # Good quality (higher word count and ratio)
@@ -214,6 +240,7 @@ class TestStage2Worker:
 # Stage 3 Worker Tests
 # ============================================================================
 
+
 class TestStage3Worker:
     """Test Stage 3 worker functionality."""
 
@@ -229,7 +256,10 @@ class TestStage3Worker:
         """Test Stage 3 worker can initialize."""
         from src.stage3.stage3_worker import Stage3Worker
 
-        with patch('src.stage3.stage3_worker.get_delta_manager', return_value=mock_delta_manager):
+        with patch(
+            "src.stage3.stage3_worker.get_delta_manager",
+            return_value=mock_delta_manager,
+        ):
             worker = Stage3Worker(max_concurrent=20, batch_size=50)
 
             assert worker.max_concurrent == 20
@@ -242,26 +272,29 @@ class TestStage3Worker:
 
         from src.stage3.stage3_worker import Stage3Worker
 
-        with patch('src.stage3.stage3_worker.get_delta_manager', return_value=mock_delta_manager):
+        with patch(
+            "src.stage3.stage3_worker.get_delta_manager",
+            return_value=mock_delta_manager,
+        ):
             worker = Stage3Worker()
 
             # Create duplicate documents
             docs = [
                 {
-                    'url': 'https://test1.com',
-                    'url_hash': 'hash1',
-                    'text_content': 'This is the first test document with unique content here'
+                    "url": "https://test1.com",
+                    "url_hash": "hash1",
+                    "text_content": "This is the first test document with unique content here",
                 },
                 {
-                    'url': 'https://test2.com',
-                    'url_hash': 'hash2',
-                    'text_content': 'This is the first test document with unique content here'  # Duplicate
+                    "url": "https://test2.com",
+                    "url_hash": "hash2",
+                    "text_content": "This is the first test document with unique content here",  # Duplicate
                 },
                 {
-                    'url': 'https://test3.com',
-                    'url_hash': 'hash3',
-                    'text_content': 'Completely different content that should not be deduplicated at all'
-                }
+                    "url": "https://test3.com",
+                    "url_hash": "hash3",
+                    "text_content": "Completely different content that should not be deduplicated at all",
+                },
             ]
 
             unique_docs = asyncio.run(worker._deduplicate_documents(docs))
@@ -274,6 +307,7 @@ class TestStage3Worker:
 # ============================================================================
 # Drain Lake Utility Tests
 # ============================================================================
+
 
 class TestDrainLake:
     """Test drain lake utility."""
@@ -290,26 +324,28 @@ class TestDrainLake:
 
         from src.common.delta_lake import DeltaLakeManager
 
-        with patch('src.common.constants.DELTA_LAKE', temp_delta_path):
+        with patch("src.common.constants.DELTA_LAKE", temp_delta_path):
             manager = DeltaLakeManager()
 
             # Write some test data
-            test_data = [{'url': 'https://testdrain.com', 'url_hash': 'drain123'}]
-            manager.write('stage1_discovery', test_data, mode='append', async_write=False)
+            test_data = [{"url": "https://testdrain.com", "url_hash": "drain123"}]
+            manager.write(
+                "stage1_discovery", test_data, mode="append", async_write=False
+            )
 
             # Verify data exists
-            before = manager.read('stage1_discovery')
+            before = manager.read("stage1_discovery")
             assert len(before) >= 1
 
             # Drain the table (simulate by deleting and recreating)
-            table_path = manager.tables['stage1_discovery']
+            table_path = manager.tables["stage1_discovery"]
             if table_path.exists():
                 shutil.rmtree(table_path)
                 table_path.mkdir(parents=True, exist_ok=True)
 
             # Verify data is gone (reading empty table returns empty list)
             try:
-                after = manager.read('stage1_discovery')
+                after = manager.read("stage1_discovery")
                 assert len(after) == 0
             except Exception:
                 # Empty table might raise exception, which is also valid
@@ -320,6 +356,7 @@ class TestDrainLake:
 # ML Error Analyzer Tests
 # ============================================================================
 
+
 class TestMLErrorAnalyzer:
     """Test ML error analyzer."""
 
@@ -328,28 +365,28 @@ class TestMLErrorAnalyzer:
         """Create sample error data for testing."""
         return [
             {
-                'url': 'https://test1.com/page1',
-                'error_type': 'TimeoutError',
-                'http_status_code': None,
-                'stage': 'stage1'
+                "url": "https://test1.com/page1",
+                "error_type": "TimeoutError",
+                "http_status_code": None,
+                "stage": "stage1",
             },
             {
-                'url': 'https://test1.com/page2',
-                'error_type': 'TimeoutError',
-                'http_status_code': None,
-                'stage': 'stage1'
+                "url": "https://test1.com/page2",
+                "error_type": "TimeoutError",
+                "http_status_code": None,
+                "stage": "stage1",
             },
             {
-                'url': 'https://test2.com/page1',
-                'error_type': 'HttpError',
-                'http_status_code': 404,
-                'stage': 'stage2'
+                "url": "https://test2.com/page1",
+                "error_type": "HttpError",
+                "http_status_code": 404,
+                "stage": "stage2",
             },
             {
-                'url': 'https://test2.com/page2',
-                'error_type': 'HttpError',
-                'http_status_code': 404,
-                'stage': 'stage2'
+                "url": "https://test2.com/page2",
+                "error_type": "HttpError",
+                "http_status_code": 404,
+                "stage": "stage2",
             },
         ]
 
@@ -358,21 +395,25 @@ class TestMLErrorAnalyzer:
         # Test the logic directly without importing the full script
         from urllib.parse import urlparse
 
-        url = 'https://test.com/path/to/page.html?query=value'
+        url = "https://test.com/path/to/page.html?query=value"
         parsed = urlparse(url)
-        path_parts = [p for p in parsed.path.split('/') if p]
+        path_parts = [p for p in parsed.path.split("/") if p]
 
         features = {
-            'domain': parsed.netloc,
-            'path_depth': len(path_parts),
-            'has_query': 1 if parsed.query else 0,
-            'extension': path_parts[-1].split('.')[-1] if path_parts and '.' in path_parts[-1] else 'none',
+            "domain": parsed.netloc,
+            "path_depth": len(path_parts),
+            "has_query": 1 if parsed.query else 0,
+            "extension": (
+                path_parts[-1].split(".")[-1]
+                if path_parts and "." in path_parts[-1]
+                else "none"
+            ),
         }
 
-        assert features['domain'] == 'test.com'
-        assert features['path_depth'] == 3
-        assert features['has_query'] == 1
-        assert features['extension'] == 'html'
+        assert features["domain"] == "test.com"
+        assert features["path_depth"] == 3
+        assert features["has_query"] == 1
+        assert features["extension"] == "html"
 
     def test_recommendation_generation(self):
         """Test recommendation generation logic."""
@@ -383,25 +424,26 @@ class TestMLErrorAnalyzer:
             recommendations = []
             error_lower = error_type.lower()
 
-            if 'timeout' in error_lower:
+            if "timeout" in error_lower:
                 recommendations.append("Timeout errors: Increase timeout settings")
-            elif 'http' in error_lower or 'error' in error_lower:
+            elif "http" in error_lower or "error" in error_lower:
                 recommendations.append("HTTP errors: Check URL validity")
 
             return "\n".join(f"• {rec}" for rec in recommendations)
 
         # Test timeout recommendations
-        recs1 = generate_test_recommendations('TimeoutError')
-        assert 'timeout' in recs1.lower()
+        recs1 = generate_test_recommendations("TimeoutError")
+        assert "timeout" in recs1.lower()
 
         # Test HTTP error recommendations
-        recs2 = generate_test_recommendations('HttpError')
-        assert 'http' in recs2.lower() or 'error' in recs2.lower()
+        recs2 = generate_test_recommendations("HttpError")
+        assert "http" in recs2.lower() or "error" in recs2.lower()
 
 
 # ============================================================================
 # Integration Tests
 # ============================================================================
+
 
 class TestIntegration:
     """Test integration between components."""
@@ -414,7 +456,7 @@ class TestIntegration:
         # This is a minimal integration test to ensure components can work together
         # Full integration tests would require more setup
         with tempfile.TemporaryDirectory() as tmpdir:
-            with patch('src.common.constants.DELTA_LAKE', Path(tmpdir)):
+            with patch("src.common.constants.DELTA_LAKE", Path(tmpdir)):
                 delta = DeltaLakeManager()
                 worker = Stage2Worker(max_concurrent=1, batch_size=10)
 
@@ -424,5 +466,5 @@ class TestIntegration:
                 assert worker.delta is not None
 
 
-if __name__ == '__main__':
-    pytest.main([__file__, '-v'])
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])

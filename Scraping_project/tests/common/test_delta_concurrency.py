@@ -1,6 +1,7 @@
 import threading
-import time
+
 import pandas as pd
+
 from src.common.delta_lake import DeltaLakeManager
 
 
@@ -64,9 +65,7 @@ def test_concurrent_writes(delta_sandbox):
 
     # Initial write to create the table and prevent a race condition
     # where both threads try to create the table at the same time.
-    write_records(
-        delta_sandbox, table_name, pd.DataFrame([{"k": 0}]), mode="overwrite"
-    )
+    write_records(delta_sandbox, table_name, pd.DataFrame([{"k": 0}]), mode="overwrite")
 
     # Use test-unique path to avoid cross-test interference
     # Registry already isolated by delta_sandbox.

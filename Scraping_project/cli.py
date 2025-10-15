@@ -26,8 +26,8 @@ sys.path.insert(0, str(Path(__file__).parent))
 # Setup logging
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
 )
 logger = logging.getLogger(__name__)
 
@@ -35,6 +35,7 @@ logger = logging.getLogger(__name__)
 # ============================================================================
 # SCRAPY COMMAND (Docker entrypoint)
 # ============================================================================
+
 
 def cmd_scrapy(args):
     """Run Scrapy spiders using CrawlerRunner (Docker entrypoint)."""
@@ -50,13 +51,14 @@ def cmd_scrapy(args):
             self.settings = get_project_settings()
             configure_logging(self.settings)
             self.runner = CrawlerRunner(self.settings)
-            self.spider_names = spider_names or ['scout']
+            self.spider_names = spider_names or ["scout"]
             self.shutdown_requested = False
 
             logger.info(f"Spiders to run: {', '.join(self.spider_names)}")
 
         def setup_signal_handlers(self):
             """Set up graceful shutdown."""
+
             def signal_handler(signum, frame):
                 sig_name = signal.Signals(signum).name
                 logger.info(f"Received {sig_name}, shutting down...")
@@ -116,6 +118,7 @@ def cmd_deep_dive(args):
 
         def setup_signal_handlers(self):
             """Set up graceful shutdown."""
+
             def signal_handler(signum, frame):
                 sig_name = signal.Signals(signum).name
                 logger.info(f"Received {sig_name}, shutting down...")
@@ -131,7 +134,7 @@ def cmd_deep_dive(args):
             """Run deep dive spider."""
             logger.info("Starting deep dive spider...")
             try:
-                yield self.runner.crawl('deep_dive')
+                yield self.runner.crawl("deep_dive")
                 logger.info("Deep dive spider completed")
             finally:
                 if reactor.running:
@@ -153,14 +156,19 @@ def cmd_deep_dive(args):
 # PIPELINE COMMAND (multi-stage pipeline)
 # ============================================================================
 
+
 async def run_scrapy_crawler():
     """Run Scrapy crawler async."""
     logger.info("Stage 1: Scrapy Discovery")
     process = await asyncio.create_subprocess_exec(
-        sys.executable, '-m', 'scrapy', 'crawl', 'scout',
+        sys.executable,
+        "-m",
+        "scrapy",
+        "crawl",
+        "scout",
         cwd=str(Path(__file__).parent),
         stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE
+        stderr=asyncio.subprocess.PIPE,
     )
 
     async def log_stream(stream, prefix):
@@ -168,8 +176,7 @@ async def run_scrapy_crawler():
             logger.info(f"[{prefix}] {line.decode(errors='ignore').strip()}")
 
     await asyncio.gather(
-        log_stream(process.stdout, "SCRAPY"),
-        log_stream(process.stderr, "SCRAPY-ERR")
+        log_stream(process.stdout, "SCRAPY"), log_stream(process.stderr, "SCRAPY-ERR")
     )
     await process.wait()
     logger.info(f"Scrapy finished: {process.returncode}")
@@ -178,6 +185,7 @@ async def run_scrapy_crawler():
 async def run_stage2_workers(num_workers=100, batch_size=200):
     """Run Stage 2 analytics."""
     from src.stage2.stage2_worker import Stage2Worker
+
     logger.info(f"Stage 2: {num_workers} workers")
     worker = Stage2Worker(max_concurrent=num_workers, batch_size=batch_size)
     await worker.run()
@@ -186,6 +194,7 @@ async def run_stage2_workers(num_workers=100, batch_size=200):
 async def run_stage3_workers(num_workers=50, batch_size=100):
     """Run Stage 3 summarization."""
     from src.stage3.stage3_worker import Stage3Worker
+
     logger.info(f"Stage 3: {num_workers} workers")
     worker = Stage3Worker(max_concurrent=num_workers, batch_size=batch_size)
     await worker.run()
@@ -193,6 +202,7 @@ async def run_stage3_workers(num_workers=50, batch_size=100):
 
 def cmd_pipeline(args):
     """Run full multi-stage pipeline."""
+
     async def run():
         logger.info("🚀 Starting Multi-Stage Pipeline")
 
@@ -203,15 +213,13 @@ def cmd_pipeline(args):
         # Stage 2: Analytics
         if not args.skip_stage2:
             await run_stage2_workers(
-                num_workers=args.stage2_workers,
-                batch_size=args.stage2_batch
+                num_workers=args.stage2_workers, batch_size=args.stage2_batch
             )
 
         # Stage 3: Summarization
         if not args.skip_stage3:
             await run_stage3_workers(
-                num_workers=args.stage3_workers,
-                batch_size=args.stage3_batch
+                num_workers=args.stage3_workers, batch_size=args.stage3_batch
             )
 
         logger.info("✅ Pipeline Complete")
@@ -223,9 +231,11 @@ def cmd_pipeline(args):
 # UTILITY COMMANDS
 # ============================================================================
 
+
 def cmd_drain(args):
     """Drain Delta Lake tables."""
     from drain_lake import drain_tables
+
     logger.info("Draining Delta Lake...")
     drain_tables()
 
@@ -233,24 +243,29 @@ def cmd_drain(args):
 def cmd_export(args):
     """Export Delta Lake tables."""
     from src.common.delta_lake import DeltaLakeManager
+
     manager = DeltaLakeManager.get_instance()
 
     if args.table:
         logger.info(f"Exporting table: {args.table}")
         result = manager.export(args.table, args.output, format=args.format)
-        if 'error' in result:
-            raise RuntimeError(f"Export failed for table {args.table}: {result['error']}")
+        if "error" in result:
+            raise RuntimeError(
+                f"Export failed for table {args.table}: {result['error']}"
+            )
         logger.info(f"✅ Exported to {result.get('path')}")
     else:
         logger.info(f"Exporting all tables to: {args.output}")
         results = manager.export_all(args.output, format=args.format)
         has_errors = False
         for r in results:
-            if 'error' in r:
+            if "error" in r:
                 logger.warning(f"  ✗ {r['table']}: {r['error']}")
                 has_errors = True
             else:
-                logger.info(f"  ✓ {r['table']}: {r['rows']} rows, {r['size_mb']:.2f} MB")
+                logger.info(
+                    f"  ✓ {r['table']}: {r['rows']} rows, {r['size_mb']:.2f} MB"
+                )
 
         if has_errors:
             raise RuntimeError("One or more table exports failed.")
@@ -259,6 +274,7 @@ def cmd_export(args):
 def cmd_health(args):
     """Check pipeline health."""
     from src.common.delta_lake import DeltaLakeManager
+
     manager = DeltaLakeManager.get_instance()
 
     logger.info("Pipeline Health Check")
@@ -266,8 +282,10 @@ def cmd_health(args):
 
     tables = manager.list_tables()
     for table in tables:
-        status = "✓" if table['exists'] else "✗"
-        logger.info(f"{status} {table['name']}: {table['row_count']} rows, {table['parquet_files']} files")
+        status = "✓" if table["exists"] else "✗"
+        logger.info(
+            f"{status} {table['name']}: {table['row_count']} rows, {table['parquet_files']} files"
+        )
 
     logger.info("=" * 60)
 
@@ -294,7 +312,7 @@ def cmd_reset(args):
 
     if not args.force:
         confirmation = input("Are you sure? Type 'yes' to continue: ")
-        if confirmation.lower() != 'yes':
+        if confirmation.lower() != "yes":
             logger.info("Reset cancelled.")
             return
 
@@ -310,22 +328,24 @@ def cmd_reset(args):
     logger.info("✅ Delta Lake structure recreated")
 
     # Re-seed from CSV
-    csv_path = Path(__file__).parent / 'data' / 'raw' / 'uconn_urls.csv'
+    csv_path = Path(__file__).parent / "data" / "raw" / "uconn_urls.csv"
     if not csv_path.exists():
         logger.error(f"Seed file not found: {csv_path}")
         return
 
     logger.info(f"Loading seed URLs from: {csv_path}")
-    df = pd.read_csv(csv_path, header=None, names=['url'])
+    df = pd.read_csv(csv_path, header=None, names=["url"])
 
     # Add url_hash column
-    df['url_hash'] = df['url'].apply(lambda url: hashlib.sha256(url.encode('utf-8')).hexdigest())
-    df['added_at'] = pd.Timestamp.now().isoformat()
+    df["url_hash"] = df["url"].apply(
+        lambda url: hashlib.sha256(url.encode("utf-8")).hexdigest()
+    )
+    df["added_at"] = pd.Timestamp.now().isoformat()
 
-    seed_records = df.to_dict('records')
+    seed_records = df.to_dict("records")
     logger.info(f"Seeding {len(seed_records)} URLs...")
 
-    manager.write('seed_urls', seed_records, mode='overwrite', async_write=False)
+    manager.write("seed_urls", seed_records, mode="overwrite", async_write=False)
     logger.info("✅ Seed URLs loaded")
     logger.info("🎉 Reset complete!")
 
@@ -339,22 +359,22 @@ def cmd_clean(args):
     cleaned = []
 
     # Find and delete __pycache__ directories
-    for pycache in Path(__file__).parent.rglob('__pycache__'):
+    for pycache in Path(__file__).parent.rglob("__pycache__"):
         shutil.rmtree(pycache)
         cleaned.append(str(pycache))
 
     # Find and delete .pyc files
-    for pyc_file in Path(__file__).parent.rglob('*.pyc'):
+    for pyc_file in Path(__file__).parent.rglob("*.pyc"):
         pyc_file.unlink()
         cleaned.append(str(pyc_file))
 
     # Find and delete .DS_Store files (macOS)
-    for ds_store in Path(__file__).parent.rglob('.DS_Store'):
+    for ds_store in Path(__file__).parent.rglob(".DS_Store"):
         ds_store.unlink()
         cleaned.append(str(ds_store))
 
     # Clean Scrapy .scrapy directories
-    for scrapy_dir in Path(__file__).parent.rglob('.scrapy'):
+    for scrapy_dir in Path(__file__).parent.rglob(".scrapy"):
         if scrapy_dir.is_dir():
             shutil.rmtree(scrapy_dir)
             cleaned.append(str(scrapy_dir))
@@ -384,25 +404,25 @@ def cmd_validate(args):
         logger.info(f"  Parquet files: {table['parquet_files']}")
 
         # Check for issues
-        if table['exists'] and table['row_count'] == 0:
+        if table["exists"] and table["row_count"] == 0:
             issue = f"{table['name']}: Table exists but has 0 rows"
             issues.append(issue)
             logger.warning(f"  ⚠️  {issue}")
 
-        if table['parquet_files'] > 0 and not table['exists']:
+        if table["parquet_files"] > 0 and not table["exists"]:
             issue = f"{table['name']}: Has parquet files but no Delta log"
             issues.append(issue)
             logger.warning(f"  ⚠️  {issue}")
 
-        if 'error' in table:
+        if "error" in table:
             issue = f"{table['name']}: Error reading table - {table['error']}"
             issues.append(issue)
             logger.error(f"  ❌ {issue}")
 
         # Sample data validation
-        if table['exists'] and table['row_count'] > 0:
+        if table["exists"] and table["row_count"] > 0:
             try:
-                sample = manager.read(table['name'])[:5]  # Read first 5 records
+                sample = manager.read(table["name"])[:5]  # Read first 5 records
                 if sample:
                     logger.info(f"  Sample record keys: {list(sample[0].keys())}")
                     logger.info("  ✅ Schema appears valid")
@@ -429,66 +449,77 @@ def cmd_validate(args):
 # MAIN CLI
 # ============================================================================
 
+
 def main():
     """Main CLI entry point."""
     parser = argparse.ArgumentParser(
-        description='Unified Pipeline CLI',
-        formatter_class=argparse.RawDescriptionHelpFormatter
+        description="Unified Pipeline CLI",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
-    subparsers = parser.add_subparsers(dest='command', help='Commands')
+    subparsers = parser.add_subparsers(dest="command", help="Commands")
 
     # Scrapy command
-    scrapy_parser = subparsers.add_parser('scrapy', help='Run Scrapy spiders')
-    scrapy_parser.add_argument('--spiders', nargs='+', help='Spider names')
+    scrapy_parser = subparsers.add_parser("scrapy", help="Run Scrapy spiders")
+    scrapy_parser.add_argument("--spiders", nargs="+", help="Spider names")
     scrapy_parser.set_defaults(func=cmd_scrapy)
 
     # Deep dive command
-    deep_dive_parser = subparsers.add_parser('deep_dive', help='Run deep dive spider (conservative crawling)')
+    deep_dive_parser = subparsers.add_parser(
+        "deep_dive", help="Run deep dive spider (conservative crawling)"
+    )
     deep_dive_parser.set_defaults(func=cmd_deep_dive)
 
     # Pipeline command
-    pipeline_parser = subparsers.add_parser('pipeline', help='Run full pipeline')
-    pipeline_parser.add_argument('--skip-stage1', action='store_true')
-    pipeline_parser.add_argument('--skip-stage2', action='store_true')
-    pipeline_parser.add_argument('--skip-stage3', action='store_true')
-    pipeline_parser.add_argument('--stage2-workers', type=int, default=100)
-    pipeline_parser.add_argument('--stage2-batch', type=int, default=200)
-    pipeline_parser.add_argument('--stage3-workers', type=int, default=50)
-    pipeline_parser.add_argument('--stage3-batch', type=int, default=100)
+    pipeline_parser = subparsers.add_parser("pipeline", help="Run full pipeline")
+    pipeline_parser.add_argument("--skip-stage1", action="store_true")
+    pipeline_parser.add_argument("--skip-stage2", action="store_true")
+    pipeline_parser.add_argument("--skip-stage3", action="store_true")
+    pipeline_parser.add_argument("--stage2-workers", type=int, default=100)
+    pipeline_parser.add_argument("--stage2-batch", type=int, default=200)
+    pipeline_parser.add_argument("--stage3-workers", type=int, default=50)
+    pipeline_parser.add_argument("--stage3-batch", type=int, default=100)
     pipeline_parser.set_defaults(func=cmd_pipeline)
 
     # Drain command
-    drain_parser = subparsers.add_parser('drain', help='Drain Delta Lake')
+    drain_parser = subparsers.add_parser("drain", help="Drain Delta Lake")
     drain_parser.set_defaults(func=cmd_drain)
 
     # Export command
-    export_parser = subparsers.add_parser('export', help='Export Delta Lake')
-    export_parser.add_argument('--table', help='Specific table to export')
-    export_parser.add_argument('--output', default='exports', help='Output directory')
-    export_parser.add_argument('--format', choices=['csv', 'json', 'parquet'], default='csv')
+    export_parser = subparsers.add_parser("export", help="Export Delta Lake")
+    export_parser.add_argument("--table", help="Specific table to export")
+    export_parser.add_argument("--output", default="exports", help="Output directory")
+    export_parser.add_argument(
+        "--format", choices=["csv", "json", "parquet"], default="csv"
+    )
     export_parser.set_defaults(func=cmd_export)
 
     # Health command
-    health_parser = subparsers.add_parser('health', help='Check health')
+    health_parser = subparsers.add_parser("health", help="Check health")
     health_parser.set_defaults(func=cmd_health)
 
     # Setup command
-    setup_parser = subparsers.add_parser('setup', help='Setup models')
+    setup_parser = subparsers.add_parser("setup", help="Setup models")
     setup_parser.set_defaults(func=cmd_setup)
 
     # Reset command
-    reset_parser = subparsers.add_parser('reset', help='Reset Delta Lake and re-seed')
-    reset_parser.add_argument('--force', action='store_true', help='Skip confirmation prompt')
+    reset_parser = subparsers.add_parser("reset", help="Reset Delta Lake and re-seed")
+    reset_parser.add_argument(
+        "--force", action="store_true", help="Skip confirmation prompt"
+    )
     reset_parser.set_defaults(func=cmd_reset)
 
     # Clean command
-    clean_parser = subparsers.add_parser('clean', help='Clean temporary files')
-    clean_parser.add_argument('--verbose', action='store_true', help='Show all cleaned files')
+    clean_parser = subparsers.add_parser("clean", help="Clean temporary files")
+    clean_parser.add_argument(
+        "--verbose", action="store_true", help="Show all cleaned files"
+    )
     clean_parser.set_defaults(func=cmd_clean)
 
     # Validate command
-    validate_parser = subparsers.add_parser('validate', help='Validate Delta Lake tables')
+    validate_parser = subparsers.add_parser(
+        "validate", help="Validate Delta Lake tables"
+    )
     validate_parser.set_defaults(func=cmd_validate)
 
     # Parse and execute
@@ -506,5 +537,5 @@ def main():
         sys.exit(1)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

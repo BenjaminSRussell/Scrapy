@@ -88,4 +88,3 @@ The optional `main.yml` workflow executes a quick smoke (`make quick-check`) on 
 | `make clean`         | Remove caches and coverage artefacts      |
 
 Keep this document updated whenever the testing strategy evolves.
-

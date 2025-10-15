@@ -8,14 +8,14 @@ This module provides:
 """
 
 import hashlib
-import logging
 import json
+import logging
 from datetime import datetime
 from typing import Any
 from urllib.parse import urlparse
 
-import redis
-from redis.exceptions import RedisError
+import redis  # type: ignore[import]
+from redis.exceptions import RedisError  # type: ignore[import]
 
 logger = logging.getLogger(__name__)
 
@@ -96,7 +96,7 @@ class RedisManager:
         Returns:
             16-character hex hash
         """
-        normalized = url.lower().rstrip('/')
+        normalized = url.lower().rstrip("/")
         return hashlib.sha256(normalized.encode()).hexdigest()[:16]
 
     def url_exists(self, url: str) -> bool:
@@ -131,9 +131,9 @@ class RedisManager:
 
         # Store URL with metadata
         data = {
-            'url': url,
-            'url_hash': url_hash,
-            'timestamp': str(datetime.now()),
+            "url": url,
+            "url_hash": url_hash,
+            "timestamp": str(datetime.now()),
         }
         if metadata:
             data.update(metadata)
@@ -172,7 +172,7 @@ class RedisManager:
             key = f"{self.PREFIX_URL_HASH}{url_hash}"
 
             # Use SETNX (set if not exists) for atomic operation
-            pipeline.hsetnx(key, 'url', url)
+            pipeline.hsetnx(key, "url", url)
 
         results = pipeline.execute()
         new_count = sum(1 for r in results if r)
@@ -218,10 +218,10 @@ class RedisManager:
         # Store URL data separately
         data_key = f"{self.PREFIX_URL_HASH}{url_hash}"
         url_data = {
-            'url': url,
-            'url_hash': url_hash,
-            'priority': str(score),
-            'timestamp': str(datetime.now()),
+            "url": url,
+            "url_hash": url_hash,
+            "priority": str(score),
+            "timestamp": str(datetime.now()),
         }
         if metadata:
             url_data.update(metadata)
@@ -249,17 +249,24 @@ class RedisManager:
         path = parsed.path.lower()
 
         # Boost valuable pages
-        high_value_keywords = ['research', 'faculty', 'publication', 'people', 'directory', 'staff']
+        high_value_keywords = [
+            "research",
+            "faculty",
+            "publication",
+            "people",
+            "directory",
+            "staff",
+        ]
         if any(kw in path for kw in high_value_keywords):
             score += 10
 
         # Penalize low-value pages
-        low_value_keywords = ['login', 'calendar', 'event', 'news', 'archive']
+        low_value_keywords = ["login", "calendar", "event", "news", "archive"]
         if any(kw in path for kw in low_value_keywords):
             score -= 10
 
         # Boost shorter paths (usually more important)
-        path_depth = path.count('/')
+        path_depth = path.count("/")
         score -= path_depth * 0.5
 
         return score
@@ -327,17 +334,19 @@ class RedisManager:
         """
         key = f"{self.PREFIX_CIRCUIT_BREAKER}{domain}"
         data = {
-            'domain': domain,
-            'opened_at': str(datetime.now()),
-            'reason': reason,
-            'expires_in': str(duration_seconds),
+            "domain": domain,
+            "opened_at": str(datetime.now()),
+            "reason": reason,
+            "expires_in": str(duration_seconds),
         }
 
         # Set with expiration
         self.redis.hset(key, mapping=data)
         self.redis.expire(key, duration_seconds)
 
-        logger.warning(f"Circuit breaker OPENED for {domain} ({reason}) - blocked for {duration_seconds}s")
+        logger.warning(
+            f"Circuit breaker OPENED for {domain} ({reason}) - blocked for {duration_seconds}s"
+        )
 
     def is_circuit_open(self, domain: str) -> bool:
         """Check if circuit breaker is open for a domain.
@@ -374,7 +383,7 @@ class RedisManager:
         for key in keys:
             data = self.redis.hgetall(key)
             ttl = self.redis.ttl(key)
-            data['ttl_seconds'] = str(ttl)
+            data["ttl_seconds"] = str(ttl)
             circuits.append(data)
 
         return circuits
@@ -393,13 +402,15 @@ class RedisManager:
         key = f"{self.PREFIX_MESSAGE_QUEUE}{queue_name}"
 
         # Add timestamp if not present
-        if 'timestamp' not in data:
-            data['timestamp'] = str(datetime.now())
+        if "timestamp" not in data:
+            data["timestamp"] = str(datetime.now())
 
         # Push to list (FIFO using LPUSH + RPOP)
         self.redis.lpush(key, json.dumps(data))
 
-    def pop_from_queue(self, queue_name: str, timeout: int = 0) -> dict[str, Any] | None:
+    def pop_from_queue(
+        self, queue_name: str, timeout: int = 0
+    ) -> dict[str, Any] | None:
         """Pop data from message queue (blocking).
 
         Args:
@@ -464,7 +475,7 @@ class RedisManager:
 
         stats = {}
         for key in keys:
-            queue_name = key.replace(self.PREFIX_MESSAGE_QUEUE, '')
+            queue_name = key.replace(self.PREFIX_MESSAGE_QUEUE, "")
             stats[queue_name] = self.redis.llen(key)
 
         return stats
@@ -480,10 +491,10 @@ class RedisManager:
             Dictionary of statistics
         """
         return {
-            'total_urls': len(self.redis.keys(f"{self.PREFIX_URL_HASH}*")),
-            'queue_size': self.get_queue_size(),
-            'open_circuits': len(self.get_open_circuits()),
-            'message_queues': self.get_all_queue_stats(),
+            "total_urls": len(self.redis.keys(f"{self.PREFIX_URL_HASH}*")),
+            "queue_size": self.get_queue_size(),
+            "open_circuits": len(self.get_open_circuits()),
+            "message_queues": self.get_all_queue_stats(),
         }
 
     def clear_all_urls(self):
@@ -500,8 +511,10 @@ class RedisManager:
         self.redis.delete(queue_key)
         logger.warning("Priority queue cleared")
 
+
 # Global instance
 _redis_manager: RedisManager | None = None
+
 
 def get_redis_manager(
     host: str = "localhost",

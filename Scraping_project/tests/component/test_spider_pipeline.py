@@ -19,9 +19,9 @@ class TestScoutSpiderComponents:
         spider = ScoutSpider()
 
         assert spider.name == "scout"
-        assert hasattr(spider, 'redis_client')
-        assert hasattr(spider, 'delta')
-        assert hasattr(spider, 'skip_counters')
+        assert hasattr(spider, "redis_client")
+        assert hasattr(spider, "delta")
+        assert hasattr(spider, "skip_counters")
 
     def test_scout_spider_loads_seeds(self, delta_with_seed_urls, redis_clean):
         """Test that ScoutSpider loads seed URLs from Delta Lake."""
@@ -54,22 +54,25 @@ class TestDeepDiveSpiderComponents:
         spider = DeepDiveSpider()
 
         assert spider.name == "deep_dive"
-        assert hasattr(spider, 'allowed_domains')
+        assert hasattr(spider, "allowed_domains")
 
     def test_deep_dive_spider_enforces_depth_limit(self, mock_scrapy_settings):
         """K4: Test DepthMiddleware is configured."""
         spider = DeepDiveSpider()
 
         # Check that DEPTH_LIMIT is set in custom_settings
-        assert 'DEPTH_LIMIT' in spider.custom_settings
-        assert spider.custom_settings['DEPTH_LIMIT'] > 0
+        assert "DEPTH_LIMIT" in spider.custom_settings
+        assert spider.custom_settings["DEPTH_LIMIT"] > 0
 
     def test_deep_dive_spider_has_depth_middleware(self):
         """K4: Test DepthMiddleware is enabled."""
         spider = DeepDiveSpider()
 
-        assert 'SPIDER_MIDDLEWARES' in spider.custom_settings
-        assert 'scrapy.spidermiddlewares.depth.DepthMiddleware' in spider.custom_settings['SPIDER_MIDDLEWARES']
+        assert "SPIDER_MIDDLEWARES" in spider.custom_settings
+        assert (
+            "scrapy.spidermiddlewares.depth.DepthMiddleware"
+            in spider.custom_settings["SPIDER_MIDDLEWARES"]
+        )
 
 
 @pytest.mark.component
@@ -84,8 +87,8 @@ class TestJSSpiderComponents:
         spider = JSSpider()
 
         assert spider.name == "js_spider"
-        assert 'DOWNLOAD_HANDLERS' in spider.custom_settings
-        assert 'scrapy_playwright' in str(spider.custom_settings['DOWNLOAD_HANDLERS'])
+        assert "DOWNLOAD_HANDLERS" in spider.custom_settings
+        assert "scrapy_playwright" in str(spider.custom_settings["DOWNLOAD_HANDLERS"])
 
     @pytest.mark.skip(reason="Requires scrapy-playwright installation")
     def test_js_spider_resource_blocking_configured(self):
@@ -94,9 +97,9 @@ class TestJSSpiderComponents:
 
         spider = JSSpider()
 
-        assert hasattr(spider, 'BLOCKED_RESOURCE_TYPES')
-        assert 'image' in spider.BLOCKED_RESOURCE_TYPES
-        assert 'stylesheet' in spider.BLOCKED_RESOURCE_TYPES
+        assert hasattr(spider, "BLOCKED_RESOURCE_TYPES")
+        assert "image" in spider.BLOCKED_RESOURCE_TYPES
+        assert "stylesheet" in spider.BLOCKED_RESOURCE_TYPES
 
 
 @pytest.mark.component
@@ -106,28 +109,28 @@ class TestDeltaLakeIntegration:
     def test_delta_write_and_read(self, delta_sandbox):
         """Test writing and reading from Delta Lake."""
         test_data = [
-            {'url': 'https://example.com/1', 'depth': 0},
-            {'url': 'https://example.com/2', 'depth': 1},
+            {"url": "https://example.com/1", "depth": 0},
+            {"url": "https://example.com/2", "depth": 1},
         ]
 
         # Write data
-        delta_sandbox.write('test_table', test_data, mode='overwrite')
+        delta_sandbox.write("test_table", test_data, mode="overwrite")
 
         # Read data back
-        read_data = delta_sandbox.read('test_table')
+        read_data = delta_sandbox.read("test_table")
 
         assert len(read_data) == 2
-        assert read_data[0]['url'] == 'https://example.com/1'
+        assert read_data[0]["url"] == "https://example.com/1"
 
     def test_delta_append_mode(self, delta_sandbox):
         """Test appending to Delta Lake table."""
-        initial_data = [{'url': 'https://example.com/1', 'depth': 0}]
-        additional_data = [{'url': 'https://example.com/2', 'depth': 1}]
+        initial_data = [{"url": "https://example.com/1", "depth": 0}]
+        additional_data = [{"url": "https://example.com/2", "depth": 1}]
 
-        delta_sandbox.write('test_table', initial_data, mode='overwrite')
-        delta_sandbox.write('test_table', additional_data, mode='append')
+        delta_sandbox.write("test_table", initial_data, mode="overwrite")
+        delta_sandbox.write("test_table", additional_data, mode="append")
 
-        read_data = delta_sandbox.read('test_table')
+        read_data = delta_sandbox.read("test_table")
         assert len(read_data) == 2
 
 
@@ -142,7 +145,7 @@ class TestRedisQueueIntegration:
         spider = BaseSpider()
         spider.redis_client = redis_clean
 
-        url_hash = spider._hash_url('https://example.com/test')
+        url_hash = spider._hash_url("https://example.com/test")
 
         # First add should succeed
         redis_clean.sadd(spider.url_hashes_key, url_hash)
@@ -155,6 +158,7 @@ class TestRedisQueueIntegration:
 # ============================================================================
 # Mock helpers
 # ============================================================================
+
 
 class MockRedis:
     """Mock Redis client for testing."""

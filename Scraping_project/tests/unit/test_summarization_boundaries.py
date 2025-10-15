@@ -10,11 +10,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 import asyncio
 import unittest
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 from src.common.constants import SUMMARY_LIMITS
 from src.stage3.stage3_worker import Stage3Worker
-from src.stage4.summarization import summarize_with_heavy_model
 
 # A long sample text for testing summarization
 LONG_TEXT = (
@@ -43,9 +42,13 @@ class TestSummarizationBoundaries(unittest.TestCase):
         """
         # Mock the 'transformers' library and its 'pipeline' function.
         # The 'pipeline' function returns a callable 'summarizer' object.
-        mock_summarizer = MagicMock(return_value=[{
-            "summary_text": "The JWST is a large, infrared space telescope that was launched in 2021 to succeed the Hubble."
-        }])
+        mock_summarizer = MagicMock(
+            return_value=[
+                {
+                    "summary_text": "The JWST is a large, infrared space telescope that was launched in 2021 to succeed the Hubble."
+                }
+            ]
+        )
         mock_pipeline_func = MagicMock(return_value=mock_summarizer)
         mock_transformers = MagicMock()
         mock_transformers.pipeline = mock_pipeline_func
@@ -55,6 +58,7 @@ class TestSummarizationBoundaries(unittest.TestCase):
             # We must re-import the module AFTER the patch is in place
             # so that it sees our mocked 'transformers' library
             from src.stage4 import summarization
+
             s4_summary = summarization.summarize_with_heavy_model(LONG_TEXT)
 
         # --- Test Stage 3 (Extractive) ---
@@ -71,34 +75,34 @@ class TestSummarizationBoundaries(unittest.TestCase):
         # --- Assertions for Stage 4 ---
         self.assertFalse(
             s4_summary.startswith("The James Webb Space Telescope"),
-            "Stage 4 summary should be abstractive and not start with the original text."
+            "Stage 4 summary should be abstractive and not start with the original text.",
         )
         self.assertEqual(
             s4_summary,
-            "The JWST is a large, infrared space telescope that was launched in 2021 to succeed the Hubble."
+            "The JWST is a large, infrared space telescope that was launched in 2021 to succeed the Hubble.",
         )
         s4_word_count = len(s4_summary.split())
         self.assertLessEqual(
             s4_word_count,
             SUMMARY_LIMITS["max_length"],
-            "Stage 4 summary should not exceed the max word length."
+            "Stage 4 summary should not exceed the max word length.",
         )
         self.assertGreaterEqual(
             s4_word_count,
             SUMMARY_LIMITS["min_length"] / 2,  # Loosen min check for mock
-            "Stage 4 summary should be close to the min word length."
+            "Stage 4 summary should be close to the min word length.",
         )
 
         # --- Assertions for Stage 3 ---
         self.assertTrue(
             s3_summary.startswith("The James Webb Space Telescope"),
-            "Stage 3 summary should be extractive and start with the original text."
+            "Stage 3 summary should be extractive and start with the original text.",
         )
-        s3_sentence_count = len(s3_summary.split('.')) - 1
+        s3_sentence_count = len(s3_summary.split(".")) - 1
         self.assertLessEqual(
             s3_sentence_count,
             SUMMARY_LIMITS["extractive_max_sentences"],
-            "Stage 3 summary should not exceed the max sentence limit."
+            "Stage 3 summary should not exceed the max sentence limit.",
         )
 
 

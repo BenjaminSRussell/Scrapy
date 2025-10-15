@@ -2,16 +2,16 @@
 """
 Simple test to verify start_requests() is called
 """
+
 import logging
 import sys
 
-logging.basicConfig(
-    level=logging.WARNING,
-    format='%(asctime)s [%(levelname)s] %(message)s'
-)
-
 from scrapy.crawler import CrawlerProcess
 from scrapy.utils.project import get_project_settings
+
+logging.basicConfig(
+    level=logging.WARNING, format="%(asctime)s [%(levelname)s] %(message)s"
+)
 
 
 def main():
@@ -19,16 +19,16 @@ def main():
 
     # Get settings
     settings = get_project_settings()
-    settings.set('LOG_LEVEL', 'WARNING')  # Reduce noise
-    settings.set('CLOSESPIDER_TIMEOUT', 30)  # 30 second timeout
-    settings.set('CLOSESPIDER_PAGECOUNT', 5)  # Stop after 5 pages
+    settings.set("LOG_LEVEL", "WARNING")  # Reduce noise
+    settings.set("CLOSESPIDER_TIMEOUT", 30)  # 30 second timeout
+    settings.set("CLOSESPIDER_PAGECOUNT", 5)  # Stop after 5 pages
 
     # Create process
     process = CrawlerProcess(settings)
 
     # Crawl scout spider
     print("Crawling 'scout' spider...")
-    process.crawl('scout')
+    process.crawl("scout")
 
     # Start (blocks until done)
     print("Starting crawler process...")
@@ -36,7 +36,8 @@ def main():
 
     print("=== Crawler Finished ===")
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     try:
         main()
     except KeyboardInterrupt:
@@ -45,5 +46,6 @@ if __name__ == '__main__':
     except Exception as e:
         print(f"ERROR: {e}")
         import traceback
+
         traceback.print_exc()
         sys.exit(1)

@@ -1,13 +1,17 @@
 """Manage Delta Lake tables with a queued writer."""
 
 import logging
+import os
 import queue
 import signal
 import sys
 import threading
+import time
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeAlias
+
 from src.common.config import Config
 
 try:
@@ -15,6 +19,7 @@ try:
     import pyarrow.csv as pa_csv
     import pyarrow.parquet as pq
     from deltalake import DeltaTable, WriterProperties, write_deltalake
+
     DELTA_AVAILABLE = True
 except ImportError:
     DELTA_AVAILABLE = False
@@ -25,9 +30,11 @@ except ImportError:
     pa_csv = None
     pq = None
 
-from src.common.config import Config
 
 logger = logging.getLogger(__name__)
+
+WriteTask: TypeAlias = tuple[str, list[dict[str, Any]], str]
+MaintenanceTask: TypeAlias = tuple[str, ...]
 
 
 class DeltaLakeManager:
@@ -42,23 +49,23 @@ class DeltaLakeManager:
 
         # Get base_path from config (defaults to ./data/delta_lake if not specified)
         if base_path is None:
-            base_path = config.get('delta_lake.base_path', './data/delta_lake')
+            base_path = config.get("delta_lake.base_path", "./data/delta_lake")
         self.base_path = Path(base_path)
         self.base_path.mkdir(parents=True, exist_ok=True)
 
         # Stage-specific tables with intelligent routing
         self.tables = {
-            'seed_urls': self.base_path / 'seed_urls',
-            'stage1_discovery': self.base_path / 'stage1_discovery',
-            'stage1_errors': self.base_path / 'stage1_errors',
-            'stage1_offsite_candidates': self.base_path / 'stage1_offsite_candidates',
-            'js_spider_queue': self.base_path / 'js_spider_queue',
-            'stage2_queue': self.base_path / 'stage2_queue',
-            'stage2_page_analysis': self.base_path / 'stage2_page_analysis',
-            'stage3_analytics': self.base_path / 'stage3_analytics',
-            'stage3_summaries': self.base_path / 'stage3_summaries',
-            'stage4_large_docs': self.base_path / 'stage4_large_docs',
-            'stage4_summaries': self.base_path / 'stage4_summaries',
+            "seed_urls": self.base_path / "seed_urls",
+            "stage1_discovery": self.base_path / "stage1_discovery",
+            "stage1_errors": self.base_path / "stage1_errors",
+            "stage1_offsite_candidates": self.base_path / "stage1_offsite_candidates",
+            "js_spider_queue": self.base_path / "js_spider_queue",
+            "stage2_queue": self.base_path / "stage2_queue",
+            "stage2_page_analysis": self.base_path / "stage2_page_analysis",
+            "stage3_analytics": self.base_path / "stage3_analytics",
+            "stage3_summaries": self.base_path / "stage3_summaries",
+            "stage4_large_docs": self.base_path / "stage4_large_docs",
+            "stage4_summaries": self.base_path / "stage4_summaries",
         }
 
         # Create table directories
@@ -67,17 +74,19 @@ class DeltaLakeManager:
 
         # Concurrent write queue with maxsize to prevent memory overload
         # This creates backpressure when spiders produce faster than we can write
-        queue_maxsize = config.get('delta_lake.queue_maxsize', 1000)
-        self.write_queue = queue.Queue(maxsize=queue_maxsize)
+        queue_maxsize = config.get("delta_lake.queue_maxsize", 1000)
+        self.write_queue: queue.Queue[WriteTask | None] = queue.Queue(
+            maxsize=queue_maxsize
+        )
 
         # Schema cache to prevent schema drift
-        self.schema_cache = {}
+        self.schema_cache: dict[str, Any] = {}
 
         # Maintenance queue for async optimization tasks
-        self.maintenance_queue = queue.Queue()
+        self.maintenance_queue: queue.Queue[MaintenanceTask | None] = queue.Queue()
 
-        self.worker_thread = None
-        self.maintenance_worker_thread = None
+        self.worker_thread: threading.Thread | None = None
+        self.maintenance_worker_thread: threading.Thread | None = None
         self.shutdown_event = threading.Event()
 
         # Track whether workers are started (for proper cleanup)
@@ -102,7 +111,9 @@ class DeltaLakeManager:
 
     def _start_maintenance_worker(self):
         """Start background worker for maintenance tasks (optimization, vacuum, etc.)."""
-        self.maintenance_worker_thread = threading.Thread(target=self._process_maintenance_queue, daemon=True)
+        self.maintenance_worker_thread = threading.Thread(
+            target=self._process_maintenance_queue, daemon=True
+        )
         self.maintenance_worker_thread.start()
         logger.info("Delta Lake maintenance worker started")
 
@@ -117,14 +128,16 @@ class DeltaLakeManager:
                 task_type, *args = task
 
                 try:
-                    if task_type == 'optimize':
+                    if task_type == "optimize":
                         table_name = args[0]
                         self._optimize_table(table_name)
-                    elif task_type == 'vacuum':
+                    elif task_type == "vacuum":
                         table_name, retention_hours = args
                         self._vacuum_table(table_name, retention_hours)
                 except Exception as e:
-                    logger.error(f"Maintenance task failed ({task_type}): {e}", exc_info=True)
+                    logger.error(
+                        f"Maintenance task failed ({task_type}): {e}", exc_info=True
+                    )
                 finally:
                     self.maintenance_queue.task_done()
 
@@ -162,7 +175,9 @@ class DeltaLakeManager:
         logger.error(f"Write failed for {table_name}: {e}", exc_info=True)
         # Optional: Add metrics or circuit breaker logic here in the future
 
-    def _write_sync(self, table_name: str, data: list[dict[str, Any]], mode: str = "append"):
+    def _write_sync(
+        self, table_name: str, data: list[dict[str, Any]], mode: str = "append"
+    ):
         """Synchronous write to Delta table."""
         if not data:
             return
@@ -176,39 +191,40 @@ class DeltaLakeManager:
             logger.info(f"Dynamically created new table path for: {table_name}")
 
         # Enhanced: Extract domain from URLs for partitioning (for discovery tables)
-        if table_name in ['stage1_discovery', 'stage2_page_analysis']:
+        if table_name in ["stage1_discovery", "stage2_page_analysis"]:
             from urllib.parse import urlparse
+
             for record in data:
-                if 'url' in record and 'domain' not in record:
+                if "url" in record and "domain" not in record:
                     try:
-                        parsed = urlparse(record['url'])
+                        parsed = urlparse(record["url"])
                         # Use hostname instead of netloc to remove port numbers
                         # This prevents fragmentation: foo.uconn.edu:8080 and foo.uconn.edu go to same partition
                         hostname = parsed.hostname
                         if hostname:
                             # Extract domain without subdomain (e.g., 'uconn.edu' from 'www.uconn.edu')
-                            domain_parts = hostname.lower().split('.')
+                            domain_parts = hostname.lower().split(".")
                             if len(domain_parts) >= 2:
-                                record['domain'] = '.'.join(domain_parts[-2:])
+                                record["domain"] = ".".join(domain_parts[-2:])
                             else:
-                                record['domain'] = hostname.lower()
+                                record["domain"] = hostname.lower()
                         else:
-                            record['domain'] = 'unknown'
+                            record["domain"] = "unknown"
                     except Exception:
-                        record['domain'] = 'unknown'
+                        record["domain"] = "unknown"
 
         # Add metadata with UTC timestamps for consistency
         for record in data:
-            if '_ingestion_time' not in record:
+            if "_ingestion_time" not in record:
                 # Use UTC timezone-aware timestamps for consistency across all tables
-                record['_ingestion_time'] = datetime.now(UTC).isoformat()
-            if '_stage' not in record:
-                record['_stage'] = table_name
+                record["_ingestion_time"] = datetime.now(UTC).isoformat()
+            if "_stage" not in record:
+                record["_stage"] = table_name
 
         try:
             # Lazy-load heavy libraries on first use
-            from deltalake import WriterProperties, write_deltalake
             import pyarrow as pa
+            from deltalake import WriterProperties, write_deltalake
 
             # Get or create schema for this table to prevent schema drift
             if table_name not in self.schema_cache:
@@ -222,8 +238,8 @@ class DeltaLakeManager:
 
             # Enhanced: Partition by domain for discovery tables
             partition_by = None
-            if table_name in ['stage1_discovery', 'stage2_page_analysis']:
-                partition_by = ['domain']
+            if table_name in ["stage1_discovery", "stage2_page_analysis"]:
+                partition_by = ["domain"]
 
             # Write to Delta Lake with compression enabled via WriterProperties
             # Enable ZSTD compression to reduce disk space usage
@@ -236,7 +252,7 @@ class DeltaLakeManager:
                 schema_mode="merge" if mode == "append" else "overwrite",
                 writer_properties=writer_props,
                 # Partition by domain
-                partition_by=partition_by
+                partition_by=partition_by,
             )
 
             logger.info(f"✅ Wrote {len(data)} records to {table_name}")
@@ -244,10 +260,19 @@ class DeltaLakeManager:
             self._handle_writer_exception(e, table_name)
 
         # Enhanced: Queue optimization task instead of blocking the write path
-        if table_name in ['stage1_discovery', 'stage2_page_analysis'] and len(data) >= 1000:
-            self.maintenance_queue.put(('optimize', table_name))
+        if (
+            table_name in ["stage1_discovery", "stage2_page_analysis"]
+            and len(data) >= 1000
+        ):
+            self.maintenance_queue.put(("optimize", table_name))
 
-    def write(self, table_name: str, data: list[dict[str, Any]], mode: str = "append", async_write: bool = True):
+    def write(
+        self,
+        table_name: str,
+        data: list[dict[str, Any]],
+        mode: str = "append",
+        async_write: bool = True,
+    ):
         """Write data to a Delta table, optionally via the background queue."""
         if async_write:
             # Queue for background processing
@@ -257,7 +282,9 @@ class DeltaLakeManager:
             # Immediate synchronous write
             self._write_sync(table_name, data, mode)
 
-    def read(self, table_name: str, filters: Any = None, columns: list[str] | None = None) -> list[dict]:
+    def read(
+        self, table_name: str, filters: Any = None, columns: list[str] | None = None
+    ) -> list[dict]:
         """Read rows from a Delta table into a list of dictionaries."""
         from deltalake import DeltaTable
 
@@ -306,17 +333,22 @@ class DeltaLakeManager:
             dt.optimize.compact()
 
             logger.info(f"Z-ordering {table_name} by url_hash and discovered_at...")
-            if table_name == 'stage1_discovery':
-                dt.optimize.z_order(['url_hash', 'discovered_at'])
-            elif table_name == 'stage2_page_analysis':
-                dt.optimize.z_order(['url_hash', 'processed_at'])
+            if table_name == "stage1_discovery":
+                dt.optimize.z_order(["url_hash", "discovered_at"])
+            elif table_name == "stage2_page_analysis":
+                dt.optimize.z_order(["url_hash", "processed_at"])
 
             logger.info(f"✅ Optimized {table_name}")
 
         except Exception as e:
             logger.warning(f"Optimization failed for {table_name}: {e}")
 
-    def _vacuum_table(self, table_name: str, retention_hours: int = 168, enforce_retention_duration: bool = True):
+    def _vacuum_table(
+        self,
+        table_name: str,
+        retention_hours: int = 168,
+        enforce_retention_duration: bool = True,
+    ):
         """Vacuum Delta table to remove old data files.
 
         Args:
@@ -332,8 +364,14 @@ class DeltaLakeManager:
 
         try:
             dt = DeltaTable(str(table_path))
-            logger.info(f"Vacuuming {table_name} (retention: {retention_hours}h, enforce={enforce_retention_duration})...")
-            dt.vacuum(retention_hours=retention_hours, enforce_retention_duration=enforce_retention_duration, dry_run=False)
+            logger.info(
+                f"Vacuuming {table_name} (retention: {retention_hours}h, enforce={enforce_retention_duration})..."
+            )
+            dt.vacuum(
+                retention_hours=retention_hours,
+                enforce_retention_duration=enforce_retention_duration,
+                dry_run=False,
+            )
             logger.info(f"✅ Vacuumed {table_name}")
         except Exception as e:
             logger.warning(f"Vacuum failed for {table_name}: {e}")
@@ -353,7 +391,6 @@ class DeltaLakeManager:
         Args:
             timeout: Maximum seconds to wait for queue to finish (default: 30)
         """
-        import time
 
         logger.info(f"Waiting for queue to finish (timeout: {timeout}s)...")
 
@@ -371,7 +408,9 @@ class DeltaLakeManager:
         remaining = self.write_queue.qsize()
 
         if remaining > 0:
-            logger.warning(f"⚠️  Queue not empty after {elapsed:.1f}s: {remaining} tasks remaining (forcing shutdown)")
+            logger.warning(
+                f"⚠️  Queue not empty after {elapsed:.1f}s: {remaining} tasks remaining (forcing shutdown)"
+            )
         else:
             logger.info(f"✅ Queue emptied in {elapsed:.1f}s")
 
@@ -471,24 +510,24 @@ class DeltaLakeManager:
             parquet_files = list(table_path.glob("*.parquet"))
 
             info = {
-                'name': table_name,
-                'path': str(table_path),
-                'exists': (table_path / "_delta_log").exists(),
-                'parquet_files': len(parquet_files),
-                'row_count': 0
+                "name": table_name,
+                "path": str(table_path),
+                "exists": (table_path / "_delta_log").exists(),
+                "parquet_files": len(parquet_files),
+                "row_count": 0,
             }
 
-            if info['exists']:
+            if info["exists"]:
                 try:
-                    info['row_count'] = self.count(table_name)
+                    info["row_count"] = self.count(table_name)
                 except Exception as e:
-                    info['error'] = str(e)
+                    info["error"] = str(e)
 
             tables_info.append(info)
 
         return tables_info
 
-    def export(self, table_name: str, output_path: str, format: str = 'csv'):
+    def export(self, table_name: str, output_path: str, format: str = "csv"):
         """Export table to file using streaming to reduce memory usage.
 
         Args:
@@ -505,8 +544,8 @@ class DeltaLakeManager:
         if not table_path:
             raise ValueError(f"Unknown table: {table_name}")
 
-        output_path = Path(output_path)
-        output_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path = Path(output_path)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
 
         # Gracefully handle non-existent tables
         if not (table_path / "_delta_log").exists():
@@ -522,33 +561,35 @@ class DeltaLakeManager:
             col_count = len(pa_table.schema)
 
         # Stream data directly to file to reduce memory usage
-        if format == 'csv':
+        if format == "csv":
             # Use PyArrow CSV writer for streaming
-            with pa_csv.CSVWriter(output_path, pa_table.schema) as writer:
+            with pa_csv.CSVWriter(out_path, pa_table.schema) as writer:
                 writer.write_table(pa_table)
-        elif format == 'json':
+        elif format == "json":
             # For JSON, convert to pandas only for compatibility
             # (PyArrow doesn't have native JSON streaming writer)
             result_df = pa_table.to_pandas()
-            result_df.to_json(output_path, orient='records', lines=True)
-        elif format == 'parquet':
+            result_df.to_json(out_path, orient="records", lines=True)
+        elif format == "parquet":
             # Use PyArrow Parquet writer for streaming with compression
-            pq.write_table(pa_table, output_path, compression='ZSTD')
+            pq.write_table(pa_table, out_path, compression="ZSTD")
         else:
             raise ValueError(f"Unsupported format: {format}")
 
-        logger.info(f"✅ Exported {table_name} to {output_path} ({format})")
+        logger.info(f"✅ Exported {table_name} to {out_path} ({format})")
 
         return {
-            'table': table_name,
-            'output': str(output_path),
-            'format': format,
-            'rows': row_count,
-            'columns': col_count,
-            'size_mb': output_path.stat().st_size / (1024 * 1024) if output_path.exists() else 0,
+            "table": table_name,
+            "output": str(out_path),
+            "format": format,
+            "rows": row_count,
+            "columns": col_count,
+            "size_mb": (
+                out_path.stat().st_size / (1024 * 1024) if out_path.exists() else 0
+            ),
         }
 
-    def export_all(self, output_dir: str, format: str = 'csv') -> list[dict[str, Any]]:
+    def export_all(self, output_dir: str, format: str = "csv") -> list[dict[str, Any]]:
         """Export all tables to directory.
 
         Args:
@@ -558,23 +599,18 @@ class DeltaLakeManager:
         Returns:
             List of export results
         """
-        from pathlib import Path
-
-        output_dir = Path(output_dir)
-        output_dir.mkdir(parents=True, exist_ok=True)
+        out_dir = Path(output_dir)
+        out_dir.mkdir(parents=True, exist_ok=True)
 
         results = []
         for table_name in self.tables.keys():
             try:
-                output_path = output_dir / f"{table_name}.{format}"
+                output_path = out_dir / f"{table_name}.{format}"
                 result = self.export(table_name, str(output_path), format)
                 results.append(result)
             except Exception as e:
                 logger.warning(f"Failed to export {table_name}: {e}")
-                results.append({
-                    'table': table_name,
-                    'error': str(e)
-                })
+                results.append({"table": table_name, "error": str(e)})
 
         return results
 
@@ -613,9 +649,11 @@ class DeltaLakeManager:
             cls._instance.shutdown()
         cls._instance = None
 
+
 # =====================================================================================
 # In-Memory Test Backend
 # =====================================================================================
+
 
 class InMemoryDeltaManager:
     """In-memory mock of DeltaLakeManager for testing."""
@@ -624,13 +662,20 @@ class InMemoryDeltaManager:
         """Initialize in-memory tables dictionary."""
         self.tables: dict[str, list[dict[str, Any]]] = {}
         self.history: dict[str, list[list[dict[str, Any]]]] = {}
+        self.base_path = Path("./data/test_delta_lake")
         # Mimic table paths for compatibility if needed
         self.table_paths = {
-            'seed_urls': Path('./data/delta_lake/seed_urls'),
-            'stage1_discovery': Path('./data/delta_lake/stage1_discovery'),
+            "seed_urls": Path("./data/delta_lake/seed_urls"),
+            "stage1_discovery": Path("./data/delta_lake/stage1_discovery"),
         }
 
-    def write(self, table_name: str, rows: list[dict[str, Any]], mode: str = "append", **kwargs):
+    def write(
+        self,
+        table_name: str,
+        rows: list[dict[str, Any]],
+        mode: str = "append",
+        **kwargs,
+    ):
         """Write rows to an in-memory table."""
         if not rows:
             return
@@ -649,7 +694,9 @@ class InMemoryDeltaManager:
             self.history[table_name] = []
         self.history[table_name].append(list(self.tables[table_name]))
 
-    def _get_version(self, table_name: str, version: int | None = None) -> list[dict[str, Any]]:
+    def _get_version(
+        self, table_name: str, version: int | None = None
+    ) -> list[dict[str, Any]]:
         """Return a specific version of a table from history."""
         if version is None:
             return self.tables.get(table_name, [])
@@ -657,7 +704,13 @@ class InMemoryDeltaManager:
             raise ValueError(f"Version {version} not available for table {table_name}")
         return self.history[table_name][version]
 
-    def read(self, table_name: str, filter: Any = None, columns: list[str] | None = None, version: int | None = None) -> list[dict]:
+    def read(
+        self,
+        table_name: str,
+        filter: Any = None,
+        columns: list[str] | None = None,
+        version: int | None = None,
+    ) -> list[dict]:
         """Read rows from in-memory table, with optional column selection."""
         if table_name not in self.tables:
             raise ValueError(f"Unknown table: {table_name}")
@@ -702,10 +755,10 @@ class InMemoryDeltaManager:
 
         return [
             {
-                'timestamp': datetime.now(UTC).isoformat(),
-                'operation': 'WRITE',
-                'operationParameters': {'mode': 'Append', 'partitionBy': '[]'},
-                'user': 'test-user',
+                "timestamp": datetime.now(UTC).isoformat(),
+                "operation": "WRITE",
+                "operationParameters": {"mode": "Append", "partitionBy": "[]"},
+                "user": "test-user",
             }
             for _ in self.history.get(name, [])
         ]
@@ -734,10 +787,9 @@ class InMemoryDeltaManager:
 # =====================================================================================
 # Singleton & Factory
 # =====================================================================================
-import os
-from contextlib import contextmanager
-
-def get_delta_manager(mode: str | None = None, **kwargs) -> DeltaLakeManager | InMemoryDeltaManager:
+def get_delta_manager(
+    mode: str | None = None, **kwargs
+) -> DeltaLakeManager | InMemoryDeltaManager:
     """Factory to get a Delta Lake manager based on mode."""
     mode = mode or os.getenv("DELTA_BACKEND", "memory")
     if mode == "memory":
@@ -745,8 +797,8 @@ def get_delta_manager(mode: str | None = None, **kwargs) -> DeltaLakeManager | I
 
     # In production, use the singleton for efficiency
     # Pass start_workers=False for test environments
-    if 'start_workers' not in kwargs:
-        kwargs['start_workers'] = True # Default to starting workers for prod
+    if "start_workers" not in kwargs:
+        kwargs["start_workers"] = True  # Default to starting workers for prod
     return DeltaLakeManager.get_instance(**kwargs)
 
 
@@ -758,7 +810,7 @@ def delta_session(mode: str | None = None, **kwargs):
         yield mgr
     finally:
         # Attempt to flush if the manager supports it
-        if hasattr(mgr, 'flush_all'):
+        if hasattr(mgr, "flush_all"):
             try:
                 mgr.flush_all()
             except Exception as e:

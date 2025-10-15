@@ -1,5 +1,6 @@
 import unittest
 
+
 class TestLagAggregationSemantics(unittest.TestCase):
     """
     This test case serves as a specification for the correct aggregation
@@ -26,7 +27,10 @@ class TestLagAggregationSemantics(unittest.TestCase):
         # This is a conceptual test. The actual implementation is in PromQL.
         # The PromQL query for max lag should be:
         # max by (topic, group) (kafka_consumer_records_lag)
-        self.assertTrue(True, "The PromQL query for max lag should be correctly implemented in recording_rules.yml")
+        self.assertTrue(
+            True,
+            "The PromQL query for max lag should be correctly implemented in recording_rules.yml",
+        )
 
     def test_sum_lag_is_for_throughput_debt_only(self):
         """
@@ -44,7 +48,11 @@ class TestLagAggregationSemantics(unittest.TestCase):
         # This is a conceptual test. The actual implementation is in PromQL.
         # The PromQL query for sum lag should be:
         # sum by (topic, group) (kafka_consumer_records_lag)
-        self.assertTrue(True, "The PromQL query for sum lag should be correctly implemented in recording_rules.yml for non-alerting purposes")
+        self.assertTrue(
+            True,
+            "The PromQL query for sum lag should be correctly implemented in recording_rules.yml for non-alerting purposes",
+        )
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     unittest.main()

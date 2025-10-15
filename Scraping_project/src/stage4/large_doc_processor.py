@@ -18,8 +18,13 @@ from src.common.delta_lake import get_delta_manager
 try:
     import sys
     from pathlib import Path
+
     sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-    from monitoring.metrics_exporter import stage4_http_failures_total, stage4_http_requests_total
+    from monitoring.metrics_exporter import (
+        stage4_http_failures_total,
+        stage4_http_requests_total,
+    )
+
     PROMETHEUS_AVAILABLE = True
 except ImportError:
     stage4_http_requests_total = None
@@ -35,7 +40,7 @@ class LargeDocProcessor:
     def __init__(self, model_name: str = "facebook/bart-large-cnn"):
         self.delta = get_delta_manager()
         self.model_name = model_name
-        self.summarizer = None
+        self.summarizer: Any = None
 
         # Chunk settings for very large docs
         self.CHUNK_SIZE = 5000  # characters per chunk
@@ -43,14 +48,14 @@ class LargeDocProcessor:
 
         # Enhanced: Create httpx client with User-Agent and timeouts
         self.http_client = httpx.Client(
-            headers={'User-Agent': 'MyScraper/1.0 (Educational Research Bot)'},
+            headers={"User-Agent": "MyScraper/1.0 (Educational Research Bot)"},
             timeout=httpx.Timeout(30.0),
-            follow_redirects=True
+            follow_redirects=True,
         )
 
     def __del__(self):
         """Clean up httpx client on deletion."""
-        if hasattr(self, 'http_client'):
+        if hasattr(self, "http_client"):
             self.http_client.close()
 
     def _load_model(self):
@@ -65,14 +70,16 @@ class LargeDocProcessor:
             self.summarizer = pipeline(
                 "summarization",
                 model=self.model_name,
-                device=-1  # CPU - change to 0 for GPU
+                device=-1,  # CPU - change to 0 for GPU
             )
             logger.info("Model loaded successfully")
         except Exception as e:
             logger.error(f"Failed to load model: {e}")
             raise
 
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
+    @retry(
+        stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10)
+    )
     def _fetch_content(self, url: str, is_pdf: bool = False) -> tuple[str, str]:
         """Fetch content from URL with retry logic.
 
@@ -87,35 +94,47 @@ class LargeDocProcessor:
             response = self.http_client.get(url)
             response.raise_for_status()
 
-            content_type = response.headers.get('Content-Type', '').lower()
+            content_type = response.headers.get("Content-Type", "").lower()
 
             # Handle PDF documents
-            if 'application/pdf' in content_type or is_pdf:
-                return self._extract_pdf_text(response.content), 'pdf'
+            if "application/pdf" in content_type or is_pdf:
+                return self._extract_pdf_text(response.content), "pdf"
 
             # Handle Word documents (.docx)
-            elif 'application/vnd.openxmlformats-officedocument.wordprocessingml' in content_type or url.lower().endswith('.docx'):
-                return self._extract_docx_text(response.content), 'docx'
+            elif (
+                "application/vnd.openxmlformats-officedocument.wordprocessingml"
+                in content_type
+                or url.lower().endswith(".docx")
+            ):
+                return self._extract_docx_text(response.content), "docx"
 
             # Handle PowerPoint documents (.pptx)
-            elif 'application/vnd.openxmlformats-officedocument.presentationml' in content_type or url.lower().endswith('.pptx'):
-                return self._extract_pptx_text(response.content), 'pptx'
+            elif (
+                "application/vnd.openxmlformats-officedocument.presentationml"
+                in content_type
+                or url.lower().endswith(".pptx")
+            ):
+                return self._extract_pptx_text(response.content), "pptx"
 
             # Handle Excel documents (.xlsx)
-            elif 'application/vnd.openxmlformats-officedocument.spreadsheetml' in content_type or url.lower().endswith('.xlsx'):
-                return self._extract_xlsx_text(response.content), 'xlsx'
+            elif (
+                "application/vnd.openxmlformats-officedocument.spreadsheetml"
+                in content_type
+                or url.lower().endswith(".xlsx")
+            ):
+                return self._extract_xlsx_text(response.content), "xlsx"
 
             # Handle legacy Word documents (.doc)
-            elif 'application/msword' in content_type or url.lower().endswith('.doc'):
-                return self._extract_doc_text(response.content), 'doc'
+            elif "application/msword" in content_type or url.lower().endswith(".doc"):
+                return self._extract_doc_text(response.content), "doc"
 
             # Handle HTML documents
-            elif 'text/html' in content_type:
-                return self._extract_html_text(response.text), 'html'
+            elif "text/html" in content_type:
+                return self._extract_html_text(response.text), "html"
 
             # Handle plain text
-            elif 'text/plain' in content_type:
-                return response.text, 'txt'
+            elif "text/plain" in content_type:
+                return response.text, "txt"
 
             else:
                 logger.warning(f"Unsupported content type: {content_type} for {url}")
@@ -124,34 +143,36 @@ class LargeDocProcessor:
         except httpx.HTTPStatusError as e:
             # Increment failure counter
             if PROMETHEUS_AVAILABLE and stage4_http_failures_total:
-                stage4_http_failures_total.labels(error_type='HTTPStatusError').inc()
+                stage4_http_failures_total.labels(error_type="HTTPStatusError").inc()
             logger.error(f"HTTP error fetching {url}: {e.response.status_code}")
             raise
         except httpx.RequestError as e:
             # Increment failure counter
             if PROMETHEUS_AVAILABLE and stage4_http_failures_total:
-                stage4_http_failures_total.labels(error_type='RequestError').inc()
+                stage4_http_failures_total.labels(error_type="RequestError").inc()
             logger.error(f"Request error fetching {url}: {e}")
             raise
         except Exception as e:
             # Increment failure counter
             if PROMETHEUS_AVAILABLE and stage4_http_failures_total:
-                stage4_http_failures_total.labels(error_type='UnknownError').inc()
+                stage4_http_failures_total.labels(error_type="UnknownError").inc()
             logger.error(f"Unexpected error fetching {url}: {e}")
             raise
 
     def _extract_html_text(self, html: str) -> str:
         """Extract clean text from HTML."""
         try:
-            soup = BeautifulSoup(html, 'html.parser')
+            soup = BeautifulSoup(html, "html.parser")
 
             # Remove noise
-            for tag in soup(['script', 'style', 'nav', 'header', 'footer', 'aside', 'iframe']):
+            for tag in soup(
+                ["script", "style", "nav", "header", "footer", "aside", "iframe"]
+            ):
                 tag.decompose()
 
             # Extract text
-            text = soup.get_text(separator=' ', strip=True)
-            text = ' '.join(text.split())  # Clean whitespace
+            text = soup.get_text(separator=" ", strip=True)
+            text = " ".join(text.split())  # Clean whitespace
 
             return text
         except Exception as e:
@@ -172,7 +193,7 @@ class LargeDocProcessor:
             for page in reader.pages:
                 text_parts.append(page.extract_text())
 
-            return ' '.join(text_parts)
+            return " ".join(text_parts)
 
         except ImportError:
             logger.error("pypdf not installed - cannot extract PDF text")
@@ -201,7 +222,7 @@ class LargeDocProcessor:
                     for cell in row.cells:
                         text_parts.append(cell.text)
 
-            return '\n'.join(text_parts)
+            return "\n".join(text_parts)
 
         except ImportError:
             logger.error("python-docx not installed - cannot extract DOCX text")
@@ -226,7 +247,7 @@ class LargeDocProcessor:
                     if hasattr(shape, "text"):
                         text_parts.append(shape.text)
 
-            return '\n'.join(text_parts)
+            return "\n".join(text_parts)
 
         except ImportError:
             logger.error("python-pptx not installed - cannot extract PPTX text")
@@ -252,7 +273,7 @@ class LargeDocProcessor:
                         if cell.value:
                             text_parts.append(str(cell.value))
 
-            return '\n'.join(text_parts)
+            return "\n".join(text_parts)
 
         except ImportError:
             logger.error("openpyxl not installed - cannot extract XLSX text")
@@ -269,20 +290,23 @@ class LargeDocProcessor:
             import textract
 
             # textract requires a file path, so write to temp file
-            with tempfile.NamedTemporaryFile(suffix='.doc', delete=False) as tmp:
+            with tempfile.NamedTemporaryFile(suffix=".doc", delete=False) as tmp:
                 tmp.write(doc_content)
                 tmp_path = tmp.name
 
-            text = textract.process(tmp_path).decode('utf-8')
+            text = textract.process(tmp_path).decode("utf-8")
 
             # Clean up temp file
             import os
+
             os.unlink(tmp_path)
 
             return text
 
         except ImportError:
-            logger.error("textract not installed - cannot extract .doc text. Install: apt-get install antiword")
+            logger.error(
+                "textract not installed - cannot extract .doc text. Install: apt-get install antiword"
+            )
             return ""
         except Exception as e:
             logger.error(f"Failed to extract .doc text: {e}")
@@ -292,8 +316,8 @@ class LargeDocProcessor:
         """Process all pending large documents in queue."""
         try:
             # Read pending documents
-            all_docs = self.delta.read('stage4_large_docs')
-            pending_docs = [d for d in all_docs if d.get('status') == 'pending']
+            all_docs = self.delta.read("stage4_large_docs")
+            pending_docs = [d for d in all_docs if d.get("status") == "pending"]
 
             if not pending_docs:
                 logger.info("No pending large documents to process")
@@ -318,7 +342,9 @@ class LargeDocProcessor:
 
             # Save summaries
             if summaries:
-                self.delta.write('stage4_summaries', summaries, mode='append', async_write=False)
+                self.delta.write(
+                    "stage4_summaries", summaries, mode="append", async_write=False
+                )
                 logger.info(f"Saved {len(summaries)} summaries")
 
             # Update queue status
@@ -331,8 +357,13 @@ class LargeDocProcessor:
 
     def _process_document(self, doc: dict[str, Any]) -> dict[str, Any] | None:
         """Process a single large document."""
-        url = doc.get('url')
-        is_pdf = doc.get('is_pdf', False)
+        url_value = doc.get("url")
+        if not isinstance(url_value, str):
+            logger.warning("Document missing URL; skipping entry")
+            return None
+
+        url = url_value
+        is_pdf = bool(doc.get("is_pdf", False))
 
         logger.info(f"Processing large doc: {url[:80]}")
 
@@ -345,7 +376,9 @@ class LargeDocProcessor:
                 return None
 
             word_count = len(text.split())
-            logger.info(f"Fetched {word_count} words from {url[:80]} (type: {content_type})")
+            logger.info(
+                f"Fetched {word_count} words from {url[:80]} (type: {content_type})"
+            )
 
         except Exception as e:
             logger.error(f"Failed to fetch content from {url}: {e}")
@@ -362,7 +395,7 @@ class LargeDocProcessor:
                 summary = self._summarize_chunk(chunk)
                 if summary:
                     chunk_summaries.append(summary)
-                    logger.debug(f"Summarized chunk {i+1}/{len(chunks)}")
+                    logger.debug(f"Summarized chunk {i + 1}/{len(chunks)}")
             except Exception as e:
                 logger.warning(f"Failed to summarize chunk {i}: {e}")
 
@@ -375,18 +408,20 @@ class LargeDocProcessor:
 
         # Final summarization if combined is still too long
         if len(combined_summary) > 1000:
-            combined_summary = self._summarize_chunk(combined_summary[:5000])
+            refined_summary = self._summarize_chunk(combined_summary[:5000])
+            if refined_summary:
+                combined_summary = refined_summary
 
         return {
-            'url': url,
-            'summary': combined_summary,
-            'original_word_count': word_count,
-            'chunk_count': len(chunks),
-            'processed_at': datetime.now().isoformat(),
-            'model_used': self.model_name,
+            "url": url,
+            "summary": combined_summary,
+            "original_word_count": word_count,
+            "chunk_count": len(chunks),
+            "processed_at": datetime.now().isoformat(),
+            "model_used": self.model_name,
         }
 
-    def _split_into_chunks(self, text: str) -> list:
+    def _split_into_chunks(self, text: str) -> list[str]:
         """Split large text into overlapping chunks."""
         if len(text) <= self.CHUNK_SIZE:
             return [text]
@@ -400,7 +435,7 @@ class LargeDocProcessor:
 
             # Try to break at sentence boundary
             if end < len(text):
-                last_period = chunk.rfind('.')
+                last_period = chunk.rfind(".")
                 if last_period > self.CHUNK_SIZE // 2:
                     end = start + last_period + 1
                     chunk = text[start:end]
@@ -422,32 +457,35 @@ class LargeDocProcessor:
                 text = text[:max_input]
 
             result = self.summarizer(
-                text,
-                max_length=150,
-                min_length=30,
-                do_sample=False
+                text, max_length=150, min_length=30, do_sample=False
             )
 
-            return result[0]['summary_text']
+            return result[0]["summary_text"]
 
         except Exception as e:
             logger.error(f"Chunk summarization failed: {e}")
             # Fallback: extract first few sentences
-            sentences = text.split('.')[:3]
-            return '. '.join(sentences) + '.'
+            sentences = text.split(".")[:3]
+            return ". ".join(sentences) + "."
 
-    def _update_queue_status(self, all_docs: list, processed_docs: list):
+    def _update_queue_status(
+        self,
+        all_docs: list[dict[str, Any]],
+        processed_docs: list[dict[str, Any]],
+    ) -> None:
         """Update queue with completed status."""
-        processed_urls = {d.get('url') for d in processed_docs}
+        processed_urls = {d.get("url") for d in processed_docs}
 
         updated_queue = []
         for doc in all_docs:
-            if doc.get('url') in processed_urls:
-                doc['status'] = 'completed'
-                doc['completed_at'] = datetime.now().isoformat()
+            if doc.get("url") in processed_urls:
+                doc["status"] = "completed"
+                doc["completed_at"] = datetime.now().isoformat()
             updated_queue.append(doc)
 
-        self.delta.write('stage4_large_docs', updated_queue, mode='overwrite', async_write=False)
+        self.delta.write(
+            "stage4_large_docs", updated_queue, mode="overwrite", async_write=False
+        )
         logger.info(f"Updated queue status for {len(processed_urls)} documents")
 
 
@@ -457,9 +495,8 @@ def process_large_documents():
     processor.process_queue()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s [%(levelname)s] %(name)s: %(message)s'
+        level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
     )
     process_large_documents()

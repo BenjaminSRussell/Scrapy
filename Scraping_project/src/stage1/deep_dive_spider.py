@@ -23,11 +23,15 @@ class DeepDiveSpider(BaseSpider):
 
         config_instance = Config.get_instance()
         config = config_instance._config
-        stage1_config = config.get('stage1', {})
-        configured_domains = stage1_config.get('allowed_domains', [])
+        stage1_config = config.get("stage1", {})
+        configured_domains = stage1_config.get("allowed_domains", [])
 
         if configured_domains:
             self.allowed_domains = configured_domains
-            logger.info(f"[K4] DeepDiveSpider enforcing domain allowlist from config: {configured_domains}")
+            logger.info(
+                f"[K4] DeepDiveSpider enforcing domain allowlist from config: {configured_domains}"
+            )
         else:
-            logger.info(f"[K4] DeepDiveSpider using dynamic domains: {self.allowed_domains}")
+            logger.info(
+                f"[K4] DeepDiveSpider using dynamic domains: {self.allowed_domains}"
+            )

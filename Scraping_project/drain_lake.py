@@ -17,8 +17,7 @@ from src.common.config import Config
 from src.common.redis_manager import get_redis_manager
 
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 
@@ -32,22 +31,22 @@ class LakeDrainer:
 
         redis_config = self.config.redis_config
         self.redis = get_redis_manager(
-            host=redis_config.get('host', 'localhost'),
-            port=redis_config.get('port', 6379),
-            db=redis_config.get('db', 0),
-            password=redis_config.get('password'),
+            host=redis_config.get("host", "localhost"),
+            port=redis_config.get("port", 6379),
+            db=redis_config.get("db", 0),
+            password=redis_config.get("password"),
         )
 
         # Get queue configuration
         mq_config = self.config.message_queue_config
-        self.persistent_queues = set(mq_config.get('persistent_queues', []))
-        self.transient_queues = set(mq_config.get('transient_queues', []))
+        self.persistent_queues = set(mq_config.get("persistent_queues", []))
+        self.transient_queues = set(mq_config.get("transient_queues", []))
 
     def list_queues(self):
         """List all queues with their sizes."""
-        print("\n" + "="*70)
+        print("\n" + "=" * 70)
         print("REDIS QUEUE STATUS")
-        print("="*70 + "\n")
+        print("=" * 70 + "\n")
 
         stats = self.redis.get_all_queue_stats()
 
@@ -62,11 +61,11 @@ class LakeDrainer:
 
         for queue_name, size in stats.items():
             if queue_name in self.persistent_queues:
-                persistent.append((queue_name, size, 'PERSISTENT'))
+                persistent.append((queue_name, size, "PERSISTENT"))
             elif queue_name in self.transient_queues:
-                transient.append((queue_name, size, 'TRANSIENT'))
+                transient.append((queue_name, size, "TRANSIENT"))
             else:
-                other.append((queue_name, size, 'UNKNOWN'))
+                other.append((queue_name, size, "UNKNOWN"))
 
         # Print persistent queues
         if persistent:
@@ -108,7 +107,8 @@ class LakeDrainer:
         """
         stats = self.redis.get_all_queue_stats()
         transient_to_drain = [
-            (name, size) for name, size in stats.items()
+            (name, size)
+            for name, size in stats.items()
             if name in self.transient_queues
         ]
 
@@ -116,9 +116,9 @@ class LakeDrainer:
             print("\nNo transient queues to drain.")
             return
 
-        print("\n" + "="*70)
+        print("\n" + "=" * 70)
         print("DRAINING TRANSIENT QUEUES")
-        print("="*70 + "\n")
+        print("=" * 70 + "\n")
 
         total_items = 0
 
@@ -154,7 +154,7 @@ class LakeDrainer:
         else:
             print("\n💨 Draining all TRANSIENT queues...")
 
-        print("="*70 + "\n")
+        print("=" * 70 + "\n")
 
         total_items = 0
 
@@ -204,8 +204,10 @@ class LakeDrainer:
         # Check if persistent
         if queue_name in self.persistent_queues:
             print(f"\n⚠️  WARNING: '{queue_name}' is a PERSISTENT queue!")
-            confirm = input("Are you sure you want to drain it? (type 'YES' to confirm): ")
-            if confirm != 'YES':
+            confirm = input(
+                "Are you sure you want to drain it? (type 'YES' to confirm): "
+            )
+            if confirm != "YES":
                 print("Aborted.")
                 return
 
@@ -239,43 +241,39 @@ Examples:
 
   # Drain ALL queues including persistent (DANGEROUS!)
   python drain_lake.py --drain-all --include-persistent
-        """
+        """,
     )
 
     parser.add_argument(
-        '--list', '-l',
-        action='store_true',
-        help='List all queues with their sizes'
+        "--list", "-l", action="store_true", help="List all queues with their sizes"
     )
 
     parser.add_argument(
-        '--drain-transient', '-t',
-        action='store_true',
-        help='Drain all transient queues (safe operation)'
+        "--drain-transient",
+        "-t",
+        action="store_true",
+        help="Drain all transient queues (safe operation)",
     )
 
     parser.add_argument(
-        '--drain-all', '-a',
-        action='store_true',
-        help='Drain all queues'
+        "--drain-all", "-a", action="store_true", help="Drain all queues"
     )
 
     parser.add_argument(
-        '--queue', '-q',
-        type=str,
-        help='Drain a specific queue by name'
+        "--queue", "-q", type=str, help="Drain a specific queue by name"
     )
 
     parser.add_argument(
-        '--include-persistent',
-        action='store_true',
-        help='Also drain persistent queues (DANGEROUS! Use with caution)'
+        "--include-persistent",
+        action="store_true",
+        help="Also drain persistent queues (DANGEROUS! Use with caution)",
     )
 
     parser.add_argument(
-        '--dry-run', '-n',
-        action='store_true',
-        help='Show what would be drained without actually draining'
+        "--dry-run",
+        "-n",
+        action="store_true",
+        help="Show what would be drained without actually draining",
     )
 
     args = parser.parse_args()
@@ -292,8 +290,7 @@ Examples:
 
     elif args.drain_all:
         drainer.drain_all_queues(
-            dry_run=args.dry_run,
-            include_persistent=args.include_persistent
+            dry_run=args.dry_run, include_persistent=args.include_persistent
         )
 
     elif args.queue:
@@ -305,5 +302,5 @@ Examples:
         print("\nUse --help to see available commands")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

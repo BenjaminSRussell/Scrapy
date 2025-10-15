@@ -18,7 +18,7 @@ from src.common.constants import DATA_DIR, SUMMARY_LIMITS
 logger = logging.getLogger(__name__)
 
 
-def summarize_with_heavy_model(text: str) -> str | None:
+def summarize_with_heavy_model(text: str) -> str:
     """Use a heavy model (BART) to create an abstractive summary of the text.
 
     Args:
@@ -35,7 +35,7 @@ def summarize_with_heavy_model(text: str) -> str | None:
         summarizer = pipeline(
             "summarization",
             model="facebook/bart-large-cnn",
-            device=-1  # CPU
+            device=-1,  # CPU
         )
 
         # Limit input text to the model's max input size
@@ -67,7 +67,7 @@ def extract_key_facts(text: str, summary: str, categories: list[str]) -> list[st
     Uses the summary and categories to identify the most important information.
     """
     # Simple approach: extract sentences with category keywords
-    sentences = text.split('.')
+    sentences = text.split(".")
     key_facts = []
 
     # Get sentences that contain category keywords
@@ -99,20 +99,20 @@ def create_final_summary(analytics_data: dict) -> dict:
         Summary dict ready for JSONL output and Delta Lake
 
     """
-    url = analytics_data.get('url')
-    combined_text = analytics_data.get('combined_text', '')
-    metadata = analytics_data.get('metadata', {})
-    categories = analytics_data.get('initial_categories', [])
+    url = analytics_data.get("url")
+    combined_text = analytics_data.get("combined_text", "")
+    metadata = analytics_data.get("metadata", {})
+    categories = analytics_data.get("initial_categories", [])
 
     if not combined_text:
         logger.warning(f"No text to summarize for {url}")
         return {
-            'url': url,
-            'title': metadata.get('title', 'Unknown'),
-            'summary': "No content available",
-            'key_facts': [],
-            'categories': categories,
-            'type': metadata.get('type', 'unknown')
+            "url": url,
+            "title": metadata.get("title", "Unknown"),
+            "summary": "No content available",
+            "key_facts": [],
+            "categories": categories,
+            "type": metadata.get("type", "unknown"),
         }
 
     # Generate summary
@@ -123,17 +123,17 @@ def create_final_summary(analytics_data: dict) -> dict:
     key_facts = extract_key_facts(combined_text, summary, categories)
 
     final = {
-        'url': url,
-        'title': analytics_data.get('html_title') or metadata.get('title', 'Unknown'),
-        'summary': summary,
-        'key_facts': key_facts,
-        'categories': categories,
-        'type': metadata.get('type', 'webpage'),
-        'has_ocr': len(analytics_data.get('ocr_texts', [])) > 0,
-        'has_audio': len(analytics_data.get('audio_transcripts', [])) > 0,
-        'has_video': len(analytics_data.get('video_transcripts', [])) > 0,
-        'word_count': len(combined_text.split()),
-        'source_metadata': metadata
+        "url": url,
+        "title": analytics_data.get("html_title") or metadata.get("title", "Unknown"),
+        "summary": summary,
+        "key_facts": key_facts,
+        "categories": categories,
+        "type": metadata.get("type", "webpage"),
+        "has_ocr": len(analytics_data.get("ocr_texts", [])) > 0,
+        "has_audio": len(analytics_data.get("audio_transcripts", [])) > 0,
+        "has_video": len(analytics_data.get("video_transcripts", [])) > 0,
+        "word_count": len(combined_text.split()),
+        "source_metadata": metadata,
     }
 
     logger.info(f"✅ Created summary for {url}")
@@ -151,9 +151,9 @@ def save_to_jsonl(summaries: list[dict], output_file: Path | None = None):
 
     output_file.parent.mkdir(parents=True, exist_ok=True)
 
-    with open(output_file, 'a', encoding='utf-8') as f:
+    with open(output_file, "a", encoding="utf-8") as f:
         for summary in summaries:
-            f.write(json.dumps(summary, ensure_ascii=False) + '\n')
+            f.write(json.dumps(summary, ensure_ascii=False) + "\n")
 
     logger.info(f"✅ Saved {len(summaries)} summaries to {output_file}")
 

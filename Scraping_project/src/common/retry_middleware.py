@@ -9,6 +9,7 @@ Implements smart retry logic:
 import logging
 import random
 import time
+from typing import Any
 
 from scrapy import Request, Spider
 from scrapy.downloadermiddlewares.retry import RetryMiddleware
@@ -27,6 +28,9 @@ class IntelligentRetryMiddleware(RetryMiddleware):
     # Permanent errors - do NOT retry
     PERMANENT_STATUS_CODES = {400, 401, 403, 404, 410}
 
+    # Mirror base-class configuration so mypy recognizes the attribute
+    EXCEPTIONS_TO_RETRY = RetryMiddleware.EXCEPTIONS_TO_RETRY
+
     def __init__(self, settings):
         """Initialize middleware.
 
@@ -36,18 +40,27 @@ class IntelligentRetryMiddleware(RetryMiddleware):
         super().__init__(settings)
 
         # Exponential backoff configuration
-        self.backoff_base = settings.getint('RETRY_BACKOFF_BASE', 2)
-        self.backoff_max = settings.getint('RETRY_BACKOFF_MAX', 300)  # 5 minutes max
+        self.backoff_base = settings.getint("RETRY_BACKOFF_BASE", 2)
+        self.backoff_max = settings.getint("RETRY_BACKOFF_MAX", 300)  # 5 minutes max
 
         # Per-domain retry tracking
         self.domain_retry_counts = {}
         self.domain_last_retry = {}
         self._rng = random.Random(42)
 
-    def _calculate_backoff_delay(self, attempt: int, base: float | None = None,
-                                 max_backoff: float | None = None, jitter: float | None = None) -> float:
+    def _calculate_backoff_delay(
+        self,
+        attempt: int,
+        base: float | None = None,
+        max_backoff: float | None = None,
+        jitter: float | None = None,
+    ) -> float:
         base = base if base is not None else getattr(self, "base_backoff", 0.5)
-        max_backoff = max_backoff if max_backoff is not None else getattr(self, "max_backoff", 60.0)
+        max_backoff = (
+            max_backoff
+            if max_backoff is not None
+            else getattr(self, "max_backoff", 60.0)
+        )
         # exponential
         delay = base * (2 ** (attempt - 1))
         # deterministic jitter without importing random here:
@@ -68,10 +81,10 @@ class IntelligentRetryMiddleware(RetryMiddleware):
             'retry', 'fail', or 'pass'
         """
         if status in self.TRANSIENT_STATUS_CODES:
-            return 'retry'
+            return "retry"
         if status in self.PERMANENT_STATUS_CODES:
-            return 'fail'
-        return 'pass'
+            return "fail"
+        return "pass"
 
     def process_response(self, request: Request, response: Response, spider: Spider):
         """Process response and determine if retry needed.
@@ -86,13 +99,12 @@ class IntelligentRetryMiddleware(RetryMiddleware):
         """
         action = self._classify_status(response.status)
 
-        if action == 'retry':
+        if action == "retry":
             return self._retry_with_backoff(request, response, spider)
 
-        if action == 'fail':
+        if action == "fail":
             logger.info(
-                f"Permanent error {response.status} for {request.url[:80]}, "
-                f"not retrying"
+                f"Permanent error {response.status} for {request.url[:80]}, not retrying"
             )
             return response
 
@@ -124,8 +136,8 @@ class IntelligentRetryMiddleware(RetryMiddleware):
     def _retry_with_backoff(
         self,
         request: Request,
-        reason: any = None,
-        spider: Spider = None,
+        reason: Any = None,
+        spider: Spider | None = None,
     ) -> Request | None:
         """Retry request with exponential backoff.
 
@@ -137,7 +149,7 @@ class IntelligentRetryMiddleware(RetryMiddleware):
         Returns:
             New Request with backoff delay or None if max retries exceeded
         """
-        retries = request.meta.get('retry_times', 0) + 1
+        retries = request.meta.get("retry_times", 0) + 1
         max_retry_times = self.max_retry_times
 
         if retries <= max_retry_times:
@@ -157,8 +169,8 @@ class IntelligentRetryMiddleware(RetryMiddleware):
 
             # Create retry request with delay
             retry_request = request.copy()
-            retry_request.meta['retry_times'] = retries
-            retry_request.meta['retry_delay'] = delay
+            retry_request.meta["retry_times"] = retries
+            retry_request.meta["retry_delay"] = delay
             retry_request.dont_filter = True
 
             # Add delay to request priority (Scrapy processes by priority)
@@ -168,12 +180,16 @@ class IntelligentRetryMiddleware(RetryMiddleware):
             # Schedule retry after delay
             if spider:
                 from twisted.internet import reactor
-                reactor.callLater(
-                    delay,
-                    spider.crawler.engine.schedule,
-                    retry_request,
-                    spider,
-                )
+
+                crawler = getattr(spider, "crawler", None)
+                engine: Any = getattr(crawler, "engine", None)
+                if engine is not None and hasattr(engine, "schedule"):
+                    reactor.callLater(  # type: ignore[attr-defined]
+                        delay,
+                        engine.schedule,
+                        retry_request,
+                        spider,
+                    )
 
             return retry_request
 
@@ -194,7 +210,7 @@ class IntelligentRetryMiddleware(RetryMiddleware):
         Returns:
             Delay in seconds
         """
-        delay = self.backoff_base ** retry_count
+        delay = self.backoff_base**retry_count
 
         # Add small random jitter to prevent thundering herd
         jitter = random.uniform(0, 0.1 * delay)
@@ -215,7 +231,7 @@ class RateLimitMiddleware:
             settings: Scrapy settings
         """
         self.domain_request_times = {}
-        self.min_delay_per_domain = settings.getfloat('MIN_DELAY_PER_DOMAIN', 0.5)
+        self.min_delay_per_domain = settings.getfloat("MIN_DELAY_PER_DOMAIN", 0.5)
 
     @classmethod
     def from_crawler(cls, crawler):
@@ -289,10 +305,10 @@ class CircuitBreakerMiddleware:
         redis_config = config.redis_config
 
         redis_manager = get_redis_manager(
-            host=redis_config.get('host', 'localhost'),
-            port=redis_config.get('port', 6379),
-            db=redis_config.get('db', 0),
-            password=redis_config.get('password'),
+            host=redis_config.get("host", "localhost"),
+            port=redis_config.get("port", 6379),
+            db=redis_config.get("db", 0),
+            password=redis_config.get("password"),
         )
 
         return cls(redis_manager)
@@ -344,7 +360,9 @@ class CircuitBreakerMiddleware:
         # Track 5xx errors
         if 500 <= response.status < 600:
             # Increment error count
-            self.domain_error_counts[domain] = self.domain_error_counts.get(domain, 0) + 1
+            self.domain_error_counts[domain] = (
+                self.domain_error_counts.get(domain, 0) + 1
+            )
 
             # Check threshold (e.g., 10 errors)
             error_threshold = 10
@@ -357,8 +375,7 @@ class CircuitBreakerMiddleware:
                 )
 
                 logger.error(
-                    f"Circuit breaker opened for {domain} "
-                    f"({self.domain_error_counts[domain]} errors)"
+                    f"Circuit breaker opened for {domain} ({self.domain_error_counts[domain]} errors)"
                 )
 
                 # Reset counter

@@ -24,8 +24,8 @@ class TestEndToEndCrawl:
 
         # Configure spider
         settings = {
-            'CLOSESPIDER_TIMEOUT': 10,  # 10 second timeout for test
-            'DEPTH_LIMIT': 2,
+            "CLOSESPIDER_TIMEOUT": 10,  # 10 second timeout for test
+            "DEPTH_LIMIT": 2,
         }
 
         # Run spider
@@ -40,7 +40,7 @@ class TestEndToEndCrawl:
         reactor.run()
 
         # Verify results in Delta Lake
-        discovered = delta_sandbox.read('stage1_discovery')
+        discovered = delta_sandbox.read("stage1_discovery")
         assert len(discovered) > 0
 
     @pytest.mark.skip(reason="Requires full Scrapy reactor setup")
@@ -59,10 +59,10 @@ class TestDeltaLakeUnderLoad:
 
         def write_batch(batch_id):
             data = [
-                {'url': f'https://example.com/page{i}', 'batch': batch_id}
+                {"url": f"https://example.com/page{i}", "batch": batch_id}
                 for i in range(10)
             ]
-            delta_sandbox.write('concurrent_test', data, mode='append')
+            delta_sandbox.write("concurrent_test", data, mode="append")
 
         # Spawn multiple threads writing concurrently
         threads = []
@@ -76,7 +76,7 @@ class TestDeltaLakeUnderLoad:
             t.join(timeout=5)
 
         # Verify all writes succeeded
-        results = delta_sandbox.read('concurrent_test')
+        results = delta_sandbox.read("concurrent_test")
         assert len(results) == 50  # 5 threads * 10 records each
 
     def test_read_while_writing(self, delta_sandbox):
@@ -85,18 +85,18 @@ class TestDeltaLakeUnderLoad:
         import time
 
         # Initial data
-        delta_sandbox.write('rw_test', [{'url': 'initial'}], mode='overwrite')
+        delta_sandbox.write("rw_test", [{"url": "initial"}], mode="overwrite")
 
         results = []
 
         def write_continuously():
             for i in range(10):
-                delta_sandbox.write('rw_test', [{'url': f'write{i}'}], mode='append')
+                delta_sandbox.write("rw_test", [{"url": f"write{i}"}], mode="append")
                 time.sleep(0.1)
 
         def read_continuously():
             for _ in range(10):
-                data = delta_sandbox.read('rw_test')
+                data = delta_sandbox.read("rw_test")
                 results.append(len(data))
                 time.sleep(0.1)
 
@@ -122,10 +122,10 @@ class TestPostgresMetrics:
     def test_write_spider_metrics(self, postgres_clean):
         """Test writing spider metrics to Postgres."""
         metrics = {
-            'spider_name': 'scout',
-            'urls_processed': 100,
-            'errors': 5,
-            'timestamp': '2024-01-01T00:00:00',
+            "spider_name": "scout",
+            "urls_processed": 100,
+            "errors": 5,
+            "timestamp": "2024-01-01T00:00:00",
         }
 
         postgres_clean.execute(
@@ -133,13 +133,15 @@ class TestPostgresMetrics:
             INSERT INTO spider_stats (spider_name, urls_processed, errors, timestamp)
             VALUES (%(spider_name)s, %(urls_processed)s, %(errors)s, %(timestamp)s)
             """,
-            metrics
+            metrics,
         )
 
         # Verify write
-        result = postgres_clean.query("SELECT * FROM spider_stats WHERE spider_name = 'scout'")
+        result = postgres_clean.query(
+            "SELECT * FROM spider_stats WHERE spider_name = 'scout'"
+        )
         assert len(result) == 1
-        assert result[0]['urls_processed'] == 100
+        assert result[0]["urls_processed"] == 100
 
 
 @pytest.mark.integration
@@ -151,28 +153,28 @@ class TestQueueFlow:
         # Write to JS queue
         js_items = [
             {
-                'url': 'https://example.com/spa',
-                'url_hash': 'abc123',
-                'depth': 1,
-                'confidence': 0.85,
-                'status': 'pending',
-                'queued_at': '2024-01-01T00:00:00',
+                "url": "https://example.com/spa",
+                "url_hash": "abc123",
+                "depth": 1,
+                "confidence": 0.85,
+                "status": "pending",
+                "queued_at": "2024-01-01T00:00:00",
             }
         ]
 
-        delta_sandbox.write('js_spider_queue', js_items, mode='overwrite')
+        delta_sandbox.write("js_spider_queue", js_items, mode="overwrite")
 
         # Read back
-        queue = delta_sandbox.read('js_spider_queue')
+        queue = delta_sandbox.read("js_spider_queue")
         assert len(queue) == 1
-        assert queue[0]['status'] == 'pending'
+        assert queue[0]["status"] == "pending"
 
     def test_offsite_links_captured(self, delta_sandbox):
         """K3: Test offsite links are saved but not followed."""
         from src.stage1.base_spider import BaseSpider
 
         spider = BaseSpider()
-        spider.allowed_domains = ['example.com']
+        spider.allowed_domains = ["example.com"]
 
         # Process would save offsite item
         # Verify in tests that Request is NOT generated for external URLs
@@ -189,18 +191,18 @@ class TestDockerComposeStack:
         import psycopg2
 
         conn = psycopg2.connect(
-            host='localhost',
+            host="localhost",
             port=5432,
-            user='postgres',
-            password='postgres',
-            database='pipeline_metrics'
+            user="postgres",
+            password="postgres",
+            database="pipeline_metrics",
         )
 
         cur = conn.cursor()
         cur.execute("SELECT current_database()")
         db_name = cur.fetchone()[0]
 
-        assert db_name == 'pipeline_metrics'
+        assert db_name == "pipeline_metrics"
 
         conn.close()
 
@@ -219,7 +221,7 @@ class TestGracefulShutdown:
         """K2: Verify CLOSESPIDER_TIMEOUT is set in settings."""
         from src import settings
 
-        assert hasattr(settings, 'CLOSESPIDER_TIMEOUT')
+        assert hasattr(settings, "CLOSESPIDER_TIMEOUT")
         assert settings.CLOSESPIDER_TIMEOUT > 0
         assert settings.CLOSESPIDER_TIMEOUT == 600  # 10 minutes default
 

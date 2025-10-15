@@ -1,5 +1,7 @@
 import pandas as pd
+
 from src.common.delta_lake import DeltaLakeManager
+
 
 def test_can_write_to_new_table_dynamically(delta_sandbox: DeltaLakeManager):
     """

@@ -9,15 +9,15 @@ K6 IMPLEMENTATION: Comprehensive fixtures for testing all pipeline components.
 """
 
 import asyncio
+import contextlib
 import os
 import shutil
 import tempfile
 from collections.abc import Generator
 from pathlib import Path
 from typing import Any
-import contextlib
-import fakeredis
 
+import fakeredis
 import pytest
 
 try:  # pragma: no cover - optional dependency guard
@@ -28,17 +28,18 @@ except ImportError:  # pragma: no cover
     except ImportError:
         redis = None
 # from playwright.async_api import async_playwright
-# from scrapy.http import HtmlResponse, Request
+from scrapy.http import HtmlResponse, Request
 from twisted.internet import reactor
 from twisted.web import server, static
 
 from src.common.config import Config
-from src.common.delta_lake import DeltaLakeManager
+from src.common.delta_lake import DeltaLakeManager, InMemoryDeltaManager
 from src.common.postgres_manager import PostgresManager
 
 # ============================================================================
 # Session-level fixtures (shared across all tests)
 # ============================================================================
+
 
 @pytest.fixture(scope="session")
 def event_loop():
@@ -56,8 +57,8 @@ def test_config() -> dict:
     """
     config = Config.get_instance()
     # Override with test-specific settings
-    config.set('delta_lake.base_path', './data/test_delta_lake')
-    config.set('postgres.database', 'pipeline_metrics_test')
+    config.set("delta_lake.base_path", "./data/test_delta_lake")
+    config.set("postgres.database", "pipeline_metrics_test")
     return config.get_raw_config()
 
 
@@ -65,8 +66,11 @@ def test_config() -> dict:
 # Delta Lake fixtures (K6)
 # ============================================================================
 
+
 @pytest.fixture(scope="function")
-def delta_sandbox(test_config) -> Generator[DeltaLakeManager, None, None]:
+def delta_sandbox(
+    test_config,
+) -> Generator[DeltaLakeManager | InMemoryDeltaManager, None, None]:
     """Create isolated Delta Lake sandbox for testing.
 
     K6: Provides clean Delta Lake storage for each test.
@@ -79,24 +83,39 @@ def delta_sandbox(test_config) -> Generator[DeltaLakeManager, None, None]:
     """
     # Use the factory to get an in-memory manager for tests
     from src.common.delta_lake import get_delta_manager
+
     yield get_delta_manager("memory")
 
 
 @pytest.fixture(scope="function")
-def delta_with_seed_urls(delta_sandbox) -> DeltaLakeManager:
+def delta_with_seed_urls(
+    delta_sandbox,
+) -> DeltaLakeManager | InMemoryDeltaManager:
     """Delta Lake sandbox pre-populated with seed URLs.
 
     K6: Useful for testing spiders that load from seed_urls table.
     """
     # Write test seed URLs
     seed_urls = [
-        {'url': 'https://example.com', 'priority': 1, 'added_at': '2024-01-01T00:00:00'},
-        {'url': 'https://example.com/page1', 'priority': 2, 'added_at': '2024-01-01T00:00:00'},
-        {'url': 'https://example.com/page2', 'priority': 1, 'added_at': '2024-01-01T00:00:00'},
+        {
+            "url": "https://example.com",
+            "priority": 1,
+            "added_at": "2024-01-01T00:00:00",
+        },
+        {
+            "url": "https://example.com/page1",
+            "priority": 2,
+            "added_at": "2024-01-01T00:00:00",
+        },
+        {
+            "url": "https://example.com/page2",
+            "priority": 1,
+            "added_at": "2024-01-01T00:00:00",
+        },
     ]
 
     # Use async_write=False since workers are disabled in tests
-    delta_sandbox.write('seed_urls', seed_urls, mode='overwrite', async_write=False)
+    delta_sandbox.write("seed_urls", seed_urls, mode="overwrite", async_write=False)
 
     return delta_sandbox
 
@@ -104,6 +123,7 @@ def delta_with_seed_urls(delta_sandbox) -> DeltaLakeManager:
 # ============================================================================
 # PostgreSQL fixtures (K6)
 # ============================================================================
+
 
 @pytest.fixture(scope="session")
 def postgres_test_db(test_config) -> Generator[PostgresManager, None, None]:
@@ -118,15 +138,15 @@ def postgres_test_db(test_config) -> Generator[PostgresManager, None, None]:
         PostgresManager connected to test database
     """
     # Connect to default postgres database to create test DB
-    pg_config = test_config['postgres']
-    test_db_name = pg_config['database']
+    pg_config = test_config["postgres"]
+    test_db_name = pg_config["database"]
 
     postgres = PostgresManager(
-        host=pg_config.get('host', 'localhost'),
-        port=pg_config.get('port', 5432),
-        database='postgres',  # Connect to default DB first
-        user=pg_config.get('user', 'postgres'),
-        password=pg_config.get('password', 'postgres')
+        host=pg_config.get("host", "localhost"),
+        port=pg_config.get("port", 5432),
+        database="postgres",  # Connect to default DB first
+        user=pg_config.get("user", "postgres"),
+        password=pg_config.get("password", "postgres"),
     )
 
     try:
@@ -137,11 +157,11 @@ def postgres_test_db(test_config) -> Generator[PostgresManager, None, None]:
 
         # Connect to test database
         test_postgres = PostgresManager(
-            host=pg_config.get('host', 'localhost'),
-            port=pg_config.get('port', 5432),
+            host=pg_config.get("host", "localhost"),
+            port=pg_config.get("port", 5432),
             database=test_db_name,
-            user=pg_config.get('user', 'postgres'),
-            password=pg_config.get('password', 'postgres')
+            user=pg_config.get("user", "postgres"),
+            password=pg_config.get("password", "postgres"),
         )
 
         # Initialize schema (create tables)
@@ -153,11 +173,11 @@ def postgres_test_db(test_config) -> Generator[PostgresManager, None, None]:
         # Cleanup: drop test database
         test_postgres.close()
         postgres = PostgresManager(
-            host=pg_config.get('host', 'localhost'),
-            port=pg_config.get('port', 5432),
-            database='postgres',
-            user=pg_config.get('user', 'postgres'),
-            password=pg_config.get('password', 'postgres')
+            host=pg_config.get("host", "localhost"),
+            port=pg_config.get("port", 5432),
+            database="postgres",
+            user=pg_config.get("user", "postgres"),
+            password=pg_config.get("password", "postgres"),
         )
         postgres.execute(f"DROP DATABASE IF EXISTS {test_db_name}")
         postgres.close()
@@ -170,7 +190,7 @@ def postgres_clean(postgres_test_db) -> PostgresManager:
     K6: Function-scoped fixture that truncates all tables before each test.
     """
     # Truncate all tables to ensure clean state
-    tables = ['metrics', 'errors', 'spider_stats']  # Add your table names
+    tables = ["metrics", "errors", "spider_stats"]  # Add your table names
     for table in tables:
         try:
             postgres_test_db.execute(f"TRUNCATE TABLE {table} CASCADE")
@@ -211,6 +231,7 @@ def postgres_clean(postgres_test_db) -> PostgresManager:
 # HTTP Server fixtures (K6)
 # ============================================================================
 
+
 @pytest.fixture(scope="session")
 def http_server() -> Generator[tuple[str, int], None, None]:
     """Tiny local HTTP server for controlled test scenarios.
@@ -240,8 +261,12 @@ def http_server() -> Generator[tuple[str, int], None, None]:
         """
 
         (Path(test_dir) / "index.html").write_text(html_content)
-        (Path(test_dir) / "page1.html").write_text("<html><body><h1>Page 1</h1></body></html>")
-        (Path(test_dir) / "page2.html").write_text("<html><body><h1>Page 2</h1></body></html>")
+        (Path(test_dir) / "page1.html").write_text(
+            "<html><body><h1>Page 1</h1></body></html>"
+        )
+        (Path(test_dir) / "page2.html").write_text(
+            "<html><body><h1>Page 2</h1></body></html>"
+        )
 
         # Create static file server
         root = static.File(test_dir)
@@ -283,8 +308,8 @@ def test_html_response() -> HtmlResponse:
     request = Request(url="https://example.com/test")
     response = HtmlResponse(
         url="https://example.com/test",
-        body=html.encode('utf-8'),
-        encoding='utf-8',
+        body=html.encode("utf-8"),
+        encoding="utf-8",
         request=request,
     )
 
@@ -294,6 +319,7 @@ def test_html_response() -> HtmlResponse:
 # ============================================================================
 # Redis/Queue fixtures (K6)
 # ============================================================================
+
 
 @pytest.fixture(autouse=True, scope="session")
 def _force_test_redis_defaults():
@@ -307,6 +333,7 @@ def _force_test_redis_defaults():
         os.environ.setdefault("REDIS_URL", "fakeredis://")
     yield
 
+
 @pytest.fixture(scope="function")
 def redis_client(monkeypatch):
     """
@@ -315,9 +342,9 @@ def redis_client(monkeypatch):
     """
     # ---- Adjust these imports to your codebase ----
     try:
-        from src.common import redis_manager
+        from src.common import redis_manager  # noqa: F401
     except Exception:
-        redis_manager = None
+        pass
 
     fake = fakeredis.FakeStrictRedis(decode_responses=True)
 
@@ -329,8 +356,9 @@ def redis_client(monkeypatch):
     # Also guard tests that import redis.StrictRedis directly
     try:
         import redis
+
         monkeypatch.setattr(redis, "StrictRedis", lambda *a, **k: fake, raising=True)
-        monkeypatch.setattr(redis, "Redis",       lambda *a, **k: fake, raising=True)
+        monkeypatch.setattr(redis, "Redis", lambda *a, **k: fake, raising=True)
     except Exception:
         pass
 
@@ -359,13 +387,13 @@ def mock_queue(redis_clean):
     """
     # Add test messages to queue
     test_items = [
-        {'url': 'https://example.com/1', 'depth': 0},
-        {'url': 'https://example.com/2', 'depth': 1},
-        {'url': 'https://example.com/3', 'depth': 1},
+        {"url": "https://example.com/1", "depth": 0},
+        {"url": "https://example.com/2", "depth": 1},
+        {"url": "https://example.com/3", "depth": 1},
     ]
 
     for item in test_items:
-        redis_clean.rpush('test_queue', str(item))
+        redis_clean.rpush("test_queue", str(item))
 
     return redis_clean
 
@@ -374,6 +402,7 @@ def mock_queue(redis_clean):
 # Spider fixtures (K6)
 # ============================================================================
 
+
 @pytest.fixture(scope="function")
 def mock_scrapy_settings() -> dict:
     """Mock Scrapy settings for spider tests.
@@ -381,14 +410,14 @@ def mock_scrapy_settings() -> dict:
     K6: Minimal settings dict for testing spiders in isolation.
     """
     return {
-        'CONCURRENT_REQUESTS': 16,
-        'DOWNLOAD_DELAY': 0,
-        'DOWNLOAD_TIMEOUT': 10,
-        'RETRY_TIMES': 0,  # Disable retries in tests
-        'CLOSESPIDER_TIMEOUT': 60,  # Short timeout for tests
-        'DEPTH_LIMIT': 3,
-        'IGNORED_EXTENSIONS': ['.jpg', '.png', '.css', '.js'],
-        'DELTA_BATCH_SIZE': 10,
+        "CONCURRENT_REQUESTS": 16,
+        "DOWNLOAD_DELAY": 0,
+        "DOWNLOAD_TIMEOUT": 10,
+        "RETRY_TIMES": 0,  # Disable retries in tests
+        "CLOSESPIDER_TIMEOUT": 60,  # Short timeout for tests
+        "DEPTH_LIMIT": 3,
+        "IGNORED_EXTENSIONS": [".jpg", ".png", ".css", ".js"],
+        "DELTA_BATCH_SIZE": 10,
     }
 
 
@@ -408,6 +437,7 @@ def mock_spider_crawler(mock_scrapy_settings):
 # ============================================================================
 # Performance testing fixtures (K6)
 # ============================================================================
+
 
 @pytest.fixture(scope="function")
 def performance_timer():
@@ -435,16 +465,19 @@ def performance_timer():
         def __exit__(self, *args):
             self.elapsed = time.time() - self.start
 
-    return Timer
+    return Timer()
 
 
 # ============================================================================
 # Markers and parametrization helpers
 # ============================================================================
 
+
 def pytest_configure(config):
     """Register custom markers."""
-    config.addinivalue_line("markers", "slow: marks tests as slow (deselect with '-m \"not slow\"')")
+    config.addinivalue_line(
+        "markers", "slow: marks tests as slow (deselect with '-m \"not slow\"')"
+    )
     config.addinivalue_line("markers", "integration: marks tests as integration tests")
     config.addinivalue_line("markers", "unit: marks tests as unit tests")
     config.addinivalue_line("markers", "component: marks tests as component tests")
@@ -455,6 +488,7 @@ def pytest_configure(config):
 # ============================================================================
 # Singleton Reset Fixture
 # ============================================================================
+
 
 @pytest.fixture(autouse=True)
 def reset_singletons():

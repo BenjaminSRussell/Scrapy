@@ -18,28 +18,27 @@ class TestRedisIntegration:
     def test_queue_operations_end_to_end(self, redis_clean):
         """Test complete queue workflow."""
         manager = RedisManager(
-            host='127.0.0.1',
+            host="127.0.0.1",
             port=6379,
-            db=redis_clean.connection_pool.connection_kwargs['db']
+            db=redis_clean.connection_pool.connection_kwargs["db"],
         )
 
         # Create a pipeline of items
         test_items = [
-            {'url': f'https://example.com/{i}', 'priority': i}
-            for i in range(10)
+            {"url": f"https://example.com/{i}", "priority": i} for i in range(10)
         ]
 
         # Push all items
         for item in test_items:
-            manager.push_to_queue('test_pipeline', item)
+            manager.push_to_queue("test_pipeline", item)
 
         # Verify queue length
-        assert manager.get_queue_length('test_pipeline') == 10
+        assert manager.get_queue_length("test_pipeline") == 10
 
         # Pop and process items
         processed = []
-        while manager.get_queue_length('test_pipeline') > 0:
-            item = manager.pop_from_queue('test_pipeline')
+        while manager.get_queue_length("test_pipeline") > 0:
+            item = manager.pop_from_queue("test_pipeline")
             if item:
                 processed.append(item)
 
@@ -50,37 +49,37 @@ class TestRedisIntegration:
     def test_cache_expiration_timing(self, redis_clean):
         """Test cache TTL expiration with real timing."""
         manager = RedisManager(
-            host='127.0.0.1',
+            host="127.0.0.1",
             port=6379,
-            db=redis_clean.connection_pool.connection_kwargs['db']
+            db=redis_clean.connection_pool.connection_kwargs["db"],
         )
 
         # Set cache with 2 second TTL
-        manager.set_cache('expiring_key', {'data': 'value'}, ttl=2)
+        manager.set_cache("expiring_key", {"data": "value"}, ttl=2)
 
         # Should exist immediately
-        assert manager.cache_exists('expiring_key')
-        assert manager.get_cache('expiring_key') == {'data': 'value'}
+        assert manager.cache_exists("expiring_key")
+        assert manager.get_cache("expiring_key") == {"data": "value"}
 
         # Should still exist after 1 second
         time.sleep(1)
-        assert manager.cache_exists('expiring_key')
+        assert manager.cache_exists("expiring_key")
 
         # Should be expired after 3 seconds total
         time.sleep(2)
-        assert not manager.cache_exists('expiring_key')
-        assert manager.get_cache('expiring_key') is None
+        assert not manager.cache_exists("expiring_key")
+        assert manager.get_cache("expiring_key") is None
 
     @pytest.mark.slow
     def test_rate_limiting_enforcement(self, redis_clean):
         """Test rate limiting prevents excess requests."""
         manager = RedisManager(
-            host='127.0.0.1',
+            host="127.0.0.1",
             port=6379,
-            db=redis_clean.connection_pool.connection_kwargs['db']
+            db=redis_clean.connection_pool.connection_kwargs["db"],
         )
 
-        domain = 'example.com'
+        domain = "example.com"
         limit = 5
         window = 2  # 2 second window
 
@@ -88,7 +87,7 @@ class TestRedisIntegration:
         allowed_count = 0
         blocked_count = 0
 
-        for i in range(10):
+        for _ in range(10):
             if manager.check_rate_limit(domain, limit, window):
                 allowed_count += 1
             else:
@@ -109,9 +108,9 @@ class TestRedisIntegration:
         import threading
 
         manager = RedisManager(
-            host='127.0.0.1',
+            host="127.0.0.1",
             port=6379,
-            db=redis_clean.connection_pool.connection_kwargs['db']
+            db=redis_clean.connection_pool.connection_kwargs["db"],
         )
 
         results = []
@@ -120,13 +119,16 @@ class TestRedisIntegration:
         def producer(n):
             """Producer thread."""
             for i in range(n):
-                manager.push_to_queue('concurrent_queue', {'id': i, 'thread': threading.current_thread().name})
+                manager.push_to_queue(
+                    "concurrent_queue",
+                    {"id": i, "thread": threading.current_thread().name},
+                )
 
         def consumer(n):
             """Consumer thread."""
             consumed = []
             for _ in range(n):
-                item = manager.pop_from_queue('concurrent_queue')
+                item = manager.pop_from_queue("concurrent_queue")
                 if item:
                     consumed.append(item)
             with lock:
@@ -150,82 +152,82 @@ class TestRedisIntegration:
     def test_large_data_serialization(self, redis_clean):
         """Test handling of large data structures."""
         manager = RedisManager(
-            host='127.0.0.1',
+            host="127.0.0.1",
             port=6379,
-            db=redis_clean.connection_pool.connection_kwargs['db']
+            db=redis_clean.connection_pool.connection_kwargs["db"],
         )
 
         # Create large nested structure
         large_data = {
-            'urls': [f'https://example.com/page{i}' for i in range(1000)],
-            'metadata': {
-                'timestamp': '2024-01-01T00:00:00',
-                'nested': {
-                    'data': [{'id': i, 'value': f'item_{i}'} for i in range(100)]
-                }
-            }
+            "urls": [f"https://example.com/page{i}" for i in range(1000)],
+            "metadata": {
+                "timestamp": "2024-01-01T00:00:00",
+                "nested": {
+                    "data": [{"id": i, "value": f"item_{i}"} for i in range(100)]
+                },
+            },
         }
 
         # Store and retrieve
-        manager.set_cache('large_data', large_data)
-        retrieved = manager.get_cache('large_data')
+        manager.set_cache("large_data", large_data)
+        retrieved = manager.get_cache("large_data")
 
         # Verify integrity
         assert retrieved == large_data
-        assert len(retrieved['urls']) == 1000
-        assert len(retrieved['metadata']['nested']['data']) == 100
+        assert len(retrieved["urls"]) == 1000
+        assert len(retrieved["metadata"]["nested"]["data"]) == 100
 
     def test_connection_pool_reuse(self, redis_clean):
         """Test connection pooling across multiple instances."""
         # Create multiple managers
         managers = [
             RedisManager(
-                host='127.0.0.1',
+                host="127.0.0.1",
                 port=6379,
-                db=redis_clean.connection_pool.connection_kwargs['db']
+                db=redis_clean.connection_pool.connection_kwargs["db"],
             )
             for _ in range(5)
         ]
 
         # All should work independently
         for i, manager in enumerate(managers):
-            manager.set_cache(f'key_{i}', f'value_{i}')
+            manager.set_cache(f"key_{i}", f"value_{i}")
 
         # Verify all values
         for i, manager in enumerate(managers):
-            assert manager.get_cache(f'key_{i}') == f'value_{i}'
+            assert manager.get_cache(f"key_{i}") == f"value_{i}"
 
     def test_pipeline_with_error_recovery(self, redis_clean):
         """Test error recovery in pipeline operations."""
         manager = RedisManager(
-            host='127.0.0.1',
+            host="127.0.0.1",
             port=6379,
-            db=redis_clean.connection_pool.connection_kwargs['db']
+            db=redis_clean.connection_pool.connection_kwargs["db"],
         )
 
         # Push valid and invalid data
-        valid_items = [{'url': f'https://example.com/{i}'} for i in range(5)]
+        valid_items = [{"url": f"https://example.com/{i}"} for i in range(5)]
         for item in valid_items:
-            manager.push_to_queue('error_queue', item)
+            manager.push_to_queue("error_queue", item)
 
         # Simulate processing with some failures
         processed = []
         failed = []
 
-        while manager.get_queue_length('error_queue') > 0:
-            item = manager.pop_from_queue('error_queue')
+        while manager.get_queue_length("error_queue") > 0:
+            item = manager.pop_from_queue("error_queue")
             if item:
                 try:
                     # Simulate processing
-                    if int(item['url'][-1]) % 2 == 0:
+                    if int(item["url"][-1]) % 2 == 0:
                         processed.append(item)
                     else:
                         # Put back in queue for retry
-                        manager.push_to_queue('error_queue_retry', item)
+                        manager.push_to_queue("error_queue_retry", item)
                         failed.append(item)
                 except Exception:
                     failed.append(item)
 
         # Verify processing results
         assert len(processed) > 0
-        assert manager.get_queue_length('error_queue_retry') == len(failed)
+        assert manager.get_queue_length("error_queue_retry") == len(failed)

@@ -8,10 +8,16 @@ import logging
 import os
 import re
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from confluent_kafka import Producer as KafkaProducer
+else:  # pragma: no cover - typing only
+    KafkaProducer = Any
 
 try:
     from confluent_kafka import Producer
+
     KAFKA_AVAILABLE = True
 except ImportError:
     KAFKA_AVAILABLE = False
@@ -41,18 +47,18 @@ class DataValidationPipeline:
     - Required fields are configurable via settings
     """
 
-    def __init__(self, required_fields: list = None):
+    def __init__(self, required_fields: list[str] | None = None):
         """Initialize the validation pipeline.
 
         Args:
             required_fields: List of field names that must be present in every item
         """
-        self.required_fields = required_fields or ['url']
+        self.required_fields = required_fields or ["url"]
         self.items_validated = 0
         self.items_dropped = 0
 
     @classmethod
-    def from_crawler(cls, crawler: Crawler) -> 'DataValidationPipeline':
+    def from_crawler(cls, crawler: Crawler) -> "DataValidationPipeline":
         """Factory method to create pipeline instance from crawler settings.
 
         Args:
@@ -61,7 +67,9 @@ class DataValidationPipeline:
         Returns:
             Configured DataValidationPipeline instance
         """
-        required_fields = crawler.settings.getlist('VALIDATION_REQUIRED_FIELDS', ['url'])
+        required_fields = crawler.settings.getlist(
+            "VALIDATION_REQUIRED_FIELDS", ["url"]
+        )
         return cls(required_fields=required_fields)
 
     def process_item(self, item: Any, spider: Spider) -> Any:
@@ -82,15 +90,14 @@ class DataValidationPipeline:
         # Conditional validation: OffsiteCandidateItem uses 'external_url' instead of 'url'
         required_fields = self.required_fields
         if isinstance(item, OffsiteCandidateItem):
-            required_fields = ['external_url']
+            required_fields = ["external_url"]
 
         # Check required fields
         for field in required_fields:
             if field not in adapter:
                 self.items_dropped += 1
                 raise DropItem(
-                    f"Missing required field '{field}' in item from spider '{spider.name}'. "
-                    f"Item: {dict(adapter)}"
+                    f"Missing required field '{field}' in item from spider '{spider.name}'. Item: {dict(adapter)}"
                 )
 
             value = adapter.get(field)
@@ -107,8 +114,7 @@ class DataValidationPipeline:
             if value is None:
                 self.items_dropped += 1
                 raise DropItem(
-                    f"Required field '{field}' is None in item from spider '{spider.name}'. "
-                    f"Item: {dict(adapter)}"
+                    f"Required field '{field}' is None in item from spider '{spider.name}'. Item: {dict(adapter)}"
                 )
 
         self.items_validated += 1
@@ -116,8 +122,7 @@ class DataValidationPipeline:
         # Log validation stats every 1000 items
         if self.items_validated % 1000 == 0:
             logger.info(
-                f"Validation stats - Validated: {self.items_validated}, "
-                f"Dropped: {self.items_dropped}"
+                f"Validation stats - Validated: {self.items_validated}, Dropped: {self.items_dropped}"
             )
 
         return item
@@ -134,7 +139,7 @@ class DataCleansingPipeline:
     """
 
     # Pattern for extracting numeric values from currency strings
-    CURRENCY_PATTERN = re.compile(r'[\$£€¥]?\s*([0-9,]+\.?[0-9]*)')
+    CURRENCY_PATTERN = re.compile(r"[\$£€¥]?\s*([0-9,]+\.?[0-9]*)")
 
     def __init__(self):
         """Initialize the cleansing pipeline."""
@@ -163,22 +168,22 @@ class DataCleansingPipeline:
             # Strip whitespace from strings
             if isinstance(value, str):
                 cleaned = value.strip()
+                normalized_value: str | float = cleaned
 
                 # Normalize common fields
-                if field_name in ('category', 'type', 'status'):
-                    cleaned = cleaned.lower()
+                if field_name in ("category", "type", "status"):
+                    normalized_value = cleaned.lower()
 
                 # Convert currency strings to float
-                if field_name in ('price', 'cost', 'amount'):
-                    cleaned = self._parse_currency(cleaned)
+                if field_name in ("price", "cost", "amount"):
+                    normalized_value = self._parse_currency(cleaned)
 
-                adapter[field_name] = cleaned
+                adapter[field_name] = normalized_value
 
             # Normalize lists (strip strings in lists)
             elif isinstance(value, list):
                 adapter[field_name] = [
-                    item.strip() if isinstance(item, str) else item
-                    for item in value
+                    item.strip() if isinstance(item, str) else item for item in value
                 ]
 
         self.items_cleansed += 1
@@ -188,7 +193,7 @@ class DataCleansingPipeline:
 
         return item
 
-    def _parse_currency(self, value: str) -> float:
+    def _parse_currency(self, value: str) -> float | str:
         """Parse currency string to float.
 
         Args:
@@ -201,7 +206,7 @@ class DataCleansingPipeline:
         if match:
             try:
                 # Remove commas and convert to float
-                return float(match.group(1).replace(',', ''))
+                return float(match.group(1).replace(",", ""))
             except ValueError:
                 logger.warning(f"Failed to parse currency value: {value}")
                 return value
@@ -236,9 +241,9 @@ class MetadataPipeline:
         adapter = ItemAdapter(item)
 
         # Add metadata fields
-        adapter['scraped_at_utc'] = datetime.utcnow().isoformat() + 'Z'
-        adapter['spider_name'] = spider.name
-        adapter['pipeline_version'] = self.PIPELINE_VERSION
+        adapter["scraped_at_utc"] = datetime.utcnow().isoformat() + "Z"
+        adapter["spider_name"] = spider.name
+        adapter["pipeline_version"] = self.PIPELINE_VERSION
 
         self.items_enriched += 1
 
@@ -280,7 +285,7 @@ class KafkaPipeline:
         self,
         bootstrap_servers: str,
         topic: str,
-        producer_config: dict[str, Any] = None,
+        producer_config: dict[str, Any] | None = None,
     ):
         """Initialize the Kafka pipeline.
 
@@ -292,12 +297,12 @@ class KafkaPipeline:
         self.bootstrap_servers = bootstrap_servers
         self.topic = topic
         self.producer_config = producer_config or {}
-        self.producer = None
+        self.producer: KafkaProducer | None = None
         self.messages_sent = 0
         self.messages_failed = 0
 
     @classmethod
-    def from_crawler(cls, crawler: Crawler) -> 'KafkaPipeline':
+    def from_crawler(cls, crawler: Crawler) -> "KafkaPipeline":
         """Factory method to create pipeline instance from crawler settings.
 
         This is the standard Scrapy pattern for accessing settings and signals.
@@ -314,19 +319,19 @@ class KafkaPipeline:
         # Check if Kafka is available
         if not KAFKA_AVAILABLE:
             logger.warning("Kafka pipeline disabled - confluent_kafka not installed")
-            raise NotConfigured('confluent_kafka library not available')
+            raise NotConfigured("confluent_kafka library not available")
 
         # Load required settings
-        bootstrap_servers = crawler.settings.get('KAFKA_BOOTSTRAP_SERVERS')
+        bootstrap_servers = crawler.settings.get("KAFKA_BOOTSTRAP_SERVERS")
         if not bootstrap_servers:
-            raise NotConfigured('KAFKA_BOOTSTRAP_SERVERS setting is required')
+            raise NotConfigured("KAFKA_BOOTSTRAP_SERVERS setting is required")
 
-        topic = crawler.settings.get('KAFKA_TOPIC')
+        topic = crawler.settings.get("KAFKA_TOPIC")
         if not topic:
-            raise NotConfigured('KAFKA_TOPIC setting is required')
+            raise NotConfigured("KAFKA_TOPIC setting is required")
 
         # Load optional producer config
-        producer_config = crawler.settings.get('KAFKA_PRODUCER_CONFIG', {})
+        producer_config = crawler.settings.get("KAFKA_PRODUCER_CONFIG", {})
 
         # Create pipeline instance
         pipeline = cls(
@@ -354,32 +359,32 @@ class KafkaPipeline:
 
         # Build producer configuration
         config = {
-            'bootstrap.servers': self.bootstrap_servers,
+            "bootstrap.servers": self.bootstrap_servers,
             # Optimize for throughput and reliability
-            'linger.ms': 10,  # Small batching delay for better throughput
-            'batch.size': 16384,  # 16KB batch size
-            'compression.type': 'snappy',  # Fast compression
-            'acks': 1,  # Wait for leader acknowledgment
-            'retries': 3,  # Retry failed sends
-            'max.in.flight.requests.per.connection': 5,
+            "linger.ms": 10,  # Small batching delay for better throughput
+            "batch.size": 16384,  # 16KB batch size
+            "compression.type": "snappy",  # Fast compression
+            "acks": 1,  # Wait for leader acknowledgment
+            "retries": 3,  # Retry failed sends
+            "max.in.flight.requests.per.connection": 5,
         }
 
         # Load security settings from environment variables (never hardcode credentials!)
-        security_protocol = os.getenv('KAFKA_SECURITY_PROTOCOL')
+        security_protocol = os.getenv("KAFKA_SECURITY_PROTOCOL")
         if security_protocol:
-            config['security.protocol'] = security_protocol
+            config["security.protocol"] = security_protocol
 
-        sasl_mechanism = os.getenv('KAFKA_SASL_MECHANISM')
+        sasl_mechanism = os.getenv("KAFKA_SASL_MECHANISM")
         if sasl_mechanism:
-            config['sasl.mechanism'] = sasl_mechanism
+            config["sasl.mechanism"] = sasl_mechanism
 
-        sasl_username = os.getenv('KAFKA_SASL_USERNAME')
+        sasl_username = os.getenv("KAFKA_SASL_USERNAME")
         if sasl_username:
-            config['sasl.username'] = sasl_username
+            config["sasl.username"] = sasl_username
 
-        sasl_password = os.getenv('KAFKA_SASL_PASSWORD')
+        sasl_password = os.getenv("KAFKA_SASL_PASSWORD")
         if sasl_password:
-            config['sasl.password'] = sasl_password
+            config["sasl.password"] = sasl_password
 
         # Merge with any additional config from settings
         config.update(self.producer_config)
@@ -408,11 +413,12 @@ class KafkaPipeline:
                 # Block until all messages are delivered or timeout (30 seconds)
                 remaining = self.producer.flush(timeout=30.0)
                 if remaining > 0:
-                    logger.warning(f"{remaining} messages were not delivered before timeout")
+                    logger.warning(
+                        f"{remaining} messages were not delivered before timeout"
+                    )
 
                 logger.info(
-                    f"Kafka pipeline stats - Sent: {self.messages_sent}, "
-                    f"Failed: {self.messages_failed}"
+                    f"Kafka pipeline stats - Sent: {self.messages_sent}, Failed: {self.messages_failed}"
                 )
             except Exception as e:
                 logger.error(f"Error flushing Kafka producer: {e}")
@@ -434,8 +440,7 @@ class KafkaPipeline:
             self.messages_sent += 1
             if self.messages_sent % 1000 == 0:  # Log every 1000 messages
                 logger.info(
-                    f"Message delivered to {msg.topic()} [{msg.partition()}] "
-                    f"at offset {msg.offset()}"
+                    f"Message delivered to {msg.topic()} [{msg.partition()}] at offset {msg.offset()}"
                 )
 
     def process_item(self, item: Any, spider: Spider) -> Any:
@@ -463,9 +468,12 @@ class KafkaPipeline:
 
             # Publish to Kafka asynchronously
             # The delivery_report callback will be invoked when delivery completes
+            if self.producer is None:
+                raise RuntimeError("Kafka producer is not initialized")
+
             self.producer.produce(
                 topic=self.topic,
-                value=message_value.encode('utf-8'),
+                value=message_value.encode("utf-8"),
                 callback=self.delivery_report,
             )
 
@@ -499,13 +507,14 @@ class QueueItemPipeline:
     def __init__(self):
         """Initialize the queue item pipeline."""
         from src.common.delta_lake import get_delta_manager
+
         self.delta = get_delta_manager()
         self.js_queue_batch = []
         self.stage2_queue_batch = []
         self.items_processed = 0
 
     @classmethod
-    def from_crawler(cls, crawler: Crawler) -> 'QueueItemPipeline':
+    def from_crawler(cls, crawler: Crawler) -> "QueueItemPipeline":
         """Factory method to create pipeline instance from crawler.
 
         Args:
@@ -536,11 +545,11 @@ class QueueItemPipeline:
             return item
 
         # Check if item has routing metadata
-        target_spider = item.get('target_spider')
-        target_stage = item.get('target_stage')
+        target_spider = item.get("target_spider")
+        target_stage = item.get("target_stage")
 
         # Route to appropriate queue
-        if target_spider == 'javascript':
+        if target_spider == "javascript":
             self.js_queue_batch.append(item)
             self.items_processed += 1
 
@@ -548,7 +557,7 @@ class QueueItemPipeline:
             if len(self.js_queue_batch) >= self.BATCH_SIZE:
                 self._save_js_queue_batch()
 
-        elif target_stage == 'stage2':
+        elif target_stage == "stage2":
             self.stage2_queue_batch.append(item)
             self.items_processed += 1
 
@@ -573,7 +582,7 @@ class QueueItemPipeline:
         batch_size = len(self.js_queue_batch)
 
         try:
-            self.delta.write('js_spider_queue', self.js_queue_batch, mode='append')
+            self.delta.write("js_spider_queue", self.js_queue_batch, mode="append")
             logger.info(f"✅ Saved {batch_size} items to js_spider_queue")
             self.js_queue_batch = []
         except Exception as e:
@@ -587,7 +596,7 @@ class QueueItemPipeline:
         batch_size = len(self.stage2_queue_batch)
 
         try:
-            self.delta.write('stage2_queue', self.stage2_queue_batch, mode='append')
+            self.delta.write("stage2_queue", self.stage2_queue_batch, mode="append")
             logger.info(f"✅ Saved {batch_size} items to stage2_queue")
             self.stage2_queue_batch = []
         except Exception as e:
@@ -608,9 +617,7 @@ class QueueItemPipeline:
         if self.stage2_queue_batch:
             self._save_stage2_queue_batch()
 
-        logger.info(
-            f"[QUEUE] Pipeline stats - Total processed: {self.items_processed}"
-        )
+        logger.info(f"[QUEUE] Pipeline stats - Total processed: {self.items_processed}")
 
 
 class OffsiteCandidatePipeline:
@@ -632,12 +639,13 @@ class OffsiteCandidatePipeline:
     def __init__(self):
         """Initialize the offsite candidate pipeline."""
         from src.common.delta_lake import get_delta_manager
+
         self.delta = get_delta_manager()
         self.batch = []
         self.items_processed = 0
 
     @classmethod
-    def from_crawler(cls, crawler: Crawler) -> 'OffsiteCandidatePipeline':
+    def from_crawler(cls, crawler: Crawler) -> "OffsiteCandidatePipeline":
         """Factory method to create pipeline instance from crawler.
 
         Args:
@@ -693,14 +701,15 @@ class OffsiteCandidatePipeline:
         batch_size = len(self.batch)
 
         try:
-            self.delta.write('stage1_offsite_candidates', self.batch, mode='append')
+            self.delta.write("stage1_offsite_candidates", self.batch, mode="append")
             logger.info(f"✅ Saved {batch_size} offsite candidates to Delta Lake")
 
             # Increment Prometheus metric
             try:
                 from src.scrapy_prometheus import OFFSITE_CANDIDATES_SAVED
+
                 if OFFSITE_CANDIDATES_SAVED:
-                    OFFSITE_CANDIDATES_SAVED.labels(spider='scout').inc(batch_size)
+                    OFFSITE_CANDIDATES_SAVED.labels(spider="scout").inc(batch_size)
             except ImportError:
                 pass
 
@@ -747,10 +756,11 @@ class GrafanaSummaryPipeline:
         self.items_processed = 0
         self.sampled_content = []
         import random
+
         self.random = random
 
     @classmethod
-    def from_crawler(cls, crawler: Crawler) -> 'GrafanaSummaryPipeline':
+    def from_crawler(cls, crawler: Crawler) -> "GrafanaSummaryPipeline":
         """Factory method to create pipeline instance from crawler.
 
         Args:
@@ -788,7 +798,7 @@ class GrafanaSummaryPipeline:
 
             if text_content:
                 # Truncate content to MAX_CONTENT_LENGTH
-                truncated_content = text_content[:self.MAX_CONTENT_LENGTH]
+                truncated_content = text_content[: self.MAX_CONTENT_LENGTH]
                 if len(text_content) > self.MAX_CONTENT_LENGTH:
                     truncated_content += "..."
 
@@ -811,7 +821,7 @@ class GrafanaSummaryPipeline:
             Extracted text content or empty string
         """
         # Try common text field names
-        text_fields = ['text', 'content', 'body', 'description', 'summary', 'title']
+        text_fields = ["text", "content", "body", "description", "summary", "title"]
 
         for field in text_fields:
             if field in adapter and adapter.get(field):
@@ -820,7 +830,7 @@ class GrafanaSummaryPipeline:
                     return value.strip()
 
         # If no text field found, try to get URL as fallback
-        if 'url' in adapter:
+        if "url" in adapter:
             return f"URL: {adapter.get('url')}"
 
         return ""
@@ -845,12 +855,15 @@ class GrafanaSummaryPipeline:
         # Export to Prometheus
         try:
             from src.scrapy_prometheus import CRAWLER_CONTENT_SUMMARY
+
             if CRAWLER_CONTENT_SUMMARY:
                 # Note: Prometheus Gauge doesn't accept string values directly
                 # Instead, we'll set a numeric value and log the summary
                 # For actual text display in Grafana, you'd typically use an Info metric
                 # or store the summary in a separate system
-                CRAWLER_CONTENT_SUMMARY.labels(spider=spider.name).set(len(self.sampled_content))
+                CRAWLER_CONTENT_SUMMARY.labels(spider=spider.name).set(
+                    len(self.sampled_content)
+                )
                 logger.info(
                     f"📊 Content Summary ({len(self.sampled_content)} samples): {summary[:200]}..."
                 )

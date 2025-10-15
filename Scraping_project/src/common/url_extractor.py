@@ -7,6 +7,7 @@ links from HTML pages, scripts, sitemaps, and other sources.
 import base64
 import logging
 import re
+from re import Pattern
 from urllib.parse import unquote, urljoin, urlparse
 
 from scrapy.http import Response
@@ -22,13 +23,13 @@ class URLExtractor:
 
     # Comprehensive URL pattern with template literal exclusions
     URL_REGEX = re.compile(
-        r'(?<![{\[<$%#])(?:(?:https?|ftp):)?//[\w\-\.]+(?::\d+)?(?:/[\w\-\./?%&=]*)?'
-        r'|(?<![{\[<$%#])(?:www\.)?[\w\-]+\.(?:edu|com|org|net|gov|io|co)(?:/[\w\-\./?%&=]*)?',
-        re.IGNORECASE
+        r"(?<![{\[<$%#])(?:(?:https?|ftp):)?//[\w\-\.]+(?::\d+)?(?:/[\w\-\./?%&=]*)?"
+        r"|(?<![{\[<$%#])(?:www\.)?[\w\-]+\.(?:edu|com|org|net|gov|io|co)(?:/[\w\-\./?%&=]*)?",
+        re.IGNORECASE,
     )
 
     # Patterns for encoded/obfuscated content
-    ENCODED_URL_PATTERNS = [
+    ENCODED_URL_PATTERNS: list[Pattern[str]] = [
         re.compile(r'atob\(["\']([^"\']+)["\']\)'),
         re.compile(r'decodeURIComponent\(["\']([^"\']+)["\']\)'),
         re.compile(r'unescape\(["\']([^"\']+)["\']\)'),
@@ -111,54 +112,54 @@ class URLExtractor:
     def _extract_from_standard_tags(self, response: Response):
         """Extract URLs from standard HTML tags (a, img, link, etc.)."""
         # Extract from <a> tags
-        for href in response.css('a::attr(href)').getall():
+        for href in response.css("a::attr(href)").getall():
             self._add_url(href)
 
         # Extract from <img> tags
-        for src in response.css('img::attr(src)').getall():
+        for src in response.css("img::attr(src)").getall():
             self._add_url(src)
 
         # Extract from <link> tags (stylesheets, icons, etc.)
-        for href in response.css('link::attr(href)').getall():
+        for href in response.css("link::attr(href)").getall():
             self._add_url(href)
 
         # Extract from <iframe> tags
-        for src in response.css('iframe::attr(src)').getall():
+        for src in response.css("iframe::attr(src)").getall():
             self._add_url(src)
 
         # Extract from <form> action attributes
-        for action in response.css('form::attr(action)').getall():
+        for action in response.css("form::attr(action)").getall():
             self._add_url(action)
 
         # Extract from <embed> and <object> tags
-        for src in response.css('embed::attr(src), object::attr(data)').getall():
+        for src in response.css("embed::attr(src), object::attr(data)").getall():
             self._add_url(src)
 
         # Extract from <source> tags (video/audio)
-        for src in response.css('source::attr(src)').getall():
+        for src in response.css("source::attr(src)").getall():
             self._add_url(src)
 
         # Extract from <video> and <audio> tags
-        for src in response.css('video::attr(src), audio::attr(src)').getall():
+        for src in response.css("video::attr(src), audio::attr(src)").getall():
             self._add_url(src)
 
     def _extract_from_inline_scripts(self, response: Response):
         """Extract URLs from inline JavaScript code."""
-        for script in response.css('script::text').getall():
+        for script in response.css("script::text").getall():
             # Look for URLs in string literals
             for match in self.URL_REGEX.finditer(script):
                 self._add_url(match.group())
 
             # Look for JS variable patterns
-            for pattern in self.JS_VAR_PATTERNS:
-                for match in re.finditer(pattern, script):
+            for pattern_str in self.JS_VAR_PATTERNS:
+                for match in re.finditer(pattern_str, script):
                     # Extract URL from the match (last group is usually the URL)
                     url = match.groups()[-1]
                     self._add_url(url)
 
             # Look for encoded URLs
-            for pattern in self.ENCODED_URL_PATTERNS:
-                for match in pattern.finditer(script):
+            for encoded_pattern in self.ENCODED_URL_PATTERNS:
+                for match in encoded_pattern.finditer(script):
                     encoded = match.group(1)
                     try:
                         decoded = self._decode_url(encoded)
@@ -169,13 +170,13 @@ class URLExtractor:
 
     def _extract_from_script_tags(self, response: Response):
         """Extract URLs from external script references."""
-        for src in response.css('script::attr(src)').getall():
+        for src in response.css("script::attr(src)").getall():
             self._add_url(src)
 
     def _extract_from_css(self, response: Response):
         """Extract URLs from CSS (background-image, @import, etc.)."""
         # Extract from <style> tags
-        for style in response.css('style::text').getall():
+        for style in response.css("style::text").getall():
             # Look for url() references
             url_pattern = re.compile(r'url\(["\']?([^"\']+)["\']?\)', re.IGNORECASE)
             for match in url_pattern.finditer(style):
@@ -187,7 +188,7 @@ class URLExtractor:
                 self._add_url(match.group(1))
 
         # Extract from inline style attributes
-        for style in response.css('[style]::attr(style)').getall():
+        for style in response.css("[style]::attr(style)").getall():
             url_pattern = re.compile(r'url\(["\']?([^"\']+)["\']?\)', re.IGNORECASE)
             for match in url_pattern.finditer(style):
                 self._add_url(match.group(1))
@@ -196,13 +197,20 @@ class URLExtractor:
         """Extract URLs from data-* attributes."""
         # Common data attributes that contain URLs
         data_attrs = [
-            'data-src', 'data-href', 'data-url', 'data-link',
-            'data-image', 'data-background', 'data-lazy-src',
-            'data-original', 'data-lazy', 'data-bg'
+            "data-src",
+            "data-href",
+            "data-url",
+            "data-link",
+            "data-image",
+            "data-background",
+            "data-lazy-src",
+            "data-original",
+            "data-lazy",
+            "data-bg",
         ]
 
         for attr in data_attrs:
-            for url in response.css(f'[{attr}]::attr({attr})').getall():
+            for url in response.css(f"[{attr}]::attr({attr})").getall():
                 self._add_url(url)
 
     def _extract_from_meta_tags(self, response: Response):
@@ -242,7 +250,9 @@ class URLExtractor:
         """Recursively extract URLs from JSON data."""
         if isinstance(data, dict):
             for _key, value in data.items():
-                if isinstance(value, str) and ('http://' in value or 'https://' in value or value.startswith('/')):
+                if isinstance(value, str) and (
+                    "http://" in value or "https://" in value or value.startswith("/")
+                ):
                     self._add_url(value)
                 else:
                     self._extract_urls_from_json(value)
@@ -252,7 +262,7 @@ class URLExtractor:
 
     def _extract_from_comments(self, response: Response):
         """Extract URLs from HTML comments."""
-        comment_pattern = re.compile(r'<!--(.*?)-->', re.DOTALL)
+        comment_pattern = re.compile(r"<!--(.*?)-->", re.DOTALL)
         for match in comment_pattern.finditer(response.text):
             comment = match.group(1)
             for url_match in self.URL_REGEX.finditer(comment):
@@ -260,10 +270,10 @@ class URLExtractor:
 
     def _extract_from_event_handlers(self, response: Response):
         """Extract URLs from onclick and other event handlers."""
-        event_attrs = ['onclick', 'onload', 'onerror', 'onmouseover', 'onfocus']
+        event_attrs = ["onclick", "onload", "onerror", "onmouseover", "onfocus"]
 
         for attr in event_attrs:
-            for handler in response.css(f'[{attr}]::attr({attr})').getall():
+            for handler in response.css(f"[{attr}]::attr({attr})").getall():
                 # Look for URLs in event handler code
                 for match in self.URL_REGEX.finditer(handler):
                     self._add_url(match.group())
@@ -279,11 +289,18 @@ class URLExtractor:
     def _is_likely_template(self, url: str) -> bool:
         """Check if URL is likely a template placeholder."""
         template_indicators = [
-            '{', '}', '{{', '}}',
-            '${', '}',
-            '<%', '%>',
-            '[%', '%]',
-            '__', '##',
+            "{",
+            "}",
+            "{{",
+            "}}",
+            "${",
+            "}",
+            "<%",
+            "%>",
+            "[%",
+            "%]",
+            "__",
+            "##",
         ]
         return any(indicator in url for indicator in template_indicators)
 
@@ -291,8 +308,8 @@ class URLExtractor:
         """Attempt to decode an encoded URL."""
         try:
             # Try base64 decode
-            decoded = base64.b64decode(encoded).decode('utf-8')
-            if 'http' in decoded or decoded.startswith('/'):
+            decoded = base64.b64decode(encoded).decode("utf-8")
+            if "http" in decoded or decoded.startswith("/"):
                 return decoded
         except Exception:
             pass
@@ -300,7 +317,7 @@ class URLExtractor:
         try:
             # Try URL decode
             decoded = unquote(encoded)
-            if 'http' in decoded or decoded.startswith('/'):
+            if "http" in decoded or decoded.startswith("/"):
                 return decoded
         except Exception:
             pass
@@ -320,11 +337,17 @@ class URLExtractor:
         url = url.strip()
 
         # Skip empty URLs
-        if not url or url == '#' or url.startswith('javascript:') or url.startswith('mailto:') or url.startswith('tel:'):
+        if (
+            not url
+            or url == "#"
+            or url.startswith("javascript:")
+            or url.startswith("mailto:")
+            or url.startswith("tel:")
+        ):
             return
 
         # Skip data URIs
-        if url.startswith('data:'):
+        if url.startswith("data:"):
             return
 
         # Convert relative URLs to absolute
@@ -357,20 +380,27 @@ class URLExtractor:
                 return False
 
             # Must be http or https
-            if parsed.scheme not in ['http', 'https']:
+            if parsed.scheme not in ["http", "https"]:
                 return False
 
             # Check if domain is allowed
             if self.allowed_domains:
                 domain_matched = any(
-                    parsed.netloc == domain or parsed.netloc.endswith('.' + domain)
+                    parsed.netloc == domain or parsed.netloc.endswith("." + domain)
                     for domain in self.allowed_domains
                 )
                 if not domain_matched:
                     return False
 
             # Skip placeholder/template domains
-            placeholder_domains = ['example.com', 'example.org', 'localhost', '127.0.0.1', 'test.com', 'domain.com']
+            placeholder_domains = [
+                "example.com",
+                "example.org",
+                "localhost",
+                "127.0.0.1",
+                "test.com",
+                "domain.com",
+            ]
             if any(placeholder in parsed.netloc for placeholder in placeholder_domains):
                 return False
 

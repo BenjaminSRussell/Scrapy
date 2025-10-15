@@ -21,48 +21,57 @@ Example cron job (run weekly on Sunday at 2 AM):
 import argparse
 import logging
 import sys
+from importlib import import_module
 from pathlib import Path
 
-# Add project root to path
-project_root = Path(__file__).parent.parent
-sys.path.insert(0, str(project_root))
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
-from src.common.delta_lake import get_delta_manager
+
+def _ensure_project_root() -> None:
+    """Ensure the repository root is available on sys.path."""
+    project_root = str(PROJECT_ROOT)
+    if project_root not in sys.path:
+        sys.path.insert(0, project_root)
+
+
+def _get_delta_manager():
+    """Import and return the project's Delta Lake manager factory."""
+    _ensure_project_root()
+    delta_module = import_module("src.common.delta_lake")
+    return delta_module.get_delta_manager()
+
 
 # Configure logging
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Vacuum Delta Lake tables to remove old data files',
+        description="Vacuum Delta Lake tables to remove old data files",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=__doc__
+        epilog=__doc__,
     )
     parser.add_argument(
-        '--retention-hours',
+        "--retention-hours",
         type=int,
         default=168,
-        help='Retention period in hours (default: 168 = 7 days)'
+        help="Retention period in hours (default: 168 = 7 days)",
     )
     parser.add_argument(
-        '--tables',
-        nargs='*',
-        help='Specific tables to vacuum (default: all tables)'
+        "--tables", nargs="*", help="Specific tables to vacuum (default: all tables)"
     )
     parser.add_argument(
-        '--dry-run',
-        action='store_true',
-        help='Show what would be vacuumed without actually doing it'
+        "--dry-run",
+        action="store_true",
+        help="Show what would be vacuumed without actually doing it",
     )
     parser.add_argument(
-        '--unsafe',
-        action='store_true',
-        help='Allow retention < 168 hours (DANGEROUS - disables safety checks)'
+        "--unsafe",
+        action="store_true",
+        help="Allow retention < 168 hours (DANGEROUS - disables safety checks)",
     )
 
     args = parser.parse_args()
@@ -70,14 +79,16 @@ def main():
     logger.info("=" * 70)
     logger.info("Delta Lake Vacuum Script")
     logger.info("=" * 70)
-    logger.info(f"Retention period: {args.retention_hours} hours ({args.retention_hours / 24:.1f} days)")
+    logger.info(
+        f"Retention period: {args.retention_hours} hours ({args.retention_hours / 24:.1f} days)"
+    )
 
     if args.dry_run:
         logger.info("DRY RUN MODE - No files will be deleted")
 
     try:
         # Initialize Delta Lake manager
-        manager = get_delta_manager()
+        manager = _get_delta_manager()
 
         # Get list of tables to vacuum
         if args.tables:
@@ -110,7 +121,11 @@ def main():
                 try:
                     logger.info(f"Vacuuming {table_name}...")
                     enforce_retention = not args.unsafe
-                    manager._vacuum_table(table_name, args.retention_hours, enforce_retention_duration=enforce_retention)
+                    manager._vacuum_table(
+                        table_name,
+                        args.retention_hours,
+                        enforce_retention_duration=enforce_retention,
+                    )
                     vacuumed_count += 1
                 except Exception as e:
                     logger.error(f"Failed to vacuum {table_name}: {e}", exc_info=True)
@@ -129,5 +144,5 @@ def main():
         return 1
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     sys.exit(main())

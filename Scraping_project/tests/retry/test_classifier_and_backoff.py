@@ -1,6 +1,7 @@
 """Tests for the retry classifier and backoff logic."""
 
 import unittest
+
 from scrapy.settings import Settings
 
 from src.common.retry_middleware import IntelligentRetryMiddleware
@@ -11,10 +12,12 @@ class TestClassifierAndBackoff(unittest.TestCase):
 
     def setUp(self):
         """Set up the test case."""
-        self.settings = Settings({
-            'RETRY_BACKOFF_BASE': 2,
-            'RETRY_BACKOFF_MAX': 300,
-        })
+        self.settings = Settings(
+            {
+                "RETRY_BACKOFF_BASE": 2,
+                "RETRY_BACKOFF_MAX": 300,
+            }
+        )
         self.middleware = IntelligentRetryMiddleware(self.settings)
 
     def test_status_classification_snapshot(self):
@@ -25,22 +28,20 @@ class TestClassifierAndBackoff(unittest.TestCase):
         # Statuses to test and their expected classification (retry or fail)
         status_tests = {
             # Transient/Retryable statuses
-            408: 'retry',
-            429: 'retry',
-            500: 'retry',
-            502: 'retry',
-            503: 'retry',
-            504: 'retry',
-
+            408: "retry",
+            429: "retry",
+            500: "retry",
+            502: "retry",
+            503: "retry",
+            504: "retry",
             # Permanent/Non-retryable statuses
-            400: 'fail',
-            401: 'fail',
-            403: 'fail',
-            404: 'fail',
-            410: 'fail',
-
+            400: "fail",
+            401: "fail",
+            403: "fail",
+            404: "fail",
+            410: "fail",
             # Success status
-            200: 'pass',
+            200: "pass",
         }
 
         for status, expected_action in status_tests.items():
@@ -54,15 +55,15 @@ class TestClassifierAndBackoff(unittest.TestCase):
         Verifies the exponential backoff schedule with jitter.
         """
         retry_attempts = 10
-        backoff_base = self.settings.getint('RETRY_BACKOFF_BASE')
-        backoff_max = self.settings.getint('RETRY_BACKOFF_MAX')
+        backoff_base = self.settings.getint("RETRY_BACKOFF_BASE")
+        backoff_max = self.settings.getint("RETRY_BACKOFF_MAX")
 
         for i in range(1, retry_attempts + 1):
             with self.subTest(attempt=i):
                 delay = self.middleware._compute_backoff(i)
 
                 # Base delay without jitter
-                expected_base_delay = backoff_base ** i
+                expected_base_delay = backoff_base**i
                 # Max delay with jitter (10%)
                 expected_max_jitter_delay = expected_base_delay * 1.1
 
@@ -77,5 +78,5 @@ class TestClassifierAndBackoff(unittest.TestCase):
                 self.assertLessEqual(delay, final_expected_max + 0.0001)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

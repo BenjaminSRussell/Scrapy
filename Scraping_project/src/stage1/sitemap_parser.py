@@ -16,10 +16,10 @@ class SitemapParser:
 
     # XML namespaces commonly used in sitemaps
     NAMESPACES = {
-        'sm': 'http://www.sitemaps.org/schemas/sitemap/0.9',
-        'news': 'http://www.google.com/schemas/sitemap-news/0.9',
-        'image': 'http://www.google.com/schemas/sitemap-image/1.1',
-        'video': 'http://www.google.com/schemas/sitemap-video/1.1',
+        "sm": "http://www.sitemaps.org/schemas/sitemap/0.9",
+        "news": "http://www.google.com/schemas/sitemap-news/0.9",
+        "image": "http://www.google.com/schemas/sitemap-image/1.1",
+        "video": "http://www.google.com/schemas/sitemap-video/1.1",
     }
 
     def __init__(self, base_url: str, timeout: int = 30, max_depth: int = 5):
@@ -38,42 +38,38 @@ class SitemapParser:
         robots_sitemaps = await self._get_sitemaps_from_robots(base)
 
         common_sitemap_urls = [
-            urljoin(base, '/sitemap.xml'),
-            urljoin(base, '/sitemap.xml.gz'),
-            urljoin(base, '/sitemap_index.xml'),
-            urljoin(base, '/sitemap_index.xml.gz'),
-            urljoin(base, '/sitemap-index.xml'),
-            urljoin(base, '/sitemap-index.xml.gz'),
-            urljoin(base, '/sitemaps/sitemap.xml'),
-            urljoin(base, '/sitemap/sitemap.xml'),
+            urljoin(base, "/sitemap.xml"),
+            urljoin(base, "/sitemap.xml.gz"),
+            urljoin(base, "/sitemap_index.xml"),
+            urljoin(base, "/sitemap_index.xml.gz"),
+            urljoin(base, "/sitemap-index.xml"),
+            urljoin(base, "/sitemap-index.xml.gz"),
+            urljoin(base, "/sitemaps/sitemap.xml"),
+            urljoin(base, "/sitemap/sitemap.xml"),
         ]
 
         sitemap_urls = robots_sitemaps + common_sitemap_urls
 
-        headers = {
-            'User-Agent': 'SitemapParser/1.0 (compatible; web crawler)'
-        }
+        headers = {"User-Agent": "SitemapParser/1.0 (compatible; web crawler)"}
         async with httpx.AsyncClient(timeout=self.timeout, headers=headers) as client:
             for sitemap_url in sitemap_urls:
-                await self._parse_sitemap_recursive(
-                    client, sitemap_url, depth=0
-                )
+                await self._parse_sitemap_recursive(client, sitemap_url, depth=0)
 
         return list(self.discovered_urls)
 
     async def _get_sitemaps_from_robots(self, base_url: str) -> list[str]:
         """Return sitemap URLs declared in robots.txt."""
-        robots_url = urljoin(base_url, '/robots.txt')
+        robots_url = urljoin(base_url, "/robots.txt")
         sitemaps = []
 
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 response = await client.get(robots_url)
                 if response.status_code == 200:
-                    for line in response.text.split('\n'):
+                    for line in response.text.split("\n"):
                         line = line.strip()
-                        if line.lower().startswith('sitemap:'):
-                            sitemap_url = line.split(':', 1)[1].strip()
+                        if line.lower().startswith("sitemap:"):
+                            sitemap_url = line.split(":", 1)[1].strip()
                             sitemaps.append(sitemap_url)
                             logger.info(f"Found sitemap in robots.txt: {sitemap_url}")
         except Exception as e:
@@ -102,12 +98,17 @@ class SitemapParser:
             response = await client.get(sitemap_url)
 
             if response.status_code != 200:
-                logger.warning(f"Sitemap returned {response.status_code}: {sitemap_url}")
+                logger.warning(
+                    f"Sitemap returned {response.status_code}: {sitemap_url}"
+                )
                 return
 
             # Support gzipped sitemap payloads
             content = response.content
-            if sitemap_url.endswith('.gz') or response.headers.get('content-encoding') == 'gzip':
+            if (
+                sitemap_url.endswith(".gz")
+                or response.headers.get("content-encoding") == "gzip"
+            ):
                 try:
                     content = gzip.decompress(content)
                     logger.debug(f"Decompressed gzipped sitemap: {sitemap_url}")
@@ -138,16 +139,22 @@ class SitemapParser:
 
             except ET.ParseError as e:
                 # Fall back to plain-text parsing if needed
-                content_type = response.headers.get('content-type', '').lower()
-                if 'text/plain' in content_type or 'text/html' in content_type:
-                    logger.info(f"XML parsing failed, trying plain-text format: {sitemap_url}")
+                content_type = response.headers.get("content-type", "").lower()
+                if "text/plain" in content_type or "text/html" in content_type:
+                    logger.info(
+                        f"XML parsing failed, trying plain-text format: {sitemap_url}"
+                    )
                     try:
-                        text_content = content.decode('utf-8')
+                        text_content = content.decode("utf-8")
                         urls = self._extract_from_plain_text(text_content)
                         self.discovered_urls.update(urls)
-                        logger.info(f"Extracted {len(urls)} URLs from plain-text sitemap: {sitemap_url}")
+                        logger.info(
+                            f"Extracted {len(urls)} URLs from plain-text sitemap: {sitemap_url}"
+                        )
                     except Exception as text_error:
-                        logger.warning(f"Plain-text parsing also failed for {sitemap_url}: {text_error}")
+                        logger.warning(
+                            f"Plain-text parsing also failed for {sitemap_url}: {text_error}"
+                        )
                 else:
                     logger.warning(f"Failed to parse sitemap XML: {sitemap_url} - {e}")
 
@@ -156,11 +163,11 @@ class SitemapParser:
 
     def _is_sitemap_index(self, root: ET.Element) -> bool:
         """Return True when the document describes nested sitemaps."""
-        if root.tag.endswith('sitemapindex'):
+        if root.tag.endswith("sitemapindex"):
             return True
 
-        for ns in ['', '{http://www.sitemaps.org/schemas/sitemap/0.9}']:
-            if root.find(f'{ns}sitemap') is not None:
+        for ns in ["", "{http://www.sitemaps.org/schemas/sitemap/0.9}"]:
+            if root.find(f"{ns}sitemap") is not None:
                 return True
 
         return False
@@ -169,16 +176,18 @@ class SitemapParser:
         """Return nested sitemap URLs declared in an index file."""
         sitemaps = []
 
-        for ns in ['', '{http://www.sitemaps.org/schemas/sitemap/0.9}']:
-            for sitemap in root.findall(f'{ns}sitemap'):
-                loc = sitemap.find(f'{ns}loc')
+        for ns in ["", "{http://www.sitemaps.org/schemas/sitemap/0.9}"]:
+            for sitemap in root.findall(f"{ns}sitemap"):
+                loc = sitemap.find(f"{ns}loc")
                 if loc is not None and loc.text:
                     sitemap_url = loc.text.strip()
                     sitemaps.append(sitemap_url)
 
-                    lastmod = sitemap.find(f'{ns}lastmod')
+                    lastmod = sitemap.find(f"{ns}lastmod")
                     if lastmod is not None and lastmod.text:
-                        logger.debug(f"Sitemap {sitemap_url} last modified: {lastmod.text}")
+                        logger.debug(
+                            f"Sitemap {sitemap_url} last modified: {lastmod.text}"
+                        )
 
         return sitemaps
 
@@ -186,23 +195,30 @@ class SitemapParser:
         """Return URL entries referenced by a standard sitemap file."""
         urls = set()
 
-        for ns in ['', '{http://www.sitemaps.org/schemas/sitemap/0.9}']:
-            for url_elem in root.findall(f'{ns}url'):
-                loc = url_elem.find(f'{ns}loc')
+        for ns in ["", "{http://www.sitemaps.org/schemas/sitemap/0.9}"]:
+            for url_elem in root.findall(f"{ns}url"):
+                loc = url_elem.find(f"{ns}loc")
                 if loc is not None and loc.text:
                     url = loc.text.strip()
                     urls.add(url)
 
-                    lastmod = url_elem.find(f'{ns}lastmod')
-                    priority = url_elem.find(f'{ns}priority')
-                    changefreq = url_elem.find(f'{ns}changefreq')
+                    lastmod = url_elem.find(f"{ns}lastmod")
+                    priority = url_elem.find(f"{ns}priority")
+                    changefreq = url_elem.find(f"{ns}changefreq")
 
                     if lastmod is not None or priority is not None:
+                        priority_value = (
+                            float(priority.text)
+                            if priority is not None and priority.text is not None
+                            else None
+                        )
                         metadata = {
-                            'url': url,
-                            'lastmod': lastmod.text if lastmod is not None else None,
-                            'priority': float(priority.text) if priority is not None else None,
-                            'changefreq': changefreq.text if changefreq is not None else None,
+                            "url": url,
+                            "lastmod": lastmod.text if lastmod is not None else None,
+                            "priority": priority_value,
+                            "changefreq": (
+                                changefreq.text if changefreq is not None else None
+                            ),
                         }
                         logger.debug(f"URL metadata: {metadata}")
 
@@ -212,9 +228,9 @@ class SitemapParser:
         """Return URLs from a plain-text sitemap (one per line)."""
         urls = set()
 
-        for line in text.split('\n'):
+        for line in text.split("\n"):
             line = line.strip()
-            if line and (line.startswith('http://') or line.startswith('https://')):
+            if line and (line.startswith("http://") or line.startswith("https://")):
                 urls.add(line)
 
         return urls
@@ -247,7 +263,7 @@ class SitemapIntegration:
                 url,
                 callback=self.spider.parse,
                 errback=self.spider.handle_error,
-                meta={'depth': 0, 'source': 'sitemap'},
+                meta={"depth": 0, "source": "sitemap"},
                 priority=5,  # Give sitemap URLs higher priority
                 dont_filter=True,
             )
