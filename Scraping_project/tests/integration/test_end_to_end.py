@@ -182,7 +182,7 @@ class TestDockerComposeStack:
 
     @pytest.mark.skip(reason="Requires Docker Compose running")
     def test_postgres_db_name(self):
-        """K1: Verify POSTGRES_DB=pipeline_metrics."""
+        """K1: Verify POSTGRES_DB=scraping_pipeline."""
         import psycopg2
 
         conn = psycopg2.connect(
@@ -190,14 +190,14 @@ class TestDockerComposeStack:
             port=5432,
             user="postgres",
             password="postgres",
-            database="pipeline_metrics",
+            database="scraping_pipeline",
         )
 
         cur = conn.cursor()
         cur.execute("SELECT current_database()")
         db_name = cur.fetchone()[0]
 
-        assert db_name == "pipeline_metrics"
+        assert db_name == "scraping_pipeline"
 
         conn.close()
 

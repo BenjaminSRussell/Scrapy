@@ -76,7 +76,7 @@ postgresql:
       memory: 2Gi
 
   auth:
-    database: pipeline_metrics
+    database: scraping_pipeline
     username: postgres
     # Password should be set via secret or external secret manager
     existingSecret: "postgres-credentials"

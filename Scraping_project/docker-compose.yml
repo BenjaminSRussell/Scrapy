@@ -29,7 +29,7 @@ services:
     ports:
       - "5432:5432"
     environment:
-      POSTGRES_DB: pipeline_metrics
+      POSTGRES_DB: scraping_pipeline
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
     volumes:
@@ -37,7 +37,7 @@ services:
       - ./docker/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d pipeline_metrics"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d scraping_pipeline"]
       interval: 10s
       timeout: 3s
       retries: 5
@@ -298,12 +298,12 @@ services:
       - REDIS_PORT=6379
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
-      - POSTGRES_DB=pipeline_metrics
+      - POSTGRES_DB=scraping_pipeline
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=postgres
       - DB_HOST=postgres
       - DB_PORT=5432
-      - DB_NAME=pipeline_metrics
+      - DB_NAME=scraping_pipeline
       - DB_USER=postgres
       - DB_PASSWORD=postgres
       - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
@@ -357,12 +357,12 @@ services:
       - REDIS_PORT=6379
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
-      - POSTGRES_DB=pipeline_metrics
+      - POSTGRES_DB=scraping_pipeline
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=postgres
       - DB_HOST=postgres
       - DB_PORT=5432
-      - DB_NAME=pipeline_metrics
+      - DB_NAME=scraping_pipeline
       - DB_USER=postgres
       - DB_PASSWORD=postgres
       - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
@@ -396,12 +396,12 @@ services:
       - REDIS_PORT=6379
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
-      - POSTGRES_DB=pipeline_metrics
+      - POSTGRES_DB=scraping_pipeline
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=postgres
       - DB_HOST=postgres
       - DB_PORT=5432
-      - DB_NAME=pipeline_metrics
+      - DB_NAME=scraping_pipeline
       - DB_USER=postgres
       - DB_PASSWORD=postgres
       - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
@@ -436,12 +436,12 @@ services:
       - REDIS_PORT=6379
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
-      - POSTGRES_DB=pipeline_metrics
+      - POSTGRES_DB=scraping_pipeline
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=postgres
       - DB_HOST=postgres
       - DB_PORT=5432
-      - DB_NAME=pipeline_metrics
+      - DB_NAME=scraping_pipeline
       - DB_USER=postgres
       - DB_PASSWORD=postgres
       - KAFKA_BOOTSTRAP_SERVERS=kafka:9092

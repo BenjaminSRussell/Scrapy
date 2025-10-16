@@ -51,7 +51,7 @@ data:
         type: postgres
         access: proxy
         url: scraping-pipeline-postgresql:5432
-        database: pipeline_metrics
+        database: scraping_pipeline
         user: postgres
         secureJsonData:
           password: postgres

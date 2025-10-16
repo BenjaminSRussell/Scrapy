@@ -4,7 +4,7 @@
 
 ### *Intelligent, scalable web crawling with real-time monitoring*
 
-[![CI](https://github.com/benjaminrussell/Scraping_project/actions/workflows/main.yml/badge.svg)](https://github.com/benjaminrussell/Scraping_project/actions/workflows/main.yml)
+[![CI](https://github.com/BenjaminSRussell/Scrapy/actions/workflows/main.yml/badge.svg)](https://github.com/BenjaminSRussell/Scrapy/actions/workflows/main.yml)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 [![Scrapy](https://img.shields.io/badge/scrapy-2.11+-green.svg)](https://scrapy.org/)
 [![License](https://img.shields.io/badge/license-MIT-purple.svg)](LICENSE)

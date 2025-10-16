@@ -1,12 +1,12 @@
 -- PostgreSQL Database Initialization Script
--- Creates pipeline_metrics database and required tables
+-- Creates scraping_pipeline database and required tables
 
 -- Note: This script runs as the postgres user when the container first starts
 -- The database is created automatically by POSTGRES_DB env var, so we just need
 -- to ensure the tables exist
 
--- Connect to the pipeline_metrics database
-\c pipeline_metrics;
+-- Connect to the scraping_pipeline database
+\c scraping_pipeline;
 
 -- Performance metrics table
 CREATE TABLE IF NOT EXISTS performance_metrics (
@@ -67,5 +67,5 @@ GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO postgres;
 -- Log initialization complete
 DO $$
 BEGIN
-    RAISE NOTICE 'Database pipeline_metrics initialized successfully';
+    RAISE NOTICE 'Database scraping_pipeline initialized successfully';
 END $$;

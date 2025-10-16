@@ -58,7 +58,7 @@ def test_config() -> dict:
     config = Config.get_instance()
     # Override with test-specific settings
     config.set("delta_lake.base_path", "./data/test_delta_lake")
-    config.set("postgres.database", "pipeline_metrics_test")
+    config.set("postgres.database", "scraping_pipeline_test")
     return config.get_raw_config()
 
 

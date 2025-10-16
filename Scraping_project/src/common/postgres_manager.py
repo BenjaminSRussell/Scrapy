@@ -6,7 +6,7 @@ including performance tracking, error logging, and data retrieval for ML analysi
 Environment Variables:
     DB_HOST: PostgreSQL host (default: localhost)
     DB_PORT: PostgreSQL port (default: 5432)
-    DB_NAME: Database name (default: pipeline_metrics)
+    DB_NAME: Database name (default: scraping_pipeline)
     DB_USER: Database user (default: postgres)
     DB_PASSWORD: Database password (required)
 """
@@ -51,7 +51,7 @@ class PostgresManager:
         Args:
             host: Database host (default: from env or localhost)
             port: Database port (default: from env or 5432)
-            database: Database name (default: from env or pipeline_metrics)
+            database: Database name (default: from env or scraping_pipeline)
             user: Database user (default: from env or postgres)
             password: Database password (default: from env, required)
             min_conn: Minimum connections in pool
@@ -63,7 +63,7 @@ class PostgresManager:
         # Load configuration from environment or defaults
         self.host = host or os.getenv("DB_HOST", "localhost")
         self.port = port or int(os.getenv("DB_PORT", "5432"))
-        self.database = database or os.getenv("DB_NAME", "pipeline_metrics")
+        self.database = database or os.getenv("DB_NAME", "scraping_pipeline")
         self.user = user or os.getenv("DB_USER", "postgres")
         self.password = password or os.getenv("DB_PASSWORD")
 

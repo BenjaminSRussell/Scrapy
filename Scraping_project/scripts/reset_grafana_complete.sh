@@ -108,7 +108,7 @@ if [ "$ENV_TYPE" = "docker" ]; then
 # Database connection settings
 DB_HOST=localhost
 DB_PORT=5432
-DB_NAME=pipeline_metrics
+DB_NAME=scraping_pipeline
 DB_USER=postgres
 DB_PASSWORD=postgres
 

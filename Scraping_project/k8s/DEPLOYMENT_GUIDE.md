@@ -376,7 +376,7 @@ velero backup create scraping-pipeline --include-namespaces scraping-pipeline
 
 ```bash
 kubectl exec -it statefulset/scraping-pipeline-postgresql -n scraping-pipeline -- \
-  pg_dump -U postgres pipeline_metrics > backup-$(date +%Y%m%d).sql
+  pg_dump -U postgres scraping_pipeline > backup-$(date +%Y%m%d).sql
 ```
 
 ### Restore
@@ -384,7 +384,7 @@ kubectl exec -it statefulset/scraping-pipeline-postgresql -n scraping-pipeline -
 ```bash
 # Restore PostgreSQL
 kubectl exec -i statefulset/scraping-pipeline-postgresql -n scraping-pipeline -- \
-  psql -U postgres pipeline_metrics < backup-20250101.sql
+  psql -U postgres scraping_pipeline < backup-20250101.sql
 ```
 
 ## Troubleshooting
