@@ -140,8 +140,32 @@ if PROMETHEUS_AVAILABLE:
         ["spider"],
     )
 
+    # --- Delta Lake Manager Metrics ---
+    DELTA_MANAGER_CONTEXT_ENTER_TOTAL = Counter(
+        "delta_manager_context_enter_total",
+        "Total number of times a DeltaLakeManager context has been entered."
+    )
+    DELTA_MANAGER_CONTEXT_EXIT_TOTAL = Counter(
+        "delta_manager_context_exit_total",
+        "Total number of times a DeltaLakeManager context has been exited."
+    )
+    DELTA_MANAGER_SHUTDOWN_TOTAL = Counter(
+        "delta_manager_shutdown_total",
+        "Total number of times DeltaLakeManager.shutdown() has been called."
+    )
+    DELTA_MANAGER_SHUTDOWN_DURATION_SECONDS = Histogram(
+        "delta_manager_shutdown_duration_seconds",
+        "Time taken to shut down the DeltaLakeManager, in seconds.",
+        buckets=(0.1, 0.5, 1.0, 2.0, 5.0, 10.0, 15.0, float("inf")),
+    )
+    # --- End Delta Lake Manager Metrics ---
+
 else:
     # Dummy variables when Prometheus is not available
+    DELTA_MANAGER_CONTEXT_ENTER_TOTAL = None
+    DELTA_MANAGER_CONTEXT_EXIT_TOTAL = None
+    DELTA_MANAGER_SHUTDOWN_TOTAL = None
+    DELTA_MANAGER_SHUTDOWN_DURATION_SECONDS = None
     ITEMS_SCRAPED = ITEMS_DROPPED = REQUESTS_TOTAL = RESPONSES_TOTAL = None
     RESPONSE_TIME = SPIDER_OPENED = SPIDER_CLOSED = SPIDER_ERRORS = None
     REQUESTS_DROPPED = DOWNLOADER_REQUEST_BYTES = DOWNLOADER_RESPONSE_BYTES = None

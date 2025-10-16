@@ -13,6 +13,12 @@ from pathlib import Path
 from typing import Any, Literal, TypeAlias
 
 from src.common.config import Config
+from src.scrapy_prometheus import (
+    DELTA_MANAGER_CONTEXT_ENTER_TOTAL,
+    DELTA_MANAGER_CONTEXT_EXIT_TOTAL,
+    DELTA_MANAGER_SHUTDOWN_DURATION_SECONDS,
+    DELTA_MANAGER_SHUTDOWN_TOTAL,
+)
 
 try:
     import pyarrow as pa
@@ -459,6 +465,10 @@ class DeltaLakeManager:
             logger.debug("Already shut down, skipping")
             return
 
+        if DELTA_MANAGER_SHUTDOWN_TOTAL:
+            DELTA_MANAGER_SHUTDOWN_TOTAL.inc()
+
+        start_time = time.time()
         logger.info(f"🛑 Shutting down DeltaLakeManager (timeout: {timeout}s)...")
 
         # Signal workers to stop
@@ -494,7 +504,10 @@ class DeltaLakeManager:
         # Checkpoint pending data with shorter timeout
         self.checkpoint(timeout=min(timeout, 5))
 
-        logger.info("✅ DeltaLakeManager shutdown complete")
+        duration = time.time() - start_time
+        if DELTA_MANAGER_SHUTDOWN_DURATION_SECONDS:
+            DELTA_MANAGER_SHUTDOWN_DURATION_SECONDS.observe(duration)
+        logger.info(f"✅ DeltaLakeManager shutdown complete in {duration:.2f} seconds")
 
     def _shutdown_handler(self, signum, frame):
         """Handle shutdown signals (SIGINT, SIGTERM) gracefully.
@@ -691,6 +704,23 @@ class DeltaLakeManager:
         table = DeltaTable(str(table_path))
         return table.history()
 
+    def __enter__(self):
+        """Enter the context manager."""
+        if DELTA_MANAGER_CONTEXT_ENTER_TOTAL:
+            DELTA_MANAGER_CONTEXT_ENTER_TOTAL.inc()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Exit the context manager and gracefully shut down workers."""
+        if DELTA_MANAGER_CONTEXT_EXIT_TOTAL:
+            DELTA_MANAGER_CONTEXT_EXIT_TOTAL.inc()
+        # Only shut down if workers were actually started by this instance.
+        if getattr(self, "_workers_started", False):
+            logger.info("Context exit: Shutting down Delta Lake manager.")
+            self.shutdown(timeout=5)
+        # Return False to propagate any exceptions that occurred inside the 'with' block.
+        return False
+
     # Class-level instance for singleton pattern
     _instance: "DeltaLakeManager | None" = None
 
@@ -878,6 +908,15 @@ class InMemoryDeltaManager:
     def count(self, table_name: str) -> int:
         """Return row count for an in-memory table."""
         return len(self.tables.get(table_name, []))
+
+    def __enter__(self):
+        """Enter the context manager."""
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Exit the context manager (no-op for in-memory)."""
+        # No resources to clean up, but we must return False to propagate exceptions.
+        return False
 
 
 # =====================================================================================
