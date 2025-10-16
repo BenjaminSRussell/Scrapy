@@ -727,7 +727,7 @@ Built with these amazing tools:
 python start.py
 ```
 
-**Questions?** Open an [issue](https://github.com/benjaminrussell/Scraping_project/issues) • **Star** ⭐ if you find this useful!
+**Questions?** Open an [issue](https://github.com/BenjaminSRussell/Scrapy/issues) • **Star** ⭐ if you find this useful!
 
 Made with ❤️ and lots of ☕
 
