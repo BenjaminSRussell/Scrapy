@@ -4,8 +4,8 @@ apiVersion: 1
 groups:
   - name: Kafka Alerts
     folder: Kafka
-    # Evaluate rules every 10 seconds
-    interval: 10s
+    # Evaluate rules every 15 seconds
+    interval: 15s
     rules:
       - # Alert definition
         # UID can be used to reference this alert in other parts of Grafana
@@ -62,7 +62,7 @@ groups:
         # How long the condition must be true for the alert to fire
         for: 1m
         # How often to evaluate the alert rule
-        every: 10s
+        every: 15s
         # Labels to attach to the alert
         labels:
           severity: warning
