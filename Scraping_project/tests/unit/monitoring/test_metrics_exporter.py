@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 Unit tests for the Prometheus metrics exporter.
 
@@ -8,7 +10,25 @@ Coverage goals:
 - Error summary rollup file and counter increments
 """
 
-from __future__ import annotations
+import sys
+from pathlib import Path
+
+# Add project root to path to allow absolute imports from src
+# This is necessary for tests to run consistently, especially in CI
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
+
+# Increment the metric for test path adjustments
+from src.scrapy_prometheus import TEST_IMPORT_PATH_ADJUSTMENTS, MODULE_IMPORT_FAILURES
+try:
+    # Try to import the module to see if the path adjustment worked
+    import monitoring.metrics_exporter
+    if TEST_IMPORT_PATH_ADJUSTMENTS:
+        TEST_IMPORT_PATH_ADJUSTMENTS.labels(test_file=Path(__file__).name).inc()
+except ImportError:
+    if MODULE_IMPORT_FAILURES:
+        MODULE_IMPORT_FAILURES.labels(module_name="monitoring.metrics_exporter").inc()
+    raise
 
 import json
 from dataclasses import dataclass, field
@@ -43,6 +63,14 @@ class MetricStub:
     def labels(self, **labels: str) -> MetricHandle:
         key = tuple(sorted(labels.items()))
         return MetricHandle(self.values, key)
+
+    def set(self, value: float) -> None:
+        """Set value for a metric with no labels."""
+        self.values[()] = value
+
+    def inc(self, amount: float = 1.0) -> None:
+        """Increment value for a metric with no labels."""
+        self.values[()] = self.values.get((), 0.0) + amount
 
 
 @dataclass

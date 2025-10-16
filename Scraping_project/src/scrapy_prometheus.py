@@ -17,6 +17,10 @@ Metrics exposed:
 - scrapy_downloader_response_bytes_total: Bytes received (Counter)
 - scrapy_crawl_duration_seconds: Total crawl duration (Gauge)
 
+Test-specific metrics (for CI observability):
+- test_import_path_adjustments_total: Incremented when a test adjusts sys.path.
+- module_import_failures_total: Incremented when a test fails to import a module.
+
 All metrics are consolidated in this single extension for efficient Prometheus scraping.
 """
 
@@ -47,6 +51,19 @@ SKIPPED_URL_TALLIES: dict[str, dict[str, int]] = {}
 
 # Define Prometheus metrics only if available
 if PROMETHEUS_AVAILABLE:
+    # --- Test Environment Metrics ---
+    TEST_IMPORT_PATH_ADJUSTMENTS = Counter(
+        "test_import_path_adjustments_total",
+        "Total number of times a test file dynamically adjusted sys.path to ensure src imports work.",
+        ["test_file"],
+    )
+
+    MODULE_IMPORT_FAILURES = Counter(
+        "module_import_failures_total",
+        "Total number of times a module failed to import within a test.",
+        ["module_name"],
+    )
+
     ITEMS_SCRAPED = Counter("scrapy_items_scraped_total", "Total number of items scraped", ["spider"])
 
     ITEMS_DROPPED = Counter("scrapy_items_dropped_total", "Total number of items dropped", ["spider"])
