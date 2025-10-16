@@ -63,11 +63,14 @@ class TestFactAggregator:
 
             # Create embeddings where first two are very similar, third is different
             import numpy as np
-            mock_embeddings = np.array([
-                [1.0, 0.0, 0.0],  # Fact 1
-                [0.99, 0.01, 0.0],  # Fact 2 (very similar to Fact 1)
-                [0.0, 0.0, 1.0],  # Fact 3 (different)
-            ])
+
+            mock_embeddings = np.array(
+                [
+                    [1.0, 0.0, 0.0],  # Fact 1
+                    [0.99, 0.01, 0.0],  # Fact 2 (very similar to Fact 1)
+                    [0.0, 0.0, 1.0],  # Fact 3 (different)
+                ]
+            )
 
             mock_model.encode.return_value = mock_embeddings
             mock_transformer.return_value = mock_model
@@ -181,14 +184,8 @@ class TestChronologicalSorter:
         sorter = ChronologicalSorter()
 
         facts = [
-            {
-                "fact_text": "Received award.",
-                "publication_date": datetime(2021, 3, 15)
-            },
-            {
-                "fact_text": "Published paper.",
-                "publication_date": datetime(2023, 6, 1)
-            },
+            {"fact_text": "Received award.", "publication_date": datetime(2021, 3, 15)},
+            {"fact_text": "Published paper.", "publication_date": datetime(2023, 6, 1)},
         ]
 
         formatted = sorter.prepare_for_summarization(facts)
@@ -224,12 +221,16 @@ class TestAbstractiveSummarizer:
                 {
                     "fact_text": "Jane Doe received an award.",
                     "publication_date": datetime(2021, 3, 15),
-                    "source_references": [{"source_url": "https://example.com/1", "publication_date": datetime(2021, 3, 15)}],
+                    "source_references": [
+                        {"source_url": "https://example.com/1", "publication_date": datetime(2021, 3, 15)}
+                    ],
                 },
                 {
                     "fact_text": "She published a paper.",
                     "publication_date": datetime(2023, 6, 1),
-                    "source_references": [{"source_url": "https://example.com/2", "publication_date": datetime(2023, 6, 1)}],
+                    "source_references": [
+                        {"source_url": "https://example.com/2", "publication_date": datetime(2023, 6, 1)}
+                    ],
                 },
             ]
 
@@ -329,17 +330,21 @@ class TestStage4EntityWorker:
         from src.stage4.entity_summarization import Stage4EntityWorker
 
         # Mock both embedding and summarization models
-        with mock.patch("src.stage4.entity_summarization.SentenceTransformer") as mock_st, \
-             mock.patch("src.stage4.entity_summarization.pipeline") as mock_pipeline:
-
+        with (
+            mock.patch("src.stage4.entity_summarization.SentenceTransformer") as mock_st,
+            mock.patch("src.stage4.entity_summarization.pipeline") as mock_pipeline,
+        ):
             # Setup mock embedding model
             mock_embedding_model = mock.MagicMock()
             import numpy as np
+
             # All facts are unique (different embeddings)
-            mock_embedding_model.encode.return_value = np.array([
-                [1.0, 0.0],
-                [0.0, 1.0],
-            ])
+            mock_embedding_model.encode.return_value = np.array(
+                [
+                    [1.0, 0.0],
+                    [0.0, 1.0],
+                ]
+            )
             mock_st.return_value = mock_embedding_model
 
             # Setup mock summarization model

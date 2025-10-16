@@ -938,9 +938,7 @@ class SchemaValidationPipeline:
             Configured SchemaValidationPipeline instance
         """
         enabled = crawler.settings.getbool("SCHEMA_VALIDATION_ENABLED", True)
-        validation_failures_topic = crawler.settings.get(
-            "VALIDATION_FAILURES_TOPIC", "validation_failures"
-        )
+        validation_failures_topic = crawler.settings.get("VALIDATION_FAILURES_TOPIC", "validation_failures")
 
         pipeline = cls(
             enabled=enabled,
@@ -1011,15 +1009,12 @@ class SchemaValidationPipeline:
             try:
                 remaining = self.kafka_producer.flush(timeout=30.0)
                 if remaining > 0:
-                    logger.warning(
-                        f"{remaining} validation failure messages not delivered"
-                    )
+                    logger.warning(f"{remaining} validation failure messages not delivered")
             except Exception as e:
                 logger.error(f"Error flushing Kafka producer: {e}")
 
         logger.info(
-            f"SchemaValidationPipeline stats - Validated: {self.items_validated}, "
-            f"Dropped: {self.items_dropped}"
+            f"SchemaValidationPipeline stats - Validated: {self.items_validated}, " f"Dropped: {self.items_dropped}"
         )
 
     def process_item(self, item: Any, spider: Spider) -> Any:
@@ -1067,8 +1062,7 @@ class SchemaValidationPipeline:
 
             if self.items_validated % 1000 == 0:
                 logger.info(
-                    f"SchemaValidation stats - Validated: {self.items_validated}, "
-                    f"Dropped: {self.items_dropped}"
+                    f"SchemaValidation stats - Validated: {self.items_validated}, " f"Dropped: {self.items_dropped}"
                 )
 
             return item
@@ -1081,9 +1075,7 @@ class SchemaValidationPipeline:
             self._publish_validation_failure(item_dict, e, spider)
 
             # Drop the item
-            raise DropItem(
-                f"Schema validation failed for {item_dict.get('url', 'unknown')}: {e}"
-            )
+            raise DropItem(f"Schema validation failed for {item_dict.get('url', 'unknown')}: {e}")
 
     def _coerce_currency_fields(self, item_dict: dict[str, Any]) -> dict[str, Any]:
         """Coerce currency string fields to floats.
@@ -1108,15 +1100,11 @@ class SchemaValidationPipeline:
                 try:
                     item_dict[field] = float(cleaned)
                 except ValueError:
-                    logger.warning(
-                        f"Failed to coerce {field}='{value}' to float, leaving as-is"
-                    )
+                    logger.warning(f"Failed to coerce {field}='{value}' to float, leaving as-is")
 
         return item_dict
 
-    def _publish_validation_failure(
-        self, item_dict: dict[str, Any], error: ValidationError, spider: Spider
-    ) -> None:
+    def _publish_validation_failure(self, item_dict: dict[str, Any], error: ValidationError, spider: Spider) -> None:
         """Publish validation failure event to Kafka.
 
         Args:
@@ -1159,9 +1147,7 @@ class SchemaValidationPipeline:
             )
             self.kafka_producer.poll(0)
 
-            logger.warning(
-                f"Published validation failure to Kafka: {field_name} - {error_message}"
-            )
+            logger.warning(f"Published validation failure to Kafka: {field_name} - {error_message}")
 
         except Exception as e:
             logger.error(f"Failed to publish validation failure: {e}")
@@ -1246,9 +1232,7 @@ class RecencyScoringPipeline:
                 )
                 adapter["recency_score"] = score
             except Exception as e:
-                logger.warning(
-                    f"Failed to calculate recency score for {adapter.get('url')}: {e}"
-                )
+                logger.warning(f"Failed to calculate recency score for {adapter.get('url')}: {e}")
                 adapter["recency_score"] = self.default_score
         else:
             # No publication_date, use default score
@@ -1355,10 +1339,7 @@ class AggregationPipeline:
             return
 
         logger.info(f"Closing AggregationPipeline for spider: {spider.name}")
-        logger.info(
-            f"Aggregated {self.items_aggregated} items into "
-            f"{len(self.entity_groups)} entity groups"
-        )
+        logger.info(f"Aggregated {self.items_aggregated} items into " f"{len(self.entity_groups)} entity groups")
 
         # Sort items within each group by recency_score (descending)
         for entity_id, items in self.entity_groups.items():
@@ -1368,16 +1349,12 @@ class AggregationPipeline:
             summary = self._generate_entity_summary(entity_id, items)
 
             if summary:
-                logger.info(
-                    f"Entity {entity_id}: Generated summary from {len(items)} items"
-                )
+                logger.info(f"Entity {entity_id}: Generated summary from {len(items)} items")
                 # In production, publish summary to Kafka or store in database
                 # For now, just log it
                 logger.debug(f"Summary: {summary[:200]}...")
 
-    def _generate_entity_summary(
-        self, entity_id: str, items: list[dict[str, Any]]
-    ) -> str:
+    def _generate_entity_summary(self, entity_id: str, items: list[dict[str, Any]]) -> str:
         """Generate LLM summary for an entity, prioritizing recent facts.
 
         This is a placeholder for actual LLM integration. In production,
@@ -1400,9 +1377,7 @@ class AggregationPipeline:
             recency = item.get("recency_score", 0.0)
             title = item.get("title", "")
             content = item.get("content", "")[:200]  # Truncate
-            context_parts.append(
-                f"[Recency: {recency:.2f}] {title}: {content}"
-            )
+            context_parts.append(f"[Recency: {recency:.2f}] {title}: {content}")
 
         context = "\n".join(context_parts)
 

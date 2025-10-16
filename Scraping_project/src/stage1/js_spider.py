@@ -65,6 +65,7 @@ class JavaScriptSpider(scrapy.Spider):
 
         # Get Redis client from storage manager
         from src.common.storage_manager import get_redis
+
         redis_client = get_redis()
 
         self.priority_queue = JSPriorityQueue(redis_client, queue_key="js_spider:priority_queue")

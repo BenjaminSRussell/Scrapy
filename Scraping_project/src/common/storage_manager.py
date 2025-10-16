@@ -32,7 +32,12 @@ Usage:
 import logging
 from typing import Any, Optional
 
-from src.common.config_manager import ConfigManager, DatabaseConfig, DeltaLakeConfig, RedisConfig
+from src.common.config_manager import (
+    ConfigManager,
+    DatabaseConfig,
+    DeltaLakeConfig,
+    RedisConfig,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -237,6 +242,7 @@ class StorageManager:
             self._ensure_redis()
             if self._redis_instance is not None:
                 from src.common.redis_manager import RedisManager
+
                 if isinstance(self._redis_instance, RedisManager):
                     health["redis"] = self.redis.redis.ping()
                 else:

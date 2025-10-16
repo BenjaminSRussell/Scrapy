@@ -228,10 +228,7 @@ class TestBaseSpiderErrorHandling:
         # Create request first, then response with proper meta
         request = Request(url="https://example.com/notfound", meta={"depth": 0})
         response = HtmlResponse(
-            url="https://example.com/notfound",
-            status=404,
-            body=b"<html><body>Not Found</body></html>",
-            request=request
+            url="https://example.com/notfound", status=404, body=b"<html><body>Not Found</body></html>", request=request
         )
 
         # Should handle error without crashing
@@ -249,10 +246,7 @@ class TestBaseSpiderErrorHandling:
         # Create request first, then response with proper meta
         request = Request(url="https://example.com/error", meta={"depth": 0})
         response = HtmlResponse(
-            url="https://example.com/error",
-            status=500,
-            body=b"<html><body>Server Error</body></html>",
-            request=request
+            url="https://example.com/error", status=500, body=b"<html><body>Server Error</body></html>", request=request
         )
 
         # Should handle gracefully
@@ -332,10 +326,7 @@ class TestBaseSpiderMetrics:
         # Simulate scraping - create request with meta
         request = Request(url="https://example.com", meta={"depth": 0})
         response = HtmlResponse(
-            url="https://example.com",
-            body=b"<html></html>",
-            request=request,
-            headers={b"Content-Type": b"text/html"}
+            url="https://example.com", body=b"<html></html>", request=request, headers={b"Content-Type": b"text/html"}
         )
         spider.parse(response)
 

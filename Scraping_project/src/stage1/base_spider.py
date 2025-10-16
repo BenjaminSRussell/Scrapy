@@ -82,7 +82,7 @@ class BaseSpider(scrapy.Spider):
         # Backward compatibility: expose storage backends directly
         self.delta = self.storage.delta
         self.postgres = self.storage.postgres
-        self.redis_client = self.storage.redis if hasattr(self.storage.redis, 'redis') else self.storage.redis
+        self.redis_client = self.storage.redis if hasattr(self.storage.redis, "redis") else self.storage.redis
 
         # Spider-specific Redis key storing URL hashes
         self.url_hashes_key = f"{self.name}:url_hashes"

@@ -5,7 +5,12 @@ Tests unified storage interface for Delta Lake, PostgreSQL, and Redis.
 
 import pytest
 
-from src.common.storage_manager import StorageManager, get_delta, get_postgres, get_redis
+from src.common.storage_manager import (
+    StorageManager,
+    get_delta,
+    get_postgres,
+    get_redis,
+)
 
 
 class TestStorageManagerBasics:
@@ -72,9 +77,9 @@ class TestStorageManagerProperties:
         delta = storage.delta
 
         assert delta is not None
-        assert hasattr(delta, 'base_path')
-        assert hasattr(delta, 'write')
-        assert hasattr(delta, 'read')
+        assert hasattr(delta, "base_path")
+        assert hasattr(delta, "write")
+        assert hasattr(delta, "read")
 
     def test_redis_property(self):
         """Test Redis property access."""
@@ -92,7 +97,7 @@ class TestStorageManagerProperties:
         try:
             postgres = storage.postgres
             assert postgres is not None
-            assert hasattr(postgres, 'get_connection')
+            assert hasattr(postgres, "get_connection")
         except Exception:
             # PostgreSQL may not be available in test environment
             pytest.skip("PostgreSQL not available")
@@ -105,7 +110,7 @@ class TestConvenienceFunctions:
         """Test get_delta convenience function."""
         delta = get_delta()
         assert delta is not None
-        assert hasattr(delta, 'write')
+        assert hasattr(delta, "write")
 
     def test_get_redis(self):
         """Test get_redis convenience function."""
@@ -130,9 +135,9 @@ class TestHealthChecks:
         health = storage.health_check()
 
         assert isinstance(health, dict)
-        assert 'delta' in health
-        assert 'postgres' in health
-        assert 'redis' in health
+        assert "delta" in health
+        assert "postgres" in health
+        assert "redis" in health
 
     def test_health_check_values_are_boolean(self):
         """Test that health check values are boolean."""
@@ -148,7 +153,7 @@ class TestHealthChecks:
         health = storage.health_check()
 
         # Delta Lake should be healthy (file-based)
-        assert health['delta'] is True
+        assert health["delta"] is True
 
     def test_redis_health_check(self):
         """Test Redis health check."""
@@ -156,7 +161,7 @@ class TestHealthChecks:
         health = storage.health_check()
 
         # Redis should be healthy (using fakeredis in tests)
-        assert health['redis'] is True
+        assert health["redis"] is True
 
 
 class TestContextManager:
@@ -185,7 +190,7 @@ class TestContextManager:
             assert delta is not None
 
             # Try basic operation
-            assert hasattr(delta, 'base_path')
+            assert hasattr(delta, "base_path")
 
 
 class TestCloseAll:
@@ -216,22 +221,22 @@ class TestStorageManagerConfiguration:
 
     def test_with_custom_config(self, monkeypatch):
         """Test StorageManager with custom configuration."""
-        monkeypatch.setenv('REDIS_HOST', 'custom-redis')
+        monkeypatch.setenv("REDIS_HOST", "custom-redis")
 
         from src.common.config_manager import ConfigManager
 
-        config = ConfigManager(env_override='testing')
+        config = ConfigManager(env_override="testing")
         storage = StorageManager(config=config)
 
-        assert storage.config.redis.host == 'custom-redis'
+        assert storage.config.redis.host == "custom-redis"
 
     def test_fakeredis_detection(self, monkeypatch):
         """Test that StorageManager detects fakeredis."""
-        monkeypatch.setenv('REDIS_URL', 'fakeredis://')
+        monkeypatch.setenv("REDIS_URL", "fakeredis://")
 
         from src.common.config_manager import ConfigManager
 
-        config = ConfigManager(env_override='testing')
+        config = ConfigManager(env_override="testing")
         storage = StorageManager(config=config)
 
         # Should use fakeredis
@@ -250,16 +255,16 @@ class TestStorageManagerIntegration:
 
         # Test data
         test_records = [
-            {'url': 'https://example.com/1', 'status': 'pending'},
-            {'url': 'https://example.com/2', 'status': 'pending'},
+            {"url": "https://example.com/1", "status": "pending"},
+            {"url": "https://example.com/2", "status": "pending"},
         ]
 
         # Write to Delta Lake
         try:
-            storage.delta.write('test_table', test_records)
+            storage.delta.write("test_table", test_records)
 
             # Read back
-            records = storage.delta.read('test_table')
+            records = storage.delta.read("test_table")
             assert len(records) >= 2
         except Exception as e:
             pytest.skip(f"Delta Lake operation failed: {e}")
@@ -272,14 +277,14 @@ class TestStorageManagerIntegration:
         # Test basic operations (works with both Redis and FakeRedis)
         try:
             # Set a value
-            if hasattr(redis_client, 'redis'):
+            if hasattr(redis_client, "redis"):
                 # RedisManager
-                redis_client.redis.set('test_key', 'test_value')
-                value = redis_client.redis.get('test_key')
+                redis_client.redis.set("test_key", "test_value")
+                value = redis_client.redis.get("test_key")
             else:
                 # Direct Redis/FakeRedis
-                redis_client.set('test_key', 'test_value')
-                value = redis_client.get('test_key')
+                redis_client.set("test_key", "test_value")
+                value = redis_client.get("test_key")
 
             assert value is not None
         except Exception as e:

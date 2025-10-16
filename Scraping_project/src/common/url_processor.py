@@ -60,30 +60,71 @@ class URLProcessor:
 
     # Tracking parameters to remove during normalization
     TRACKING_PARAMS = {
-        'utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content',
-        'fbclid', 'gclid', 'msclkid',
-        'ref', 'source', 'campaign',
-        '_ga', '_gid', '_gl',
+        "utm_source",
+        "utm_medium",
+        "utm_campaign",
+        "utm_term",
+        "utm_content",
+        "fbclid",
+        "gclid",
+        "msclkid",
+        "ref",
+        "source",
+        "campaign",
+        "_ga",
+        "_gid",
+        "_gl",
     }
 
     # File extensions to skip
     IGNORED_EXTENSIONS = {
         # Images
-        '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.svg', '.webp', '.ico', '.tiff',
+        ".jpg",
+        ".jpeg",
+        ".png",
+        ".gif",
+        ".bmp",
+        ".svg",
+        ".webp",
+        ".ico",
+        ".tiff",
         # Stylesheets and scripts
-        '.css', '.js', '.map',
+        ".css",
+        ".js",
+        ".map",
         # Archives
-        '.zip', '.rar', '.7z', '.tar', '.gz', '.bz2',
+        ".zip",
+        ".rar",
+        ".7z",
+        ".tar",
+        ".gz",
+        ".bz2",
         # Media files
-        '.mp3', '.mp4', '.avi', '.mov', '.wmv', '.flv', '.webm', '.m4a', '.wav',
+        ".mp3",
+        ".mp4",
+        ".avi",
+        ".mov",
+        ".wmv",
+        ".flv",
+        ".webm",
+        ".m4a",
+        ".wav",
         # Fonts
-        '.woff', '.woff2', '.ttf', '.eot', '.otf',
+        ".woff",
+        ".woff2",
+        ".ttf",
+        ".eot",
+        ".otf",
         # Other binary formats
-        '.exe', '.dmg', '.pkg', '.deb', '.rpm',
+        ".exe",
+        ".dmg",
+        ".pkg",
+        ".deb",
+        ".rpm",
     }
 
     # Document extensions (valuable for processing)
-    DOCUMENT_EXTENSIONS = {'.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx'}
+    DOCUMENT_EXTENSIONS = {".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx"}
 
     def __init__(
         self,
@@ -179,16 +220,16 @@ class URLProcessor:
 
             # Create result dictionary
             url_data = {
-                'url': normalized_url,
-                'original_url': url,
-                'value_score': assessment.value_score,
-                'content_likelihood': assessment.content_likelihood,
-                'recommended_spider': assessment.recommended_spider,
-                'reasons': assessment.reasons,
-                'metadata': assessment.metadata,
-                'depth': depth + 1,
-                'js_confidence': js_confidence,
-                'parent_url': parent_url or response.url,
+                "url": normalized_url,
+                "original_url": url,
+                "value_score": assessment.value_score,
+                "content_likelihood": assessment.content_likelihood,
+                "recommended_spider": assessment.recommended_spider,
+                "reasons": assessment.reasons,
+                "metadata": assessment.metadata,
+                "depth": depth + 1,
+                "js_confidence": js_confidence,
+                "parent_url": parent_url or response.url,
             }
 
             processed_urls.append(url_data)
@@ -221,7 +262,7 @@ class URLProcessor:
             parsed = urlparse(url)
 
             # Validate scheme
-            if parsed.scheme not in ('http', 'https'):
+            if parsed.scheme not in ("http", "https"):
                 return None
 
             # Validate netloc
@@ -233,32 +274,34 @@ class URLProcessor:
             netloc = parsed.netloc.lower()
 
             # Remove default ports
-            if netloc.endswith(':80') and scheme == 'http':
+            if netloc.endswith(":80") and scheme == "http":
                 netloc = netloc[:-3]
-            elif netloc.endswith(':443') and scheme == 'https':
+            elif netloc.endswith(":443") and scheme == "https":
                 netloc = netloc[:-4]
 
             # Normalize path (lowercase for consistency)
-            path = (parsed.path or '/').lower()
+            path = (parsed.path or "/").lower()
 
             # Remove trailing slash for non-root paths
-            if len(path) > 1 and path.endswith('/'):
-                path = path.rstrip('/')
+            if len(path) > 1 and path.endswith("/"):
+                path = path.rstrip("/")
 
             # Filter and sort query parameters
-            params = ''
+            params = ""
             if parsed.query:
                 params = self._normalize_query_params(parsed.query)
 
             # Reconstruct URL (without fragment)
-            normalized = urlunparse((
-                scheme,
-                netloc,
-                path,
-                '',  # params (deprecated)
-                params,
-                '',  # fragment (removed)
-            ))
+            normalized = urlunparse(
+                (
+                    scheme,
+                    netloc,
+                    path,
+                    "",  # params (deprecated)
+                    params,
+                    "",  # fragment (removed)
+                )
+            )
 
             return normalized
 
@@ -281,11 +324,7 @@ class URLProcessor:
             params = parse_qs(query, keep_blank_values=True)
 
             # Filter out tracking parameters
-            filtered_params = {
-                key: value
-                for key, value in params.items()
-                if key.lower() not in self.TRACKING_PARAMS
-            }
+            filtered_params = {key: value for key, value in params.items() if key.lower() not in self.TRACKING_PARAMS}
 
             # Sort parameters for consistency
             sorted_params = sorted(filtered_params.items())
@@ -293,7 +332,7 @@ class URLProcessor:
             # Reconstruct query string
             if sorted_params:
                 return urlencode(sorted_params, doseq=True)
-            return ''
+            return ""
 
         except Exception as e:
             logger.debug(f"Failed to normalize query params: {e}")
@@ -324,16 +363,16 @@ class URLProcessor:
 
             # Check for common exclusion patterns
             exclusion_patterns = [
-                r'/wp-admin',
-                r'/wp-login',
-                r'/admin',
-                r'/login',
-                r'/logout',
-                r'/signin',
-                r'/signout',
-                r'/register',
-                r'/cart',
-                r'/checkout',
+                r"/wp-admin",
+                r"/wp-login",
+                r"/admin",
+                r"/login",
+                r"/logout",
+                r"/signin",
+                r"/signout",
+                r"/register",
+                r"/cart",
+                r"/checkout",
             ]
 
             for pattern in exclusion_patterns:
@@ -490,14 +529,16 @@ class URLProcessor:
                 js_confidence=js_confidence,
             )
 
-            processed.append({
-                'url': normalized,
-                'value_score': assessment.value_score,
-                'priority': priority,
-                'recommended_spider': assessment.recommended_spider,
-                'depth': depth,
-                'parent_url': parent_url,
-            })
+            processed.append(
+                {
+                    "url": normalized,
+                    "value_score": assessment.value_score,
+                    "priority": priority,
+                    "recommended_spider": assessment.recommended_spider,
+                    "depth": depth,
+                    "parent_url": parent_url,
+                }
+            )
 
         return processed
 

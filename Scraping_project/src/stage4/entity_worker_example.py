@@ -19,10 +19,7 @@ from datetime import datetime
 from src.common.delta_lake import get_delta_manager
 from src.stage4.entity_summarization import Stage4EntityWorker
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 
 logger = logging.getLogger(__name__)
 
@@ -103,7 +100,7 @@ class EntityWorkerRunner:
 
         # Process in batches
         for i in range(0, len(records), self.batch_size):
-            batch = records[i:i + self.batch_size]
+            batch = records[i : i + self.batch_size]
             logger.info(f"Processing batch {i // self.batch_size + 1}: {len(batch)} records")
 
             # Convert Delta Lake records to document format
@@ -112,12 +109,7 @@ class EntityWorkerRunner:
                 entity_name, entity_type = self.extract_entity_from_record(record)
 
                 # Extract content (try multiple field names)
-                content = (
-                    record.get("content") or
-                    record.get("combined_text") or
-                    record.get("summary") or
-                    ""
-                )
+                content = record.get("content") or record.get("combined_text") or record.get("summary") or ""
 
                 if not content:
                     logger.warning(f"No content found for record: {record.get('url')}")
@@ -131,18 +123,20 @@ class EntityWorkerRunner:
                     except ValueError:
                         pub_date = None
 
-                documents.append({
-                    "entity_name": entity_name,
-                    "entity_type": entity_type,
-                    "content": content,
-                    "source_url": record.get("url", record.get("source_url", "unknown")),
-                    "publication_date": pub_date,
-                    "metadata": {
-                        "title": record.get("title"),
-                        "scraped_at": record.get("scraped_at_utc"),
-                        "spider_name": record.get("spider_name"),
+                documents.append(
+                    {
+                        "entity_name": entity_name,
+                        "entity_type": entity_type,
+                        "content": content,
+                        "source_url": record.get("url", record.get("source_url", "unknown")),
+                        "publication_date": pub_date,
+                        "metadata": {
+                            "title": record.get("title"),
+                            "scraped_at": record.get("scraped_at_utc"),
+                            "spider_name": record.get("spider_name"),
+                        },
                     }
-                })
+                )
 
             # Process batch through entity worker
             if documents:
@@ -222,6 +216,7 @@ class KafkaEntityWorker:
 
                 # Parse message
                 import json
+
                 record = json.loads(msg.value().decode("utf-8"))
 
                 # Extract entity info (same logic as EntityWorkerRunner)
@@ -237,7 +232,7 @@ class KafkaEntityWorker:
                     "metadata": {
                         "title": record.get("title"),
                         "category": record.get("category_final"),
-                    }
+                    },
                 }
 
                 self.document_batch.append(document)
@@ -267,24 +262,15 @@ def main():
         "--mode",
         choices=["delta", "kafka"],
         default="delta",
-        help="Processing mode: delta (batch) or kafka (streaming)"
+        help="Processing mode: delta (batch) or kafka (streaming)",
     )
     parser.add_argument(
-        "--input-table",
-        default="stage3_analytics",
-        help="Delta Lake table to read from (delta mode only)"
+        "--input-table", default="stage3_analytics", help="Delta Lake table to read from (delta mode only)"
     )
     parser.add_argument(
-        "--kafka-topic",
-        default="final_categorized",
-        help="Kafka topic to consume from (kafka mode only)"
+        "--kafka-topic", default="final_categorized", help="Kafka topic to consume from (kafka mode only)"
     )
-    parser.add_argument(
-        "--limit",
-        type=int,
-        default=None,
-        help="Limit number of records to process (delta mode only)"
-    )
+    parser.add_argument("--limit", type=int, default=None, help="Limit number of records to process (delta mode only)")
 
     args = parser.parse_args()
 

@@ -81,17 +81,13 @@ class BaseRecordSchema(BaseModel):
 
     # Classification fields
     category_final: CategoryType | None = Field(None, description="Final ZSC category")
-    category_confidence: float | None = Field(
-        None, ge=0.0, le=1.0, description="ZSC confidence score [0.0, 1.0]"
-    )
+    category_confidence: float | None = Field(None, ge=0.0, le=1.0, description="ZSC confidence score [0.0, 1.0]")
 
     # Entity aggregation
     entity_id: str | None = Field(None, description="Unique entity identifier")
 
     # Validation status
-    validation_status: bool = Field(
-        default=False, description="Confirms successful validation"
-    )
+    validation_status: bool = Field(default=False, description="Confirms successful validation")
 
     # Metadata fields
     scraped_at_utc: datetime | None = Field(None, description="Scraping timestamp UTC")
@@ -99,9 +95,7 @@ class BaseRecordSchema(BaseModel):
     pipeline_version: str | None = Field(None, description="Pipeline version")
 
     # Recency scoring (added by RecencyScoringPipeline)
-    recency_score: float | None = Field(
-        None, ge=0.0, le=1.0, description="Temporal relevance score [0.0, 1.0]"
-    )
+    recency_score: float | None = Field(None, ge=0.0, le=1.0, description="Temporal relevance score [0.0, 1.0]")
 
     model_config = {
         "json_schema_extra": {
@@ -174,8 +168,7 @@ class BaseRecordSchema(BaseModel):
                 # Validate that provided total matches sum (within 1% tolerance)
                 if abs(self.total_cost - calculated_total) > (calculated_total * 0.01):
                     raise ValueError(
-                        f"Total cost {self.total_cost} does not match sum of components "
-                        f"{calculated_total}"
+                        f"Total cost {self.total_cost} does not match sum of components " f"{calculated_total}"
                     )
 
         return self

@@ -14,6 +14,7 @@ from typing import Any
 
 try:
     import requests
+
     REQUESTS_AVAILABLE = True
 except ImportError:
     REQUESTS_AVAILABLE = False
@@ -21,6 +22,7 @@ except ImportError:
 
 try:
     import speech_recognition as sr
+
     SPEECH_RECOGNITION_AVAILABLE = True
 except ImportError:
     SPEECH_RECOGNITION_AVAILABLE = False
@@ -28,6 +30,7 @@ except ImportError:
 
 try:
     from twisted.internet import defer, threads
+
     TWISTED_AVAILABLE = True
 except ImportError:
     TWISTED_AVAILABLE = False
@@ -158,22 +161,16 @@ class AsyncASRProcessor:
 
         if not REQUESTS_AVAILABLE:
             logger.warning(
-                "requests library not available. Media download will be disabled. "
-                "Install with: pip install requests"
+                "requests library not available. Media download will be disabled. " "Install with: pip install requests"
             )
 
         self.max_workers = max_workers
         self.temp_dir = temp_dir or tempfile.gettempdir()
         self.executor = ProcessPoolExecutor(max_workers=max_workers)
 
-        logger.info(
-            f"AsyncASRProcessor initialized with {max_workers} workers, "
-            f"temp_dir={self.temp_dir}"
-        )
+        logger.info(f"AsyncASRProcessor initialized with {max_workers} workers, " f"temp_dir={self.temp_dir}")
 
-    def process_media_url(
-        self, media_url: str, item_dict: dict[str, Any]
-    ) -> "defer.Deferred":
+    def process_media_url(self, media_url: str, item_dict: dict[str, Any]) -> "defer.Deferred":
         """Process media URL asynchronously (download + transcribe).
 
         This method returns a Deferred that will fire with the transcription result.
@@ -201,8 +198,7 @@ class AsyncASRProcessor:
         # Check if URL has supported format
         url_lower = media_url.lower()
         is_supported = any(
-            url_lower.endswith(ext)
-            for ext in self.SUPPORTED_AUDIO_FORMATS | self.SUPPORTED_VIDEO_FORMATS
+            url_lower.endswith(ext) for ext in self.SUPPORTED_AUDIO_FORMATS | self.SUPPORTED_VIDEO_FORMATS
         )
 
         if not is_supported:
@@ -210,19 +206,13 @@ class AsyncASRProcessor:
             return defer.succeed(item_dict)
 
         # Download media file asynchronously
-        download_deferred = threads.deferToThread(
-            self._download_media, media_url
-        )
+        download_deferred = threads.deferToThread(self._download_media, media_url)
 
         # Chain transcription after download
-        download_deferred.addCallback(
-            lambda local_path: self._transcribe_async(local_path, item_dict)
-        )
+        download_deferred.addCallback(lambda local_path: self._transcribe_async(local_path, item_dict))
 
         # Handle errors gracefully
-        download_deferred.addErrback(
-            lambda failure: self._handle_error(failure, item_dict)
-        )
+        download_deferred.addErrback(lambda failure: self._handle_error(failure, item_dict))
 
         return download_deferred
 
@@ -265,9 +255,7 @@ class AsyncASRProcessor:
         logger.info(f"Media downloaded to: {temp_path}")
         return temp_path
 
-    def _transcribe_async(
-        self, local_path: str, item_dict: dict[str, Any]
-    ) -> "defer.Deferred":
+    def _transcribe_async(self, local_path: str, item_dict: dict[str, Any]) -> "defer.Deferred":
         """Transcribe audio file asynchronously using process pool.
 
         Args:
@@ -294,9 +282,7 @@ class AsyncASRProcessor:
                     # Update item with transcript
                     item_dict["transcript"] = result["transcript"]
                     item_dict["media_duration"] = result.get("duration", 0)
-                    logger.info(
-                        f"Transcription successful: {len(result['transcript'])} chars"
-                    )
+                    logger.info(f"Transcription successful: {len(result['transcript'])} chars")
                 else:
                     logger.warning(f"Transcription failed: {result['error']}")
                     item_dict["transcript"] = ""
@@ -320,9 +306,7 @@ class AsyncASRProcessor:
 
         return deferred
 
-    def _handle_error(
-        self, failure: Any, item_dict: dict[str, Any]
-    ) -> dict[str, Any]:
+    def _handle_error(self, failure: Any, item_dict: dict[str, Any]) -> dict[str, Any]:
         """Handle errors in download/transcription pipeline.
 
         Args:
@@ -407,9 +391,7 @@ class ASRMiddleware:
 
                 if media_url:
                     # Submit for async transcription
-                    deferred = self.processor.process_media_url(
-                        media_url, item_or_request
-                    )
+                    deferred = self.processor.process_media_url(media_url, item_or_request)
                     yield deferred
                 else:
                     yield item_or_request

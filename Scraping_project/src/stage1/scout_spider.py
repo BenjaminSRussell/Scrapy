@@ -19,17 +19,17 @@ def get_delta_manager(*args, **kwargs):
     """Proxy to StorageManager delta backend (patched in tests)."""
     return get_delta()
 
+
 def get_postgres_manager(*args, **kwargs):
     """Proxy to StorageManager postgres backend (patched in tests)."""
     return get_postgres()
+
 
 # Legacy proxies removed - use StorageManager directly
 _core_get_delta_manager = get_delta_manager
 _core_get_postgres_manager = get_postgres_manager
 
 logger = logging.getLogger(__name__)
-
-
 
 
 class ScoutSpider(BaseSpider):

@@ -666,6 +666,7 @@ class DeltaLakeManager:
         table_path = self.tables.get(table_name)
         if table_path and table_path.exists():
             import shutil
+
             shutil.rmtree(table_path)
             logger.info(f"Deleted table: {table_name}")
 
@@ -819,10 +820,12 @@ class InMemoryDeltaManager:
         """
         if not self.table_exists(name) or not self.tables[name]:
             import pyarrow as pa
+
             return pa.schema([])
 
         # Infer schema from the first record and create a PyArrow-compatible schema
         import pyarrow as pa
+
         first_record = self.tables[name][0]
         fields = []
         for key, value in first_record.items():

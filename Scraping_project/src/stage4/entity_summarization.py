@@ -125,10 +125,7 @@ class FactAggregator:
 
             self.entity_facts[entity_name].append(fact_record)
 
-        logger.info(
-            f"Added {len(entity_sentences)} facts for entity '{entity_name}' "
-            f"from {source_url}"
-        )
+        logger.info(f"Added {len(entity_sentences)} facts for entity '{entity_name}' " f"from {source_url}")
 
     def _parse_date(self, date_input: datetime | str | None) -> datetime | None:
         """Parse various date formats to datetime object.
@@ -172,7 +169,7 @@ class FactAggregator:
         """
         # Simple sentence splitting (handles ., !, ?)
         # For production, use spaCy: nlp(content).sents
-        sentence_pattern = re.compile(r'[^.!?]+[.!?]+')
+        sentence_pattern = re.compile(r"[^.!?]+[.!?]+")
         sentences = sentence_pattern.findall(content)
 
         # Clean and filter sentences
@@ -186,11 +183,7 @@ class FactAggregator:
 
         return cleaned
 
-    def _filter_entity_sentences(
-        self,
-        sentences: list[str],
-        entity_name: str
-    ) -> list[str]:
+    def _filter_entity_sentences(self, sentences: list[str], entity_name: str) -> list[str]:
         """Filter sentences that mention the entity.
 
         This is a simple keyword-based filter. For production, consider using
@@ -262,26 +255,22 @@ class FactAggregator:
             # Aggregate all source references for this cluster
             source_refs = []
             for fact in cluster_facts:
-                source_refs.append({
-                    "source_url": fact["source_url"],
-                    "publication_date": fact["publication_date"],
-                })
+                source_refs.append(
+                    {
+                        "source_url": fact["source_url"],
+                        "publication_date": fact["publication_date"],
+                    }
+                )
 
             # Add aggregated sources to representative fact
             representative["source_references"] = source_refs
             deduplicated.append(representative)
 
-        logger.info(
-            f"✅ Deduplicated {len(facts)} facts → {len(deduplicated)} unique facts "
-            f"for '{entity_name}'"
-        )
+        logger.info(f"✅ Deduplicated {len(facts)} facts → {len(deduplicated)} unique facts " f"for '{entity_name}'")
 
         return deduplicated
 
-    def _compute_similarity_matrix(
-        self,
-        embeddings: np.ndarray
-    ) -> np.ndarray:
+    def _compute_similarity_matrix(self, embeddings: np.ndarray) -> np.ndarray:
         """Compute pairwise cosine similarity matrix.
 
         Args:
@@ -338,10 +327,7 @@ class FactAggregator:
 
         return clusters
 
-    def _select_representative_fact(
-        self,
-        cluster_facts: list[dict[str, Any]]
-    ) -> dict[str, Any]:
+    def _select_representative_fact(self, cluster_facts: list[dict[str, Any]]) -> dict[str, Any]:
         """Select the most representative fact from a cluster.
 
         Selection criteria (in order of priority):
@@ -359,9 +345,9 @@ class FactAggregator:
             cluster_facts,
             key=lambda f: (
                 f["publication_date"] or datetime.min,  # Handle None dates
-                len(f["fact_text"])
+                len(f["fact_text"]),
             ),
-            reverse=True
+            reverse=True,
         )
 
         return sorted_facts[0]
@@ -394,11 +380,7 @@ class ChronologicalSorter:
         """
         self.date_format = date_format
 
-    def sort_facts(
-        self,
-        facts: list[dict[str, Any]],
-        descending: bool = False
-    ) -> list[dict[str, Any]]:
+    def sort_facts(self, facts: list[dict[str, Any]], descending: bool = False) -> list[dict[str, Any]]:
         """Sort facts by publication date.
 
         Args:
@@ -408,18 +390,11 @@ class ChronologicalSorter:
         Returns:
             Sorted facts
         """
-        sorted_facts = sorted(
-            facts,
-            key=lambda f: f.get("publication_date") or datetime.min,
-            reverse=descending
-        )
+        sorted_facts = sorted(facts, key=lambda f: f.get("publication_date") or datetime.min, reverse=descending)
 
         return sorted_facts
 
-    def prepare_for_summarization(
-        self,
-        facts: list[dict[str, Any]]
-    ) -> str:
+    def prepare_for_summarization(self, facts: list[dict[str, Any]]) -> str:
         """Prepare facts for summarization with date context.
 
         This method creates a text input for the summarization model by:
@@ -560,10 +535,7 @@ class AbstractiveSummarizer:
             "citations": citations,
         }
 
-    def _create_citations(
-        self,
-        facts: list[dict[str, Any]]
-    ) -> dict[int, list[dict[str, Any]]]:
+    def _create_citations(self, facts: list[dict[str, Any]]) -> dict[int, list[dict[str, Any]]]:
         """Create citation mapping from facts.
 
         Args:
@@ -583,11 +555,7 @@ class AbstractiveSummarizer:
 
         return citations
 
-    def _embed_citations(
-        self,
-        summary_text: str,
-        citations: dict[int, list[dict[str, Any]]]
-    ) -> str:
+    def _embed_citations(self, summary_text: str, citations: dict[int, list[dict[str, Any]]]) -> str:
         """Embed citation markers into summary text.
 
         This is a simple implementation that appends citations at the end.
@@ -638,6 +606,7 @@ class EntitySummaryStorage:
         """
         if delta_manager is None:
             from src.common.delta_lake import get_delta_manager
+
             delta_manager = get_delta_manager()
 
         self.delta = delta_manager
@@ -679,8 +648,7 @@ class EntitySummaryStorage:
             source_refs_map[str(citation_num)] = [
                 {
                     "url": ref.get("source_url", ""),
-                    "date": ref.get("publication_date").isoformat()
-                    if ref.get("publication_date") else None,
+                    "date": ref.get("publication_date").isoformat() if ref.get("publication_date") else None,
                 }
                 for ref in refs
             ]
@@ -707,9 +675,7 @@ class EntitySummaryStorage:
         # Write to Delta Lake
         self.delta.write(self.table_name, [record], mode="append")
 
-        logger.info(
-            f"✅ Saved summary for '{entity_name}' to Delta Lake table '{self.table_name}'"
-        )
+        logger.info(f"✅ Saved summary for '{entity_name}' to Delta Lake table '{self.table_name}'")
 
     def read_summaries(
         self,
@@ -781,10 +747,7 @@ class Stage4EntityWorker:
 
         logger.info("✅ Stage4EntityWorker initialized")
 
-    def process_documents(
-        self,
-        documents: list[dict[str, Any]]
-    ):
+    def process_documents(self, documents: list[dict[str, Any]]):
         """Process a batch of documents through the entity summarization pipeline.
 
         Args:
@@ -835,15 +798,9 @@ class Stage4EntityWorker:
                 facts=facts,
             )
 
-            logger.info(
-                f"✅ Completed processing for entity '{entity_name}' "
-                f"({len(facts)} unique facts)"
-            )
+            logger.info(f"✅ Completed processing for entity '{entity_name}' " f"({len(facts)} unique facts)")
 
-        logger.info(
-            f"✅ Stage 4 processing complete. "
-            f"Processed {len(all_entity_facts)} entities."
-        )
+        logger.info(f"✅ Stage 4 processing complete. " f"Processed {len(all_entity_facts)} entities.")
 
 
 # Example usage and integration

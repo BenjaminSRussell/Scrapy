@@ -10,7 +10,11 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from src.common.scoring_metrics import calculate_decay_score, calculate_weighted_average
-from src.pipelines import AggregationPipeline, RecencyScoringPipeline, SchemaValidationPipeline
+from src.pipelines import (
+    AggregationPipeline,
+    RecencyScoringPipeline,
+    SchemaValidationPipeline,
+)
 from src.schemas import BaseRecordSchema, CategoryType, ValidationFailureRecord
 
 
@@ -231,9 +235,7 @@ class TestPipelineIntegration:
     def test_schema_validation_pipeline_success(self, mock_spider, sample_item):
         """Test SchemaValidationPipeline processes valid items correctly."""
         # Mock Kafka producer
-        with patch("src.pipelines.KAFKA_AVAILABLE", True), \
-             patch("src.pipelines.PYDANTIC_AVAILABLE", True):
-
+        with patch("src.pipelines.KAFKA_AVAILABLE", True), patch("src.pipelines.PYDANTIC_AVAILABLE", True):
             pipeline = SchemaValidationPipeline(
                 enabled=True,
                 validation_failures_topic="test_failures",
@@ -306,9 +308,7 @@ class TestPipelineIntegration:
     def test_full_pipeline_flow(self, mock_spider):
         """Test complete pipeline flow: validation → scoring → aggregation."""
         # Create pipelines
-        with patch("src.pipelines.KAFKA_AVAILABLE", True), \
-             patch("src.pipelines.PYDANTIC_AVAILABLE", True):
-
+        with patch("src.pipelines.KAFKA_AVAILABLE", True), patch("src.pipelines.PYDANTIC_AVAILABLE", True):
             validation_pipeline = SchemaValidationPipeline(enabled=True)
             validation_pipeline.kafka_producer = None
 

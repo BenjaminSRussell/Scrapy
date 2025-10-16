@@ -27,19 +27,16 @@ from src.stage4.entity_summarization import (
 )
 
 # Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 
 logger = logging.getLogger(__name__)
 
 
 def demo_fact_aggregator():
     """Demonstrate Phase 1: Fact Aggregation and Deduplication."""
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print("PHASE 1: EXTRACTIVE FACT AGGREGATION AND DEDUPLICATION")
-    print("="*80 + "\n")
+    print("=" * 80 + "\n")
 
     # Initialize aggregator
     aggregator = FactAggregator(
@@ -112,8 +109,10 @@ def demo_fact_aggregator():
     # Deduplicate facts
     deduplicated_facts = aggregator.deduplicate_facts("Professor Jane Doe")
 
-    print(f"Result: {len(aggregator.entity_facts['Professor Jane Doe'])} raw facts "
-          f"→ {len(deduplicated_facts)} unique facts after deduplication\n")
+    print(
+        f"Result: {len(aggregator.entity_facts['Professor Jane Doe'])} raw facts "
+        f"→ {len(deduplicated_facts)} unique facts after deduplication\n"
+    )
 
     print("Deduplicated Facts:")
     print("-" * 80)
@@ -129,9 +128,9 @@ def demo_fact_aggregator():
 
 def demo_chronological_sorting(facts):
     """Demonstrate Phase 2a: Chronological Sorting."""
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print("PHASE 2A: CHRONOLOGICAL SORTING WITH DATE CONTEXT")
-    print("="*80 + "\n")
+    print("=" * 80 + "\n")
 
     sorter = ChronologicalSorter(date_format="%Y-%m-%d")
 
@@ -148,9 +147,9 @@ def demo_chronological_sorting(facts):
 
 def demo_abstractive_summarization(formatted_text, facts):
     """Demonstrate Phase 2b: Abstractive Summarization with Citations."""
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print("PHASE 2B: ABSTRACTIVE SUMMARIZATION WITH CITATIONS")
-    print("="*80 + "\n")
+    print("=" * 80 + "\n")
 
     summarizer = AbstractiveSummarizer(
         model_name="facebook/bart-large-cnn",
@@ -185,9 +184,9 @@ def demo_abstractive_summarization(formatted_text, facts):
 
 def demo_full_pipeline():
     """Demonstrate the complete end-to-end pipeline using Stage4EntityWorker."""
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print("FULL PIPELINE DEMO: END-TO-END ENTITY SUMMARIZATION")
-    print("="*80 + "\n")
+    print("=" * 80 + "\n")
 
     # Initialize worker
     worker = Stage4EntityWorker(
@@ -237,9 +236,9 @@ def demo_full_pipeline():
     # Process all documents
     worker.process_documents(documents)
 
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print("PIPELINE COMPLETE!")
-    print("="*80)
+    print("=" * 80)
     print("\nEntity summaries have been stored in Delta Lake table: 'entity_summaries'")
     print("\nTo query the results, run:")
     print("  from src.common.delta_lake import get_delta_manager")
@@ -250,9 +249,9 @@ def demo_full_pipeline():
 
 def main():
     """Run all demos."""
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print("ENTITY-CENTRIC SUMMARIZATION PIPELINE DEMONSTRATION")
-    print("="*80)
+    print("=" * 80)
     print("\nThis demo shows how the pipeline transforms raw documents into")
     print("verifiable, non-redundant, chronologically-aware entity summaries.\n")
 

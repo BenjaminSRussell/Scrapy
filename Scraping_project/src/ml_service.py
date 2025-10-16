@@ -15,6 +15,7 @@ from typing import Any
 
 try:
     from confluent_kafka import Consumer, KafkaError, Producer
+
     KAFKA_AVAILABLE = True
 except ImportError:
     KAFKA_AVAILABLE = False
@@ -24,6 +25,7 @@ except ImportError:
 
 try:
     from transformers import pipeline
+
     TRANSFORMERS_AVAILABLE = True
 except ImportError:
     TRANSFORMERS_AVAILABLE = False
@@ -79,8 +81,7 @@ class ZeroShotClassifier:
         """
         if not TRANSFORMERS_AVAILABLE:
             raise ImportError(
-                "transformers library required for ZeroShotClassifier. "
-                "Install with: pip install transformers torch"
+                "transformers library required for ZeroShotClassifier. " "Install with: pip install transformers torch"
             )
 
         self.model_name = model_name
@@ -109,9 +110,7 @@ class ZeroShotClassifier:
             "other",
         ]
 
-    def classify(
-        self, text: str, multi_label: bool = False
-    ) -> dict[str, Any]:
+    def classify(self, text: str, multi_label: bool = False) -> dict[str, Any]:
         """Classify text using zero-shot classification.
 
         Args:
@@ -180,9 +179,7 @@ class ZeroShotClassifier:
             "meets_threshold": meets_threshold,
         }
 
-    def classify_batch(
-        self, texts: list[str], multi_label: bool = False
-    ) -> list[dict[str, Any]]:
+    def classify_batch(self, texts: list[str], multi_label: bool = False) -> list[dict[str, Any]]:
         """Classify multiple texts efficiently.
 
         Args:
