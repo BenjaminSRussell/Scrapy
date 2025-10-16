@@ -2,10 +2,8 @@
 
 import json
 import logging
-import time
 from datetime import datetime
 from typing import Any
-from urllib.parse import urlparse
 
 import redis
 
@@ -81,12 +79,14 @@ class JSPriorityQueue:
             # Store metadata if provided
             if metadata or parent_url or js_confidence:
                 url_metadata = metadata or {}
-                url_metadata.update({
-                    "queued_at": datetime.now().isoformat(),
-                    "parent_url": parent_url,
-                    "js_confidence": js_confidence,
-                    "priority": priority,
-                })
+                url_metadata.update(
+                    {
+                        "queued_at": datetime.now().isoformat(),
+                        "parent_url": parent_url,
+                        "js_confidence": js_confidence,
+                        "priority": priority,
+                    }
+                )
 
                 self.redis.hset(
                     self.metadata_key,
@@ -173,11 +173,13 @@ class JSPriorityQueue:
                 metadata_json = results[i * 3 + 1]  # Every 3rd result is metadata
                 metadata = json.loads(metadata_json) if metadata_json else {}
 
-                url_dicts.append({
-                    "url": url.decode() if isinstance(url, bytes) else url,
-                    "metadata": metadata,
-                    "dequeued_at": datetime.now().isoformat(),
-                })
+                url_dicts.append(
+                    {
+                        "url": url.decode() if isinstance(url, bytes) else url,
+                        "metadata": metadata,
+                        "dequeued_at": datetime.now().isoformat(),
+                    }
+                )
 
             logger.debug(f"[JS_QUEUE] Dequeued {len(url_dicts)} URLs")
             return url_dicts
@@ -251,9 +253,9 @@ class JSPriorityQueue:
 
             priority_dist = {
                 "critical": 0,  # 100+
-                "high": 0,      # 50-99
-                "medium": 0,    # 25-49
-                "low": 0,       # 0-24
+                "high": 0,  # 50-99
+                "medium": 0,  # 25-49
+                "low": 0,  # 0-24
             }
 
             for _, score in all_scores:
@@ -286,6 +288,10 @@ def calculate_js_priority(
 ) -> int:
     """Calculate priority score for JavaScript rendering.
 
+    DEPRECATED: This function is maintained for backward compatibility.
+    New code should use URLValueAssessor.calculate_js_priority() instead,
+    which includes historical data analysis.
+
     Priority levels:
     - 100: Critical (SPA, framework detected)
     - 50-75: High (high JS confidence, framework hints)
@@ -301,30 +307,40 @@ def calculate_js_priority(
     Returns:
         Priority score (0-100)
     """
-    base_priority = int(js_confidence * 50)  # 0-50 from confidence
+    # Delegate to URLValueAssessor for consistency
+    try:
+        from src.common.url_value_assessor import URLValueAssessor
 
-    # Boost for frameworks
-    if framework_detected:
-        framework_boost = {
-            "react": 50,
-            "vue": 50,
-            "angular": 50,
-            "next": 50,
-            "nuxt": 50,
-            "svelte": 40,
-            "ember": 40,
-        }.get(framework_detected.lower(), 30)
+        assessor = URLValueAssessor()
+        return assessor.calculate_js_priority(js_confidence, url, framework_detected, is_spa)
+    except Exception as e:
+        logger.warning(f"[JS_QUEUE] Could not use URLValueAssessor, falling back: {e}")
 
-        base_priority += framework_boost
+        # Fallback implementation (kept for robustness)
+        base_priority = int(js_confidence * 50)  # 0-50 from confidence
 
-    # Boost for SPA detection
-    if is_spa:
-        base_priority += 50
+        # Boost for frameworks
+        if framework_detected:
+            framework_boost = {
+                "react": 50,
+                "vue": 50,
+                "angular": 50,
+                "next": 50,
+                "nuxt": 50,
+                "svelte": 40,
+                "ember": 40,
+            }.get(framework_detected.lower(), 30)
 
-    # URL-based heuristics
-    url_lower = url.lower()
-    if any(hint in url_lower for hint in ["app", "dashboard", "portal", "console"]):
-        base_priority += 10
+            base_priority += framework_boost
 
-    # Cap at 100
-    return min(base_priority, 100)
+        # Boost for SPA detection
+        if is_spa:
+            base_priority += 50
+
+        # URL-based heuristics
+        url_lower = url.lower()
+        if any(hint in url_lower for hint in ["app", "dashboard", "portal", "console"]):
+            base_priority += 10
+
+        # Cap at 100
+        return min(base_priority, 100)

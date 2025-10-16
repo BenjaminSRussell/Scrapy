@@ -225,15 +225,13 @@ class MetricsExporter:
                             # Use Delta Lake's metadata to estimate size efficiently
                             # This avoids full filesystem traversal
                             parquet_files = [
-                                f for f in os.listdir(table_path)
-                                if f.endswith('.parquet') and os.path.isfile(os.path.join(table_path, f))
+                                f
+                                for f in os.listdir(table_path)
+                                if f.endswith(".parquet") and os.path.isfile(os.path.join(table_path, f))
                             ]
                             if parquet_files:
                                 # Quick size calculation from parquet files only (skip _delta_log)
-                                size = sum(
-                                    os.path.getsize(os.path.join(table_path, f))
-                                    for f in parquet_files
-                                )
+                                size = sum(os.path.getsize(os.path.join(table_path, f)) for f in parquet_files)
                                 delta_lake_size_bytes.labels(table=table).set(size)
                     except Exception:
                         # Skip size calculation if it fails

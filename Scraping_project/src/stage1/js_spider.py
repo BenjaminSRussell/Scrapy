@@ -65,13 +65,14 @@ class JavaScriptSpider(scrapy.Spider):
         self.delta = get_delta_manager()
 
         # Initialize Redis priority queue
-        config_obj = self.config._config if hasattr(self.config, '_config') else {}
+        config_obj = self.config._config if hasattr(self.config, "_config") else {}
         redis_config = config_obj.get("redis", {})
         redis_host = os.getenv("REDIS_HOST", redis_config.get("host", "localhost"))
         redis_port = int(os.getenv("REDIS_PORT", redis_config.get("port", 6379)))
 
         if os.getenv("REDIS_URL") == "fakeredis://":
             import fakeredis
+
             redis_client = fakeredis.FakeStrictRedis(decode_responses=False)
         else:
             redis_client = redis.Redis(

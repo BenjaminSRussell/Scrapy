@@ -17,8 +17,8 @@ from scrapy.spidermiddlewares.httperror import HttpError
 from twisted.internet.error import DNSLookupError, TCPTimedOutError, TimeoutError
 
 from src.common.config import Config
-from src.common.delta_lake import DeltaLakeManager
-from src.common.postgres_manager import PostgresManager
+from src.common.delta_lake import DeltaLakeManager, get_delta_manager
+from src.common.postgres_manager import PostgresManager, get_postgres_manager
 from src.common.url_extractor import URLExtractor
 from src.items import OffsiteCandidateItem
 from src.stage1.js_detection import JSDetector

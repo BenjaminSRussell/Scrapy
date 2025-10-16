@@ -102,15 +102,46 @@ class TestAlertIntervals(unittest.TestCase):
     def wait_for_grafana():
         """Waits for the Grafana API to become responsive."""
         grafana_url = "http://admin:admin@localhost:3000/api/health"
-        for _ in range(30):  # Wait up to 30 seconds
+        max_attempts = 60  # Increased to 60 seconds
+        for attempt in range(max_attempts):
             try:
-                response = requests.get(grafana_url)
+                response = requests.get(grafana_url, timeout=5)
                 if response.status_code == 200:
-                    print("Grafana is up and running.")
+                    print(f"Grafana is up and running (took {attempt + 1}s).")
                     return
-            except requests.ConnectionError:
-                pass
+                else:
+                    print(f"Attempt {attempt + 1}/{max_attempts}: Grafana returned status {response.status_code}")
+            except requests.ConnectionError as e:
+                print(f"Attempt {attempt + 1}/{max_attempts}: Grafana not yet ready ({e})")
+            except requests.Timeout:
+                print(f"Attempt {attempt + 1}/{max_attempts}: Grafana health check timed out")
+            except Exception as e:
+                print(f"Attempt {attempt + 1}/{max_attempts}: Unexpected error: {e}")
             time.sleep(1)
+
+        # Check if Grafana container is running
+        try:
+            result = subprocess.run(
+                "docker compose ps grafana",
+                shell=True,
+                capture_output=True,
+                text=True,
+                cwd=os.getcwd(),
+            )
+            print(f"Grafana container status:\n{result.stdout}")
+
+            # Check Grafana logs for errors
+            logs_result = subprocess.run(
+                "docker compose logs --tail=50 grafana",
+                shell=True,
+                capture_output=True,
+                text=True,
+                cwd=os.getcwd(),
+            )
+            print(f"Recent Grafana logs:\n{logs_result.stdout}")
+        except Exception as e:
+            print(f"Could not get Grafana diagnostics: {e}")
+
         raise RuntimeError("Grafana did not become healthy in time.")
 
     def _validate_rules(self, rules_response):

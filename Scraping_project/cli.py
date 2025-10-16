@@ -12,6 +12,20 @@ Commands:
   export      Export Delta Lake data
   health      Check pipeline health
 """
+#!/usr/bin/env python3
+"""Unified Pipeline CLI - Single entry point for all operations
+
+Provides commands for running Scrapy, orchestrating the full pipeline,
+and handling operational utilities from one tool.
+
+Commands:
+  scrapy      Run Scrapy spiders (simple Docker entrypoint)
+  pipeline    Run full multi-stage pipeline
+  setup       Download and validate models
+  drain       Drain Delta Lake tables
+  export      Export Delta Lake data
+  health      Check pipeline health
+"""
 
 import argparse
 import asyncio

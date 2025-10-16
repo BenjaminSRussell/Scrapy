@@ -61,7 +61,7 @@ class TestRedisPerformance:
             speedup = timer_individual.elapsed / timer_batch.elapsed
             print(f"\n✓ Batch operations {speedup:.1f}x faster")
         else:
-            print(f"\n✓ Batch operations comparable to individual (fakeredis is in-memory)")
+            print("\n✓ Batch operations comparable to individual (fakeredis is in-memory)")
 
 
 @pytest.mark.performance

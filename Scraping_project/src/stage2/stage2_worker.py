@@ -12,9 +12,10 @@ from datetime import datetime
 from typing import Any
 
 import aiohttp
+import pyarrow as pa
 from bs4 import BeautifulSoup
 
-from src.common.delta_lake import get_delta_manager
+from src.common.delta_lake import DeltaTable, get_delta_manager
 from src.common.postgres_manager import get_postgres_manager
 
 logger = logging.getLogger(__name__)
@@ -55,7 +56,8 @@ class Stage2Worker:
 
         # Read all URLs from stage2_queue (populated by ScoutSpider)
         try:
-            all_queue_items = self.delta.read("stage2_queue")
+            queue_table = self.delta.read_table("stage2_queue")
+            all_queue_items = queue_table.to_pylist()
         except Exception as e:
             logger.warning(f"[STAGE2] No URLs found in stage2_queue: {e}")
             return
@@ -103,7 +105,7 @@ class Stage2Worker:
 
             # Update queue status for processed items
             if valid_results:
-                self._update_queue_status(all_queue_items, [r["url"] for r in valid_results])
+                await self._update_queue_status([r["url"] for r in valid_results])
 
             # Log performance to PostgreSQL
             if self.postgres and len(valid_results) > 0:
@@ -119,15 +121,65 @@ class Stage2Worker:
 
         logger.info("[STAGE2] Worker completed all batches")
 
-    def _update_queue_status(self, all_queue_items: list, completed_urls: list):
-        """Update queue status for completed items.
+    async def _update_queue_status(self, completed_urls: list[str], table_name: str = "stage2_queue"):
+        """ARCHITECTURAL FIX: Update queue status using Delta Lake MERGE.
 
-        REFACTORED: Marks items as 'completed' in stage2_queue after processing.
+        This is far more efficient than overwriting the entire table on every batch.
+        It atomically updates the status of completed URLs from 'pending' to 'completed'.
 
         Args:
-            all_queue_items: All queue items from stage2_queue
-            completed_urls: List of URLs that were successfully processed
+            completed_urls: List of URLs that were successfully processed.
+            table_name: The name of the queue table to update.
         """
+        if not completed_urls:
+            return
+
+        try:
+            # 1. Create a PyArrow Table for the updates
+            update_data = {
+                "url": pa.array(completed_urls, type=pa.string()),
+                "status": pa.array(["completed"] * len(completed_urls), type=pa.string()),
+                "completed_at": pa.array(
+                    [datetime.now().isoformat() for _ in completed_urls],
+                    type=pa.timestamp("ms"),
+                ),
+            }
+            updates_table = pa.Table.from_pydict(update_data)
+
+            # 2. Get the target DeltaTable
+            target_table = DeltaTable(self.delta.get_table_path(table_name))
+
+            # 3. Perform the MERGE operation
+            (
+                target_table.merge(
+                    source=updates_table,
+                    predicate="target.url = source.url",
+                    source_alias="source",
+                    target_alias="target",
+                )
+                .when_matched_update(
+                    set_updates={
+                        "status": "source.status",
+                        "completed_at": "source.completed_at",
+                    }
+                )
+                .execute()
+            )
+
+            logger.info(f"[STAGE2] Marked {len(completed_urls)} items as completed in {table_name} via MERGE")
+
+        except Exception as e:
+            logger.error(f"[STAGE2] Failed to update queue status via MERGE: {e}")
+            logger.info("[STAGE2] Falling back to overwrite method for this batch")
+            # Fallback to the old method in case of MERGE errors
+            try:
+                all_items = self.delta.read(table_name)
+                self._update_queue_status_overwrite(all_items, completed_urls, table_name)
+            except Exception as fallback_e:
+                logger.error(f"[STAGE2] Fallback overwrite method also failed: {fallback_e}")
+
+    def _update_queue_status_overwrite(self, all_queue_items: list, completed_urls: list, table_name: str = "stage2_queue"):
+        """DEPRECATED: Original method to update queue status by overwriting the table."""
         try:
             completed_set = set(completed_urls)
 
@@ -138,11 +190,11 @@ class Stage2Worker:
                     item["completed_at"] = datetime.now().isoformat()
 
             # Write back to Delta Lake
-            self.delta.write("stage2_queue", all_queue_items, mode="overwrite", async_write=False)
-            logger.info(f"[STAGE2] Marked {len(completed_urls)} items as completed in queue")
+            self.delta.write(table_name, all_queue_items, mode="overwrite", async_write=False)
+            logger.info(f"[STAGE2] Marked {len(completed_urls)} items as completed in {table_name} (overwrite)")
 
         except Exception as e:
-            logger.error(f"[STAGE2] Failed to update queue status: {e}")
+            logger.error(f"[STAGE2] Failed to update queue status (overwrite): {e}")
 
     async def _analyze_url(self, record: dict[str, Any]) -> dict[str, Any]:
         """Analyze single URL with quality control and triage."""
