@@ -42,9 +42,7 @@ def _get_delta_manager():
 
 
 # Configure logging
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
 
@@ -60,9 +58,7 @@ def main():
         default=168,
         help="Retention period in hours (default: 168 = 7 days)",
     )
-    parser.add_argument(
-        "--tables", nargs="*", help="Specific tables to vacuum (default: all tables)"
-    )
+    parser.add_argument("--tables", nargs="*", help="Specific tables to vacuum (default: all tables)")
     parser.add_argument(
         "--dry-run",
         action="store_true",
@@ -79,9 +75,7 @@ def main():
     logger.info("=" * 70)
     logger.info("Delta Lake Vacuum Script")
     logger.info("=" * 70)
-    logger.info(
-        f"Retention period: {args.retention_hours} hours ({args.retention_hours / 24:.1f} days)"
-    )
+    logger.info(f"Retention period: {args.retention_hours} hours ({args.retention_hours / 24:.1f} days)")
 
     if args.dry_run:
         logger.info("DRY RUN MODE - No files will be deleted")

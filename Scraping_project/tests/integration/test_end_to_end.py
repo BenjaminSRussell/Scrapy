@@ -58,10 +58,7 @@ class TestDeltaLakeUnderLoad:
         import threading
 
         def write_batch(batch_id):
-            data = [
-                {"url": f"https://example.com/page{i}", "batch": batch_id}
-                for i in range(10)
-            ]
+            data = [{"url": f"https://example.com/page{i}", "batch": batch_id} for i in range(10)]
             delta_sandbox.write("concurrent_test", data, mode="append")
 
         # Spawn multiple threads writing concurrently
@@ -137,9 +134,7 @@ class TestPostgresMetrics:
         )
 
         # Verify write
-        result = postgres_clean.query(
-            "SELECT * FROM spider_stats WHERE spider_name = 'scout'"
-        )
+        result = postgres_clean.query("SELECT * FROM spider_stats WHERE spider_name = 'scout'")
         assert len(result) == 1
         assert result[0]["urls_processed"] == 100
 

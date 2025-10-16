@@ -175,9 +175,7 @@ async def run_scrapy_crawler():
         async for line in stream:
             logger.info(f"[{prefix}] {line.decode(errors='ignore').strip()}")
 
-    await asyncio.gather(
-        log_stream(process.stdout, "SCRAPY"), log_stream(process.stderr, "SCRAPY-ERR")
-    )
+    await asyncio.gather(log_stream(process.stdout, "SCRAPY"), log_stream(process.stderr, "SCRAPY-ERR"))
     await process.wait()
     logger.info(f"Scrapy finished: {process.returncode}")
 
@@ -212,15 +210,11 @@ def cmd_pipeline(args):
 
         # Stage 2: Analytics
         if not args.skip_stage2:
-            await run_stage2_workers(
-                num_workers=args.stage2_workers, batch_size=args.stage2_batch
-            )
+            await run_stage2_workers(num_workers=args.stage2_workers, batch_size=args.stage2_batch)
 
         # Stage 3: Summarization
         if not args.skip_stage3:
-            await run_stage3_workers(
-                num_workers=args.stage3_workers, batch_size=args.stage3_batch
-            )
+            await run_stage3_workers(num_workers=args.stage3_workers, batch_size=args.stage3_batch)
 
         logger.info("✅ Pipeline Complete")
 
@@ -250,9 +244,7 @@ def cmd_export(args):
         logger.info(f"Exporting table: {args.table}")
         result = manager.export(args.table, args.output, format=args.format)
         if "error" in result:
-            raise RuntimeError(
-                f"Export failed for table {args.table}: {result['error']}"
-            )
+            raise RuntimeError(f"Export failed for table {args.table}: {result['error']}")
         logger.info(f"✅ Exported to {result.get('path')}")
     else:
         logger.info(f"Exporting all tables to: {args.output}")
@@ -263,9 +255,7 @@ def cmd_export(args):
                 logger.warning(f"  ✗ {r['table']}: {r['error']}")
                 has_errors = True
             else:
-                logger.info(
-                    f"  ✓ {r['table']}: {r['rows']} rows, {r['size_mb']:.2f} MB"
-                )
+                logger.info(f"  ✓ {r['table']}: {r['rows']} rows, {r['size_mb']:.2f} MB")
 
         if has_errors:
             raise RuntimeError("One or more table exports failed.")
@@ -283,9 +273,7 @@ def cmd_health(args):
     tables = manager.list_tables()
     for table in tables:
         status = "✓" if table["exists"] else "✗"
-        logger.info(
-            f"{status} {table['name']}: {table['row_count']} rows, {table['parquet_files']} files"
-        )
+        logger.info(f"{status} {table['name']}: {table['row_count']} rows, {table['parquet_files']} files")
 
     logger.info("=" * 60)
 
@@ -337,9 +325,7 @@ def cmd_reset(args):
     df = pd.read_csv(csv_path, header=None, names=["url"])
 
     # Add url_hash column
-    df["url_hash"] = df["url"].apply(
-        lambda url: hashlib.sha256(url.encode("utf-8")).hexdigest()
-    )
+    df["url_hash"] = df["url"].apply(lambda url: hashlib.sha256(url.encode("utf-8")).hexdigest())
     df["added_at"] = pd.Timestamp.now().isoformat()
 
     seed_records = df.to_dict("records")
@@ -465,9 +451,7 @@ def main():
     scrapy_parser.set_defaults(func=cmd_scrapy)
 
     # Deep dive command
-    deep_dive_parser = subparsers.add_parser(
-        "deep_dive", help="Run deep dive spider (conservative crawling)"
-    )
+    deep_dive_parser = subparsers.add_parser("deep_dive", help="Run deep dive spider (conservative crawling)")
     deep_dive_parser.set_defaults(func=cmd_deep_dive)
 
     # Pipeline command
@@ -489,9 +473,7 @@ def main():
     export_parser = subparsers.add_parser("export", help="Export Delta Lake")
     export_parser.add_argument("--table", help="Specific table to export")
     export_parser.add_argument("--output", default="exports", help="Output directory")
-    export_parser.add_argument(
-        "--format", choices=["csv", "json", "parquet"], default="csv"
-    )
+    export_parser.add_argument("--format", choices=["csv", "json", "parquet"], default="csv")
     export_parser.set_defaults(func=cmd_export)
 
     # Health command
@@ -504,22 +486,16 @@ def main():
 
     # Reset command
     reset_parser = subparsers.add_parser("reset", help="Reset Delta Lake and re-seed")
-    reset_parser.add_argument(
-        "--force", action="store_true", help="Skip confirmation prompt"
-    )
+    reset_parser.add_argument("--force", action="store_true", help="Skip confirmation prompt")
     reset_parser.set_defaults(func=cmd_reset)
 
     # Clean command
     clean_parser = subparsers.add_parser("clean", help="Clean temporary files")
-    clean_parser.add_argument(
-        "--verbose", action="store_true", help="Show all cleaned files"
-    )
+    clean_parser.add_argument("--verbose", action="store_true", help="Show all cleaned files")
     clean_parser.set_defaults(func=cmd_clean)
 
     # Validate command
-    validate_parser = subparsers.add_parser(
-        "validate", help="Validate Delta Lake tables"
-    )
+    validate_parser = subparsers.add_parser("validate", help="Validate Delta Lake tables")
     validate_parser.set_defaults(func=cmd_validate)
 
     # Parse and execute

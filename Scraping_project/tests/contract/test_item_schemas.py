@@ -246,10 +246,7 @@ class TestScrapySettingsContract:
         settings = get_spider_settings("deep_dive")
 
         assert "SPIDER_MIDDLEWARES" in settings
-        assert (
-            "scrapy.spidermiddlewares.depth.DepthMiddleware"
-            in settings["SPIDER_MIDDLEWARES"]
-        )
+        assert "scrapy.spidermiddlewares.depth.DepthMiddleware" in settings["SPIDER_MIDDLEWARES"]
 
     def test_playwright_configured_for_js_spider(self):
         """K5: Contract - Playwright handlers must be configured for js_spider."""

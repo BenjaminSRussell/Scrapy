@@ -47,17 +47,11 @@ SKIPPED_URL_TALLIES: dict[str, dict[str, int]] = {}
 
 # Define Prometheus metrics only if available
 if PROMETHEUS_AVAILABLE:
-    ITEMS_SCRAPED = Counter(
-        "scrapy_items_scraped_total", "Total number of items scraped", ["spider"]
-    )
+    ITEMS_SCRAPED = Counter("scrapy_items_scraped_total", "Total number of items scraped", ["spider"])
 
-    ITEMS_DROPPED = Counter(
-        "scrapy_items_dropped_total", "Total number of items dropped", ["spider"]
-    )
+    ITEMS_DROPPED = Counter("scrapy_items_dropped_total", "Total number of items dropped", ["spider"])
 
-    REQUESTS_TOTAL = Counter(
-        "scrapy_requests_total", "Total number of requests made", ["spider", "method"]
-    )
+    REQUESTS_TOTAL = Counter("scrapy_requests_total", "Total number of requests made", ["spider", "method"])
 
     RESPONSES_TOTAL = Counter(
         "scrapy_responses_total",
@@ -72,9 +66,7 @@ if PROMETHEUS_AVAILABLE:
         buckets=(0.1, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0, float("inf")),
     )
 
-    SPIDER_OPENED = Gauge(
-        "scrapy_spider_opened", "Number of spiders currently running", ["spider"]
-    )
+    SPIDER_OPENED = Gauge("scrapy_spider_opened", "Number of spiders currently running", ["spider"])
 
     SPIDER_CLOSED = Counter(
         "scrapy_spider_closed_total",
@@ -188,9 +180,7 @@ class PrometheusExtension:
         """
         # Check if Prometheus is available
         if not PROMETHEUS_AVAILABLE:
-            logger.warning(
-                "Prometheus extension disabled - prometheus_client not installed"
-            )
+            logger.warning("Prometheus extension disabled - prometheus_client not installed")
             raise NotConfigured("prometheus_client library not available")
 
         # Check if extension is enabled
@@ -213,12 +203,8 @@ class PrometheusExtension:
         crawler.signals.connect(ext.request_scheduled, signal=signals.request_scheduled)
         crawler.signals.connect(ext.request_dropped, signal=signals.request_dropped)
         crawler.signals.connect(ext.response_received, signal=signals.response_received)
-        crawler.signals.connect(
-            ext.request_reached_downloader, signal=signals.request_reached_downloader
-        )
-        crawler.signals.connect(
-            ext.response_downloaded, signal=signals.response_downloaded
-        )
+        crawler.signals.connect(ext.request_reached_downloader, signal=signals.request_reached_downloader)
+        crawler.signals.connect(ext.response_downloaded, signal=signals.response_downloaded)
 
         return ext
 
@@ -228,9 +214,7 @@ class PrometheusExtension:
             try:
                 start_http_server(self.port, addr=self.host)
                 self.server_started = True
-                logger.info(
-                    f"Prometheus metrics server started on {self.host}:{self.port}"
-                )
+                logger.info(f"Prometheus metrics server started on {self.host}:{self.port}")
                 logger.info(f"Metrics endpoint: http://{self.host}:{self.port}/metrics")
             except Exception as e:
                 logger.error(f"Failed to start Prometheus server: {e}")
@@ -251,9 +235,7 @@ class PrometheusExtension:
         SKIPPED_URL_TALLIES[spider.name] = {}
 
         SPIDER_OPENED.labels(spider=spider.name).set(1)
-        logger.info(
-            f"Spider opened: {spider.name} at {time.strftime('%Y-%m-%d %H:%M:%S')}"
-        )
+        logger.info(f"Spider opened: {spider.name} at {time.strftime('%Y-%m-%d %H:%M:%S')}")
 
     def spider_closed(self, spider: Spider, reason: str):
         """Called when spider is closed - Calculate and record total crawl duration.
@@ -273,16 +255,9 @@ class PrometheusExtension:
         if spider.name in SKIPPED_URL_TALLIES and SKIPPED_URL_TALLIES[spider.name]:
             total_skipped = sum(SKIPPED_URL_TALLIES[spider.name].values())
             tally_str = ", ".join(
-                [
-                    f"{reason}: {count}"
-                    for reason, count in sorted(
-                        SKIPPED_URL_TALLIES[spider.name].items()
-                    )
-                ]
+                [f"{reason}: {count}" for reason, count in sorted(SKIPPED_URL_TALLIES[spider.name].items())]
             )
-            logger.info(
-                f"📊 FINAL SKIPPED URLs SUMMARY - Total: {total_skipped} | {tally_str}"
-            )
+            logger.info(f"📊 FINAL SKIPPED URLs SUMMARY - Total: {total_skipped} | {tally_str}")
             del SKIPPED_URL_TALLIES[spider.name]
 
         SPIDER_OPENED.labels(spider=spider.name).set(0)
@@ -306,9 +281,7 @@ class PrometheusExtension:
             # Update tally
             if spider.name not in SKIPPED_URL_TALLIES:
                 SKIPPED_URL_TALLIES[spider.name] = {}
-            SKIPPED_URL_TALLIES[spider.name][skip_reason] = (
-                SKIPPED_URL_TALLIES[spider.name].get(skip_reason, 0) + 1
-            )
+            SKIPPED_URL_TALLIES[spider.name][skip_reason] = SKIPPED_URL_TALLIES[spider.name].get(skip_reason, 0) + 1
 
     def item_dropped(self, item: Any, spider: Spider, exception: Exception):
         """Called when item is dropped - Track drop reasons for data quality monitoring.
@@ -340,14 +313,10 @@ class PrometheusExtension:
             spider: Spider instance
         """
         # Extract exception type for categorization
-        exception_type = (
-            failure.type.__name__ if hasattr(failure, "type") else "Unknown"
-        )
+        exception_type = failure.type.__name__ if hasattr(failure, "type") else "Unknown"
 
         SPIDER_ERRORS.labels(spider=spider.name, exception_type=exception_type).inc()
-        logger.error(
-            f"Spider error in {spider.name}: {exception_type} - {failure.getErrorMessage()}"
-        )
+        logger.error(f"Spider error in {spider.name}: {exception_type} - {failure.getErrorMessage()}")
 
     def request_scheduled(self, request: Request, spider: Spider):
         """Called when request is scheduled.
@@ -379,20 +348,13 @@ class PrometheusExtension:
         # Update tally
         if spider.name not in SKIPPED_URL_TALLIES:
             SKIPPED_URL_TALLIES[spider.name] = {}
-        SKIPPED_URL_TALLIES[spider.name][drop_reason] = (
-            SKIPPED_URL_TALLIES[spider.name].get(drop_reason, 0) + 1
-        )
+        SKIPPED_URL_TALLIES[spider.name][drop_reason] = SKIPPED_URL_TALLIES[spider.name].get(drop_reason, 0) + 1
 
         # Log running tally every 100 skipped URLs
         total_skipped = sum(SKIPPED_URL_TALLIES[spider.name].values())
         if total_skipped % 100 == 0:
             tally_str = ", ".join(
-                [
-                    f"{reason}: {count}"
-                    for reason, count in sorted(
-                        SKIPPED_URL_TALLIES[spider.name].items()
-                    )
-                ]
+                [f"{reason}: {count}" for reason, count in sorted(SKIPPED_URL_TALLIES[spider.name].items())]
             )
             logger.info(f"🔄 SKIPPED URLs - Total: {total_skipped} | {tally_str}")
 
@@ -416,19 +378,13 @@ class PrometheusExtension:
 
             # Log slow responses
             if latency > 5.0:
-                logger.warning(
-                    f"Slow response in {spider.name}: {latency:.2f}s for {response.url}"
-                )
+                logger.warning(f"Slow response in {spider.name}: {latency:.2f}s for {response.url}")
 
         # Log specific status codes of interest
         if response.status in [403, 503]:
-            logger.warning(
-                f"Blocked/Error response in {spider.name}: {response.status} from {response.url}"
-            )
+            logger.warning(f"Blocked/Error response in {spider.name}: {response.status} from {response.url}")
         elif response.status >= 500:
-            logger.error(
-                f"Server error in {spider.name}: {response.status} from {response.url}"
-            )
+            logger.error(f"Server error in {spider.name}: {response.status} from {response.url}")
 
     def request_reached_downloader(self, request: Request, spider: Spider):
         """Called when request reaches downloader.

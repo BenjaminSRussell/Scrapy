@@ -88,17 +88,13 @@ class TestAlertIntervals(unittest.TestCase):
         with open(config_path) as f:
             config = yaml.safe_load(f)
 
-        global_interval = parse_duration_to_seconds(
-            config.get("global", {}).get("scrape_interval", "15s")
-        )
+        global_interval = parse_duration_to_seconds(config.get("global", {}).get("scrape_interval", "15s"))
 
         min_interval = global_interval
         for job in config.get("scrape_configs", []):
             job_interval = job.get("scrape_interval")
             if job_interval:
-                min_interval = min(
-                    min_interval, parse_duration_to_seconds(job_interval)
-                )
+                min_interval = min(min_interval, parse_duration_to_seconds(job_interval))
 
         return min_interval
 
@@ -121,15 +117,11 @@ class TestAlertIntervals(unittest.TestCase):
         """
         Shared logic to validate the structure and intervals of Grafana alert rules.
         """
-        self.assertGreater(
-            len(rules_response), 0, "No Grafana alert rule groups found."
-        )
+        self.assertGreater(len(rules_response), 0, "No Grafana alert rule groups found.")
 
         for group_name, rules in rules_response.items():
             self.assertIn("rules", rules)
-            self.assertGreater(
-                len(rules["rules"]), 0, f"No rules found in group '{group_name}'"
-            )
+            self.assertGreater(len(rules["rules"]), 0, f"No rules found in group '{group_name}'")
             for rule in rules["rules"]:
                 # Handle different structures for online (API) vs offline (YAML)
                 if "grafana_alert" in rule:  # Online mode, from API
@@ -161,9 +153,7 @@ class TestAlertIntervals(unittest.TestCase):
         if os.environ.get("OBS_OFFLINE") == "1":
             self.skipTest("Skipping online test in offline mode")
 
-        grafana_rules_url = (
-            "http://admin:admin@localhost:3000/api/ruler/grafana/api/v1/rules"
-        )
+        grafana_rules_url = "http://admin:admin@localhost:3000/api/ruler/grafana/api/v1/rules"
 
         try:
             response = requests.get(grafana_rules_url)
@@ -218,9 +208,7 @@ class TestAlertIntervals(unittest.TestCase):
         )
 
         # 3. Reuse validation logic with mocked data
-        grafana_rules_url = (
-            "http://admin:admin@localhost:3000/api/ruler/grafana/api/v1/rules"
-        )
+        grafana_rules_url = "http://admin:admin@localhost:3000/api/ruler/grafana/api/v1/rules"
         response = requests.get(grafana_rules_url)
         self.assertEqual(response.status_code, 200)
 

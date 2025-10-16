@@ -31,13 +31,13 @@ def _patch_scrapy_response_meta() -> None:
         else:
             raise TypeError("Response.meta assignments must use a dict")
 
-        if getattr(instance, "request", None) is None:
-            instance.request = Request(
-                url=getattr(instance, "url", ""), dont_filter=True
-            )
+        request = getattr(instance, "request", None)
+        if request is None:
+            request = Request(url=getattr(instance, "url", ""), dont_filter=True)
+            instance.request = request
 
-        instance.request.meta.clear()
-        instance.request.meta.update(value_dict)
+        request.meta.clear()
+        request.meta.update(value_dict)
 
     Response.meta = property(  # type: ignore[assignment]
         _meta_get,

@@ -149,9 +149,7 @@ def ensure_tools_available(env: str) -> None:
     sys.exit(1)
 
 
-def run_command(
-    command: Iterable[str], *, capture_output: bool = False
-) -> subprocess.CompletedProcess:
+def run_command(command: Iterable[str], *, capture_output: bool = False) -> subprocess.CompletedProcess:
     cmd_list = list(command)
     try:
         return subprocess.run(
@@ -233,9 +231,7 @@ def start_local(args: argparse.Namespace) -> None:
     print("Local Environment Started Successfully!")
     print("=" * 70)
     print(f"\n📊 Grafana Dashboard: {LOCAL_GRAFANA_URL}")
-    print(
-        "   - Default credentials: admin / (password from .env GRAFANA_ADMIN_PASSWORD)"
-    )
+    print("   - Default credentials: admin / (password from .env GRAFANA_ADMIN_PASSWORD)")
     print("   - View real-time metrics, dashboards, and alerts")
     print("\n📈 Prometheus Replicas (HA Setup):")
     for idx, url in enumerate(LOCAL_PROMETHEUS_URLS, 1):
@@ -269,15 +265,9 @@ def prompt_prerequisites() -> None:
         """
     ).strip()
     print(checklist)
-    confirmation = (
-        input("Type 'yes' to confirm that all prerequisites are satisfied: ")
-        .strip()
-        .lower()
-    )
+    confirmation = input("Type 'yes' to confirm that all prerequisites are satisfied: ").strip().lower()
     if confirmation != "yes":
-        print(
-            "Aborting Kubernetes deployment. Please complete the prerequisites and try again."
-        )
+        print("Aborting Kubernetes deployment. Please complete the prerequisites and try again.")
         sys.exit(0)
 
 
@@ -319,9 +309,7 @@ def deploy_helm_release(
 
 def wait_for_pods_ready(namespace: str, timeout: int = 300) -> None:
     """Wait for all pods in namespace to be ready."""
-    print(
-        f"Waiting for pods in namespace '{namespace}' to be ready (timeout={timeout}s)..."
-    )
+    print(f"Waiting for pods in namespace '{namespace}' to be ready (timeout={timeout}s)...")
     deadline = time.time() + timeout
     while time.time() < deadline:
         result = subprocess.run(
@@ -344,9 +332,7 @@ def wait_for_pods_ready(namespace: str, timeout: int = 300) -> None:
                 print(f"All pods in namespace '{namespace}' are ready!")
                 return
         time.sleep(5)
-    print(
-        f"WARNING: Not all pods became ready within {timeout}s. Check status with: kubectl get pods -n {namespace}"
-    )
+    print(f"WARNING: Not all pods became ready within {timeout}s. Check status with: kubectl get pods -n {namespace}")
 
 
 def verify_hpa_status(namespace: str) -> None:
@@ -380,12 +366,8 @@ def start_k8s(args: argparse.Namespace) -> None:
     if args.stage == "pipeline":
         release = args.release or PIPELINE_RELEASE
         namespace = args.namespace or PIPELINE_NAMESPACE
-        print(
-            f"Deploying the full pipeline as Helm release '{release}' in namespace '{namespace}'..."
-        )
-        deploy_helm_release(
-            args.chart, release, namespace, values_files, additional_sets
-        )
+        print(f"Deploying the full pipeline as Helm release '{release}' in namespace '{namespace}'...")
+        deploy_helm_release(args.chart, release, namespace, values_files, additional_sets)
         print("\nDeployment complete! Waiting for pods to be ready...")
         wait_for_pods_ready(namespace, timeout=300)
         verify_hpa_status(namespace)
@@ -395,45 +377,31 @@ def start_k8s(args: argparse.Namespace) -> None:
         print(f"Release: {release}")
         print(f"Namespace: {namespace}")
         print("\n📊 Accessing Services:")
-        print(
-            f"   - Grafana:     kubectl port-forward -n {namespace} svc/{release}-grafana 3000:3000"
-        )
+        print(f"   - Grafana:     kubectl port-forward -n {namespace} svc/{release}-grafana 3000:3000")
         print("                  Then open: http://localhost:3000")
-        print(
-            f"   - Prometheus:  kubectl port-forward -n {namespace} svc/{release}-prometheus 9090:9090"
-        )
+        print(f"   - Prometheus:  kubectl port-forward -n {namespace} svc/{release}-prometheus 9090:9090")
         print("                  Then open: http://localhost:9090")
         print("\n📝 Viewing Logs:")
-        print(
-            f"   - Scrapy app:     kubectl logs -n {namespace} -l app.kubernetes.io/component=scrapy --tail=100 -f"
-        )
+        print(f"   - Scrapy app:     kubectl logs -n {namespace} -l app.kubernetes.io/component=scrapy --tail=100 -f")
         print(
             f"   - Stage 2 worker: kubectl logs -n {namespace} -l app.kubernetes.io/component=stage2-worker --tail=100 -f"
         )
         print(
             f"   - Stage 3 worker: kubectl logs -n {namespace} -l app.kubernetes.io/component=stage3-worker --tail=100 -f"
         )
-        print(
-            f"   - All pods:       kubectl logs -n {namespace} --all-containers=true --tail=50 -f"
-        )
+        print(f"   - All pods:       kubectl logs -n {namespace} --all-containers=true --tail=50 -f")
         print("\n🔧 Managing Deployment:")
         print(f"   - View pods:       kubectl get pods -n {namespace}")
         print(f"   - View HPAs:       kubectl get hpa -n {namespace}")
         print(f"   - View services:   kubectl get svc -n {namespace}")
         print(f"   - Watch pods:      kubectl get pods -n {namespace} --watch")
-        print(
-            f"   - Scale scrapy:    kubectl scale deployment/{release}-scrapy -n {namespace} --replicas=5"
-        )
+        print(f"   - Scale scrapy:    kubectl scale deployment/{release}-scrapy -n {namespace} --replicas=5")
         print(f"   - Describe pod:    kubectl describe pod -n {namespace} <pod-name>")
-        print(
-            f"   - Execute in pod:  kubectl exec -n {namespace} -it <pod-name> -- /bin/bash"
-        )
+        print(f"   - Execute in pod:  kubectl exec -n {namespace} -it <pod-name> -- /bin/bash")
         print(f"{'=' * 70}\n")
         return
 
-    stages = (
-        ["stage1", "stage2", "stage3"] if args.stage == "all-stages" else [args.stage]
-    )
+    stages = ["stage1", "stage2", "stage3"] if args.stage == "all-stages" else [args.stage]
     for stage in stages:
         defaults = K8S_STAGE_DEFAULTS[stage]
         release = (
@@ -448,9 +416,7 @@ def start_k8s(args: argparse.Namespace) -> None:
         )
         set_args = list(defaults.get("set_overrides", ()))
         set_args.extend(additional_sets)
-        print(
-            f"\nDeploying stage '{stage}' as Helm release '{release}' in namespace '{namespace}'..."
-        )
+        print(f"\nDeploying stage '{stage}' as Helm release '{release}' in namespace '{namespace}'...")
         deploy_helm_release(args.chart, release, namespace, values_files, set_args)
         wait_for_pods_ready(namespace, timeout=180)
         verify_hpa_status(namespace)
@@ -461,9 +427,7 @@ def start_k8s(args: argparse.Namespace) -> None:
         print(f"Namespace: {namespace}")
         print("\n📝 Monitoring:")
         print(f"   - View pods:  kubectl get pods -n {namespace}")
-        print(
-            f"   - View logs:  kubectl logs -n {namespace} --all-containers=true --tail=100 -f"
-        )
+        print(f"   - View logs:  kubectl logs -n {namespace} --all-containers=true --tail=100 -f")
         print(f"   - Watch:      kubectl get pods -n {namespace} --watch")
         print(f"{'=' * 70}\n")
 

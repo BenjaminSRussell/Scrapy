@@ -23,12 +23,8 @@ class JSDetector:
 
     # Pre-compiled regex patterns (compiled once for performance)
     TAG_STRIP_PATTERN = re.compile(r"<[^>]+>")
-    SCRIPT_STRIP_PATTERN = re.compile(
-        r"<script[^>]*>.*?</script>", flags=re.DOTALL | re.IGNORECASE
-    )
-    STYLE_STRIP_PATTERN = re.compile(
-        r"<style[^>]*>.*?</style>", flags=re.DOTALL | re.IGNORECASE
-    )
+    SCRIPT_STRIP_PATTERN = re.compile(r"<script[^>]*>.*?</script>", flags=re.DOTALL | re.IGNORECASE)
+    STYLE_STRIP_PATTERN = re.compile(r"<style[^>]*>.*?</style>", flags=re.DOTALL | re.IGNORECASE)
 
     # SPA Framework indicators
     SPA_FRAMEWORKS = {
@@ -164,9 +160,7 @@ class JSDetector:
         content_result = self._check_minimal_content()
         if content_result["minimal"]:
             confidence += self.MINIMAL_CONTENT_CONFIDENCE
-            reasons.append(
-                f"Minimal initial content: {content_result['text_length']} chars"
-            )
+            reasons.append(f"Minimal initial content: {content_result['text_length']} chars")
 
         # Empty body with scripts
         empty_result = self._check_empty_body()
@@ -292,10 +286,7 @@ class JSDetector:
         root_classes = ["app", "application", "spa-root", "root"]
 
         for root_class in root_classes:
-            if (
-                f'class="{root_class}"' in self.html
-                or f"class='{root_class}'" in self.html
-            ):
+            if f'class="{root_class}"' in self.html or f"class='{root_class}'" in self.html:
                 return f".{root_class}"
 
         return None

@@ -24,10 +24,7 @@ def add_stage4_panels(dashboard_path: Path):
 
     # Find the highest panel ID and Y position
     max_id = max(panel["id"] for panel in dashboard.get("panels", []))
-    max_y = max(
-        panel["gridPos"]["y"] + panel["gridPos"]["h"]
-        for panel in dashboard.get("panels", [])
-    )
+    max_y = max(panel["gridPos"]["y"] + panel["gridPos"]["h"] for panel in dashboard.get("panels", []))
 
     logger.info(f"Max panel ID: {max_id}, Max Y position: {max_y}")
 
@@ -211,9 +208,7 @@ def main():
     """Main entry point."""
     # Find dashboard file
     project_root = Path(__file__).parent.parent
-    dashboard_path = (
-        project_root / "monitoring" / "dashboards" / "unified_dashboard.json"
-    )
+    dashboard_path = project_root / "monitoring" / "dashboards" / "unified_dashboard.json"
 
     if not dashboard_path.exists():
         logger.error(f"Dashboard not found at: {dashboard_path}")

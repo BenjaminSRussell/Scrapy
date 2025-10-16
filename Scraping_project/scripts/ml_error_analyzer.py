@@ -77,11 +77,7 @@ class ErrorAnalyzer:
                 "domain": parsed.netloc,
                 "path_depth": len(path_parts),
                 "has_query": 1 if parsed.query else 0,
-                "extension": (
-                    path_parts[-1].split(".")[-1]
-                    if path_parts and "." in path_parts[-1]
-                    else "none"
-                ),
+                "extension": (path_parts[-1].split(".")[-1] if path_parts and "." in path_parts[-1] else "none"),
                 "is_subdomain": 1 if parsed.netloc.count(".") > 1 else 0,
             }
         except Exception:
@@ -110,9 +106,7 @@ class ErrorAnalyzer:
 
         # Encode error types
         error_encoder = LabelEncoder()
-        df_features["error_type_encoded"] = error_encoder.fit_transform(
-            df["error_type"]
-        )
+        df_features["error_type_encoded"] = error_encoder.fit_transform(df["error_type"])
 
         # Encode HTTP status codes (handle nulls)
         df_features["http_status"] = df["http_status_code"].fillna(0).astype(int)
@@ -139,9 +133,7 @@ class ErrorAnalyzer:
 
         return df_features[numeric_features], metadata
 
-    def determine_optimal_clusters(
-        self, X: pd.DataFrame, max_clusters: int = 10
-    ) -> int:
+    def determine_optimal_clusters(self, X: pd.DataFrame, max_clusters: int = 10) -> int:
         """Determine optimal number of clusters using elbow method.
 
         Args:
@@ -166,9 +158,7 @@ class ErrorAnalyzer:
         # Simple heuristic: find the "elbow"
         # Calculate rate of decrease
         if len(inertias) >= 3:
-            decreases = [
-                inertias[i] - inertias[i + 1] for i in range(len(inertias) - 1)
-            ]
+            decreases = [inertias[i] - inertias[i + 1] for i in range(len(inertias) - 1)]
             # Find where decrease slows significantly
             for i in range(1, len(decreases) - 1):
                 if decreases[i] < 0.7 * decreases[i - 1]:
@@ -209,11 +199,7 @@ class ErrorAnalyzer:
         common_domain = domain_counts.index[0] if len(domain_counts) > 0 else "unknown"
 
         # Average HTTP status
-        avg_status = (
-            cluster_df["http_status_code"].dropna().mean()
-            if "http_status_code" in cluster_df
-            else None
-        )
+        avg_status = cluster_df["http_status_code"].dropna().mean() if "http_status_code" in cluster_df else None
 
         # Most common stage
         stage_counts = cluster_df["stage"].value_counts()
@@ -221,7 +207,9 @@ class ErrorAnalyzer:
 
         # Generate plain-English summary
         summary = f"Cluster {cluster_id + 1}: {cluster_size} errors ({cluster_pct:.1f}% of total)\n"
-        summary += f"Primary Error: '{common_error}' ({error_freq} occurrences, {error_freq / cluster_size * 100:.1f}%)\n"
+        summary += (
+            f"Primary Error: '{common_error}' ({error_freq} occurrences, {error_freq / cluster_size * 100:.1f}%)\n"
+        )
         summary += f"Most Affected Domain: {common_domain}\n"
         summary += f"Pipeline Stage: {common_stage}\n"
 
@@ -229,9 +217,7 @@ class ErrorAnalyzer:
             summary += f"Average HTTP Status: {avg_status:.0f}\n"
 
         # Generate recommendations based on error patterns
-        recommendations = self._generate_recommendations(
-            common_error, common_domain, avg_status, common_stage
-        )
+        recommendations = self._generate_recommendations(common_error, common_domain, avg_status, common_stage)
 
         return {
             "cluster_id": cluster_id,
@@ -244,9 +230,7 @@ class ErrorAnalyzer:
             "recommendations": recommendations,
         }
 
-    def _generate_recommendations(
-        self, error_type: str, domain: str, avg_status: float, stage: str
-    ) -> str:
+    def _generate_recommendations(self, error_type: str, domain: str, avg_status: float, stage: str) -> str:
         """Generate actionable recommendations based on error patterns.
 
         Args:
@@ -279,21 +263,15 @@ class ErrorAnalyzer:
         # Error type recommendations
         error_lower = error_type.lower()
         if "timeout" in error_lower:
-            recommendations.append(
-                "Timeout errors: Increase timeout settings or reduce request rate"
-            )
+            recommendations.append("Timeout errors: Increase timeout settings or reduce request rate")
         elif "connection" in error_lower:
-            recommendations.append(
-                "Connection errors: Verify network stability and target server availability"
-            )
+            recommendations.append("Connection errors: Verify network stability and target server availability")
         elif "ssl" in error_lower or "certificate" in error_lower:
             recommendations.append(
                 "SSL/Certificate errors: Update SSL certificates or disable verification for testing"
             )
         elif "rate" in error_lower or "throttle" in error_lower:
-            recommendations.append(
-                "Rate limiting detected: Implement exponential backoff or reduce request frequency"
-            )
+            recommendations.append("Rate limiting detected: Implement exponential backoff or reduce request frequency")
 
         # Stage-specific recommendations
         if stage == "stage1":
@@ -301,13 +279,9 @@ class ErrorAnalyzer:
                 "Stage 1 (Discovery): Consider adjusting Scrapy concurrency settings or adding delays"
             )
         elif stage == "stage2":
-            recommendations.append(
-                "Stage 2 (Analysis): Verify content extraction logic and HTML parsing"
-            )
+            recommendations.append("Stage 2 (Analysis): Verify content extraction logic and HTML parsing")
         elif stage == "stage3":
-            recommendations.append(
-                "Stage 3 (Summarization): Check model loading and memory availability"
-            )
+            recommendations.append("Stage 3 (Summarization): Check model loading and memory availability")
 
         return (
             "\n".join(f"• {rec}" for rec in recommendations)
@@ -315,9 +289,7 @@ class ErrorAnalyzer:
             else "No specific recommendations available"
         )
 
-    def analyze(
-        self, min_errors: int = 10, n_clusters: int | None = None
-    ) -> dict[str, Any]:
+    def analyze(self, min_errors: int = 10, n_clusters: int | None = None) -> dict[str, Any]:
         """Perform ML-based error analysis.
 
         Args:
@@ -345,9 +317,7 @@ class ErrorAnalyzer:
         logger.info(f"Loaded {total_errors} error records")
 
         if total_errors < min_errors:
-            logger.warning(
-                f"Insufficient errors for analysis (need at least {min_errors})"
-            )
+            logger.warning(f"Insufficient errors for analysis (need at least {min_errors})")
             return {"status": "insufficient_data", "total_errors": total_errors}
 
         # Prepare features
@@ -371,9 +341,7 @@ class ErrorAnalyzer:
 
         for cluster_id in range(n_clusters):
             cluster_df = df[df["cluster"] == cluster_id]
-            analysis = self.generate_cluster_summary(
-                cluster_id, cluster_df, total_errors, metadata
-            )
+            analysis = self.generate_cluster_summary(cluster_id, cluster_df, total_errors, metadata)
             cluster_analyses.append(analysis)
 
         # Sort by cluster size (largest first)
@@ -445,9 +413,7 @@ def main():
             logger.warning("No error data available for analysis")
             sys.exit(0)
         elif result["status"] == "insufficient_data":
-            logger.warning(
-                f"Need at least {args.min_errors} errors, found {result['total_errors']}"
-            )
+            logger.warning(f"Need at least {args.min_errors} errors, found {result['total_errors']}")
             sys.exit(0)
 
         logger.info("")

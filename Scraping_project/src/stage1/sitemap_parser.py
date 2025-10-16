@@ -98,17 +98,12 @@ class SitemapParser:
             response = await client.get(sitemap_url)
 
             if response.status_code != 200:
-                logger.warning(
-                    f"Sitemap returned {response.status_code}: {sitemap_url}"
-                )
+                logger.warning(f"Sitemap returned {response.status_code}: {sitemap_url}")
                 return
 
             # Support gzipped sitemap payloads
             content = response.content
-            if (
-                sitemap_url.endswith(".gz")
-                or response.headers.get("content-encoding") == "gzip"
-            ):
+            if sitemap_url.endswith(".gz") or response.headers.get("content-encoding") == "gzip":
                 try:
                     content = gzip.decompress(content)
                     logger.debug(f"Decompressed gzipped sitemap: {sitemap_url}")
@@ -127,9 +122,7 @@ class SitemapParser:
 
                     # Recursively parse nested sitemaps
                     for nested_url in nested_sitemaps:
-                        await self._parse_sitemap_recursive(
-                            client, nested_url, depth + 1
-                        )
+                        await self._parse_sitemap_recursive(client, nested_url, depth + 1)
 
                 else:
                     # Regular sitemap with URLs
@@ -141,20 +134,14 @@ class SitemapParser:
                 # Fall back to plain-text parsing if needed
                 content_type = response.headers.get("content-type", "").lower()
                 if "text/plain" in content_type or "text/html" in content_type:
-                    logger.info(
-                        f"XML parsing failed, trying plain-text format: {sitemap_url}"
-                    )
+                    logger.info(f"XML parsing failed, trying plain-text format: {sitemap_url}")
                     try:
                         text_content = content.decode("utf-8")
                         urls = self._extract_from_plain_text(text_content)
                         self.discovered_urls.update(urls)
-                        logger.info(
-                            f"Extracted {len(urls)} URLs from plain-text sitemap: {sitemap_url}"
-                        )
+                        logger.info(f"Extracted {len(urls)} URLs from plain-text sitemap: {sitemap_url}")
                     except Exception as text_error:
-                        logger.warning(
-                            f"Plain-text parsing also failed for {sitemap_url}: {text_error}"
-                        )
+                        logger.warning(f"Plain-text parsing also failed for {sitemap_url}: {text_error}")
                 else:
                     logger.warning(f"Failed to parse sitemap XML: {sitemap_url} - {e}")
 
@@ -185,9 +172,7 @@ class SitemapParser:
 
                     lastmod = sitemap.find(f"{ns}lastmod")
                     if lastmod is not None and lastmod.text:
-                        logger.debug(
-                            f"Sitemap {sitemap_url} last modified: {lastmod.text}"
-                        )
+                        logger.debug(f"Sitemap {sitemap_url} last modified: {lastmod.text}")
 
         return sitemaps
 
@@ -208,17 +193,13 @@ class SitemapParser:
 
                     if lastmod is not None or priority is not None:
                         priority_value = (
-                            float(priority.text)
-                            if priority is not None and priority.text is not None
-                            else None
+                            float(priority.text) if priority is not None and priority.text is not None else None
                         )
                         metadata = {
                             "url": url,
                             "lastmod": lastmod.text if lastmod is not None else None,
                             "priority": priority_value,
-                            "changefreq": (
-                                changefreq.text if changefreq is not None else None
-                            ),
+                            "changefreq": (changefreq.text if changefreq is not None else None),
                         }
                         logger.debug(f"URL metadata: {metadata}")
 

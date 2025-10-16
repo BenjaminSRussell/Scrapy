@@ -44,9 +44,7 @@ class TestAlertWindowsVsScrape(unittest.TestCase):
             config = yaml.safe_load(f)
 
         global_config = config.get("global", {})
-        self.scrape_interval = parse_duration_to_seconds(
-            global_config.get("scrape_interval", "15s")
-        )
+        self.scrape_interval = parse_duration_to_seconds(global_config.get("scrape_interval", "15s"))
         self.evaluation_interval = parse_duration_to_seconds(
             global_config.get("evaluation_interval", self.scrape_interval)
         )
@@ -55,27 +53,21 @@ class TestAlertWindowsVsScrape(unittest.TestCase):
         for job in config.get("scrape_configs", []):
             job_interval = job.get("scrape_interval")
             if job_interval:
-                self.scrape_interval = min(
-                    self.scrape_interval, parse_duration_to_seconds(job_interval)
-                )
+                self.scrape_interval = min(self.scrape_interval, parse_duration_to_seconds(job_interval))
 
         # Discover rule files and map container paths to local paths
         self.rule_files = []
         for container_path in config.get("rule_files", []):
             # Based on docker-compose.yml, /etc/prometheus/ maps to ./monitoring/
             if container_path.startswith("/etc/prometheus/"):
-                local_path = container_path.replace(
-                    "/etc/prometheus/", "Scraping_project/monitoring/"
-                )
+                local_path = container_path.replace("/etc/prometheus/", "Scraping_project/monitoring/")
                 self.rule_files.append(local_path)
 
     def test_alert_for_duration_is_valid(self):
         """
         Ensures every alert rule's 'for:' is compatible with Prometheus scrape_interval/evaluation_interval.
         """
-        self.assertGreater(
-            len(self.rule_files), 0, "No rule files were discovered from prometheus.yml"
-        )
+        self.assertGreater(len(self.rule_files), 0, "No rule files were discovered from prometheus.yml")
 
         for rules_path in self.rule_files:
             self.assertTrue(

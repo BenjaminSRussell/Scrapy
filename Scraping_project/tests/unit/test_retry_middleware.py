@@ -10,9 +10,7 @@ class TestIntelligentRetryMiddleware(unittest.TestCase):
         Verify that 'import random' is not called inside _calculate_backoff_delay.
         """
         settings = MagicMock()
-        settings.getint.side_effect = lambda key, default=None: (
-            default if default is not None else 2
-        )
+        settings.getint.side_effect = lambda key, default=None: (default if default is not None else 2)
         middleware = IntelligentRetryMiddleware(settings=settings)
 
         with patch("builtins.__import__") as mock_import:

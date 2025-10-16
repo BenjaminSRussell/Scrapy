@@ -65,9 +65,7 @@ class TestDeltaLake:
                 },
             ]
 
-            manager.write(
-                "stage1_discovery", test_data, mode="append", async_write=False
-            )
+            manager.write("stage1_discovery", test_data, mode="append", async_write=False)
 
             # Read data back
             results = manager.read("stage1_discovery")
@@ -207,9 +205,7 @@ class TestStage2Worker:
             </html>
             """
 
-            result = asyncio.run(
-                worker._analyze_html("https://test.com", "abc123", html, False)
-            )
+            result = asyncio.run(worker._analyze_html("https://test.com", "abc123", html, False))
 
             assert result["url"] == "https://test.com"
             assert result["word_count"] >= 50
@@ -329,9 +325,7 @@ class TestDrainLake:
 
             # Write some test data
             test_data = [{"url": "https://testdrain.com", "url_hash": "drain123"}]
-            manager.write(
-                "stage1_discovery", test_data, mode="append", async_write=False
-            )
+            manager.write("stage1_discovery", test_data, mode="append", async_write=False)
 
             # Verify data exists
             before = manager.read("stage1_discovery")
@@ -403,11 +397,7 @@ class TestMLErrorAnalyzer:
             "domain": parsed.netloc,
             "path_depth": len(path_parts),
             "has_query": 1 if parsed.query else 0,
-            "extension": (
-                path_parts[-1].split(".")[-1]
-                if path_parts and "." in path_parts[-1]
-                else "none"
-            ),
+            "extension": (path_parts[-1].split(".")[-1] if path_parts and "." in path_parts[-1] else "none"),
         }
 
         assert features["domain"] == "test.com"

@@ -66,9 +66,7 @@ USER_AGENT = _scrapy_config.get("user_agent", "UConn-Discovery-Crawler/1.0")
 
 # Concurrency settings (from YAML)
 CONCURRENT_REQUESTS = _scrapy_config.get("concurrent_requests", 64)
-CONCURRENT_REQUESTS_PER_DOMAIN = _scrapy_config.get(
-    "concurrent_requests_per_domain", 32
-)
+CONCURRENT_REQUESTS_PER_DOMAIN = _scrapy_config.get("concurrent_requests_per_domain", 32)
 CONCURRENT_REQUESTS_PER_IP = _scrapy_config.get("concurrent_requests_per_ip", 32)
 
 # Download settings (from YAML)
@@ -88,9 +86,7 @@ LOG_LEVEL = _scrapy_config.get("log_level", "INFO")
 # ============================================================================
 # Global timeout for spider execution (dev: 5-10 min, prod: longer)
 # Ensures graceful shutdown and prevents infinite crawling
-CLOSESPIDER_TIMEOUT = _scrapy_config.get(
-    "closespider_timeout", 600
-)  # 10 minutes default for dev
+CLOSESPIDER_TIMEOUT = _scrapy_config.get("closespider_timeout", 600)  # 10 minutes default for dev
 
 # Enable and configure the AutoThrottle extension (disabled by default)
 # AutoThrottle dynamically adjusts concurrency based on server response times
@@ -104,13 +100,9 @@ AUTOTHROTTLE_DEBUG = _scrapy_config.get("autothrottle_debug", False)
 HTTPCACHE_ENABLED = _scrapy_config.get("httpcache_enabled", True)
 HTTPCACHE_EXPIRATION_SECS = _scrapy_config.get("httpcache_expiration_secs", 3600)
 HTTPCACHE_DIR = PROJECT_ROOT / "data" / "cache" / "scrapy"
-HTTPCACHE_STORAGE = _scrapy_config.get(
-    "httpcache_storage", "scrapy.extensions.httpcache.DbmCacheStorage"
-)
+HTTPCACHE_STORAGE = _scrapy_config.get("httpcache_storage", "scrapy.extensions.httpcache.DbmCacheStorage")
 
-TWISTED_REACTOR = _scrapy_config.get(
-    "twisted_reactor", "twisted.internet.asyncioreactor.AsyncioSelectorReactor"
-)
+TWISTED_REACTOR = _scrapy_config.get("twisted_reactor", "twisted.internet.asyncioreactor.AsyncioSelectorReactor")
 FEED_EXPORT_ENCODING = _scrapy_config.get("feed_export_encoding", "utf-8")
 
 # Playwright settings
@@ -118,9 +110,7 @@ FEED_EXPORT_ENCODING = _scrapy_config.get("feed_export_encoding", "utf-8")
 # To enable Playwright, uncomment the following lines and ensure scrapy-playwright is installed.
 # DOWNLOAD_HANDLERS = _scrapy_config.get('download_handlers', {})
 PLAYWRIGHT_BROWSER_TYPE = _scrapy_config.get("playwright_browser_type", "chromium")
-PLAYWRIGHT_LAUNCH_OPTIONS = _scrapy_config.get(
-    "playwright_launch_options", {"headless": True}
-)
+PLAYWRIGHT_LAUNCH_OPTIONS = _scrapy_config.get("playwright_launch_options", {"headless": True})
 
 # ============================================================================
 # Extensions Configuration
@@ -141,9 +131,7 @@ PROMETHEUS_ENABLED = _scrapy_config.get("prometheus_enabled", True)
 
 # Metrics endpoint configuration
 PROMETHEUS_PORT = _scrapy_config.get("prometheus_port", 9410)
-PROMETHEUS_HOST = _scrapy_config.get(
-    "prometheus_host", "0.0.0.0"
-)  # Listen on all interfaces
+PROMETHEUS_HOST = _scrapy_config.get("prometheus_host", "0.0.0.0")  # Listen on all interfaces
 PROMETHEUS_PATH = _scrapy_config.get("prometheus_path", "metrics")
 
 # ============================================================================
@@ -158,9 +146,7 @@ KAFKA_BOOTSTRAP_SERVERS = _scrapy_config.get(
 )
 
 # Required: Target topic for scraped items
-KAFKA_TOPIC = _scrapy_config.get(
-    "kafka_topic", os.getenv("KAFKA_TOPIC", "scraped-items")
-)
+KAFKA_TOPIC = _scrapy_config.get("kafka_topic", os.getenv("KAFKA_TOPIC", "scraped-items"))
 
 # Optional: Additional producer configuration
 # For production, consider tuning these parameters:

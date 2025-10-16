@@ -67,9 +67,7 @@ class DataValidationPipeline:
         Returns:
             Configured DataValidationPipeline instance
         """
-        required_fields = crawler.settings.getlist(
-            "VALIDATION_REQUIRED_FIELDS", ["url"]
-        )
+        required_fields = crawler.settings.getlist("VALIDATION_REQUIRED_FIELDS", ["url"])
         return cls(required_fields=required_fields)
 
     def process_item(self, item: Any, spider: Spider) -> Any:
@@ -121,9 +119,7 @@ class DataValidationPipeline:
 
         # Log validation stats every 1000 items
         if self.items_validated % 1000 == 0:
-            logger.info(
-                f"Validation stats - Validated: {self.items_validated}, Dropped: {self.items_dropped}"
-            )
+            logger.info(f"Validation stats - Validated: {self.items_validated}, Dropped: {self.items_dropped}")
 
         return item
 
@@ -182,9 +178,7 @@ class DataCleansingPipeline:
 
             # Normalize lists (strip strings in lists)
             elif isinstance(value, list):
-                adapter[field_name] = [
-                    item.strip() if isinstance(item, str) else item for item in value
-                ]
+                adapter[field_name] = [item.strip() if isinstance(item, str) else item for item in value]
 
         self.items_cleansed += 1
 
@@ -413,13 +407,9 @@ class KafkaPipeline:
                 # Block until all messages are delivered or timeout (30 seconds)
                 remaining = self.producer.flush(timeout=30.0)
                 if remaining > 0:
-                    logger.warning(
-                        f"{remaining} messages were not delivered before timeout"
-                    )
+                    logger.warning(f"{remaining} messages were not delivered before timeout")
 
-                logger.info(
-                    f"Kafka pipeline stats - Sent: {self.messages_sent}, Failed: {self.messages_failed}"
-                )
+                logger.info(f"Kafka pipeline stats - Sent: {self.messages_sent}, Failed: {self.messages_failed}")
             except Exception as e:
                 logger.error(f"Error flushing Kafka producer: {e}")
 
@@ -439,9 +429,7 @@ class KafkaPipeline:
         else:
             self.messages_sent += 1
             if self.messages_sent % 1000 == 0:  # Log every 1000 messages
-                logger.info(
-                    f"Message delivered to {msg.topic()} [{msg.partition()}] at offset {msg.offset()}"
-                )
+                logger.info(f"Message delivered to {msg.topic()} [{msg.partition()}] at offset {msg.offset()}")
 
     def process_item(self, item: Any, spider: Spider) -> Any:
         """Serialize and publish item to Kafka.
@@ -729,9 +717,7 @@ class OffsiteCandidatePipeline:
         if self.batch:
             self._save_batch()
 
-        logger.info(
-            f"OffsiteCandidatePipeline stats - Total processed: {self.items_processed}"
-        )
+        logger.info(f"OffsiteCandidatePipeline stats - Total processed: {self.items_processed}")
 
 
 class GrafanaSummaryPipeline:
@@ -861,12 +847,8 @@ class GrafanaSummaryPipeline:
                 # Instead, we'll set a numeric value and log the summary
                 # For actual text display in Grafana, you'd typically use an Info metric
                 # or store the summary in a separate system
-                CRAWLER_CONTENT_SUMMARY.labels(spider=spider.name).set(
-                    len(self.sampled_content)
-                )
-                logger.info(
-                    f"📊 Content Summary ({len(self.sampled_content)} samples): {summary[:200]}..."
-                )
+                CRAWLER_CONTENT_SUMMARY.labels(spider=spider.name).set(len(self.sampled_content))
+                logger.info(f"📊 Content Summary ({len(self.sampled_content)} samples): {summary[:200]}...")
         except ImportError:
             pass
 
@@ -885,6 +867,4 @@ class GrafanaSummaryPipeline:
         if self.sampled_content:
             self._generate_and_export_summary(spider)
 
-        logger.info(
-            f"GrafanaSummaryPipeline stats - Total items processed: {self.items_processed}"
-        )
+        logger.info(f"GrafanaSummaryPipeline stats - Total items processed: {self.items_processed}")

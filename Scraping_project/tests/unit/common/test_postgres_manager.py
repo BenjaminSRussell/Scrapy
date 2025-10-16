@@ -99,9 +99,7 @@ def test_init_initializes_pool_and_schema(patched_postgres, monkeypatch):
     def mock_init_schema(self):
         init_calls.append(True)
 
-    monkeypatch.setattr(
-        PostgresManager, "_initialize_schema", mock_init_schema, raising=False
-    )
+    monkeypatch.setattr(PostgresManager, "_initialize_schema", mock_init_schema, raising=False)
 
     mgr = PostgresManager(password="secret", min_conn=1, max_conn=4)
 
@@ -178,11 +176,7 @@ def test_save_error_analysis_iterates_clusters(patched_postgres):
         },
     ]
 
-    mgr.save_error_analysis(
-        total_errors=20, num_clusters=2, cluster_data=cluster_payload
-    )
+    mgr.save_error_analysis(total_errors=20, num_clusters=2, cluster_data=cluster_payload)
 
-    insert_calls = [
-        q for q, _ in connection.cursor_stub.executed if "error_analysis_reports" in q
-    ]
+    insert_calls = [q for q, _ in connection.cursor_stub.executed if "error_analysis_reports" in q]
     assert len(insert_calls) == 2

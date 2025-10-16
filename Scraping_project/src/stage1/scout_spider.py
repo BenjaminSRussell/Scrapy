@@ -105,17 +105,11 @@ class ScoutSpider(BaseSpider):
     def parse(self, response: Response) -> Iterator:
         """Dual-queue discovery handler using batch Redis operations."""
         # Fast content-type check
-        content_type = (
-            response.headers.get("Content-Type", b"")
-            .decode("utf-8", errors="ignore")
-            .lower()
-        )
+        content_type = response.headers.get("Content-Type", b"").decode("utf-8", errors="ignore").lower()
 
         # Only process HTML pages
         if "text/html" not in content_type:
-            logger.debug(
-                f"[SCOUT] Non-HTML, skipping: {content_type} for {response.url[:80]}"
-            )
+            logger.debug(f"[SCOUT] Non-HTML, skipping: {content_type} for {response.url[:80]}")
             return
 
         # Extract all URLs using BaseSpider method
@@ -160,9 +154,7 @@ class ScoutSpider(BaseSpider):
 
                 # Track metric
                 if hasattr(self, "skip_counters"):
-                    self.skip_counters["offsite"] = (
-                        self.skip_counters.get("offsite", 0) + 1
-                    )
+                    self.skip_counters["offsite"] = self.skip_counters.get("offsite", 0) + 1
 
             elif self._is_static_asset(url):
                 # Static asset - discard
@@ -208,9 +200,7 @@ class ScoutSpider(BaseSpider):
         """Prepare discovery helpers for a given response."""
 
         self._discovery_response = response
-        self._url_extractor = URLExtractor(
-            base_url=response.url, allowed_domains=self.allowed_domains
-        )
+        self._url_extractor = URLExtractor(base_url=response.url, allowed_domains=self.allowed_domains)
 
     def discover_all_urls(self) -> Iterable[str]:
         """Return all URLs discovered from the initialized response."""
@@ -218,9 +208,7 @@ class ScoutSpider(BaseSpider):
         if self._discovery_response is None or self._url_extractor is None:
             raise RuntimeError("Call _initialize_discovery before discovering URLs")
 
-        discovered = set(
-            self._url_extractor.discover_all_urls(self._discovery_response)
-        )
+        discovered = set(self._url_extractor.discover_all_urls(self._discovery_response))
         discovered.update(self._extract_sitemap_urls())
         return sorted(discovered)
 
@@ -262,10 +250,7 @@ class ScoutSpider(BaseSpider):
 
         if ".pdf" in url_lower:
             return "pdf"
-        elif any(
-            ext in url_lower
-            for ext in [".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx"]
-        ):
+        elif any(ext in url_lower for ext in [".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx"]):
             return "doc"
         elif any(ext in url_lower for ext in [".mp4", ".avi", ".mov", ".mp3", ".wav"]):
             return "media"

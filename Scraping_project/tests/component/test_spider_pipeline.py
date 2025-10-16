@@ -69,10 +69,7 @@ class TestDeepDiveSpiderComponents:
         spider = DeepDiveSpider()
 
         assert "SPIDER_MIDDLEWARES" in spider.custom_settings
-        assert (
-            "scrapy.spidermiddlewares.depth.DepthMiddleware"
-            in spider.custom_settings["SPIDER_MIDDLEWARES"]
-        )
+        assert "scrapy.spidermiddlewares.depth.DepthMiddleware" in spider.custom_settings["SPIDER_MIDDLEWARES"]
 
 
 @pytest.mark.component

@@ -261,12 +261,8 @@ def http_server() -> Generator[tuple[str, int], None, None]:
         """
 
         (Path(test_dir) / "index.html").write_text(html_content)
-        (Path(test_dir) / "page1.html").write_text(
-            "<html><body><h1>Page 1</h1></body></html>"
-        )
-        (Path(test_dir) / "page2.html").write_text(
-            "<html><body><h1>Page 2</h1></body></html>"
-        )
+        (Path(test_dir) / "page1.html").write_text("<html><body><h1>Page 1</h1></body></html>")
+        (Path(test_dir) / "page2.html").write_text("<html><body><h1>Page 2</h1></body></html>")
 
         # Create static file server
         root = static.File(test_dir)
@@ -475,9 +471,7 @@ def performance_timer():
 
 def pytest_configure(config):
     """Register custom markers."""
-    config.addinivalue_line(
-        "markers", "slow: marks tests as slow (deselect with '-m \"not slow\"')"
-    )
+    config.addinivalue_line("markers", "slow: marks tests as slow (deselect with '-m \"not slow\"')")
     config.addinivalue_line("markers", "integration: marks tests as integration tests")
     config.addinivalue_line("markers", "unit: marks tests as unit tests")
     config.addinivalue_line("markers", "component: marks tests as component tests")

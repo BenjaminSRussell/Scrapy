@@ -27,12 +27,8 @@ def delta_manager(tmp_path):
 def test_lazy_imports_on_first_write(delta_manager, caplog):
     """Verify that heavy libraries (pyarrow, deltalake) are loaded only on first write."""
     # 1. Assert libs are NOT in sys.modules before first write
-    assert (
-        "deltalake" not in sys.modules
-    ), "deltalake should not be imported before first write"
-    assert (
-        "pyarrow" not in sys.modules
-    ), "pyarrow should not be imported before first write"
+    assert "deltalake" not in sys.modules, "deltalake should not be imported before first write"
+    assert "pyarrow" not in sys.modules, "pyarrow should not be imported before first write"
 
     # 2. Perform a write operation to a table without special partitioning
     sample_data = [{"id": 1, "value": "a"}]
@@ -49,17 +45,13 @@ def test_lazy_imports_on_first_write(delta_manager, caplog):
 
 
 @patch("deltalake.write_deltalake")
-def test_unified_exception_handling_on_write(
-    mock_write_deltalake, delta_manager, caplog
-):
+def test_unified_exception_handling_on_write(mock_write_deltalake, delta_manager, caplog):
     """Assert that _handle_writer_exception is called on write failure."""
     # 1. Configure mock to raise a specific exception
     mock_write_deltalake.side_effect = RuntimeError("Disk is full")
 
     # 2. Mock the unified exception handler to track its call
-    delta_manager._handle_writer_exception = MagicMock(
-        wraps=delta_manager._handle_writer_exception
-    )
+    delta_manager._handle_writer_exception = MagicMock(wraps=delta_manager._handle_writer_exception)
 
     # 3. Perform a write that is expected to fail
     sample_data = [{"id": 2, "value": "b"}]

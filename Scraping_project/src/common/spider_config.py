@@ -11,17 +11,13 @@ def get_spider_settings(spider_name: str) -> dict:
     spider_config = stage1_config.get("spiders", {}).get(spider_name, {})
 
     if not spider_config:
-        raise ValueError(
-            f"No configuration found for spider '{spider_name}' in config.yml"
-        )
+        raise ValueError(f"No configuration found for spider '{spider_name}' in config.yml")
 
     # Build Scrapy settings from config
     settings = {
         # Concurrency settings
         "CONCURRENT_REQUESTS": spider_config.get("concurrent_requests", 32),
-        "CONCURRENT_REQUESTS_PER_DOMAIN": spider_config.get(
-            "concurrent_requests_per_domain", 8
-        ),
+        "CONCURRENT_REQUESTS_PER_DOMAIN": spider_config.get("concurrent_requests_per_domain", 8),
         "DOWNLOAD_DELAY": spider_config.get("download_delay", 0.25),
         "DOWNLOAD_TIMEOUT": spider_config.get("download_timeout", 30),
         # Robots and cookies
@@ -35,13 +31,9 @@ def get_spider_settings(spider_name: str) -> dict:
         "AUTOTHROTTLE_ENABLED": spider_config.get("autothrottle_enabled", True),
         "AUTOTHROTTLE_START_DELAY": spider_config.get("autothrottle_start_delay", 0.25),
         "AUTOTHROTTLE_MAX_DELAY": spider_config.get("autothrottle_max_delay", 10),
-        "AUTOTHROTTLE_TARGET_CONCURRENCY": spider_config.get(
-            "autothrottle_target_concurrency", 2.0
-        ),
+        "AUTOTHROTTLE_TARGET_CONCURRENCY": spider_config.get("autothrottle_target_concurrency", 2.0),
         # Reactor settings
-        "REACTOR_THREADPOOL_MAXSIZE": spider_config.get(
-            "reactor_threadpool_maxsize", 20
-        ),
+        "REACTOR_THREADPOOL_MAXSIZE": spider_config.get("reactor_threadpool_maxsize", 20),
         "DNS_TIMEOUT": spider_config.get("dns_timeout", 15),
         # Memory settings
         "MEMUSAGE_ENABLED": True,

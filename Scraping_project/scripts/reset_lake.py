@@ -76,9 +76,7 @@ def seed_lake():
 
     # Add url_hash column
     logger.info("Calculating URL hashes...")
-    df["url_hash"] = df["url"].apply(
-        lambda url: hashlib.sha256(url.encode("utf-8")).hexdigest()
-    )
+    df["url_hash"] = df["url"].apply(lambda url: hashlib.sha256(url.encode("utf-8")).hexdigest())
 
     # Add timestamp
     df["added_at"] = pd.Timestamp.now().isoformat()

@@ -119,9 +119,7 @@ def fake_backends(monkeypatch):
         "get_instance",
         classmethod(lambda cls, config_path=None: FakeConfig()),
     )
-    monkeypatch.setattr(
-        exporter_module, "get_redis_manager", lambda **kwargs: redis_backend
-    )
+    monkeypatch.setattr(exporter_module, "get_redis_manager", lambda **kwargs: redis_backend)
     monkeypatch.setattr(
         exporter_module.DeltaLakeManager,
         "get_instance",
@@ -181,9 +179,7 @@ def test_update_delta_lake_metrics_tracks_counts_and_sizes(
     assert discovered_total[()] == 5
 
 
-def test_update_throughput_metrics_increments_counters(
-    monkeypatch, exporter, metric_stubs, fake_backends
-):
+def test_update_throughput_metrics_increments_counters(monkeypatch, exporter, metric_stubs, fake_backends):
     _, delta_backend = fake_backends
     delta_backend.tables = {
         "stage1_discovery": [{}] * 20,
@@ -212,9 +208,7 @@ def test_update_throughput_metrics_increments_counters(
     assert rate_values[(("stage", "stage2"),)] == pytest.approx(0.3)
 
 
-def test_update_error_metrics_writes_summary(
-    tmp_path, exporter, metric_stubs, fake_backends
-):
+def test_update_error_metrics_writes_summary(tmp_path, exporter, metric_stubs, fake_backends):
     _, delta_backend = fake_backends
     delta_backend.tables = {
         "stage1_errors": [

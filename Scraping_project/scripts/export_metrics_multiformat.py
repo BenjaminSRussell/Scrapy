@@ -111,9 +111,7 @@ class MetricsExporter:
 
         for metric in metrics:
             metric_name = metric["metric"].get("__name__", "unknown")
-            labels = ",".join(
-                [f"{k}={v}" for k, v in metric["metric"].items() if k != "__name__"]
-            )
+            labels = ",".join([f"{k}={v}" for k, v in metric["metric"].items() if k != "__name__"])
             value = metric["value"][1] if len(metric["value"]) > 1 else 0
 
             if labels:
@@ -130,9 +128,7 @@ class MetricsExporter:
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Export Prometheus metrics to multiple formats"
-    )
+    parser = argparse.ArgumentParser(description="Export Prometheus metrics to multiple formats")
     parser.add_argument(
         "--format",
         choices=["json", "csv", "parquet", "influx", "all"],
@@ -197,15 +193,11 @@ def main():
             exported_count += 1
 
         if args.format in ["parquet", "all"]:
-            exporter.export_parquet(
-                metrics, f"{args.output_dir}/{name}_{timestamp}.parquet"
-            )
+            exporter.export_parquet(metrics, f"{args.output_dir}/{name}_{timestamp}.parquet")
             exported_count += 1
 
         if args.format in ["influx", "all"]:
-            exporter.export_influxdb_line_protocol(
-                metrics, f"{args.output_dir}/{name}_{timestamp}.influx"
-            )
+            exporter.export_influxdb_line_protocol(metrics, f"{args.output_dir}/{name}_{timestamp}.influx")
             exported_count += 1
 
     print("\n" + "=" * 80)

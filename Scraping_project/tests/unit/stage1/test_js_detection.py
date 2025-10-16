@@ -7,9 +7,7 @@ from src.stage1.js_detection import JSDetector, detect_js_requirement
 
 def build_response(body: str, url: str = "https://example.com") -> HtmlResponse:
     request = Request(url=url)
-    return HtmlResponse(
-        url=url, body=body.encode("utf-8"), encoding="utf-8", request=request
-    )
+    return HtmlResponse(url=url, body=body.encode("utf-8"), encoding="utf-8", request=request)
 
 
 def test_detects_spa_framework_confidence():

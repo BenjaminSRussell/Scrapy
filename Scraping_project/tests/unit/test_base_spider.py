@@ -85,74 +85,39 @@ class TestBaseSpiderResourceCategorization:
         """Test image file categorization."""
         spider = BaseSpider()
 
-        assert (
-            spider._categorize_skip_reason("https://example.com/photo.jpg") == "images"
-        )
-        assert (
-            spider._categorize_skip_reason("https://example.com/icon.png") == "images"
-        )
-        assert (
-            spider._categorize_skip_reason("https://example.com/logo.svg") == "images"
-        )
+        assert spider._categorize_skip_reason("https://example.com/photo.jpg") == "images"
+        assert spider._categorize_skip_reason("https://example.com/icon.png") == "images"
+        assert spider._categorize_skip_reason("https://example.com/logo.svg") == "images"
 
     def test_categorize_skip_reason_static_assets(self):
         """Test static asset categorization."""
         spider = BaseSpider()
 
-        assert (
-            spider._categorize_skip_reason("https://example.com/style.css")
-            == "static_assets"
-        )
-        assert (
-            spider._categorize_skip_reason("https://example.com/app.js")
-            == "static_assets"
-        )
-        assert (
-            spider._categorize_skip_reason("https://example.com/font.woff2")
-            == "static_assets"
-        )
+        assert spider._categorize_skip_reason("https://example.com/style.css") == "static_assets"
+        assert spider._categorize_skip_reason("https://example.com/app.js") == "static_assets"
+        assert spider._categorize_skip_reason("https://example.com/font.woff2") == "static_assets"
 
     def test_categorize_skip_reason_documents(self):
         """Test document file categorization."""
         spider = BaseSpider()
 
-        assert (
-            spider._categorize_skip_reason("https://example.com/report.pdf")
-            == "documents"
-        )
-        assert (
-            spider._categorize_skip_reason("https://example.com/data.xlsx")
-            == "documents"
-        )
-        assert (
-            spider._categorize_skip_reason("https://example.com/slide.pptx")
-            == "documents"
-        )
+        assert spider._categorize_skip_reason("https://example.com/report.pdf") == "documents"
+        assert spider._categorize_skip_reason("https://example.com/data.xlsx") == "documents"
+        assert spider._categorize_skip_reason("https://example.com/slide.pptx") == "documents"
 
     def test_categorize_skip_reason_media(self):
         """Test media file categorization."""
         spider = BaseSpider()
 
-        assert (
-            spider._categorize_skip_reason("https://example.com/video.mp4")
-            == "media_files"
-        )
-        assert (
-            spider._categorize_skip_reason("https://example.com/audio.mp3")
-            == "media_files"
-        )
+        assert spider._categorize_skip_reason("https://example.com/video.mp4") == "media_files"
+        assert spider._categorize_skip_reason("https://example.com/audio.mp3") == "media_files"
 
     def test_categorize_skip_reason_archives(self):
         """Test archive file categorization."""
         spider = BaseSpider()
 
-        assert (
-            spider._categorize_skip_reason("https://example.com/data.zip") == "archives"
-        )
-        assert (
-            spider._categorize_skip_reason("https://example.com/backup.tar.gz")
-            == "archives"
-        )
+        assert spider._categorize_skip_reason("https://example.com/data.zip") == "archives"
+        assert spider._categorize_skip_reason("https://example.com/backup.tar.gz") == "archives"
 
 
 @pytest.mark.unit
@@ -171,19 +136,11 @@ class TestBaseSpiderLinkTriage:
             "https://example.com/image.jpg",  # Static
         ]
 
-        results = list(
-            spider._process_discovered_urls(
-                test_html_response, discovered_urls, depth=0
-            )
-        )
+        results = list(spider._process_discovered_urls(test_html_response, discovered_urls, depth=0))
 
         # Should yield: 1 offsite item, 1 static item, 1 HTML request
-        offsite_items = [
-            r for r in results if isinstance(r, dict) and "external_url" in r
-        ]
-        static_items = [
-            r for r in results if isinstance(r, dict) and "skip_reason" in r
-        ]
+        offsite_items = [r for r in results if isinstance(r, dict) and "external_url" in r]
+        static_items = [r for r in results if isinstance(r, dict) and "skip_reason" in r]
         html_requests = [r for r in results if hasattr(r, "url")]
 
         assert len(offsite_items) == 1
@@ -198,11 +155,7 @@ class TestBaseSpiderLinkTriage:
 
         discovered_urls = ["https://external.com/page"]
 
-        results = list(
-            spider._process_discovered_urls(
-                test_html_response, discovered_urls, depth=0
-            )
-        )
+        results = list(spider._process_discovered_urls(test_html_response, discovered_urls, depth=0))
 
         # Should yield offsite item but no Request
         requests = [r for r in results if hasattr(r, "url")]

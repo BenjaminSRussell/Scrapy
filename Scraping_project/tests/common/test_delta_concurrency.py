@@ -1,4 +1,5 @@
 import threading
+from typing import Literal
 
 import pandas as pd
 
@@ -6,7 +7,10 @@ from src.common.delta_lake import DeltaLakeManager
 
 
 def write_records(
-    manager: DeltaLakeManager, table_name: str, df: pd.DataFrame, mode: str = "append"
+    manager: DeltaLakeManager,
+    table_name: str,
+    df: pd.DataFrame,
+    mode: Literal["append", "overwrite", "error", "ignore"] = "append",
 ):
     """
     Helper function to write a pandas DataFrame to a Delta table synchronously.

@@ -70,9 +70,7 @@ class BaseSpider(scrapy.Spider):
 
         # Grab IGNORED_EXTENSIONS from settings when available
         self.IGNORED_EXTENSIONS = (
-            getattr(self, "settings", {}).get("IGNORED_EXTENSIONS", [])
-            if hasattr(self, "settings")
-            else []
+            getattr(self, "settings", {}).get("IGNORED_EXTENSIONS", []) if hasattr(self, "settings") else []
         )
         # Maintain backward-compatible alias used in tests
         self.ignored_extensions = list(self.IGNORED_EXTENSIONS)
@@ -138,15 +136,11 @@ class BaseSpider(scrapy.Spider):
         self.last_metric_update = time.time()
 
         # Minimum JS detector confidence before flagging a page
-        self.js_confidence_threshold = self.config.get("stage1", {}).get(
-            "js_confidence_threshold", 0.7
-        )
+        self.js_confidence_threshold = self.config.get("stage1", {}).get("js_confidence_threshold", 0.7)
 
         # Batch size falls back to 50 if settings unavailable
         self.batch_size = (
-            self.settings.getint("DELTA_BATCH_SIZE", 50)
-            if hasattr(self, "settings") and self.settings
-            else 50
+            self.settings.getint("DELTA_BATCH_SIZE", 50) if hasattr(self, "settings") and self.settings else 50
         )
 
         # Optional depth control (tests may set max_depth dynamically)
@@ -157,31 +151,23 @@ class BaseSpider(scrapy.Spider):
             self.start_urls = self._load_seed_urls()
 
         url_count = self.redis_client.scard(self.url_hashes_key)
-        logger.info(
-            f"{self.name} loaded {len(self.start_urls)} seeds, {url_count} existing URLs in Redis"
-        )
+        logger.info(f"{self.name} loaded {len(self.start_urls)} seeds, {url_count} existing URLs in Redis")
 
     async def start(self):
         """Emit initial requests for the dynamically loaded start URLs."""
         logger.warning(f"🚀 [{self.name}] start() CALLED!")  # DEBUG
 
         if not self.start_urls:
-            logger.error(
-                f"{self.name}: No start URLs to crawl! Check Delta Lake seed_urls table."
-            )
+            logger.error(f"{self.name}: No start URLs to crawl! Check Delta Lake seed_urls table.")
             return
 
-        logger.warning(
-            f"🚀 [{self.name}]: Starting crawl with {len(self.start_urls)} seed URLs"
-        )
+        logger.warning(f"🚀 [{self.name}]: Starting crawl with {len(self.start_urls)} seed URLs")
 
         request_count = 0
         for url in self.start_urls:
             request_count += 1
             if request_count <= 5:
-                logger.warning(
-                    f"🚀 [{self.name}]: Yielding request #{request_count}: {url[:80]}"
-                )
+                logger.warning(f"🚀 [{self.name}]: Yielding request #{request_count}: {url[:80]}")
             yield scrapy.Request(
                 url,
                 callback=self.parse,
@@ -191,9 +177,7 @@ class BaseSpider(scrapy.Spider):
                 dont_filter=False,
             )
 
-        logger.warning(
-            f"🚀 [{self.name}]: Yielded {request_count} total requests from start()"
-        )
+        logger.warning(f"🚀 [{self.name}]: Yielded {request_count} total requests from start()")
 
     def _hash_url(self, url: str) -> str:
         """Return the full SHA256 hash of a URL for deduplication."""
@@ -225,11 +209,7 @@ class BaseSpider(scrapy.Spider):
             ]
 
             # Filter out tracking parameters
-            filtered_params = {
-                k: v
-                for k, v in query_params.items()
-                if k.lower() not in trackers_to_remove
-            }
+            filtered_params = {k: v for k, v in query_params.items() if k.lower() not in trackers_to_remove}
 
             # Rebuild the URL
             new_query = urlencode(filtered_params, doseq=True)
@@ -256,9 +236,7 @@ class BaseSpider(scrapy.Spider):
             seed_records = self.delta.read("seed_urls")
             urls = [record["url"] for record in seed_records]
 
-            logger.info(
-                f"Loaded {len(urls)} seed URLs from Delta Lake, checking against Redis..."
-            )
+            logger.info(f"Loaded {len(urls)} seed URLs from Delta Lake, checking against Redis...")
 
             # Batch deduplicate using a Redis pipeline
             new_urls = []
@@ -301,10 +279,7 @@ class BaseSpider(scrapy.Spider):
     def extract_links(self, response: Response) -> list[str]:
         """Return normalized links from a response, filtering ignored extensions."""
         candidate_urls = self._extract_urls(response)
-        ignored = [
-            ext.lower()
-            for ext in getattr(self, "ignored_extensions", self.IGNORED_EXTENSIONS)
-        ]
+        ignored = [ext.lower() for ext in getattr(self, "ignored_extensions", self.IGNORED_EXTENSIONS)]
         unique_links: set[str] = set()
 
         for url in candidate_urls:
@@ -391,20 +366,14 @@ class BaseSpider(scrapy.Spider):
             "timestamp": datetime.now().isoformat(),
         }
         self.error_records.append(error_record)
-        logger.error(
-            "Error response received: %s for %s", response.status, response.url
-        )
+        logger.error("Error response received: %s for %s", response.status, response.url)
         return error_record
 
     def parse(self, response: Response):
         """Handle each response, record metadata, and queue new work."""
         depth = response.meta.get("depth", 0)
         url_hash = self._hash_url(response.url)
-        content_type = (
-            response.headers.get("Content-Type", b"")
-            .decode("utf-8", errors="ignore")
-            .lower()
-        )
+        content_type = response.headers.get("Content-Type", b"").decode("utf-8", errors="ignore").lower()
 
         results: list[Any] = []
 
@@ -417,20 +386,14 @@ class BaseSpider(scrapy.Spider):
             "content_size": len(response.body),
             "discovered_at": datetime.now().isoformat(),
             "discovery_type": (
-                "html"
-                if ("text/html" in content_type or "application/xhtml" in content_type)
-                else "resource"
+                "html" if ("text/html" in content_type or "application/xhtml" in content_type) else "resource"
             ),
         }
-        discovered_item["resource_type"] = self._categorize_resource(
-            response.url, content_type
-        )
+        discovered_item["resource_type"] = self._categorize_resource(response.url, content_type)
         results.append(discovered_item)
 
         if "text/html" not in content_type and "application/xhtml" not in content_type:
-            logger.debug(
-                f"Non-HTML content discovered: {content_type} for {response.url[:80]}"
-            )
+            logger.debug(f"Non-HTML content discovered: {content_type} for {response.url[:80]}")
             self._record_non_html(response, url_hash, depth, content_type)
             return results
 
@@ -482,15 +445,9 @@ class BaseSpider(scrapy.Spider):
         """Categorize the resource type based on URL and content type."""
         url_lower = url.lower()
 
-        if any(
-            ext in url_lower
-            for ext in [".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx"]
-        ):
+        if any(ext in url_lower for ext in [".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx"]):
             return "document"
-        elif any(
-            ext in url_lower
-            for ext in [".jpg", ".jpeg", ".png", ".gif", ".svg", ".webp"]
-        ):
+        elif any(ext in url_lower for ext in [".jpg", ".jpeg", ".png", ".gif", ".svg", ".webp"]):
             return "image"
         elif any(ext in url_lower for ext in [".js", ".css"]):
             return "asset"
@@ -516,15 +473,11 @@ class BaseSpider(scrapy.Spider):
         Returns:
             List of discovered URLs
         """
-        extractor = URLExtractor(
-            base_url=response.url, allowed_domains=self.allowed_domains
-        )
+        extractor = URLExtractor(base_url=response.url, allowed_domains=self.allowed_domains)
         discovered_urls = extractor.discover_all_urls(response)
         return [self.normalize_url(url) for url in discovered_urls]
 
-    def _process_discovered_urls(
-        self, response: Response, discovered_urls: list[str], depth: int
-    ) -> Iterator:
+    def _process_discovered_urls(self, response: Response, discovered_urls: list[str], depth: int) -> Iterator:
         """Deduplicate discovered URLs, track skips, and queue new crawl requests."""
         if not discovered_urls:
             return
@@ -568,9 +521,7 @@ class BaseSpider(scrapy.Spider):
                 offsite_urls.append(url)
             else:
                 # Internal URLs rely on the configured ignore list
-                is_static = any(
-                    url.lower().endswith(ext) for ext in self.IGNORED_EXTENSIONS
-                )
+                is_static = any(url.lower().endswith(ext) for ext in self.IGNORED_EXTENSIONS)
 
                 if is_static:
                     # Static resource: publish metadata only
@@ -586,24 +537,18 @@ class BaseSpider(scrapy.Spider):
             if PROMETHEUS_AVAILABLE and OFFSITE_LINKS_FOUND:
                 OFFSITE_LINKS_FOUND.labels(spider=self.name).inc()
 
-            logger.debug(
-                f"[K3 OFFSITE] External link found (not following): {url[:80]}"
-            )
+            logger.debug(f"[K3 OFFSITE] External link found (not following): {url[:80]}")
 
         # Track static resources
         for url, url_hash in static_urls:
             skip_reason = self._categorize_skip_reason(url)
             self._track_skip(url, skip_reason)
-            yield self._create_static_item(
-                url, url_hash, depth, response.url, skip_reason
-            )
+            yield self._create_static_item(url, url_hash, depth, response.url, skip_reason)
             logger.debug(f"[K3 STATIC] Skipped {skip_reason}: {url[:80]}")
 
         # Queue HTML candidates for crawling
         for url, _url_hash in html_candidates:
-            priority = (
-                0 if urlparse(response.url).netloc == urlparse(url).netloc else -1
-            )
+            priority = 0 if urlparse(response.url).netloc == urlparse(url).netloc else -1
             yield scrapy.Request(
                 url,
                 callback=self.parse,
@@ -614,9 +559,7 @@ class BaseSpider(scrapy.Spider):
             )
             logger.debug(f"[K3 HTML] Queued HTML candidate: {url[:80]}")
 
-    def _create_offsite_item(
-        self, response: Response, url: str
-    ) -> OffsiteCandidateItem:
+    def _create_offsite_item(self, response: Response, url: str) -> OffsiteCandidateItem:
         """Create an offsite candidate item with context."""
         anchor_text, context = self._extract_context(response, url)
         return OffsiteCandidateItem(
@@ -627,9 +570,7 @@ class BaseSpider(scrapy.Spider):
             discovered_at=datetime.now().isoformat(),
         )
 
-    def _create_static_item(
-        self, url: str, url_hash: str, depth: int, parent_url: str, skip_reason: str
-    ) -> dict:
+    def _create_static_item(self, url: str, url_hash: str, depth: int, parent_url: str, skip_reason: str) -> dict:
         """Create metadata item for static resources."""
         return {
             "url": url,
@@ -704,10 +645,7 @@ class BaseSpider(scrapy.Spider):
             return "images"
         elif any(url_lower.endswith(ext) for ext in [".css", ".js", ".map"]):
             return "static_assets"
-        elif any(
-            url_lower.endswith(ext)
-            for ext in [".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx"]
-        ):
+        elif any(url_lower.endswith(ext) for ext in [".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx"]):
             return "documents"
         elif any(
             url_lower.endswith(ext)
@@ -724,15 +662,9 @@ class BaseSpider(scrapy.Spider):
             ]
         ):
             return "media_files"
-        elif any(
-            url_lower.endswith(ext)
-            for ext in [".zip", ".rar", ".7z", ".tar", ".gz", ".bz2"]
-        ):
+        elif any(url_lower.endswith(ext) for ext in [".zip", ".rar", ".7z", ".tar", ".gz", ".bz2"]):
             return "archives"
-        elif any(
-            url_lower.endswith(ext)
-            for ext in [".woff", ".woff2", ".ttf", ".eot", ".otf"]
-        ):
+        elif any(url_lower.endswith(ext) for ext in [".woff", ".woff2", ".ttf", ".eot", ".otf"]):
             return "static_assets"
         else:
             return "static_assets"
@@ -746,12 +678,7 @@ class BaseSpider(scrapy.Spider):
 
         total_skips = sum(self.skip_counters.values())
         if total_skips % 500 == 0:
-            skip_summary = ", ".join(
-                [
-                    f"{k}: {v}"
-                    for k, v in sorted(self.skip_counters.items(), key=lambda x: -x[1])
-                ]
-            )
+            skip_summary = ", ".join([f"{k}: {v}" for k, v in sorted(self.skip_counters.items(), key=lambda x: -x[1])])
             logger.info(f"⏭️  SKIP STATS - Total: {total_skips} | {skip_summary}")
 
     def _update_dashboard_metrics(self):
@@ -763,11 +690,7 @@ class BaseSpider(scrapy.Spider):
 
         # Calculate rate from sliding window (URLs discovered in last 60 seconds)
         cutoff_time = current_time - 60
-        recent_urls = sum(
-            count
-            for timestamp, count in self.url_discovery_window
-            if timestamp >= cutoff_time
-        )
+        recent_urls = sum(count for timestamp, count in self.url_discovery_window if timestamp >= cutoff_time)
         urls_per_minute = recent_urls  # Already per minute due to 60-second window
 
         # Calculate average file size from window
@@ -809,9 +732,7 @@ class BaseSpider(scrapy.Spider):
         }
         self.discovered_records.append(record)
 
-    def _record_non_html(
-        self, response: Response, url_hash: str, depth: int, content_type: str
-    ):
+    def _record_non_html(self, response: Response, url_hash: str, depth: int, content_type: str):
         """Record non-HTML resource discovery."""
         record = {
             "url": response.url,
@@ -828,9 +749,7 @@ class BaseSpider(scrapy.Spider):
         if self.discovered_records:
             try:
                 self.delta.write("stage1_discovery", self.discovered_records)
-                logger.info(
-                    f"💾 Saved {len(self.discovered_records)} discovery records"
-                )
+                logger.info(f"💾 Saved {len(self.discovered_records)} discovery records")
                 self.discovered_records = []
             except Exception as e:
                 logger.error(f"Failed to save discovery records: {e}")
@@ -841,9 +760,7 @@ class BaseSpider(scrapy.Spider):
         if (now - self.perf_last_log).seconds >= 10:
             elapsed = (now - self.perf_start_time).seconds or 1
             rate = self.perf_urls_processed / elapsed
-            logger.info(
-                f"⚡ Performance: {self.perf_urls_processed} URLs @ {rate:.2f} URLs/sec"
-            )
+            logger.info(f"⚡ Performance: {self.perf_urls_processed} URLs @ {rate:.2f} URLs/sec")
             self.perf_last_log = now
 
     def handle_error(self, failure):
@@ -875,13 +792,9 @@ class BaseSpider(scrapy.Spider):
             if retry_count >= max_retries:
                 logger.error(f"Timeout after {retry_count} retries: {request.url[:80]}")
             else:
-                logger.debug(
-                    f"Timeout (retry {retry_count}/{max_retries}): {request.url[:80]}"
-                )
+                logger.debug(f"Timeout (retry {retry_count}/{max_retries}): {request.url[:80]}")
         else:
-            logger.error(
-                f"Unknown error: {failure.getErrorMessage()} for {request.url[:80]}"
-            )
+            logger.error(f"Unknown error: {failure.getErrorMessage()} for {request.url[:80]}")
 
         # Record error for analysis
         error_record = {
@@ -921,10 +834,5 @@ class BaseSpider(scrapy.Spider):
         logger.info(f"✅ Final stats: {self.perf_urls_processed} URLs processed")
         logger.info(f"✅ Total URLs discovered: {self.total_urls_discovered}")
 
-        skip_summary = ", ".join(
-            [
-                f"{k}: {v}"
-                for k, v in sorted(self.skip_counters.items(), key=lambda x: -x[1])
-            ]
-        )
+        skip_summary = ", ".join([f"{k}: {v}" for k, v in sorted(self.skip_counters.items(), key=lambda x: -x[1])])
         logger.info(f"⏭️  Final skip stats: {skip_summary}")

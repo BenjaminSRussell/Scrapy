@@ -51,9 +51,7 @@ def load_seeds():
                 # Project only url_hash column for memory efficiency
                 pa_table = dt.to_pyarrow_table(columns=["url_hash"])
                 existing_url_hashes = set(pa_table["url_hash"].to_pylist())
-                logger.info(
-                    f"Found {len(existing_url_hashes)} existing seed URL hashes (memory-optimized)."
-                )
+                logger.info(f"Found {len(existing_url_hashes)} existing seed URL hashes (memory-optimized).")
             else:
                 logger.info("No existing seed_urls table found, will create new one.")
         except Exception as proj_error:
@@ -65,9 +63,7 @@ def load_seeds():
                     existing_url_hashes.add(record["url_hash"])
                 else:
                     existing_url_hashes.add(_hash_url(record["url"]))
-            logger.info(
-                f"Found {len(existing_url_hashes)} existing seed URL hashes (fallback mode)."
-            )
+            logger.info(f"Found {len(existing_url_hashes)} existing seed URL hashes (fallback mode).")
     except Exception as e:
         logger.info(f"No existing seed_urls table found, will create new one. ({e})")
 
@@ -106,9 +102,7 @@ def load_seeds():
     logger.info(f"Processed {line_count} lines from seed file")
 
     if new_urls:
-        logger.info(
-            f"Found {len(new_urls)} new URLs to add ({duplicate_count} duplicates skipped)."
-        )
+        logger.info(f"Found {len(new_urls)} new URLs to add ({duplicate_count} duplicates skipped).")
         try:
             # Append to existing table (synchronous write)
             delta_manager.write("seed_urls", new_urls, mode="append", async_write=False)
@@ -119,9 +113,7 @@ def load_seeds():
             logger.error(f"Failed to write seed URLs to Delta Lake: {e}")
     else:
         if duplicate_count > 0:
-            logger.info(
-                f"All {duplicate_count} URLs from CSV already exist in seed_urls table."
-            )
+            logger.info(f"All {duplicate_count} URLs from CSV already exist in seed_urls table.")
         else:
             logger.warning("No valid seed URLs found in the seed file.")
 

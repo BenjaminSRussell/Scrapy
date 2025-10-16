@@ -14,9 +14,7 @@ from pathlib import Path
 # Paths
 SCRIPT_DIR = Path(__file__).parent
 PROJECT_ROOT = SCRIPT_DIR.parent
-DASHBOARD_PATH = (
-    PROJECT_ROOT / "monitoring" / "dashboards" / "unified_dashboard.json.backup"
-)
+DASHBOARD_PATH = PROJECT_ROOT / "monitoring" / "dashboards" / "unified_dashboard.json.backup"
 
 
 def add_offsite_panels(dashboard_path: Path):
@@ -32,9 +30,7 @@ def add_offsite_panels(dashboard_path: Path):
 
     # Find max panel ID and Y position
     max_id = max(panel["id"] for panel in dashboard["panels"])
-    max_y = max(
-        panel["gridPos"]["y"] + panel["gridPos"]["h"] for panel in dashboard["panels"]
-    )
+    max_y = max(panel["gridPos"]["y"] + panel["gridPos"]["h"] for panel in dashboard["panels"])
 
     print(f"Max panel ID: {max_id}")
     print(f"Max Y position: {max_y}")

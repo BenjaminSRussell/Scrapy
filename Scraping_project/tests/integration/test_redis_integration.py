@@ -24,9 +24,7 @@ class TestRedisIntegration:
         )
 
         # Create a pipeline of items
-        test_items = [
-            {"url": f"https://example.com/{i}", "priority": i} for i in range(10)
-        ]
+        test_items = [{"url": f"https://example.com/{i}", "priority": i} for i in range(10)]
 
         # Push all items
         for item in test_items:
@@ -162,9 +160,7 @@ class TestRedisIntegration:
             "urls": [f"https://example.com/page{i}" for i in range(1000)],
             "metadata": {
                 "timestamp": "2024-01-01T00:00:00",
-                "nested": {
-                    "data": [{"id": i, "value": f"item_{i}"} for i in range(100)]
-                },
+                "nested": {"data": [{"id": i, "value": f"item_{i}"} for i in range(100)]},
             },
         }
 

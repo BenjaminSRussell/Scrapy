@@ -92,9 +92,7 @@ class TestBaseSpiderURLExtraction:
         </html>
         """
 
-        response = HtmlResponse(
-            url="https://example.com", body=html.encode("utf-8"), encoding="utf-8"
-        )
+        response = HtmlResponse(url="https://example.com", body=html.encode("utf-8"), encoding="utf-8")
 
         links = spider.extract_links(response)
 
@@ -121,9 +119,7 @@ class TestBaseSpiderURLExtraction:
         </html>
         """
 
-        response = HtmlResponse(
-            url="https://example.com", body=html.encode("utf-8"), encoding="utf-8"
-        )
+        response = HtmlResponse(url="https://example.com", body=html.encode("utf-8"), encoding="utf-8")
 
         links = spider.extract_links(response)
 

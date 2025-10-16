@@ -28,10 +28,6 @@ class DeepDiveSpider(BaseSpider):
 
         if configured_domains:
             self.allowed_domains = configured_domains
-            logger.info(
-                f"[K4] DeepDiveSpider enforcing domain allowlist from config: {configured_domains}"
-            )
+            logger.info(f"[K4] DeepDiveSpider enforcing domain allowlist from config: {configured_domains}")
         else:
-            logger.info(
-                f"[K4] DeepDiveSpider using dynamic domains: {self.allowed_domains}"
-            )
+            logger.info(f"[K4] DeepDiveSpider using dynamic domains: {self.allowed_domains}")

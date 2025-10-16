@@ -77,9 +77,7 @@ class LargeDocProcessor:
             logger.error(f"Failed to load model: {e}")
             raise
 
-    @retry(
-        stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10)
-    )
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
     def _fetch_content(self, url: str, is_pdf: bool = False) -> tuple[str, str]:
         """Fetch content from URL with retry logic.
 
@@ -102,25 +100,20 @@ class LargeDocProcessor:
 
             # Handle Word documents (.docx)
             elif (
-                "application/vnd.openxmlformats-officedocument.wordprocessingml"
-                in content_type
+                "application/vnd.openxmlformats-officedocument.wordprocessingml" in content_type
                 or url.lower().endswith(".docx")
             ):
                 return self._extract_docx_text(response.content), "docx"
 
             # Handle PowerPoint documents (.pptx)
-            elif (
-                "application/vnd.openxmlformats-officedocument.presentationml"
-                in content_type
-                or url.lower().endswith(".pptx")
+            elif "application/vnd.openxmlformats-officedocument.presentationml" in content_type or url.lower().endswith(
+                ".pptx"
             ):
                 return self._extract_pptx_text(response.content), "pptx"
 
             # Handle Excel documents (.xlsx)
-            elif (
-                "application/vnd.openxmlformats-officedocument.spreadsheetml"
-                in content_type
-                or url.lower().endswith(".xlsx")
+            elif "application/vnd.openxmlformats-officedocument.spreadsheetml" in content_type or url.lower().endswith(
+                ".xlsx"
             ):
                 return self._extract_xlsx_text(response.content), "xlsx"
 
@@ -165,9 +158,7 @@ class LargeDocProcessor:
             soup = BeautifulSoup(html, "html.parser")
 
             # Remove noise
-            for tag in soup(
-                ["script", "style", "nav", "header", "footer", "aside", "iframe"]
-            ):
+            for tag in soup(["script", "style", "nav", "header", "footer", "aside", "iframe"]):
                 tag.decompose()
 
             # Extract text
@@ -304,9 +295,7 @@ class LargeDocProcessor:
             return text
 
         except ImportError:
-            logger.error(
-                "textract not installed - cannot extract .doc text. Install: apt-get install antiword"
-            )
+            logger.error("textract not installed - cannot extract .doc text. Install: apt-get install antiword")
             return ""
         except Exception as e:
             logger.error(f"Failed to extract .doc text: {e}")
@@ -342,9 +331,7 @@ class LargeDocProcessor:
 
             # Save summaries
             if summaries:
-                self.delta.write(
-                    "stage4_summaries", summaries, mode="append", async_write=False
-                )
+                self.delta.write("stage4_summaries", summaries, mode="append", async_write=False)
                 logger.info(f"Saved {len(summaries)} summaries")
 
             # Update queue status
@@ -376,9 +363,7 @@ class LargeDocProcessor:
                 return None
 
             word_count = len(text.split())
-            logger.info(
-                f"Fetched {word_count} words from {url[:80]} (type: {content_type})"
-            )
+            logger.info(f"Fetched {word_count} words from {url[:80]} (type: {content_type})")
 
         except Exception as e:
             logger.error(f"Failed to fetch content from {url}: {e}")
@@ -456,9 +441,7 @@ class LargeDocProcessor:
             if len(text) > max_input:
                 text = text[:max_input]
 
-            result = self.summarizer(
-                text, max_length=150, min_length=30, do_sample=False
-            )
+            result = self.summarizer(text, max_length=150, min_length=30, do_sample=False)
 
             return result[0]["summary_text"]
 
@@ -483,9 +466,7 @@ class LargeDocProcessor:
                 doc["completed_at"] = datetime.now().isoformat()
             updated_queue.append(doc)
 
-        self.delta.write(
-            "stage4_large_docs", updated_queue, mode="overwrite", async_write=False
-        )
+        self.delta.write("stage4_large_docs", updated_queue, mode="overwrite", async_write=False)
         logger.info(f"Updated queue status for {len(processed_urls)} documents")
 
 
@@ -496,7 +477,5 @@ def process_large_documents():
 
 
 if __name__ == "__main__":
-    logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
-    )
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
     process_large_documents()

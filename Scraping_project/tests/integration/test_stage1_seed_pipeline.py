@@ -47,21 +47,15 @@ class SeedSpider(BaseSpider):
 def test_seed_urls_deduplicated(delta_with_seed_urls, monkeypatch):
     fake_redis = RedisSetStub(existing=set())
 
-    monkeypatch.setattr(
-        "src.stage1.base_spider.get_delta_manager", lambda: delta_with_seed_urls
-    )
+    monkeypatch.setattr("src.stage1.base_spider.get_delta_manager", lambda: delta_with_seed_urls)
     monkeypatch.setattr("src.stage1.base_spider.get_postgres_manager", lambda: object())
-    monkeypatch.setattr(
-        "src.stage1.base_spider.redis.Redis", lambda **kwargs: fake_redis
-    )
+    monkeypatch.setattr("src.stage1.base_spider.redis.Redis", lambda **kwargs: fake_redis)
 
     spider = SeedSpider()
 
     assert len(spider.start_urls) == 3
 
     # Run again with Redis already populated to verify deduplication
-    monkeypatch.setattr(
-        "src.stage1.base_spider.redis.Redis", lambda **kwargs: fake_redis
-    )
+    monkeypatch.setattr("src.stage1.base_spider.redis.Redis", lambda **kwargs: fake_redis)
     spider_again = SeedSpider()
     assert spider_again.start_urls == []

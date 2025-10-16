@@ -64,9 +64,7 @@ class JavaScriptSpider(scrapy.Spider):
         self.rendered_count = 0
         self.completed_urls = []
 
-        logger.info(
-            f"[JAVASCRIPT] Initialized with {len(self.start_urls)} pages to render"
-        )
+        logger.info(f"[JAVASCRIPT] Initialized with {len(self.start_urls)} pages to render")
 
     def _load_js_queue(self) -> list[str]:
         """Return pending URLs from the js_spider_queue table."""
@@ -76,9 +74,7 @@ class JavaScriptSpider(scrapy.Spider):
             pending_items = [r for r in all_queue_data if r.get("status") == "pending"]
 
             urls = [item["url"] for item in pending_items]
-            logger.info(
-                f"[JAVASCRIPT] Loaded {len(urls)} pending JS pages from js_spider_queue"
-            )
+            logger.info(f"[JAVASCRIPT] Loaded {len(urls)} pending JS pages from js_spider_queue")
             return urls
 
         except Exception as e:
@@ -114,9 +110,7 @@ class JavaScriptSpider(scrapy.Spider):
 
             await self._simulate_scrolling(page)
 
-            page.on(
-                "response", lambda resp: self._handle_response(resp, intercepted_urls)
-            )
+            page.on("response", lambda resp: self._handle_response(resp, intercepted_urls))
 
         discovered_urls = self._extract_urls_from_rendered_html(response)
 
@@ -186,9 +180,7 @@ class JavaScriptSpider(scrapy.Spider):
                 previous_height = new_height
                 scroll_count += 1
 
-            logger.debug(
-                f"[JAVASCRIPT] Scrolling complete after {scroll_count} scrolls"
-            )
+            logger.debug(f"[JAVASCRIPT] Scrolling complete after {scroll_count} scrolls")
 
         except Exception as e:
             logger.debug(f"[JAVASCRIPT] Scrolling failed: {e}")
@@ -230,9 +222,7 @@ class JavaScriptSpider(scrapy.Spider):
 
     def handle_error(self, failure):
         """Handle rendering errors."""
-        logger.error(
-            f"[JAVASCRIPT] Rendering failed: {failure.getErrorMessage()} for {failure.request.url[:80]}"
-        )
+        logger.error(f"[JAVASCRIPT] Rendering failed: {failure.getErrorMessage()} for {failure.request.url[:80]}")
 
     def closed(self, reason):
         """Persist completion markers for the processed queue items."""
@@ -261,9 +251,7 @@ class JavaScriptSpider(scrapy.Spider):
                     mode="overwrite",
                     async_write=False,
                 )
-                logger.info(
-                    f"[JAVASCRIPT] Marked {len(self.completed_urls)} items as completed in queue"
-                )
+                logger.info(f"[JAVASCRIPT] Marked {len(self.completed_urls)} items as completed in queue")
 
             except Exception as e:
                 logger.error(f"[JAVASCRIPT] Failed to update queue status: {e}")

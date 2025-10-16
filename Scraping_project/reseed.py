@@ -64,14 +64,10 @@ def load_seed_urls(csv_path: Path, manager) -> int:
     df = df[df["url"].str.strip() != ""]
     df = df.drop_duplicates(subset=["url"])
 
-    logger.info(
-        f"Loaded {original_count} URLs, {len(df)} unique URLs after deduplication"
-    )
+    logger.info(f"Loaded {original_count} URLs, {len(df)} unique URLs after deduplication")
 
     # Add url_hash column (SHA256 hash of URL)
-    df["url_hash"] = df["url"].apply(
-        lambda url: hashlib.sha256(url.encode("utf-8")).hexdigest()
-    )
+    df["url_hash"] = df["url"].apply(lambda url: hashlib.sha256(url.encode("utf-8")).hexdigest())
 
     # Add timestamp
     df["added_at"] = pd.Timestamp.now().isoformat()
@@ -133,9 +129,7 @@ def check_table_stats(manager):
 
     for table in tables:
         status = "✓" if table["exists"] else "✗"
-        logger.info(
-            f"{status} {table['name']}: {table['row_count']} rows, {table['parquet_files']} parquet files"
-        )
+        logger.info(f"{status} {table['name']}: {table['row_count']} rows, {table['parquet_files']} parquet files")
 
         if "error" in table:
             logger.warning(f"  ⚠️  Error: {table['error']}")
@@ -150,9 +144,7 @@ def main():
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
 
-    parser.add_argument(
-        "--csv", default="data/raw/uconn_urls.csv", help="Path to uconn_urls.csv file"
-    )
+    parser.add_argument("--csv", default="data/raw/uconn_urls.csv", help="Path to uconn_urls.csv file")
 
     parser.add_argument(
         "--clear",
@@ -160,13 +152,9 @@ def main():
         help="Clear all Delta Lake tables before reseeding (WARNING: destructive!)",
     )
 
-    parser.add_argument(
-        "--no-validate", action="store_true", help="Skip validation after seeding"
-    )
+    parser.add_argument("--no-validate", action="store_true", help="Skip validation after seeding")
 
-    parser.add_argument(
-        "--force", action="store_true", help="Skip confirmation prompts"
-    )
+    parser.add_argument("--force", action="store_true", help="Skip confirmation prompts")
 
     args = parser.parse_args()
 
@@ -208,9 +196,7 @@ def main():
             validation = validate_seed_urls(manager)
 
             if not validation["valid"]:
-                logger.error(
-                    f"❌ Validation failed: {validation.get('error', 'Unknown error')}"
-                )
+                logger.error(f"❌ Validation failed: {validation.get('error', 'Unknown error')}")
                 sys.exit(1)
 
             # Check all table statistics

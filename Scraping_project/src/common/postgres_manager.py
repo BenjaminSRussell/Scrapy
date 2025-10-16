@@ -58,9 +58,7 @@ class PostgresManager:
             max_conn: Maximum connections in pool
         """
         if not POSTGRES_AVAILABLE:
-            raise ImportError(
-                "PostgreSQL support not available. Install with: pip install psycopg2-binary"
-            )
+            raise ImportError("PostgreSQL support not available. Install with: pip install psycopg2-binary")
 
         # Load configuration from environment or defaults
         self.host = host or os.getenv("DB_HOST", "localhost")
@@ -85,9 +83,7 @@ class PostgresManager:
                 user=self.user,
                 password=self.password,
             )
-            logger.info(
-                f"PostgreSQL connection pool created: {self.host}:{self.port}/{self.database}"
-            )
+            logger.info(f"PostgreSQL connection pool created: {self.host}:{self.port}/{self.database}")
         except Exception as e:
             logger.error(f"Failed to create PostgreSQL connection pool: {e}")
             raise
@@ -220,11 +216,7 @@ class PostgresManager:
             worker_count: Number of workers used (optional)
             memory_usage_mb: Memory usage in MB (optional)
         """
-        throughput = (
-            urls_processed / processing_time_seconds
-            if processing_time_seconds > 0
-            else 0
-        )
+        throughput = urls_processed / processing_time_seconds if processing_time_seconds > 0 else 0
 
         with self.get_connection() as conn:
             cursor = conn.cursor()
@@ -387,9 +379,7 @@ class PostgresManager:
 
         return [dict(row) for row in results]
 
-    def save_error_analysis(
-        self, total_errors: int, num_clusters: int, cluster_data: list[dict[str, Any]]
-    ):
+    def save_error_analysis(self, total_errors: int, num_clusters: int, cluster_data: list[dict[str, Any]]):
         """Save error analysis results to the database.
 
         Args:
@@ -433,9 +423,7 @@ class PostgresManager:
 
             cursor.close()
 
-        logger.info(
-            f"Saved error analysis: {num_clusters} clusters from {total_errors} errors"
-        )
+        logger.info(f"Saved error analysis: {num_clusters} clusters from {total_errors} errors")
 
     def close(self):
         """Close all connections in the pool."""

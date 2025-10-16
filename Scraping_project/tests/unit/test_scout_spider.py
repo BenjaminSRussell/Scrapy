@@ -14,9 +14,7 @@ class TestScoutSpider(unittest.TestCase):
         with patch("src.stage1.scout_spider.get_delta_manager"):
             with patch("src.stage1.scout_spider.get_postgres_manager"):
                 self.spider = ScoutSpider()
-                self.spider._initialize_discovery(
-                    HtmlResponse(url="https://example.com", body=b"")
-                )
+                self.spider._initialize_discovery(HtmlResponse(url="https://example.com", body=b""))
 
     # ============================================================================
     # URL Hashing and Filtering Tests
@@ -52,21 +50,13 @@ class TestScoutSpider(unittest.TestCase):
 
         # Ignored extensions
         self.assertTrue(spider._has_ignored_extension("https://example.com/image.jpg"))
-        self.assertTrue(
-            spider._has_ignored_extension("https://example.com/document.PDF")
-        )
-        self.assertTrue(
-            spider._has_ignored_extension("https://example.com/archive.zip")
-        )
+        self.assertTrue(spider._has_ignored_extension("https://example.com/document.PDF"))
+        self.assertTrue(spider._has_ignored_extension("https://example.com/archive.zip"))
 
         # Non-ignored extensions
         self.assertFalse(spider._has_ignored_extension("https://example.com/page.html"))
-        self.assertFalse(
-            spider._has_ignored_extension("https://example.com/document.php")
-        )
-        self.assertFalse(
-            spider._has_ignored_extension("https://example.com/no_extension")
-        )
+        self.assertFalse(spider._has_ignored_extension("https://example.com/document.php"))
+        self.assertFalse(spider._has_ignored_extension("https://example.com/no_extension"))
 
     # ============================================================================
     # JS Detection Tests
@@ -213,9 +203,7 @@ class TestScoutSpider(unittest.TestCase):
         failure_timeout = MagicMock()
         failure_timeout.request = request_timeout
         failure_timeout.value = TimeoutError()
-        failure_timeout.check.side_effect = lambda *a: any(
-            x in a for x in [TimeoutError, TCPTimedOutError]
-        )
+        failure_timeout.check.side_effect = lambda *a: any(x in a for x in [TimeoutError, TCPTimedOutError])
 
         spider.handle_error(failure_timeout)
         self.assertEqual(len(spider.error_records), 1)

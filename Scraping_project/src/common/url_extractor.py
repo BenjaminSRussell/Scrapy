@@ -250,9 +250,7 @@ class URLExtractor:
         """Recursively extract URLs from JSON data."""
         if isinstance(data, dict):
             for _key, value in data.items():
-                if isinstance(value, str) and (
-                    "http://" in value or "https://" in value or value.startswith("/")
-                ):
+                if isinstance(value, str) and ("http://" in value or "https://" in value or value.startswith("/")):
                     self._add_url(value)
                 else:
                     self._extract_urls_from_json(value)
@@ -386,8 +384,7 @@ class URLExtractor:
             # Check if domain is allowed
             if self.allowed_domains:
                 domain_matched = any(
-                    parsed.netloc == domain or parsed.netloc.endswith("." + domain)
-                    for domain in self.allowed_domains
+                    parsed.netloc == domain or parsed.netloc.endswith("." + domain) for domain in self.allowed_domains
                 )
                 if not domain_matched:
                     return False

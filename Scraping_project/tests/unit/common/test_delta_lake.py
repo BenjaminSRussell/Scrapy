@@ -33,9 +33,7 @@ class TestDeltaLakeManagerInit:
     def test_init_with_invalid_path_raises(self):
         """Test initialization with invalid path raises error."""
         with pytest.raises((OSError, ValueError)):
-            DeltaLakeManager(
-                base_path="/invalid/path/that/cannot/be/created", start_workers=False
-            )
+            DeltaLakeManager(base_path="/invalid/path/that/cannot/be/created", start_workers=False)
 
 
 class TestDeltaLakeWrite:
@@ -56,9 +54,7 @@ class TestDeltaLakeWrite:
     @pytest.mark.unit
     def test_write_multiple_rows(self, delta_sandbox):
         """Test writing multiple rows."""
-        data = [
-            {"url": f"https://example.com/{i}", "status": "success"} for i in range(10)
-        ]
+        data = [{"url": f"https://example.com/{i}", "status": "success"} for i in range(10)]
 
         delta_sandbox.write("test_table", data, mode="append", async_write=False)
 
@@ -243,9 +239,7 @@ class TestDeltaLakeTableManagement:
     @pytest.mark.unit
     def test_table_exists(self, delta_sandbox):
         """Test checking if table exists."""
-        delta_sandbox.write(
-            "test_table", [{"id": 1}], mode="overwrite", async_write=False
-        )
+        delta_sandbox.write("test_table", [{"id": 1}], mode="overwrite", async_write=False)
 
         assert delta_sandbox.table_exists("test_table") is True
         assert delta_sandbox.table_exists("nonexistent") is False
@@ -253,9 +247,7 @@ class TestDeltaLakeTableManagement:
     @pytest.mark.unit
     def test_delete_table(self, delta_sandbox):
         """Test deleting a table."""
-        delta_sandbox.write(
-            "test_table", [{"id": 1}], mode="overwrite", async_write=False
-        )
+        delta_sandbox.write("test_table", [{"id": 1}], mode="overwrite", async_write=False)
 
         # Delete table
         delta_sandbox.delete_table("test_table")
@@ -313,12 +305,8 @@ class TestDeltaLakeTimeTravel:
     def test_get_table_history(self, delta_sandbox):
         """Test getting table history."""
         # Create multiple versions
-        delta_sandbox.write(
-            "test_table", [{"id": 1}], mode="overwrite", async_write=False
-        )
-        delta_sandbox.write(
-            "test_table", [{"id": 2}], mode="overwrite", async_write=False
-        )
+        delta_sandbox.write("test_table", [{"id": 1}], mode="overwrite", async_write=False)
+        delta_sandbox.write("test_table", [{"id": 2}], mode="overwrite", async_write=False)
 
         history = delta_sandbox.get_table_history("test_table")
 
@@ -381,10 +369,7 @@ class TestDeltaLakePerformance:
     def test_large_batch_write_performance(self, delta_sandbox, performance_timer):
         """Test performance of large batch writes."""
         # Generate large dataset
-        data = [
-            {"id": i, "value": f"row_{i}", "timestamp": datetime.now().isoformat()}
-            for i in range(1000)
-        ]
+        data = [{"id": i, "value": f"row_{i}", "timestamp": datetime.now().isoformat()} for i in range(1000)]
 
         with performance_timer() as timer:
             delta_sandbox.write("test_table", data, mode="overwrite", async_write=False)

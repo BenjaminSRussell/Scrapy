@@ -14,38 +14,24 @@ from src.common.config import Config
 from src.common.delta_lake import DeltaLakeManager
 from src.common.redis_manager import get_redis_manager
 
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
 
 # Define Prometheus metrics
-redis_queue_length = Gauge(
-    "redis_queue_length", "Length of Redis message queues", ["queue"]
-)
+redis_queue_length = Gauge("redis_queue_length", "Length of Redis message queues", ["queue"])
 
-urls_processed_total = Counter(
-    "urls_processed_total", "Total number of URLs processed", ["stage"]
-)
+urls_processed_total = Counter("urls_processed_total", "Total number of URLs processed", ["stage"])
 
-errors_total = Counter(
-    "errors_total", "Total number of errors", ["stage", "error_type"]
-)
+errors_total = Counter("errors_total", "Total number of errors", ["stage", "error_type"])
 
-consumer_lag_seconds = Gauge(
-    "consumer_lag_seconds", "Consumer lag in seconds", ["consumer"]
-)
+consumer_lag_seconds = Gauge("consumer_lag_seconds", "Consumer lag in seconds", ["consumer"])
 
-circuit_breaker_open_count = Gauge(
-    "circuit_breaker_open_count", "Number of open circuit breakers"
-)
+circuit_breaker_open_count = Gauge("circuit_breaker_open_count", "Number of open circuit breakers")
 
 total_urls_discovered = Gauge("total_urls_discovered", "Total URLs discovered")
 
-active_workers_count = Gauge(
-    "active_workers_count", "Number of active workers", ["stage"]
-)
+active_workers_count = Gauge("active_workers_count", "Number of active workers", ["stage"])
 
 processing_time_seconds = Histogram(
     "processing_time_seconds",
@@ -54,9 +40,7 @@ processing_time_seconds = Histogram(
     buckets=[0.1, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0],
 )
 
-delta_lake_records = Gauge(
-    "delta_lake_records", "Number of records in Delta Lake tables", ["table"]
-)
+delta_lake_records = Gauge("delta_lake_records", "Number of records in Delta Lake tables", ["table"])
 
 # New metrics for enhanced dashboard
 urls_processed_per_second = Gauge(
@@ -65,18 +49,12 @@ urls_processed_per_second = Gauge(
     ["stage"],
 )
 
-delta_lake_total_records = Gauge(
-    "delta_lake_total_records", "Total number of records across all Delta Lake tables"
-)
+delta_lake_total_records = Gauge("delta_lake_total_records", "Total number of records across all Delta Lake tables")
 
-delta_lake_size_bytes = Gauge(
-    "delta_lake_size_bytes", "Size of Delta Lake table in bytes", ["table"]
-)
+delta_lake_size_bytes = Gauge("delta_lake_size_bytes", "Size of Delta Lake table in bytes", ["table"])
 
 # Stage 4 metrics for large document processing
-stage4_http_requests_total = Counter(
-    "stage4_http_requests_total", "Total HTTP requests made by Stage 4 processor"
-)
+stage4_http_requests_total = Counter("stage4_http_requests_total", "Total HTTP requests made by Stage 4 processor")
 
 stage4_http_failures_total = Counter(
     "stage4_http_failures_total",
@@ -122,16 +100,12 @@ class MetricsExporter:
         self.previous_error_counts: dict[str, dict[str, int]] = {}
         self.last_update_time = time.time()
         # Persist summaries in the shared exports folder
-        exports_root = (
-            Path(exports_dir) if exports_dir is not None else Path("/app/exports")
-        )
+        exports_root = Path(exports_dir) if exports_dir is not None else Path("/app/exports")
         exports_root.mkdir(parents=True, exist_ok=True)
         self.error_summary_path = exports_root / "stage1_errors_summary.json"
         self._last_error_summary_fingerprint: tuple | None = None
 
-        logger.info(
-            f"Metrics exporter initialized on port {port} with {update_interval}s update interval"
-        )
+        logger.info(f"Metrics exporter initialized on port {port} with {update_interval}s update interval")
 
     def start(self):
         """Start metrics server and update loop."""
@@ -154,23 +128,17 @@ class MetricsExporter:
                 # Check if there are any seed URLs or discovered URLs
                 seed_records = self.delta.read("seed_urls")
                 if seed_records and len(seed_records) > 0:
-                    logger.info(
-                        f"Scraping activity detected! Found {len(seed_records)} seed URLs"
-                    )
+                    logger.info(f"Scraping activity detected! Found {len(seed_records)} seed URLs")
                     logger.info("Starting metrics collection...")
                     return
             except Exception as e:
-                logger.debug(
-                    f"No scraping activity yet (seed_urls table not found or empty): {e}"
-                )
+                logger.debug(f"No scraping activity yet (seed_urls table not found or empty): {e}")
 
             try:
                 # Also check if any stage1_discovery records exist
                 discovery_records = self.delta.read("stage1_discovery")
                 if discovery_records and len(discovery_records) > 0:
-                    logger.info(
-                        f"Scraping activity detected! Found {len(discovery_records)} discovered URLs"
-                    )
+                    logger.info(f"Scraping activity detected! Found {len(discovery_records)} discovered URLs")
                     logger.info("Starting metrics collection...")
                     return
             except Exception as e:
@@ -300,9 +268,7 @@ class MetricsExporter:
                         if delta_count > 0:
                             urls_processed_total.labels(stage=stage).inc(delta_count)
 
-                        urls_processed_per_second.labels(stage=stage).set(
-                            max(0.0, rate)
-                        )
+                        urls_processed_per_second.labels(stage=stage).set(max(0.0, rate))
 
                         # Update previous count
                         self.previous_counts[table] = current_count
@@ -333,9 +299,7 @@ class MetricsExporter:
                 previous = previous_counts.get(error_type, 0)
                 delta = count - previous
                 if delta > 0:
-                    errors_total.labels(stage=error_stage, error_type=error_type).inc(
-                        delta
-                    )
+                    errors_total.labels(stage=error_stage, error_type=error_type).inc(delta)
 
             # Ensure we remember zero-state types as well
             self.previous_error_counts[error_stage] = current_counts
@@ -356,11 +320,7 @@ class MetricsExporter:
                     {
                         "type": error_type,
                         "count": count,
-                        "percentage": (
-                            round((count / total_errors) * 100, 2)
-                            if total_errors
-                            else 0.0
-                        ),
+                        "percentage": (round((count / total_errors) * 100, 2) if total_errors else 0.0),
                     }
                     for error_type, count in top_errors
                 ],
@@ -387,9 +347,7 @@ def main():
     """Main entry point."""
     import argparse
 
-    parser = argparse.ArgumentParser(
-        description="Prometheus Metrics Exporter for Scraping Pipeline"
-    )
+    parser = argparse.ArgumentParser(description="Prometheus Metrics Exporter for Scraping Pipeline")
 
     parser.add_argument(
         "--port",

@@ -28,9 +28,7 @@ def save_dashboard(dashboard: dict[str, Any], dashboard_path: Path) -> None:
     dashboard["version"] = dashboard.get("version", 1) + 1
     with open(dashboard_path, "w") as f:
         json.dump(dashboard, f, indent=2)
-    logger.info(
-        f"  ✅ Dashboard saved successfully. New version: {dashboard['version']}"
-    )
+    logger.info(f"  ✅ Dashboard saved successfully. New version: {dashboard['version']}")
 
 
 def find_panel(
@@ -52,11 +50,7 @@ def add_panels(dashboard: dict[str, Any], panel_specs: list[dict[str, Any]]) -> 
     logger.info(f"Adding {len(panel_specs)} new panel(s)...")
     panels = dashboard.get("panels", [])
     max_id = max((p["id"] for p in panels), default=0) if panels else 0
-    base_y = (
-        max((p["gridPos"]["y"] + p["gridPos"]["h"] for p in panels), default=0)
-        if panels
-        else 0
-    )
+    base_y = max((p["gridPos"]["y"] + p["gridPos"]["h"] for p in panels), default=0) if panels else 0
 
     for spec in panel_specs:
         max_id += 1
@@ -69,9 +63,7 @@ def add_panels(dashboard: dict[str, Any], panel_specs: list[dict[str, Any]]) -> 
         spec["gridPos"] = grid_pos
 
         panels.append(spec)
-        logger.info(
-            f"  ✅ Panel '{spec.get('title', 'N/A')}' added with ID: {spec['id']}"
-        )
+        logger.info(f"  ✅ Panel '{spec.get('title', 'N/A')}' added with ID: {spec['id']}")
 
 
 def modify_panel(dashboard: dict[str, Any], panel_spec: dict[str, Any]) -> None:
@@ -86,16 +78,12 @@ def modify_panel(dashboard: dict[str, Any], panel_spec: dict[str, Any]) -> None:
         panel_id=panel_id if isinstance(panel_id, int) else None,
     )
     if not panel_to_modify:
-        logger.error(
-            f"  ❌ Panel with title '{panel_title}' or ID '{panel_id}' not found."
-        )
+        logger.error(f"  ❌ Panel with title '{panel_title}' or ID '{panel_id}' not found.")
         return
 
     # Update the panel with the new spec
     panel_to_modify.update(panel_spec)
-    logger.info(
-        f"  ✅ Panel '{panel_to_modify.get('title')}' (ID: {panel_to_modify.get('id')}) modified."
-    )
+    logger.info(f"  ✅ Panel '{panel_to_modify.get('title')}' (ID: {panel_to_modify.get('id')}) modified.")
 
 
 def delete_panel(dashboard: dict[str, Any], panel_spec: dict[str, Any]) -> None:
@@ -110,23 +98,17 @@ def delete_panel(dashboard: dict[str, Any], panel_spec: dict[str, Any]) -> None:
         panel_id=panel_id if isinstance(panel_id, int) else None,
     )
     if not panel_to_delete:
-        logger.error(
-            f"  ❌ Panel with title '{panel_title}' or ID '{panel_id}' not found."
-        )
+        logger.error(f"  ❌ Panel with title '{panel_title}' or ID '{panel_id}' not found.")
         return
 
     dashboard["panels"].remove(panel_to_delete)
-    logger.info(
-        f"  ✅ Panel '{panel_to_delete.get('title')}' (ID: {panel_to_delete.get('id')}) deleted."
-    )
+    logger.info(f"  ✅ Panel '{panel_to_delete.get('title')}' (ID: {panel_to_delete.get('id')}) deleted.")
 
 
 def main():
     """Main execution."""
     parser = argparse.ArgumentParser(description="Update a Grafana dashboard.")
-    parser.add_argument(
-        "--dashboard", type=Path, required=True, help="Path to the dashboard JSON file."
-    )
+    parser.add_argument("--dashboard", type=Path, required=True, help="Path to the dashboard JSON file.")
     parser.add_argument(
         "--op",
         required=True,

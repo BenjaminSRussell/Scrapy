@@ -66,28 +66,18 @@ class ErrorAnomalyDetector:
             errors_df["timestamp"] = pd.to_datetime(errors_df["timestamp"])
 
         # Feature 1: Error rate (errors/minute)
-        time_range_minutes = (
-            errors_df["timestamp"].max() - errors_df["timestamp"].min()
-        ).total_seconds() / 60
+        time_range_minutes = (errors_df["timestamp"].max() - errors_df["timestamp"].min()).total_seconds() / 60
         error_rate = len(errors_df) / max(time_range_minutes, 1)
 
         # Feature 2: Unique error types
-        unique_types = (
-            errors_df["error_type"].nunique()
-            if "error_type" in errors_df.columns
-            else 1
-        )
+        unique_types = errors_df["error_type"].nunique() if "error_type" in errors_df.columns else 1
 
         # Feature 3: Error type diversity (normalized entropy)
         if "error_type" in errors_df.columns:
             type_counts = errors_df["error_type"].value_counts()
             probs = type_counts / type_counts.sum()
             entropy = -np.sum(probs * np.log2(probs + 1e-10))
-            normalized_entropy = (
-                entropy / np.log2(len(type_counts) + 1e-10)
-                if len(type_counts) > 1
-                else 0
-            )
+            normalized_entropy = entropy / np.log2(len(type_counts) + 1e-10) if len(type_counts) > 1 else 0
         else:
             normalized_entropy = 0
 
@@ -124,9 +114,7 @@ class ErrorAnomalyDetector:
 
     def fit(self, errors_df):
         """Fit K-Means model on historical error data."""
-        logger.info(
-            f"Fitting K-Means with {self.n_clusters} clusters on {len(errors_df)} error records"
-        )
+        logger.info(f"Fitting K-Means with {self.n_clusters} clusters on {len(errors_df)} error records")
 
         # Create multiple time windows for training
         errors_df["timestamp"] = pd.to_datetime(errors_df["timestamp"])
@@ -138,10 +126,7 @@ class ErrorAnomalyDetector:
         current_time = min_time
         while current_time < max_time:
             window_end = current_time + timedelta(hours=1)
-            window_data = errors_df[
-                (errors_df["timestamp"] >= current_time)
-                & (errors_df["timestamp"] < window_end)
-            ]
+            window_data = errors_df[(errors_df["timestamp"] >= current_time) & (errors_df["timestamp"] < window_end)]
 
             if not window_data.empty:
                 windows.append(window_data)
@@ -290,12 +275,8 @@ class ErrorAnomalyDetector:
 
 def main():
     parser = argparse.ArgumentParser(description="K-Means anomaly detection for errors")
-    parser.add_argument(
-        "--train", action="store_true", help="Train model on historical data"
-    )
-    parser.add_argument(
-        "--detect", action="store_true", help="Detect anomalies in current data"
-    )
+    parser.add_argument("--train", action="store_true", help="Train model on historical data")
+    parser.add_argument("--detect", action="store_true", help="Detect anomalies in current data")
     parser.add_argument(
         "--model-file",
         default="data/models/anomaly_detector.pkl",
@@ -338,9 +319,7 @@ def main():
             ).fetchdf()
         except Exception as e:
             logger.error(f"Failed to load historical errors: {e}")
-            print(
-                "⚠️  No historical error data found. Generating synthetic training data..."
-            )
+            print("⚠️  No historical error data found. Generating synthetic training data...")
 
             # Generate synthetic data for demonstration
             np.random.seed(42)
@@ -349,9 +328,7 @@ def main():
                 {
                     "timestamp": dates,
                     "error_code": np.random.choice([404, 500, 503], 1000),
-                    "error_type": np.random.choice(
-                        ["timeout", "not_found", "server_error"], 1000
-                    ),
+                    "error_type": np.random.choice(["timeout", "not_found", "server_error"], 1000),
                 }
             )
 

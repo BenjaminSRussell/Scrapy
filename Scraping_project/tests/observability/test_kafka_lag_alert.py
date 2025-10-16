@@ -7,9 +7,7 @@ import yaml
 
 class TestKafkaLagAlert(unittest.TestCase):
     def setUp(self):
-        self.rules_path = os.path.join(
-            os.path.dirname(__file__), "../../monitoring/alerting_rules.yml"
-        )
+        self.rules_path = os.path.join(os.path.dirname(__file__), "../../monitoring/alerting_rules.yml")
         with open(self.rules_path) as f:
             self.rules = yaml.safe_load(f)
 
@@ -41,9 +39,7 @@ class TestKafkaLagAlert(unittest.TestCase):
             (r for r in kafka_group["rules"] if r["alert"] == "KafkaConsumerLagSLO"),
             None,
         )
-        self.assertIsNotNone(
-            slo_alert, "Cannot test expression of missing alert 'KafkaConsumerLagSLO'"
-        )
+        self.assertIsNotNone(slo_alert, "Cannot test expression of missing alert 'KafkaConsumerLagSLO'")
 
         # Check that the expression refers to our pre-calculated metric
         self.assertIn(

@@ -30,10 +30,7 @@ def extract_prometheus_expressions(panel: dict) -> list[str]:
     expressions = []
     if "targets" in panel:
         for target in panel.get("targets", []):
-            if (
-                "expr" in target
-                and target.get("datasource", {}).get("type") == "prometheus"
-            ):
+            if "expr" in target and target.get("datasource", {}).get("type") == "prometheus":
                 expressions.append(target["expr"])
 
     if "panels" in panel:
@@ -122,11 +119,7 @@ def get_all_metric_names_from_expr(expr: str) -> set[str]:
     potential_names = set(re.findall(r"\b([a-zA-Z_:][a-zA-Z0-9_:]+)\b", expr))
 
     # Filter out known PromQL keywords/functions and pure numbers.
-    metric_names = {
-        name
-        for name in potential_names
-        if name not in PROMQL_KEYWORDS and not name.isdigit()
-    }
+    metric_names = {name for name in potential_names if name not in PROMQL_KEYWORDS and not name.isdigit()}
     return metric_names
 
 
@@ -147,9 +140,7 @@ def test_grafana_dashboard_validity(dashboard_path: Path):
     except json.JSONDecodeError:
         pytest.fail(f"Invalid JSON in dashboard: {dashboard_path}")
 
-    assert (
-        "panels" in dashboard_json or "rows" in dashboard_json
-    ), "Dashboard must have panels or rows"
+    assert "panels" in dashboard_json or "rows" in dashboard_json, "Dashboard must have panels or rows"
 
     all_panels = dashboard_json.get("panels", [])
     for row in dashboard_json.get("rows", []):
@@ -161,9 +152,7 @@ def test_grafana_dashboard_validity(dashboard_path: Path):
         expressions = extract_prometheus_expressions(panel)
         for expr in expressions:
             if not expr.strip():
-                invalid_panels.append(
-                    (panel.get("title", "N/A"), "Expression is empty or whitespace")
-                )
+                invalid_panels.append((panel.get("title", "N/A"), "Expression is empty or whitespace"))
                 continue
 
             metric_names = get_all_metric_names_from_expr(expr)
@@ -179,9 +168,7 @@ def test_grafana_dashboard_validity(dashboard_path: Path):
                     continue
 
                 # 2. Check if the metric has a known third-party prefix. If so, skip further checks.
-                if any(
-                    name.startswith(prefix) for prefix in KNOWN_THIRD_PARTY_PREFIXES
-                ):
+                if any(name.startswith(prefix) for prefix in KNOWN_THIRD_PARTY_PREFIXES):
                     continue
 
                 # 3. Handle special cases like the 'up' metric.
@@ -189,9 +176,7 @@ def test_grafana_dashboard_validity(dashboard_path: Path):
                     continue
 
                 # 4. If it's not a known third-party metric, it must have an app-specific prefix.
-                if not any(
-                    name.startswith(prefix) for prefix in METRIC_PREFIX_ALLOWLIST
-                ):
+                if not any(name.startswith(prefix) for prefix in METRIC_PREFIX_ALLOWLIST):
                     invalid_panels.append(
                         (
                             panel.get("title", "N/A"),

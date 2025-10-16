@@ -56,11 +56,7 @@ class IntelligentRetryMiddleware(RetryMiddleware):
         jitter: float | None = None,
     ) -> float:
         base = base if base is not None else getattr(self, "base_backoff", 0.5)
-        max_backoff = (
-            max_backoff
-            if max_backoff is not None
-            else getattr(self, "max_backoff", 60.0)
-        )
+        max_backoff = max_backoff if max_backoff is not None else getattr(self, "max_backoff", 60.0)
         # exponential
         delay = base * (2 ** (attempt - 1))
         # deterministic jitter without importing random here:
@@ -103,9 +99,7 @@ class IntelligentRetryMiddleware(RetryMiddleware):
             return self._retry_with_backoff(request, response, spider)
 
         if action == "fail":
-            logger.info(
-                f"Permanent error {response.status} for {request.url[:80]}, not retrying"
-            )
+            logger.info(f"Permanent error {response.status} for {request.url[:80]}, not retrying")
             return response
 
         return response
@@ -194,9 +188,7 @@ class IntelligentRetryMiddleware(RetryMiddleware):
             return retry_request
 
         else:
-            logger.warning(
-                f"Max retries ({max_retry_times}) exceeded for {request.url[:80]}"
-            )
+            logger.warning(f"Max retries ({max_retry_times}) exceeded for {request.url[:80]}")
             return None
 
     def _compute_backoff(self, retry_count: int) -> float:
@@ -360,9 +352,7 @@ class CircuitBreakerMiddleware:
         # Track 5xx errors
         if 500 <= response.status < 600:
             # Increment error count
-            self.domain_error_counts[domain] = (
-                self.domain_error_counts.get(domain, 0) + 1
-            )
+            self.domain_error_counts[domain] = self.domain_error_counts.get(domain, 0) + 1
 
             # Check threshold (e.g., 10 errors)
             error_threshold = 10
@@ -374,9 +364,7 @@ class CircuitBreakerMiddleware:
                     reason=f"high_error_rate_{response.status}",
                 )
 
-                logger.error(
-                    f"Circuit breaker opened for {domain} ({self.domain_error_counts[domain]} errors)"
-                )
+                logger.error(f"Circuit breaker opened for {domain} ({self.domain_error_counts[domain]} errors)")
 
                 # Reset counter
                 self.domain_error_counts[domain] = 0

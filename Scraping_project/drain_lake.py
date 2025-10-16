@@ -16,9 +16,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from src.common.config import Config
 from src.common.redis_manager import get_redis_manager
 
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
 
@@ -106,11 +104,7 @@ class LakeDrainer:
             dry_run: If True, only show what would be drained
         """
         stats = self.redis.get_all_queue_stats()
-        transient_to_drain = [
-            (name, size)
-            for name, size in stats.items()
-            if name in self.transient_queues
-        ]
+        transient_to_drain = [(name, size) for name, size in stats.items() if name in self.transient_queues]
 
         if not transient_to_drain:
             print("\nNo transient queues to drain.")
@@ -204,9 +198,7 @@ class LakeDrainer:
         # Check if persistent
         if queue_name in self.persistent_queues:
             print(f"\n⚠️  WARNING: '{queue_name}' is a PERSISTENT queue!")
-            confirm = input(
-                "Are you sure you want to drain it? (type 'YES' to confirm): "
-            )
+            confirm = input("Are you sure you want to drain it? (type 'YES' to confirm): ")
             if confirm != "YES":
                 print("Aborted.")
                 return
@@ -244,9 +236,7 @@ Examples:
         """,
     )
 
-    parser.add_argument(
-        "--list", "-l", action="store_true", help="List all queues with their sizes"
-    )
+    parser.add_argument("--list", "-l", action="store_true", help="List all queues with their sizes")
 
     parser.add_argument(
         "--drain-transient",
@@ -255,13 +245,9 @@ Examples:
         help="Drain all transient queues (safe operation)",
     )
 
-    parser.add_argument(
-        "--drain-all", "-a", action="store_true", help="Drain all queues"
-    )
+    parser.add_argument("--drain-all", "-a", action="store_true", help="Drain all queues")
 
-    parser.add_argument(
-        "--queue", "-q", type=str, help="Drain a specific queue by name"
-    )
+    parser.add_argument("--queue", "-q", type=str, help="Drain a specific queue by name")
 
     parser.add_argument(
         "--include-persistent",
@@ -289,9 +275,7 @@ Examples:
         drainer.drain_transient_queues(dry_run=args.dry_run)
 
     elif args.drain_all:
-        drainer.drain_all_queues(
-            dry_run=args.dry_run, include_persistent=args.include_persistent
-        )
+        drainer.drain_all_queues(dry_run=args.dry_run, include_persistent=args.include_persistent)
 
     elif args.queue:
         drainer.drain_specific_queue(args.queue, dry_run=args.dry_run)

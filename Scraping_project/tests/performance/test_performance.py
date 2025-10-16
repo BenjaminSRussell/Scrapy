@@ -25,9 +25,7 @@ class TestHashingPerformance:
                 spider._hash_url(url)
 
         assert timer.elapsed < 1.0, f"Hashing took {timer.elapsed:.2f}s (expected < 1s)"
-        print(
-            f"\n✓ Hashed 10,000 URLs in {timer.elapsed:.3f}s ({10000 / timer.elapsed:.0f} URLs/sec)"
-        )
+        print(f"\n✓ Hashed 10,000 URLs in {timer.elapsed:.3f}s ({10000 / timer.elapsed:.0f} URLs/sec)")
 
 
 @pytest.mark.performance
@@ -58,9 +56,7 @@ class TestRedisPerformance:
             timer_batch.elapsed < timer_individual.elapsed * 0.5
         ), f"Batch ({timer_batch.elapsed:.2f}s) not faster than individual ({timer_individual.elapsed:.2f}s)"
 
-        print(
-            f"\n✓ Batch operations {timer_individual.elapsed / timer_batch.elapsed:.1f}x faster"
-        )
+        print(f"\n✓ Batch operations {timer_individual.elapsed / timer_batch.elapsed:.1f}x faster")
 
 
 @pytest.mark.performance
@@ -85,9 +81,7 @@ class TestDeltaLakePerformance:
             delta_sandbox.write("perf_test", records, mode="overwrite")
 
         throughput = len(records) / timer.elapsed
-        assert (
-            throughput > 100
-        ), f"Write throughput {throughput:.0f} records/sec (expected > 100)"
+        assert throughput > 100, f"Write throughput {throughput:.0f} records/sec (expected > 100)"
 
         print(f"\n✓ Delta Lake write: {throughput:.0f} records/sec")
 
@@ -130,9 +124,7 @@ class TestDeltaLakePerformance:
                     future.result(timeout=10)
 
         # Should complete in reasonable time without deadlock
-        assert (
-            timer.elapsed < 10.0
-        ), f"Concurrent writes took {timer.elapsed:.2f}s (expected < 10s)"
+        assert timer.elapsed < 10.0, f"Concurrent writes took {timer.elapsed:.2f}s (expected < 10s)"
 
         # Verify all writes succeeded
         results = delta_sandbox.read("concurrent_perf")
@@ -158,13 +150,9 @@ class TestSpiderParsingPerformance:
                 list(spider.parse(test_html_response))
 
         avg_time = timer.elapsed / 100
-        assert (
-            avg_time < 0.1
-        ), f"Parse took {avg_time:.3f}s per response (expected < 0.1s)"
+        assert avg_time < 0.1, f"Parse took {avg_time:.3f}s per response (expected < 0.1s)"
 
-        print(
-            f"\n✓ Parsed 100 responses in {timer.elapsed:.2f}s ({avg_time * 1000:.1f}ms per response)"
-        )
+        print(f"\n✓ Parsed 100 responses in {timer.elapsed:.2f}s ({avg_time * 1000:.1f}ms per response)")
 
 
 @pytest.mark.performance
@@ -199,13 +187,9 @@ class TestLinkTriagePerformance:
         assert static_count == 1000
 
         throughput = len(test_urls) / timer.elapsed
-        assert (
-            throughput > 1000
-        ), f"Categorization throughput {throughput:.0f} URLs/sec (expected > 1000)"
+        assert throughput > 1000, f"Categorization throughput {throughput:.0f} URLs/sec (expected > 1000)"
 
-        print(
-            f"\n✓ Categorized {len(test_urls)} URLs in {timer.elapsed:.2f}s ({throughput:.0f} URLs/sec)"
-        )
+        print(f"\n✓ Categorized {len(test_urls)} URLs in {timer.elapsed:.2f}s ({throughput:.0f} URLs/sec)")
 
 
 @pytest.mark.performance
@@ -243,9 +227,7 @@ class TestMemoryUsage:
         memory_increase = final_memory - initial_memory
 
         # Should not use more than 100MB for 1000 records
-        assert (
-            memory_increase < 100
-        ), f"Memory increase {memory_increase:.1f}MB (expected < 100MB)"
+        assert memory_increase < 100, f"Memory increase {memory_increase:.1f}MB (expected < 100MB)"
 
         print(f"\n✓ Memory increase: {memory_increase:.1f}MB for 1000 records")
 
@@ -262,17 +244,13 @@ class TestBatchingPerformance:
         with performance_timer as timer_small:
             for i in range(0, len(records), 10):
                 batch = records[i : i + 10]
-                delta_sandbox.write(
-                    "batch_test_small", batch, mode="append" if i > 0 else "overwrite"
-                )
+                delta_sandbox.write("batch_test_small", batch, mode="append" if i > 0 else "overwrite")
 
         # Large batches (100 records)
         with performance_timer as timer_large:
             for i in range(0, len(records), 100):
                 batch = records[i : i + 100]
-                delta_sandbox.write(
-                    "batch_test_large", batch, mode="append" if i > 0 else "overwrite"
-                )
+                delta_sandbox.write("batch_test_large", batch, mode="append" if i > 0 else "overwrite")
 
         # Larger batches should be faster
         assert (

@@ -9,9 +9,7 @@ import sys
 from scrapy.crawler import CrawlerProcess
 from scrapy.utils.project import get_project_settings
 
-logging.basicConfig(
-    level=logging.WARNING, format="%(asctime)s [%(levelname)s] %(message)s"
-)
+logging.basicConfig(level=logging.WARNING, format="%(asctime)s [%(levelname)s] %(message)s")
 
 
 def main():

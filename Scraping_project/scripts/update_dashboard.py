@@ -29,15 +29,11 @@ def fix_kafka_panel(dashboard):
 
                 # Replace incorrect metric names with correct one
                 if "consumer_lag_seconds" in old_expr:
-                    target["expr"] = old_expr.replace(
-                        "consumer_lag_seconds", "kafka_consumer_records_lag"
-                    )
+                    target["expr"] = old_expr.replace("consumer_lag_seconds", "kafka_consumer_records_lag")
                     logger.info(f"    Fixed: {old_expr} -> {target['expr']}")
                 elif old_expr == "kafka_consumer_lag":
                     target["expr"] = "kafka_consumer_records_lag"
-                    target["legendFormat"] = (
-                        "{{consumer_group}}-{{topic}}-p{{partition}}"
-                    )
+                    target["legendFormat"] = "{{consumer_group}}-{{topic}}-p{{partition}}"
                     logger.info(f"    Fixed: {old_expr} -> kafka_consumer_records_lag")
 
             # Update description
@@ -173,19 +169,12 @@ def add_offsite_panels(dashboard):
     # Add panels to dashboard
     panels.extend([panel_offsite_rate, panel_offsite_total, panel_speed_comparison])
 
-    logger.info(
-        f"  ✅ Added 3 new panels (IDs: {max_id + 1}, {max_id + 2}, {max_id + 3})"
-    )
+    logger.info(f"  ✅ Added 3 new panels (IDs: {max_id + 1}, {max_id + 2}, {max_id + 3})")
 
 
 def main():
     """Main execution."""
-    dashboard_path = (
-        Path(__file__).parent.parent
-        / "monitoring"
-        / "dashboards"
-        / "unified_dashboard.json.backup"
-    )
+    dashboard_path = Path(__file__).parent.parent / "monitoring" / "dashboards" / "unified_dashboard.json.backup"
 
     if not dashboard_path.exists():
         logger.error(f"❌ Dashboard file not found: {dashboard_path}")

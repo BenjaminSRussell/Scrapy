@@ -53,9 +53,7 @@ def main():
     logger.info("Each instance will use extreme concurrency settings:")
     logger.info("  - CONCURRENT_REQUESTS: 1024")
     logger.info("  - CONCURRENT_REQUESTS_PER_DOMAIN: 512")
-    logger.info(
-        f"  - Total theoretical max: {num_instances * 1024} concurrent requests"
-    )
+    logger.info(f"  - Total theoretical max: {num_instances * 1024} concurrent requests")
 
     # Create processes for each spider instance
     processes = []

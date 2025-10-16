@@ -10,7 +10,7 @@ import time
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, TypeAlias
+from typing import Any, Literal, TypeAlias
 
 from src.common.config import Config
 
@@ -23,12 +23,12 @@ try:
     DELTA_AVAILABLE = True
 except ImportError:
     DELTA_AVAILABLE = False
-    DeltaTable = None
-    write_deltalake = None
-    WriterProperties = None
-    pa = None
-    pa_csv = None
-    pq = None
+    DeltaTable = None  # type: ignore
+    write_deltalake = None  # type: ignore
+    WriterProperties = None  # type: ignore
+    pa = None  # type: ignore
+    pa_csv = None  # type: ignore
+    pq = None  # type: ignore
 
 
 logger = logging.getLogger(__name__)
@@ -75,9 +75,7 @@ class DeltaLakeManager:
         # Concurrent write queue with maxsize to prevent memory overload
         # This creates backpressure when spiders produce faster than we can write
         queue_maxsize = config.get("delta_lake.queue_maxsize", 1000)
-        self.write_queue: queue.Queue[WriteTask | None] = queue.Queue(
-            maxsize=queue_maxsize
-        )
+        self.write_queue: queue.Queue[WriteTask | None] = queue.Queue(maxsize=queue_maxsize)
 
         # Schema cache to prevent schema drift
         self.schema_cache: dict[str, Any] = {}
@@ -111,9 +109,7 @@ class DeltaLakeManager:
 
     def _start_maintenance_worker(self):
         """Start background worker for maintenance tasks (optimization, vacuum, etc.)."""
-        self.maintenance_worker_thread = threading.Thread(
-            target=self._process_maintenance_queue, daemon=True
-        )
+        self.maintenance_worker_thread = threading.Thread(target=self._process_maintenance_queue, daemon=True)
         self.maintenance_worker_thread.start()
         logger.info("Delta Lake maintenance worker started")
 
@@ -135,9 +131,7 @@ class DeltaLakeManager:
                         table_name, retention_hours = args
                         self._vacuum_table(table_name, retention_hours)
                 except Exception as e:
-                    logger.error(
-                        f"Maintenance task failed ({task_type}): {e}", exc_info=True
-                    )
+                    logger.error(f"Maintenance task failed ({task_type}): {e}", exc_info=True)
                 finally:
                     self.maintenance_queue.task_done()
 
@@ -176,9 +170,11 @@ class DeltaLakeManager:
         # Optional: Add metrics or circuit breaker logic here in the future
 
     def _write_sync(
-        self, table_name: str, data: list[dict[str, Any]], mode: str = "append"
+        self,
+        table_name: str,
+        data: list[dict[str, Any]],
+        mode: Literal["append", "overwrite", "error", "ignore"] = "append",
     ):
-        """Synchronous write to Delta table."""
         if not data:
             return
 
@@ -260,17 +256,14 @@ class DeltaLakeManager:
             self._handle_writer_exception(e, table_name)
 
         # Enhanced: Queue optimization task instead of blocking the write path
-        if (
-            table_name in ["stage1_discovery", "stage2_page_analysis"]
-            and len(data) >= 1000
-        ):
+        if table_name in ["stage1_discovery", "stage2_page_analysis"] and len(data) >= 1000:
             self.maintenance_queue.put(("optimize", table_name))
 
     def write(
         self,
         table_name: str,
         data: list[dict[str, Any]],
-        mode: str = "append",
+        mode: Literal["append", "overwrite", "error", "ignore"] = "append",
         async_write: bool = True,
     ):
         """Write data to a Delta table, optionally via the background queue."""
@@ -282,9 +275,7 @@ class DeltaLakeManager:
             # Immediate synchronous write
             self._write_sync(table_name, data, mode)
 
-    def read(
-        self, table_name: str, filters: Any = None, columns: list[str] | None = None
-    ) -> list[dict]:
+    def read(self, table_name: str, filters: Any = None, columns: list[str] | None = None) -> list[dict]:
         """Read rows from a Delta table into a list of dictionaries."""
         from deltalake import DeltaTable
 
@@ -408,9 +399,7 @@ class DeltaLakeManager:
         remaining = self.write_queue.qsize()
 
         if remaining > 0:
-            logger.warning(
-                f"⚠️  Queue not empty after {elapsed:.1f}s: {remaining} tasks remaining (forcing shutdown)"
-            )
+            logger.warning(f"⚠️  Queue not empty after {elapsed:.1f}s: {remaining} tasks remaining (forcing shutdown)")
         else:
             logger.info(f"✅ Queue emptied in {elapsed:.1f}s")
 
@@ -584,9 +573,7 @@ class DeltaLakeManager:
             "format": format,
             "rows": row_count,
             "columns": col_count,
-            "size_mb": (
-                out_path.stat().st_size / (1024 * 1024) if out_path.exists() else 0
-            ),
+            "size_mb": (out_path.stat().st_size / (1024 * 1024) if out_path.exists() else 0),
         }
 
     def export_all(self, output_dir: str, format: str = "csv") -> list[dict[str, Any]]:
@@ -618,9 +605,7 @@ class DeltaLakeManager:
     _instance: "DeltaLakeManager | None" = None
 
     @classmethod
-    def get_instance(
-        cls, base_path: str | None = None, start_workers: bool = True
-    ) -> "DeltaLakeManager":
+    def get_instance(cls, base_path: str | None = None, start_workers: bool = True) -> "DeltaLakeManager":
         """
         Get or create global Delta Lake manager.
 
@@ -694,9 +679,7 @@ class InMemoryDeltaManager:
             self.history[table_name] = []
         self.history[table_name].append(list(self.tables[table_name]))
 
-    def _get_version(
-        self, table_name: str, version: int | None = None
-    ) -> list[dict[str, Any]]:
+    def _get_version(self, table_name: str, version: int | None = None) -> list[dict[str, Any]]:
         """Return a specific version of a table from history."""
         if version is None:
             return self.tables.get(table_name, [])
@@ -787,9 +770,7 @@ class InMemoryDeltaManager:
 # =====================================================================================
 # Singleton & Factory
 # =====================================================================================
-def get_delta_manager(
-    mode: str | None = None, **kwargs
-) -> DeltaLakeManager | InMemoryDeltaManager:
+def get_delta_manager(mode: str | None = None, **kwargs) -> DeltaLakeManager | InMemoryDeltaManager:
     """Factory to get a Delta Lake manager based on mode."""
     mode = mode or os.getenv("DELTA_BACKEND", "memory")
     if mode == "memory":

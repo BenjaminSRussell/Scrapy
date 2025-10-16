@@ -84,10 +84,7 @@ class TestKafkaLabelConsistency(unittest.TestCase):
                             for metric in KAFKA_CONSUMER_METRICS:
                                 if metric in expr:
                                     for label in INCORRECT_LABELS:
-                                        if (
-                                            f"{{{label}=" in expr
-                                            or f",{label}=" in expr
-                                        ):
+                                        if f"{{{label}=" in expr or f",{label}=" in expr:
                                             offending_rules.append(
                                                 f"Rule '{rule.get('alert', rule.get('record', 'N/A'))}' in '{filename}'"
                                             )

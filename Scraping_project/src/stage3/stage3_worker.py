@@ -32,9 +32,7 @@ class Stage3Worker:
 
     async def run(self):
         """Main worker loop - process quality documents."""
-        logger.info(
-            f"Stage 3 Worker starting with {self.max_concurrent} concurrent workers"
-        )
+        logger.info(f"Stage 3 Worker starting with {self.max_concurrent} concurrent workers")
 
         # Read quality documents from stage2_page_analysis
         all_docs = self.delta.read("stage2_page_analysis")
@@ -67,9 +65,7 @@ class Stage3Worker:
             processed_hashes = set()
 
         # Filter to pending
-        pending = [
-            doc for doc in quality_docs if doc.get("url_hash") not in processed_hashes
-        ]
+        pending = [doc for doc in quality_docs if doc.get("url_hash") not in processed_hashes]
 
         if not pending:
             logger.info("All quality documents already processed")
@@ -80,9 +76,7 @@ class Stage3Worker:
         # Process in batches
         for i in range(0, len(pending), self.batch_size):
             batch = pending[i : i + self.batch_size]
-            logger.info(
-                f"Processing batch {i // self.batch_size + 1}: {len(batch)} documents"
-            )
+            logger.info(f"Processing batch {i // self.batch_size + 1}: {len(batch)} documents")
 
             # Track performance
             batch_start = time.time()
@@ -99,16 +93,10 @@ class Stage3Worker:
             batch_time = time.time() - batch_start
 
             # Filter valid results
-            valid_results = [
-                r
-                for r in results
-                if isinstance(r, dict) and not isinstance(r, Exception)
-            ]
+            valid_results = [r for r in results if isinstance(r, dict) and not isinstance(r, Exception)]
 
             if valid_results:
-                self.delta.write(
-                    "stage4_summaries", valid_results, mode="append", async_write=False
-                )
+                self.delta.write("stage4_summaries", valid_results, mode="append", async_write=False)
                 logger.info(f"Saved {len(valid_results)} summaries")
 
                 # Log performance to PostgreSQL
@@ -125,9 +113,7 @@ class Stage3Worker:
 
         logger.info("Stage 3 Worker completed all batches")
 
-    async def _deduplicate_documents(
-        self, documents: list[dict[str, Any]]
-    ) -> list[dict[str, Any]]:
+    async def _deduplicate_documents(self, documents: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Use MinHash LSH to detect and remove near-duplicate documents."""
         logger.info(f"Running similarity detection on {len(documents)} documents")
 
@@ -182,9 +168,7 @@ class Stage3Worker:
                 # Simple extractive summary (first sentences)
                 max_sentences = SUMMARY_LIMITS["extractive_max_sentences"]
                 sentences = text.split(".")[:max_sentences]
-                summary_body = ". ".join(
-                    sentence.strip() for sentence in sentences if sentence.strip()
-                )
+                summary_body = ". ".join(sentence.strip() for sentence in sentences if sentence.strip())
                 summary = summary_body + "." if summary_body else ""
 
                 return {

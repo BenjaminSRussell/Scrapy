@@ -344,9 +344,7 @@ class RedisManager:
         self.redis.hset(key, mapping=data)
         self.redis.expire(key, duration_seconds)
 
-        logger.warning(
-            f"Circuit breaker OPENED for {domain} ({reason}) - blocked for {duration_seconds}s"
-        )
+        logger.warning(f"Circuit breaker OPENED for {domain} ({reason}) - blocked for {duration_seconds}s")
 
     def is_circuit_open(self, domain: str) -> bool:
         """Check if circuit breaker is open for a domain.
@@ -408,9 +406,7 @@ class RedisManager:
         # Push to list (FIFO using LPUSH + RPOP)
         self.redis.lpush(key, json.dumps(data))
 
-    def pop_from_queue(
-        self, queue_name: str, timeout: int = 0
-    ) -> dict[str, Any] | None:
+    def pop_from_queue(self, queue_name: str, timeout: int = 0) -> dict[str, Any] | None:
         """Pop data from message queue (blocking).
 
         Args:
