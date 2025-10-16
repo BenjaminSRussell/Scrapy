@@ -26,6 +26,9 @@ try:
         AVERAGE_FILE_SIZE_BYTES,
         NEW_URLS_FOUND_PER_MINUTE,
         OFFSITE_LINKS_FOUND,
+        SEED_DEDUP_LATENCY_SECONDS,
+        SEED_URLS_DEDUPLICATED_TOTAL,
+        SEED_URLS_EMITTED_TOTAL,
     )
 
     PROMETHEUS_AVAILABLE = True
@@ -33,6 +36,9 @@ except ImportError:
     NEW_URLS_FOUND_PER_MINUTE = None
     AVERAGE_FILE_SIZE_BYTES = None
     OFFSITE_LINKS_FOUND = None
+    SEED_URLS_EMITTED_TOTAL = None
+    SEED_URLS_DEDUPLICATED_TOTAL = None
+    SEED_DEDUP_LATENCY_SECONDS = None
     PROMETHEUS_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
@@ -187,12 +193,33 @@ class BaseSpider(scrapy.Spider):
         return normalized or url
 
     def _load_seed_urls(self):
-        """Load all seed URLs from Delta Lake, bypassing Redis check."""
+        """Load all seed URLs from Delta Lake, ensuring they are unique."""
+        start_time = time.time()
         try:
             seed_records = self.delta.read("seed_urls")
-            urls = [record["url"] for record in seed_records]
-            logger.info(f"Loaded {len(urls)} seed URLs directly from Delta Lake.")
-            return urls
+            raw_urls = [record["url"] for record in seed_records]
+            # Use a set for automatic deduplication, then convert to a list
+            unique_urls = list(set(raw_urls))
+
+            if PROMETHEUS_AVAILABLE:
+                num_raw = len(raw_urls)
+                num_unique = len(unique_urls)
+                num_deduplicated = num_raw - num_unique
+
+                SEED_URLS_EMITTED_TOTAL.labels(spider=self.name).inc(num_unique)
+                SEED_URLS_DEDUPLICATED_TOTAL.labels(spider=self.name).inc(num_deduplicated)
+
+                latency = time.time() - start_time
+                SEED_DEDUP_LATENCY_SECONDS.labels(spider=self.name).observe(latency)
+
+                logger.info(
+                    f"Loaded {num_unique} unique seed URLs from {num_raw} total records "
+                    f"({num_deduplicated} duplicates removed) in {latency:.4f}s."
+                )
+            else:
+                logger.info(f"Loaded {len(unique_urls)} unique seed URLs from Delta Lake.")
+
+            return unique_urls
         except Exception as e:
             logger.error(f"Could not load seed URLs from Delta Lake: {e}")
             return []

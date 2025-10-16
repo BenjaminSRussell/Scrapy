@@ -140,6 +140,27 @@ if PROMETHEUS_AVAILABLE:
         ["spider"],
     )
 
+    # --- Seed Deduplication Metrics ---
+    SEED_URLS_EMITTED_TOTAL = Counter(
+        "seed_urls_emitted_total",
+        "Total number of seed URLs emitted to Redis after deduplication",
+        ["spider"],
+    )
+
+    SEED_URLS_DEDUPLICATED_TOTAL = Counter(
+        "seed_urls_deduplicated_total",
+        "Total number of seed URLs dropped due to deduplication",
+        ["spider"],
+    )
+
+    SEED_DEDUP_LATENCY_SECONDS = Histogram(
+        "seed_dedup_latency_seconds",
+        "Time spent in the deduplication check against Delta Lake for seed URLs",
+        ["spider"],
+        buckets=(0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, float("inf")),
+    )
+
+
 else:
     # Dummy variables when Prometheus is not available
     ITEMS_SCRAPED = ITEMS_DROPPED = REQUESTS_TOTAL = RESPONSES_TOTAL = None
@@ -149,6 +170,7 @@ else:
     NEW_URLS_FOUND_PER_MINUTE = AVERAGE_FILE_SIZE_BYTES = None
     OFFSITE_LINKS_FOUND = OFFSITE_CANDIDATES_SAVED = None
     CRAWLER_CONTENT_SUMMARY = None
+    SEED_URLS_EMITTED_TOTAL = SEED_URLS_DEDUPLICATED_TOTAL = SEED_DEDUP_LATENCY_SECONDS = None
 
 
 class PrometheusExtension:
