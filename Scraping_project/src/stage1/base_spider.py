@@ -26,6 +26,8 @@ try:
         AVERAGE_FILE_SIZE_BYTES,
         NEW_URLS_FOUND_PER_MINUTE,
         OFFSITE_LINKS_FOUND,
+        SPIDER_INIT_ERRORS,
+        SPIDER_START_URLS,
     )
 
     PROMETHEUS_AVAILABLE = True
@@ -33,6 +35,8 @@ except ImportError:
     NEW_URLS_FOUND_PER_MINUTE = None
     AVERAGE_FILE_SIZE_BYTES = None
     OFFSITE_LINKS_FOUND = None
+    SPIDER_INIT_ERRORS = None
+    SPIDER_START_URLS = None
     PROMETHEUS_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
@@ -134,12 +138,21 @@ class BaseSpider(scrapy.Spider):
         # Optional depth control (tests may set max_depth dynamically)
         self.max_depth = self.settings.getint("MAX_DEPTH") if hasattr(self, "settings") and self.settings else None
 
-        # Ensure we have start URLs loaded from Delta
-        if not hasattr(self, "start_urls") or not self.start_urls:
-            self.start_urls = self._load_seed_urls()
+        try:
+            # Ensure we have start URLs loaded from Delta
+            if not hasattr(self, "start_urls") or not self.start_urls:
+                self.start_urls = self._load_seed_urls()
 
-        url_count = self.redis_client.scard(self.url_hashes_key)
-        logger.info(f"{self.name} loaded {len(self.start_urls)} seeds, {url_count} existing URLs in Redis")
+            if PROMETHEUS_AVAILABLE and SPIDER_START_URLS:
+                SPIDER_START_URLS.labels(spider=self.name).set(len(self.start_urls))
+
+            url_count = self.redis_client.scard(self.url_hashes_key)
+            logger.info(f"{self.name} loaded {len(self.start_urls)} seeds, {url_count} existing URLs in Redis")
+        except Exception as e:
+            logger.error(f"CRITICAL: Spider initialization failed: {e}")
+            if PROMETHEUS_AVAILABLE and SPIDER_INIT_ERRORS:
+                SPIDER_INIT_ERRORS.labels(spider=self.name).inc()
+            raise
 
     async def start(self):
         """Emit initial requests for the dynamically loaded start URLs."""

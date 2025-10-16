@@ -140,6 +140,18 @@ if PROMETHEUS_AVAILABLE:
         ["spider"],
     )
 
+    SPIDER_INIT_ERRORS = Counter(
+        "spider_init_errors_total",
+        "Total number of exceptions during spider initialization",
+        ["spider"],
+    )
+
+    SPIDER_START_URLS = Gauge(
+        "spider_start_urls_loaded",
+        "Number of seed URLs loaded by a spider",
+        ["spider"],
+    )
+
 else:
     # Dummy variables when Prometheus is not available
     ITEMS_SCRAPED = ITEMS_DROPPED = REQUESTS_TOTAL = RESPONSES_TOTAL = None
@@ -148,7 +160,7 @@ else:
     CRAWL_DURATION = URLS_SKIPPED = None
     NEW_URLS_FOUND_PER_MINUTE = AVERAGE_FILE_SIZE_BYTES = None
     OFFSITE_LINKS_FOUND = OFFSITE_CANDIDATES_SAVED = None
-    CRAWLER_CONTENT_SUMMARY = None
+    CRAWLER_CONTENT_SUMMARY = SPIDER_INIT_ERRORS = SPIDER_START_URLS = None
 
 
 class PrometheusExtension:
