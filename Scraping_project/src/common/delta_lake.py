@@ -225,12 +225,33 @@ class DeltaLakeManager:
             # Get or create schema for this table to prevent schema drift
             if table_name not in self.schema_cache:
                 # First write: infer and cache the schema
+                # Use from_pylist for initial schema inference
                 table = pa.Table.from_pylist(data)
                 self.schema_cache[table_name] = table.schema
                 logger.debug(f"Cached schema for {table_name}: {table.schema}")
             else:
-                # Subsequent writes: use cached schema to enforce consistency
-                table = pa.Table.from_pylist(data, schema=self.schema_cache[table_name])
+                # PERFORMANCE OPTIMIZATION: Convert data more efficiently
+                # Instead of using from_pylist (which infers types every time),
+                # we convert dict list into columnar format first
+                cached_schema = self.schema_cache[table_name]
+
+                # Extract column data in columnar format (much faster)
+                columns_data = {}
+                for field in cached_schema:
+                    col_name = field.name
+                    # Extract all values for this column
+                    columns_data[col_name] = [row.get(col_name) for row in data]
+
+                # Build arrays from columnar data using cached schema types
+                arrays = []
+                for field in cached_schema:
+                    col_name = field.name
+                    col_data = columns_data[col_name]
+                    # Create array with explicit type from schema (no inference needed)
+                    arrays.append(pa.array(col_data, type=field.type))
+
+                # Construct table directly from arrays (fastest path)
+                table = pa.Table.from_arrays(arrays, schema=cached_schema)
 
             # Enhanced: Partition by domain for discovery tables
             partition_by = None

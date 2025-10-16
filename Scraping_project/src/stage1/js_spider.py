@@ -1,17 +1,20 @@
-"""Render JavaScript-heavy pages queued by the crawler."""
+"""Enhanced JavaScript spider with priority queue and aggressive async processing."""
 
 import hashlib
 import logging
+import os
 from collections.abc import AsyncGenerator, Iterator
 from datetime import datetime
 from typing import Any
 from urllib.parse import urljoin
 
+import redis
 import scrapy
 from scrapy.http import Response
 
 from src.common.config import Config
 from src.common.delta_lake import get_delta_manager
+from src.common.js_priority_queue import JSPriorityQueue
 from src.common.spider_config import get_spider_settings
 from src.stage1.base_spider import BaseSpider
 
@@ -23,7 +26,7 @@ class JavaScriptSpider(scrapy.Spider):
 
     name = "javascript"
 
-    # Custom settings tuned for Playwright rendering
+    # ENHANCED: Aggressive async settings for maximum throughput
     custom_settings = {
         **get_spider_settings("deep_dive"),
         # Enable scrapy-playwright
@@ -37,34 +40,70 @@ class JavaScriptSpider(scrapy.Spider):
             "headless": True,
             "timeout": 30000,
         },
-        # Lower concurrency for headless browsers
-        "CONCURRENT_REQUESTS": 10,
-        "CONCURRENT_REQUESTS_PER_DOMAIN": 5,
+        # ENHANCED: Higher concurrency for aggressive async processing
+        "CONCURRENT_REQUESTS": 20,  # Increased from 10
+        "CONCURRENT_REQUESTS_PER_DOMAIN": 10,  # Increased from 5
         # Longer timeouts for JS rendering
         "DOWNLOAD_TIMEOUT": 60,
         # Memory limits (browsers are memory-intensive)
-        "MEMUSAGE_LIMIT_MB": 8192,
-        "MEMUSAGE_WARNING_MB": 6144,
+        "MEMUSAGE_LIMIT_MB": 12288,  # Increased to 12GB
+        "MEMUSAGE_WARNING_MB": 10240,  # Warning at 10GB
+        # Aggressive auto-throttle settings
+        "AUTOTHROTTLE_ENABLED": True,
+        "AUTOTHROTTLE_START_DELAY": 0.5,
+        "AUTOTHROTTLE_TARGET_CONCURRENCY": 15.0,
     }
 
     # Block non-essential assets to keep render fast
     BLOCKED_RESOURCE_TYPES = ["image", "stylesheet", "font", "media"]
 
     def __init__(self, *args, **kwargs):
-        """Initialize JavaScript spider."""
+        """Initialize enhanced JavaScript spider with priority queue."""
         super().__init__(*args, **kwargs)
 
         self.config = Config.get_instance()
         self.delta = get_delta_manager()
 
-        # Load pending work
+        # Initialize Redis priority queue
+        config_obj = self.config._config if hasattr(self.config, '_config') else {}
+        redis_config = config_obj.get("redis", {})
+        redis_host = os.getenv("REDIS_HOST", redis_config.get("host", "localhost"))
+        redis_port = int(os.getenv("REDIS_PORT", redis_config.get("port", 6379)))
+
+        if os.getenv("REDIS_URL") == "fakeredis://":
+            import fakeredis
+            redis_client = fakeredis.FakeStrictRedis(decode_responses=False)
+        else:
+            redis_client = redis.Redis(
+                host=redis_host,
+                port=redis_port,
+                db=redis_config.get("db", 0),
+                decode_responses=False,
+            )
+
+        self.priority_queue = JSPriorityQueue(redis_client, queue_key="js_spider:priority_queue")
+
+        # Load pending work from both Delta Lake (legacy) and priority queue
         self.start_urls = self._load_js_queue()
 
         # Tracking
         self.rendered_count = 0
         self.completed_urls = []
+        self.priority_stats = {
+            "critical": 0,
+            "high": 0,
+            "medium": 0,
+            "low": 0,
+        }
 
-        logger.info(f"[JAVASCRIPT] Initialized with {len(self.start_urls)} pages to render")
+        # Log queue stats
+        queue_stats = self.priority_queue.get_stats()
+        logger.info(
+            f"[JS_SPIDER] Initialized | "
+            f"Delta queue: {len(self.start_urls)} | "
+            f"Priority queue: {queue_stats.get('total_size', 0)} | "
+            f"Total pages to render: {len(self.start_urls) + queue_stats.get('total_size', 0)}"
+        )
 
     def _load_js_queue(self) -> list[str]:
         """Return pending URLs from the js_spider_queue table."""
@@ -82,7 +121,59 @@ class JavaScriptSpider(scrapy.Spider):
             return []
 
     def start_requests(self) -> Iterator[scrapy.Request]:
-        """Yield Playwright-enabled requests for queued URLs."""
+        """Yield Playwright-enabled requests for queued URLs (priority queue first)."""
+        # ENHANCED: Process priority queue first (highest priority URLs)
+        logger.info("[JS_SPIDER] Processing priority queue...")
+
+        # Dequeue in batches for efficiency
+        batch_size = 50
+        while True:
+            url_batch = self.priority_queue.dequeue(count=batch_size)
+            if not url_batch:
+                break
+
+            for url_data in url_batch:
+                url = url_data["url"]
+                metadata = url_data.get("metadata", {})
+                priority = metadata.get("priority", 0)
+
+                # Track priority distribution
+                if priority >= 100:
+                    self.priority_stats["critical"] += 1
+                elif priority >= 50:
+                    self.priority_stats["high"] += 1
+                elif priority >= 25:
+                    self.priority_stats["medium"] += 1
+                else:
+                    self.priority_stats["low"] += 1
+
+                yield scrapy.Request(
+                    url,
+                    callback=self.parse,
+                    errback=self.handle_error,
+                    meta={
+                        "playwright": True,
+                        "playwright_include_page": True,
+                        "playwright_page_methods": [
+                            # Wait until async work drains
+                            ("wait_for_load_state", "networkidle"),
+                        ],
+                        "priority": priority,
+                        "metadata": metadata,
+                    },
+                    priority=priority,  # Scrapy's internal priority
+                )
+
+        logger.info(
+            f"[JS_SPIDER] Priority queue processed | "
+            f"Critical: {self.priority_stats['critical']} | "
+            f"High: {self.priority_stats['high']} | "
+            f"Medium: {self.priority_stats['medium']} | "
+            f"Low: {self.priority_stats['low']}"
+        )
+
+        # Process legacy Delta Lake queue
+        logger.info("[JS_SPIDER] Processing Delta Lake queue...")
         for url in self.start_urls:
             yield scrapy.Request(
                 url,

@@ -6,8 +6,8 @@ import pytest
 
 # Configuration: Paths and Metric Name Rules
 DASHBOARD_PATHS = [
-    "Scraping_project/monitoring/dashboards/",
-    "Scraping_project/ops/grafana/dashboards/",
+    Path(__file__).parent.parent.parent / "monitoring" / "dashboards",
+    Path(__file__).parent.parent.parent / "ops" / "grafana" / "dashboards",
 ]
 METRIC_PREFIX_ALLOWLIST = {"scrapy_", "app_", "kafka_"}
 METRIC_NAME_DENYLIST = {"scrapy_pages_scraped_total", "old_request_errors_total"}
@@ -16,8 +16,7 @@ METRIC_NAME_DENYLIST = {"scrapy_pages_scraped_total", "old_request_errors_total"
 def find_dashboard_files() -> list[Path]:
     """Finds all Grafana dashboard JSON files in the configured paths."""
     found_files: list[Path] = []
-    for path_str in DASHBOARD_PATHS:
-        path = Path(path_str)
+    for path in DASHBOARD_PATHS:
         if path.is_dir():
             found_files.extend(path.rglob("*.json"))
     return found_files

@@ -3,6 +3,7 @@ apiVersion: 1
 
 groups:
   - name: Kafka Alerts
+    folder: Kafka
     # Evaluate rules every 10 seconds
     interval: 10s
     rules:

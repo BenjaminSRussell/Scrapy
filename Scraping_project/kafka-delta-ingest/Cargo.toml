@@ -45,6 +45,9 @@ redis = { version = "0.27", features = ["tokio-comp", "connection-manager"] }
 # Environment variables - Latest stable
 dotenv = "0.15"
 
+# JSON Schema validation
+jsonschema = "0.26"
+
 [profile.release]
 opt-level = 3
 lto = "thin"  # Use thin LTO instead of full LTO (much faster linking)

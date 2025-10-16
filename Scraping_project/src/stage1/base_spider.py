@@ -144,7 +144,7 @@ class BaseSpider(scrapy.Spider):
         )
 
         # Optional depth control (tests may set max_depth dynamically)
-        self.max_depth = getattr(self.settings, "MAX_DEPTH", None)
+        self.max_depth = self.settings.getint("MAX_DEPTH") if hasattr(self, "settings") and self.settings else None
 
         # Ensure we have start URLs loaded from Delta
         if not hasattr(self, "start_urls") or not self.start_urls:
@@ -231,38 +231,12 @@ class BaseSpider(scrapy.Spider):
             return url
 
     def _load_seed_urls(self):
-        """Return new seed URLs from Delta Lake that are not already in Redis."""
+        """Load all seed URLs from Delta Lake, bypassing Redis check."""
         try:
             seed_records = self.delta.read("seed_urls")
             urls = [record["url"] for record in seed_records]
-
-            logger.info(f"Loaded {len(urls)} seed URLs from Delta Lake, checking against Redis...")
-
-            # Batch deduplicate using a Redis pipeline
-            new_urls = []
-            if urls:
-                pipeline = self.redis_client.pipeline()
-                url_hashes = []
-
-                # Queue all existence checks
-                for url in urls:
-                    url_hash = self._hash_url(url)
-                    url_hashes.append(url_hash)
-                    pipeline.sismember(self.url_hashes_key, url_hash)
-
-                # Execute batch check
-                exists_results = pipeline.execute()
-
-                # Filter out existing URLs
-                for url, exists in zip(urls, exists_results, strict=False):
-                    if not exists:
-                        new_urls.append(url)
-
-                logger.info(
-                    f"After deduplication: {len(new_urls)} new URLs (filtered {len(urls) - len(new_urls)} existing)"
-                )
-
-            return new_urls
+            logger.info(f"Loaded {len(urls)} seed URLs directly from Delta Lake.")
+            return urls
         except Exception as e:
             logger.error(f"Could not load seed URLs from Delta Lake: {e}")
             return []

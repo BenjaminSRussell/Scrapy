@@ -30,7 +30,7 @@ def test_read_while_writing(delta_sandbox):
     table_name = "concurrent_test"
     # Register the ad-hoc table for this test
     table_path = delta_sandbox.base_path / table_name
-    table_path.mkdir(exist_ok=True)
+    table_path.mkdir(parents=True, exist_ok=True)
     delta_sandbox.tables[table_name] = table_path
 
     start_evt = threading.Event()
@@ -64,7 +64,7 @@ def test_concurrent_writes(delta_sandbox):
     table_name = "rw_test"
     # Register the ad-hoc table for this test
     table_path = delta_sandbox.base_path / table_name
-    table_path.mkdir(exist_ok=True)
+    table_path.mkdir(parents=True, exist_ok=True)
     delta_sandbox.tables[table_name] = table_path
 
     # Initial write to create the table and prevent a race condition

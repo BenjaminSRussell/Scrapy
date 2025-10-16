@@ -254,9 +254,9 @@ scrapyApp:
   enabled: true
   replicaCount: 3
   image:
-    repository: ""  # Set your registry/image
-    tag: "latest"
-    pullPolicy: Always
+    repository: ""  # REQUIRED: Set your registry/image (e.g., ghcr.io/yourorg/scraping-pipeline)
+    tag: ""  # REQUIRED: Set a specific version tag (e.g., git commit SHA, semantic version like v1.0.0)
+    pullPolicy: IfNotPresent  # Use IfNotPresent with specific tags for better caching
 
   terminationGracePeriodSeconds: 120
 
@@ -299,9 +299,9 @@ stage2Worker:
   enabled: true
   replicaCount: 3
   image:
-    repository: ""  # Set your registry/image
-    tag: "latest"
-    pullPolicy: Always
+    repository: ""  # REQUIRED: Set your registry/image
+    tag: ""  # REQUIRED: Set a specific version tag
+    pullPolicy: IfNotPresent
 
   terminationGracePeriodSeconds: 120
 
@@ -328,9 +328,9 @@ stage3Worker:
   enabled: true
   replicaCount: 2
   image:
-    repository: ""  # Set your registry/image
-    tag: "latest"
-    pullPolicy: Always
+    repository: ""  # REQUIRED: Set your registry/image
+    tag: ""  # REQUIRED: Set a specific version tag
+    pullPolicy: IfNotPresent
 
   terminationGracePeriodSeconds: 120
 
@@ -357,9 +357,9 @@ kafkaDeltaIngestor:
   enabled: true
   replicaCount: 2
   image:
-    repository: ""  # Set your registry/image
-    tag: "latest"
-    pullPolicy: Always
+    repository: ""  # REQUIRED: Set your registry/image
+    tag: ""  # REQUIRED: Set a specific version tag
+    pullPolicy: IfNotPresent
 
   terminationGracePeriodSeconds: 120
 
@@ -387,9 +387,9 @@ metricsExporter:
   enabled: true
   replicaCount: 1
   image:
-    repository: ""  # Set your registry/image
-    tag: "latest"
-    pullPolicy: Always
+    repository: ""  # REQUIRED: Set your registry/image
+    tag: ""  # REQUIRED: Set a specific version tag
+    pullPolicy: IfNotPresent
 
   service:
     type: ClusterIP
@@ -445,7 +445,7 @@ exporters:
     enabled: true
     image:
       repository: bitnami/jmx-exporter
-      tag: "latest"
+      tag: "1.0.1"  # Use a specific version instead of 'latest'
     service:
       port: 5556
     resources:
@@ -486,19 +486,30 @@ deltaLake:
 # Secrets Management
 # ============================================
 secrets:
-  # Set to true to use external secrets (e.g., AWS Secrets Manager, Vault)
-  useExternalSecrets: false
+  # SECURITY: Always use external secrets in production (e.g., AWS Secrets Manager, Vault)
+  # Set to false ONLY for local development/testing
+  useExternalSecrets: true
   externalSecretsProvider: ""
 
-  # If useExternalSecrets is false, secrets will be created from these values
-  # WARNING: In production, use external secrets or sealed secrets
+  # CRITICAL SECURITY WARNING:
+  # These default values are INSECURE and MUST be overridden during installation.
+  # They exist only as placeholders to show the required structure.
+  #
+  # For production deployments:
+  #   1. Set useExternalSecrets=true and use a secrets manager (recommended)
+  #   2. OR create secrets manually before deploying:
+  #      kubectl create secret generic postgres-credentials --from-literal=password=<YOUR_SECURE_PASSWORD>
+  #      kubectl create secret generic grafana-credentials --from-literal=admin-user=admin --from-literal=admin-password=<YOUR_SECURE_PASSWORD>
+  #   3. OR override these values during Helm install:
+  #      helm install ... --set secrets.postgres.password=<YOUR_SECURE_PASSWORD> --set secrets.grafana.adminPassword=<YOUR_SECURE_PASSWORD>
+  #
+  # NEVER deploy with these default values!
   postgres:
-    password: "changeme"
-
+    password: ""  # MUST BE SET - see warning above
 
   grafana:
     adminUser: "admin"
-    adminPassword: "admin"
+    adminPassword: ""  # MUST BE SET - see warning above
 
   aws:
     accessKeyId: ""

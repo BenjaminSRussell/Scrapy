@@ -8,11 +8,6 @@
 
 set -e
 
-echo "=========================================="
-echo "  Kubernetes Reset and Redeploy"
-echo "=========================================="
-echo ""
-
 # Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -29,7 +24,18 @@ print_step() { echo -e "${BLUE}[STEP]${NC} $1"; }
 OLD_RELEASE_NAME="coco"
 NEW_RELEASE_NAME="scraping-pipeline"
 CHART_PATH="k8s/helm/scraping-pipeline"
-NAMESPACE="default"
+# Allow namespace to be overridden via environment variable or command-line argument
+NAMESPACE="${NAMESPACE:-${1:-scraping-pipeline}}"
+
+echo "=========================================="
+echo "  Kubernetes Reset and Redeploy"
+echo "=========================================="
+echo ""
+print_info "Namespace: ${NAMESPACE}"
+print_info "Usage: $0 [namespace]"
+print_info "  Example: $0 production"
+print_info "  Default namespace: scraping-pipeline"
+echo ""
 
 # Check if kubectl is available
 if ! command -v kubectl &> /dev/null; then

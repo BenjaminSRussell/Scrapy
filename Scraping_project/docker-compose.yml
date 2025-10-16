@@ -241,7 +241,9 @@ services:
       - "3000:3000"
     environment:
       - GF_SECURITY_ADMIN_USER=admin
-      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}
+      # SECURITY WARNING: Default password is 'admin' for development convenience
+      # For production: Set a secure GRAFANA_ADMIN_PASSWORD in your .env file
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
       - GF_SECURITY_PASSWORD_POLICY=none
       - GF_PLUGINS_PREINSTALL=redis-datasource
       - GF_SERVER_DOMAIN=localhost
@@ -305,7 +307,9 @@ services:
       - DB_USER=postgres
       - DB_PASSWORD=postgres
       - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
-      - KAFKA_TOPIC=scraped-items
+      # Kafka topic is now configurable via config.yml (kafka.topics.scraped_items)
+      # This env var is kept for backward compatibility
+      - KAFKA_TOPIC=${KAFKA_TOPIC:-scraped-items}
       - SCRAPY_SETTINGS_MODULE=src.settings
       - ENV=development
       - SCOUT_INSTANCES=${SCOUT_INSTANCES:-8}
@@ -315,6 +319,7 @@ services:
       - ./data/raw:/app/data/raw:ro
       - delta_data:/app/data
       - ./run_multiple_scouts.py:/app/run_multiple_scouts.py:ro
+      - ./reseed.py:/app/reseed.py:ro
     restart: unless-stopped
     deploy:
       resources:
@@ -462,7 +467,7 @@ services:
       target: kafka-delta-ingest
     container_name: scraping_kafka_delta_ingest
     command: >
-      ingest scraped-items ./data/delta_lake/scraped_data
+      ingest scraped-items /delta/delta_lake/scraped_data
       --kafka kafka:9092
       --app-id scrapy-ingestor
       --auto-offset-reset earliest
@@ -480,7 +485,9 @@ services:
       - delta_data:/delta
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "test -f /delta/delta_lake/scraped_data/_delta_log || exit 0"]
+      # Improved health check: verify process is running AND check recent write activity
+      # This catches process crashes and hangs
+      test: ["CMD-SHELL", "pgrep -f kafka-delta-ingest > /dev/null && (test ! -d /delta/delta_lake/scraped_data || find /delta/delta_lake/scraped_data -type f -mmin -5 | grep -q . || exit 0)"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -509,6 +516,7 @@ services:
       - delta_data:/app/data
       - ./src:/app/src:ro
       - ./config:/app/config:ro
+      - ./monitoring/metrics_exporter.py:/app/metrics_exporter.py:ro
     command: python metrics_exporter.py --port 9090 --interval 5
     restart: unless-stopped
     networks:

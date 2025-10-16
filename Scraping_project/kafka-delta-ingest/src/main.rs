@@ -7,11 +7,12 @@ use deltalake::delta_datafusion::DataFusionMixins;
 use deltalake::kernel::{DataType as DeltaDataType, StructField};
 use deltalake::writer::{DeltaWriter, RecordBatchWriter};
 use deltalake::{DeltaTable, DeltaTableBuilder};
+use jsonschema::{Draft, JSONSchema};
 use rdkafka::config::ClientConfig;
 use rdkafka::consumer::{Consumer, StreamConsumer};
 use rdkafka::Message;
 use redis::{aio::ConnectionManager, AsyncCommands};
-use serde_json::Value;
+use serde_json::{json, Value};
 use std::net::UdpSocket;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -127,6 +128,45 @@ impl ScrapyMetrics {
     }
 }
 
+/// Build the JSON schema for scraped items to validate incoming messages
+fn build_scraped_item_schema() -> Value {
+    json!({
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "required": ["url", "scraped_at_utc", "spider_name"],
+        "properties": {
+            "url": {
+                "type": "string",
+                "minLength": 1,
+                "description": "The URL that was scraped"
+            },
+            "title": {
+                "type": ["string", "null"],
+                "description": "Page title (optional)"
+            },
+            "content": {
+                "type": ["string", "null"],
+                "description": "Page content (optional)"
+            },
+            "scraped_at_utc": {
+                "type": "string",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}",
+                "description": "UTC timestamp in ISO 8601 format"
+            },
+            "spider_name": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Name of the spider that collected this data"
+            },
+            "pipeline_version": {
+                "type": ["string", "null"],
+                "description": "Version of the scraping pipeline (optional)"
+            }
+        },
+        "additionalProperties": true
+    })
+}
+
 #[derive(Parser)]
 #[command(name = "kafka-delta-ingest")]
 #[command(about = "High-performance Kafka to Delta Lake ingestor", long_about = None)]
@@ -222,13 +262,21 @@ async fn ingest(
     auto_offset_reset: &str,
     allowed_latency: u64,
     max_messages_per_batch: usize,
-    _transform: Option<String>,
+    transform: Option<String>,
 ) -> Result<()> {
     info!("Starting Kafka to Delta Lake ingestor");
     info!("Topic: {}", topic);
     info!("Table path: {}", table_path);
     info!("Kafka brokers: {}", kafka_brokers);
     info!("App ID: {}", app_id);
+
+    // Build and compile JSON schema for validation
+    let schema_def = build_scraped_item_schema();
+    let schema = JSONSchema::options()
+        .with_draft(Draft::Draft7)
+        .compile(&schema_def)
+        .context("Failed to compile JSON schema")?;
+    info!("Schema validation enabled - all messages will be validated against the schema");
 
     // Initialize StatsD client for metrics
     let statsd_host = std::env::var("STATSD_HOST").unwrap_or_else(|_| "localhost".to_string());
@@ -262,8 +310,25 @@ async fn ingest(
 
     info!("Successfully connected to Kafka and subscribed to topic: {}", topic);
 
+    // Parse partition transform if provided
+    let partition_column = if let Some(transform_str) = &transform {
+        // Expected format: "date: substr(scraped_at_utc, `0`, `10`)"
+        // Extract the partition column name (before the colon)
+        let parts: Vec<&str> = transform_str.split(':').collect();
+        if parts.len() >= 1 {
+            let col_name = parts[0].trim();
+            info!("Partitioning enabled on column: {}", col_name);
+            Some(col_name.to_string())
+        } else {
+            warn!("Invalid transform format: {}. Expected format: 'column_name: expression'", transform_str);
+            None
+        }
+    } else {
+        None
+    };
+
     // Load or create Delta table
-    let delta_table = load_or_create_table(table_path).await?;
+    let delta_table = load_or_create_table(table_path, partition_column.as_deref()).await?;
     let schema = delta_table.snapshot()?.arrow_schema()?.clone();
 
     info!("Delta table loaded/created successfully");
@@ -278,17 +343,64 @@ async fn ingest(
                 if let Some(payload) = message.payload() {
                     match serde_json::from_slice::<Value>(payload) {
                         Ok(json_value) => {
-                            // Signal: response_received - Track HTTP status (default 200 for successful parse)
-                            scrapy_metrics.response_received(200).await.ok();
+                            // CRITICAL: Validate message against schema before processing
+                            match schema.validate(&json_value) {
+                                Ok(_) => {
+                                    // Signal: response_received - Track HTTP status (default 200 for successful parse)
+                                    scrapy_metrics.response_received(200).await.ok();
 
-                            buffer.push(json_value);
-                            metrics.incr("messages.received").ok();
+                                    buffer.push(json_value);
+                                    metrics.incr("messages.received").ok();
+                                }
+                                Err(errors) => {
+                                    // Schema validation failed - log detailed errors
+                                    let error_details: Vec<String> = errors
+                                        .map(|e| format!("{} at {}", e, e.instance_path))
+                                        .collect();
+                                    let error_summary = error_details.join("; ");
+
+                                    warn!(
+                                        "Schema validation failed for message: {}. Errors: {}",
+                                        serde_json::to_string(&json_value).unwrap_or_else(|_| "<unprintable>".to_string()),
+                                        error_summary
+                                    );
+
+                                    metrics.incr("errors.schema_validation_failed").ok();
+
+                                    // Signal: item_dropped with reason
+                                    scrapy_metrics.item_dropped("schema_validation_failed").await.ok();
+
+                                    // Signal: spider_error for tracking
+                                    scrapy_metrics
+                                        .spider_error("schema_validation_error", &error_summary)
+                                        .await
+                                        .ok();
+
+                                    // TODO: Write invalid messages to dead-letter queue topic
+                                    // For now, we just log and drop them
+                                }
+                            }
 
                             // Check if we should write the batch
                             let should_write = buffer.len() >= max_messages_per_batch
                                 || last_write.elapsed() >= Duration::from_secs(allowed_latency);
 
                             if should_write {
+                                // Add date partition column if partitioning is enabled
+                                if partition_column.is_some() {
+                                    for item in &mut buffer {
+                                        if let Some(obj) = item.as_object_mut() {
+                                            if let Some(timestamp) = obj.get("scraped_at_utc").and_then(|v| v.as_str()) {
+                                                // Extract date (first 10 characters: YYYY-MM-DD)
+                                                if timestamp.len() >= 10 {
+                                                    let date = &timestamp[0..10];
+                                                    obj.insert("date".to_string(), Value::String(date.to_string()));
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
                                 info!("Writing batch of {} messages to Delta Lake", buffer.len());
 
                                 match write_batch(&delta_table, &schema, &buffer, &metrics, &mut scrapy_metrics).await {
@@ -332,7 +444,7 @@ async fn ingest(
     }
 }
 
-async fn load_or_create_table(table_path: &str) -> Result<DeltaTable> {
+async fn load_or_create_table(table_path: &str, partition_column: Option<&str>) -> Result<DeltaTable> {
     // Try to load existing table
     match DeltaTableBuilder::from_uri(table_path).load().await {
         Ok(table) => {
@@ -343,7 +455,7 @@ async fn load_or_create_table(table_path: &str) -> Result<DeltaTable> {
             info!("Creating new Delta table at: {}", table_path);
 
             // Define schema for scraped items using Delta kernel types
-            let fields = vec![
+            let mut fields = vec![
                 StructField::new("url", DeltaDataType::STRING, false),
                 StructField::new("title", DeltaDataType::STRING, true),
                 StructField::new("content", DeltaDataType::STRING, true),
@@ -352,9 +464,23 @@ async fn load_or_create_table(table_path: &str) -> Result<DeltaTable> {
                 StructField::new("pipeline_version", DeltaDataType::STRING, true),
             ];
 
-            deltalake::operations::create::CreateBuilder::new()
+            // Add date column for partitioning if specified
+            if partition_column.is_some() {
+                fields.push(StructField::new("date", DeltaDataType::STRING, true));
+            }
+
+            // If partitioning is enabled, add the partition column to schema if needed
+            let mut builder = deltalake::operations::create::CreateBuilder::new()
                 .with_location(table_path)
-                .with_columns(fields)
+                .with_columns(fields);
+
+            // Add partition columns if specified
+            if let Some(part_col) = partition_column {
+                info!("Creating table with partition column: {}", part_col);
+                builder = builder.with_partition_columns(vec![part_col]);
+            }
+
+            builder
                 .await
                 .context("Failed to create Delta table")
         }
@@ -379,6 +505,10 @@ async fn write_batch(
     let mut scraped_ats = Vec::new();
     let mut spider_names = Vec::new();
     let mut pipeline_versions = Vec::new();
+    let mut dates = Vec::new();
+
+    // Check if schema includes date column (for partitioning)
+    let has_date_column = schema.fields().iter().any(|f| f.name() == "date");
 
     for record in records {
         urls.push(record.get("url").and_then(|v| v.as_str()).unwrap_or(""));
@@ -388,21 +518,29 @@ async fn write_batch(
         spider_names.push(record.get("spider_name").and_then(|v| v.as_str()).unwrap_or(""));
         pipeline_versions.push(record.get("pipeline_version").and_then(|v| v.as_str()));
 
+        if has_date_column {
+            dates.push(record.get("date").and_then(|v| v.as_str()));
+        }
+
         // Signal: item_scraped for each successfully written item
         scrapy_metrics.item_scraped().await.ok();
     }
 
-    let batch = RecordBatch::try_new(
-        Arc::new(schema.clone()),
-        vec![
-            Arc::new(StringArray::from(urls)),
-            Arc::new(StringArray::from(titles)),
-            Arc::new(StringArray::from(contents)),
-            Arc::new(StringArray::from(scraped_ats)),
-            Arc::new(StringArray::from(spider_names)),
-            Arc::new(StringArray::from(pipeline_versions)),
-        ],
-    )?;
+    // Build column arrays - add date column if schema includes it
+    let mut columns: Vec<Arc<dyn deltalake::arrow::array::Array>> = vec![
+        Arc::new(StringArray::from(urls)),
+        Arc::new(StringArray::from(titles)),
+        Arc::new(StringArray::from(contents)),
+        Arc::new(StringArray::from(scraped_ats)),
+        Arc::new(StringArray::from(spider_names)),
+        Arc::new(StringArray::from(pipeline_versions)),
+    ];
+
+    if has_date_column {
+        columns.push(Arc::new(StringArray::from(dates)));
+    }
+
+    let batch = RecordBatch::try_new(Arc::new(schema.clone()), columns)?;
 
     // Write to Delta Lake
     let mut writer = RecordBatchWriter::for_table(table)?;

@@ -28,9 +28,6 @@ class IntelligentRetryMiddleware(RetryMiddleware):
     # Permanent errors - do NOT retry
     PERMANENT_STATUS_CODES = {400, 401, 403, 404, 410}
 
-    # Mirror base-class configuration so mypy recognizes the attribute
-    EXCEPTIONS_TO_RETRY = RetryMiddleware.EXCEPTIONS_TO_RETRY
-
     def __init__(self, settings):
         """Initialize middleware.
 

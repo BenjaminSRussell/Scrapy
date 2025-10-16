@@ -185,7 +185,7 @@ def main():
 
         # Create Delta Lake manager
         logger.info("Initializing Delta Lake manager...")
-        manager = get_delta_manager()
+        manager = get_delta_manager(mode="local")
         logger.info("✅ Delta Lake manager initialized")
 
         # Load seed URLs
