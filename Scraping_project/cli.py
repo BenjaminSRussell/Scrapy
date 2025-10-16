@@ -12,6 +12,7 @@ Commands:
   export      Export Delta Lake data
   health      Check pipeline health
 """
+
 #!/usr/bin/env python3
 """Unified Pipeline CLI - Single entry point for all operations
 

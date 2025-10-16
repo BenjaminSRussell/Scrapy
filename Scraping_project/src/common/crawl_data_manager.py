@@ -109,8 +109,7 @@ class CrawlDataManager:
             domain_data = [
                 row
                 for row in discovery_data
-                if row.get("domain") == domain
-                and self._parse_timestamp(row.get("discovered_at", "")) >= cutoff_date
+                if row.get("domain") == domain and self._parse_timestamp(row.get("discovered_at", "")) >= cutoff_date
             ]
 
             if not domain_data:
@@ -340,9 +339,7 @@ class CrawlDataManager:
             success_rate = successful_stage2 / match_count if match_count > 0 else 0.0
 
             # Calculate average content length
-            content_lengths = [
-                row.get("content_length", 0) for row in stage2_data if row.get("url") in matching_urls
-            ]
+            content_lengths = [row.get("content_length", 0) for row in stage2_data if row.get("url") in matching_urls]
             avg_content_length = sum(content_lengths) // len(content_lengths) if content_lengths else 0
 
             # Estimate value score based on success rate and content length
@@ -404,9 +401,7 @@ class CrawlDataManager:
                 "lookback_days": self.lookback_days,
                 "cache_entries": len(self._domain_cache),
                 "cache_age_hours": (
-                    (datetime.now() - self._cache_timestamp).total_seconds() / 3600
-                    if self._cache_timestamp
-                    else None
+                    (datetime.now() - self._cache_timestamp).total_seconds() / 3600 if self._cache_timestamp else None
                 ),
             }
 

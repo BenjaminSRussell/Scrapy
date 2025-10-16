@@ -178,7 +178,9 @@ class Stage2Worker:
             except Exception as fallback_e:
                 logger.error(f"[STAGE2] Fallback overwrite method also failed: {fallback_e}")
 
-    def _update_queue_status_overwrite(self, all_queue_items: list, completed_urls: list, table_name: str = "stage2_queue"):
+    def _update_queue_status_overwrite(
+        self, all_queue_items: list, completed_urls: list, table_name: str = "stage2_queue"
+    ):
         """DEPRECATED: Original method to update queue status by overwriting the table."""
         try:
             completed_set = set(completed_urls)

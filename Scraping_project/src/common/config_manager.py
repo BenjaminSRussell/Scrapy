@@ -25,15 +25,17 @@ Usage:
 """
 
 import os
-import yaml
+from enum import Enum
 from pathlib import Path
 from typing import Any, Optional
+
+import yaml
 from pydantic import BaseModel, Field, validator
-from enum import Enum
 
 
 class Environment(str, Enum):
     """Deployment environment"""
+
     DEVELOPMENT = "development"
     PRODUCTION = "production"
     TESTING = "testing"
@@ -43,33 +45,37 @@ class Environment(str, Enum):
 # Configuration Models (Type-Safe with Validation)
 # ============================================================================
 
+
 class DatabaseConfig(BaseModel):
     """PostgreSQL database configuration"""
+
     host: str = "localhost"
     port: int = 5432
     database: str = "scraping_db"
     user: str = "postgres"
-    password: Optional[str] = None
+    password: str | None = None
     min_connections: int = 1
     max_connections: int = 10
 
-    @validator('password')
+    @validator("password")
     def validate_password(cls, v):
         """Warn if password is not set in production"""
         if v is None:
             import warnings
+
             warnings.warn("Database password not set. Connection may fail.")
         return v
 
 
 class RedisConfig(BaseModel):
     """Redis configuration"""
+
     host: str = "localhost"
     port: int = 6379
     db: int = 0
-    password: Optional[str] = None
+    password: str | None = None
     max_connections: int = 50
-    url: Optional[str] = None  # Alternative: redis://host:port/db
+    url: str | None = None  # Alternative: redis://host:port/db
 
     @property
     def is_fakeredis(self) -> bool:
@@ -79,6 +85,7 @@ class RedisConfig(BaseModel):
 
 class KafkaProducerConfig(BaseModel):
     """Kafka producer configuration"""
+
     compression_type: str = "gzip"
     acks: str = "all"
     retries: int = 3
@@ -87,6 +94,7 @@ class KafkaProducerConfig(BaseModel):
 
 class KafkaConsumerConfig(BaseModel):
     """Kafka consumer configuration"""
+
     group_id: str = "scraping-pipeline"
     auto_offset_reset: str = "earliest"
     enable_auto_commit: bool = True
@@ -94,6 +102,7 @@ class KafkaConsumerConfig(BaseModel):
 
 class KafkaConfig(BaseModel):
     """Kafka configuration"""
+
     bootstrap_servers: str = "localhost:9092"
     topic: str = "scraped-items"
     dead_letter_topic: str = "dead-letter-queue"
@@ -101,14 +110,15 @@ class KafkaConfig(BaseModel):
     consumer: KafkaConsumerConfig = Field(default_factory=KafkaConsumerConfig)
 
     # SASL/SSL configuration
-    security_protocol: Optional[str] = None
-    sasl_mechanism: Optional[str] = None
-    sasl_username: Optional[str] = None
-    sasl_password: Optional[str] = None
+    security_protocol: str | None = None
+    sasl_mechanism: str | None = None
+    sasl_username: str | None = None
+    sasl_password: str | None = None
 
 
 class SpiderConfig(BaseModel):
     """Individual spider configuration"""
+
     concurrent_requests: int = 32
     download_delay: float = 0.1
     depth_limit: int = 5
@@ -119,6 +129,7 @@ class SpiderConfig(BaseModel):
 
 class Stage1Config(BaseModel):
     """Stage 1 (Discovery/Crawling) configuration"""
+
     allowed_domains: list[str] = Field(default_factory=list)
     js_confidence_threshold: float = 0.7
     batch_size: int = 50
@@ -126,17 +137,18 @@ class Stage1Config(BaseModel):
     circuit_breaker_enabled: bool = True
     circuit_breaker_error_threshold: int = 5
     use_redis_queue: bool = True
-    priority_boost_keywords: list[str] = Field(default_factory=lambda: [
-        "research", "publications", "faculty", "staff", "departments"
-    ])
-    priority_penalty_keywords: list[str] = Field(default_factory=lambda: [
-        "login", "logout", "cart", "checkout", "wp-admin"
-    ])
+    priority_boost_keywords: list[str] = Field(
+        default_factory=lambda: ["research", "publications", "faculty", "staff", "departments"]
+    )
+    priority_penalty_keywords: list[str] = Field(
+        default_factory=lambda: ["login", "logout", "cart", "checkout", "wp-admin"]
+    )
     spiders: dict[str, SpiderConfig] = Field(default_factory=dict)
 
 
 class Stage2Config(BaseModel):
     """Stage 2 (Page Analysis) configuration"""
+
     max_workers: int = 10
     batch_size: int = 100
     poll_interval_seconds: int = 60
@@ -150,6 +162,7 @@ class Stage2Config(BaseModel):
 
 class Stage3Config(BaseModel):
     """Stage 3 (Summarization) configuration"""
+
     max_workers: int = 5
     batch_size: int = 50
     poll_interval_seconds: int = 120
@@ -162,6 +175,7 @@ class Stage3Config(BaseModel):
 
 class Stage4Config(BaseModel):
     """Stage 4 (Large Document Processing) configuration"""
+
     chunk_size: int = 1000
     chunk_overlap: int = 200
     model_name: str = "facebook/bart-large-cnn"
@@ -173,38 +187,43 @@ class Stage4Config(BaseModel):
 
 class DeltaLakeConfig(BaseModel):
     """Delta Lake configuration"""
+
     base_path: str = "./data/delta_lake"
     checkpoint_interval: int = 100
     force_shutdown_timeout: int = 30
     queue_maxsize: int = 1000
 
     # Table names
-    tables: dict[str, str] = Field(default_factory=lambda: {
-        "seed_urls": "seed_urls",
-        "stage1_discovery": "stage1_discovery",
-        "stage1_errors": "stage1_errors",
-        "stage1_offsite_candidates": "stage1_offsite_candidates",
-        "js_spider_queue": "js_spider_queue",
-        "stage2_queue": "stage2_queue",
-        "stage2_page_analysis": "stage2_page_analysis",
-        "stage3_analytics": "stage3_analytics",
-        "stage3_summaries": "stage3_summaries",
-        "stage4_large_docs": "stage4_large_docs",
-        "stage4_summaries": "stage4_summaries",
-    })
+    tables: dict[str, str] = Field(
+        default_factory=lambda: {
+            "seed_urls": "seed_urls",
+            "stage1_discovery": "stage1_discovery",
+            "stage1_errors": "stage1_errors",
+            "stage1_offsite_candidates": "stage1_offsite_candidates",
+            "js_spider_queue": "js_spider_queue",
+            "stage2_queue": "stage2_queue",
+            "stage2_page_analysis": "stage2_page_analysis",
+            "stage3_analytics": "stage3_analytics",
+            "stage3_summaries": "stage3_summaries",
+            "stage4_large_docs": "stage4_large_docs",
+            "stage4_summaries": "stage4_summaries",
+        }
+    )
 
 
 class LoggingConfig(BaseModel):
     """Logging configuration"""
+
     level: str = "INFO"
     format: str = "%(asctime)s [%(name)s] %(levelname)s: %(message)s"
-    file: Optional[str] = None
+    file: str | None = None
     max_bytes: int = 10 * 1024 * 1024  # 10MB
     backup_count: int = 5
 
 
 class MonitoringConfig(BaseModel):
     """Monitoring configuration (Prometheus/Grafana)"""
+
     enabled: bool = True
     prometheus_port: int = 9090
     grafana_port: int = 3000
@@ -212,17 +231,20 @@ class MonitoringConfig(BaseModel):
     metrics_interval: int = 60
 
     # Metrics to collect
-    metrics: list[str] = Field(default_factory=lambda: [
-        "urls_processed",
-        "urls_discovered",
-        "errors_encountered",
-        "processing_time",
-        "queue_size",
-    ])
+    metrics: list[str] = Field(
+        default_factory=lambda: [
+            "urls_processed",
+            "urls_discovered",
+            "errors_encountered",
+            "processing_time",
+            "queue_size",
+        ]
+    )
 
 
 class ExportConfig(BaseModel):
     """Data export configuration"""
+
     default_format: str = "parquet"
     output_directory: str = "./data/exports"
     compression: str = "snappy"
@@ -232,8 +254,10 @@ class ExportConfig(BaseModel):
 # Main Configuration Container
 # ============================================================================
 
+
 class AppConfig(BaseModel):
     """Complete application configuration"""
+
     environment: Environment = Environment.DEVELOPMENT
 
     # Component configurations
@@ -261,6 +285,7 @@ class AppConfig(BaseModel):
 # Configuration Manager (Singleton)
 # ============================================================================
 
+
 class ConfigManager:
     """
     Unified configuration manager with clear precedence and validation.
@@ -276,10 +301,10 @@ class ConfigManager:
         redis_port = config.redis.port
     """
 
-    _instance: Optional['ConfigManager'] = None
-    _config: Optional[AppConfig] = None
+    _instance: Optional["ConfigManager"] = None
+    _config: AppConfig | None = None
 
-    def __init__(self, config_path: Optional[Path] = None, env_override: Optional[Environment] = None):
+    def __init__(self, config_path: Path | None = None, env_override: Environment | None = None):
         """
         Initialize configuration manager.
 
@@ -292,7 +317,7 @@ class ConfigManager:
         self._load_config()
 
     @classmethod
-    def get_instance(cls, reset: bool = False) -> 'ConfigManager':
+    def get_instance(cls, reset: bool = False) -> "ConfigManager":
         """Get singleton instance"""
         if cls._instance is None or reset:
             cls._instance = cls()
@@ -311,7 +336,7 @@ class ConfigManager:
         config_dict = self._apply_env_overrides(yaml_config)
 
         # Step 4: Set environment
-        config_dict['environment'] = environment
+        config_dict["environment"] = environment
 
         # Step 5: Validate and create config object
         self._config = AppConfig(**config_dict)
@@ -336,7 +361,7 @@ class ConfigManager:
             print(f"Warning: Config file not found at {config_path}, using defaults")
             return {}
 
-        with open(config_path, 'r') as f:
+        with open(config_path) as f:
             return yaml.safe_load(f) or {}
 
     def _apply_env_overrides(self, yaml_config: dict[str, Any]) -> dict[str, Any]:
@@ -344,44 +369,54 @@ class ConfigManager:
         config = yaml_config.copy()
 
         # Database configuration (support both DB_* and POSTGRES_* prefixes)
-        db_config = config.get('database', {}) if 'database' in config else config.get('postgres', {})
-        db_config['host'] = os.getenv('DB_HOST') or os.getenv('POSTGRES_HOST') or db_config.get('host', 'localhost')
-        db_config['port'] = int(os.getenv('DB_PORT') or os.getenv('POSTGRES_PORT') or db_config.get('port', 5432))
-        db_config['database'] = os.getenv('DB_NAME') or os.getenv('POSTGRES_DB') or db_config.get('database', 'scraping_db')
-        db_config['user'] = os.getenv('DB_USER') or os.getenv('POSTGRES_USER') or db_config.get('user', 'postgres')
-        db_config['password'] = os.getenv('DB_PASSWORD') or os.getenv('POSTGRES_PASSWORD') or db_config.get('password')
-        config['database'] = db_config
+        db_config = config.get("database", {}) if "database" in config else config.get("postgres", {})
+        db_config["host"] = os.getenv("DB_HOST") or os.getenv("POSTGRES_HOST") or db_config.get("host", "localhost")
+        db_config["port"] = int(os.getenv("DB_PORT") or os.getenv("POSTGRES_PORT") or db_config.get("port", 5432))
+        db_config["database"] = (
+            os.getenv("DB_NAME") or os.getenv("POSTGRES_DB") or db_config.get("database", "scraping_db")
+        )
+        db_config["user"] = os.getenv("DB_USER") or os.getenv("POSTGRES_USER") or db_config.get("user", "postgres")
+        db_config["password"] = os.getenv("DB_PASSWORD") or os.getenv("POSTGRES_PASSWORD") or db_config.get("password")
+        config["database"] = db_config
 
         # Redis configuration
-        redis_config = config.get('redis', {})
-        redis_config['url'] = os.getenv('REDIS_URL') or redis_config.get('url')
-        redis_config['host'] = os.getenv('REDIS_HOST') or redis_config.get('host', 'localhost')
-        redis_config['port'] = int(os.getenv('REDIS_PORT') or redis_config.get('port', 6379))
-        redis_config['password'] = os.getenv('REDIS_PASSWORD') or redis_config.get('password')
-        config['redis'] = redis_config
+        redis_config = config.get("redis", {})
+        redis_config["url"] = os.getenv("REDIS_URL") or redis_config.get("url")
+        redis_config["host"] = os.getenv("REDIS_HOST") or redis_config.get("host", "localhost")
+        redis_config["port"] = int(os.getenv("REDIS_PORT") or redis_config.get("port", 6379))
+        redis_config["password"] = os.getenv("REDIS_PASSWORD") or redis_config.get("password")
+        config["redis"] = redis_config
 
         # Kafka configuration
-        kafka_config = config.get('kafka', {})
-        kafka_config['bootstrap_servers'] = os.getenv('KAFKA_BOOTSTRAP_SERVERS') or kafka_config.get('bootstrap_servers', 'localhost:9092')
-        kafka_config['topic'] = os.getenv('KAFKA_TOPIC') or kafka_config.get('topic', 'scraped-items')
+        kafka_config = config.get("kafka", {})
+        kafka_config["bootstrap_servers"] = os.getenv("KAFKA_BOOTSTRAP_SERVERS") or kafka_config.get(
+            "bootstrap_servers", "localhost:9092"
+        )
+        kafka_config["topic"] = os.getenv("KAFKA_TOPIC") or kafka_config.get("topic", "scraped-items")
 
         # SASL/SSL configuration
-        kafka_config['security_protocol'] = os.getenv('KAFKA_SECURITY_PROTOCOL') or kafka_config.get('security_protocol')
-        kafka_config['sasl_mechanism'] = os.getenv('KAFKA_SASL_MECHANISM') or kafka_config.get('sasl_mechanism')
-        kafka_config['sasl_username'] = os.getenv('KAFKA_SASL_USERNAME') or kafka_config.get('sasl_username')
-        kafka_config['sasl_password'] = os.getenv('KAFKA_SASL_PASSWORD') or kafka_config.get('sasl_password')
-        config['kafka'] = kafka_config
+        kafka_config["security_protocol"] = os.getenv("KAFKA_SECURITY_PROTOCOL") or kafka_config.get(
+            "security_protocol"
+        )
+        kafka_config["sasl_mechanism"] = os.getenv("KAFKA_SASL_MECHANISM") or kafka_config.get("sasl_mechanism")
+        kafka_config["sasl_username"] = os.getenv("KAFKA_SASL_USERNAME") or kafka_config.get("sasl_username")
+        kafka_config["sasl_password"] = os.getenv("KAFKA_SASL_PASSWORD") or kafka_config.get("sasl_password")
+        config["kafka"] = kafka_config
 
         # Logging configuration
-        logging_config = config.get('logging', {})
-        logging_config['level'] = os.getenv('LOG_LEVEL') or logging_config.get('level', 'INFO')
-        config['logging'] = logging_config
+        logging_config = config.get("logging", {})
+        logging_config["level"] = os.getenv("LOG_LEVEL") or logging_config.get("level", "INFO")
+        config["logging"] = logging_config
 
         # Monitoring configuration
-        monitoring_config = config.get('monitoring', {})
-        monitoring_config['metrics_port'] = int(os.getenv('METRICS_PORT') or monitoring_config.get('metrics_port', 8000))
-        monitoring_config['metrics_interval'] = int(os.getenv('METRICS_INTERVAL') or monitoring_config.get('metrics_interval', 60))
-        config['monitoring'] = monitoring_config
+        monitoring_config = config.get("monitoring", {})
+        monitoring_config["metrics_port"] = int(
+            os.getenv("METRICS_PORT") or monitoring_config.get("metrics_port", 8000)
+        )
+        monitoring_config["metrics_interval"] = int(
+            os.getenv("METRICS_INTERVAL") or monitoring_config.get("metrics_interval", 60)
+        )
+        config["monitoring"] = monitoring_config
 
         return config
 
@@ -457,7 +492,7 @@ class ConfigManager:
         """Export configuration as dictionary"""
         return self.config.dict()
 
-    def to_yaml(self, file_path: Optional[Path] = None) -> str:
+    def to_yaml(self, file_path: Path | None = None) -> str:
         """
         Export configuration as YAML.
 
@@ -470,7 +505,7 @@ class ConfigManager:
         yaml_str = yaml.dump(self.to_dict(), default_flow_style=False, sort_keys=False)
 
         if file_path:
-            with open(file_path, 'w') as f:
+            with open(file_path, "w") as f:
                 f.write(yaml_str)
 
         return yaml_str
@@ -479,6 +514,7 @@ class ConfigManager:
 # ============================================================================
 # Backward Compatibility Layer
 # ============================================================================
+
 
 class Config:
     """
@@ -491,10 +527,11 @@ class Config:
     def get_instance():
         """Get ConfigManager instance (backward compatible)"""
         import warnings
+
         warnings.warn(
             "Config.get_instance() is deprecated. Use ConfigManager.get_instance() instead.",
             DeprecationWarning,
-            stacklevel=2
+            stacklevel=2,
         )
         return ConfigManager.get_instance()
 
@@ -502,6 +539,7 @@ class Config:
 # ============================================================================
 # Convenience Functions
 # ============================================================================
+
 
 def get_config() -> ConfigManager:
     """Get configuration manager instance"""
