@@ -272,7 +272,7 @@ async fn ingest(
 
     // Build and compile JSON schema for validation
     let schema_def = build_scraped_item_schema();
-    let schema = JSONSchema::options()
+    let schema_validator = JSONSchema::options()
         .with_draft(Draft::Draft7)
         .compile(&schema_def)
         .context("Failed to compile JSON schema")?;
@@ -344,7 +344,7 @@ async fn ingest(
                     match serde_json::from_slice::<Value>(payload) {
                         Ok(json_value) => {
                             // CRITICAL: Validate message against schema before processing
-                            match schema.validate(&json_value) {
+                            match schema_validator.validate(&json_value) {
                                 Ok(_) => {
                                     // Signal: response_received - Track HTTP status (default 200 for successful parse)
                                     scrapy_metrics.response_received(200).await.ok();

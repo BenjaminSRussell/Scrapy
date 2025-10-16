@@ -46,7 +46,7 @@ redis = { version = "0.27", features = ["tokio-comp", "connection-manager"] }
 dotenv = "0.15"
 
 # JSON Schema validation
-jsonschema = "0.26"
+jsonschema = "0.17"
 
 [profile.release]
 opt-level = 3
