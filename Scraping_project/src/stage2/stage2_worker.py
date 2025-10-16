@@ -309,7 +309,7 @@ class Stage2Worker:
 
         try:
             # Run YAKE in thread pool to avoid blocking
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             keywords = await loop.run_in_executor(None, self._extract_keywords_sync, text, is_heavy)
             return keywords
         except Exception as e:

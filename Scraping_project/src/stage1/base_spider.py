@@ -2,24 +2,21 @@
 
 import hashlib
 import logging
-import os
 import time
 from collections import deque
 from collections.abc import Callable, Iterator
 from datetime import datetime
 from typing import Any
-from urllib.parse import ParseResult, parse_qs, urlencode, urlparse
+from urllib.parse import urlparse
 
-import redis  # type: ignore[import]
 import scrapy
 from scrapy.http import Request, Response
 from scrapy.spidermiddlewares.httperror import HttpError
 from twisted.internet.error import DNSLookupError, TCPTimedOutError, TimeoutError
 
-from src.common.config import Config
-from src.common.delta_lake import DeltaLakeManager
-from src.common.postgres_manager import PostgresManager
-from src.common.url_extractor import URLExtractor
+from src.common.config_manager import ConfigManager
+from src.common.storage_manager import StorageManager
+from src.common.url_processor import URLProcessor
 from src.items import OffsiteCandidateItem
 from src.stage1.js_detection import JSDetector
 
@@ -75,26 +72,17 @@ class BaseSpider(scrapy.Spider):
         # Maintain backward-compatible alias used in tests
         self.ignored_extensions = list(self.IGNORED_EXTENSIONS)
 
-        # Load configuration
-        config_instance = Config.get_instance()
-        self.config = config_instance._config
+        # Load configuration using new ConfigManager
+        self.config_manager = ConfigManager.get_instance()
+        self.config = self.config_manager.config
 
-        # Shared Redis client for URL de-duplication
-        redis_config = self.config.get("redis", {})
-        redis_host = os.getenv("REDIS_HOST", redis_config.get("host", "localhost"))
-        redis_port = int(os.getenv("REDIS_PORT", redis_config.get("port", 6379)))
+        # Initialize unified storage manager
+        self.storage = StorageManager.get_instance()
 
-        if os.getenv("REDIS_URL") == "fakeredis://":
-            import fakeredis
-
-            self.redis_client = fakeredis.FakeStrictRedis(decode_responses=False)
-        else:
-            self.redis_client = redis.Redis(
-                host=redis_host,
-                port=redis_port,
-                db=redis_config.get("db", 0),
-                decode_responses=False,  # Work with bytes for efficiency
-            )
+        # Backward compatibility: expose storage backends directly
+        self.delta = self.storage.delta
+        self.postgres = self.storage.postgres
+        self.redis_client = self.storage.redis if hasattr(self.storage.redis, 'redis') else self.storage.redis
 
         # Spider-specific Redis key storing URL hashes
         self.url_hashes_key = f"{self.name}:url_hashes"
@@ -116,9 +104,11 @@ class BaseSpider(scrapy.Spider):
             "invalid_urls": 0,
         }
 
-        # Initialize managers
-        self.delta = DeltaLakeManager.get_instance()
-        self.postgres = PostgresManager.get_instance()
+        # Initialize URL processor for centralized URL operations
+        self.url_processor = URLProcessor(
+            base_url="",  # Will be set per response
+            allowed_domains=self.allowed_domains,
+        )
 
         # Performance metrics
         self.perf_start_time = datetime.now()
@@ -136,12 +126,10 @@ class BaseSpider(scrapy.Spider):
         self.last_metric_update = time.time()
 
         # Minimum JS detector confidence before flagging a page
-        self.js_confidence_threshold = self.config.get("stage1", {}).get("js_confidence_threshold", 0.7)
+        self.js_confidence_threshold = self.config_manager.stage1.js_confidence_threshold
 
-        # Batch size falls back to 50 if settings unavailable
-        self.batch_size = (
-            self.settings.getint("DELTA_BATCH_SIZE", 50) if hasattr(self, "settings") and self.settings else 50
-        )
+        # Batch size from configuration
+        self.batch_size = self.config_manager.stage1.batch_size
 
         # Optional depth control (tests may set max_depth dynamically)
         self.max_depth = self.settings.getint("MAX_DEPTH") if hasattr(self, "settings") and self.settings else None
@@ -180,55 +168,23 @@ class BaseSpider(scrapy.Spider):
         logger.warning(f"🚀 [{self.name}]: Yielded {request_count} total requests from start()")
 
     def _hash_url(self, url: str) -> str:
-        """Return the full SHA256 hash of a URL for deduplication."""
-        return hashlib.sha256(url.encode("utf-8")).hexdigest()
+        """Return the full SHA256 hash of a URL for deduplication.
 
-    @staticmethod
-    def normalize_url(url: str) -> str:
-        """Normalize a URL for consistency.
+        Normalizes URL before hashing to ensure consistent hashes for equivalent URLs.
+        """
+        # Normalize URL first to ensure consistent hashes
+        normalized = self.normalize_url(url)
+        return hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:16]
+
+    def normalize_url(self, url: str) -> str:
+        """Normalize a URL for consistency using URLProcessor.
 
         - Lowercase scheme and hostname
         - Remove fragment
         - Remove common tracking parameters
         """
-        try:
-            parsed = urlparse(url)
-
-            # Reconstruct query string without tracking parameters
-            query_params = parse_qs(parsed.query)
-
-            # List of trackers to remove (case-insensitive)
-            trackers_to_remove = [
-                "utm_source",
-                "utm_medium",
-                "utm_campaign",
-                "utm_term",
-                "utm_content",
-                "gclid",
-                "fbclid",
-            ]
-
-            # Filter out tracking parameters
-            filtered_params = {k: v for k, v in query_params.items() if k.lower() not in trackers_to_remove}
-
-            # Rebuild the URL
-            new_query = urlencode(filtered_params, doseq=True)
-
-            # Create a new ParseResult tuple
-            normalized = ParseResult(
-                scheme=parsed.scheme.lower(),
-                netloc=parsed.netloc.lower(),
-                path=parsed.path,
-                params=parsed.params,
-                query=new_query,
-                fragment="",  # Remove fragment
-            )
-
-            return normalized.geturl()
-
-        except Exception:
-            # If parsing fails, return the original URL
-            return url
+        normalized = self.url_processor.normalize_url(url)
+        return normalized or url
 
     def _load_seed_urls(self):
         """Load all seed URLs from Delta Lake, bypassing Redis check."""
@@ -439,16 +395,17 @@ class BaseSpider(scrapy.Spider):
         return result["requires_js"], result["confidence"]
 
     def _extract_urls(self, response: Response) -> list[str]:
-        """Extract URLs using centralized URLExtractor.
+        """Extract URLs using centralized URLProcessor.
 
         Args:
             response: Scrapy Response object
 
         Returns:
-            List of discovered URLs
+            List of discovered URLs (normalized)
         """
-        extractor = URLExtractor(base_url=response.url, allowed_domains=self.allowed_domains)
-        discovered_urls = extractor.discover_all_urls(response)
+        # Update URL processor base URL for this response
+        self.url_processor.base_url = response.url
+        discovered_urls = self.url_processor.extractor.discover_all_urls(response)
         return [self.normalize_url(url) for url in discovered_urls]
 
     def _process_discovered_urls(self, response: Response, discovered_urls: list[str], depth: int) -> Iterator:
@@ -456,30 +413,10 @@ class BaseSpider(scrapy.Spider):
         if not discovered_urls:
             return
 
-        # Batch Redis operations using pipeline
-        pipeline = self.redis_client.pipeline()
-        url_hash_map = {}
+        new_urls, url_hash_map = self._deduplicate_urls(discovered_urls)
 
-        # First pass: hash all URLs and check existence in batch
-        for url in discovered_urls:
-            url_hash = self._hash_url(url)
-            url_hash_map[url] = url_hash
-            pipeline.sismember(self.url_hashes_key, url_hash)
-
-        # Execute batch check
-        existence_results = pipeline.execute()
-
-        # Second pass: add new URLs in batch
-        new_urls = []
-        for url, exists in zip(discovered_urls, existence_results, strict=False):
-            if not exists:
-                url_hash = url_hash_map[url]
-                pipeline.sadd(self.url_hashes_key, url_hash)
-                new_urls.append(url)
-
-        # Execute batch add
-        if new_urls:
-            pipeline.execute()
+        if not new_urls:
+            return
 
         # Categorize URLs for downstream handling
         html_candidates = []
@@ -532,6 +469,37 @@ class BaseSpider(scrapy.Spider):
                 dont_filter=False,
             )
             logger.debug(f"[K3 HTML] Queued HTML candidate: {url[:80]}")
+
+    def _deduplicate_urls(self, urls: list[str]) -> tuple[list[str], dict[str, str]]:
+        """Deduplicate provided URLs using Redis set operations."""
+        if not urls:
+            return [], {}
+
+        pipeline = self.redis_client.pipeline()
+        url_hash_map: dict[str, str] = {}
+
+        for url in urls:
+            url_hash = self._hash_url(url)
+            url_hash_map[url] = url_hash
+            pipeline.sismember(self.url_hashes_key, url_hash)
+
+        existence_results = pipeline.execute()
+
+        new_urls: list[str] = []
+
+        for url, exists in zip(urls, existence_results, strict=False):
+            if not exists:
+                url_hash = url_hash_map[url]
+                pipeline.sadd(self.url_hashes_key, url_hash)
+                new_urls.append(url)
+
+        if new_urls:
+            pipeline.execute()
+        else:
+            pipeline.reset()
+
+        new_url_hashes = {url: url_hash_map[url] for url in new_urls}
+        return new_urls, new_url_hashes
 
     def _create_offsite_item(self, response: Response, url: str) -> OffsiteCandidateItem:
         """Create an offsite candidate item with context."""

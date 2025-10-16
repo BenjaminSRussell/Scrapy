@@ -389,7 +389,7 @@ class URLExtractor:
                 if not domain_matched:
                     return False
 
-            # Skip placeholder/template domains
+            # Skip placeholder/template domains (unless explicitly allowed)
             placeholder_domains = [
                 "example.com",
                 "example.org",
@@ -398,8 +398,10 @@ class URLExtractor:
                 "test.com",
                 "domain.com",
             ]
-            if any(placeholder in parsed.netloc for placeholder in placeholder_domains):
-                return False
+            # Only block placeholders if they're NOT in allowed_domains
+            if not self.allowed_domains:
+                if any(placeholder in parsed.netloc for placeholder in placeholder_domains):
+                    return False
 
             return True
 

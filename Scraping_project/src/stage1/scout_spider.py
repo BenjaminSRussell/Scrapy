@@ -8,27 +8,28 @@ from urllib.parse import urlparse
 import scrapy
 from scrapy.http import Response
 
-from src.common.delta_lake import get_delta_manager as _core_get_delta_manager
-from src.common.postgres_manager import (
-    get_postgres_manager as _core_get_postgres_manager,
-)
 from src.common.spider_config import get_spider_settings
+from src.common.storage_manager import get_delta, get_postgres
 from src.common.url_extractor import URLExtractor
 from src.stage1.base_spider import BaseSpider
+
+
+# Backward compatibility aliases
+def get_delta_manager(*args, **kwargs):
+    """Proxy to StorageManager delta backend (patched in tests)."""
+    return get_delta()
+
+def get_postgres_manager(*args, **kwargs):
+    """Proxy to StorageManager postgres backend (patched in tests)."""
+    return get_postgres()
+
+# Legacy proxies removed - use StorageManager directly
+_core_get_delta_manager = get_delta_manager
+_core_get_postgres_manager = get_postgres_manager
 
 logger = logging.getLogger(__name__)
 
 
-def get_delta_manager(*args, **kwargs):
-    """Proxy to the shared delta manager factory (patched in tests)."""
-
-    return _core_get_delta_manager(*args, **kwargs)
-
-
-def get_postgres_manager(*args, **kwargs):
-    """Proxy to the shared postgres manager factory (patched in tests)."""
-
-    return _core_get_postgres_manager(*args, **kwargs)
 
 
 class ScoutSpider(BaseSpider):
@@ -118,30 +119,8 @@ class ScoutSpider(BaseSpider):
         if not discovered_urls:
             return
 
-        # Check all URLs at once in Redis
-        pipeline = self.redis_client.pipeline()
-        url_hash_map = {}
-
-        # First pass: hash all URLs and check existence in batch
-        for url in discovered_urls:
-            url_hash = self._hash_url(url)
-            url_hash_map[url] = url_hash
-            pipeline.sismember(self.url_hashes_key, url_hash)
-
-        # Execute batch check
-        existence_results = pipeline.execute()
-
-        # Second pass: add new URLs in batch
-        new_urls = []
-        for url, exists in zip(discovered_urls, existence_results, strict=False):
-            if not exists:
-                url_hash = url_hash_map[url]
-                pipeline.sadd(self.url_hashes_key, url_hash)
-                new_urls.append(url)
-
-        # Execute batch add
-        if new_urls:
-            pipeline.execute()
+        # Check all URLs at once in Redis via BaseSpider helper
+        new_urls, _ = self._deduplicate_urls(discovered_urls)
 
         # Process new URLs only
         depth = response.meta.get("depth", 0)

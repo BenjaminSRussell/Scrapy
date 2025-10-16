@@ -173,7 +173,7 @@ kafka:
     dead_letter: scraped-items-dlq  # Dead letter queue for invalid messages
   producer:
     compression_type: snappy
-    acks: 1  # 0=no ack, 1=leader ack, all=all replicas ack
+    acks: "1"  # 0=no ack, 1=leader ack, all=all replicas ack
     retries: 3
   consumer:
     group_id: scraping-pipeline

@@ -28,11 +28,11 @@ class TestBaseSpiderInit:
     @pytest.mark.stage1
     def test_init_loads_delta_lake(self, mock_spider_crawler):
         """Test spider initializes Delta Lake manager."""
-        with patch("src.stage1.base_spider.DeltaLakeManager"):
-            spider = BaseSpider.from_crawler(mock_spider_crawler)
+        spider = BaseSpider.from_crawler(mock_spider_crawler)
 
-            # Should have initialized Delta Lake
-            assert hasattr(spider, "delta")
+        # Should have initialized Delta Lake via StorageManager
+        assert hasattr(spider, "delta")
+        assert hasattr(spider, "storage")
 
     @pytest.mark.unit
     @pytest.mark.stage1
@@ -225,8 +225,13 @@ class TestBaseSpiderErrorHandling:
         """Test spider handles 404 errors gracefully."""
         spider = BaseSpider()
 
+        # Create request first, then response with proper meta
+        request = Request(url="https://example.com/notfound", meta={"depth": 0})
         response = HtmlResponse(
-            url="https://example.com/notfound", status=404, body=b"<html><body>Not Found</body></html>"
+            url="https://example.com/notfound",
+            status=404,
+            body=b"<html><body>Not Found</body></html>",
+            request=request
         )
 
         # Should handle error without crashing
@@ -241,8 +246,13 @@ class TestBaseSpiderErrorHandling:
         """Test spider handles server errors."""
         spider = BaseSpider()
 
+        # Create request first, then response with proper meta
+        request = Request(url="https://example.com/error", meta={"depth": 0})
         response = HtmlResponse(
-            url="https://example.com/error", status=500, body=b"<html><body>Server Error</body></html>"
+            url="https://example.com/error",
+            status=500,
+            body=b"<html><body>Server Error</body></html>",
+            request=request
         )
 
         # Should handle gracefully
@@ -319,8 +329,14 @@ class TestBaseSpiderMetrics:
         spider.crawler = Mock()
         spider.crawler.stats = Mock()
 
-        # Simulate scraping
-        response = HtmlResponse(url="https://example.com", body=b"<html></html>")
+        # Simulate scraping - create request with meta
+        request = Request(url="https://example.com", meta={"depth": 0})
+        response = HtmlResponse(
+            url="https://example.com",
+            body=b"<html></html>",
+            request=request,
+            headers={b"Content-Type": b"text/html"}
+        )
         spider.parse(response)
 
         # Should have incremented counter (depending on implementation)

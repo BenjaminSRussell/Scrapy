@@ -1,0 +1,141 @@
+# Entity Summarization Configuration Example
+# Copy this to your main config file (development.yml or production.yml)
+
+# Stage 4: Entity-Centric Summarization Pipeline
+entity_summarization:
+  # Model Configuration
+  # -------------------
+
+  # Sentence embedding model for semantic deduplication
+  # Options:
+  #   - "sentence-transformers/all-MiniLM-L6-v2" (fast, 90MB, good quality)
+  #   - "sentence-transformers/all-mpnet-base-v2" (slower, 420MB, best quality)
+  #   - "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2" (multilingual)
+  embedding_model: "sentence-transformers/all-MiniLM-L6-v2"
+
+  # Abstractive summarization model
+  # Options:
+  #   - "facebook/bart-large-cnn" (best quality, 1.6GB)
+  #   - "facebook/bart-base" (faster, smaller, 560MB)
+  #   - "google/pegasus-xsum" (alternative, good for extractive-like summaries)
+  summarization_model: "facebook/bart-large-cnn"
+
+  # Semantic Deduplication Parameters
+  # ----------------------------------
+
+  # Cosine similarity threshold for clustering similar facts (0.0 - 1.0)
+  # Higher values = more aggressive deduplication (fewer, more unique facts)
+  # Lower values = less deduplication (more facts retained)
+  # Recommended: 0.80 - 0.90
+  similarity_threshold: 0.85
+
+  # Fact Extraction Parameters
+  # ---------------------------
+
+  # Minimum character length for a valid fact
+  # Facts shorter than this are discarded (likely fragments)
+  min_fact_length: 20
+
+  # Maximum character length for a fact
+  # Facts longer than this are truncated or split
+  max_fact_length: 500
+
+  # Summarization Parameters
+  # -------------------------
+
+  # Maximum length of generated summary (in tokens)
+  # Typical values: 200-400 tokens (~150-300 words)
+  summary_max_length: 300
+
+  # Minimum length of generated summary (in tokens)
+  # Ensures summaries are substantive
+  summary_min_length: 100
+
+  # Processing Parameters
+  # ---------------------
+
+  # Number of documents to process in each batch
+  # Higher values = better throughput, more memory usage
+  # Recommended: 50-100 for CPU, 100-200 for GPU
+  batch_size: 100
+
+  # Device for model inference
+  # -1 = CPU (slower, no GPU required)
+  # 0 = GPU:0 (first GPU, fast)
+  # 1 = GPU:1 (second GPU, for multi-GPU setups)
+  device: -1
+
+  # Storage Configuration
+  # ---------------------
+
+  # Delta Lake table name for entity summaries
+  delta_table_name: "entity_summaries"
+
+  # Write mode for Delta Lake
+  # "append" = add new summaries (recommended)
+  # "overwrite" = replace all summaries (use with caution)
+  delta_write_mode: "append"
+
+  # Worker Configuration
+  # --------------------
+
+  # Input source for entity worker
+  # "delta" = batch processing from Delta Lake
+  # "kafka" = streaming from Kafka topic
+  input_source: "delta"
+
+  # Delta Lake input table (for delta mode)
+  delta_input_table: "stage3_analytics"
+
+  # Kafka input topic (for kafka mode)
+  kafka_input_topic: "final_categorized"
+
+  # Kafka consumer group ID
+  kafka_consumer_group: "entity-worker-group"
+
+  # Advanced Options
+  # ----------------
+
+  # Enable chronological date prefixes in summarization input
+  # When true, facts are prepended with "(YYYY-MM-DD): " to guide the model
+  enable_date_prefixes: true
+
+  # Date format for chronological prefixes
+  # Formats: "%Y-%m-%d", "%B %d, %Y", etc.
+  date_format: "%Y-%m-%d"
+
+  # Enable source citation embedding
+  # When true, inline citations [1], [2], etc. are added to summaries
+  enable_citations: true
+
+  # Citation style
+  # "inline" = [1], [2] in text
+  # "superscript" = ¹, ² in text (requires unicode support)
+  # "footnote" = numbered footnotes at end
+  citation_style: "inline"
+
+  # Logging Configuration
+  # ---------------------
+
+  # Log level for entity summarization components
+  # Options: DEBUG, INFO, WARNING, ERROR
+  log_level: "INFO"
+
+  # Enable detailed progress logging
+  verbose: true
+
+
+# Example: Production Configuration with GPU
+# -------------------------------------------
+# Uncomment and modify for production deployment:
+
+# entity_summarization:
+#   embedding_model: "sentence-transformers/all-mpnet-base-v2"  # Best quality
+#   summarization_model: "facebook/bart-large-cnn"
+#   similarity_threshold: 0.88  # Stricter deduplication
+#   batch_size: 200  # Larger batches for GPU
+#   device: 0  # Use first GPU
+#   input_source: "kafka"  # Real-time streaming
+#   kafka_input_topic: "final_categorized"
+#   kafka_consumer_group: "entity-worker-prod"
+#   verbose: false  # Less logging in production

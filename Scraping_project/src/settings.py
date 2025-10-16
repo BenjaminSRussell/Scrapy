@@ -47,12 +47,19 @@ ROBOTSTXT_OBEY = _scrapy_config.get("robotstxt_obey", False)
 ITEM_PIPELINES = _scrapy_config.get(
     "item_pipelines",
     {
-        "src.pipelines.DataValidationPipeline": 100,  # First: Validate and drop invalid items
-        "src.pipelines.DataCleansingPipeline": 200,  # Second: Cleanse and normalize data
-        "src.pipelines.MetadataPipeline": 250,  # Third: Add operational metadata
-        "src.pipelines.KafkaPipeline": 300,  # Fourth: Serialize and publish to Kafka
-        "src.pipelines.OffsiteCandidatePipeline": 800,  # Fifth: Process and save offsite candidates
-        "src.pipelines.GrafanaSummaryPipeline": 900,  # Sixth: Generate content summaries for Grafana
+        # Part 1: High-Integrity Data Ingestion
+        "src.pipelines.DataValidationPipeline": 100,  # Basic field validation
+        "src.pipelines.DataCleansingPipeline": 150,  # Normalize and cleanse data
+        "src.pipelines.SchemaValidationPipeline": 200,  # Pydantic schema validation with type coercion
+        "src.pipelines.MetadataPipeline": 250,  # Add operational metadata
+        "src.pipelines.RecencyScoringPipeline": 300,  # Calculate recency scores for temporal relevance
+        # Part 4: Kafka Decoupling
+        "src.pipelines.KafkaPipeline": 400,  # Publish to validated_items topic for ZSC processing
+        # Aggregation (happens in-memory, doesn't block)
+        "src.pipelines.AggregationPipeline": 500,  # Entity grouping and summarization
+        # Special purpose pipelines
+        "src.pipelines.OffsiteCandidatePipeline": 800,  # Process offsite candidates
+        "src.pipelines.GrafanaSummaryPipeline": 900,  # Generate content summaries for Grafana
     },
 )
 
@@ -232,3 +239,77 @@ IGNORED_EXTENSIONS = [
 
 # Batch size for Delta Lake writes (number of records before writing)
 DELTA_BATCH_SIZE = _scrapy_config.get("delta_batch_size", 50)
+
+# ============================================================================
+# Part 1: Schema Validation Configuration
+# ============================================================================
+# Enable Pydantic-based schema validation with type coercion
+SCHEMA_VALIDATION_ENABLED = _scrapy_config.get("schema_validation_enabled", True)
+
+# Kafka topic for publishing validation failures
+VALIDATION_FAILURES_TOPIC = _scrapy_config.get("validation_failures_topic", "validation_failures")
+
+# ============================================================================
+# Part 3: Recency Scoring Configuration
+# ============================================================================
+# Exponential decay constant (k) for recency scoring
+# Higher values = faster decay. Default 0.01 means ~63% score after 100 days
+RECENCY_DECAY_CONSTANT = _scrapy_config.get("recency_decay_constant", 0.01)
+
+# Default recency score for items without publication_date
+RECENCY_DEFAULT_SCORE = _scrapy_config.get("recency_default_score", 0.5)
+
+# ============================================================================
+# Part 3: Aggregation Pipeline Configuration
+# ============================================================================
+# Enable entity aggregation and LLM summarization
+AGGREGATION_ENABLED = _scrapy_config.get("aggregation_enabled", True)
+
+# Kafka topic for publishing entity summaries
+AGGREGATION_OUTPUT_TOPIC = _scrapy_config.get("aggregation_output_topic", "entity_summaries")
+
+# ============================================================================
+# Part 2: Zero-Shot Classification Configuration
+# ============================================================================
+# ZSC Microservice settings (run separately: python -m src.ml_service)
+# These are loaded from environment variables in the microservice
+
+# Input topic for ZSC (should match KAFKA_TOPIC from KafkaPipeline)
+ZSC_INPUT_TOPIC = _scrapy_config.get("zsc_input_topic", "validated_items")
+
+# Output topic for high-confidence classifications
+ZSC_OUTPUT_TOPIC = _scrapy_config.get("zsc_output_topic", "final_categorized")
+
+# Output topic for low-confidence items requiring human review
+ZSC_LOW_CONF_TOPIC = _scrapy_config.get("zsc_low_conf_topic", "low_confidence_review")
+
+# Minimum confidence threshold for ZSC (0.0 - 1.0)
+ZSC_CONFIDENCE_THRESHOLD = _scrapy_config.get("zsc_confidence_threshold", 0.85)
+
+# Pre-trained NLI model for zero-shot classification
+ZSC_MODEL_NAME = _scrapy_config.get("zsc_model_name", "facebook/bart-large-mnli")
+
+# Device for ZSC inference (-1 = CPU, 0 = GPU:0, etc.)
+ZSC_DEVICE = _scrapy_config.get("zsc_device", -1)
+
+# ============================================================================
+# Part 4: Async ASR Processing Configuration
+# ============================================================================
+# Maximum number of parallel ASR transcription processes
+ASR_MAX_WORKERS = _scrapy_config.get("asr_max_workers", 4)
+
+# Enable ASR middleware (set to False to disable automatic transcription)
+ASR_ENABLED = _scrapy_config.get("asr_enabled", False)
+
+# ============================================================================
+# Updated Kafka Configuration for Multi-Topic Architecture
+# ============================================================================
+# Primary Kafka topic (validated_items) - consumed by ZSC microservice
+KAFKA_TOPIC = _scrapy_config.get("kafka_topic", os.getenv("KAFKA_TOPIC", "validated_items"))
+
+# Note: The system uses multiple Kafka topics for architectural decoupling:
+# - validation_failures: Items that failed schema validation
+# - validated_items: Items that passed validation (consumed by ZSC)
+# - final_categorized: High-confidence categorized items from ZSC
+# - low_confidence_review: Low-confidence items for human auditing
+# - entity_summaries: Aggregated entity summaries from LLM

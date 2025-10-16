@@ -30,7 +30,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 import yaml
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class Environment(str, Enum):
@@ -57,8 +57,8 @@ class DatabaseConfig(BaseModel):
     min_connections: int = 1
     max_connections: int = 10
 
-    @validator("password")
-    def validate_password(cls, v):
+    @field_validator("password")
+    def validate_password(cls, v: str | None) -> str | None:
         """Warn if password is not set in production"""
         if v is None:
             import warnings
@@ -255,6 +255,20 @@ class ExportConfig(BaseModel):
 # ============================================================================
 
 
+class MessageQueuesConfig(BaseModel):
+    """Message queue configuration"""
+
+    stage1_to_stage2: str = "stage1_discovered_urls"
+    stage2_to_stage3: str = "stage2_analyzed_pages"
+    stage2_to_stage4: str = "stage2_large_docs"
+    js_render_queue: str = "stage1_js_render_pending"
+    js_render_results: str = "stage1_js_render_results"
+    stage1_errors: str = "stage1_error_queue"
+    stage2_errors: str = "stage2_error_queue"
+    stage3_errors: str = "stage3_error_queue"
+    stage4_errors: str = "stage4_error_queue"
+
+
 class AppConfig(BaseModel):
     """Complete application configuration"""
 
@@ -276,9 +290,9 @@ class AppConfig(BaseModel):
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
     monitoring: MonitoringConfig = Field(default_factory=MonitoringConfig)
     export: ExportConfig = Field(default_factory=ExportConfig)
+    message_queues: MessageQueuesConfig = Field(default_factory=MessageQueuesConfig)
 
-    class Config:
-        arbitrary_types_allowed = True
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
 # ============================================================================
@@ -326,8 +340,8 @@ class ConfigManager:
     def _load_config(self) -> None:
         """Load configuration from all sources with proper precedence"""
         # Step 1: Determine environment
-        env = self._env_override or os.getenv("ENV", "development")
-        environment = Environment(env)
+        raw_env = self._env_override or os.getenv("ENV", Environment.DEVELOPMENT.value)
+        environment = raw_env if isinstance(raw_env, Environment) else Environment(str(raw_env).lower())
 
         # Step 2: Load YAML configuration
         yaml_config = self._load_yaml_config(environment)
@@ -484,13 +498,44 @@ class ConfigManager:
         """Export configuration"""
         return self.config.export
 
+    @property
+    def message_queues(self) -> MessageQueuesConfig:
+        """Message queues configuration"""
+        return self.config.message_queues
+
+    def get(self, key: str, default: Any = None) -> Any:
+        """Get configuration value by dot-notation key.
+
+        Args:
+            key: Dot-notation key (e.g., 'redis.host', 'stage1.batch_size')
+            default: Default value if key not found
+
+        Returns:
+            Configuration value or default
+
+        Example:
+            config.get('redis.host')  # Returns 'localhost'
+            config.get('stage1.js_confidence_threshold')  # Returns 0.7
+        """
+        parts = key.split(".")
+        value = self.config.model_dump(mode="python")
+
+        for part in parts:
+            if isinstance(value, dict) and part in value:
+                value = value[part]
+            else:
+                return default
+
+        return value
+
     def reload(self) -> None:
         """Reload configuration from sources"""
         self._load_config()
 
     def to_dict(self) -> dict[str, Any]:
         """Export configuration as dictionary"""
-        return self.config.dict()
+        # Use model_dump to properly serialize Enums and other complex types
+        return self.config.model_dump(mode="python")
 
     def to_yaml(self, file_path: Path | None = None) -> str:
         """
@@ -502,7 +547,21 @@ class ConfigManager:
         Returns:
             YAML string representation
         """
-        yaml_str = yaml.dump(self.to_dict(), default_flow_style=False, sort_keys=False)
+        config_dict = self.to_dict()
+
+        # Convert any remaining Enum values to strings
+        def convert_enums(obj):
+            if isinstance(obj, dict):
+                return {k: convert_enums(v) for k, v in obj.items()}
+            elif isinstance(obj, list):
+                return [convert_enums(item) for item in obj]
+            elif isinstance(obj, Enum):
+                return obj.value
+            else:
+                return obj
+
+        config_dict = convert_enums(config_dict)
+        yaml_str = yaml.dump(config_dict, default_flow_style=False, sort_keys=False)
 
         if file_path:
             with open(file_path, "w") as f:

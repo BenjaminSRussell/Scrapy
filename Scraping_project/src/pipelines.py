@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import re
+from collections import defaultdict
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
@@ -22,6 +23,14 @@ try:
 except ImportError:
     KAFKA_AVAILABLE = False
     Producer = None
+
+try:
+    from pydantic import ValidationError
+
+    PYDANTIC_AVAILABLE = True
+except ImportError:
+    PYDANTIC_AVAILABLE = False
+    ValidationError = Exception  # type: ignore
 
 from itemadapter import ItemAdapter
 from scrapy import Spider, signals
@@ -471,7 +480,7 @@ class KafkaPipeline:
 
         except Exception as e:
             logger.error(f"Error processing item for Kafka: {e}")
-            # Don't raise - allow item to continue through pipeline
+            raise DropItem(f"Failed to publish item to Kafka: {e}")
 
         return item
 
@@ -552,6 +561,8 @@ class QueueItemPipeline:
             # Save batch if it reaches BATCH_SIZE
             if len(self.stage2_queue_batch) >= self.BATCH_SIZE:
                 self._save_stage2_queue_batch()
+        else:
+            logger.warning(f"QueueItemPipeline: Received a dict item with no routing metadata: {item}")
 
         # Log progress every 500 items
         if self.items_processed % 500 == 0:
@@ -572,7 +583,7 @@ class QueueItemPipeline:
         try:
             self.delta.write("js_spider_queue", self.js_queue_batch, mode="append")
             logger.info(f"✅ Saved {batch_size} items to js_spider_queue")
-            self.js_queue_batch = []
+            self.js_queue_batch.clear()  # Clear batch on success
         except Exception as e:
             logger.error(f"Failed to save JS queue batch: {e}")
 
@@ -586,7 +597,7 @@ class QueueItemPipeline:
         try:
             self.delta.write("stage2_queue", self.stage2_queue_batch, mode="append")
             logger.info(f"✅ Saved {batch_size} items to stage2_queue")
-            self.stage2_queue_batch = []
+            self.stage2_queue_batch.clear()  # Clear batch on success
         except Exception as e:
             logger.error(f"Failed to save Stage 2 queue batch: {e}")
 
@@ -701,7 +712,7 @@ class OffsiteCandidatePipeline:
             except ImportError:
                 pass
 
-            self.batch = []
+            self.batch.clear()  # Clear batch on success
         except Exception as e:
             logger.error(f"Failed to save offsite candidates batch: {e}")
 
@@ -868,3 +879,541 @@ class GrafanaSummaryPipeline:
             self._generate_and_export_summary(spider)
 
         logger.info(f"GrafanaSummaryPipeline stats - Total items processed: {self.items_processed}")
+
+
+# ============================================================================
+# Part 1: High-Integrity Data Ingestion Pipelines
+# ============================================================================
+
+
+class SchemaValidationPipeline:
+    """High-integrity validation pipeline using Pydantic schemas.
+
+    This pipeline enforces schema-first data validation with explicit type coercion
+    and mandatory field presence checks. It focuses on institutional cost data with
+    strict non-negative float constraints.
+
+    Features:
+    - Pydantic-based schema validation with BaseRecordSchema
+    - Automatic type coercion (currency strings → floats)
+    - Range checks for cost fields (must be ≥ 0)
+    - Kafka publishing of validation failures to validation_failures topic
+    - Sets validation_status=True for items that pass all checks
+
+    Configuration:
+        SCHEMA_VALIDATION_ENABLED: Enable/disable this pipeline (default: True)
+        VALIDATION_FAILURES_TOPIC: Kafka topic for failed items (default: 'validation_failures')
+    """
+
+    PIPELINE_VERSION = "1.0.0"
+
+    def __init__(
+        self,
+        enabled: bool = True,
+        validation_failures_topic: str = "validation_failures",
+    ):
+        """Initialize the schema validation pipeline.
+
+        Args:
+            enabled: Whether validation is enabled
+            validation_failures_topic: Kafka topic for validation failures
+        """
+        if not PYDANTIC_AVAILABLE:
+            raise NotConfigured("Pydantic is required for SchemaValidationPipeline")
+
+        self.enabled = enabled
+        self.validation_failures_topic = validation_failures_topic
+        self.items_validated = 0
+        self.items_dropped = 0
+        self.kafka_producer: KafkaProducer | None = None
+
+    @classmethod
+    def from_crawler(cls, crawler: Crawler) -> "SchemaValidationPipeline":
+        """Factory method to create pipeline from crawler settings.
+
+        Args:
+            crawler: Scrapy crawler instance
+
+        Returns:
+            Configured SchemaValidationPipeline instance
+        """
+        enabled = crawler.settings.getbool("SCHEMA_VALIDATION_ENABLED", True)
+        validation_failures_topic = crawler.settings.get(
+            "VALIDATION_FAILURES_TOPIC", "validation_failures"
+        )
+
+        pipeline = cls(
+            enabled=enabled,
+            validation_failures_topic=validation_failures_topic,
+        )
+
+        # Connect lifecycle methods
+        crawler.signals.connect(pipeline.open_spider, signal=signals.spider_opened)
+        crawler.signals.connect(pipeline.close_spider, signal=signals.spider_closed)
+
+        return pipeline
+
+    def open_spider(self, spider: Spider) -> None:
+        """Initialize Kafka producer for publishing validation failures.
+
+        Args:
+            spider: The spider that was opened
+        """
+        if not KAFKA_AVAILABLE or not self.enabled:
+            logger.warning("SchemaValidationPipeline: Kafka not available or disabled")
+            return
+
+        logger.info(f"Opening SchemaValidationPipeline for spider: {spider.name}")
+
+        # Initialize Kafka producer for validation failures
+        bootstrap_servers = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
+
+        try:
+            config = {
+                "bootstrap.servers": bootstrap_servers,
+                "linger.ms": 10,
+                "compression.type": "snappy",
+                "acks": 1,
+            }
+
+            # Add security settings if present
+            security_protocol = os.getenv("KAFKA_SECURITY_PROTOCOL")
+            if security_protocol:
+                config["security.protocol"] = security_protocol
+
+            sasl_mechanism = os.getenv("KAFKA_SASL_MECHANISM")
+            if sasl_mechanism:
+                config["sasl.mechanism"] = sasl_mechanism
+
+            sasl_username = os.getenv("KAFKA_SASL_USERNAME")
+            if sasl_username:
+                config["sasl.username"] = sasl_username
+
+            sasl_password = os.getenv("KAFKA_SASL_PASSWORD")
+            if sasl_password:
+                config["sasl.password"] = sasl_password
+
+            self.kafka_producer = Producer(config)
+            logger.info("Kafka producer initialized for validation failures")
+        except Exception as e:
+            logger.error(f"Failed to initialize Kafka producer: {e}")
+            self.kafka_producer = None
+
+    def close_spider(self, spider: Spider) -> None:
+        """Flush and close Kafka producer.
+
+        Args:
+            spider: The spider that was closed
+        """
+        logger.info(f"Closing SchemaValidationPipeline for spider: {spider.name}")
+
+        if self.kafka_producer:
+            try:
+                remaining = self.kafka_producer.flush(timeout=30.0)
+                if remaining > 0:
+                    logger.warning(
+                        f"{remaining} validation failure messages not delivered"
+                    )
+            except Exception as e:
+                logger.error(f"Error flushing Kafka producer: {e}")
+
+        logger.info(
+            f"SchemaValidationPipeline stats - Validated: {self.items_validated}, "
+            f"Dropped: {self.items_dropped}"
+        )
+
+    def process_item(self, item: Any, spider: Spider) -> Any:
+        """Validate item against BaseRecordSchema and enforce integrity checks.
+
+        Args:
+            item: The scraped item to validate
+            spider: The spider that yielded the item
+
+        Returns:
+            The validated item with validation_status=True
+
+        Raises:
+            DropItem: If item fails validation
+        """
+        if not self.enabled:
+            return item
+
+        # Skip OffsiteCandidateItem (has different schema)
+        if isinstance(item, OffsiteCandidateItem):
+            return item
+
+        adapter = ItemAdapter(item)
+        item_dict = adapter.asdict()
+
+        # Attempt validation with Pydantic schema
+        try:
+            from src.schemas import BaseRecordSchema
+
+            # Pre-process currency fields for coercion
+            item_dict = self._coerce_currency_fields(item_dict)
+
+            # Validate with Pydantic
+            validated_record = BaseRecordSchema(**item_dict)
+
+            # Mark as validated
+            validated_record.validation_status = True
+
+            # Update item with validated data
+            validated_dict = validated_record.model_dump(mode="json")
+            for key, value in validated_dict.items():
+                adapter[key] = value
+
+            self.items_validated += 1
+
+            if self.items_validated % 1000 == 0:
+                logger.info(
+                    f"SchemaValidation stats - Validated: {self.items_validated}, "
+                    f"Dropped: {self.items_dropped}"
+                )
+
+            return item
+
+        except ValidationError as e:
+            # Extract validation error details
+            self.items_dropped += 1
+
+            # Publish validation failure to Kafka
+            self._publish_validation_failure(item_dict, e, spider)
+
+            # Drop the item
+            raise DropItem(
+                f"Schema validation failed for {item_dict.get('url', 'unknown')}: {e}"
+            )
+
+    def _coerce_currency_fields(self, item_dict: dict[str, Any]) -> dict[str, Any]:
+        """Coerce currency string fields to floats.
+
+        Handles fields like tuition_cost, housing_cost, fees_cost, total_cost.
+        Strips currency symbols ($, £, €, ¥) and commas before conversion.
+
+        Args:
+            item_dict: Item dictionary
+
+        Returns:
+            Item dictionary with coerced currency fields
+        """
+        currency_fields = ["tuition_cost", "housing_cost", "fees_cost", "total_cost"]
+        currency_pattern = re.compile(r"[\$£€¥,\s]+")
+
+        for field in currency_fields:
+            if field in item_dict and isinstance(item_dict[field], str):
+                value = item_dict[field]
+                # Remove currency symbols and commas
+                cleaned = currency_pattern.sub("", value)
+                try:
+                    item_dict[field] = float(cleaned)
+                except ValueError:
+                    logger.warning(
+                        f"Failed to coerce {field}='{value}' to float, leaving as-is"
+                    )
+
+        return item_dict
+
+    def _publish_validation_failure(
+        self, item_dict: dict[str, Any], error: ValidationError, spider: Spider
+    ) -> None:
+        """Publish validation failure event to Kafka.
+
+        Args:
+            item_dict: The item that failed validation
+            error: Pydantic ValidationError
+            spider: The spider instance
+        """
+        if not self.kafka_producer:
+            return
+
+        try:
+            from src.schemas import ValidationFailureRecord
+
+            # Extract first error for simplicity
+            errors = error.errors()
+            if not errors:
+                return
+
+            first_error = errors[0]
+            field_name = ".".join(str(loc) for loc in first_error["loc"])
+            violation_rule = first_error["type"]
+            error_message = first_error["msg"]
+            attempted_value = str(first_error.get("input", ""))
+
+            failure_record = ValidationFailureRecord(
+                url=item_dict.get("url", "unknown"),
+                field_name=field_name,
+                violation_rule=violation_rule,
+                attempted_value=attempted_value,
+                error_message=error_message,
+                spider_name=spider.name,
+                pipeline_version=self.PIPELINE_VERSION,
+            )
+
+            # Serialize and publish
+            message = failure_record.model_dump_json()
+            self.kafka_producer.produce(
+                topic=self.validation_failures_topic,
+                value=message.encode("utf-8"),
+            )
+            self.kafka_producer.poll(0)
+
+            logger.warning(
+                f"Published validation failure to Kafka: {field_name} - {error_message}"
+            )
+
+        except Exception as e:
+            logger.error(f"Failed to publish validation failure: {e}")
+
+
+class RecencyScoringPipeline:
+    """Pipeline for calculating recency-weighted scores for temporal relevance.
+
+    This pipeline applies exponential decay scoring to items based on publication_date,
+    enabling chronologically-aware aggregation and prioritization of fresh content.
+
+    Features:
+    - Exponential decay scoring: S = e^(-k * T)
+    - Configurable decay constant (k) for tuning decay rate
+    - Adds recency_score field [0.0, 1.0] to all items
+    - Handles missing publication_date gracefully (assigns default score)
+
+    Configuration:
+        RECENCY_DECAY_CONSTANT: Decay rate (default: 0.01, ~63% after 100 days)
+        RECENCY_DEFAULT_SCORE: Score for items without publication_date (default: 0.5)
+    """
+
+    def __init__(
+        self,
+        decay_constant: float = 0.01,
+        default_score: float = 0.5,
+    ):
+        """Initialize the recency scoring pipeline.
+
+        Args:
+            decay_constant: Decay rate parameter (k). Higher = faster decay.
+            default_score: Score for items missing publication_date
+        """
+        self.decay_constant = decay_constant
+        self.default_score = default_score
+        self.items_scored = 0
+
+    @classmethod
+    def from_crawler(cls, crawler: Crawler) -> "RecencyScoringPipeline":
+        """Factory method to create pipeline from crawler settings.
+
+        Args:
+            crawler: Scrapy crawler instance
+
+        Returns:
+            Configured RecencyScoringPipeline instance
+        """
+        decay_constant = crawler.settings.getfloat("RECENCY_DECAY_CONSTANT", 0.01)
+        default_score = crawler.settings.getfloat("RECENCY_DEFAULT_SCORE", 0.5)
+
+        return cls(
+            decay_constant=decay_constant,
+            default_score=default_score,
+        )
+
+    def process_item(self, item: Any, spider: Spider) -> Any:
+        """Calculate and add recency_score to item.
+
+        Args:
+            item: The scraped item
+            spider: The spider that yielded the item
+
+        Returns:
+            The item with recency_score added
+        """
+        # Skip OffsiteCandidateItem
+        if isinstance(item, OffsiteCandidateItem):
+            return item
+
+        adapter = ItemAdapter(item)
+
+        # Get publication_date
+        publication_date = adapter.get("publication_date")
+
+        if publication_date:
+            try:
+                from src.common.scoring_metrics import calculate_decay_score
+
+                score = calculate_decay_score(
+                    publication_date=publication_date,
+                    decay_constant=self.decay_constant,
+                )
+                adapter["recency_score"] = score
+            except Exception as e:
+                logger.warning(
+                    f"Failed to calculate recency score for {adapter.get('url')}: {e}"
+                )
+                adapter["recency_score"] = self.default_score
+        else:
+            # No publication_date, use default score
+            adapter["recency_score"] = self.default_score
+
+        self.items_scored += 1
+
+        if self.items_scored % 1000 == 0:
+            logger.info(f"RecencyScoring: Scored {self.items_scored} items")
+
+        return item
+
+
+class AggregationPipeline:
+    """Pipeline for entity grouping and recency-weighted aggregation.
+
+    This pipeline groups items by entity_id and sorts them by recency_score,
+    then triggers batch LLM summarization on spider close.
+
+    Features:
+    - Groups items by entity_id
+    - Sorts within groups by recency_score (descending)
+    - Triggers LLM summarization on spider_closed
+    - LLM prompt prioritizes facts with higher recency_score
+
+    Configuration:
+        AGGREGATION_ENABLED: Enable/disable aggregation (default: True)
+        AGGREGATION_OUTPUT_TOPIC: Kafka topic for summaries (default: 'entity_summaries')
+    """
+
+    def __init__(
+        self,
+        enabled: bool = True,
+        output_topic: str = "entity_summaries",
+    ):
+        """Initialize the aggregation pipeline.
+
+        Args:
+            enabled: Whether aggregation is enabled
+            output_topic: Kafka topic for entity summaries
+        """
+        self.enabled = enabled
+        self.output_topic = output_topic
+        self.entity_groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
+        self.items_aggregated = 0
+
+    @classmethod
+    def from_crawler(cls, crawler: Crawler) -> "AggregationPipeline":
+        """Factory method to create pipeline from crawler settings.
+
+        Args:
+            crawler: Scrapy crawler instance
+
+        Returns:
+            Configured AggregationPipeline instance
+        """
+        enabled = crawler.settings.getbool("AGGREGATION_ENABLED", True)
+        output_topic = crawler.settings.get("AGGREGATION_OUTPUT_TOPIC", "entity_summaries")
+
+        pipeline = cls(enabled=enabled, output_topic=output_topic)
+
+        # Connect to spider_closed signal
+        crawler.signals.connect(pipeline.close_spider, signal=signals.spider_closed)
+
+        return pipeline
+
+    def process_item(self, item: Any, spider: Spider) -> Any:
+        """Group items by entity_id for later summarization.
+
+        Args:
+            item: The scraped item
+            spider: The spider that yielded the item
+
+        Returns:
+            The original item (unmodified)
+        """
+        if not self.enabled:
+            return item
+
+        # Skip OffsiteCandidateItem
+        if isinstance(item, OffsiteCandidateItem):
+            return item
+
+        adapter = ItemAdapter(item)
+        entity_id = adapter.get("entity_id")
+
+        if entity_id:
+            item_dict = adapter.asdict()
+            self.entity_groups[entity_id].append(item_dict)
+            self.items_aggregated += 1
+
+        return item
+
+    def close_spider(self, spider: Spider) -> None:
+        """Trigger batch summarization of aggregated entities.
+
+        This method sorts items within each entity group by recency_score
+        and then generates LLM summaries that prioritize fresher facts.
+
+        Args:
+            spider: The spider that was closed
+        """
+        if not self.enabled:
+            return
+
+        logger.info(f"Closing AggregationPipeline for spider: {spider.name}")
+        logger.info(
+            f"Aggregated {self.items_aggregated} items into "
+            f"{len(self.entity_groups)} entity groups"
+        )
+
+        # Sort items within each group by recency_score (descending)
+        for entity_id, items in self.entity_groups.items():
+            items.sort(key=lambda x: x.get("recency_score", 0.0), reverse=True)
+
+            # Generate summary for this entity
+            summary = self._generate_entity_summary(entity_id, items)
+
+            if summary:
+                logger.info(
+                    f"Entity {entity_id}: Generated summary from {len(items)} items"
+                )
+                # In production, publish summary to Kafka or store in database
+                # For now, just log it
+                logger.debug(f"Summary: {summary[:200]}...")
+
+    def _generate_entity_summary(
+        self, entity_id: str, items: list[dict[str, Any]]
+    ) -> str:
+        """Generate LLM summary for an entity, prioritizing recent facts.
+
+        This is a placeholder for actual LLM integration. In production,
+        this would call an LLM API with a prompt that instructs the model
+        to prioritize information from items with higher recency_score.
+
+        Args:
+            entity_id: Entity identifier
+            items: List of items for this entity, sorted by recency_score desc
+
+        Returns:
+            Generated summary text
+        """
+        # Placeholder implementation
+        # In production, would use OpenAI, Anthropic, or other LLM API
+
+        # Build context with recency weighting in prompt
+        context_parts = []
+        for item in items[:10]:  # Limit to top 10 most recent
+            recency = item.get("recency_score", 0.0)
+            title = item.get("title", "")
+            content = item.get("content", "")[:200]  # Truncate
+            context_parts.append(
+                f"[Recency: {recency:.2f}] {title}: {content}"
+            )
+
+        context = "\n".join(context_parts)
+
+        # Placeholder prompt
+        prompt = f"""Synthesize the following information about entity '{entity_id}'.
+Prioritize facts from entries with higher recency scores (closer to 1.0).
+
+{context}
+
+Summary:"""
+
+        # In production: summary = llm_api.generate(prompt)
+        # For now, return placeholder
+        return f"Summary for {entity_id} based on {len(items)} sources (most recent first)"

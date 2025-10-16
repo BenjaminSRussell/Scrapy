@@ -6,10 +6,8 @@ from typing import Any
 
 from scrapy.http import Response
 
-from src.common.config import Config
 from src.common.hidden_url_extractor import HiddenURLExtractor
 from src.common.spider_config import get_spider_settings
-from src.common.url_value_assessor import URLValueAssessor
 from src.stage1.base_spider import BaseSpider
 
 logger = logging.getLogger(__name__)
@@ -35,10 +33,8 @@ class DeepDiveSpider(BaseSpider):
         """Initialize enhanced depth spider."""
         super().__init__(*args, **kwargs)
 
-        config_instance = Config.get_instance()
-        config = config_instance._config
-        stage1_config = config.get("stage1", {})
-        configured_domains = stage1_config.get("allowed_domains", [])
+        # Configure allowed domains from ConfigManager
+        configured_domains = self.config_manager.stage1.allowed_domains
 
         if configured_domains:
             self.allowed_domains = configured_domains
@@ -46,8 +42,7 @@ class DeepDiveSpider(BaseSpider):
         else:
             logger.info(f"[DEPTH] Using dynamic domains: {self.allowed_domains}")
 
-        # Initialize URL value assessor
-        self.url_assessor = URLValueAssessor()
+        # URL processor (inherited from BaseSpider) includes URL value assessment
 
         # Tracking for depth spider stats
         self.depth_stats = {
@@ -105,8 +100,8 @@ class DeepDiveSpider(BaseSpider):
                 if self.redis_client.sismember(self.url_hashes_key, url_hash):
                     continue
 
-                # Assess URL value
-                assessment = self.url_assessor.assess_url(
+                # Assess URL value using URLProcessor
+                assessment = self.url_processor.assessor.assess_url(
                     url=url,
                     parent_url=response.url,
                     depth=depth + 1,

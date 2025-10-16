@@ -2,20 +2,18 @@
 
 import hashlib
 import logging
-import os
 from collections.abc import AsyncGenerator, Iterator
 from datetime import datetime
 from typing import Any
 from urllib.parse import urljoin
 
-import redis
 import scrapy
 from scrapy.http import Response
 
-from src.common.config import Config
-from src.common.delta_lake import get_delta_manager
+from src.common.config_manager import ConfigManager
 from src.common.js_priority_queue import JSPriorityQueue
 from src.common.spider_config import get_spider_settings
+from src.common.storage_manager import get_delta
 from src.stage1.base_spider import BaseSpider
 
 logger = logging.getLogger(__name__)
@@ -61,26 +59,13 @@ class JavaScriptSpider(scrapy.Spider):
         """Initialize enhanced JavaScript spider with priority queue."""
         super().__init__(*args, **kwargs)
 
-        self.config = Config.get_instance()
-        self.delta = get_delta_manager()
+        # Get configuration and storage from ConfigManager and StorageManager
+        self.config = ConfigManager.get_instance()
+        self.delta = get_delta()
 
-        # Initialize Redis priority queue
-        config_obj = self.config._config if hasattr(self.config, "_config") else {}
-        redis_config = config_obj.get("redis", {})
-        redis_host = os.getenv("REDIS_HOST", redis_config.get("host", "localhost"))
-        redis_port = int(os.getenv("REDIS_PORT", redis_config.get("port", 6379)))
-
-        if os.getenv("REDIS_URL") == "fakeredis://":
-            import fakeredis
-
-            redis_client = fakeredis.FakeStrictRedis(decode_responses=False)
-        else:
-            redis_client = redis.Redis(
-                host=redis_host,
-                port=redis_port,
-                db=redis_config.get("db", 0),
-                decode_responses=False,
-            )
+        # Get Redis client from storage manager
+        from src.common.storage_manager import get_redis
+        redis_client = get_redis()
 
         self.priority_queue = JSPriorityQueue(redis_client, queue_key="js_spider:priority_queue")
 

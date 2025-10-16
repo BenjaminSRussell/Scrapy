@@ -21,7 +21,7 @@ class TestBaseSpiderURLHashing:
         hash2 = spider._hash_url(url)
 
         assert hash1 == hash2
-        assert len(hash1) == 64  # SHA256 produces 64-char hex string
+        assert len(hash1) == 16  # Truncated SHA256 hash (16 chars)
 
     def test_hash_url_uniqueness(self):
         """Test that different URLs produce different hashes."""
@@ -37,8 +37,8 @@ class TestBaseSpiderURLHashing:
         spider = BaseSpider()
         url_hash = spider._hash_url("https://example.com/test")
 
-        # SHA256 produces 64 hex characters
-        assert len(url_hash) == 64
+        # Truncated SHA256 produces 16 hex characters
+        assert len(url_hash) == 16
 
 
 @pytest.mark.unit
@@ -189,24 +189,46 @@ class TestBaseSpiderCounters:
 # ============================================================================
 
 
+class MockRedisPipeline:
+    """Simplified Redis pipeline emulating batched operations."""
+
+    def __init__(self, parent: "MockRedis"):
+        self._parent = parent
+        self._commands: list[tuple[str, str, str]] = []
+
+    def sismember(self, key: str, value: str):
+        self._commands.append(("sismember", key, value))
+        return self
+
+    def sadd(self, key: str, value: str):
+        self._commands.append(("sadd", key, value))
+        return self
+
+    def execute(self):
+        results: list[bool] = []
+
+        for command, _key, value in self._commands:
+            if command == "sismember":
+                results.append(value in self._parent.data)
+            elif command == "sadd":
+                self._parent.data.add(value)
+
+        self._commands.clear()
+        return results
+
+    def reset(self):
+        self._commands.clear()
+        return None
+
+
 class MockRedis:
     """Mock Redis client for testing."""
 
     def __init__(self):
-        self.data = set()
+        self.data: set[str] = set()
 
     def pipeline(self):
-        return self
-
-    def sismember(self, key, value):
-        return self
-
-    def sadd(self, key, value):
-        self.data.add(value)
-        return self
-
-    def execute(self):
-        return [False] * 10  # Return False for all existence checks
+        return MockRedisPipeline(self)
 
     def scard(self, key):
         return len(self.data)

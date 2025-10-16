@@ -622,6 +622,74 @@ class DeltaLakeManager:
 
         return results
 
+    def get_table_schema(self, table_name: str):
+        """Get schema for a Delta table.
+
+        Args:
+            table_name: Name of the table
+
+        Returns:
+            PyArrow Schema object
+        """
+        from deltalake import DeltaTable
+
+        table_path = self.tables.get(table_name)
+        if not table_path:
+            raise ValueError(f"Unknown table: {table_name}")
+
+        if not (table_path / "_delta_log").exists():
+            raise ValueError(f"No data found in {table_name}")
+
+        table = DeltaTable(str(table_path))
+        return table.schema().to_pyarrow()
+
+    def table_exists(self, table_name: str) -> bool:
+        """Check if a table exists.
+
+        Args:
+            table_name: Name of the table
+
+        Returns:
+            True if table exists, False otherwise
+        """
+        table_path = self.tables.get(table_name)
+        if not table_path:
+            return False
+        return (table_path / "_delta_log").exists()
+
+    def delete_table(self, table_name: str):
+        """Delete a Delta table.
+
+        Args:
+            table_name: Name of the table to delete
+        """
+        table_path = self.tables.get(table_name)
+        if table_path and table_path.exists():
+            import shutil
+            shutil.rmtree(table_path)
+            logger.info(f"Deleted table: {table_name}")
+
+    def get_table_history(self, table_name: str) -> list[dict]:
+        """Get history for a Delta table.
+
+        Args:
+            table_name: Name of the table
+
+        Returns:
+            List of history records
+        """
+        from deltalake import DeltaTable
+
+        table_path = self.tables.get(table_name)
+        if not table_path:
+            raise ValueError(f"Unknown table: {table_name}")
+
+        if not (table_path / "_delta_log").exists():
+            return []
+
+        table = DeltaTable(str(table_path))
+        return table.history()
+
     # Class-level instance for singleton pattern
     _instance: "DeltaLakeManager | None" = None
 
@@ -744,13 +812,34 @@ class InMemoryDeltaManager:
         if name in self.tables:
             del self.tables[name]
 
-    def get_table_schema(self, name: str) -> dict[str, str]:
-        """Return a dummy schema for an in-memory table."""
+    def get_table_schema(self, name: str):
+        """Return a dummy schema for an in-memory table.
+
+        Returns an object with a 'fields' attribute compatible with PyArrow schema.
+        """
         if not self.table_exists(name) or not self.tables[name]:
-            return {}
-        # Infer schema from the first record
+            import pyarrow as pa
+            return pa.schema([])
+
+        # Infer schema from the first record and create a PyArrow-compatible schema
+        import pyarrow as pa
         first_record = self.tables[name][0]
-        return {key: str(type(value).__name__) for key, value in first_record.items()}
+        fields = []
+        for key, value in first_record.items():
+            # Map Python types to PyArrow types
+            if isinstance(value, bool):
+                field_type = pa.bool_()
+            elif isinstance(value, int):
+                field_type = pa.int64()
+            elif isinstance(value, float):
+                field_type = pa.float64()
+            elif isinstance(value, str):
+                field_type = pa.string()
+            else:
+                field_type = pa.string()  # Default to string
+            fields.append(pa.field(key, field_type))
+
+        return pa.schema(fields)
 
     def get_table_history(self, name: str) -> list[dict]:
         """Return dummy history for an in--memory table."""

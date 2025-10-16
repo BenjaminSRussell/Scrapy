@@ -461,7 +461,7 @@ def performance_timer():
         def __exit__(self, *args):
             self.elapsed = time.time() - self.start
 
-    return Timer()
+    return Timer
 
 
 # ============================================================================
