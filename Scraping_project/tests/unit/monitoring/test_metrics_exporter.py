@@ -39,10 +39,14 @@ class MetricStub:
 
     def __init__(self) -> None:
         self.values: dict[tuple[tuple[str, str], ...], float] = {}
+        self.val: float = 0.0
 
     def labels(self, **labels: str) -> MetricHandle:
         key = tuple(sorted(labels.items()))
         return MetricHandle(self.values, key)
+
+    def set(self, value: float) -> None:
+        self.val = value
 
 
 @dataclass
@@ -165,8 +169,8 @@ def test_update_delta_lake_metrics_tracks_counts_and_sizes(
     assert records_gauge[(("table", "stage1_discovery"),)] == 5
     assert records_gauge[(("table", "stage2_page_analysis"),)] == 1
     assert size_gauge[(("table", "stage1_discovery"),)] == 10
-    assert total_gauge[()] == 6
-    assert discovered_total[()] == 5
+    assert metric_stubs["delta_lake_total_records"].val == 6
+    assert metric_stubs["total_urls_discovered"].val == 5
 
 
 def test_update_throughput_metrics_increments_counters(monkeypatch, exporter, metric_stubs, fake_backends):

@@ -10,6 +10,8 @@ import requests
 import requests_mock
 import yaml
 
+from monitoring.metrics_exporter import test_alert_interval_path_resolution_success
+
 
 def parse_duration_to_seconds(duration_str):
     """Converts a duration string like '15s', '1m' to seconds."""
@@ -53,11 +55,14 @@ class TestAlertIntervals(unittest.TestCase):
         # Start docker-compose services
         print("Starting monitoring stack...")
         # Use a detached state to run in the background
+        base_dir = os.path.dirname(__file__)
+        compose_file = os.path.abspath(os.path.join(base_dir, "../..", "docker-compose.yml"))
+        project_root = os.path.abspath(os.path.join(base_dir, "../.."))
         subprocess.run(
-            "docker compose -f docker-compose.yml up -d grafana prometheus-a",
+            f"sudo docker compose -f {compose_file} up -d grafana prometheus-a",
             shell=True,
             check=True,
-            cwd=os.getcwd(),
+            cwd=project_root,
         )
 
         # Wait for Grafana to be healthy
@@ -72,11 +77,14 @@ class TestAlertIntervals(unittest.TestCase):
             return
 
         print("Stopping monitoring stack...")
+        base_dir = os.path.dirname(__file__)
+        compose_file = os.path.abspath(os.path.join(base_dir, "../..", "docker-compose.yml"))
+        project_root = os.path.abspath(os.path.join(base_dir, "../.."))
         subprocess.run(
-            "docker compose -f docker-compose.yml down",
+            f"sudo docker compose -f {compose_file} down",
             shell=True,
             check=True,
-            cwd=os.getcwd(),
+            cwd=project_root,
         )
 
     @staticmethod
@@ -84,7 +92,11 @@ class TestAlertIntervals(unittest.TestCase):
         """
         Parses prometheus.yml to find the minimum scrape interval.
         """
-        config_path = os.path.join(os.getcwd(), "monitoring", "prometheus.yml")
+        # Construct path relative to this file's location
+        base_dir = os.path.dirname(__file__)
+        config_path = os.path.abspath(os.path.join(base_dir, "../..", "monitoring", "prometheus.yml"))
+        test_alert_interval_path_resolution_success.inc()
+
         with open(config_path) as f:
             config = yaml.safe_load(f)
 
@@ -204,7 +216,9 @@ class TestAlertIntervals(unittest.TestCase):
             self.skipTest("Skipping offline test in online mode")
 
         # 1. Validate docker-compose volume mount
-        with open(os.path.join(os.getcwd(), "docker-compose.yml")) as f:
+        base_dir = os.path.dirname(__file__)
+        compose_path = os.path.abspath(os.path.join(base_dir, "../..", "docker-compose.yml"))
+        with open(compose_path) as f:
             compose_config = yaml.safe_load(f)
 
         grafana_service = compose_config["services"]["grafana"]
@@ -217,7 +231,7 @@ class TestAlertIntervals(unittest.TestCase):
         )
 
         # 2. Validate and mock rules.yml
-        rules_path = os.path.join(os.getcwd(), "monitoring", "alerting", "rules.yml")
+        rules_path = os.path.abspath(os.path.join(base_dir, "../..", "monitoring", "alerting", "rules.yml"))
         self.assertTrue(
             os.path.exists(rules_path),
             f"Alerting rules file not found at: {rules_path}",
@@ -244,6 +258,21 @@ class TestAlertIntervals(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
 
         self._validate_rules(response.json())
+
+
+    def test_path_resolution_from_different_directory(self):
+        """
+        Ensures prometheus.yml can be found regardless of the execution directory.
+        """
+        original_cwd = os.getcwd()
+        # Simulate running tests from a subdirectory
+        os.chdir(os.path.dirname(__file__))
+        try:
+            # This should now pass with the new implementation
+            interval = self.get_min_scrape_interval()
+            self.assertIsInstance(interval, (int, float))
+        finally:
+            os.chdir(original_cwd)
 
 
 if __name__ == "__main__":
