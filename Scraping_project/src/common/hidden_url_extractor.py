@@ -81,7 +81,9 @@ class HiddenURLExtractor:
         # Log findings
         total_found = sum(len(urls) for urls in results.values())
         if total_found > 0:
-            logger.info(f"[HIDDEN_URLS] Found {total_found} hidden URLs: {dict((k, len(v)) for k, v in results.items())}")
+            logger.info(
+                f"[HIDDEN_URLS] Found {total_found} hidden URLs: {dict((k, len(v)) for k, v in results.items())}"
+            )
 
         return results
 
@@ -279,7 +281,7 @@ class HiddenURLExtractor:
 
     def _extract_urls_from_json(self, data: Any, depth: int = 0) -> set[str]:
         """Recursively extract URLs from JSON structure."""
-        urls = set()
+        urls: set[str] = set()
 
         # Prevent infinite recursion
         if depth > 10:
@@ -287,7 +289,7 @@ class HiddenURLExtractor:
 
         try:
             if isinstance(data, dict):
-                for key, value in data.items():
+                for _key, value in data.items():
                     # Check if value looks like a URL
                     if isinstance(value, str) and self._looks_like_url(value):
                         absolute_url = urljoin(self.base_url, value)
@@ -295,7 +297,7 @@ class HiddenURLExtractor:
                             urls.add(absolute_url)
 
                     # Recurse into nested structures
-                    elif isinstance(value, (dict, list)):
+                    elif isinstance(value, dict | list):
                         urls.update(self._extract_urls_from_json(value, depth + 1))
 
             elif isinstance(data, list):
@@ -305,7 +307,7 @@ class HiddenURLExtractor:
                         if self._is_valid_url(absolute_url):
                             urls.add(absolute_url)
 
-                    elif isinstance(item, (dict, list)):
+                    elif isinstance(item, dict | list):
                         urls.update(self._extract_urls_from_json(item, depth + 1))
 
         except Exception as e:

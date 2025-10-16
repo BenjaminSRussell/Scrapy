@@ -21,18 +21,18 @@ class TestBaseSpiderInit:
         spider = BaseSpider()
 
         assert spider.name is not None
-        assert hasattr(spider, 'allowed_domains')
-        assert hasattr(spider, 'start_urls')
+        assert hasattr(spider, "allowed_domains")
+        assert hasattr(spider, "start_urls")
 
     @pytest.mark.unit
     @pytest.mark.stage1
     def test_init_loads_delta_lake(self, mock_spider_crawler):
         """Test spider initializes Delta Lake manager."""
-        with patch('src.stage1.base_spider.DeltaLakeManager') as mock_delta:
+        with patch("src.stage1.base_spider.DeltaLakeManager"):
             spider = BaseSpider.from_crawler(mock_spider_crawler)
 
             # Should have initialized Delta Lake
-            assert hasattr(spider, 'delta')
+            assert hasattr(spider, "delta")
 
     @pytest.mark.unit
     @pytest.mark.stage1
@@ -41,7 +41,7 @@ class TestBaseSpiderInit:
         spider = BaseSpider.from_crawler(mock_spider_crawler)
 
         # Should have loaded config
-        assert hasattr(spider, 'config')
+        assert hasattr(spider, "config")
 
 
 class TestBaseSpiderURLExtraction:
@@ -57,21 +57,21 @@ class TestBaseSpiderURLExtraction:
 
         assert len(links) > 0
         # Should extract relative and absolute links
-        assert any('/page1' in link for link in links)
-        assert any('external.com' in link for link in links)
+        assert any("/page1" in link for link in links)
+        assert any("external.com" in link for link in links)
 
     @pytest.mark.unit
     @pytest.mark.stage1
     def test_extract_links_filters_ignored_extensions(self, test_html_response):
         """Test link extraction filters out ignored file extensions."""
         spider = BaseSpider()
-        spider.ignored_extensions = ['.jpg', '.png', '.css', '.js']
+        spider.ignored_extensions = [".jpg", ".png", ".css", ".js"]
 
         links = spider.extract_links(test_html_response)
 
         # Should not include images or scripts
-        assert not any(link.endswith('.jpg') for link in links)
-        assert not any(link.endswith('.js') for link in links)
+        assert not any(link.endswith(".jpg") for link in links)
+        assert not any(link.endswith(".js") for link in links)
 
     @pytest.mark.unit
     @pytest.mark.stage1
@@ -89,18 +89,14 @@ class TestBaseSpiderURLExtraction:
         </html>
         """
 
-        response = HtmlResponse(
-            url='https://example.com',
-            body=html.encode('utf-8'),
-            encoding='utf-8'
-        )
+        response = HtmlResponse(url="https://example.com", body=html.encode("utf-8"), encoding="utf-8")
 
         links = spider.extract_links(response)
 
         # Should normalize whitespace and fragments
-        assert 'https://example.com/page1' in links
+        assert "https://example.com/page1" in links
         # Fragment handling depends on implementation
-        assert any('page2' in link for link in links)
+        assert any("page2" in link for link in links)
 
     @pytest.mark.unit
     @pytest.mark.stage1
@@ -120,18 +116,14 @@ class TestBaseSpiderURLExtraction:
         </html>
         """
 
-        response = HtmlResponse(
-            url='https://example.com',
-            body=html.encode('utf-8'),
-            encoding='utf-8'
-        )
+        response = HtmlResponse(url="https://example.com", body=html.encode("utf-8"), encoding="utf-8")
 
         links = spider.extract_links(response)
 
         # Should only extract valid HTTP(S) links
-        assert any('valid' in link for link in links)
-        assert not any('javascript:' in link for link in links)
-        assert not any('mailto:' in link for link in links)
+        assert any("valid" in link for link in links)
+        assert not any("javascript:" in link for link in links)
+        assert not any("mailto:" in link for link in links)
 
 
 class TestBaseSpiderRobotsTxt:
@@ -144,8 +136,8 @@ class TestBaseSpiderRobotsTxt:
         spider = BaseSpider()
 
         # Test with mock robots.txt parser
-        with patch.object(spider, 'is_allowed_by_robots', return_value=False):
-            url = 'https://example.com/disallowed'
+        with patch.object(spider, "is_allowed_by_robots", return_value=False):
+            url = "https://example.com/disallowed"
 
             # Should not crawl disallowed URL
             allowed = spider.is_allowed_by_robots(url)
@@ -158,8 +150,8 @@ class TestBaseSpiderRobotsTxt:
         spider = BaseSpider()
 
         # When robots.txt doesn't exist, should allow all
-        with patch.object(spider, 'is_allowed_by_robots', return_value=True):
-            url = 'https://example.com/page'
+        with patch.object(spider, "is_allowed_by_robots", return_value=True):
+            url = "https://example.com/page"
 
             allowed = spider.is_allowed_by_robots(url)
             assert allowed is True
@@ -176,13 +168,13 @@ class TestBaseSpiderDepthControl:
         spider.max_depth = 2
 
         # Create request at max depth
-        request = Request(url='https://example.com/deep', meta={'depth': 2})
+        request = Request(url="https://example.com/deep", meta={"depth": 2})
 
         # Should not follow links from this page
         should_follow = spider.should_follow_link(request)
 
         # Depending on implementation
-        assert should_follow is False or request.meta['depth'] == 2
+        assert should_follow is False or request.meta["depth"] == 2
 
     @pytest.mark.unit
     @pytest.mark.stage1
@@ -191,12 +183,12 @@ class TestBaseSpiderDepthControl:
         spider = BaseSpider()
 
         # Initial request at depth 0
-        request = Request(url='https://example.com', meta={'depth': 0})
+        request = Request(url="https://example.com", meta={"depth": 0})
 
         # Following link should increment depth
-        next_request = spider.create_request('https://example.com/next', parent=request)
+        next_request = spider.create_request("https://example.com/next", parent=request)
 
-        assert next_request.meta['depth'] == 1
+        assert next_request.meta["depth"] == 1
 
 
 class TestBaseSpiderRateLimiting:
@@ -234,16 +226,14 @@ class TestBaseSpiderErrorHandling:
         spider = BaseSpider()
 
         response = HtmlResponse(
-            url='https://example.com/notfound',
-            status=404,
-            body=b'<html><body>Not Found</body></html>'
+            url="https://example.com/notfound", status=404, body=b"<html><body>Not Found</body></html>"
         )
 
         # Should handle error without crashing
         result = spider.parse(response)
 
         # Depending on implementation, might log error or return None
-        assert result is None or isinstance(result, (list, type(None)))
+        assert result is None or isinstance(result, list | type(None))
 
     @pytest.mark.unit
     @pytest.mark.stage1
@@ -252,14 +242,12 @@ class TestBaseSpiderErrorHandling:
         spider = BaseSpider()
 
         response = HtmlResponse(
-            url='https://example.com/error',
-            status=500,
-            body=b'<html><body>Server Error</body></html>'
+            url="https://example.com/error", status=500, body=b"<html><body>Server Error</body></html>"
         )
 
         # Should handle gracefully
         result = spider.parse(response)
-        assert result is None or isinstance(result, (list, type(None)))
+        assert result is None or isinstance(result, list | type(None))
 
     @pytest.mark.unit
     @pytest.mark.stage1
@@ -279,8 +267,6 @@ class TestBaseSpiderDuplicateDetection:
     @pytest.mark.stage1
     def test_filters_duplicate_urls(self):
         """Test spider filters duplicate URLs."""
-        spider = BaseSpider()
-
         # Mock duplicate filter
         seen_urls = set()
 
@@ -290,7 +276,7 @@ class TestBaseSpiderDuplicateDetection:
             seen_urls.add(url)
             return False
 
-        url = 'https://example.com/page'
+        url = "https://example.com/page"
 
         # First time should not be duplicate
         assert is_duplicate(url) is False
@@ -306,10 +292,10 @@ class TestBaseSpiderDuplicateDetection:
 
         # These should be considered duplicates
         urls = [
-            'https://example.com/page',
-            'https://example.com/page/',
-            'https://example.com/page#section',
-            'https://example.com/page?utm=123',
+            "https://example.com/page",
+            "https://example.com/page/",
+            "https://example.com/page#section",
+            "https://example.com/page?utm=123",
         ]
 
         # Normalize and check
@@ -334,12 +320,12 @@ class TestBaseSpiderMetrics:
         spider.crawler.stats = Mock()
 
         # Simulate scraping
-        response = HtmlResponse(url='https://example.com', body=b'<html></html>')
+        response = HtmlResponse(url="https://example.com", body=b"<html></html>")
         spider.parse(response)
 
         # Should have incremented counter (depending on implementation)
         # Verify stats collector was called
-        assert hasattr(spider.crawler, 'stats')
+        assert hasattr(spider.crawler, "stats")
 
     @pytest.mark.unit
     @pytest.mark.stage1
@@ -350,11 +336,11 @@ class TestBaseSpiderMetrics:
         spider.crawler.stats = Mock()
 
         # Simulate error
-        response = HtmlResponse(url='https://example.com', status=500, body=b'Error')
+        response = HtmlResponse(url="https://example.com", status=500, body=b"Error")
 
         try:
             spider.parse_error(response)
-        except:
+        except Exception:
             pass
 
         # Should have logged error
@@ -374,7 +360,7 @@ class TestBaseSpiderCleanup:
         spider.redis = Mock()
 
         # Call close
-        spider.closed('finished')
+        spider.closed("finished")
 
         # Should have closed connections
         # Verify cleanup was called (depending on implementation)
@@ -388,7 +374,7 @@ class TestBaseSpiderCleanup:
         spider.delta = Mock()
 
         # Call close
-        spider.closed('finished')
+        spider.closed("finished")
 
         # Should have flushed pending writes
         # (depending on implementation)

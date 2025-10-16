@@ -2,6 +2,7 @@
 
 import logging
 from collections.abc import Iterator
+from typing import Any
 
 from scrapy.http import Response
 
