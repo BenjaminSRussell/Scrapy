@@ -259,7 +259,7 @@ class TestDeltaLakeTableManagement:
         schema = delta_sandbox.get_table_schema("test_table")
 
         # Verify schema contains expected fields
-        field_names = [field.name for field in schema.fields]
+        field_names = [field.name for field in schema]
         assert "id" in field_names
         assert "name" in field_names
         assert "value" in field_names
