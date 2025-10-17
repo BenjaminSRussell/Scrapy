@@ -49,6 +49,11 @@ urls_processed_per_second = Gauge(
     ["stage"],
 )
 
+test_alert_interval_path_resolution_success = Counter(
+    "test_alert_interval_path_resolution_success",
+    "Counter for successful path resolutions in tests.",
+)
+
 delta_lake_total_records = Gauge("delta_lake_total_records", "Total number of records across all Delta Lake tables")
 
 delta_lake_size_bytes = Gauge("delta_lake_size_bytes", "Size of Delta Lake table in bytes", ["table"])

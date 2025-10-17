@@ -5,9 +5,13 @@ from pathlib import Path
 import yaml
 
 
+import os
+
+
 def load_datasources():
-    config_path = Path("monitoring/grafana_datasource.yml")
-    return yaml.safe_load(config_path.read_text())
+    base_dir = os.path.dirname(__file__)
+    config_path = os.path.abspath(os.path.join(base_dir, "../../..", "monitoring", "grafana_datasource.yml"))
+    return yaml.safe_load(Path(config_path).read_text())
 
 
 def test_required_datasources_present():
