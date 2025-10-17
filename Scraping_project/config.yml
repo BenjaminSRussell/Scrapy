@@ -29,8 +29,15 @@ stage1:
   allowed_domains:
     - uconn.edu
 
+  # NEW: Aggressive URL Collection Mode
+  aggressive_collection: true  # Capture EVERYTHING - Stage 2 will filter
+  expand_seeds: true  # Auto-add discovered URLs back to seed_urls
+  parse_sitemaps: true  # Auto-discover and parse sitemaps
+  enable_depth_mode: true  # Switch to depth spider when idle
+  enable_rescraping: true  # Re-scrape existing URLs to find missed links
+
   # JS Detection
-  js_confidence_threshold: 0.7  # Only queue pages with JS confidence > 0.7
+  js_confidence_threshold: 0.5  # REDUCED - render more pages (was 0.7)
 
   # Batch sizes
   batch_size: 50  # URLs to batch before writing to Delta Lake
@@ -50,12 +57,15 @@ stage1:
     - people
     - directory
     - staff
-  priority_penalty_keywords:
-    - login
-    - calendar
-    - event
-    - news
-    - archive
+  priority_penalty_keywords: []  # REMOVED - we want everything now
+
+  # Depth Spider Mode (when regular queues are empty)
+  depth_spider:
+    enabled: true
+    trigger_when_queue_below: 10  # Switch to depth mode when queue < 10 items
+    max_depth: 50  # Go MUCH deeper when in depth mode (was 10)
+    concurrent_requests: 64  # Slower but more thorough
+    rescrape_interval_hours: 24  # Re-scrape existing URLs after 24 hours
 
   # Spider-Specific Settings
   spiders:
@@ -67,7 +77,6 @@ stage1:
       download_timeout: 15
       retry_times: 2
       depth_limit: 10
-      robotstxt_obey: false
       cookies_enabled: false
 
       # Autothrottle
@@ -92,7 +101,6 @@ stage1:
       download_timeout: 30
       retry_times: 3
       depth_limit: 10
-      robotstxt_obey: true
       cookies_enabled: true
 
       # Autothrottle

@@ -361,25 +361,21 @@ class URLProcessor:
                 if path_lower.endswith(ext):
                     return False
 
-            # Check for common exclusion patterns
+            # REDUCED exclusion patterns - only block truly problematic endpoints
+            # NOTE: Stage 1 should capture EVERYTHING, Stage 2 will validate
+            # We removed most patterns because universities often have content at:
+            # - /admin/directory, /admin/faculty, etc.
+            # - /login/saml, /login/shibboleth with public info
             exclusion_patterns = [
-                r"/wp-admin",
-                r"/wp-login",
-                r"/admin",
-                r"/login",
-                r"/logout",
-                r"/signin",
-                r"/signout",
-                r"/register",
-                r"/cart",
-                r"/checkout",
+                r"/wp-login\.php$",  # Only block actual WordPress login
+                r"/checkout$",  # Only block exact checkout endpoint
             ]
 
             for pattern in exclusion_patterns:
                 if re.search(pattern, path_lower):
                     return False
 
-            return True
+            return True  # Allow everything else - we want ALL URLs in seed_urls
 
         except Exception:
             return False

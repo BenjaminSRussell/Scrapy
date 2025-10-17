@@ -40,9 +40,6 @@ BOT_NAME = _scrapy_config.get("bot_name", "uconn_scraper")
 SPIDER_MODULES = _scrapy_config.get("spider_modules", ["src.stage1", "src.stage3"])
 NEWSPIDER_MODULE = _scrapy_config.get("newspider_module", "src.stage3")
 
-# Obey robots.txt rules (from YAML or default)
-ROBOTSTXT_OBEY = _scrapy_config.get("robotstxt_obey", False)
-
 # Configure pipelines - Order matters! Lower numbers execute first
 ITEM_PIPELINES = _scrapy_config.get(
     "item_pipelines",
@@ -111,6 +108,21 @@ HTTPCACHE_STORAGE = _scrapy_config.get("httpcache_storage", "scrapy.extensions.h
 
 TWISTED_REACTOR = _scrapy_config.get("twisted_reactor", "twisted.internet.asyncioreactor.AsyncioSelectorReactor")
 FEED_EXPORT_ENCODING = _scrapy_config.get("feed_export_encoding", "utf-8")
+
+# ============================================================================
+# Dupefilter Configuration - COMPLETELY DISABLED for aggressive re-scraping
+# ============================================================================
+# Disable dupefilter completely to allow re-scraping ALL URLs
+# This enables seed URL expansion and continuous crawling
+DUPEFILTER_CLASS = "scrapy.dupefilters.BaseDupeFilter"
+# Alternative: Use RFPDupeFilter (respects dont_filter=True in requests)
+# DUPEFILTER_CLASS = "scrapy.dupefilters.RFPDupeFilter"
+
+# Additional settings for depth and cookies
+COOKIES_ENABLED = False  # Disable cookies for faster crawling
+DEPTH_LIMIT = 10  # Maximum crawl depth (can be overridden per spider)
+DEPTH_PRIORITY = 1  # Prioritize shallower pages
+DEPTH_STATS_VERBOSE = True  # Log detailed depth statistics
 
 # Playwright settings
 # DOWNLOAD_HANDLERS is disabled by default to avoid conflicts with other extensions.

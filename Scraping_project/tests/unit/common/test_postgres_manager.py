@@ -177,5 +177,5 @@ def test_save_error_analysis_iterates_clusters(patched_postgres):
 
     mgr.save_error_analysis(total_errors=20, num_clusters=2, cluster_data=cluster_payload)
 
-    insert_calls = [q for q, _ in connection.cursor_stub.executed if "error_analysis_reports" in q]
+    insert_calls = [q for q, _ in connection.cursor_stub.executed if "INSERT INTO error_analysis_reports" in q]
     assert len(insert_calls) == 2

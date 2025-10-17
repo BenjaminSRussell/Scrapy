@@ -58,9 +58,12 @@ class BaseSpider(scrapy.Spider):
 
     def __init__(self, *args, **kwargs):
         """Initialize base spider with shared resources."""
+        print(f"\n🕷️  BaseSpider.__init__() called for {kwargs.get('name', 'unknown')}")
         # Allow name to be overridden for testing
         self.name = kwargs.pop("name", self.name)
+        print(f"🕷️  Calling super().__init__...")
         super().__init__(*args, **kwargs)
+        print(f"🕷️  super().__init__() complete for {self.name}")
 
         # Limit crawl to uconn.edu domains (including subdomains)
         self.allowed_domains = ["uconn.edu"]
@@ -82,7 +85,7 @@ class BaseSpider(scrapy.Spider):
         # Backward compatibility: expose storage backends directly
         self.delta = self.storage.delta
         self.postgres = self.storage.postgres
-        self.redis_client = self.storage.redis if hasattr(self.storage.redis, "redis") else self.storage.redis
+        self.redis_client = self.storage.redis.redis if hasattr(self.storage.redis, "redis") else self.storage.redis
 
         # Spider-specific Redis key storing URL hashes
         self.url_hashes_key = f"{self.name}:url_hashes"
@@ -134,38 +137,32 @@ class BaseSpider(scrapy.Spider):
         # Optional depth control (tests may set max_depth dynamically)
         self.max_depth = self.settings.getint("MAX_DEPTH") if hasattr(self, "settings") and self.settings else None
 
-        # Ensure we have start URLs loaded from Delta
-        if not hasattr(self, "start_urls") or not self.start_urls:
-            self.start_urls = self._load_seed_urls()
+        # Load start URLs from Delta Lake (Scrapy will use these automatically)
+        # With DUPEFILTER_CLASS = BaseDupeFilter, all URLs will be crawled (no filtering)
+        print(f"[{self.name}] Loading start_urls from Delta Lake...")
+        self.start_urls = self._load_seed_urls()
+        print(f"[{self.name}] Loaded {len(self.start_urls)} start_urls")
 
-        url_count = self.redis_client.scard(self.url_hashes_key)
-        logger.info(f"{self.name} loaded {len(self.start_urls)} seeds, {url_count} existing URLs in Redis")
+        print(f"✅ BaseSpider.__init__() COMPLETE for {self.name}")
 
     async def start(self):
-        """Emit initial requests for the dynamically loaded start URLs."""
-        logger.warning(f"🚀 [{self.name}] start() CALLED!")  # DEBUG
+        """Override Scrapy's new start() async method (replaces deprecated start_requests())."""
+        print(f"🚀 [{self.name}] start() called!")
+        print(f"🚀 [{self.name}] Processing {len(self.start_urls)} start URLs...")
 
-        if not self.start_urls:
-            logger.error(f"{self.name}: No start URLs to crawl! Check Delta Lake seed_urls table.")
-            return
+        for i, url in enumerate(self.start_urls):
+            if i < 5:  # Log first 5 URLs
+                print(f"  - URL {i}: {url[:80]}")
 
-        logger.warning(f"🚀 [{self.name}]: Starting crawl with {len(self.start_urls)} seed URLs")
-
-        request_count = 0
-        for url in self.start_urls:
-            request_count += 1
-            if request_count <= 5:
-                logger.warning(f"🚀 [{self.name}]: Yielding request #{request_count}: {url[:80]}")
             yield scrapy.Request(
                 url,
                 callback=self.parse,
                 errback=self.handle_error,
-                meta={"depth": 0},
-                priority=1,
-                dont_filter=False,
+                dont_filter=True,  # Explicit: allow re-scraping
+                priority=0,
             )
 
-        logger.warning(f"🚀 [{self.name}]: Yielded {request_count} total requests from start()")
+        print(f"✅ [{self.name}] start() generated {len(self.start_urls)} requests")
 
     def _hash_url(self, url: str) -> str:
         """Return the full SHA256 hash of a URL for deduplication.
@@ -187,11 +184,23 @@ class BaseSpider(scrapy.Spider):
         return normalized or url
 
     def _load_seed_urls(self):
-        """Load all seed URLs from Delta Lake, bypassing Redis check."""
+        """Load ALL seed URLs from Delta Lake - let Scrapy's dupefilter handle deduplication during crawl.
+
+        IMPORTANT: We return ALL seeds, not just "new" ones. This ensures:
+        1. Seeds are always attempted for crawling
+        2. Scrapy's dupefilter prevents duplicate requests DURING the crawl
+        3. Seed expansion can continuously grow the seed_urls table
+        4. Re-scraping can find new links on previously visited pages
+        """
         try:
             seed_records = self.delta.read("seed_urls")
             urls = [record["url"] for record in seed_records]
-            logger.info(f"Loaded {len(urls)} seed URLs directly from Delta Lake.")
+            logger.info(f"Loaded {len(urls)} seed URLs from Delta Lake (will attempt all)")
+
+            # Get Redis stats for logging but DON'T filter
+            url_count_in_redis = self.redis_client.scard(self.url_hashes_key) if hasattr(self, 'url_hashes_key') else 0
+            logger.info(f"Redis currently tracking {url_count_in_redis} URLs (dupefilter will handle during crawl)")
+
             return urls
         except Exception as e:
             logger.error(f"Could not load seed URLs from Delta Lake: {e}")
@@ -274,17 +283,6 @@ class BaseSpider(scrapy.Spider):
         )
         return request
 
-    def is_allowed_by_robots(self, url: str) -> bool:
-        """Basic robots.txt check (defaults to permissive)."""
-        parser = getattr(self, "_robots_parser", None)
-        if parser is None:
-            return True
-
-        user_agent = getattr(self, "user_agent", "*")
-        try:
-            return parser.can_fetch(user_agent, url)
-        except Exception:
-            return True
 
     def parse_error(self, response: Response) -> dict[str, Any]:
         """Record error responses for downstream analysis."""

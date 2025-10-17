@@ -20,8 +20,7 @@ def get_spider_settings(spider_name: str) -> dict:
         "CONCURRENT_REQUESTS_PER_DOMAIN": spider_config.get("concurrent_requests_per_domain", 8),
         "DOWNLOAD_DELAY": spider_config.get("download_delay", 0.25),
         "DOWNLOAD_TIMEOUT": spider_config.get("download_timeout", 30),
-        # Robots and cookies
-        "ROBOTSTXT_OBEY": spider_config.get("robotstxt_obey", True),
+        # Cookies
         "COOKIES_ENABLED": spider_config.get("cookies_enabled", True),
         # Cache and retry
         "HTTPCACHE_ENABLED": False,

@@ -10,12 +10,13 @@ K6 IMPLEMENTATION: Comprehensive fixtures for testing all pipeline components.
 
 import asyncio
 import contextlib
+import inspect
 import os
 import shutil
 import tempfile
 from collections.abc import Generator
 from pathlib import Path
-from typing import Any
+from typing import Any, Set
 
 import fakeredis
 import pytest
@@ -35,6 +36,44 @@ from twisted.web import server, static
 from src.common.config import Config
 from src.common.delta_lake import DeltaLakeManager, InMemoryDeltaManager
 from src.common.postgres_manager import PostgresManager
+
+# ============================================================================
+# Fakeredis Compatibility Patches
+# ============================================================================
+
+
+def _patch_fakeredis_helpers():
+    """
+    Monkey-patch fakeredis to work around __closure__ issue with redis 5.x+.
+
+    The issue occurs because redis.Redis.__init__ changed in recent versions and
+    no longer has __closure__ attribute. This is a known compatibility issue.
+    """
+    try:
+        import fakeredis._helpers as helpers
+        import redis
+
+        # Store original function
+        original_get_args_to_warn = helpers._get_args_to_warn
+
+        # Create patched version that handles the AttributeError
+        def patched_get_args_to_warn() -> Set[str]:
+            try:
+                return original_get_args_to_warn()
+            except AttributeError:
+                # If __closure__ doesn't exist, just return empty set
+                return set()
+
+        # Apply the patch
+        helpers._get_args_to_warn = patched_get_args_to_warn
+    except Exception:
+        # If patching fails, tests will fail naturally with original error
+        pass
+
+
+# Apply patch at module import time
+_patch_fakeredis_helpers()
+
 
 # ============================================================================
 # Session-level fixtures (shared across all tests)
@@ -442,7 +481,7 @@ def performance_timer():
     K6: Tracks execution time for performance benchmarks.
 
     Usage:
-        with performance_timer() as timer:
+        with performance_timer as timer:
             # Code to benchmark
             pass
         assert timer.elapsed < 1.0  # Assert < 1 second
@@ -461,7 +500,7 @@ def performance_timer():
         def __exit__(self, *args):
             self.elapsed = time.time() - self.start
 
-    return Timer
+    return Timer()
 
 
 # ============================================================================

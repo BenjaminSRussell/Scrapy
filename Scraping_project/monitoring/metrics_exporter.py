@@ -31,6 +31,10 @@ circuit_breaker_open_count = Gauge("circuit_breaker_open_count", "Number of open
 
 total_urls_discovered = Gauge("total_urls_discovered", "Total URLs discovered")
 
+total_uconn_urls = Gauge("total_uconn_urls", "Total UConn URLs discovered across all sources")
+
+total_seed_urls = Gauge("total_seed_urls", "Total seed URLs available for crawling")
+
 active_workers_count = Gauge("active_workers_count", "Number of active workers", ["stage"])
 
 processing_time_seconds = Histogram(
@@ -89,7 +93,6 @@ class MetricsExporter:
 
         # Initialize managers
         config = Config.get_instance()
-
         redis_config = config.redis_config
         self.redis = get_redis_manager(
             host=os.environ.get("REDIS_HOST", redis_config.get("host", "localhost")),
@@ -100,6 +103,40 @@ class MetricsExporter:
 
         self.delta = DeltaLakeManager.get_instance()
 
+        # Track delta tables so we can expose baseline metrics even before data arrives
+        self._tracked_tables: list[str] = [
+            "seed_urls",
+            "uconn_urls",
+            "stage1_discovery",
+            "stage1_errors",
+            "stage1_offsite_candidates",
+            "js_spider_queue",
+            "stage2_queue",
+            "stage2_page_analysis",
+            "stage3_analytics",
+            "stage3_summaries",
+            "stage4_large_docs",
+            "stage4_summaries",
+        ]
+
+        self._throughput_table_to_stage: dict[str, str] = {
+            "stage1_discovery": "stage1",
+            "stage2_page_analysis": "stage2",
+            "stage3_summaries": "stage3",
+            "stage4_summaries": "stage4",
+        }
+        self._tracked_stages: list[str] = sorted(set(self._throughput_table_to_stage.values()))
+
+        # Redis queues we want to monitor. Pre-register so Grafana panels don't show "No data".
+        message_queues_cfg = getattr(config, "message_queue_config", {}) or {}
+        queue_names: set[str] = {"priority_queue"}
+        for value in message_queues_cfg.values():
+            if isinstance(value, str):
+                queue_names.add(value)
+            elif isinstance(value, (list, tuple, set)):
+                queue_names.update({item for item in value if isinstance(item, str)})
+        self._tracked_queues = sorted(queue_names)
+
         # Track previous counts for rate calculation
         self.previous_counts: dict[str, int] = {}
         self.previous_error_counts: dict[str, dict[str, int]] = {}
@@ -109,6 +146,9 @@ class MetricsExporter:
         exports_root.mkdir(parents=True, exist_ok=True)
         self.error_summary_path = exports_root / "stage1_errors_summary.json"
         self._last_error_summary_fingerprint: tuple | None = None
+
+        # Seed default zero values so dashboards have immediate data
+        self._initialize_metrics()
 
         logger.info(f"Metrics exporter initialized on port {port} with {update_interval}s update interval")
 
@@ -174,13 +214,21 @@ class MetricsExporter:
         """Update Redis queue depth metrics."""
         try:
             queue_stats = self.redis.get_all_queue_stats()
+            seen: set[str] = set()
 
             for queue_name, length in queue_stats.items():
                 redis_queue_length.labels(queue=queue_name).set(length)
+                seen.add(queue_name)
 
             # Priority queue
             pq_size = self.redis.get_queue_size()
             redis_queue_length.labels(queue="priority_queue").set(pq_size)
+            seen.add("priority_queue")
+
+            # Ensure tracked queues that weren't returned still emit zeros
+            for queue_name in self._tracked_queues:
+                if queue_name not in seen:
+                    redis_queue_length.labels(queue=queue_name).set(0)
 
         except Exception as e:
             logger.error(f"Error updating queue metrics: {e}")
@@ -199,21 +247,9 @@ class MetricsExporter:
         import os
 
         try:
-            tables = [
-                "stage1_discovery",
-                "stage1_errors",
-                "js_spider_queue",
-                "stage2_queue",
-                "stage2_page_analysis",
-                "stage3_analytics",
-                "stage3_summaries",
-                "stage4_large_docs",
-                "stage4_summaries",
-            ]
-
             total_records = 0
 
-            for table in tables:
+            for table in self._tracked_tables:
                 try:
                     # OPTIMIZED: Use count estimation from Delta metadata instead of full read
                     # This avoids loading entire tables into memory
@@ -242,9 +278,13 @@ class MetricsExporter:
                         # Skip size calculation if it fails
                         pass
 
-                    # Update total URLs discovered
+                    # Update specific metrics for key tables
                     if table == "stage1_discovery":
                         total_urls_discovered.set(count)
+                    elif table == "uconn_urls":
+                        total_uconn_urls.set(count)
+                    elif table == "seed_urls":
+                        total_seed_urls.set(count)
 
                 except Exception as e:
                     logger.debug(f"Table {table} not found or empty: {e}")
@@ -262,14 +302,7 @@ class MetricsExporter:
             time_delta = current_time - self.last_update_time
 
             if time_delta > 0:
-                tables_to_stages = {
-                    "stage1_discovery": "stage1",
-                    "stage2_page_analysis": "stage2",
-                    "stage3_summaries": "stage3",
-                    "stage4_summaries": "stage4",
-                }
-
-                for table, stage in tables_to_stages.items():
+                for table, stage in self._throughput_table_to_stage.items():
                     try:
                         records = self.delta.read(table)
                         current_count = len(records) if records else 0
@@ -358,6 +391,34 @@ class MetricsExporter:
 
         except Exception as e:
             logger.debug(f"Failed to write error summary: {e}")
+
+    def _initialize_metrics(self):
+        """Prime metrics with zeros so Grafana panels render immediately."""
+        try:
+            for queue_name in self._tracked_queues:
+                redis_queue_length.labels(queue=queue_name).set(0)
+
+            for table in self._tracked_tables:
+                delta_lake_records.labels(table=table).set(0)
+                delta_lake_size_bytes.labels(table=table).set(0)
+
+            delta_lake_total_records.set(0)
+            total_seed_urls.set(0)
+            total_uconn_urls.set(0)
+            total_urls_discovered.set(0)
+            circuit_breaker_open_count.set(0)
+
+            for stage in self._tracked_stages:
+                urls_processed_per_second.labels(stage=stage).set(0.0)
+                urls_processed_total.labels(stage=stage).inc(0)
+                errors_total.labels(stage=stage, error_type="none").inc(0)
+                active_workers_count.labels(stage=stage).set(0)
+
+            stage4_http_requests_total.inc(0)
+            stage4_http_failures_total.labels(error_type="unknown").inc(0)
+
+        except Exception as e:
+            logger.debug(f"Failed to initialize baseline metrics: {e}")
 
 
 def main():

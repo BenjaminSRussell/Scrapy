@@ -5,6 +5,7 @@ datasources:
   - name: Prometheus
     type: prometheus
     access: proxy
+    uid: prometheus-primary
     url: http://prometheus-a:9090
     isDefault: true
     editable: true
@@ -16,6 +17,7 @@ datasources:
   - name: Prometheus-B
     type: prometheus
     access: proxy
+    uid: prometheus-replica-b
     url: http://prometheus-b:9090
     editable: true
     jsonData:

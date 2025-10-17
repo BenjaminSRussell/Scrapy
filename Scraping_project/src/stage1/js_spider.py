@@ -199,6 +199,10 @@ class JavaScriptSpider(scrapy.Spider):
 
         logger.info(f"[JAVASCRIPT] Rendered {url[:80]} -> {len(discovered_urls)} URLs")
 
+        # NEW: Add all discovered URLs back to seed_urls for continuous expansion
+        if discovered_urls:
+            self._add_urls_to_seeds(discovered_urls, url)
+
         # Create discovery items - write to stage1_discovery for ScoutSpider to pick up
         for discovered_url in discovered_urls:
             discovered_hash = self._hash_url(discovered_url)
@@ -297,6 +301,67 @@ class JavaScriptSpider(scrapy.Spider):
     def _hash_url(self, url: str) -> str:
         """Hash URL using SHA256 for consistency with base_spider."""
         return hashlib.sha256(url.encode("utf-8")).hexdigest()
+
+    def _add_urls_to_seeds(self, urls: list[str], source_url: str) -> None:
+        """
+        Add JS-discovered URLs to seed_urls and uconn_urls for continuous expansion.
+
+        Critical for finding URLs that only appear after JavaScript execution.
+        Many SPAs hide their navigation and content URLs until JS runs.
+
+        Args:
+            urls: List of URLs discovered via JavaScript rendering
+            source_url: The parent URL that was rendered
+        """
+        if not urls:
+            return
+
+        try:
+            from urllib.parse import urlparse
+
+            timestamp = datetime.now().isoformat()
+
+            seed_records = []
+            uconn_records = []
+
+            for url in urls:
+                url_domain = urlparse(url).netloc
+
+                # Add to seed_urls for future crawling
+                seed_records.append({
+                    "url": url,
+                    "source": "js_spider_expansion",  # Mark as JS-discovered
+                    "parent_url": source_url,
+                    "discovered_at": timestamp,
+                    "priority": 2,  # Higher priority than scout discoveries
+                    "status": "pending",
+                    "domain": url_domain,
+                    "requires_js": True,  # Flag for future renders
+                })
+
+                # Add to uconn_urls if UConn domain
+                if "uconn.edu" in url_domain.lower():
+                    uconn_records.append({
+                        "url": url,
+                        "source": "javascript_spider",
+                        "parent_url": source_url,
+                        "discovered_at": timestamp,
+                        "domain": url_domain,
+                        "url_hash": self._hash_url(url),
+                        "discovered_via_js": True,
+                    })
+
+            # Batch write to both tables
+            self.delta.append_to_table("seed_urls", seed_records)
+
+            if uconn_records:
+                self.delta.append_to_table("uconn_urls", uconn_records)
+                logger.debug(f"[JS_SPIDER] Added {len(uconn_records)} UConn URLs to master list")
+
+            logger.info(f"[JS_SPIDER] Added {len(urls)} JS-discovered URLs to seed_urls")
+
+        except Exception as e:
+            logger.error(f"[JS_SPIDER] Failed to add URLs to seed_urls/uconn_urls: {e}")
 
     def handle_error(self, failure):
         """Handle rendering errors."""

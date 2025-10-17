@@ -9,6 +9,7 @@ numpy>=1.26.0,<3.0.0
 
 # Specialized Processing
 playwright>=1.49.0  # For JavaScript-heavy pages
+scrapy-playwright>=0.0.41  # Scrapy integration for Playwright
 httpx>=0.28.0  # Modern HTTP client
 aiohttp>=3.12.0  # Async HTTP client for Stage 2 worker
 
@@ -22,6 +23,7 @@ networkx==3.5 # Pinned to resolve conflict
 # NLP & ML - For large document processing (Stage 4)
 transformers>=4.50.0
 torch>=2.6.0
+sentence-transformers>=2.0.0  # For semantic similarity and embeddings
 
 # OCR & Media - For document processing
 easyocr>=1.7.0
@@ -31,7 +33,7 @@ pillow>=11.0.0
 
 # Database
 psycopg2-binary>=2.9.0  # PostgreSQL adapter
-redis==4.6.0  # Redis for distributed queues and caching
+redis>=5.0,<6.0  # Redis for distributed queues and caching (pinned to 5.x for fakeredis compatibility)
 
 # Message Queue - Kafka for event streaming
 confluent-kafka>=2.3.0  # High-performance Kafka client (librdkafka wrapper)
@@ -39,6 +41,7 @@ confluent-kafka>=2.3.0  # High-performance Kafka client (librdkafka wrapper)
 # Monitoring
 prometheus-client>=0.20.0  # Prometheus metrics exporter
 kubernetes>=32.0.0  # Kubernetes Python client for health checks and service discovery
+requests-mock>=1.12.0  # Mock library for testing HTTP requests
 
 # Machine Learning
 scikit-learn>=1.3.0  # ML for error analysis

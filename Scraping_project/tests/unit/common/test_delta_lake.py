@@ -356,7 +356,7 @@ class TestDeltaLakePerformance:
         # Generate large dataset
         data = [{"id": i, "value": f"row_{i}", "timestamp": datetime.now().isoformat()} for i in range(1000)]
 
-        with performance_timer() as timer:
+        with performance_timer as timer:
             delta_sandbox.write("test_table", data, mode="overwrite", async_write=False)
 
         # Should complete in reasonable time (adjust threshold as needed)
@@ -370,7 +370,7 @@ class TestDeltaLakePerformance:
         data = [{"id": i} for i in range(1000)]
         delta_sandbox.write("test_table", data, mode="overwrite", async_write=False)
 
-        with performance_timer() as timer:
+        with performance_timer as timer:
             result = delta_sandbox.read("test_table")
 
         assert len(result) == 1000

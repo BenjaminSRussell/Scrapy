@@ -212,7 +212,7 @@ class HiddenURLExtractor:
         return list(urls)
 
     def extract_sitemap_urls(self, response: Response) -> list[str]:
-        """Extract sitemap references from robots.txt and common locations."""
+        """Extract sitemap references from common locations."""
         urls = set()
 
         try:
@@ -225,7 +225,6 @@ class HiddenURLExtractor:
                 f"{base}/sitemap_index.xml",
                 f"{base}/sitemap-index.xml",
                 f"{base}/sitemap.txt",
-                f"{base}/robots.txt",
             ]
 
             # Check for sitemap links in page

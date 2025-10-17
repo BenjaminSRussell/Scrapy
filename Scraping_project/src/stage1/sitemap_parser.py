@@ -35,9 +35,7 @@ class SitemapParser:
         parsed = urlparse(self.base_url)
         base = f"{parsed.scheme}://{parsed.netloc}"
 
-        robots_sitemaps = await self._get_sitemaps_from_robots(base)
-
-        common_sitemap_urls = [
+        sitemap_urls = [
             urljoin(base, "/sitemap.xml"),
             urljoin(base, "/sitemap.xml.gz"),
             urljoin(base, "/sitemap_index.xml"),
@@ -48,34 +46,12 @@ class SitemapParser:
             urljoin(base, "/sitemap/sitemap.xml"),
         ]
 
-        sitemap_urls = robots_sitemaps + common_sitemap_urls
-
         headers = {"User-Agent": "SitemapParser/1.0 (compatible; web crawler)"}
         async with httpx.AsyncClient(timeout=self.timeout, headers=headers) as client:
             for sitemap_url in sitemap_urls:
                 await self._parse_sitemap_recursive(client, sitemap_url, depth=0)
 
         return list(self.discovered_urls)
-
-    async def _get_sitemaps_from_robots(self, base_url: str) -> list[str]:
-        """Return sitemap URLs declared in robots.txt."""
-        robots_url = urljoin(base_url, "/robots.txt")
-        sitemaps = []
-
-        try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
-                response = await client.get(robots_url)
-                if response.status_code == 200:
-                    for line in response.text.split("\n"):
-                        line = line.strip()
-                        if line.lower().startswith("sitemap:"):
-                            sitemap_url = line.split(":", 1)[1].strip()
-                            sitemaps.append(sitemap_url)
-                            logger.info(f"Found sitemap in robots.txt: {sitemap_url}")
-        except Exception as e:
-            logger.debug(f"Failed to fetch robots.txt: {e}")
-
-        return sitemaps
 
     async def _parse_sitemap_recursive(
         self,

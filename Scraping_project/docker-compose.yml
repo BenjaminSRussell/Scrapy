@@ -238,7 +238,7 @@ services:
     image: grafana/grafana:11.6.1
     container_name: scraping_grafana
     ports:
-      - "3000:3000"
+      - "3001:3000"
     environment:
       - GF_SECURITY_ADMIN_USER=admin
       # SECURITY WARNING: Default password is 'admin' for development convenience
@@ -317,7 +317,7 @@ services:
       - ./src:/app/src:ro
       - ./config:/app/config:ro
       - ./data/raw:/app/data/raw:ro
-      - delta_data:/app/data
+      - ./data:/app/data
       - ./run_multiple_scouts.py:/app/run_multiple_scouts.py:ro
       - ./reseed.py:/app/reseed.py:ro
     restart: unless-stopped
@@ -368,7 +368,7 @@ services:
       - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
     volumes:
       - ./src:/app/src:ro
-      - delta_data:/app/data
+      - ./data:/app/data
     restart: unless-stopped
     networks:
       - scraping_network
@@ -408,7 +408,7 @@ services:
 
     volumes:
       - ./src:/app/src:ro
-      - delta_data:/app/data
+      - ./data:/app/data
     restart: unless-stopped
     networks:
       - scraping_network
@@ -447,7 +447,7 @@ services:
       - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
     volumes:
       - ./src:/app/src:ro
-      - delta_data:/app/data
+      - ./data:/app/data
     restart: unless-stopped
     networks:
       - scraping_network
@@ -513,7 +513,7 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
     volumes:
-      - delta_data:/app/data
+      - ./data:/app/data
       - ./src:/app/src:ro
       - ./config:/app/config:ro
       - ./monitoring/metrics_exporter.py:/app/metrics_exporter.py:ro

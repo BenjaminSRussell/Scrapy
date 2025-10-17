@@ -14,6 +14,8 @@ class TestScoutSpider(unittest.TestCase):
         with patch("src.stage1.scout_spider.get_delta_manager"):
             with patch("src.stage1.scout_spider.get_postgres_manager"):
                 self.spider = ScoutSpider()
+                # Override allowed_domains for tests using example.com
+                self.spider.allowed_domains = ["example.com"]
                 self.spider._initialize_discovery(HtmlResponse(url="https://example.com", body=b""))
 
     # ============================================================================
@@ -48,15 +50,17 @@ class TestScoutSpider(unittest.TestCase):
         """Test filtering of URLs with ignored extensions."""
         spider = self.spider
 
-        # Ignored extensions
+        # Ignored extensions (static assets)
         self.assertTrue(spider._has_ignored_extension("https://example.com/image.jpg"))
-        self.assertTrue(spider._has_ignored_extension("https://example.com/document.PDF"))
+        self.assertTrue(spider._has_ignored_extension("https://example.com/image.JPG"))  # Case insensitive
         self.assertTrue(spider._has_ignored_extension("https://example.com/archive.zip"))
+        self.assertTrue(spider._has_ignored_extension("https://example.com/style.css"))
 
-        # Non-ignored extensions
+        # Non-ignored extensions (processable content)
         self.assertFalse(spider._has_ignored_extension("https://example.com/page.html"))
         self.assertFalse(spider._has_ignored_extension("https://example.com/document.php"))
         self.assertFalse(spider._has_ignored_extension("https://example.com/no_extension"))
+        self.assertFalse(spider._has_ignored_extension("https://example.com/document.pdf"))  # PDFs are processed in Stage 4
 
     # ============================================================================
     # JS Detection Tests
@@ -131,7 +135,6 @@ class TestScoutSpider(unittest.TestCase):
             "https://example.com/image.jpg",
             "https://example.com/script-url",
             "https://example.com/api/data",
-            "https://example.com/robots.txt",
             "https://example.com/sitemap.xml",
             "https://example.com/sitemap_index.xml",
             "https://example.com/sitemap-index.xml",
@@ -141,13 +144,12 @@ class TestScoutSpider(unittest.TestCase):
             self.assertIn(expected_url, urls)
 
     def test_extract_sitemap_urls(self):
-        """Test generation of sitemap and robots.txt URLs."""
+        """Test generation of sitemap URLs."""
         spider = self.spider
         response = HtmlResponse(url="https://sub.example.com/path/page", body=b"")
         spider._initialize_discovery(response)
         urls = spider._extract_sitemap_urls()
 
-        self.assertIn("https://sub.example.com/robots.txt", urls)
         self.assertIn("https://sub.example.com/sitemap.xml", urls)
         self.assertIn("https://sub.example.com/sitemap_index.xml", urls)
 

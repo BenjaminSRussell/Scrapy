@@ -134,7 +134,11 @@ class TestURLValidation:
             assert self.processor.should_follow_url(url) is False
 
     def test_should_not_follow_login_pages(self):
-        """Test that login pages are not followed."""
+        """Test that login/admin pages ARE now followed with aggressive collection mode.
+
+        Per Stage 1 redesign: "Capture everything, let Stage 2 validate"
+        Login pages often have public info links worth discovering.
+        """
         login_urls = [
             "https://example.com/login",
             "https://example.com/signin",
@@ -142,8 +146,9 @@ class TestURLValidation:
             "https://example.com/wp-admin/",
         ]
 
+        # With aggressive collection enabled, these should now be followed
         for url in login_urls:
-            assert self.processor.should_follow_url(url) is False
+            assert self.processor.should_follow_url(url) is True
 
     def test_is_document_url(self):
         """Test document URL detection."""

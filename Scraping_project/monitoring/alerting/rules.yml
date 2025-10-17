@@ -4,8 +4,8 @@ apiVersion: 1
 groups:
   - name: Kafka Alerts
     folder: Kafka
-    # Evaluate rules every 15 seconds
-    interval: 15s
+    # Evaluate rules every 20 seconds (must be divisible by scheduler interval of 10s)
+    interval: 20s
     rules:
       - # Alert definition
         # UID can be used to reference this alert in other parts of Grafana
@@ -21,7 +21,7 @@ groups:
             relativeTimeRange:
               from: 600
               to: 0
-            datasourceUid: P846C49B2003B53C6
+            datasourceUid: prometheus-primary
             model:
               expr: kafka_consumer_records_lag > 100
               intervalMs: 1000
@@ -44,7 +44,7 @@ groups:
                     type: and
                   query:
                     params:
-                      - B
+                      - A
                   reducer:
                     params: []
                     type: last
@@ -61,8 +61,8 @@ groups:
               type: classic_conditions
         # How long the condition must be true for the alert to fire
         for: 1m
-        # How often to evaluate the alert rule
-        every: 15s
+        # How often to evaluate the alert rule (must be divisible by scheduler interval of 10s)
+        every: 20s
         # Labels to attach to the alert
         labels:
           severity: warning

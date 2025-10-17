@@ -106,6 +106,9 @@ class JSDetector:
         re.compile(r"vendor\.[a-f0-9]{8,}\.js"),  # vendor.12345678.js
         re.compile(r"main\.[a-f0-9]{8,}\.js"),  # main.12345678.js
         re.compile(r"runtime\.[a-f0-9]{8,}\.js"),  # runtime.12345678.js
+        re.compile(r"/_next/static/.*\.js"),  # Next.js bundled files
+        re.compile(r"/_nuxt/.*\.js"),  # Nuxt.js bundled files
+        re.compile(r"/static/js/.*\.js"),  # Common static JS pattern
     ]
 
     # JSON state objects (client-side hydration)
@@ -172,7 +175,7 @@ class JSDetector:
         confidence = min(confidence, 1.0)
 
         # Determine if rendering required (using named threshold constant)
-        requires_js = confidence > self.CONFIDENCE_THRESHOLD
+        requires_js = confidence >= self.CONFIDENCE_THRESHOLD
 
         return {
             "requires_js": requires_js,
@@ -235,8 +238,9 @@ class JSDetector:
         for indicator in self.ASYNC_INDICATORS:
             count += self.html_lower.count(indicator.lower())
 
-        # Consider "heavy" if more than 5 async indicators
-        heavy = count > 5
+        # Consider "heavy" if 2 or more async indicators
+        # (fetch calls, axios, etc. suggest client-side data loading)
+        heavy = count >= 2
 
         return {
             "heavy": heavy,

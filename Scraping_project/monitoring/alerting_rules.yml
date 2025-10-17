@@ -10,7 +10,7 @@ groups:
   # Kafka Infrastructure Alerts
   # ============================================
   - name: kafka_infrastructure
-    interval: 30s
+    interval: 20s
     rules:
       # Critical: Kafka broker is down
       - alert: KafkaBrokerDown
@@ -121,7 +121,7 @@ groups:
   # Scrapy Application Alerts
   # ============================================
   - name: scrapy_application
-    interval: 30s
+    interval: 20s
     rules:
       # Critical: Scrapy app is down
       - alert: ScrapyAppDown
@@ -227,7 +227,7 @@ groups:
   # Kafka Pipeline Alerts
   # ============================================
   - name: kafka_pipeline
-    interval: 30s
+    interval: 20s
     rules:
       # Critical: Kafka pipeline is down
       - alert: KafkaPipelineDown
@@ -272,7 +272,7 @@ groups:
   # Infrastructure Alerts
   # ============================================
   - name: infrastructure
-    interval: 30s
+    interval: 20s
     rules:
       # Critical: Redis is down
       - alert: RedisDown

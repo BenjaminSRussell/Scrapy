@@ -158,32 +158,6 @@ class TestBaseSpiderURLExtraction:
         assert "https://www.uconn.edu/example.com" in links
 
 
-class TestBaseSpiderRobotsTxt:
-    """Test robots.txt handling."""
-
-    @pytest.mark.unit
-    @pytest.mark.stage1
-    def test_respects_robots_txt(self):
-        """Test spider respects robots.txt rules."""
-        spider = BaseSpider()
-
-        with patch.object(spider, "is_allowed_by_robots", return_value=False):
-            url = "https://example.com/disallowed"
-            allowed = spider.is_allowed_by_robots(url)
-            assert allowed is False
-
-    @pytest.mark.unit
-    @pytest.mark.stage1
-    def test_handles_missing_robots_txt(self):
-        """Test spider handles missing robots.txt gracefully."""
-        spider = BaseSpider()
-
-        with patch.object(spider, "is_allowed_by_robots", return_value=True):
-            url = "https://example.com/page"
-            allowed = spider.is_allowed_by_robots(url)
-            assert allowed is True
-
-
 class TestBaseSpiderDepthControl:
     """Test crawl depth control."""
 

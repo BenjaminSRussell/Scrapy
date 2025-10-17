@@ -58,10 +58,12 @@ class TestAlertWindowsVsScrape(unittest.TestCase):
 
         # Discover rule files and map container paths to local paths
         self.rule_files = []
+        monitoring_dir = os.path.abspath(os.path.join(base_dir, "../..", "monitoring"))
         for container_path in config.get("rule_files", []):
             # Based on docker-compose.yml, /etc/prometheus/ maps to ./monitoring/
             if container_path.startswith("/etc/prometheus/"):
-                local_path = container_path.replace("/etc/prometheus/", "Scraping_project/monitoring/")
+                filename = os.path.basename(container_path)
+                local_path = os.path.join(monitoring_dir, filename)
                 self.rule_files.append(local_path)
 
     def test_alert_for_duration_is_valid(self):

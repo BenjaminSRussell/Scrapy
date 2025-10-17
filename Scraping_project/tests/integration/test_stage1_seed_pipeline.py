@@ -47,15 +47,25 @@ class SeedSpider(BaseSpider):
 def test_seed_urls_deduplicated(delta_with_seed_urls, monkeypatch):
     fake_redis = RedisSetStub(existing=set())
 
-    monkeypatch.setattr("src.stage1.base_spider.get_delta_manager", lambda: delta_with_seed_urls)
-    monkeypatch.setattr("src.stage1.base_spider.get_postgres_manager", lambda: object())
-    monkeypatch.setattr("src.stage1.base_spider.redis.Redis", lambda **kwargs: fake_redis)
+    # Create a mock StorageManager with our delta_with_seed_urls
+    class MockStorageManager:
+        def __init__(self):
+            self.delta = delta_with_seed_urls
+            self.postgres = object()
+            self.redis = fake_redis
+
+        @classmethod
+        def get_instance(cls):
+            return cls()
+
+    monkeypatch.setattr("src.stage1.base_spider.StorageManager", MockStorageManager)
 
     spider = SeedSpider()
 
     assert len(spider.start_urls) == 3
 
-    # Run again with Redis already populated to verify deduplication
-    monkeypatch.setattr("src.stage1.base_spider.redis.Redis", lambda **kwargs: fake_redis)
+    # Run again - should still load all seeds since deduplication happens during crawl, not seed loading
+    # This matches the new Stage 1 design philosophy: "Load ALL seeds, let Scrapy's dupefilter handle it"
     spider_again = SeedSpider()
-    assert spider_again.start_urls == []
+    assert len(spider_again.start_urls) == 3  # Same URLs loaded again - that's expected
+    assert spider_again.start_urls == spider.start_urls  # Same list of URLs

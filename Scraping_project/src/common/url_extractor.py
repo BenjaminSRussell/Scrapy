@@ -40,6 +40,7 @@ class URLExtractor:
         r'(?:var|let|const)\s+(\w+)\s*=\s*["\']([^"\']*(?:https?://|/)[^"\']+)["\']',
         r'(\w+)\s*:\s*["\']([^"\']*(?:https?://|/)[^"\']+)["\']',
         r'(?:url|href|src|endpoint|api|link)\s*[:=]\s*["\']([^"\']+)["\']',
+        r'(?:fetch|axios\.get|axios\.post|\.get|\.post)\s*\(\s*["\']([^"\']+)["\']',
     ]
 
     def __init__(self, base_url: str, allowed_domains: list[str]):
