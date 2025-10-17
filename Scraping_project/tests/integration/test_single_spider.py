@@ -10,10 +10,7 @@ import sys
 from scrapy.crawler import CrawlerProcess
 from scrapy.utils.project import get_project_settings
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(name)s] %(levelname)s: %(message)s"
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
 
 
@@ -54,6 +51,7 @@ def main():
         print("=" * 80)
         print(f"ERROR: {e}")
         import traceback
+
         traceback.print_exc()
         print("=" * 80)
         sys.exit(1)

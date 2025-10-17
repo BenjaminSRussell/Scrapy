@@ -1,12 +1,11 @@
 import json
 import logging
 import os
+import socket
 import sys
 import time
 from datetime import datetime
 from pathlib import Path
-
-from prometheus_client import Counter, Gauge, Histogram, start_http_server
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -18,78 +17,76 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(level
 logger = logging.getLogger(__name__)
 
 
-# Define Prometheus metrics
-redis_queue_length = Gauge("redis_queue_length", "Length of Redis message queues", ["queue"])
+class StatsDClient:
+    """UDP-based StatsD client for fire-and-forget metrics (no acknowledgment required)."""
 
-urls_processed_total = Counter("urls_processed_total", "Total number of URLs processed", ["stage"])
+    def __init__(self, host: str = "localhost", port: int = 8125):
+        """Initialize StatsD UDP client.
 
-errors_total = Counter("errors_total", "Total number of errors", ["stage", "error_type"])
+        Args:
+            host: StatsD server hostname
+            port: StatsD server port (default 8125)
+        """
+        self.host = host
+        self.port = port
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        logger.info(f"StatsD client initialized for {host}:{port} (UDP)")
 
-consumer_lag_seconds = Gauge("consumer_lag_seconds", "Consumer lag in seconds", ["consumer"])
+    def _send(self, metric: str):
+        """Send metric via UDP (fire-and-forget, no response expected)."""
+        try:
+            self.sock.sendto(metric.encode("utf-8"), (self.host, self.port))
+        except Exception as e:
+            logger.debug(f"Failed to send metric via UDP: {e}")
 
-circuit_breaker_open_count = Gauge("circuit_breaker_open_count", "Number of open circuit breakers")
+    def gauge(self, name: str, value: float, tags: dict[str, str] | None = None):
+        """Send gauge metric."""
+        tag_str = self._format_tags(tags) if tags else ""
+        metric = f"{name}:{value}|g{tag_str}"
+        self._send(metric)
 
-total_urls_discovered = Gauge("total_urls_discovered", "Total URLs discovered")
+    def counter(self, name: str, value: int = 1, tags: dict[str, str] | None = None):
+        """Send counter increment."""
+        tag_str = self._format_tags(tags) if tags else ""
+        metric = f"{name}:{value}|c{tag_str}"
+        self._send(metric)
 
-total_uconn_urls = Gauge("total_uconn_urls", "Total UConn URLs discovered across all sources")
+    def timing(self, name: str, value_ms: float, tags: dict[str, str] | None = None):
+        """Send timing metric."""
+        tag_str = self._format_tags(tags) if tags else ""
+        metric = f"{name}:{value_ms}|ms{tag_str}"
+        self._send(metric)
 
-total_seed_urls = Gauge("total_seed_urls", "Total seed URLs available for crawling")
-
-active_workers_count = Gauge("active_workers_count", "Number of active workers", ["stage"])
-
-processing_time_seconds = Histogram(
-    "processing_time_seconds",
-    "Time spent processing items",
-    ["stage"],
-    buckets=[0.1, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0],
-)
-
-delta_lake_records = Gauge("delta_lake_records", "Number of records in Delta Lake tables", ["table"])
-
-# New metrics for enhanced dashboard
-urls_processed_per_second = Gauge(
-    "urls_processed_per_second",
-    "URLs processed per second (5-second window)",
-    ["stage"],
-)
-
-test_alert_interval_path_resolution_success = Counter(
-    "test_alert_interval_path_resolution_success",
-    "Counter for successful path resolutions in tests.",
-)
-
-delta_lake_total_records = Gauge("delta_lake_total_records", "Total number of records across all Delta Lake tables")
-
-delta_lake_size_bytes = Gauge("delta_lake_size_bytes", "Size of Delta Lake table in bytes", ["table"])
-
-# Stage 4 metrics for large document processing
-stage4_http_requests_total = Counter("stage4_http_requests_total", "Total HTTP requests made by Stage 4 processor")
-
-stage4_http_failures_total = Counter(
-    "stage4_http_failures_total",
-    "Total HTTP request failures in Stage 4",
-    ["error_type"],
-)
+    def _format_tags(self, tags: dict[str, str]) -> str:
+        """Format tags for StatsD (DogStatsD format: |#tag1:val1,tag2:val2)."""
+        if not tags:
+            return ""
+        tag_list = [f"{k}:{v}" for k, v in tags.items()]
+        return f"|#{','.join(tag_list)}"
 
 
 class MetricsExporter:
-    """Exports pipeline metrics to Prometheus."""
+    """Exports pipeline metrics via UDP to StatsD (fire-and-forget, no acknowledgment)."""
 
     def __init__(
         self,
-        port: int = 9090,
+        statsd_host: str = "localhost",
+        statsd_port: int = 8125,
         update_interval: int = 5,
         exports_dir: str | Path | None = None,
     ):
         """Initialize exporter.
 
         Args:
-            port: Port to expose metrics on
+            statsd_host: StatsD server hostname
+            statsd_port: StatsD server port (default 8125)
             update_interval: Seconds between metric updates (default: 5 for live stats)
             exports_dir: Optional override for error summary directory (defaults to /app/exports)
         """
-        self.port = port
         self.update_interval = update_interval
+
+        # Initialize UDP StatsD client (no acknowledgment/response required)
+        self.statsd = StatsDClient(host=statsd_host, port=statsd_port)
 
         # Initialize managers
         config = Config.get_instance()
@@ -150,13 +147,11 @@ class MetricsExporter:
         # Seed default zero values so dashboards have immediate data
         self._initialize_metrics()
 
-        logger.info(f"Metrics exporter initialized on port {port} with {update_interval}s update interval")
+        logger.info(f"UDP metrics exporter initialized (StatsD: {statsd_host}:{statsd_port}, interval: {update_interval}s)")
 
     def start(self):
-        """Start metrics server and update loop."""
-        # Start Prometheus HTTP server
-        start_http_server(self.port)
-        logger.info(f"Metrics server started on http://localhost:{self.port}/metrics")
+        """Start metrics update loop (UDP - no server needed)."""
+        logger.info("Starting UDP metrics exporter (fire-and-forget mode)")
 
         # Wait for scraping to start before collecting metrics
         self._wait_for_scraping_to_start()
@@ -211,92 +206,78 @@ class MetricsExporter:
             time.sleep(self.update_interval)
 
     def _update_queue_metrics(self):
-        """Update Redis queue depth metrics."""
+        """Update Redis queue depth metrics via UDP."""
         try:
             queue_stats = self.redis.get_all_queue_stats()
             seen: set[str] = set()
 
             for queue_name, length in queue_stats.items():
-                redis_queue_length.labels(queue=queue_name).set(length)
+                self.statsd.gauge("redis.queue.length", length, {"queue": queue_name})
                 seen.add(queue_name)
 
             # Priority queue
             pq_size = self.redis.get_queue_size()
-            redis_queue_length.labels(queue="priority_queue").set(pq_size)
+            self.statsd.gauge("redis.queue.length", pq_size, {"queue": "priority_queue"})
             seen.add("priority_queue")
 
             # Ensure tracked queues that weren't returned still emit zeros
             for queue_name in self._tracked_queues:
                 if queue_name not in seen:
-                    redis_queue_length.labels(queue=queue_name).set(0)
+                    self.statsd.gauge("redis.queue.length", 0, {"queue": queue_name})
 
         except Exception as e:
             logger.error(f"Error updating queue metrics: {e}")
 
     def _update_circuit_breaker_metrics(self):
-        """Update circuit breaker metrics."""
+        """Update circuit breaker metrics via UDP."""
         try:
             open_circuits = self.redis.get_open_circuits()
-            circuit_breaker_open_count.set(len(open_circuits))
+            self.statsd.gauge("circuit_breaker.open_count", len(open_circuits))
 
         except Exception as e:
             logger.error(f"Error updating circuit breaker metrics: {e}")
 
     def _update_delta_lake_metrics(self):
-        """Update Delta Lake table metrics."""
-        import os
-
+        """Update Delta Lake table metrics via UDP."""
         try:
             total_records = 0
 
             for table in self._tracked_tables:
                 try:
-                    # OPTIMIZED: Use count estimation from Delta metadata instead of full read
-                    # This avoids loading entire tables into memory
+                    # Get record count
                     records = self.delta.read(table)
                     count = len(records) if records else 0
-                    delta_lake_records.labels(table=table).set(count)
                     total_records += count
 
-                    # OPTIMIZED: Calculate table size from Delta Lake metadata instead of filesystem walk
-                    # This is 10-100x faster than os.walk() for large tables
+                    # Send record count gauge
+                    self.statsd.gauge("delta_lake.records", count, {"table": table})
+
+                    # Send table size gauge
                     try:
-                        table_path = f"data/delta_lake/{table}"
-                        if os.path.exists(table_path):
-                            # Use Delta Lake's metadata to estimate size efficiently
-                            # This avoids full filesystem traversal
-                            parquet_files = [
-                                f
-                                for f in os.listdir(table_path)
-                                if f.endswith(".parquet") and os.path.isfile(os.path.join(table_path, f))
-                            ]
-                            if parquet_files:
-                                # Quick size calculation from parquet files only (skip _delta_log)
-                                size = sum(os.path.getsize(os.path.join(table_path, f)) for f in parquet_files)
-                                delta_lake_size_bytes.labels(table=table).set(size)
+                        size = self.delta.get_table_size(table)
+                        self.statsd.gauge("delta_lake.size_bytes", size, {"table": table})
                     except Exception:
-                        # Skip size calculation if it fails
                         pass
 
                     # Update specific metrics for key tables
                     if table == "stage1_discovery":
-                        total_urls_discovered.set(count)
+                        self.statsd.gauge("urls.discovered.total", count)
                     elif table == "uconn_urls":
-                        total_uconn_urls.set(count)
+                        self.statsd.gauge("urls.uconn.total", count)
                     elif table == "seed_urls":
-                        total_seed_urls.set(count)
+                        self.statsd.gauge("urls.seed.total", count)
 
                 except Exception as e:
-                    logger.debug(f"Table {table} not found or empty: {e}")
+                    logger.debug(f"Could not read table {table}: {e}")
 
             # Set total across all tables
-            delta_lake_total_records.set(total_records)
+            self.statsd.gauge("delta_lake.total_records", total_records)
 
         except Exception as e:
             logger.error(f"Error updating Delta Lake metrics: {e}")
 
     def _update_throughput_metrics(self):
-        """Update real-time throughput metrics (URLs per second)."""
+        """Update real-time throughput metrics (URLs per second) via UDP."""
         try:
             current_time = time.time()
             time_delta = current_time - self.last_update_time
@@ -316,9 +297,9 @@ class MetricsExporter:
                             rate = delta_count / time_delta if time_delta > 0 else 0.0
 
                         if delta_count > 0:
-                            urls_processed_total.labels(stage=stage).inc(delta_count)
+                            self.statsd.counter("urls.processed.total", delta_count, {"stage": stage})
 
-                        urls_processed_per_second.labels(stage=stage).set(max(0.0, rate))
+                        self.statsd.gauge("urls.processed.per_second", max(0.0, rate), {"stage": stage})
 
                         # Update previous count
                         self.previous_counts[table] = current_count
@@ -332,7 +313,7 @@ class MetricsExporter:
             logger.error(f"Error updating throughput metrics: {e}")
 
     def _update_error_metrics(self):
-        """Update error counters by stage and type."""
+        """Update error counters by stage and type via UDP."""
         try:
             error_stage = "stage1"
             records = self.delta.read("stage1_errors")
@@ -349,7 +330,7 @@ class MetricsExporter:
                 previous = previous_counts.get(error_type, 0)
                 delta = count - previous
                 if delta > 0:
-                    errors_total.labels(stage=error_stage, error_type=error_type).inc(delta)
+                    self.statsd.counter("errors.total", delta, {"stage": error_stage, "error_type": error_type})
 
             # Ensure we remember zero-state types as well
             self.previous_error_counts[error_stage] = current_counts
@@ -393,29 +374,29 @@ class MetricsExporter:
             logger.debug(f"Failed to write error summary: {e}")
 
     def _initialize_metrics(self):
-        """Prime metrics with zeros so Grafana panels render immediately."""
+        """Prime metrics with zeros via UDP so dashboards render immediately."""
         try:
             for queue_name in self._tracked_queues:
-                redis_queue_length.labels(queue=queue_name).set(0)
+                self.statsd.gauge("redis.queue.length", 0, {"queue": queue_name})
 
             for table in self._tracked_tables:
-                delta_lake_records.labels(table=table).set(0)
-                delta_lake_size_bytes.labels(table=table).set(0)
+                self.statsd.gauge("delta_lake.records", 0, {"table": table})
+                self.statsd.gauge("delta_lake.size_bytes", 0, {"table": table})
 
-            delta_lake_total_records.set(0)
-            total_seed_urls.set(0)
-            total_uconn_urls.set(0)
-            total_urls_discovered.set(0)
-            circuit_breaker_open_count.set(0)
+            self.statsd.gauge("delta_lake.total_records", 0)
+            self.statsd.gauge("urls.seed.total", 0)
+            self.statsd.gauge("urls.uconn.total", 0)
+            self.statsd.gauge("urls.discovered.total", 0)
+            self.statsd.gauge("circuit_breaker.open_count", 0)
 
             for stage in self._tracked_stages:
-                urls_processed_per_second.labels(stage=stage).set(0.0)
-                urls_processed_total.labels(stage=stage).inc(0)
-                errors_total.labels(stage=stage, error_type="none").inc(0)
-                active_workers_count.labels(stage=stage).set(0)
+                self.statsd.gauge("urls.processed.per_second", 0.0, {"stage": stage})
+                self.statsd.counter("urls.processed.total", 0, {"stage": stage})
+                self.statsd.counter("errors.total", 0, {"stage": stage, "error_type": "none"})
+                self.statsd.gauge("workers.active", 0, {"stage": stage})
 
-            stage4_http_requests_total.inc(0)
-            stage4_http_failures_total.labels(error_type="unknown").inc(0)
+            self.statsd.counter("stage4.http.requests.total", 0)
+            self.statsd.counter("stage4.http.failures.total", 0, {"error_type": "unknown"})
 
         except Exception as e:
             logger.debug(f"Failed to initialize baseline metrics: {e}")
@@ -425,25 +406,36 @@ def main():
     """Main entry point."""
     import argparse
 
-    parser = argparse.ArgumentParser(description="Prometheus Metrics Exporter for Scraping Pipeline")
+    parser = argparse.ArgumentParser(description="UDP StatsD Metrics Exporter for Scraping Pipeline")
 
     parser.add_argument(
-        "--port",
+        "--statsd-host",
+        type=str,
+        default=os.environ.get("STATSD_HOST", "localhost"),
+        help="StatsD server hostname (default: localhost)",
+    )
+
+    parser.add_argument(
+        "--statsd-port",
         type=int,
-        default=9090,
-        help="Port to expose metrics on (default: 9090)",
+        default=int(os.environ.get("STATSD_PORT", "8125")),
+        help="StatsD server port (default: 8125)",
     )
 
     parser.add_argument(
         "--interval",
         type=int,
-        default=10,
-        help="Update interval in seconds (default: 10)",
+        default=5,
+        help="Update interval in seconds (default: 5)",
     )
 
     args = parser.parse_args()
 
-    exporter = MetricsExporter(port=args.port, update_interval=args.interval)
+    exporter = MetricsExporter(
+        statsd_host=args.statsd_host,
+        statsd_port=args.statsd_port,
+        update_interval=args.interval,
+    )
     exporter.start()
 
 

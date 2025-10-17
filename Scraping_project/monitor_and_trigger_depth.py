@@ -219,9 +219,7 @@ class DepthSpiderMonitor:
 
 def main():
     """CLI entry point."""
-    parser = argparse.ArgumentParser(
-        description="Monitor pipeline queues and trigger depth spider when idle"
-    )
+    parser = argparse.ArgumentParser(description="Monitor pipeline queues and trigger depth spider when idle")
     parser.add_argument(
         "--check-interval",
         type=int,

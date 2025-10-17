@@ -14,13 +14,15 @@ from scrapy.utils.project import get_project_settings
 from src.stage1 import scout_spider
 
 # Store original _load_seed_urls
-original_load_seed_urls = scout_spider.ScoutSpider._load_seed_urls if hasattr(scout_spider, 'ScoutSpider') else None
+original_load_seed_urls = scout_spider.ScoutSpider._load_seed_urls if hasattr(scout_spider, "ScoutSpider") else None
+
 
 def limited_load_seed_urls(self):
     """Load only first 10 seed URLs for testing"""
     print("\n🔧 MONKEY PATCH: Loading only first 10 seed URLs...")
     try:
         from src.common.storage_manager import get_delta_manager
+
         delta = get_delta_manager()
         seed_records = delta.read("seed_urls")
         all_urls = [record["url"] for record in seed_records]
@@ -35,10 +37,7 @@ def limited_load_seed_urls(self):
         return []
 
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(name)s] %(levelname)s: %(message)s"
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
 
 
@@ -55,6 +54,7 @@ def main():
     # Apply monkey patch
     if original_load_seed_urls:
         from src.stage1.base_spider import BaseSpider
+
         BaseSpider._load_seed_urls = limited_load_seed_urls
         print("✅ Monkey patch applied to BaseSpider._load_seed_urls")
     else:
@@ -87,6 +87,7 @@ def main():
         print("=" * 80)
         print(f"ERROR: {e}")
         import traceback
+
         traceback.print_exc()
         print("=" * 80)
         sys.exit(1)

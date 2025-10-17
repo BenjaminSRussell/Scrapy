@@ -12,15 +12,13 @@ from scrapy.crawler import CrawlerProcess
 from scrapy.http import Request
 from scrapy.utils.project import get_project_settings
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(name)s] %(levelname)s: %(message)s"
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
 
 
 class TestSpider(Spider):
     """Minimal test spider to verify start_requests() is called"""
+
     name = "test_start_requests"
 
     def __init__(self, *args, **kwargs):
@@ -108,6 +106,7 @@ def main():
         print("=" * 80)
         print(f"ERROR: {e}")
         import traceback
+
         traceback.print_exc()
         print("=" * 80)
         sys.exit(1)

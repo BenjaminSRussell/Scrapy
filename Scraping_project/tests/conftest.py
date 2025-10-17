@@ -10,13 +10,12 @@ K6 IMPLEMENTATION: Comprehensive fixtures for testing all pipeline components.
 
 import asyncio
 import contextlib
-import inspect
 import os
 import shutil
 import tempfile
 from collections.abc import Generator
 from pathlib import Path
-from typing import Any, Set
+from typing import Any
 
 import fakeredis
 import pytest
@@ -51,13 +50,12 @@ def _patch_fakeredis_helpers():
     """
     try:
         import fakeredis._helpers as helpers
-        import redis
 
         # Store original function
         original_get_args_to_warn = helpers._get_args_to_warn
 
         # Create patched version that handles the AttributeError
-        def patched_get_args_to_warn() -> Set[str]:
+        def patched_get_args_to_warn() -> set[str]:
             try:
                 return original_get_args_to_warn()
             except AttributeError:

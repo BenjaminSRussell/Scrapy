@@ -60,7 +60,9 @@ class TestScoutSpider(unittest.TestCase):
         self.assertFalse(spider._has_ignored_extension("https://example.com/page.html"))
         self.assertFalse(spider._has_ignored_extension("https://example.com/document.php"))
         self.assertFalse(spider._has_ignored_extension("https://example.com/no_extension"))
-        self.assertFalse(spider._has_ignored_extension("https://example.com/document.pdf"))  # PDFs are processed in Stage 4
+        self.assertFalse(
+            spider._has_ignored_extension("https://example.com/document.pdf")
+        )  # PDFs are processed in Stage 4
 
     # ============================================================================
     # JS Detection Tests

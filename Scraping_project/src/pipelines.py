@@ -1392,3 +1392,322 @@ Summary:"""
         # In production: summary = llm_api.generate(prompt)
         # For now, return placeholder
         return f"Summary for {entity_id} based on {len(items)} sources (most recent first)"
+
+
+class MetadataExtractionPipeline:
+    """Pipeline for extracting metadata from Stage 2 output before Stage 3/4.
+
+    This pipeline enriches content with extracted metadata (keywords, entities, etc.)
+    before downstream processing. It operates between Stage 2 and Stage 3, adding
+    structured metadata to improve Stage 3/4 analysis quality.
+
+    Features:
+    - Keyword extraction using YAKE or spaCy (configurable via interface)
+    - Entity extraction (persons, organizations, locations)
+    - Batch processing for efficiency
+    - Saves enriched data to metadata_queue Delta table
+    - Graceful shutdown with data flushing
+
+    Configuration:
+        METADATA_EXTRACTION_ENABLED: Enable/disable this pipeline (default: True)
+        METADATA_EXTRACTOR_TYPE: Type of extractor ('yake', 'spacy') (default: 'yake')
+        METADATA_BATCH_SIZE: Batch size before writing (default: 100)
+        METADATA_MAX_KEYWORDS: Max keywords per document (default: 10)
+    """
+
+    BATCH_SIZE = 100
+    MAX_KEYWORDS = 10
+
+    def __init__(
+        self,
+        enabled: bool = True,
+        extractor_type: str = "yake",
+        batch_size: int = 100,
+        max_keywords: int = 10,
+    ):
+        """Initialize the metadata extraction pipeline.
+
+        Args:
+            enabled: Whether pipeline is enabled
+            extractor_type: Type of keyword extractor ('yake' or 'spacy')
+            batch_size: Number of items to batch before writing
+            max_keywords: Maximum keywords to extract per document
+        """
+        self.enabled = enabled
+        self.extractor_type = extractor_type
+        self.batch_size = batch_size
+        self.max_keywords = max_keywords
+        self.batch = []
+        self.items_processed = 0
+
+        # Initialize keyword extractor
+        self.extractor = self._init_extractor(extractor_type)
+
+    def _init_extractor(self, extractor_type: str):
+        """Initialize keyword extraction interface.
+
+        Args:
+            extractor_type: Type of extractor ('yake' or 'spacy')
+
+        Returns:
+            Extractor instance
+        """
+        if extractor_type == "yake":
+            try:
+                import yake
+
+                # Configure YAKE extractor
+                return yake.KeywordExtractor(
+                    lan="en",
+                    n=3,  # Max n-gram size
+                    dedupLim=0.9,  # Deduplication threshold
+                    top=self.max_keywords,
+                    features=None,
+                )
+            except ImportError:
+                logger.warning("YAKE not installed, falling back to simple extractor")
+                return None
+        elif extractor_type == "spacy":
+            try:
+                import spacy
+
+                # Load spaCy model
+                return spacy.load("en_core_web_sm")
+            except (ImportError, OSError):
+                logger.warning("spaCy not available, falling back to simple extractor")
+                return None
+        else:
+            logger.warning(f"Unknown extractor type: {extractor_type}, using simple extractor")
+            return None
+
+    @classmethod
+    def from_crawler(cls, crawler: "Crawler") -> "MetadataExtractionPipeline":
+        """Factory method to create pipeline from crawler settings.
+
+        Args:
+            crawler: Scrapy crawler instance
+
+        Returns:
+            Configured MetadataExtractionPipeline instance
+        """
+        enabled = crawler.settings.getbool("METADATA_EXTRACTION_ENABLED", True)
+        extractor_type = crawler.settings.get("METADATA_EXTRACTOR_TYPE", "yake")
+        batch_size = crawler.settings.getint("METADATA_BATCH_SIZE", 100)
+        max_keywords = crawler.settings.getint("METADATA_MAX_KEYWORDS", 10)
+
+        pipeline = cls(
+            enabled=enabled,
+            extractor_type=extractor_type,
+            batch_size=batch_size,
+            max_keywords=max_keywords,
+        )
+
+        # Connect lifecycle methods
+        crawler.signals.connect(pipeline.spider_closed, signal=signals.spider_closed)
+
+        return pipeline
+
+    def process_item(self, item: Any, spider: Spider) -> Any:
+        """Extract metadata from item and batch for Delta Lake.
+
+        Args:
+            item: The scraped item (from Stage 2)
+            spider: The spider that yielded the item
+
+        Returns:
+            The original item (enriched with metadata field)
+        """
+        if not self.enabled:
+            return item
+
+        # Skip items without text content
+        adapter = ItemAdapter(item)
+        text_content = adapter.get("content") or adapter.get("text") or adapter.get("body")
+
+        if not text_content or not isinstance(text_content, str):
+            return item
+
+        # Extract metadata
+        metadata = self._extract_metadata(text_content, adapter)
+
+        # Add metadata to item
+        adapter["extracted_metadata"] = metadata
+
+        # Prepare record for metadata_queue
+        record = {
+            "url": adapter.get("url"),
+            "title": adapter.get("title", ""),
+            "keywords": metadata.get("keywords", []),
+            "entities": metadata.get("entities", {}),
+            "extraction_timestamp": datetime.utcnow().isoformat() + "Z",
+            "spider_name": spider.name,
+        }
+
+        # Add to batch
+        self.batch.append(record)
+        self.items_processed += 1
+
+        # Save batch if it reaches batch_size
+        if len(self.batch) >= self.batch_size:
+            self._save_batch()
+
+        # Log progress
+        if self.items_processed % 500 == 0:
+            logger.info(f"[METADATA] Processed {self.items_processed} items, extracted metadata from {len(self.batch)} pending")
+
+        return item
+
+    def _extract_metadata(self, text: str, adapter: ItemAdapter) -> dict[str, Any]:
+        """Extract keywords and entities from text.
+
+        Args:
+            text: Text content to analyze
+            adapter: ItemAdapter for accessing other fields
+
+        Returns:
+            Dictionary with extracted metadata
+        """
+        metadata = {"keywords": [], "entities": {}}
+
+        # Extract keywords
+        if self.extractor:
+            if self.extractor_type == "yake":
+                keywords = self._extract_keywords_yake(text)
+            elif self.extractor_type == "spacy":
+                keywords, entities = self._extract_keywords_spacy(text)
+                metadata["entities"] = entities
+            else:
+                keywords = self._extract_keywords_simple(text)
+        else:
+            keywords = self._extract_keywords_simple(text)
+
+        metadata["keywords"] = keywords
+
+        return metadata
+
+    def _extract_keywords_yake(self, text: str) -> list[str]:
+        """Extract keywords using YAKE.
+
+        Args:
+            text: Text to analyze
+
+        Returns:
+            List of keyword strings
+        """
+        try:
+            # Extract keywords with YAKE
+            keywords_with_scores = self.extractor.extract_keywords(text)
+            # Return only keyword text (not scores)
+            return [kw for kw, score in keywords_with_scores[: self.max_keywords]]
+        except Exception as e:
+            logger.warning(f"YAKE extraction failed: {e}")
+            return self._extract_keywords_simple(text)
+
+    def _extract_keywords_spacy(self, text: str) -> tuple[list[str], dict[str, list[str]]]:
+        """Extract keywords and entities using spaCy.
+
+        Args:
+            text: Text to analyze
+
+        Returns:
+            Tuple of (keywords list, entities dict)
+        """
+        try:
+            doc = self.extractor(text[: 1000000])  # Limit text length for spaCy
+
+            # Extract noun phrases as keywords
+            keywords = []
+            for chunk in doc.noun_chunks:
+                if len(keywords) < self.max_keywords:
+                    keywords.append(chunk.text.lower())
+
+            # Extract named entities
+            entities = defaultdict(list)
+            for ent in doc.ents:
+                entities[ent.label_].append(ent.text)
+
+            return keywords, dict(entities)
+
+        except Exception as e:
+            logger.warning(f"spaCy extraction failed: {e}")
+            return self._extract_keywords_simple(text), {}
+
+    def _extract_keywords_simple(self, text: str) -> list[str]:
+        """Simple keyword extraction fallback using word frequency.
+
+        Args:
+            text: Text to analyze
+
+        Returns:
+            List of top words by frequency
+        """
+        from collections import Counter
+
+        # Simple tokenization
+        words = re.findall(r"\b[a-z]{4,}\b", text.lower())
+
+        # Filter common stop words
+        stop_words = {
+            "this",
+            "that",
+            "with",
+            "from",
+            "have",
+            "been",
+            "were",
+            "said",
+            "will",
+            "they",
+            "their",
+            "what",
+            "about",
+            "which",
+            "when",
+            "there",
+            "than",
+            "them",
+            "these",
+            "would",
+            "could",
+            "should",
+        }
+
+        filtered_words = [w for w in words if w not in stop_words]
+
+        # Get top N by frequency
+        counter = Counter(filtered_words)
+        top_keywords = [word for word, count in counter.most_common(self.max_keywords)]
+
+        return top_keywords
+
+    def _save_batch(self):
+        """Save current batch to Delta Lake metadata_queue table."""
+        if not self.batch:
+            return
+
+        batch_size = len(self.batch)
+
+        try:
+            from src.common.delta_lake import get_delta_manager
+
+            delta = get_delta_manager()
+            delta.write("metadata_queue", self.batch, mode="append")
+            logger.info(f"✅ Saved {batch_size} metadata records to metadata_queue")
+
+            self.batch.clear()  # Clear batch on success
+        except Exception as e:
+            logger.error(f"Failed to save metadata batch: {e}")
+
+    def spider_closed(self, spider: Spider) -> None:
+        """Flush remaining batch when spider closes.
+
+        Args:
+            spider: The spider that was closed
+        """
+        logger.info(f"[METADATA] Closing MetadataExtractionPipeline for spider: {spider.name}")
+
+        # Save any remaining items in the batch
+        if self.batch:
+            self._save_batch()
+
+        logger.info(f"[METADATA] Pipeline stats - Total processed: {self.items_processed}")

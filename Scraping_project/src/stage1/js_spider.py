@@ -14,6 +14,7 @@ from src.common.config_manager import ConfigManager
 from src.common.js_priority_queue import JSPriorityQueue
 from src.common.spider_config import get_spider_settings
 from src.common.storage_manager import get_delta
+from src.lakehouse import SeedManager
 from src.stage1.base_spider import BaseSpider
 
 logger = logging.getLogger(__name__)
@@ -62,6 +63,9 @@ class JavaScriptSpider(scrapy.Spider):
         # Get configuration and storage from ConfigManager and StorageManager
         self.config = ConfigManager.get_instance()
         self.delta = get_delta()
+
+        # Initialize SeedManager for centralized seeding operations
+        self.seed_manager = SeedManager(self.delta)
 
         # Get Redis client from storage manager
         from src.common.storage_manager import get_redis
@@ -309,6 +313,8 @@ class JavaScriptSpider(scrapy.Spider):
         Critical for finding URLs that only appear after JavaScript execution.
         Many SPAs hide their navigation and content URLs until JS runs.
 
+        This method now delegates to SeedManager for centralized, idempotent seeding.
+
         Args:
             urls: List of URLs discovered via JavaScript rendering
             source_url: The parent URL that was rendered
@@ -317,51 +323,23 @@ class JavaScriptSpider(scrapy.Spider):
             return
 
         try:
-            from urllib.parse import urlparse
+            # Use SeedManager for centralized seeding logic
+            result = self.seed_manager.add_urls_to_seeds(
+                urls=urls,
+                source_url=source_url,
+                source_spider=self.name,
+                write_uconn_urls=True,  # JS spider writes to uconn_urls
+                enqueue_stage2=False,  # JS spider doesn't enqueue for Stage 2
+            )
 
-            timestamp = datetime.now().isoformat()
-
-            seed_records = []
-            uconn_records = []
-
-            for url in urls:
-                url_domain = urlparse(url).netloc
-
-                # Add to seed_urls for future crawling
-                seed_records.append({
-                    "url": url,
-                    "source": "js_spider_expansion",  # Mark as JS-discovered
-                    "parent_url": source_url,
-                    "discovered_at": timestamp,
-                    "priority": 2,  # Higher priority than scout discoveries
-                    "status": "pending",
-                    "domain": url_domain,
-                    "requires_js": True,  # Flag for future renders
-                })
-
-                # Add to uconn_urls if UConn domain
-                if "uconn.edu" in url_domain.lower():
-                    uconn_records.append({
-                        "url": url,
-                        "source": "javascript_spider",
-                        "parent_url": source_url,
-                        "discovered_at": timestamp,
-                        "domain": url_domain,
-                        "url_hash": self._hash_url(url),
-                        "discovered_via_js": True,
-                    })
-
-            # Batch write to both tables
-            self.delta.append_to_table("seed_urls", seed_records)
-
-            if uconn_records:
-                self.delta.append_to_table("uconn_urls", uconn_records)
-                logger.debug(f"[JS_SPIDER] Added {len(uconn_records)} UConn URLs to master list")
-
-            logger.info(f"[JS_SPIDER] Added {len(urls)} JS-discovered URLs to seed_urls")
+            logger.info(
+                f"[JS_SPIDER] SeedManager results: "
+                f"seeds={result['seed_inserted']}, "
+                f"uconn={result['uconn_inserted']}"
+            )
 
         except Exception as e:
-            logger.error(f"[JS_SPIDER] Failed to add URLs to seed_urls/uconn_urls: {e}")
+            logger.error(f"[JS_SPIDER] Failed to add URLs via SeedManager: {e}", exc_info=True)
 
     def handle_error(self, failure):
         """Handle rendering errors."""

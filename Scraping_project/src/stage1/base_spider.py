@@ -16,7 +16,7 @@ from twisted.internet.error import DNSLookupError, TCPTimedOutError, TimeoutErro
 
 from src.common.config_manager import ConfigManager
 from src.common.storage_manager import StorageManager
-from src.common.url_processor import URLProcessor
+from src.common.url_processor import URLProcessor, should_follow_url
 from src.items import OffsiteCandidateItem
 from src.stage1.js_detection import JSDetector
 
@@ -61,7 +61,7 @@ class BaseSpider(scrapy.Spider):
         print(f"\n🕷️  BaseSpider.__init__() called for {kwargs.get('name', 'unknown')}")
         # Allow name to be overridden for testing
         self.name = kwargs.pop("name", self.name)
-        print(f"🕷️  Calling super().__init__...")
+        print("🕷️  Calling super().__init__...")
         super().__init__(*args, **kwargs)
         print(f"🕷️  super().__init__() complete for {self.name}")
 
@@ -198,7 +198,7 @@ class BaseSpider(scrapy.Spider):
             logger.info(f"Loaded {len(urls)} seed URLs from Delta Lake (will attempt all)")
 
             # Get Redis stats for logging but DON'T filter
-            url_count_in_redis = self.redis_client.scard(self.url_hashes_key) if hasattr(self, 'url_hashes_key') else 0
+            url_count_in_redis = self.redis_client.scard(self.url_hashes_key) if hasattr(self, "url_hashes_key") else 0
             logger.info(f"Redis currently tracking {url_count_in_redis} URLs (dupefilter will handle during crawl)")
 
             return urls
@@ -216,9 +216,11 @@ class BaseSpider(scrapy.Spider):
     # ------------------------------------------------------------------
 
     def extract_links(self, response: Response) -> list[str]:
-        """Return normalized links from a response, filtering ignored extensions."""
+        """Return normalized links from a response, filtering ignored extensions.
+
+        REFACTORED: Uses centralized should_follow_url() for consistent filtering.
+        """
         candidate_urls = self._extract_urls(response)
-        ignored = [ext.lower() for ext in getattr(self, "ignored_extensions", self.IGNORED_EXTENSIONS)]
         unique_links: set[str] = set()
 
         for url in candidate_urls:
@@ -226,9 +228,9 @@ class BaseSpider(scrapy.Spider):
                 continue
 
             normalized_url = self.normalize_url(url)
-            lower_url = normalized_url.lower()
 
-            if any(lower_url.endswith(ext) for ext in ignored):
+            # Use centralized filtering logic from url_processor
+            if not should_follow_url(normalized_url):
                 continue
 
             scheme = urlparse(normalized_url).scheme
@@ -282,7 +284,6 @@ class BaseSpider(scrapy.Spider):
             **kwargs,
         )
         return request
-
 
     def parse_error(self, response: Response) -> dict[str, Any]:
         """Record error responses for downstream analysis."""
@@ -429,11 +430,12 @@ class BaseSpider(scrapy.Spider):
                 # Record offsite links but do not follow them
                 offsite_urls.append(url)
             else:
-                # Internal URLs rely on the configured ignore list
-                is_static = any(url.lower().endswith(ext) for ext in self.IGNORED_EXTENSIONS)
+                # Internal URLs: use centralized filtering logic
+                # REFACTORED: Uses should_follow_url() from url_processor
+                should_follow = should_follow_url(url)
 
-                if is_static:
-                    # Static resource: publish metadata only
+                if not should_follow:
+                    # Static/filtered resource: publish metadata only
                     static_urls.append((url, url_hash))
                 else:
                     # HTML candidate: queue for crawling
@@ -565,49 +567,39 @@ class BaseSpider(scrapy.Spider):
         return anchor_text, context
 
     def _categorize_skip_reason(self, url: str) -> str:
-        """Categorize the reason a URL was skipped for metrics tracking."""
+        """Categorize the reason a URL was skipped for metrics tracking.
+
+        REFACTORED: Uses URLProcessor.IGNORED_EXTENSIONS as single source of truth.
+        This method now only categorizes WHY a URL was skipped, not WHETHER to skip it.
+        The actual filtering decision is made by url_processor.should_follow_url().
+        """
         url_lower = url.lower()
 
+        # Image extensions
         if any(
             url_lower.endswith(ext)
-            for ext in [
-                ".jpg",
-                ".jpeg",
-                ".png",
-                ".gif",
-                ".bmp",
-                ".svg",
-                ".webp",
-                ".ico",
-                ".tiff",
-            ]
+            for ext in [".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".ico", ".tiff"]
         ):
             return "images"
-        elif any(url_lower.endswith(ext) for ext in [".css", ".js", ".map"]):
+
+        # Static assets (CSS, maps, fonts)
+        elif any(url_lower.endswith(ext) for ext in [".css", ".map", ".woff", ".woff2", ".ttf", ".eot", ".otf"]):
             return "static_assets"
-        elif any(url_lower.endswith(ext) for ext in [".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx"]):
-            return "documents"
+
+        # Media files (audio/video)
         elif any(
             url_lower.endswith(ext)
-            for ext in [
-                ".mp3",
-                ".mp4",
-                ".avi",
-                ".mov",
-                ".wmv",
-                ".flv",
-                ".webm",
-                ".m4a",
-                ".wav",
-            ]
+            for ext in [".mp3", ".mp4", ".avi", ".mov", ".wmv", ".flv", ".webm", ".m4a", ".wav"]
         ):
             return "media_files"
-        elif any(url_lower.endswith(ext) for ext in [".zip", ".rar", ".7z", ".tar", ".gz", ".bz2"]):
-            return "archives"
-        elif any(url_lower.endswith(ext) for ext in [".woff", ".woff2", ".ttf", ".eot", ".otf"]):
-            return "static_assets"
+
+        # Binary executables
+        elif any(url_lower.endswith(ext) for ext in [".exe", ".dmg", ".pkg", ".deb", ".rpm"]):
+            return "executables"
+
+        # Default category for other filtered URLs
         else:
-            return "static_assets"
+            return "other_filtered"
 
     def _track_skip(self, url: str, reason: str | None = None):
         """Track a skipped URL for metrics."""
