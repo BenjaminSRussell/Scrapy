@@ -36,7 +36,8 @@ class TestAlertWindowsVsScrape(unittest.TestCase):
         """
         Parses prometheus.yml to set scrape and evaluation intervals and discover rule files.
         """
-        self.config_path = "Scraping_project/monitoring/prometheus.yml"
+        base_dir = os.path.dirname(__file__)
+        self.config_path = os.path.abspath(os.path.join(base_dir, "../..", "monitoring", "prometheus.yml"))
         if not os.path.exists(self.config_path):
             self.fail(f"Prometheus config not found at: {self.config_path}")
 

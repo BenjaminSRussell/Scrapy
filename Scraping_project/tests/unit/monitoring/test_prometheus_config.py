@@ -1,12 +1,16 @@
 """Validate Prometheus scrape configuration for dashboard coverage."""
 
+import os
 from pathlib import Path
 
 import yaml
 
 
 def load_prom_config():
-    return yaml.safe_load(Path("monitoring/prometheus.yml").read_text())
+    # Construct path relative to this file's location
+    base_dir = os.path.dirname(__file__)
+    config_path = os.path.abspath(os.path.join(base_dir, "../../..", "monitoring", "prometheus.yml"))
+    return yaml.safe_load(Path(config_path).read_text())
 
 
 def test_alertmanager_targets_complete():
