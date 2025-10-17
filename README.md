@@ -581,6 +581,41 @@ docker-compose exec scrapy-app bash
 
 ---
 
+## 📂 Repository Layout & Ignore Policy
+
+### Single Authoritative .gitignore
+
+This repository uses a **single root-level `.gitignore`** file for all ignore rules. All nested `.gitignore` files have been consolidated into `/.gitignore` for easier maintenance and consistency.
+
+### What's Ignored
+
+The root `.gitignore` covers:
+- **Python artifacts**: bytecode, wheels, eggs, build outputs
+- **Virtual environments**: `.venv/`, `venv/`, `ENV/`, `env/`
+- **IDE files**: `.idea/`, `.vscode/`, `*.iml`, swap files
+- **Data & logs**: `data/**`, `logs/**`, `*.log`, `*.db`
+- **Test artifacts**: `.pytest_cache/`, `.coverage`, `htmlcov/`
+- **Secrets**: `.env*`, `*.pem`, `*.key`, `credentials.json`
+- **Database files**: `*.sqlite`, `*.db-shm`, `*.db-wal`
+- **Delta Lake**: `data/delta_lake/`, `_delta_log/`, checkpoints
+- **Kafka/Streaming**: `kafka-logs/`, `zookeeper/`
+- **Docker overrides**: `docker-compose.override.yml`
+- **Monitoring data**: `prometheus-data/`, `grafana-data/`
+- **Temp files**: `tmp/`, `temp/`, `*.tmp`, `*.bak`
+- **macOS artifacts**: `.DS_Store`, `._*`
+- **Rust/Cargo**: `target/`, `.cargo/`, `*.rs.bk`
+
+### What's Tracked (Whitelisted)
+
+Important project files are explicitly whitelisted:
+- `package.json`, `package-lock.json` (Node dependencies)
+- `tsconfig.json` (TypeScript config)
+- `Cargo.toml`, `Cargo.lock` (Rust dependencies)
+
+View the complete ignore rules in [.gitignore](.gitignore).
+
+---
+
 ## 🐛 Troubleshooting
 
 ### Quick Diagnostics

@@ -76,30 +76,22 @@ class URLProcessor:
         "_gl",
     }
 
-    # File extensions to skip
+    # File extensions to skip - REDUCED to only truly useless binary/media files
+    # Stage 1 liberal policy: capture everything except pure binary assets
     IGNORED_EXTENSIONS = {
-        # Images
+        # Pure binary images (never contain links)
         ".jpg",
         ".jpeg",
         ".png",
         ".gif",
         ".bmp",
-        ".svg",
         ".webp",
         ".ico",
         ".tiff",
-        # Stylesheets and scripts
+        # Stylesheets and source maps (no content value)
         ".css",
-        ".js",
         ".map",
-        # Archives
-        ".zip",
-        ".rar",
-        ".7z",
-        ".tar",
-        ".gz",
-        ".bz2",
-        # Media files
+        # Pure media files
         ".mp3",
         ".mp4",
         ".avi",
@@ -115,12 +107,14 @@ class URLProcessor:
         ".ttf",
         ".eot",
         ".otf",
-        # Other binary formats
+        # Binary executables
         ".exe",
         ".dmg",
         ".pkg",
         ".deb",
         ".rpm",
+        # REMOVED: .js (SPAs need these), .svg (can contain links),
+        # .zip/.tar/etc (may have directory listings)
     }
 
     # Document extensions (valuable for processing)
@@ -556,3 +550,65 @@ def create_url_processor(base_url: str, allowed_domains: list[str]) -> URLProces
         URLProcessor instance
     """
     return URLProcessor(base_url=base_url, allowed_domains=allowed_domains)
+
+
+def should_follow_url(url: str) -> bool:
+    """
+    Standalone function to check if a URL should be followed.
+
+    This is the centralized Stage 1 URL filtering logic.
+    Liberal policy: skip only pure binary/media assets that never contain links.
+
+    Args:
+        url: URL to check
+
+    Returns:
+        True if URL should be followed, False if it's a static asset to skip
+
+    Examples:
+        >>> should_follow_url("https://example.com/page.html")
+        True
+        >>> should_follow_url("https://example.com/image.jpg")
+        False
+        >>> should_follow_url("https://example.com/app.js")
+        True  # JavaScript files may contain dynamic content
+        >>> should_follow_url("https://example.com/doc.pdf")
+        True  # Documents are valuable
+    """
+    try:
+        # Reject empty or invalid URLs
+        if not url or not isinstance(url, str):
+            return False
+
+        parsed = urlparse(url)
+
+        # Reject URLs without valid scheme or netloc
+        if not parsed.scheme or not parsed.netloc:
+            return False
+
+        # Only allow HTTP(S)
+        if parsed.scheme not in ('http', 'https'):
+            return False
+
+        path_lower = parsed.path.lower()
+
+        # Check if URL ends with ignored extension
+        ignored_extensions = URLProcessor.IGNORED_EXTENSIONS
+        for ext in ignored_extensions:
+            if path_lower.endswith(ext):
+                return False
+
+        # Minimal exclusion patterns - only block truly problematic endpoints
+        exclusion_patterns = [
+            r"/wp-login\.php$",  # WordPress login
+            r"/checkout$",  # E-commerce checkout
+        ]
+
+        for pattern in exclusion_patterns:
+            if re.search(pattern, path_lower):
+                return False
+
+        return True  # Liberal policy: allow everything else
+
+    except Exception:
+        return False

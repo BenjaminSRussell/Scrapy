@@ -3,7 +3,7 @@
 Tests core spider functionality, URL extraction, and response handling.
 """
 
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 
 import pytest
 from scrapy.http import HtmlResponse, Request
@@ -248,11 +248,13 @@ class TestBaseSpiderDuplicateDetection:
     def test_filters_duplicate_urls(self):
         """Test spider filters duplicate URLs."""
         seen_urls = set()
+
         def is_duplicate(url):
             if url in seen_urls:
                 return True
             seen_urls.add(url)
             return False
+
         url = "https://example.com/page"
         assert is_duplicate(url) is False
         assert is_duplicate(url) is True

@@ -12,8 +12,8 @@ Features:
 """
 
 import logging
+from collections.abc import Iterator
 from datetime import datetime, timedelta
-from typing import Iterator
 
 import scrapy
 from scrapy.http import Response
@@ -21,6 +21,8 @@ from scrapy.http import Response
 from src.common.config_manager import ConfigManager
 from src.common.spider_config import get_spider_settings
 from src.common.storage_manager import get_delta, get_redis
+from src.common.url_processor import should_follow_url
+from src.lakehouse import SeedManager
 from src.stage1.base_spider import BaseSpider
 
 logger = logging.getLogger(__name__)
@@ -50,6 +52,9 @@ class DepthSpider(BaseSpider):
         # Get Redis and Delta Lake managers
         self.redis_client = get_redis()
         self.delta = get_delta()
+
+        # Initialize SeedManager for centralized seeding operations
+        self.seed_manager = SeedManager(self.delta)
 
         # Tracking
         self.depth_stats = {
@@ -197,7 +202,8 @@ class DepthSpider(BaseSpider):
                 continue
 
             # Skip static assets (but still add to seeds)
-            if self._is_static_asset(url):
+            # Using centralized url_processor filtering logic
+            if not should_follow_url(url):
                 skip_reason = self._categorize_skip_reason(url)
                 self._track_skip(url, skip_reason)
                 urls_to_add_to_seeds.append(url)
@@ -230,16 +236,6 @@ class DepthSpider(BaseSpider):
         if self.depth_stats["urls_rescraped"] % 100 == 0:
             self._log_depth_stats()
 
-    def _is_static_asset(self, url: str) -> bool:
-        """Check if URL is a static asset."""
-        url_lower = url.lower()
-        static_extensions = {
-            ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".ico",
-            ".css", ".js", ".map", ".mp3", ".mp4", ".avi", ".mov",
-            ".woff", ".woff2", ".ttf", ".eot",
-        }
-        return any(url_lower.endswith(ext) for ext in static_extensions)
-
     def _guess_content_type(self, url: str) -> str:
         """Guess content type from URL."""
         url_lower = url.lower()
@@ -251,39 +247,32 @@ class DepthSpider(BaseSpider):
             return "html"
 
     def _add_urls_to_seeds(self, urls: list[str], source_url: str) -> None:
-        """Add discovered URLs to seed_urls table."""
+        """
+        Add discovered URLs to seed_urls table.
+
+        This method now delegates to SeedManager for centralized, idempotent seeding.
+        """
         if not urls:
             return
 
         try:
-            from urllib.parse import urlparse
+            # Use SeedManager for centralized seeding logic
+            result = self.seed_manager.add_urls_to_seeds(
+                urls=urls,
+                source_url=source_url,
+                source_spider=self.name,
+                write_uconn_urls=True,  # Depth spider writes to uconn_urls
+                enqueue_stage2=False,  # Depth spider doesn't enqueue for Stage 2
+            )
 
-            timestamp = datetime.now().isoformat()
-            seed_records = []
-
-            for url in urls:
-                url_hash = self._hash_url(url)
-                seed_records.append({
-                    "url": url,
-                    "url_hash": url_hash,
-                    "added_at": timestamp,
-                })
-
-            # Check for duplicates
-            try:
-                existing_seeds = self.delta.read("seed_urls")
-                existing_hashes = {record.get("url_hash") for record in existing_seeds}
-                new_seed_records = [r for r in seed_records if r["url_hash"] not in existing_hashes]
-
-                if new_seed_records:
-                    self.delta.append_to_table("seed_urls", new_seed_records)
-                    logger.info(f"[DEPTH] Added {len(new_seed_records)}/{len(seed_records)} new URLs to seed_urls")
-            except Exception:
-                # If read fails, just append
-                self.delta.append_to_table("seed_urls", seed_records)
+            logger.info(
+                f"[DEPTH] SeedManager results: "
+                f"seeds={result['seed_inserted']}, "
+                f"uconn={result['uconn_inserted']}"
+            )
 
         except Exception as e:
-            logger.error(f"[DEPTH] Failed to add URLs to seed_urls: {e}", exc_info=True)
+            logger.error(f"[DEPTH] Failed to add URLs via SeedManager: {e}", exc_info=True)
 
     def _log_depth_stats(self):
         """Log depth spider statistics."""

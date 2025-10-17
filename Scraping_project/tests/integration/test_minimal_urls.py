@@ -12,15 +12,13 @@ from scrapy.crawler import CrawlerProcess
 from scrapy.http import Request
 from scrapy.utils.project import get_project_settings
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(name)s] %(levelname)s: %(message)s"
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
 
 
 class MinimalTestSpider(Spider):
     """Minimal spider with hardcoded URLs"""
+
     name = "test_minimal"
 
     # Hardcode 5 simple URLs (no Delta Lake)
@@ -55,7 +53,7 @@ class MinimalTestSpider(Spider):
         """Parse callback"""
         print(f"📄 Parsed: {response.url} (Status: {response.status}, Size: {len(response.body)} bytes)")
         # Extract some links for visibility
-        links = response.css('a::attr(href)').getall()[:5]
+        links = response.css("a::attr(href)").getall()[:5]
         if links:
             print(f"   Found {len(links)} sample links: {links}")
         return {"url": response.url, "status": response.status, "link_count": len(links)}
@@ -102,6 +100,7 @@ def main():
         print("=" * 80)
         print(f"ERROR: {e}")
         import traceback
+
         traceback.print_exc()
         print("=" * 80)
         sys.exit(1)
