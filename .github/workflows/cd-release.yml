@@ -38,7 +38,7 @@ jobs:
             type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Build and push kafka-delta-ingest image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: ./Scraping_project
           file: ./Scraping_project/Dockerfile
@@ -78,7 +78,7 @@ jobs:
             type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Build and push crawler image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: ./Scraping_project
           file: ./Scraping_project/Dockerfile
@@ -118,7 +118,7 @@ jobs:
             type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Build and push metrics image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: ./Scraping_project
           file: ./Scraping_project/Dockerfile
