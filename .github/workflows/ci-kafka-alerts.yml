@@ -34,7 +34,7 @@ jobs:
           python3 -m unittest Scraping_project/tests/observability/test_recording_rules.py
 
       - name: Archive rules for inspection
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: prometheus-rules
           path: |
