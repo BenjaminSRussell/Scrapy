@@ -33,7 +33,7 @@ pillow>=11.0.0
 
 # Database
 psycopg2-binary>=2.9.0  # PostgreSQL adapter
-redis>=5.0,<6.0  # Redis for distributed queues and caching (pinned to 5.x for fakeredis compatibility)
+redis>=5.0,<8.0  # Redis for distributed queues and caching (pinned to 5.x for fakeredis compatibility)
 
 # Message Queue - Kafka for event streaming
 confluent-kafka>=2.3.0  # High-performance Kafka client (librdkafka wrapper)
