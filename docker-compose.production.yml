@@ -1,0 +1,82 @@
+# Production Docker Compose with TLS, Tracing, and Log Aggregation
+# Usage: docker-compose -f docker-compose.production.yml up -d
+
+version: '3.8'
+
+services:
+  # ============================================
+  # Log Aggregation - Loki
+  # ============================================
+  loki:
+    image: grafana/loki:2.9.3
+    container_name: scraping_loki
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./monitoring/loki-config.yml:/etc/loki/local-config.yaml
+      - loki_data:/loki
+    command: -config.file=/etc/loki/local-config.yaml
+    restart: unless-stopped
+    networks:
+      - scraping_network
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3100/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ============================================
+  # Distributed Tracing - Jaeger
+  # ============================================
+  jaeger:
+    image: jaegertracing/all-in-one:1.52
+    container_name: scraping_jaeger
+    ports:
+      - "5775:5775/udp"  # Zipkin compact
+      - "6831:6831/udp"  # Jaeger compact
+      - "6832:6832/udp"  # Jaeger binary
+      - "5778:5778"      # Serve configs
+      - "16686:16686"    # Jaeger UI
+      - "14268:14268"    # Jaeger collector
+      - "14250:14250"    # gRPC
+      - "9411:9411"      # Zipkin
+    environment:
+      - COLLECTOR_ZIPKIN_HOST_PORT=:9411
+      - COLLECTOR_OTLP_ENABLED=true
+    restart: unless-stopped
+    networks:
+      - scraping_network
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:14269/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ============================================
+  # OpenTelemetry Collector
+  # ============================================
+  otel-collector:
+    image: otel/opentelemetry-collector:0.91.0
+    container_name: scraping_otel_collector
+    ports:
+      - "4317:4317"   # OTLP gRPC
+      - "4318:4318"   # OTLP HTTP
+      - "8888:8888"   # Prometheus metrics
+      - "8889:8889"   # Prometheus exporter
+    volumes:
+      - ./monitoring/otel-collector-config.yml:/etc/otel/config.yaml
+    command: ["--config=/etc/otel/config.yaml"]
+    restart: unless-stopped
+    networks:
+      - scraping_network
+    depends_on:
+      - jaeger
+      - loki
+
+volumes:
+  loki_data:
+    driver: local
+
+networks:
+  scraping_network:
+    external: true
