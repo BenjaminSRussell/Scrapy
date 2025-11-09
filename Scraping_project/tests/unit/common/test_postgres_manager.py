@@ -1,9 +1,3 @@
-"""
-Unit tests for PostgresManager.
-
-Avoids real database connections by stubbing psycopg2 connection pooling.
-"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -14,7 +8,6 @@ import pytest
 
 from src.common import postgres_manager as pg_module
 from src.common.postgres_manager import PostgresManager
-
 
 @dataclass
 class CursorStub:
@@ -36,7 +29,6 @@ class CursorStub:
     def close(self):
         return None
 
-
 class ConnectionStub:
     def __init__(self, cursor_factory=None, fetch_values=None):
         self.cursor_factory = cursor_factory
@@ -53,7 +45,6 @@ class ConnectionStub:
     def rollback(self):
         self.rollbacks += 1
 
-
 class PoolStub:
     def __init__(self, connection: ConnectionStub):
         self.connection = connection
@@ -67,7 +58,6 @@ class PoolStub:
 
     def closeall(self):
         return None
-
 
 @pytest.fixture
 def patched_postgres(monkeypatch):
@@ -91,12 +81,10 @@ def patched_postgres(monkeypatch):
 
     return connection, pool_stub, fake_pool
 
-
 def test_init_requires_password(monkeypatch):
     monkeypatch.setattr(pg_module, "POSTGRES_AVAILABLE", True)
     with pytest.raises(ValueError):
         PostgresManager(password=None)
-
 
 def test_init_initializes_pool_and_schema(patched_postgres, monkeypatch):
     connection, pool_stub, fake_pool = patched_postgres
@@ -113,7 +101,6 @@ def test_init_initializes_pool_and_schema(patched_postgres, monkeypatch):
     assert mgr.connection_pool is pool_stub
     assert init_calls == [True]
 
-
 def test_log_performance_metric_executes_insert(patched_postgres):
     connection, *_ = patched_postgres
     mgr = PostgresManager(password="secret")
@@ -125,7 +112,6 @@ def test_log_performance_metric_executes_insert(patched_postgres):
     assert params[1] == 10
     assert params[2] == 2.0
     assert params[3] == pytest.approx(5.0)
-
 
 def test_get_performance_metrics_returns_dicts(patched_postgres):
     connection, *_ = patched_postgres
@@ -139,7 +125,6 @@ def test_get_performance_metrics_returns_dicts(patched_postgres):
     assert params[-1] == 5
     assert rows == [{"stage": "stage1", "urls_processed": 5}]
 
-
 def test_log_error_persists_record(patched_postgres):
     connection, *_ = patched_postgres
     mgr = PostgresManager(password="secret")
@@ -151,7 +136,6 @@ def test_log_error_persists_record(patched_postgres):
     assert params[1] == "http://example.com"
     assert params[2] == "Timeout"
     assert params[6] == 1
-
 
 def test_save_error_analysis_iterates_clusters(patched_postgres):
     connection, *_ = patched_postgres

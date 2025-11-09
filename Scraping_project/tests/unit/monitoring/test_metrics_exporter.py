@@ -1,13 +1,3 @@
-"""
-Unit tests for the Prometheus metrics exporter.
-
-Coverage goals:
-- Queue depth gauges (Redis + priority queue)
-- Delta Lake record/size gauges and total counter aggregation
-- Throughput counters (rate calculations per stage)
-- Error summary rollup file and counter increments
-"""
-
 from __future__ import annotations
 
 import json
@@ -19,9 +9,7 @@ import pytest
 
 from monitoring import metrics_exporter as exporter_module
 
-
 class MetricHandle:
-    """Stub handle returned from Gauge/Counter.labels()."""
 
     def __init__(self, store: dict[tuple[tuple[str, str], ...], float], key: tuple[tuple[str, str], ...]):
         self._store = store
@@ -33,9 +21,7 @@ class MetricHandle:
     def inc(self, amount: float = 1.0) -> None:
         self._store[self._key] = self._store.get(self._key, 0.0) + amount
 
-
 class MetricStub:
-    """Simple collector that records the latest value per label set."""
 
     def __init__(self) -> None:
         self.values: dict[tuple[tuple[str, str], ...], float] = {}
@@ -47,7 +33,6 @@ class MetricStub:
 
     def set(self, value: float) -> None:
         self.val = value
-
 
 @dataclass
 class FakeRedisManager:
@@ -64,14 +49,12 @@ class FakeRedisManager:
     def get_open_circuits(self) -> list[str]:
         return self.open_circuits
 
-
 @dataclass
 class FakeDeltaManager:
     tables: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
 
     def read(self, table_name: str) -> list[dict[str, Any]]:
         return self.tables.get(table_name, [])
-
 
 class FakeConfig:
     redis_config = {
@@ -87,7 +70,6 @@ class FakeConfig:
         if key == "delta_lake.queue_maxsize":
             return 50
         return default
-
 
 @pytest.fixture
 def metric_stubs(monkeypatch):
@@ -107,21 +89,16 @@ def metric_stubs(monkeypatch):
 
     return stubs
 
-
 @pytest.fixture
 def fake_backends(monkeypatch):
     redis_backend = FakeRedisManager()
     delta_backend = FakeDeltaManager()
 
-    # Patch Config.get_instance() to return FakeConfig
     monkeypatch.setattr("src.common.config.Config.get_instance", lambda: FakeConfig())
-    # Patch get_redis_manager to return our fake
     monkeypatch.setattr(exporter_module, "get_redis_manager", lambda **kwargs: redis_backend)
-    # Patch DeltaLakeManager.get_instance() to return our fake
     monkeypatch.setattr("src.common.delta_lake.DeltaLakeManager.get_instance", lambda: delta_backend)
 
     return redis_backend, delta_backend
-
 
 @pytest.fixture
 def exporter(tmp_path, metric_stubs, fake_backends):
@@ -131,7 +108,6 @@ def exporter(tmp_path, metric_stubs, fake_backends):
         exports_dir=tmp_path / "exports",
     )
     return exporter_instance
-
 
 def test_update_queue_metrics_records_lengths(exporter, metric_stubs, fake_backends):
     redis_backend, _ = fake_backends
@@ -143,7 +119,6 @@ def test_update_queue_metrics_records_lengths(exporter, metric_stubs, fake_backe
     gauge_values = metric_stubs["redis_queue_length"].values
     assert gauge_values[(("queue", "stage2_queue"),)] == 7
     assert gauge_values[(("queue", "priority_queue"),)] == 3
-
 
 def test_update_delta_lake_metrics_tracks_counts_and_sizes(
     tmp_path, exporter, metric_stubs, fake_backends, monkeypatch
@@ -172,7 +147,6 @@ def test_update_delta_lake_metrics_tracks_counts_and_sizes(
     assert metric_stubs["delta_lake_total_records"].val == 6
     assert metric_stubs["total_urls_discovered"].val == 5
 
-
 def test_update_throughput_metrics_increments_counters(monkeypatch, exporter, metric_stubs, fake_backends):
     _, delta_backend = fake_backends
     delta_backend.tables = {
@@ -200,7 +174,6 @@ def test_update_throughput_metrics_increments_counters(monkeypatch, exporter, me
     assert rate_values[(("stage", "stage1"),)] == pytest.approx(1.0)
     assert counter_values[(("stage", "stage2"),)] == 3
     assert rate_values[(("stage", "stage2"),)] == pytest.approx(0.3)
-
 
 def test_update_error_metrics_writes_summary(tmp_path, exporter, metric_stubs, fake_backends):
     _, delta_backend = fake_backends

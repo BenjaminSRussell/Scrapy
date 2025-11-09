@@ -1,7 +1,3 @@
-"""Stage 2: Intelligent Page Analysis with Quality Control and Triage.
-Routes massive documents to separate queue for Stage 4 processing.
-"""
-
 import logging
 import re
 from typing import Any
@@ -9,25 +5,21 @@ from typing import Any
 import httpx
 from bs4 import BeautifulSoup
 
-from src.common.delta_lake import get_delta_manager
+from src.utils.delta import get_delta
 
 logger = logging.getLogger(__name__)
 
-
 class IntelligentAnalyzer:
-    """Advanced page analysis with quality control and document triage."""
 
     def __init__(self):
         self.client = httpx.Client(timeout=30, follow_redirects=True)
-        self.delta = get_delta_manager()
+        self.delta = get_delta()
 
-        # Quality thresholds
         self.MIN_WORD_COUNT = 50
         self.MIN_TEXT_TO_HTML_RATIO = 0.1
-        self.MASSIVE_DOC_THRESHOLD = 50000  # 50k characters (roughly 8-10k words)
+        self.MASSIVE_DOC_THRESHOLD = 50000
 
     def analyze(self, url: str, is_heavy: bool = False) -> dict[str, Any]:
-        """Complete analysis with QC and triage."""
         try:
             response = self.client.get(url)
 
@@ -51,40 +43,32 @@ class IntelligentAnalyzer:
             return self._error_record(url, 0, f"unknown: {str(e)}")
 
     def _analyze_html(self, url: str, html: str, is_heavy: bool) -> dict[str, Any]:
-        """Analyze HTML with quality control."""
         soup = BeautifulSoup(html, "html.parser")
 
-        # Remove noise
         for tag in soup(["script", "style", "nav", "header", "footer", "aside", "iframe"]):
             tag.decompose()
 
         text = soup.get_text(separator=" ", strip=True)
         text = re.sub(r"\s+", " ", text).strip()
 
-        # Quality control
         word_count = len(text.split())
         content_length = len(text)
         html_length = len(html)
 
         text_to_html_ratio = content_length / html_length if html_length > 0 else 0
 
-        # Quality checks
         is_low_quality = word_count < self.MIN_WORD_COUNT or text_to_html_ratio < self.MIN_TEXT_TO_HTML_RATIO
 
-        # Document triage - check if text is massive
         is_massive_doc = content_length > self.MASSIVE_DOC_THRESHOLD
 
-        # Route massive documents to Stage 4 queue
         if is_massive_doc and not is_low_quality:
             self._route_to_stage4(url, text, word_count, content_length)
             logger.info(f"Routed large document ({content_length} chars) to Stage 4: {url[:80]}")
 
-        # Extract keywords only if quality passes and not massive
         keywords = []
         if not is_low_quality and not is_massive_doc:
             keywords = self._extract_keywords(text, is_heavy)
 
-        # Check for embedded PDFs
         pdf_links = [a["href"] for a in soup.find_all("a", href=True) if a["href"].endswith(".pdf")]
 
         return {
@@ -106,12 +90,10 @@ class IntelligentAnalyzer:
         }
 
     def _analyze_pdf(self, url: str, pdf_content: bytes, is_heavy: bool) -> dict[str, Any]:
-        """Analyze PDF with text + OCR."""
         text_extracted = ""
         ocr_text = ""
         has_ocr = False
 
-        # Try text extraction
         try:
             import io
 
@@ -127,7 +109,6 @@ class IntelligentAnalyzer:
         except Exception as e:
             logger.warning(f"PDF text extraction failed: {e}")
 
-        # OCR if minimal text
         if len(text_extracted) < 100:
             try:
                 import easyocr
@@ -173,7 +154,6 @@ class IntelligentAnalyzer:
         }
 
     def _analyze_binary(self, url: str, content: bytes, content_type: str, is_heavy: bool) -> dict[str, Any]:
-        """Analyze images with OCR."""
         ocr_text = ""
         has_ocr = False
 
@@ -211,7 +191,6 @@ class IntelligentAnalyzer:
         }
 
     def _error_record(self, url: str, error_code: int, error_msg: str) -> dict[str, Any]:
-        """Create error record."""
         return {
             "url": url,
             "has_error": True,
@@ -225,7 +204,6 @@ class IntelligentAnalyzer:
         }
 
     def _extract_keywords(self, text: str, is_heavy: bool) -> list:
-        """Extract keywords with YAKE."""
         if not text or len(text) < 50:
             return []
 
@@ -249,17 +227,13 @@ class IntelligentAnalyzer:
             return []
 
     def _calculate_quality_score(self, word_count: int, text_ratio: float) -> float:
-        """Calculate quality score 0-1."""
-        # Word count component (0-0.6)
         word_score = min(word_count / 1000, 0.6)
 
-        # Text ratio component (0-0.4)
         ratio_score = min(text_ratio * 0.4, 0.4)
 
         return round(word_score + ratio_score, 3)
 
     def _route_to_stage4(self, url: str, text: str, word_count: int, content_length: int):
-        """Route large document to Stage 4 for heavyweight processing."""
         from datetime import datetime
 
         record = {
@@ -277,12 +251,9 @@ class IntelligentAnalyzer:
             logger.error(f"Failed to route to Stage 4: {e}")
 
     def close(self):
-        """Close HTTP client."""
         self.client.close()
 
-
 def analyze_url(url: str, is_heavy: bool = False) -> dict[str, Any]:
-    """Convenience function."""
     analyzer = IntelligentAnalyzer()
     try:
         return analyzer.analyze(url, is_heavy)
