@@ -7,8 +7,9 @@ from typing import Any
 import aiohttp
 import pyarrow as pa
 from bs4 import BeautifulSoup
+from deltalake import DeltaTable
 
-from src.common.delta_lake import DeltaTable, get_delta_manager
+from src.common.delta_lake import get_delta_manager
 from src.common.postgres_manager import get_postgres_manager
 
 logger = logging.getLogger(__name__)

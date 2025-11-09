@@ -261,6 +261,36 @@ class LargeDocProcessor:
             logger.error(f"Failed to extract .doc text: {e}")
             return ""
 
+    def process_large_document(self, url: str, text: str) -> str:
+        try:
+            chunks = self._split_into_chunks(text)
+            logger.info(f"Split {url[:80]} into {len(chunks)} chunks")
+
+            chunk_summaries = []
+            for i, chunk in enumerate(chunks):
+                try:
+                    summary = self._summarize_chunk(chunk)
+                    if summary:
+                        chunk_summaries.append(summary)
+                except Exception as e:
+                    logger.warning(f"Failed to summarize chunk {i}: {e}")
+
+            if not chunk_summaries:
+                return text[:500] + "..." if len(text) > 500 else text
+
+            combined_summary = " ".join(chunk_summaries)
+
+            if len(combined_summary) > 1000:
+                refined_summary = self._summarize_chunk(combined_summary[:5000])
+                if refined_summary:
+                    combined_summary = refined_summary
+
+            return combined_summary
+
+        except Exception as e:
+            logger.error(f"Failed to process large document: {e}")
+            return text[:500] + "..." if len(text) > 500 else text
+
     def process_queue(self):
         try:
             all_docs = self.delta.read("stage4_large_docs")

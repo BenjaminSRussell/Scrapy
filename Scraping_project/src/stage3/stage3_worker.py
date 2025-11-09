@@ -116,13 +116,18 @@ class Stage3Worker:
 
             similar = lsh.query(minhash)
 
-            if similar:
+            if similar or url_hash in seen_similar:
                 logger.debug(f"Skipping duplicate: {doc.get('url', '')[:80]}")
                 seen_similar.add(url_hash)
                 continue
 
-            lsh.insert(url_hash, minhash)
-            unique_docs.append(doc)
+            try:
+                lsh.insert(url_hash, minhash)
+                seen_similar.add(url_hash)
+                unique_docs.append(doc)
+            except ValueError:
+                logger.debug(f"Key already exists in LSH: {doc.get('url', '')[:80]}")
+                continue
 
         logger.info(f"Deduplication: {len(unique_docs)} unique out of {len(documents)}")
         return unique_docs
