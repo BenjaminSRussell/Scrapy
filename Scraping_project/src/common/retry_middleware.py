@@ -1,11 +1,3 @@
-"""Intelligent Retry Middleware with Exponential Backoff.
-
-Implements smart retry logic:
-- Exponential backoff for transient errors
-- Immediate failure for permanent errors
-- Per-domain rate limiting
-"""
-
 import logging
 import random
 import time
@@ -18,29 +10,18 @@ from scrapy.utils.response import response_status_message
 
 logger = logging.getLogger(__name__)
 
-
 class IntelligentRetryMiddleware(RetryMiddleware):
-    """Enhanced retry middleware with exponential backoff."""
 
-    # Transient errors - should retry
     TRANSIENT_STATUS_CODES = {408, 429, 500, 502, 503, 504}
 
-    # Permanent errors - do NOT retry
     PERMANENT_STATUS_CODES = {400, 401, 403, 404, 410}
 
     def __init__(self, settings):
-        """Initialize middleware.
-
-        Args:
-            settings: Scrapy settings
-        """
         super().__init__(settings)
 
-        # Exponential backoff configuration
         self.backoff_base = settings.getint("RETRY_BACKOFF_BASE", 2)
-        self.backoff_max = settings.getint("RETRY_BACKOFF_MAX", 300)  # 5 minutes max
+        self.backoff_max = settings.getint("RETRY_BACKOFF_MAX", 300)
 
-        # Per-domain retry tracking
         self.domain_retry_counts = {}
         self.domain_last_retry = {}
         self._rng = random.Random(42)
@@ -54,25 +35,14 @@ class IntelligentRetryMiddleware(RetryMiddleware):
     ) -> float:
         base = base if base is not None else getattr(self, "base_backoff", 0.5)
         max_backoff = max_backoff if max_backoff is not None else getattr(self, "max_backoff", 60.0)
-        # exponential
         delay = base * (2 ** (attempt - 1))
-        # deterministic jitter without importing random here:
-        # use a pre-seeded RNG on the instance, created in __init__ once.
         j = 0.0
         if jitter:
-            j = (self._rng.random() * 2 - 1.0) * jitter  # [-jitter, +jitter]
+            j = (self._rng.random() * 2 - 1.0) * jitter
         delay = min(max(delay + j, 0.0), max_backoff)
         return delay
 
     def _classify_status(self, status: int) -> str:
-        """Classify HTTP status code.
-
-        Args:
-            status: HTTP status code
-
-        Returns:
-            'retry', 'fail', or 'pass'
-        """
         if status in self.TRANSIENT_STATUS_CODES:
             return "retry"
         if status in self.PERMANENT_STATUS_CODES:
@@ -80,16 +50,6 @@ class IntelligentRetryMiddleware(RetryMiddleware):
         return "pass"
 
     def process_response(self, request: Request, response: Response, spider: Spider):
-        """Process response and determine if retry needed.
-
-        Args:
-            request: Scrapy request
-            response: Scrapy response
-            spider: Scrapy spider
-
-        Returns:
-            Response or new Request (for retry)
-        """
         action = self._classify_status(response.status)
 
         if action == "retry":
@@ -102,17 +62,6 @@ class IntelligentRetryMiddleware(RetryMiddleware):
         return response
 
     def process_exception(self, request: Request, exception: Exception, spider: Spider):
-        """Process exception and determine if retry needed.
-
-        Args:
-            request: Scrapy request
-            exception: Exception that occurred
-            spider: Scrapy spider
-
-        Returns:
-            New Request (for retry) or None
-        """
-        # Check if this exception type should be retried
         if isinstance(exception, self.EXCEPTIONS_TO_RETRY):
             logger.debug(f"Retryable exception for {request.url[:80]}: {exception}")
             return self._retry_with_backoff(
@@ -121,7 +70,6 @@ class IntelligentRetryMiddleware(RetryMiddleware):
                 spider=spider,
             )
 
-        # Non-retryable exception
         return None
 
     def _retry_with_backoff(
@@ -144,10 +92,8 @@ class IntelligentRetryMiddleware(RetryMiddleware):
         max_retry_times = self.max_retry_times
 
         if retries <= max_retry_times:
-            # Calculate exponential backoff delay
             delay = self._compute_backoff(retries)
 
-            # Extract reason message
             if isinstance(reason, Response):
                 reason_msg = response_status_message(reason.status)
             else:
@@ -158,17 +104,13 @@ class IntelligentRetryMiddleware(RetryMiddleware):
                 f"(reason: {reason_msg}) - waiting {delay:.1f}s"
             )
 
-            # Create retry request with delay
             retry_request = request.copy()
             retry_request.meta["retry_times"] = retries
             retry_request.meta["retry_delay"] = delay
             retry_request.dont_filter = True
 
-            # Add delay to request priority (Scrapy processes by priority)
-            # Lower priority = later execution
             retry_request.priority = request.priority - (retries * 10)
 
-            # Schedule retry after delay
             if spider:
                 from twisted.internet import reactor
 
@@ -189,19 +131,8 @@ class IntelligentRetryMiddleware(RetryMiddleware):
             return None
 
     def _compute_backoff(self, retry_count: int) -> float:
-        """Calculate exponential backoff delay.
-
-        Formula: min(backoff_base^retry_count, backoff_max)
-
-        Args:
-            retry_count: Current retry attempt (1-indexed)
-
-        Returns:
-            Delay in seconds
-        """
         delay = self.backoff_base**retry_count
 
-        # Add small random jitter to prevent thundering herd
         jitter = random.uniform(0, 0.1 * delay)
         delay += jitter
 
@@ -209,84 +140,41 @@ class IntelligentRetryMiddleware(RetryMiddleware):
 
         return delay
 
-
 class RateLimitMiddleware:
-    """Per-domain rate limiting middleware."""
 
     def __init__(self, settings):
-        """Initialize middleware.
-
-        Args:
-            settings: Scrapy settings
-        """
         self.domain_request_times = {}
         self.min_delay_per_domain = settings.getfloat("MIN_DELAY_PER_DOMAIN", 0.5)
 
     @classmethod
     def from_crawler(cls, crawler):
-        """Create middleware from crawler.
-
-        Args:
-            crawler: Scrapy crawler
-
-        Returns:
-            Middleware instance
-        """
         return cls(crawler.settings)
 
     def process_request(self, request: Request, spider: Spider):
-        """Process request and enforce rate limit.
-
-        Args:
-            request: Scrapy request
-            spider: Scrapy spider
-        """
         from urllib.parse import urlparse
 
         domain = urlparse(request.url).netloc
 
-        # Check last request time for this domain
         last_time = self.domain_request_times.get(domain, 0)
         now = time.time()
 
         elapsed = now - last_time
 
         if elapsed < self.min_delay_per_domain:
-            # Need to wait
             delay = self.min_delay_per_domain - elapsed
             logger.debug(f"Rate limiting {domain}: waiting {delay:.2f}s")
             time.sleep(delay)
 
-        # Update last request time
         self.domain_request_times[domain] = time.time()
 
-
 class CircuitBreakerMiddleware:
-    """Circuit breaker middleware using Redis.
-
-    Prevents requests to domains that are experiencing high error rates.
-    """
 
     def __init__(self, redis_manager):
-        """Initialize middleware.
-
-        Args:
-            redis_manager: RedisManager instance
-        """
         self.redis = redis_manager
         self.domain_error_counts = {}
 
     @classmethod
     def from_crawler(cls, crawler):
-        """Create middleware from crawler.
-
-        Args:
-            crawler: Scrapy crawler
-
-        Returns:
-            Middleware instance
-        """
-        # Get Redis manager
         from src.common.config import Config
         from src.common.redis_manager import get_redis_manager
 
@@ -303,26 +191,15 @@ class CircuitBreakerMiddleware:
         return cls(redis_manager)
 
     def process_request(self, request: Request, spider: Spider):
-        """Check if circuit breaker is open for domain.
-
-        Args:
-            request: Scrapy request
-            spider: Scrapy spider
-
-        Returns:
-            None to continue, or Response to short-circuit
-        """
         from urllib.parse import urlparse
 
         from scrapy.http import Response
 
         domain = urlparse(request.url).netloc
 
-        # Check if circuit is open
         if self.redis.is_circuit_open(domain):
             logger.warning(f"Circuit breaker open for {domain}, skipping request")
 
-            # Return 503 response to signal unavailable
             return Response(
                 url=request.url,
                 status=503,
@@ -332,38 +209,23 @@ class CircuitBreakerMiddleware:
         return None
 
     def process_response(self, request: Request, response: Response, spider: Spider):
-        """Track errors and open circuit if threshold exceeded.
-
-        Args:
-            request: Scrapy request
-            response: Scrapy response
-            spider: Scrapy spider
-
-        Returns:
-            Response
-        """
         from urllib.parse import urlparse
 
         domain = urlparse(request.url).netloc
 
-        # Track 5xx errors
         if 500 <= response.status < 600:
-            # Increment error count
             self.domain_error_counts[domain] = self.domain_error_counts.get(domain, 0) + 1
 
-            # Check threshold (e.g., 10 errors)
             error_threshold = 10
             if self.domain_error_counts[domain] >= error_threshold:
-                # Open circuit breaker
                 self.redis.open_circuit(
                     domain,
-                    duration_seconds=900,  # 15 minutes
+                    duration_seconds=900,
                     reason=f"high_error_rate_{response.status}",
                 )
 
                 logger.error(f"Circuit breaker opened for {domain} ({self.domain_error_counts[domain]} errors)")
 
-                # Reset counter
                 self.domain_error_counts[domain] = 0
 
         return response

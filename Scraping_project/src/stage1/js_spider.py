@@ -19,65 +19,49 @@ from src.stage1.base_spider import BaseSpider
 
 logger = logging.getLogger(__name__)
 
-
 class JavaScriptSpider(scrapy.Spider):
-    """Render queued pages with Playwright before handing data downstream."""
 
     name = "javascript"
 
-    # ENHANCED: Aggressive async settings for maximum throughput
     custom_settings = {
         **get_spider_settings("deep_dive"),
-        # Enable scrapy-playwright
         "DOWNLOAD_HANDLERS": {
             "http": "scrapy_playwright.handler.ScrapyPlaywrightDownloadHandler",
             "https": "scrapy_playwright.handler.ScrapyPlaywrightDownloadHandler",
         },
-        # Playwright-specific settings
         "PLAYWRIGHT_BROWSER_TYPE": "chromium",
         "PLAYWRIGHT_LAUNCH_OPTIONS": {
             "headless": True,
             "timeout": 30000,
         },
-        # ENHANCED: Higher concurrency for aggressive async processing
-        "CONCURRENT_REQUESTS": 20,  # Increased from 10
-        "CONCURRENT_REQUESTS_PER_DOMAIN": 10,  # Increased from 5
-        # Longer timeouts for JS rendering
+        "CONCURRENT_REQUESTS": 20,
+        "CONCURRENT_REQUESTS_PER_DOMAIN": 10,
         "DOWNLOAD_TIMEOUT": 60,
-        # Memory limits (browsers are memory-intensive)
-        "MEMUSAGE_LIMIT_MB": 12288,  # Increased to 12GB
-        "MEMUSAGE_WARNING_MB": 10240,  # Warning at 10GB
-        # Aggressive auto-throttle settings
+        "MEMUSAGE_LIMIT_MB": 12288,
+        "MEMUSAGE_WARNING_MB": 10240,
         "AUTOTHROTTLE_ENABLED": True,
         "AUTOTHROTTLE_START_DELAY": 0.5,
         "AUTOTHROTTLE_TARGET_CONCURRENCY": 15.0,
     }
 
-    # Block non-essential assets to keep render fast
     BLOCKED_RESOURCE_TYPES = ["image", "stylesheet", "font", "media"]
 
     def __init__(self, *args, **kwargs):
-        """Initialize enhanced JavaScript spider with priority queue."""
         super().__init__(*args, **kwargs)
 
-        # Get configuration and storage from ConfigManager and StorageManager
         self.config = ConfigManager.get_instance()
         self.delta = get_delta()
 
-        # Initialize SeedManager for centralized seeding operations
         self.seed_manager = SeedManager(self.delta)
 
-        # Get Redis client from storage manager
         from src.common.storage_manager import get_redis
 
         redis_client = get_redis()
 
         self.priority_queue = JSPriorityQueue(redis_client, queue_key="js_spider:priority_queue")
 
-        # Load pending work from both Delta Lake (legacy) and priority queue
         self.start_urls = self._load_js_queue()
 
-        # Tracking
         self.rendered_count = 0
         self.completed_urls = []
         self.priority_stats = {
@@ -87,7 +71,6 @@ class JavaScriptSpider(scrapy.Spider):
             "low": 0,
         }
 
-        # Log queue stats
         queue_stats = self.priority_queue.get_stats()
         logger.info(
             f"[JS_SPIDER] Initialized | "
@@ -97,7 +80,6 @@ class JavaScriptSpider(scrapy.Spider):
         )
 
     def _load_js_queue(self) -> list[str]:
-        """Return pending URLs from the js_spider_queue table."""
         try:
             all_queue_data = self.delta.read("js_spider_queue")
 
@@ -112,11 +94,8 @@ class JavaScriptSpider(scrapy.Spider):
             return []
 
     def start_requests(self) -> Iterator[scrapy.Request]:
-        """Yield Playwright-enabled requests for queued URLs (priority queue first)."""
-        # ENHANCED: Process priority queue first (highest priority URLs)
         logger.info("[JS_SPIDER] Processing priority queue...")
 
-        # Dequeue in batches for efficiency
         batch_size = 50
         while True:
             url_batch = self.priority_queue.dequeue(count=batch_size)
@@ -128,7 +107,6 @@ class JavaScriptSpider(scrapy.Spider):
                 metadata = url_data.get("metadata", {})
                 priority = metadata.get("priority", 0)
 
-                # Track priority distribution
                 if priority >= 100:
                     self.priority_stats["critical"] += 1
                 elif priority >= 50:
@@ -146,13 +124,12 @@ class JavaScriptSpider(scrapy.Spider):
                         "playwright": True,
                         "playwright_include_page": True,
                         "playwright_page_methods": [
-                            # Wait until async work drains
                             ("wait_for_load_state", "networkidle"),
                         ],
                         "priority": priority,
                         "metadata": metadata,
                     },
-                    priority=priority,  # Scrapy's internal priority
+                    priority=priority,
                 )
 
         logger.info(
@@ -163,7 +140,6 @@ class JavaScriptSpider(scrapy.Spider):
             f"Low: {self.priority_stats['low']}"
         )
 
-        # Process legacy Delta Lake queue
         logger.info("[JS_SPIDER] Processing Delta Lake queue...")
         for url in self.start_urls:
             yield scrapy.Request(
@@ -174,14 +150,12 @@ class JavaScriptSpider(scrapy.Spider):
                     "playwright": True,
                     "playwright_include_page": True,
                     "playwright_page_methods": [
-                        # Wait until async work drains
                         ("wait_for_load_state", "networkidle"),
                     ],
                 },
             )
 
     async def parse(self, response: Response) -> AsyncGenerator[dict[str, Any], None]:
-        """Render the page, collect links, and mark queue entries complete."""
         url = response.url
 
         page = response.meta.get("playwright_page")
@@ -203,11 +177,9 @@ class JavaScriptSpider(scrapy.Spider):
 
         logger.info(f"[JAVASCRIPT] Rendered {url[:80]} -> {len(discovered_urls)} URLs")
 
-        # NEW: Add all discovered URLs back to seed_urls for continuous expansion
         if discovered_urls:
             self._add_urls_to_seeds(discovered_urls, url)
 
-        # Create discovery items - write to stage1_discovery for ScoutSpider to pick up
         for discovered_url in discovered_urls:
             discovered_hash = self._hash_url(discovered_url)
 
@@ -225,19 +197,13 @@ class JavaScriptSpider(scrapy.Spider):
                 "discovered_via_js": True,
             }
 
-        # Track completion for queue status update
         self.rendered_count += 1
         self.completed_urls.append(url)
 
-        # Close page to free memory
         if page:
             await page.close()
 
     async def _setup_resource_blocking(self, page):
-        """Block unnecessary resource types for faster rendering.
-
-        Blocks images, CSS, fonts - reduces load time by 3-5x.
-        """
 
         async def handle_route(route):
             if route.request.resource_type in self.BLOCKED_RESOURCE_TYPES:
@@ -248,7 +214,6 @@ class JavaScriptSpider(scrapy.Spider):
         await page.route("**/*", handle_route)
 
     async def _simulate_scrolling(self, page):
-        """Scroll a few times to nudge lazy loaders."""
         try:
             previous_height = await page.evaluate("document.body.scrollHeight")
 
@@ -272,7 +237,6 @@ class JavaScriptSpider(scrapy.Spider):
             logger.debug(f"[JAVASCRIPT] Scrolling failed: {e}")
 
     def _handle_response(self, response, intercepted_urls: list):
-        """Capture JSON endpoints exposed during rendering."""
         try:
             content_type = response.headers.get("content-type", "")
             if "application/json" in content_type:
@@ -282,7 +246,6 @@ class JavaScriptSpider(scrapy.Spider):
             logger.debug(f"[JAVASCRIPT] Response handler error: {e}")
 
     def _extract_urls_from_rendered_html(self, response: Response) -> list[str]:
-        """Collect links, script sources, and images from the rendered DOM."""
         urls = []
 
         for link in response.css("a::attr(href), link::attr(href)").getall():
@@ -303,33 +266,19 @@ class JavaScriptSpider(scrapy.Spider):
         return [BaseSpider.normalize_url(url) for url in urls]
 
     def _hash_url(self, url: str) -> str:
-        """Hash URL using SHA256 for consistency with base_spider."""
         return hashlib.sha256(url.encode("utf-8")).hexdigest()
 
     def _add_urls_to_seeds(self, urls: list[str], source_url: str) -> None:
-        """
-        Add JS-discovered URLs to seed_urls and uconn_urls for continuous expansion.
-
-        Critical for finding URLs that only appear after JavaScript execution.
-        Many SPAs hide their navigation and content URLs until JS runs.
-
-        This method now delegates to SeedManager for centralized, idempotent seeding.
-
-        Args:
-            urls: List of URLs discovered via JavaScript rendering
-            source_url: The parent URL that was rendered
-        """
         if not urls:
             return
 
         try:
-            # Use SeedManager for centralized seeding logic
             result = self.seed_manager.add_urls_to_seeds(
                 urls=urls,
                 source_url=source_url,
                 source_spider=self.name,
-                write_uconn_urls=True,  # JS spider writes to uconn_urls
-                enqueue_stage2=False,  # JS spider doesn't enqueue for Stage 2
+                write_uconn_urls=True,
+                enqueue_stage2=False,
             )
 
             logger.info(
@@ -340,30 +289,23 @@ class JavaScriptSpider(scrapy.Spider):
             logger.error(f"[JS_SPIDER] Failed to add URLs via SeedManager: {e}", exc_info=True)
 
     def handle_error(self, failure):
-        """Handle rendering errors."""
         logger.error(f"[JAVASCRIPT] Rendering failed: {failure.getErrorMessage()} for {failure.request.url[:80]}")
 
     def closed(self, reason):
-        """Persist completion markers for the processed queue items."""
         logger.info(f"[JAVASCRIPT] Spider closing: {reason}")
         logger.info(f"[JAVASCRIPT] Rendered {self.rendered_count} pages successfully")
 
-        # Update queue status for completed URLs
         if self.completed_urls:
             try:
-                # Read all queue data
                 all_queue_data = self.delta.read("js_spider_queue")
 
-                # Create set of completed URLs for faster lookup
                 completed_set = set(self.completed_urls)
 
-                # Update status for completed items
                 for record in all_queue_data:
                     if record.get("url") in completed_set:
                         record["status"] = "completed"
                         record["completed_at"] = datetime.now().isoformat()
 
-                # Write back to Delta Lake
                 self.delta.write(
                     "js_spider_queue",
                     all_queue_data,

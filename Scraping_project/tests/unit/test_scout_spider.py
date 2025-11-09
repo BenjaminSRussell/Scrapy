@@ -7,88 +7,68 @@ from twisted.internet.error import DNSLookupError, TCPTimedOutError, TimeoutErro
 
 from src.stage1.scout_spider import ScoutSpider
 
-
 class TestScoutSpider(unittest.TestCase):
     def setUp(self):
-        # Patch dependencies for initialization
         with patch("src.stage1.scout_spider.get_delta_manager"):
             with patch("src.stage1.scout_spider.get_postgres_manager"):
                 self.spider = ScoutSpider()
-                # Override allowed_domains for tests using example.com
                 self.spider.allowed_domains = ["example.com"]
                 self.spider._initialize_discovery(HtmlResponse(url="https://example.com", body=b""))
 
     # ============================================================================
-    # URL Hashing and Filtering Tests
     # ============================================================================
 
     def test_hash_url(self):
-        """Test URL hashing for consistency and normalization."""
         spider = self.spider
 
-        # Basic case
         url1 = "https://example.com/page"
         hash1 = spider._hash_url(url1)
 
-        # Normalization (trailing slash)
         url2 = "https://example.com/page/"
         hash2 = spider._hash_url(url2)
 
-        # Normalization (case)
         url3 = "https://EXAMPLE.com/Page"
         hash3 = spider._hash_url(url3)
 
-        # All hashes should be identical
         self.assertEqual(hash1, hash2)
         self.assertEqual(hash1, hash3)
 
-        # Verify hash format
         self.assertEqual(len(hash1), 16)
         self.assertTrue(all(c in "0123456789abcdef" for c in hash1))
 
     def test_has_ignored_extension(self):
-        """Test filtering of URLs with ignored extensions."""
         spider = self.spider
 
-        # Ignored extensions (static assets)
         self.assertTrue(spider._has_ignored_extension("https://example.com/image.jpg"))
-        self.assertTrue(spider._has_ignored_extension("https://example.com/image.JPG"))  # Case insensitive
+        self.assertTrue(spider._has_ignored_extension("https://example.com/image.JPG"))
         self.assertTrue(spider._has_ignored_extension("https://example.com/archive.zip"))
         self.assertTrue(spider._has_ignored_extension("https://example.com/style.css"))
 
-        # Non-ignored extensions (processable content)
         self.assertFalse(spider._has_ignored_extension("https://example.com/page.html"))
         self.assertFalse(spider._has_ignored_extension("https://example.com/document.php"))
         self.assertFalse(spider._has_ignored_extension("https://example.com/no_extension"))
         self.assertFalse(
             spider._has_ignored_extension("https://example.com/document.pdf")
-        )  # PDFs are processed in Stage 4
+        )
 
     # ============================================================================
-    # JS Detection Tests
     # ============================================================================
 
     def test_detect_js_requirement(self):
-        """Test detection of JS-heavy pages."""
         spider = self.spider
 
-        # Helper to create a Scrapy HtmlResponse
         def create_response(body: str) -> HtmlResponse:
             return HtmlResponse(url="https://js-test.com", body=body, encoding="utf-8")
 
-        # Case 1: SPA indicators (React, Vue)
         spa_body = "<html><body><div id='app-root'></div><script src='app.js'></script></body></html>"
         self.assertTrue(spider._detect_js_requirement(create_response(spa_body)))
 
-        # Case 2: Heavy async loading
         async_body = "<html><script>fetch('/api/1'); fetch('/api/2'); axios.get('/data');</script></html>"
         self.assertTrue(spider._detect_js_requirement(create_response(async_body)))
 
-        # Case 3: Minimal content with script tags
         minimal_body = "<html><body><script src='loader.js'></script></body></html>"
         self.assertTrue(spider._detect_js_requirement(create_response(minimal_body)))
 
-        # Case 4: Standard HTML (should not require JS)
         standard_body = """
         <html>
             <body>
@@ -104,11 +84,9 @@ class TestScoutSpider(unittest.TestCase):
         self.assertFalse(spider._detect_js_requirement(create_response(standard_body)))
 
     # ============================================================================
-    # URL Extraction Tests
     # ============================================================================
 
     def test_discover_all_urls(self):
-        """Test the main URL discovery method."""
         spider = self.spider
         body = """
         <html>
@@ -146,7 +124,6 @@ class TestScoutSpider(unittest.TestCase):
             self.assertIn(expected_url, urls)
 
     def test_extract_sitemap_urls(self):
-        """Test generation of sitemap URLs."""
         spider = self.spider
         response = HtmlResponse(url="https://sub.example.com/path/page", body=b"")
         spider._initialize_discovery(response)
@@ -156,11 +133,9 @@ class TestScoutSpider(unittest.TestCase):
         self.assertIn("https://sub.example.com/sitemap_index.xml", urls)
 
     # ============================================================================
-    # Error Handling Tests
     # ============================================================================
 
     def test_handle_error_conditions(self):
-        """Test different error handling scenarios."""
         spider = self.spider
 
         # --- Test HttpError ---
@@ -213,7 +188,6 @@ class TestScoutSpider(unittest.TestCase):
         self.assertEqual(len(spider.error_records), 1)
         record = spider.error_records[0]
         self.assertEqual(record["error_type"], "TimeoutError")
-
 
 if __name__ == "__main__":
     unittest.main()

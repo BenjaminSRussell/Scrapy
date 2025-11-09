@@ -1,13 +1,5 @@
-"""Recency-weighted scoring functions for temporal relevance.
-
-This module implements exponential decay scoring to calculate chronological
-relevance of scraped items. Fresher content receives higher scores, enabling
-recency-weighted aggregation and summarization.
-"""
-
 import math
 from datetime import UTC, datetime
-
 
 def calculate_decay_score(
     publication_date: datetime | str,
@@ -39,27 +31,24 @@ def calculate_decay_score(
         >>> now = datetime(2024, 1, 20, tzinfo=timezone.utc)
         >>> yesterday = now - timedelta(days=1)
         >>> score = calculate_decay_score(yesterday, reference_date=now, decay_constant=0.01)
-        >>> assert 0.99 < score <= 1.0  # Very recent content
+        >>> assert 0.99 < score <= 1.0
 
         >>> month_ago = now - timedelta(days=30)
         >>> score = calculate_decay_score(month_ago, reference_date=now, decay_constant=0.01)
-        >>> assert 0.70 < score < 0.75  # Moderate decay
+        >>> assert 0.70 < score < 0.75
 
         >>> year_ago = now - timedelta(days=365)
         >>> score = calculate_decay_score(year_ago, reference_date=now, decay_constant=0.01)
-        >>> assert 0.02 < score < 0.03  # Significant decay
+        >>> assert 0.02 < score < 0.03
     """
-    # Parse publication_date if string
     if isinstance(publication_date, str):
         if publication_date.endswith("Z"):
             publication_date = publication_date[:-1] + "+00:00"
         publication_date = datetime.fromisoformat(publication_date)
 
-    # Ensure publication_date is timezone-aware
     if publication_date.tzinfo is None:
         publication_date = publication_date.replace(tzinfo=UTC)
 
-    # Parse or default reference_date
     if reference_date is None:
         reference_date = datetime.now(UTC)
     elif isinstance(reference_date, str):
@@ -67,26 +56,19 @@ def calculate_decay_score(
             reference_date = reference_date[:-1] + "+00:00"
         reference_date = datetime.fromisoformat(reference_date)
 
-    # Ensure reference_date is timezone-aware
     if reference_date.tzinfo is None:
         reference_date = reference_date.replace(tzinfo=UTC)
 
-    # Calculate time difference in days
     time_delta = reference_date - publication_date
 
-    # Validate that publication_date is not in the future
     if time_delta.total_seconds() < 0:
         raise ValueError(f"publication_date {publication_date} is in the future (reference_date: {reference_date})")
 
-    # Convert to days (handle unit consistency)
-    days_elapsed = time_delta.total_seconds() / 86400.0  # 86400 seconds in a day
+    days_elapsed = time_delta.total_seconds() / 86400.0
 
-    # Calculate exponential decay score
     score = math.exp(-decay_constant * days_elapsed)
 
-    # Clamp to [0.0, 1.0] to prevent edge cases from exceeding range
     return min(max(score, 0.0), 1.0)
-
 
 def calculate_weighted_average(
     values: list[float],
@@ -106,10 +88,10 @@ def calculate_weighted_average(
         ValueError: If any recency_score is not in [0.0, 1.0]
 
     Examples:
-        >>> values = [100.0, 80.0, 60.0]  # Older to newer values
-        >>> recency_scores = [0.5, 0.8, 1.0]  # Corresponding recency
+        >>> values = [100.0, 80.0, 60.0]
+        >>> recency_scores = [0.5, 0.8, 1.0]
         >>> avg = calculate_weighted_average(values, recency_scores)
-        >>> assert 70 < avg < 90  # Weighted toward newer values
+        >>> assert 70 < avg < 90
     """
     if not values or not recency_scores:
         raise ValueError("values and recency_scores cannot be empty")
@@ -119,21 +101,17 @@ def calculate_weighted_average(
             f"values and recency_scores must have same length (got {len(values)} and {len(recency_scores)})"
         )
 
-    # Validate recency scores
     for score in recency_scores:
         if not 0.0 <= score <= 1.0:
             raise ValueError(f"recency_score {score} must be in range [0.0, 1.0]")
 
-    # Calculate weighted sum and total weight
     weighted_sum = sum(v * w for v, w in zip(values, recency_scores, strict=False))
     total_weight = sum(recency_scores)
 
-    # Avoid division by zero
     if total_weight == 0:
-        return sum(values) / len(values)  # Fallback to simple average
+        return sum(values) / len(values)
 
     return weighted_sum / total_weight
-
 
 def calculate_temporal_relevance_rank(
     items: list[dict],
@@ -164,15 +142,13 @@ def calculate_temporal_relevance_rank(
         ...     {"url": "new.com", "publication_date": "2024-01-15T00:00:00Z"},
         ... ]
         >>> ranked = calculate_temporal_relevance_rank(items)
-        >>> assert ranked[0]["url"] == "new.com"  # Newer item ranked first
+        >>> assert ranked[0]["url"] == "new.com"
         >>> assert ranked[0]["recency_score"] > ranked[1]["recency_score"]
     """
-    # Validate all items have publication_date
     for item in items:
         if publication_date_field not in item:
             raise ValueError(f"Item missing required field '{publication_date_field}': {item}")
 
-    # Calculate and add recency scores
     reference_date = datetime.now(UTC)
     for item in items:
         pub_date = item[publication_date_field]
@@ -182,29 +158,9 @@ def calculate_temporal_relevance_rank(
             decay_constant=decay_constant,
         )
 
-    # Sort by recency_score descending (fresher content first)
     return sorted(items, key=lambda x: x[score_field], reverse=True)
 
-
 def get_decay_half_life(decay_constant: float) -> float:
-    """Calculate half-life (days until score reaches 0.5) for given decay constant.
-
-    This is useful for understanding the practical impact of different decay
-    constants when configuring the scoring system.
-
-    Args:
-        decay_constant: Decay rate parameter (k)
-
-    Returns:
-        Number of days until score reaches 0.5
-
-    Examples:
-        >>> half_life = get_decay_half_life(0.01)
-        >>> assert 69 < half_life < 70  # ~69.3 days
-
-        >>> half_life = get_decay_half_life(0.1)
-        >>> assert 6 < half_life < 7  # ~6.93 days
-    """
     if decay_constant <= 0:
         raise ValueError(f"decay_constant must be positive (got {decay_constant})")
 

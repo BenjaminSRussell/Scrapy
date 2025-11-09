@@ -1,9 +1,4 @@
 #!/usr/bin/env python3
-"""Multi-format metrics exporter.
-
-Exports Prometheus metrics to multiple formats for analysis and integration.
-Supports: JSON, CSV, Parquet, InfluxDB Line Protocol
-"""
 
 import argparse
 import json
@@ -23,15 +18,12 @@ except ImportError:
     print("❌ pandas not installed. Run: pip install pandas")
     sys.exit(1)
 
-
 class MetricsExporter:
-    """Export Prometheus metrics to multiple formats."""
 
     def __init__(self, prometheus_url="http://localhost:9091"):
         self.prometheus_url = prometheus_url
 
     def query_metrics(self, query):
-        """Query Prometheus and return results."""
         url = f"{self.prometheus_url}/api/v1/query"
         try:
             response = requests.get(url, params={"query": query}, timeout=10)
@@ -47,7 +39,6 @@ class MetricsExporter:
             return []
 
     def export_json(self, metrics, output_file):
-        """Export to JSON format."""
         output_file = Path(output_file)
         output_file.parent.mkdir(parents=True, exist_ok=True)
 
@@ -56,11 +47,9 @@ class MetricsExporter:
         print(f"✅ Exported to JSON: {output_file}")
 
     def export_csv(self, metrics, output_file):
-        """Export to CSV format."""
         output_file = Path(output_file)
         output_file.parent.mkdir(parents=True, exist_ok=True)
 
-        # Flatten metrics for CSV
         rows = []
         for metric in metrics:
             row = {
@@ -68,7 +57,6 @@ class MetricsExporter:
                 "timestamp": datetime.now().isoformat(),
                 "value": metric["value"][1] if len(metric["value"]) > 1 else None,
             }
-            # Add all labels
             for key, value in metric["metric"].items():
                 if key != "__name__":
                     row[f"label_{key}"] = value
@@ -79,11 +67,9 @@ class MetricsExporter:
         print(f"✅ Exported to CSV: {output_file} ({len(rows)} rows)")
 
     def export_parquet(self, metrics, output_file):
-        """Export to Parquet format."""
         output_file = Path(output_file)
         output_file.parent.mkdir(parents=True, exist_ok=True)
 
-        # Flatten metrics
         rows = []
         for metric in metrics:
             row = {
@@ -91,7 +77,6 @@ class MetricsExporter:
                 "timestamp": datetime.now().isoformat(),
                 "value": float(metric["value"][1]) if len(metric["value"]) > 1 else 0.0,
             }
-            # Add all labels
             for key, value in metric["metric"].items():
                 if key != "__name__":
                     row[f"label_{key}"] = value
@@ -102,7 +87,6 @@ class MetricsExporter:
         print(f"✅ Exported to Parquet: {output_file} ({len(rows)} rows)")
 
     def export_influxdb_line_protocol(self, metrics, output_file):
-        """Export to InfluxDB line protocol format."""
         output_file = Path(output_file)
         output_file.parent.mkdir(parents=True, exist_ok=True)
 
@@ -126,7 +110,6 @@ class MetricsExporter:
 
         print(f"✅ Exported to InfluxDB format: {output_file} ({len(lines)} metrics)")
 
-
 def main():
     parser = argparse.ArgumentParser(description="Export Prometheus metrics to multiple formats")
     parser.add_argument(
@@ -149,7 +132,6 @@ def main():
 
     exporter = MetricsExporter(prometheus_url=args.prometheus_url)
 
-    # Define key metrics to export
     metrics_queries = {
         "scraping_rate": "rate(scrapy_items_scraped_total[5m])",
         "consumer_lag": "kafka_consumer_lag",
@@ -183,7 +165,6 @@ def main():
 
         print(f"  Found {len(metrics)} metric(s)")
 
-        # Export in requested format(s)
         if args.format in ["json", "all"]:
             exporter.export_json(metrics, f"{args.output_dir}/{name}_{timestamp}.json")
             exported_count += 1
@@ -204,7 +185,6 @@ def main():
     print(f"✅ Export complete: {exported_count} file(s) created")
     print(f"📁 Location: {args.output_dir}")
     print("=" * 80)
-
 
 if __name__ == "__main__":
     main()

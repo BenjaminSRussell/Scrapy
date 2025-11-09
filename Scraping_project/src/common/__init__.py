@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-
 def _patch_scrapy_response_meta() -> None:
-    """Patch Scrapy Response.meta to allow assignment in tests."""
     try:
         from scrapy.http import Request, Response  # type: ignore
     except Exception:
@@ -46,8 +44,6 @@ def _patch_scrapy_response_meta() -> None:
     )
     Response._meta_assignment_patched = True  # type: ignore[attr-defined]
 
-
 _patch_scrapy_response_meta()
-
 
 __all__: tuple[str, ...] = ()

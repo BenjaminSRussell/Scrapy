@@ -9,29 +9,13 @@ import redis
 
 logger = logging.getLogger(__name__)
 
-
 class JSPriorityQueue:
-    """High-performance priority queue for JavaScript spider using Redis sorted sets.
-
-    Features:
-    - Priority-based URL scheduling (higher priority = processed first)
-    - Duplicate detection using URL hashes
-    - Atomic operations for thread-safety
-    - Batch operations for high throughput
-    - URL value assessment integration
-    """
 
     def __init__(self, redis_client: redis.Redis, queue_key: str = "js_spider:priority_queue"):
-        """Initialize JS priority queue.
-
-        Args:
-            redis_client: Redis connection
-            queue_key: Redis key for the priority queue (sorted set)
-        """
         self.redis = redis_client
         self.queue_key = queue_key
-        self.hash_key = f"{queue_key}:hashes"  # Set for deduplication
-        self.metadata_key = f"{queue_key}:metadata"  # Hash for URL metadata
+        self.hash_key = f"{queue_key}:hashes"
+        self.metadata_key = f"{queue_key}:metadata"
 
         logger.info(f"[JS_QUEUE] Initialized priority queue: {queue_key}")
 
@@ -60,23 +44,16 @@ class JSPriorityQueue:
             True if URL was added, False if already in queue
         """
         try:
-            # Check if URL already queued
             if self.redis.sismember(self.hash_key, url):
                 logger.debug(f"[JS_QUEUE] URL already queued: {url[:80]}")
                 return False
 
-            # Add to deduplication set
             self.redis.sadd(self.hash_key, url)
 
-            # Calculate final priority score
-            # Priority is negative because Redis sorted sets are ascending
-            # (we want highest priority first)
-            priority_score = -priority  # Negate for descending order
+            priority_score = -priority
 
-            # Add URL to sorted set with priority score
             self.redis.zadd(self.queue_key, {url: priority_score})
 
-            # Store metadata if provided
             if metadata or parent_url or js_confidence:
                 url_metadata = metadata or {}
                 url_metadata.update(
@@ -102,14 +79,6 @@ class JSPriorityQueue:
             return False
 
     def enqueue_batch(self, urls: list[tuple[str, int, dict[str, Any] | None]]) -> int:
-        """Enqueue multiple URLs in a single atomic operation.
-
-        Args:
-            urls: List of (url, priority, metadata) tuples
-
-        Returns:
-            Number of URLs successfully enqueued
-        """
         if not urls:
             return 0
 
@@ -118,7 +87,6 @@ class JSPriorityQueue:
             enqueued_count = 0
 
             for url, priority, metadata in urls:
-                # Check if already exists
                 if not self.redis.sismember(self.hash_key, url):
                     pipeline.sadd(self.hash_key, url)
                     pipeline.zadd(self.queue_key, {url: -priority})
@@ -142,22 +110,12 @@ class JSPriorityQueue:
             return 0
 
     def dequeue(self, count: int = 1) -> list[dict[str, Any]]:
-        """Dequeue highest priority URLs.
-
-        Args:
-            count: Number of URLs to dequeue
-
-        Returns:
-            List of URL dictionaries with metadata
-        """
         try:
-            # Get top N URLs by priority (lowest scores = highest priority)
             urls = self.redis.zrange(self.queue_key, 0, count - 1)
 
             if not urls:
                 return []
 
-            # Remove from queue and get metadata
             pipeline = self.redis.pipeline()
 
             for url in urls:
@@ -167,10 +125,9 @@ class JSPriorityQueue:
 
             results = pipeline.execute()
 
-            # Parse results
             url_dicts = []
             for i, url in enumerate(urls):
-                metadata_json = results[i * 3 + 1]  # Every 3rd result is metadata
+                metadata_json = results[i * 3 + 1]
                 metadata = json.loads(metadata_json) if metadata_json else {}
 
                 url_dicts.append(
@@ -189,22 +146,13 @@ class JSPriorityQueue:
             return []
 
     def peek(self, count: int = 10) -> list[tuple[str, int]]:
-        """Preview top URLs without removing them.
-
-        Args:
-            count: Number of URLs to peek
-
-        Returns:
-            List of (url, priority) tuples
-        """
         try:
-            # Get URLs with scores
             results = self.redis.zrange(self.queue_key, 0, count - 1, withscores=True)
 
             return [
                 (
                     url.decode() if isinstance(url, bytes) else url,
-                    -int(score),  # Convert back to positive priority
+                    -int(score),
                 )
                 for url, score in results
             ]
@@ -214,11 +162,6 @@ class JSPriorityQueue:
             return []
 
     def size(self) -> int:
-        """Get current queue size.
-
-        Returns:
-            Number of URLs in queue
-        """
         try:
             return self.redis.zcard(self.queue_key)
         except Exception as e:
@@ -226,7 +169,6 @@ class JSPriorityQueue:
             return 0
 
     def clear(self) -> None:
-        """Clear all URLs from queue."""
         try:
             pipeline = self.redis.pipeline()
             pipeline.delete(self.queue_key)
@@ -240,26 +182,20 @@ class JSPriorityQueue:
             logger.error(f"[JS_QUEUE] Clear failed: {e}")
 
     def get_stats(self) -> dict[str, Any]:
-        """Get queue statistics.
-
-        Returns:
-            Dictionary with queue statistics
-        """
         try:
             total_size = self.size()
 
-            # Get priority distribution
             all_scores = self.redis.zrange(self.queue_key, 0, -1, withscores=True)
 
             priority_dist = {
-                "critical": 0,  # 100+
-                "high": 0,  # 50-99
-                "medium": 0,  # 25-49
-                "low": 0,  # 0-24
+                "critical": 0,
+                "high": 0,
+                "medium": 0,
+                "low": 0,
             }
 
             for _, score in all_scores:
-                priority = -int(score)  # Convert back to positive
+                priority = -int(score)
                 if priority >= 100:
                     priority_dist["critical"] += 1
                 elif priority >= 50:
@@ -278,7 +214,6 @@ class JSPriorityQueue:
         except Exception as e:
             logger.error(f"[JS_QUEUE] Stats failed: {e}")
             return {}
-
 
 def calculate_js_priority(
     js_confidence: float,
@@ -307,7 +242,6 @@ def calculate_js_priority(
     Returns:
         Priority score (0-100)
     """
-    # Delegate to URLValueAssessor for consistency
     try:
         from src.common.url_value_assessor import URLValueAssessor
 
@@ -316,10 +250,8 @@ def calculate_js_priority(
     except Exception as e:
         logger.warning(f"[JS_QUEUE] Could not use URLValueAssessor, falling back: {e}")
 
-        # Fallback implementation (kept for robustness)
-        base_priority = int(js_confidence * 50)  # 0-50 from confidence
+        base_priority = int(js_confidence * 50)
 
-        # Boost for frameworks
         if framework_detected:
             framework_boost = {
                 "react": 50,
@@ -333,14 +265,11 @@ def calculate_js_priority(
 
             base_priority += framework_boost
 
-        # Boost for SPA detection
         if is_spa:
             base_priority += 50
 
-        # URL-based heuristics
         url_lower = url.lower()
         if any(hint in url_lower for hint in ["app", "dashboard", "portal", "console"]):
             base_priority += 10
 
-        # Cap at 100
         return min(base_priority, 100)

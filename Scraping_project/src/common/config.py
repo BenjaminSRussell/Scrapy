@@ -10,12 +10,9 @@ import yaml  # type: ignore[import-untyped]
 
 logger = logging.getLogger(__name__)
 
-
 class Config:
-    """Configuration manager for the scraping pipeline."""
 
     def __init__(self, config_path: str | os.PathLike[str] | None = None):
-        """Load configuration from YAML file."""
         if config_path is None:
             project_root = Path(__file__).parent.parent.parent
             resolved_path = project_root / "config.yml"
@@ -27,7 +24,6 @@ class Config:
         self._load_config()
 
     def _load_config(self):
-        """Load configuration from YAML file."""
         if not self.config_path.exists():
             logger.warning(f"Config file not found: {self.config_path}")
             logger.warning("Using default configuration")
@@ -44,10 +40,9 @@ class Config:
             self._config = self._get_default_config()
 
     def _get_default_config(self) -> dict[str, Any]:
-        """Return baseline configuration when no file is present."""
         return {
             "redis": {
-                "host": "127.0.0.1",  # Force IPv4 for local Redis
+                "host": "127.0.0.1",
                 "port": 6379,
                 "db": 0,
                 "password": None,
@@ -68,7 +63,6 @@ class Config:
         }
 
     def get(self, key_path: str, default: Any = None) -> Any:
-        """Return a value using dot notation, or the provided default."""
         keys = key_path.split(".")
         value = self._config
 
@@ -81,11 +75,9 @@ class Config:
         return value
 
     def get_section(self, section: str) -> dict[str, Any]:
-        """Return a nested configuration dictionary."""
         return self._config.get(section, {})
 
     def set(self, key_path: str, value: Any):
-        """Set a configuration value for the current process."""
         keys = key_path.split(".")
         config = self._config
 
@@ -97,20 +89,16 @@ class Config:
         config[keys[-1]] = value
 
     def reload(self):
-        """Reload configuration from disk."""
         self._load_config()
 
     # ============================================
-    # Convenience Methods for Common Settings
     # ============================================
 
     @property
     def redis_config(self) -> dict[str, Any]:
-        """Return Redis configuration, prioritizing REDIS_URL env var."""
         redis_url = os.getenv("REDIS_URL")
         if redis_url:
             if redis_url == "fakeredis://":
-                # Use default config for fakeredis, but signal its use
                 config = self.get_section("redis").copy()
                 config["is_fake"] = True
                 return config
@@ -126,61 +114,43 @@ class Config:
 
     @property
     def postgres_config(self) -> dict[str, Any]:
-        """Return PostgreSQL configuration block."""
         return self.get_section("postgres")
 
     @property
     def stage1_config(self) -> dict[str, Any]:
-        """Return Stage 1 configuration block."""
         return self.get_section("stage1")
 
     @property
     def stage2_config(self) -> dict[str, Any]:
-        """Return Stage 2 configuration block."""
         return self.get_section("stage2")
 
     @property
     def stage3_config(self) -> dict[str, Any]:
-        """Return Stage 3 configuration block."""
         return self.get_section("stage3")
 
     @property
     def stage4_config(self) -> dict[str, Any]:
-        """Return Stage 4 configuration block."""
         return self.get_section("stage4")
 
     @property
     def delta_lake_config(self) -> dict[str, Any]:
-        """Return Delta Lake configuration block."""
         return self.get_section("delta_lake")
 
     @property
     def message_queue_config(self) -> dict[str, Any]:
-        """Return message queue configuration block."""
         return self.get_section("message_queues")
 
-    # Class-level instance for singleton pattern
     _instance: "Config | None" = None
 
     @classmethod
     def get_instance(cls, config_path: str | None = None) -> "Config":
-        """
-        Return the shared Config instance, creating it on first use.
-
-        Note:
-            Once created, the singleton instance persists. Subsequent calls with
-            different parameters will return the existing instance without
-            modification.
-        """
         if cls._instance is None:
             cls._instance = cls(config_path)
         return cls._instance
 
     @classmethod
     def reset_instance(cls):
-        """Reset the singleton instance (useful for testing)."""
         cls._instance = None
 
     def get_raw_config(self) -> dict[str, Any]:
-        """Return the raw configuration dictionary."""
         return self._config

@@ -1,14 +1,3 @@
-"""Pipeline Orchestrator - Coordinates all 4 stages of the scraping pipeline
-
-This orchestrator manages the complete pipeline flow:
-  Stage 1: URL Discovery (Scout Spider) → seed_urls, stage2_queue
-  Stage 2: Page Analysis → stage2_page_analysis
-  Stage 3: Summarization (quality docs) → stage3_summaries
-  Stage 4: Large Doc Processing (massive docs) → stage4_large_doc_summaries
-
-The orchestrator can run all stages or individual stages on demand.
-"""
-
 import asyncio
 import logging
 from dataclasses import dataclass
@@ -25,10 +14,8 @@ from src.stage4.stage4_worker import Stage4Worker
 
 logger = logging.getLogger(__name__)
 
-
 @dataclass
 class PipelineStats:
-    """Statistics for pipeline execution."""
     stage1_urls_discovered: int = 0
     stage1_urls_queued: int = 0
     stage2_pages_analyzed: int = 0
@@ -41,21 +28,13 @@ class PipelineStats:
 
     @property
     def total_duration_seconds(self) -> float:
-        """Calculate total pipeline duration."""
         if self.start_time and self.end_time:
             return (self.end_time - self.start_time).total_seconds()
         return 0.0
 
-
 class PipelineOrchestrator:
-    """Orchestrates the complete 4-stage scraping pipeline."""
 
     def __init__(self, config: dict | None = None):
-        """Initialize orchestrator.
-
-        Args:
-            config: Configuration dict with stage-specific settings
-        """
         self.config = config or {}
         self.delta = get_delta_manager()
         self.stats = PipelineStats()
@@ -80,20 +59,17 @@ class PipelineOrchestrator:
 
         settings = get_project_settings()
 
-        # Disable problematic middleware temporarily
         settings.set('EXTENSIONS', {})
 
         if url_limit:
             settings.set('CLOSESPIDER_ITEMCOUNT', url_limit)
 
-        # Use SelectReactor to avoid asyncio conflicts
         settings.set('TWISTED_REACTOR', 'twisted.internet.selectreactor.SelectReactor')
 
         process = CrawlerProcess(settings)
         process.crawl(spider_name)
         process.start()
 
-        # Check results
         try:
             queue = self.delta.read("stage2_queue")
             queued_count = len([item for item in queue if item.get('status') == 'pending'])
@@ -125,12 +101,10 @@ class PipelineOrchestrator:
         worker = Stage2Worker(max_concurrent=max_concurrent, batch_size=batch_size)
         await worker.run()
 
-        # Check results
         try:
             analysis = self.delta.read("stage2_page_analysis")
             analyzed_count = len(analysis)
 
-            # Count quality vs massive docs
             quality_docs = len([d for d in analysis if not d.get('is_massive_doc', False) and not d.get('is_low_quality', True)])
             massive_docs = len([d for d in analysis if d.get('is_massive_doc', False)])
 
@@ -168,9 +142,8 @@ class PipelineOrchestrator:
         worker = Stage3Worker(max_concurrent=max_concurrent, batch_size=batch_size)
         await worker.run()
 
-        # Check results
         try:
-            summaries = self.delta.read("stage4_summaries")  # Stage 3 writes to stage4_summaries
+            summaries = self.delta.read("stage4_summaries")
             summary_count = len(summaries)
 
             logger.info(f"✅ Stage 3 complete: {summary_count} summaries created")
@@ -182,11 +155,6 @@ class PipelineOrchestrator:
             return 0
 
     async def run_stage4(self) -> int:
-        """Run Stage 4 (Large Document Processing).
-
-        Returns:
-            Number of large doc summaries created
-        """
         logger.info("=" * 80)
         logger.info("STAGE 4: LARGE DOCUMENT PROCESSING")
         logger.info("=" * 80)
@@ -194,7 +162,6 @@ class PipelineOrchestrator:
         worker = Stage4Worker()
         await worker.run()
 
-        # Check results
         try:
             large_summaries = self.delta.read("stage4_large_doc_summaries")
             large_count = len(large_summaries)
@@ -227,13 +194,10 @@ class PipelineOrchestrator:
         logger.info("🚀 " * 40)
 
         try:
-            # Stage 1: URL Discovery
             self.run_stage1(url_limit=stage1_url_limit)
 
-            # Stage 2: Page Analysis
             await self.run_stage2(max_concurrent=stage2_concurrent)
 
-            # Stage 3 & 4 can run in parallel (different data sources)
             await asyncio.gather(
                 self.run_stage3(max_concurrent=stage3_concurrent),
                 self.run_stage4(),
@@ -241,7 +205,6 @@ class PipelineOrchestrator:
 
             self.stats.end_time = datetime.now()
 
-            # Print final stats
             self._print_final_stats()
 
         except Exception as e:
@@ -271,7 +234,6 @@ class PipelineOrchestrator:
             raise ValueError(f"Unknown stage: {stage}")
 
     def _print_final_stats(self):
-        """Print final pipeline statistics."""
         logger.info("\n" + "=" * 80)
         logger.info("PIPELINE EXECUTION COMPLETE")
         logger.info("=" * 80)
@@ -296,9 +258,7 @@ class PipelineOrchestrator:
         logger.info(f"✅ Total summaries created: {self.stats.stage3_summaries_created + self.stats.stage4_large_summaries}")
         logger.info("=" * 80 + "\n")
 
-
 async def main():
-    """Main entry point for orchestrator."""
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
@@ -306,13 +266,11 @@ async def main():
 
     orchestrator = PipelineOrchestrator()
 
-    # Run full pipeline with limits for testing
     await orchestrator.run_full_pipeline(
-        stage1_url_limit=50,  # Limit for testing
+        stage1_url_limit=50,
         stage2_concurrent=10,
         stage3_concurrent=5,
     )
-
 
 if __name__ == "__main__":
     asyncio.run(main())

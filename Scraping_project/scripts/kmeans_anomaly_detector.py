@@ -1,8 +1,4 @@
 #!/usr/bin/env python3
-"""K-Means based anomaly detection for pipeline errors.
-
-Clusters error patterns and detects anomalies in real-time using machine learning.
-"""
 
 import argparse
 import json
@@ -35,9 +31,7 @@ except ImportError:
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-
 class ErrorAnomalyDetector:
-    """Detect anomalous error patterns using K-Means clustering."""
 
     def __init__(self, n_clusters=3):
         self.n_clusters = n_clusters
@@ -47,32 +41,19 @@ class ErrorAnomalyDetector:
         self.feature_names = []
 
     def prepare_features(self, errors_df):
-        """Prepare error features for clustering.
-
-        Features extracted:
-        1. Error rate (errors per minute)
-        2. Unique error types
-        3. Error type diversity (entropy)
-        4. Temporal pattern (hour of day)
-        5. Error code distribution
-        """
         if errors_df.empty:
             return np.array([]).reshape(0, 5)
 
-        # Ensure timestamp column exists and is datetime
         if "timestamp" not in errors_df.columns:
             errors_df["timestamp"] = datetime.now()
         else:
             errors_df["timestamp"] = pd.to_datetime(errors_df["timestamp"])
 
-        # Feature 1: Error rate (errors/minute)
         time_range_minutes = (errors_df["timestamp"].max() - errors_df["timestamp"].min()).total_seconds() / 60
         error_rate = len(errors_df) / max(time_range_minutes, 1)
 
-        # Feature 2: Unique error types
         unique_types = errors_df["error_type"].nunique() if "error_type" in errors_df.columns else 1
 
-        # Feature 3: Error type diversity (normalized entropy)
         if "error_type" in errors_df.columns:
             type_counts = errors_df["error_type"].value_counts()
             probs = type_counts / type_counts.sum()
@@ -81,17 +62,14 @@ class ErrorAnomalyDetector:
         else:
             normalized_entropy = 0
 
-        # Feature 4: Peak hour (time pattern)
         errors_df["hour"] = errors_df["timestamp"].dt.hour
         peak_hour_count = errors_df.groupby("hour").size().max()
 
-        # Feature 5: Error code variance
         if "error_code" in errors_df.columns:
             error_code_variance = errors_df["error_code"].var()
         else:
             error_code_variance = 0
 
-        # Create feature vector
         features = np.array(
             [
                 error_rate,
@@ -113,15 +91,12 @@ class ErrorAnomalyDetector:
         return features
 
     def fit(self, errors_df):
-        """Fit K-Means model on historical error data."""
         logger.info(f"Fitting K-Means with {self.n_clusters} clusters on {len(errors_df)} error records")
 
-        # Create multiple time windows for training
         errors_df["timestamp"] = pd.to_datetime(errors_df["timestamp"])
         min_time = errors_df["timestamp"].min()
         max_time = errors_df["timestamp"].max()
 
-        # Create hourly windows
         windows = []
         current_time = min_time
         while current_time < max_time:
@@ -137,7 +112,6 @@ class ErrorAnomalyDetector:
             logger.warning("No time windows created - insufficient data")
             return False
 
-        # Extract features from each window
         X_list = []
         for window in windows:
             features = self.prepare_features(window)
@@ -150,10 +124,8 @@ class ErrorAnomalyDetector:
 
         X = np.vstack(X_list)
 
-        # Scale features
         X_scaled = self.scaler.fit_transform(X)
 
-        # Fit K-Means
         self.kmeans.fit(X_scaled)
         self.is_fitted = True
 
@@ -164,15 +136,6 @@ class ErrorAnomalyDetector:
         return True
 
     def detect_anomalies(self, current_errors_df, sensitivity=2.0):
-        """Detect if current errors are anomalous.
-
-        Args:
-            current_errors_df: DataFrame with current error data
-            sensitivity: Anomaly threshold multiplier (default: 2.0 = 2 std devs)
-
-        Returns:
-            Dictionary with anomaly detection results
-        """
         if not self.is_fitted:
             raise ValueError("Model not fitted. Call fit() first.")
 
@@ -198,15 +161,11 @@ class ErrorAnomalyDetector:
 
         X_scaled = self.scaler.transform(X)
 
-        # Predict cluster
         cluster = self.kmeans.predict(X_scaled)[0]
 
-        # Calculate distance to nearest cluster center
         distances = self.kmeans.transform(X_scaled)
         min_distance = distances.min(axis=1)[0]
 
-        # Anomaly threshold (sensitivity * standard deviations from cluster center)
-        # Calculate from training data
         all_distances = []
         for center_idx in range(self.n_clusters):
             dist_to_center = np.linalg.norm(
@@ -218,7 +177,6 @@ class ErrorAnomalyDetector:
         threshold = sensitivity * np.std(all_distances)
         is_anomaly = min_distance > threshold
 
-        # Feature importance (which features contribute most to anomaly)
         feature_scores = {}
         if len(self.feature_names) == X.shape[1]:
             for idx, name in enumerate(self.feature_names):
@@ -239,7 +197,6 @@ class ErrorAnomalyDetector:
         }
 
     def save_model(self, filepath):
-        """Save fitted model to disk."""
         import pickle
 
         if not self.is_fitted:
@@ -258,7 +215,6 @@ class ErrorAnomalyDetector:
         logger.info(f"✅ Model saved to {filepath}")
 
     def load_model(self, filepath):
-        """Load fitted model from disk."""
         import pickle
 
         with open(filepath, "rb") as f:
@@ -271,7 +227,6 @@ class ErrorAnomalyDetector:
         self.is_fitted = True
 
         logger.info(f"✅ Model loaded from {filepath}")
-
 
 def main():
     parser = argparse.ArgumentParser(description="K-Means anomaly detection for errors")
@@ -297,7 +252,6 @@ def main():
 
     detector = ErrorAnomalyDetector(n_clusters=3)
 
-    # Connect to DuckDB
     con = duckdb.connect(":memory:")
 
     if args.train:
@@ -305,7 +259,6 @@ def main():
         print("TRAINING K-MEANS ANOMALY DETECTOR")
         print("=" * 80)
 
-        # Load historical errors from Delta Lake
         try:
             historical_errors = con.execute(
                 """
@@ -321,7 +274,6 @@ def main():
             logger.error(f"Failed to load historical errors: {e}")
             print("⚠️  No historical error data found. Generating synthetic training data...")
 
-            # Generate synthetic data for demonstration
             np.random.seed(42)
             dates = pd.date_range(end=datetime.now(), periods=1000, freq="1H")
             historical_errors = pd.DataFrame(
@@ -337,7 +289,6 @@ def main():
         success = detector.fit(historical_errors)
 
         if success:
-            # Save model
             Path(args.model_file).parent.mkdir(parents=True, exist_ok=True)
             detector.save_model(args.model_file)
             print(f"\n✅ Training complete! Model saved to {args.model_file}")
@@ -350,7 +301,6 @@ def main():
         print("DETECTING ANOMALIES")
         print("=" * 80)
 
-        # Load model
         if Path(args.model_file).exists():
             detector.load_model(args.model_file)
         else:
@@ -358,7 +308,6 @@ def main():
             print("   Run with --train first to create the model")
             sys.exit(1)
 
-        # Load current errors
         try:
             current_errors = con.execute(
                 """
@@ -383,12 +332,10 @@ def main():
 
         result = detector.detect_anomalies(current_errors, sensitivity=args.sensitivity)
 
-        # Save result
         Path(args.output).parent.mkdir(parents=True, exist_ok=True)
         with open(args.output, "w") as f:
             json.dump(result, f, indent=2)
 
-        # Print result
         print("\n" + "=" * 80)
         if result["is_anomaly"]:
             print("🚨 ANOMALY DETECTED!")
@@ -418,7 +365,6 @@ def main():
         print("=" * 80)
 
     con.close()
-
 
 if __name__ == "__main__":
     main()

@@ -1,25 +1,3 @@
-"""
-SeedManager - Centralized URL seeding and queueing logic.
-
-This module handles:
-1. Upserting URLs into seed_urls table (idempotent)
-2. Optionally writing to uconn_urls master list
-3. Optionally enqueuing URLs to stage2_queue
-
-⚠️  IMPORTANT: Spiders must NEVER write directly to seed/queue tables.
-All seeding operations must go through SeedManager to ensure:
-- Idempotency (duplicate URLs are handled correctly)
-- Consistency (schema matching, URL normalization)
-- Centralized logic (no drift between spiders)
-
-Schema Assumptions:
-- seed_urls: url (str), url_hash (str), discovered_at (ISO timestamp), source_url (str), source_spider (str)
-- uconn_urls: url, url_hash, discovered_at, source_url, source_spider
-- stage2_queue: url, url_hash, enqueued_at, status
-
-All writes are idempotent via merge_into using url_hash as merge key.
-"""
-
 import datetime as dt
 import hashlib
 import logging
@@ -30,31 +8,10 @@ from src.lakehouse.lakehouse_manager import LakehouseManager
 
 logger = logging.getLogger(__name__)
 
-
 def default_url_hasher(url: str) -> str:
-    """Default URL hasher using SHA256 (first 16 chars)."""
     return hashlib.sha256(url.encode("utf-8")).hexdigest()[:16]
 
-
 class SeedManager:
-    """
-    Centralized manager for seed URL expansion and queueing.
-
-    Provides idempotent writes to seed_urls, uconn_urls, and stage2_queue tables.
-    This is the ONLY way spiders should add URLs to seeds or queues.
-
-    Example:
-        >>> from src.lakehouse import get_lakehouse_manager, SeedManager
-        >>> lakehouse = get_lakehouse_manager()
-        >>> seed_mgr = SeedManager(lakehouse)
-        >>> result = seed_mgr.add_urls_to_seeds(
-        ...     urls=["https://example.com/page1"],
-        ...     source_url="https://example.com",
-        ...     source_spider="scout"
-        ... )
-        >>> print(result)
-        {'seed_inserted': 1, 'uconn_inserted': 1, 'stage2_enqueued': 1}
-    """
 
     def __init__(
         self,
@@ -96,9 +53,9 @@ class SeedManager:
         Returns:
             Dictionary with counts:
             {
-                "seed_inserted": int,      # URLs merged into seed_urls
-                "uconn_inserted": int,     # URLs merged into uconn_urls
-                "stage2_enqueued": int     # URLs enqueued to stage2_queue
+                "seed_inserted": int,
+                "uconn_inserted": int,
+                "stage2_enqueued": int
             }
 
         Examples:
@@ -113,13 +70,12 @@ class SeedManager:
             >>> print(result)
             {'seed_inserted': 2, 'uconn_inserted': 2, 'stage2_enqueued': 2}
         """
-        url_list = list(set(urls))  # Deduplicate
+        url_list = list(set(urls))
         if not url_list:
             return {"seed_inserted": 0, "uconn_inserted": 0, "stage2_enqueued": 0}
 
         now = dt.datetime.utcnow().isoformat()
 
-        # Prepare base records
         rows = []
         for url in url_list:
             rows.append(
@@ -132,7 +88,6 @@ class SeedManager:
                 }
             )
 
-        # 1. Upsert into seed_urls
         try:
             self.lakehouse.merge_into(
                 "seed_urls",
@@ -146,11 +101,9 @@ class SeedManager:
             logger.error(f"[SeedManager] Failed to merge into seed_urls: {e}", exc_info=True)
             ins_seed = 0
 
-        # 2. Optionally write to uconn_urls (filter to UConn domains only)
         ins_uconn = 0
         if write_uconn_urls:
             try:
-                # Filter to only UConn URLs
                 uconn_rows = [r for r in rows if "uconn.edu" in urlparse(r["url"]).netloc.lower()]
 
                 if uconn_rows:
@@ -165,7 +118,6 @@ class SeedManager:
             except Exception as e:
                 logger.warning(f"[SeedManager] Failed to merge into uconn_urls: {e}")
 
-        # 3. Optionally enqueue to stage2_queue
         enq = 0
         if enqueue_stage2:
             try:
@@ -225,7 +177,7 @@ class SeedManager:
                 source_url="bulk_import",
                 source_spider=source_spider,
                 write_uconn_urls=True,
-                enqueue_stage2=False,  # Bulk imports typically don't enqueue for Stage 2
+                enqueue_stage2=False,
             )
             for key in total_results:
                 total_results[key] += result[key]
@@ -233,26 +185,9 @@ class SeedManager:
         logger.info(f"[SeedManager] Bulk seeded {len(urls)} URLs: {total_results}")
         return total_results
 
-
 # =====================================================================================
-# Legacy Compatibility
 # =====================================================================================
 
-
-# For backward compatibility, support the old DeltaLakeManager type
-# This will be deprecated in future versions
 def create_seed_manager_from_delta(delta_manager) -> SeedManager:
-    """
-    Create a SeedManager from a DeltaLakeManager (legacy compatibility).
-
-    Args:
-        delta_manager: DeltaLakeManager or LakehouseManager instance
-
-    Returns:
-        SeedManager instance
-
-    Deprecated:
-        Use SeedManager(lakehouse) directly instead.
-    """
     logger.warning("create_seed_manager_from_delta() is deprecated. Use SeedManager(lakehouse) directly instead.")
     return SeedManager(delta_manager)

@@ -1,16 +1,3 @@
-"""PostgreSQL Manager - Database interface for performance metrics and error logging
-
-This module provides a centralized interface for all PostgreSQL database operations,
-including performance tracking, error logging, and data retrieval for ML analysis.
-
-Environment Variables:
-    DB_HOST: PostgreSQL host (default: localhost)
-    DB_PORT: PostgreSQL port (default: 5432)
-    DB_NAME: Database name (default: scraping_pipeline)
-    DB_USER: Database user (default: postgres)
-    DB_PASSWORD: Database password (required)
-"""
-
 import logging
 import os
 from collections.abc import Sequence
@@ -32,9 +19,7 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-
 class PostgresManager:
-    """Manages PostgreSQL connections and provides methods for logging and querying."""
 
     def __init__(
         self,
@@ -60,7 +45,6 @@ class PostgresManager:
         if not POSTGRES_AVAILABLE:
             raise ImportError("PostgreSQL support not available. Install with: pip install psycopg2-binary")
 
-        # Load configuration from environment or defaults
         self.host = host or os.getenv("DB_HOST", "localhost")
         self.port = port or int(os.getenv("DB_PORT", "5432"))
         self.database = database or os.getenv("DB_NAME", "scraping_pipeline")
@@ -72,7 +56,6 @@ class PostgresManager:
                 "Database password required. Set DB_PASSWORD environment variable or pass password parameter."
             )
 
-        # Create connection pool
         try:
             self.connection_pool = psycopg2.pool.SimpleConnectionPool(
                 min_conn,
@@ -88,12 +71,10 @@ class PostgresManager:
             logger.error(f"Failed to create PostgreSQL connection pool: {e}")
             raise
 
-        # Initialize database schema
         self._initialize_schema()
 
     @contextmanager
     def get_connection(self):
-        """Context manager for getting database connections from the pool."""
         conn = None
         try:
             conn = self.connection_pool.getconn()
@@ -109,11 +90,9 @@ class PostgresManager:
                 self.connection_pool.putconn(conn)
 
     def _initialize_schema(self):
-        """Create required tables if they don't exist."""
         with self.get_connection() as conn:
             cursor = conn.cursor()
 
-            # Performance metrics table
             cursor.execute(
                 """
                 CREATE TABLE IF NOT EXISTS performance_metrics (
@@ -130,7 +109,6 @@ class PostgresManager:
             """
             )
 
-            # Create index on stage and timestamp for faster queries
             cursor.execute(
                 """
                 CREATE INDEX IF NOT EXISTS idx_perf_stage_time
@@ -138,7 +116,6 @@ class PostgresManager:
             """
             )
 
-            # Error logs table
             cursor.execute(
                 """
                 CREATE TABLE IF NOT EXISTS error_logs (
@@ -156,7 +133,6 @@ class PostgresManager:
             """
             )
 
-            # Create index on stage and timestamp for faster queries
             cursor.execute(
                 """
                 CREATE INDEX IF NOT EXISTS idx_error_stage_time
@@ -164,7 +140,6 @@ class PostgresManager:
             """
             )
 
-            # Error analysis reports table
             cursor.execute(
                 """
                 CREATE TABLE IF NOT EXISTS error_analysis_reports (
@@ -189,11 +164,9 @@ class PostgresManager:
             logger.info("Database schema initialized successfully")
 
     def initialize_schema(self):
-        """Public helper to initialize the schema (used by tests)."""
         self._initialize_schema()
 
     def execute(self, query: str, params: Sequence[Any] | None = None):
-        """Execute an arbitrary SQL statement using the connection pool."""
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(query, params)
@@ -380,21 +353,6 @@ class PostgresManager:
         return [dict(row) for row in results]
 
     def save_error_analysis(self, total_errors: int, num_clusters: int, cluster_data: list[dict[str, Any]]):
-        """Save error analysis results to the database.
-
-        Args:
-            total_errors: Total number of errors analyzed
-            num_clusters: Number of clusters identified
-            cluster_data: List of cluster analysis results, each containing:
-                - cluster_id: Cluster identifier
-                - cluster_size: Number of errors in cluster
-                - cluster_percentage: Percentage of total errors
-                - common_error_type: Most common error type
-                - common_url_pattern: Common URL pattern
-                - avg_http_status: Average HTTP status code
-                - summary: Plain-English summary
-                - recommendations: Recommendations for fixing
-        """
         with self.get_connection() as conn:
             cursor = conn.cursor()
 
@@ -426,23 +384,15 @@ class PostgresManager:
         logger.info(f"Saved error analysis: {num_clusters} clusters from {total_errors} errors")
 
     def close(self):
-        """Close all connections in the pool."""
         if self.connection_pool:
             self.connection_pool.closeall()
             logger.info("PostgreSQL connection pool closed")
 
-    # Class-level instance for singleton pattern
     _instance: "PostgresManager | None" = None
 
     @classmethod
     def get_instance(cls) -> "PostgresManager | None":
-        """
-        Get or create global PostgreSQL manager.
-        Returns:
-            PostgresManager instance or None if credentials not configured
-        """
         if cls._instance is None:
-            # Only create if password is available
             if os.getenv("DB_PASSWORD"):
                 try:
                     cls._instance = cls()
@@ -456,24 +406,19 @@ class PostgresManager:
 
     @classmethod
     def reset_instance(cls):
-        """Reset the singleton instance (useful for testing)."""
         if cls._instance:
             cls._instance.close()
         cls._instance = None
 
-
-# Module-level convenience accessor
 _postgres_manager: PostgresManager | None = None
 
-
 def get_postgres_manager(**kwargs) -> PostgresManager | None:
-    """Return a cached PostgresManager instance, creating it on first use."""
     global _postgres_manager
 
     if _postgres_manager is None:
         try:
             _postgres_manager = PostgresManager(**kwargs)
-        except Exception as exc:  # pragma: no cover - defensive guard
+        except Exception as exc:
             logger.warning(f"Postgres manager unavailable: {exc}")
             return None
 

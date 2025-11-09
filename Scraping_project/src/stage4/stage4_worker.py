@@ -1,8 +1,3 @@
-"""Stage 4 Worker - Large Document Processing
-Handles heavyweight summarization of massive documents.
-Reads from stage2_page_analysis (where is_massive_doc=True) and writes to stage4_large_doc_summaries.
-"""
-
 import asyncio
 import logging
 from datetime import datetime
@@ -13,24 +8,15 @@ from src.stage4.large_doc_processor import LargeDocProcessor
 
 logger = logging.getLogger(__name__)
 
-
 class Stage4Worker:
-    """Worker for Stage 4 large document processing."""
 
     def __init__(self, model_name: str = "facebook/bart-large-cnn"):
-        """Initialize Stage 4 worker.
-
-        Args:
-            model_name: HuggingFace model for heavyweight summarization
-        """
         self.delta = get_delta_manager()
         self.processor = LargeDocProcessor(model_name=model_name)
 
     async def run(self):
-        """Main worker loop - process large documents."""
         logger.info("[STAGE4] Worker starting for large document processing")
 
-        # Read large documents from stage2_page_analysis
         try:
             all_docs = self.delta.read("stage2_page_analysis")
         except Exception as e:
@@ -41,7 +27,6 @@ class Stage4Worker:
             logger.warning("[STAGE4] No documents found in stage2_page_analysis")
             return
 
-        # Filter to massive documents only
         large_docs = [
             doc
             for doc in all_docs
@@ -55,14 +40,12 @@ class Stage4Worker:
             logger.info("[STAGE4] No large documents to process")
             return
 
-        # Check already processed
         try:
             processed = self.delta.read("stage4_large_doc_summaries")
             processed_urls = {r["url"] for r in processed}
         except Exception:
             processed_urls = set()
 
-        # Filter to pending
         pending = [doc for doc in large_docs if doc.get("url") not in processed_urls]
 
         if not pending:
@@ -71,7 +54,6 @@ class Stage4Worker:
 
         logger.info(f"[STAGE4] Processing {len(pending)} pending large documents")
 
-        # Process documents sequentially (CPU-bound, heavyweight models)
         results = []
         for i, doc in enumerate(pending):
             logger.info(f"[STAGE4] Processing {i+1}/{len(pending)}: {doc.get('url', '')[:80]}")
@@ -83,7 +65,6 @@ class Stage4Worker:
             except Exception as e:
                 logger.error(f"[STAGE4] Failed to process {doc.get('url', '')}: {e}")
 
-        # Save results
         if results:
             try:
                 self.delta.write("stage4_large_doc_summaries", results, mode="append")
@@ -94,19 +75,10 @@ class Stage4Worker:
         logger.info("[STAGE4] Worker completed")
 
     async def _process_large_document(self, doc: dict[str, Any]) -> dict[str, Any] | None:
-        """Process a single large document.
-
-        Args:
-            doc: Document record from stage2_page_analysis
-
-        Returns:
-            Summary record or None if failed
-        """
         try:
             url = doc.get("url", "")
             url_hash = doc.get("url_hash", "")
 
-            # Fetch fresh content (Stage 4 processor fetches on-demand)
             is_pdf = doc.get("content_hint") == "pdf"
 
             logger.info(f"[STAGE4] Fetching content from {url[:80]}")
@@ -118,7 +90,6 @@ class Stage4Worker:
 
             logger.info(f"[STAGE4] Processing {len(text)} characters")
 
-            # Process with heavyweight model
             summary = self.processor.process_large_document(url, text)
 
             if not summary:
@@ -140,9 +111,7 @@ class Stage4Worker:
             logger.error(f"[STAGE4] Error processing {doc.get('url', '')}: {e}")
             return None
 
-
 async def run_stage4_worker():
-    """Run Stage 4 worker in continuous mode."""
     logger.info("[STAGE4] Worker starting in continuous mode...")
 
     while True:
@@ -150,7 +119,6 @@ async def run_stage4_worker():
             worker = Stage4Worker()
             await worker.run()
 
-            # Wait 60 seconds before checking for new work (longer than other stages)
             logger.info("[STAGE4] Waiting 60 seconds before next check...")
             await asyncio.sleep(60)
 
@@ -159,9 +127,7 @@ async def run_stage4_worker():
             break
         except Exception as e:
             logger.error(f"[STAGE4] Error in worker loop: {e}")
-            # Wait before retrying on error
             await asyncio.sleep(30)
-
 
 if __name__ == "__main__":
     logging.basicConfig(

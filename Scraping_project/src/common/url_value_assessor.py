@@ -8,29 +8,18 @@ from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
 
-
 @dataclass
 class URLValue:
-    """Assessment of a URL's value for crawling."""
 
     url: str
-    value_score: int  # 0-100
-    content_likelihood: str  # "high", "medium", "low"
-    recommended_spider: str  # "js", "depth", "scout"
+    value_score: int
+    content_likelihood: str
+    recommended_spider: str
     reasons: list[str]
     metadata: dict[str, Any]
 
-
 class URLValueAssessor:
-    """Assess the value of URLs for intelligent crawl prioritization.
 
-    This class evaluates URLs to determine:
-    1. How valuable they are to crawl (content richness)
-    2. Which spider should handle them
-    3. What priority they should have
-    """
-
-    # High-value URL patterns (likely to contain rich content)
     HIGH_VALUE_PATTERNS = [
         r"/research/",
         r"/publications?/",
@@ -55,7 +44,6 @@ class URLValueAssessor:
         r"/contact/",
     ]
 
-    # Low-value URL patterns (likely administrative/utility pages)
     LOW_VALUE_PATTERNS = [
         r"/login",
         r"/logout",
@@ -77,13 +65,12 @@ class URLValueAssessor:
         r"/robots\.txt",
         r"/feed/",
         r"/rss/",
-        r"/api/",  # Raw API endpoints (not rendered pages)
+        r"/api/",
         r"/assets/",
         r"/static/",
         r"/cdn/",
     ]
 
-    # Patterns indicating JavaScript-heavy pages
     JS_PATTERNS = [
         r"/app/",
         r"/dashboard/",
@@ -92,11 +79,10 @@ class URLValueAssessor:
         r"/admin/",
         r"/editor/",
         r"/viewer/",
-        r"/#/",  # SPA hash routing
+        r"/
         r"/spa/",
     ]
 
-    # Patterns indicating deep/hidden content
     DEPTH_PATTERNS = [
         r"/archive/",
         r"/collection/",
@@ -110,7 +96,6 @@ class URLValueAssessor:
         r"/topic/",
     ]
 
-    # Document extensions (valuable for content extraction)
     DOCUMENT_EXTENSIONS = {
         ".pdf": 40,
         ".doc": 35,
@@ -122,12 +107,6 @@ class URLValueAssessor:
     }
 
     def __init__(self, crawl_data_manager=None, use_historical_data: bool = True):
-        """Initialize URL value assessor.
-
-        Args:
-            crawl_data_manager: CrawlDataManager instance for historical analysis (optional)
-            use_historical_data: Whether to use historical data for assessment (default: True)
-        """
         self.high_value_regex = re.compile("|".join(self.HIGH_VALUE_PATTERNS), re.IGNORECASE)
         self.low_value_regex = re.compile("|".join(self.LOW_VALUE_PATTERNS), re.IGNORECASE)
         self.js_regex = re.compile("|".join(self.JS_PATTERNS), re.IGNORECASE)
@@ -136,7 +115,6 @@ class URLValueAssessor:
         self.use_historical_data = use_historical_data
         self.crawl_data_manager = crawl_data_manager
 
-        # Lazy-load crawl data manager if enabled
         if self.use_historical_data and self.crawl_data_manager is None:
             try:
                 from src.common.crawl_data_manager import CrawlDataManager
@@ -167,11 +145,10 @@ class URLValueAssessor:
         """
         parsed = urlparse(url)
         path = parsed.path.lower()
-        value_score = 50  # Base score
+        value_score = 50
         reasons = []
         metadata = {}
 
-        # Check for document extensions
         doc_boost = self._assess_document_value(url)
         if doc_boost > 0:
             value_score += doc_boost
@@ -179,24 +156,21 @@ class URLValueAssessor:
             reasons.append(f"document_file_{ext}")
             metadata["is_document"] = True
 
-        # Check historical path value first (data-driven)
         if self.use_historical_data and self.crawl_data_manager and parsed.netloc:
             try:
                 domain = self._extract_domain(parsed.netloc)
                 if self.crawl_data_manager.is_valuable_path(url, domain):
-                    value_score += 35  # Higher boost for historically proven paths
+                    value_score += 35
                     reasons.append("historical_valuable_path")
                     metadata["historical_valuable_path"] = True
             except Exception as e:
                 logger.debug(f"[URL_ASSESSOR] Could not check historical path value: {e}")
 
-        # Check high-value patterns (static rules)
         if self.high_value_regex.search(path):
             value_score += 30
             reasons.append("high_value_pattern")
             metadata["has_high_value_pattern"] = True
 
-        # Check low-value patterns
         if self.low_value_regex.search(path):
             value_score -= 40
             reasons.append("low_value_pattern")
@@ -211,17 +185,13 @@ class URLValueAssessor:
             value_score -= 10
             reasons.append("deep_path")
 
-        # Check for query parameters (may indicate dynamic content)
         if parsed.query:
-            # Some query params indicate valuable filters
             if any(param in parsed.query.lower() for param in ["id=", "page=", "category=", "search="]):
                 value_score += 5
                 reasons.append("dynamic_params")
             else:
-                # Generic tracking params reduce value
                 value_score -= 5
 
-        # Assess JS requirement
         js_boost = self._assess_js_requirement(url, js_confidence)
         if js_boost != 0:
             value_score += js_boost
@@ -234,17 +204,14 @@ class URLValueAssessor:
             value_score -= (depth - 3) * 5
             reasons.append(f"depth_{depth}")
 
-        # Domain assessment
         if parsed.netloc:
             domain_boost = self._assess_domain_value(parsed.netloc)
             value_score += domain_boost
             if domain_boost > 0:
                 reasons.append("valuable_domain")
 
-        # Clamp score to 0-100
         value_score = max(0, min(100, value_score))
 
-        # Determine content likelihood
         if value_score >= 70:
             content_likelihood = "high"
         elif value_score >= 40:
@@ -252,7 +219,6 @@ class URLValueAssessor:
         else:
             content_likelihood = "low"
 
-        # Recommend spider
         recommended_spider = self._recommend_spider(url, js_confidence, value_score)
 
         return URLValue(
@@ -265,14 +231,12 @@ class URLValueAssessor:
         )
 
     def _extract_domain(self, netloc: str) -> str:
-        """Extract base domain from netloc (e.g., 'uconn.edu' from 'www.uconn.edu')."""
         domain_parts = netloc.lower().split(".")
         if len(domain_parts) >= 2:
             return ".".join(domain_parts[-2:])
         return netloc.lower()
 
     def _assess_document_value(self, url: str) -> int:
-        """Assess value boost for document URLs."""
         url_lower = url.lower()
 
         for ext, boost in self.DOCUMENT_EXTENSIONS.items():
@@ -282,47 +246,36 @@ class URLValueAssessor:
         return 0
 
     def _assess_js_requirement(self, url: str, js_confidence: float) -> int:
-        """Assess value adjustment for JS-heavy pages."""
-        # High JS confidence suggests valuable dynamic content
         if js_confidence > 0.7:
             return 20
 
-        # JS patterns in URL
         if self.js_regex.search(url.lower()):
             return 15
 
-        # SPA indicators
-        if "/#/" in url or "/app/" in url.lower():
+        if "/
             return 25
 
         return 0
 
     def _assess_domain_value(self, domain: str) -> int:
-        """Assess value based on domain characteristics and historical data."""
         domain_lower = domain.lower()
         base_score = 0
 
-        # Use historical data if available
         if self.use_historical_data and self.crawl_data_manager:
             try:
                 historical_boost = self.crawl_data_manager.get_domain_value_boost(domain)
                 if historical_boost != 0:
-                    # Historical data takes precedence
                     logger.debug(f"[URL_ASSESSOR] Historical boost for {domain}: {historical_boost}")
                     return historical_boost
             except Exception as e:
                 logger.debug(f"[URL_ASSESSOR] Could not get historical data for {domain}: {e}")
 
-        # Fallback to static rules
-        # Educational domains (.edu) are often valuable
         if ".edu" in domain_lower:
             base_score = 10
 
-        # Government domains (.gov) are often valuable
         elif ".gov" in domain_lower:
             base_score = 10
 
-        # Subdomain depth penalty
         subdomain_count = len(domain_lower.split(".")) - 2
         if subdomain_count > 2:
             base_score -= 5
@@ -330,32 +283,20 @@ class URLValueAssessor:
         return base_score
 
     def _recommend_spider(self, url: str, js_confidence: float, value_score: int) -> str:
-        """Recommend which spider should handle this URL.
-
-        Returns:
-            "js" - JavaScript spider (for JS-heavy pages)
-            "depth" - Depth spider (for discovery and hidden content)
-            "scout" - Scout spider (for standard HTML pages)
-        """
         url_lower = url.lower()
 
-        # High JS confidence → JS spider
         if js_confidence > 0.6:
             return "js"
 
-        # JS patterns → JS spider
         if self.js_regex.search(url_lower):
             return "js"
 
-        # Depth/archive patterns → Depth spider
         if self.depth_regex.search(url_lower):
             return "depth"
 
-        # Low value URLs → Skip or low-priority scout
         if value_score < 30:
             return "scout"
 
-        # Default to scout for standard pages
         return "scout"
 
     def assess_batch(
@@ -439,9 +380,8 @@ class URLValueAssessor:
         Returns:
             Priority score (0-100)
         """
-        base_priority = int(js_confidence * 50)  # 0-50 from confidence
+        base_priority = int(js_confidence * 50)
 
-        # Boost for frameworks
         if framework_detected:
             framework_boost = {
                 "react": 50,
@@ -455,16 +395,13 @@ class URLValueAssessor:
 
             base_priority += framework_boost
 
-        # Boost for SPA detection
         if is_spa:
             base_priority += 50
 
-        # URL-based heuristics
         url_lower = url.lower()
         if any(hint in url_lower for hint in ["app", "dashboard", "portal", "console"]):
             base_priority += 10
 
-        # Use historical data if available
         if self.use_historical_data and self.crawl_data_manager:
             try:
                 parsed = urlparse(url)
@@ -472,25 +409,20 @@ class URLValueAssessor:
                     domain = self._extract_domain(parsed.netloc)
                     avg_js_conf = self.crawl_data_manager.get_avg_js_confidence(domain)
                     if avg_js_conf > 0.7:
-                        # Domain historically requires JS
                         base_priority += 15
                         logger.debug(f"[URL_ASSESSOR] Historical JS boost for {domain}: +15")
             except Exception as e:
                 logger.debug(f"[URL_ASSESSOR] Could not use historical JS data: {e}")
 
-        # Cap at 100
         return min(base_priority, 100)
 
-
 def example_usage():
-    """Example usage of URLValueAssessor."""
     assessor = URLValueAssessor()
 
-    # Example URLs
     test_urls = [
         "https://www.uconn.edu/research/faculty/",
         "https://www.uconn.edu/login",
-        "https://portal.uconn.edu/app/dashboard/#/home",
+        "https://portal.uconn.edu/app/dashboard/
         "https://www.uconn.edu/documents/report.pdf",
         "https://www.uconn.edu/static/assets/logo.png",
         "https://www.uconn.edu/news/article/2024/breakthrough",
@@ -503,7 +435,6 @@ def example_usage():
         print(f"  Content Likelihood: {assessment.content_likelihood}")
         print(f"  Recommended Spider: {assessment.recommended_spider}")
         print(f"  Reasons: {', '.join(assessment.reasons)}")
-
 
 if __name__ == "__main__":
     example_usage()

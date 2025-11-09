@@ -1,8 +1,3 @@
-"""Stage 3 Asynchronous Worker
-Similarity detection & summarization for quality documents.
-Uses datasketch MinHash for deduplication and BART for summarization.
-"""
-
 import asyncio
 import logging
 import time
@@ -17,12 +12,9 @@ from src.common.postgres_manager import PostgresManager
 
 logger = logging.getLogger(__name__)
 
-
 class Stage3Worker:
-    """Async worker for Stage 3 similarity detection & summarization."""
 
     def __init__(self, max_concurrent: int = 20, batch_size: int = 50):
-        """Initialize Stage 3 worker."""
         self.max_concurrent = max_concurrent
         self.batch_size = batch_size
         self.semaphore = asyncio.Semaphore(max_concurrent)
@@ -31,17 +23,14 @@ class Stage3Worker:
         self.SIMILARITY_THRESHOLD = 0.3
 
     async def run(self):
-        """Main worker loop - process quality documents."""
         logger.info(f"Stage 3 Worker starting with {self.max_concurrent} concurrent workers")
 
-        # Read quality documents from stage2_page_analysis
         all_docs = self.delta.read("stage2_page_analysis")
 
         if not all_docs:
             logger.warning("No documents found in stage2_page_analysis")
             return
 
-        # Filter to quality documents only
         quality_docs = [
             doc
             for doc in all_docs
@@ -57,14 +46,12 @@ class Stage3Worker:
             logger.info("No quality documents to process")
             return
 
-        # Check already processed
         try:
             processed = self.delta.read("stage4_summaries")
             processed_hashes = {r["url_hash"] for r in processed}
         except Exception:
             processed_hashes = set()
 
-        # Filter to pending
         pending = [doc for doc in quality_docs if doc.get("url_hash") not in processed_hashes]
 
         if not pending:
@@ -73,33 +60,26 @@ class Stage3Worker:
 
         logger.info(f"Processing {len(pending)} pending documents")
 
-        # Process in batches
         for i in range(0, len(pending), self.batch_size):
             batch = pending[i : i + self.batch_size]
             logger.info(f"Processing batch {i // self.batch_size + 1}: {len(batch)} documents")
 
-            # Track performance
             batch_start = time.time()
 
-            # Deduplicate batch
             unique_batch = await self._deduplicate_documents(batch)
             logger.info(f"After deduplication: {len(unique_batch)} unique documents")
 
-            # Summarize concurrently
             tasks = [self._summarize_document(doc) for doc in unique_batch]
             results = await asyncio.gather(*tasks, return_exceptions=True)
 
-            # Calculate batch time
             batch_time = time.time() - batch_start
 
-            # Filter valid results
             valid_results = [r for r in results if isinstance(r, dict) and not isinstance(r, Exception)]
 
             if valid_results:
                 self.delta.write("stage4_summaries", valid_results, mode="append", async_write=False)
                 logger.info(f"Saved {len(valid_results)} summaries")
 
-                # Log performance to PostgreSQL
                 if self.postgres:
                     try:
                         self.postgres.log_performance_metric(
@@ -114,7 +94,6 @@ class Stage3Worker:
         logger.info("Stage 3 Worker completed all batches")
 
     async def _deduplicate_documents(self, documents: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        """Use MinHash LSH to detect and remove near-duplicate documents."""
         logger.info(f"Running similarity detection on {len(documents)} documents")
 
         lsh = MinHashLSH(threshold=self.SIMILARITY_THRESHOLD, num_perm=128)
@@ -129,15 +108,12 @@ class Stage3Worker:
             if not text or url_hash in seen_similar:
                 continue
 
-            # Create MinHash
             minhash = MinHash(num_perm=128)
 
-            # Tokenize
             words = text.lower().split()
-            for word in words[:1000]:  # First 1000 words
+            for word in words[:1000]:
                 minhash.update(word.encode("utf-8"))
 
-            # Query LSH for similar documents
             similar = lsh.query(minhash)
 
             if similar:
@@ -145,7 +121,6 @@ class Stage3Worker:
                 seen_similar.add(url_hash)
                 continue
 
-            # Add to LSH
             lsh.insert(url_hash, minhash)
             unique_docs.append(doc)
 
@@ -153,19 +128,12 @@ class Stage3Worker:
         return unique_docs
 
     async def _summarize_document(self, doc: dict[str, Any]) -> dict[str, Any] | None:
-        """Performs simple extractive summarization on a document.
-
-        This method extracts the first N sentences from the document's text
-        content to create a concise, extractive summary. The number of
-        sentences is defined by `SUMMARY_LIMITS["extractive_max_sentences"]`.
-        """
         async with self.semaphore:
             try:
                 url = doc.get("url", "")
                 text = doc.get("text_content", "")
                 url_hash = doc.get("url_hash", "")
 
-                # Simple extractive summary (first sentences)
                 max_sentences = SUMMARY_LIMITS["extractive_max_sentences"]
                 sentences = text.split(".")[:max_sentences]
                 summary_body = ". ".join(sentence.strip() for sentence in sentences if sentence.strip())
@@ -184,7 +152,6 @@ class Stage3Worker:
             except Exception as err:
                 logger.error(f"Summarization failed for {doc.get('url', '')}: {err}")
 
-                # Log error to PostgreSQL for observability
                 if self.postgres:
                     try:
                         self.postgres.log_error(
@@ -199,13 +166,11 @@ class Stage3Worker:
                 return None
 
     def _fallback_summary(self, text: str, max_chars: int = 500) -> str:
-        """Fallback summary - first N characters."""
         if len(text) <= max_chars:
             return text
         return text[:max_chars] + "..."
 
     def _extract_key_facts(self, text: str, keywords: list[str]) -> list[str]:
-        """Extract key facts from text based on keywords."""
         sentences = text.split(".")
         facts = []
 
@@ -214,7 +179,6 @@ class Stage3Worker:
             if not sentence:
                 continue
 
-            # Check if sentence contains any keyword
             for keyword in keywords:
                 if keyword.lower() in sentence.lower():
                     facts.append(sentence)
@@ -225,16 +189,13 @@ class Stage3Worker:
 
         return facts if facts else [s.strip() for s in sentences[:3] if s.strip()]
 
-
 async def run_stage3_worker():
-    """Run Stage 3 worker in continuous mode."""
     logger.info("Stage 3 Worker starting in continuous mode...")
 
     while True:
         try:
             worker = Stage3Worker(max_concurrent=20, batch_size=50)
             await worker.run()
-            # Wait 30 seconds before checking for new work
             logger.info("Waiting 30 seconds before next check...")
             await asyncio.sleep(30)
         except KeyboardInterrupt:
@@ -242,9 +203,7 @@ async def run_stage3_worker():
             break
         except Exception as e:
             logger.error(f"Error in Stage 3 Worker loop: {e}")
-            # Wait a bit before retrying on error
             await asyncio.sleep(10)
-
 
 if __name__ == "__main__":
     asyncio.run(run_stage3_worker())

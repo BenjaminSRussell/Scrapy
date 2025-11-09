@@ -1,16 +1,3 @@
-"""Stage 4: Entity-Centric Summarization with Verifiable Citations
-
-This module implements a sophisticated, entity-centric summarization pipeline that produces
-verifiable, non-redundant, and chronologically-aware summaries from scraped content.
-
-The pipeline consists of three main phases:
-1. Extractive Fact Aggregation and Deduplication
-2. Abstractive Summarization with Chronological Context
-3. Structured Output and Storage
-
-All NLP tasks use local Hugging Face models to ensure the system is self-contained.
-"""
-
 import logging
 import re
 from collections import defaultdict
@@ -21,21 +8,7 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
-
 class FactAggregator:
-    """Aggregates and deduplicates facts by entity using semantic clustering.
-
-    This class implements Phase 1 of the entity-centric summarization pipeline:
-    - Aggregates facts (sentences) by entity across multiple source documents
-    - Preserves source references (URL, date) for each fact
-    - Implements semantic deduplication using sentence embeddings and clustering
-
-    Features:
-    - Sentence-level fact extraction with entity co-reference
-    - Semantic deduplication via cosine similarity clustering
-    - Source attribution for provenance tracking
-    - Handles multiple date formats (ISO 8601, timestamps, etc.)
-    """
 
     def __init__(
         self,
@@ -57,14 +30,11 @@ class FactAggregator:
         self.min_fact_length = min_fact_length
         self.max_fact_length = max_fact_length
 
-        # Lazy-load the embedding model on first use
         self._embedding_model = None
 
-        # Entity fact storage: {entity_name: [list of FactRecord]}
         self.entity_facts: dict[str, list[dict[str, Any]]] = defaultdict(list)
 
     def _get_embedding_model(self):
-        """Lazy-load the sentence embedding model."""
         if self._embedding_model is None:
             try:
                 from sentence_transformers import SentenceTransformer
@@ -102,16 +72,12 @@ class FactAggregator:
             publication_date: Date of publication (datetime or ISO 8601 string)
             metadata: Optional additional metadata
         """
-        # Parse publication date to datetime
         pub_date = self._parse_date(publication_date)
 
-        # Extract sentences from content
         sentences = self._extract_sentences(content)
 
-        # Filter sentences that mention the entity
         entity_sentences = self._filter_entity_sentences(sentences, entity_name)
 
-        # Create FactRecords
         for sentence in entity_sentences:
             fact_record = {
                 "entity_name": entity_name,
@@ -128,14 +94,6 @@ class FactAggregator:
         logger.info(f"Added {len(entity_sentences)} facts for entity '{entity_name}' from {source_url}")
 
     def _parse_date(self, date_input: datetime | str | None) -> datetime | None:
-        """Parse various date formats to datetime object.
-
-        Args:
-            date_input: Date in various formats
-
-        Returns:
-            Parsed datetime or None if parsing fails
-        """
         if date_input is None:
             return None
 
@@ -144,7 +102,6 @@ class FactAggregator:
 
         if isinstance(date_input, str):
             try:
-                # Handle ISO 8601 format with 'Z' suffix
                 if date_input.endswith("Z"):
                     date_input = date_input[:-1] + "+00:00"
 
@@ -156,72 +113,31 @@ class FactAggregator:
         return None
 
     def _extract_sentences(self, content: str) -> list[str]:
-        """Extract well-formed sentences from content.
-
-        Uses simple sentence boundary detection. For production, consider
-        using spaCy or nltk for more sophisticated sentence splitting.
-
-        Args:
-            content: Text content
-
-        Returns:
-            List of sentences
-        """
-        # Simple sentence splitting (handles ., !, ?)
-        # For production, use spaCy: nlp(content).sents
         sentence_pattern = re.compile(r"[^.!?]+[.!?]+")
         sentences = sentence_pattern.findall(content)
 
-        # Clean and filter sentences
         cleaned = []
         for sent in sentences:
             sent = sent.strip()
 
-            # Filter by length
             if self.min_fact_length <= len(sent) <= self.max_fact_length:
                 cleaned.append(sent)
 
         return cleaned
 
     def _filter_entity_sentences(self, sentences: list[str], entity_name: str) -> list[str]:
-        """Filter sentences that mention the entity.
-
-        This is a simple keyword-based filter. For production, consider using
-        named entity recognition (NER) and co-reference resolution.
-
-        Args:
-            sentences: List of sentences
-            entity_name: Entity name to search for
-
-        Returns:
-            Sentences mentioning the entity
-        """
-        # Extract key terms from entity name (e.g., "Jane Doe" → ["Jane", "Doe"])
         entity_terms = entity_name.lower().split()
 
         filtered = []
         for sent in sentences:
             sent_lower = sent.lower()
 
-            # Check if any entity term appears in sentence
             if any(term in sent_lower for term in entity_terms):
                 filtered.append(sent)
 
         return filtered
 
     def deduplicate_facts(self, entity_name: str) -> list[dict[str, Any]]:
-        """Deduplicate facts for an entity using semantic clustering.
-
-        This method uses sentence embeddings and cosine similarity to identify
-        semantically similar facts. From each cluster of similar facts, it selects
-        the most representative one (e.g., longest, most recent).
-
-        Args:
-            entity_name: Entity to deduplicate facts for
-
-        Returns:
-            Deduplicated list of FactRecords with source references
-        """
         facts = self.entity_facts.get(entity_name, [])
 
         if not facts:
@@ -233,26 +149,20 @@ class FactAggregator:
 
         logger.info(f"Deduplicating {len(facts)} facts for '{entity_name}'...")
 
-        # Extract fact texts
         fact_texts = [f["fact_text"] for f in facts]
 
-        # Generate embeddings
         model = self._get_embedding_model()
         embeddings = model.encode(fact_texts, convert_to_numpy=True)
 
-        # Compute pairwise cosine similarity matrix
         similarity_matrix = self._compute_similarity_matrix(embeddings)
 
-        # Cluster similar facts
         clusters = self._cluster_facts(similarity_matrix)
 
-        # Select representative fact from each cluster
         deduplicated = []
         for cluster_indices in clusters:
             cluster_facts = [facts[i] for i in cluster_indices]
             representative = self._select_representative_fact(cluster_facts)
 
-            # Aggregate all source references for this cluster
             source_refs = []
             for fact in cluster_facts:
                 source_refs.append(
@@ -262,7 +172,6 @@ class FactAggregator:
                     }
                 )
 
-            # Add aggregated sources to representative fact
             representative["source_references"] = source_refs
             deduplicated.append(representative)
 
@@ -271,42 +180,14 @@ class FactAggregator:
         return deduplicated
 
     def _compute_similarity_matrix(self, embeddings: np.ndarray) -> np.ndarray:
-        """Compute pairwise cosine similarity matrix.
-
-        Args:
-            embeddings: Sentence embeddings (n_samples, embedding_dim)
-
-        Returns:
-            Similarity matrix (n_samples, n_samples)
-        """
-        # Normalize embeddings for cosine similarity
         norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
-        normalized = embeddings / (norms + 1e-10)  # Avoid division by zero
+        normalized = embeddings / (norms + 1e-10)
 
-        # Compute cosine similarity: dot product of normalized vectors
         similarity = np.dot(normalized, normalized.T)
 
         return similarity
 
     def _cluster_facts(self, similarity_matrix: np.ndarray) -> list[list[int]]:
-        """Cluster facts using greedy clustering based on similarity threshold.
-
-        This implements a simple greedy clustering algorithm:
-        1. Start with first unclustered fact
-        2. Find all facts similar to it (above threshold)
-        3. Create a cluster with these facts
-        4. Mark them as clustered
-        5. Repeat until all facts are clustered
-
-        For production, consider using community detection algorithms like
-        Leiden or Louvain for better clustering quality.
-
-        Args:
-            similarity_matrix: Pairwise similarity matrix
-
-        Returns:
-            List of clusters, where each cluster is a list of fact indices
-        """
         n = similarity_matrix.shape[0]
         clustered = set()
         clusters = []
@@ -315,7 +196,6 @@ class FactAggregator:
             if i in clustered:
                 continue
 
-            # Find all facts similar to fact i
             similar_indices = []
             for j in range(n):
                 if similarity_matrix[i, j] >= self.similarity_threshold:
@@ -328,23 +208,10 @@ class FactAggregator:
         return clusters
 
     def _select_representative_fact(self, cluster_facts: list[dict[str, Any]]) -> dict[str, Any]:
-        """Select the most representative fact from a cluster.
-
-        Selection criteria (in order of priority):
-        1. Most recent publication date
-        2. Longest fact text (more detailed)
-
-        Args:
-            cluster_facts: Facts in the cluster
-
-        Returns:
-            Representative FactRecord
-        """
-        # Sort by publication date (most recent first), then by length (longest first)
         sorted_facts = sorted(
             cluster_facts,
             key=lambda f: (
-                f["publication_date"] or datetime.min,  # Handle None dates
+                f["publication_date"] or datetime.min,
                 len(f["fact_text"]),
             ),
             reverse=True,
@@ -353,65 +220,25 @@ class FactAggregator:
         return sorted_facts[0]
 
     def get_all_deduplicated_facts(self) -> dict[str, list[dict[str, Any]]]:
-        """Get deduplicated facts for all entities.
-
-        Returns:
-            Dictionary mapping entity names to deduplicated facts
-        """
         result = {}
         for entity_name in self.entity_facts.keys():
             result[entity_name] = self.deduplicate_facts(entity_name)
 
         return result
 
-
 class ChronologicalSorter:
-    """Sorts facts chronologically and prepares them for summarization.
-
-    This class implements Phase 2a of the pipeline: chronological organization
-    of facts with date-based context cues for the summarization model.
-    """
 
     def __init__(self, date_format: str = "%Y-%m-%d"):
-        """Initialize the chronological sorter.
-
-        Args:
-            date_format: Format string for date display
-        """
         self.date_format = date_format
 
     def sort_facts(self, facts: list[dict[str, Any]], descending: bool = False) -> list[dict[str, Any]]:
-        """Sort facts by publication date.
-
-        Args:
-            facts: List of FactRecords
-            descending: If True, sort newest first. If False, oldest first.
-
-        Returns:
-            Sorted facts
-        """
         sorted_facts = sorted(facts, key=lambda f: f.get("publication_date") or datetime.min, reverse=descending)
 
         return sorted_facts
 
     def prepare_for_summarization(self, facts: list[dict[str, Any]]) -> str:
-        """Prepare facts for summarization with date context.
-
-        This method creates a text input for the summarization model by:
-        1. Sorting facts chronologically (oldest to newest)
-        2. Prepending each fact with its publication date
-        3. Concatenating all facts with proper formatting
-
-        Args:
-            facts: List of FactRecords
-
-        Returns:
-            Formatted text ready for summarization
-        """
-        # Sort facts chronologically (oldest to newest)
         sorted_facts = self.sort_facts(facts, descending=False)
 
-        # Format each fact with date prefix
         formatted_lines = []
         for fact in sorted_facts:
             pub_date = fact.get("publication_date")
@@ -423,18 +250,11 @@ class ChronologicalSorter:
             else:
                 formatted_lines.append(f"(Date unknown): {fact_text}")
 
-        # Join with newlines
         formatted_text = "\n".join(formatted_lines)
 
         return formatted_text
 
-
 class AbstractiveSummarizer:
-    """Generates abstractive summaries with inline citations.
-
-    This class implements Phase 2b of the pipeline: abstractive summarization
-    using a pre-trained transformer model (BART) with citation embedding.
-    """
 
     def __init__(
         self,
@@ -456,11 +276,9 @@ class AbstractiveSummarizer:
         self.min_length = min_length
         self.device = device
 
-        # Lazy-load the summarization pipeline
         self._summarizer = None
 
     def _get_summarizer(self):
-        """Lazy-load the summarization pipeline."""
         if self._summarizer is None:
             try:
                 from transformers import pipeline
@@ -501,11 +319,9 @@ class AbstractiveSummarizer:
                 "citations": {},
             }
 
-        # Generate summary using BART
         summarizer = self._get_summarizer()
 
-        # Truncate input if too long (BART has 1024 token limit)
-        max_input_chars = 4000  # Rough approximation
+        max_input_chars = 4000
         if len(input_text) > max_input_chars:
             input_text = input_text[:max_input_chars]
             logger.warning(f"Truncated input text to {max_input_chars} characters")
@@ -521,13 +337,10 @@ class AbstractiveSummarizer:
             summary_text = result[0]["summary_text"]
         except Exception as e:
             logger.error(f"Summarization failed: {e}")
-            # Fallback: use first few sentences
             summary_text = ". ".join(input_text.split(".")[:3]) + "."
 
-        # Create citation mapping from source references
         citations = self._create_citations(facts)
 
-        # Embed citations into summary (simple approach)
         summary_with_citations = self._embed_citations(summary_text, citations)
 
         return {
@@ -536,14 +349,6 @@ class AbstractiveSummarizer:
         }
 
     def _create_citations(self, facts: list[dict[str, Any]]) -> dict[int, list[dict[str, Any]]]:
-        """Create citation mapping from facts.
-
-        Args:
-            facts: List of FactRecords with source_references
-
-        Returns:
-            Dictionary mapping citation numbers to source references
-        """
         citations = {}
         citation_num = 1
 
@@ -556,33 +361,17 @@ class AbstractiveSummarizer:
         return citations
 
     def _embed_citations(self, summary_text: str, citations: dict[int, list[dict[str, Any]]]) -> str:
-        """Embed citation markers into summary text.
-
-        This is a simple implementation that appends citations at the end.
-        For production, consider using NER to identify entities/facts and
-        insert citations at appropriate positions.
-
-        Args:
-            summary_text: Generated summary
-            citations: Citation mapping
-
-        Returns:
-            Summary with embedded citations
-        """
         if not citations:
             return summary_text
 
-        # Simple approach: append citation list at the end
         citation_markers = []
         for num in sorted(citations.keys()):
             source_refs = citations[num]
             if source_refs:
-                # Use the first (most recent) source
                 ref = source_refs[0]
-                _ = ref.get("source_url", "")  # Reserved for future citation formatting
+                _ = ref.get("source_url", "")
                 citation_markers.append(f"[{num}]")
 
-        # Append citation markers to summary
         if citation_markers:
             summary_with_citations = f"{summary_text} {' '.join(citation_markers)}"
         else:
@@ -590,20 +379,9 @@ class AbstractiveSummarizer:
 
         return summary_with_citations
 
-
 class EntitySummaryStorage:
-    """Manages storage of entity summaries in Delta Lake.
-
-    This class implements Phase 3 of the pipeline: structured storage
-    of entity summaries with citations in Delta Lake format.
-    """
 
     def __init__(self, delta_manager=None):
-        """Initialize the entity summary storage.
-
-        Args:
-            delta_manager: DeltaLakeManager instance (optional, will auto-create)
-        """
         if delta_manager is None:
             from src.common.delta_lake import get_delta_manager
 
@@ -612,13 +390,12 @@ class EntitySummaryStorage:
         self.delta = delta_manager
         self.table_name = "entity_summaries"
 
-        # Define schema for entity summaries table
         self.schema = {
             "entity_name": "string",
             "entity_type": "string",
             "summary_text": "string",
-            "source_references": "string",  # JSON-encoded list of sources
-            "last_updated": "string",  # ISO 8601 timestamp
+            "source_references": "string",
+            "last_updated": "string",
             "fact_count": "int",
             "created_at": "string",
         }
@@ -642,7 +419,6 @@ class EntitySummaryStorage:
         """
         import json
 
-        # Flatten source references from citations
         source_refs_map = {}
         for citation_num, refs in citations.items():
             source_refs_map[str(citation_num)] = [
@@ -653,7 +429,6 @@ class EntitySummaryStorage:
                 for ref in refs
             ]
 
-        # Find most recent publication date
         all_dates = []
         for fact in facts:
             if fact.get("publication_date"):
@@ -661,7 +436,6 @@ class EntitySummaryStorage:
 
         last_updated = max(all_dates).isoformat() if all_dates else datetime.utcnow().isoformat()
 
-        # Create record
         record = {
             "entity_name": entity_name,
             "entity_type": entity_type,
@@ -672,7 +446,6 @@ class EntitySummaryStorage:
             "created_at": datetime.utcnow().isoformat(),
         }
 
-        # Write to Delta Lake
         self.delta.write(self.table_name, [record], mode="append")
 
         logger.info(f"✅ Saved summary for '{entity_name}' to Delta Lake table '{self.table_name}'")
@@ -691,7 +464,6 @@ class EntitySummaryStorage:
         Returns:
             List of entity summary records
         """
-        # Build filter expression
         filters = []
         if entity_name:
             filters.append(f"entity_name = '{entity_name}'")
@@ -700,21 +472,11 @@ class EntitySummaryStorage:
 
         filter_expr = " AND ".join(filters) if filters else None
 
-        # Read from Delta Lake
         records = self.delta.read(self.table_name, filters=filter_expr)
 
         return records
 
-
 class Stage4EntityWorker:
-    """Orchestrates the complete entity-centric summarization pipeline.
-
-    This is the main entry point for Stage 4 processing. It coordinates all
-    three phases of the pipeline:
-    1. Fact aggregation and deduplication (FactAggregator)
-    2. Chronological sorting and abstractive summarization (ChronologicalSorter + AbstractiveSummarizer)
-    3. Structured storage (EntitySummaryStorage)
-    """
 
     def __init__(
         self,
@@ -748,20 +510,8 @@ class Stage4EntityWorker:
         logger.info("✅ Stage4EntityWorker initialized")
 
     def process_documents(self, documents: list[dict[str, Any]]):
-        """Process a batch of documents through the entity summarization pipeline.
-
-        Args:
-            documents: List of document records with the following fields:
-                - entity_name (str): Name of the entity
-                - entity_type (str): Type of entity
-                - content (str): Text content
-                - source_url (str): Source URL
-                - publication_date (datetime|str|None): Publication date
-                - metadata (dict, optional): Additional metadata
-        """
         logger.info(f"Processing {len(documents)} documents...")
 
-        # Phase 1: Aggregate facts by entity
         for doc in documents:
             self.fact_aggregator.add_document(
                 entity_name=doc["entity_name"],
@@ -772,24 +522,18 @@ class Stage4EntityWorker:
                 metadata=doc.get("metadata"),
             )
 
-        # Get all deduplicated facts
         all_entity_facts = self.fact_aggregator.get_all_deduplicated_facts()
 
-        # Phase 2 & 3: Summarize and store for each entity
         for entity_name, facts in all_entity_facts.items():
             if not facts:
                 continue
 
-            # Get entity type from first fact
             entity_type = facts[0].get("entity_type", "unknown")
 
-            # Sort facts chronologically and prepare for summarization
             chronological_text = self.chronological_sorter.prepare_for_summarization(facts)
 
-            # Generate abstractive summary with citations
             summary_result = self.summarizer.summarize(chronological_text, facts)
 
-            # Store in Delta Lake
             self.storage.save_summary(
                 entity_name=entity_name,
                 entity_type=entity_type,
@@ -802,10 +546,7 @@ class Stage4EntityWorker:
 
         logger.info(f"✅ Stage 4 processing complete. Processed {len(all_entity_facts)} entities.")
 
-
-# Example usage and integration
 if __name__ == "__main__":
-    # Example: Process sample documents
     sample_documents = [
         {
             "entity_name": "Professor Jane Doe",
@@ -825,7 +566,7 @@ if __name__ == "__main__":
             "content": (
                 "Dr. Jane Doe was promoted to Full Professor in 2024. "
                 "She now leads the AI Research Lab at UConn. "
-                "Professor Doe received the NSF CAREER Award in 2021. "  # Duplicate fact
+                "Professor Doe received the NSF CAREER Award in 2021. "
                 "Her lab has 15 PhD students working on various AI projects."
             ),
             "source_url": "https://uconn.edu/news/jane-doe-promotion",
@@ -845,8 +586,6 @@ if __name__ == "__main__":
         },
     ]
 
-    # Initialize worker
     worker = Stage4EntityWorker()
 
-    # Process documents
     worker.process_documents(sample_documents)
