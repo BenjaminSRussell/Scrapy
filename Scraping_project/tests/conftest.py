@@ -53,7 +53,7 @@ async def sample_url_record():
     from datetime import datetime
     return {
         "url": "https://example.com/test",
-        "url_hash": "abc123def456",
+        "url_hash": "abc123def456789012345678901234567890abcd",
         "discovered_at": datetime.now(),
         "status": "pending",
         "depth": 0
@@ -66,7 +66,7 @@ def sample_stage2_data():
     from datetime import datetime
     return {
         "url": "https://example.com/test",
-        "url_hash": "abc123def456",
+        "url_hash": "abc123def456789012345678901234567890abcd",
         "title": "Test Page",
         "word_count": 500,
         "content_length": 2500,

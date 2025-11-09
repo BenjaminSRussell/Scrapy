@@ -24,10 +24,10 @@ class TestURLRecord:
         """Test valid URL record creation."""
         record = URLRecord(
             url="https://example.com",
-            url_hash="abc123def456"
+            url_hash="abc123def456789012345678901234567890abcd"
         )
         assert record.url == "https://example.com"
-        assert record.url_hash == "abc123def456"
+        assert record.url_hash == "abc123def456789012345678901234567890abcd"
 
     def test_hash_validation(self):
         """Test hash validation."""
@@ -41,9 +41,9 @@ class TestURLRecord:
         """Test hash is normalized to lowercase."""
         record = URLRecord(
             url="https://example.com",
-            url_hash="ABC123DEF456"
+            url_hash="ABC123DEF456789012345678901234567890ABCD"
         )
-        assert record.url_hash == "abc123def456"
+        assert record.url_hash == "abc123def456789012345678901234567890abcd"
 
 
 class TestStage2Analysis:
@@ -53,7 +53,7 @@ class TestStage2Analysis:
         """Test valid analysis record."""
         record = Stage2Analysis(
             url="https://example.com",
-            url_hash="abc123",
+            url_hash="abc123def456789012345678901234567890abcd",
             word_count=500,
             content_length=2500,
             html_length=5000,
@@ -71,7 +71,7 @@ class TestStage2Analysis:
         with pytest.raises(ValidationError):
             Stage2Analysis(
                 url="https://example.com",
-                url_hash="abc123",
+                url_hash="abc123def456789012345678901234567890abcd",
                 word_count=500,
                 content_length=2500,
                 html_length=5000,
@@ -86,7 +86,7 @@ class TestStage2Analysis:
         """Test empty keywords are filtered."""
         record = Stage2Analysis(
             url="https://example.com",
-            url_hash="abc123",
+            url_hash="abc123def456789012345678901234567890abcd",
             word_count=500,
             content_length=2500,
             html_length=5000,
@@ -109,7 +109,7 @@ class TestStage3Summary:
         with pytest.raises(ValidationError):
             Stage3Summary(
                 url="https://example.com",
-                url_hash="abc123",
+                url_hash="abc123def456789012345678901234567890abcd",
                 summary="short",  # Too short
                 word_count=100,
                 quality_score=0.8,
@@ -120,7 +120,7 @@ class TestStage3Summary:
         """Test valid summary."""
         record = Stage3Summary(
             url="https://example.com",
-            url_hash="abc123",
+            url_hash="abc123def456789012345678901234567890abcd",
             summary="This is a valid summary with enough content",
             word_count=100,
             quality_score=0.8,
