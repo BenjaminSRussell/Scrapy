@@ -8,7 +8,10 @@ from datasketch import MinHash, MinHashLSH  # type: ignore[import-untyped]
 
 from src.core.constants import SUMMARY_LIMITS
 from src.utils.delta import get_delta
-from src.common.postgres_manager_deprecated import PostgresManager
+# PostgreSQL support to be implemented in Phase 6
+class PostgresManager:
+    @staticmethod
+    def get_instance(): return None
 
 logger = logging.getLogger(__name__)
 

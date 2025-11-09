@@ -9,7 +9,8 @@ import scrapy
 from scrapy.http import Response
 
 from src.stage1.middlewares.spider_config import get_spider_settings
-from src.common.storage_manager_deprecated import get_delta, get_postgres
+from src.utils.delta import get_delta
+# get_postgres removed - implement in Phase 6
 from src.stage1.processors.url_extractor import URLExtractor
 from src.stage1.processors.url_processor import should_follow_url
 from src.lakehouse import SeedManager

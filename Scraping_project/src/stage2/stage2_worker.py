@@ -10,7 +10,9 @@ from bs4 import BeautifulSoup
 from deltalake import DeltaTable
 
 from src.utils.delta import get_delta
-from src.common.postgres_manager_deprecated import get_postgres_manager
+# # PostgreSQL support to be implemented in Phase 6
+get_postgres_manager = lambda: None
+get_postgres_manager = lambda: None  # TODO: Implement in Phase 6
 
 logger = logging.getLogger(__name__)
 

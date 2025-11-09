@@ -15,7 +15,7 @@ from scrapy.spidermiddlewares.httperror import HttpError
 from twisted.internet.error import DNSLookupError, TCPTimedOutError, TimeoutError
 
 from src.core.config import get_config
-from src.common.storage_manager_deprecated import StorageManager
+# StorageManager removed - use get_delta() and get_redis() directly
 from src.stage1.processors.url_processor import URLProcessor, should_follow_url
 from src.items import OffsiteCandidateItem
 from src.stage1.js_detection import JSDetector

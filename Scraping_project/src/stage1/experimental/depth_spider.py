@@ -7,7 +7,8 @@ from scrapy.http import Response
 
 from src.core.config import get_config
 from src.stage1.middlewares.spider_config import get_spider_settings
-from src.common.storage_manager_deprecated import get_delta, get_redis
+from src.utils.delta import get_delta
+from src.utils.redis import get_redis
 from src.stage1.processors.url_processor import should_follow_url
 from src.lakehouse import SeedManager
 from src.stage1.base_spider import BaseSpider
