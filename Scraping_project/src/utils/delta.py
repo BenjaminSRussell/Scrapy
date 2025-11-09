@@ -5,13 +5,18 @@ Centralizes all Delta Lake operations to eliminate duplicate code across the pip
 This module merges functionality from:
 - src/common/delta_lake.py
 - src/common/storage_manager.py
+
+Phase 6 Enhancement: Added type-safe operations with Pydantic validation
 """
 
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, TypeVar, Type, Generic
 from pathlib import Path
 import logging
+from pydantic import BaseModel, ValidationError
 
 logger = logging.getLogger(__name__)
+
+T = TypeVar('T', bound=BaseModel)
 
 
 class DeltaHelper:
@@ -134,6 +139,107 @@ class DeltaHelper:
         except Exception as e:
             logger.error(f"Failed to clear {table_name}: {e}")
             return False
+
+    # Phase 6: Type-safe operations with Pydantic validation
+
+    def read_typed(
+        self,
+        table_name: str,
+        model: Type[T],
+        filters: Optional[List] = None,
+        validate_all: bool = True
+    ) -> List[T]:
+        """
+        Read and validate data using Pydantic model.
+
+        Args:
+            table_name: Name of the table to read
+            model: Pydantic model class for validation
+            filters: Optional filters to apply
+            validate_all: If False, skip invalid rows instead of failing
+
+        Returns:
+            List of validated Pydantic model instances
+
+        Example:
+            from src.core.models import Stage2Analysis
+            delta = get_delta()
+            analyses = delta.read_typed("stage2_page_analysis", Stage2Analysis)
+
+        Raises:
+            ValidationError: If validation fails and validate_all=True
+        """
+        raw_data = self.read(table_name, filters)
+
+        validated_data = []
+        validation_errors = []
+
+        for idx, row in enumerate(raw_data):
+            try:
+                validated_item = model(**row)
+                validated_data.append(validated_item)
+            except ValidationError as e:
+                validation_errors.append((idx, row, e))
+                if validate_all:
+                    logger.error(
+                        f"Validation failed for row {idx} in {table_name}: {e}"
+                    )
+                    raise
+                else:
+                    logger.warning(
+                        f"Skipping invalid row {idx} in {table_name}: {e}"
+                    )
+
+        if validation_errors and not validate_all:
+            logger.warning(
+                f"Skipped {len(validation_errors)} invalid rows out of "
+                f"{len(raw_data)} total in {table_name}"
+            )
+
+        return validated_data
+
+    def write_typed(
+        self,
+        table_name: str,
+        data: List[T],
+        mode: str = "append"
+    ) -> bool:
+        """
+        Write validated Pydantic models to Delta table.
+
+        Args:
+            table_name: Name of the table to write to
+            data: List of Pydantic model instances
+            mode: Write mode ('append' or 'overwrite')
+
+        Returns:
+            True if successful, False otherwise
+
+        Example:
+            from src.core.models import Stage2Analysis
+            delta = get_delta()
+            analysis = Stage2Analysis(url="https://...", ...)
+            delta.write_typed("stage2_page_analysis", [analysis])
+        """
+        try:
+            # Convert Pydantic models to dicts
+            dict_data = [item.model_dump() for item in data]
+            return self.write(table_name, dict_data, mode=mode)
+        except Exception as e:
+            logger.error(f"Failed to write typed data to {table_name}: {e}")
+            return False
+
+    def get_table_path(self, table_name: str) -> Path:
+        """
+        Get file system path for a table.
+
+        Args:
+            table_name: Name of the table
+
+        Returns:
+            Path to the table directory
+        """
+        return self.manager.get_table_path(table_name)
 
 
 # Global instance
