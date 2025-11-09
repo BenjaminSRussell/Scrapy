@@ -142,16 +142,13 @@ if PROMETHEUS_AVAILABLE:
 
     # --- Delta Lake Manager Metrics ---
     DELTA_MANAGER_CONTEXT_ENTER_TOTAL = Counter(
-        "delta_manager_context_enter_total",
-        "Total number of times a DeltaLakeManager context has been entered."
+        "delta_manager_context_enter_total", "Total number of times a DeltaLakeManager context has been entered."
     )
     DELTA_MANAGER_CONTEXT_EXIT_TOTAL = Counter(
-        "delta_manager_context_exit_total",
-        "Total number of times a DeltaLakeManager context has been exited."
+        "delta_manager_context_exit_total", "Total number of times a DeltaLakeManager context has been exited."
     )
     DELTA_MANAGER_SHUTDOWN_TOTAL = Counter(
-        "delta_manager_shutdown_total",
-        "Total number of times DeltaLakeManager.shutdown() has been called."
+        "delta_manager_shutdown_total", "Total number of times DeltaLakeManager.shutdown() has been called."
     )
     DELTA_MANAGER_SHUTDOWN_DURATION_SECONDS = Histogram(
         "delta_manager_shutdown_duration_seconds",

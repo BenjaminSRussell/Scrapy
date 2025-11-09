@@ -773,9 +773,7 @@ class LakehouseManager:
             # Read existing data
             try:
                 existing_data = self.read(table_name)
-                existing_keys = {
-                    tuple(row.get(k) for k in merge_keys) for row in existing_data
-                }
+                existing_keys = {tuple(row.get(k) for k in merge_keys) for row in existing_data}
             except Exception:
                 # Table doesn't exist yet, treat all as inserts
                 existing_keys = set()
@@ -815,9 +813,7 @@ class LakehouseManager:
                 self._write_sync(table_name, final_data, mode="overwrite")
 
             affected = len(updates_map) + len(inserts)
-            logger.info(
-                f"[merge_into] {table_name}: {len(updates_map)} updated, {len(inserts)} inserted"
-            )
+            logger.info(f"[merge_into] {table_name}: {len(updates_map)} updated, {len(inserts)} inserted")
             return affected
 
         except Exception as e:
@@ -1184,9 +1180,7 @@ class InMemoryBackend:
                 existing_data.append(update_row)
                 inserts_count += 1
 
-        logger.debug(
-            f"[InMemory merge_into] {table_name}: {updates_count} updated, {inserts_count} inserted"
-        )
+        logger.debug(f"[InMemory merge_into] {table_name}: {updates_count} updated, {inserts_count} inserted")
         return updates_count + inserts_count
 
     def append_to_table(self, table_name: str, records: list[dict[str, Any]]) -> None:

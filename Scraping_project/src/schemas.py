@@ -168,7 +168,7 @@ class BaseRecordSchema(BaseModel):
                 # Validate that provided total matches sum (within 1% tolerance)
                 if abs(self.total_cost - calculated_total) > (calculated_total * 0.01):
                     raise ValueError(
-                        f"Total cost {self.total_cost} does not match sum of components " f"{calculated_total}"
+                        f"Total cost {self.total_cost} does not match sum of components {calculated_total}"
                     )
 
         return self

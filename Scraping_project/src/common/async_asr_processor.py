@@ -161,14 +161,14 @@ class AsyncASRProcessor:
 
         if not REQUESTS_AVAILABLE:
             logger.warning(
-                "requests library not available. Media download will be disabled. " "Install with: pip install requests"
+                "requests library not available. Media download will be disabled. Install with: pip install requests"
             )
 
         self.max_workers = max_workers
         self.temp_dir = temp_dir or tempfile.gettempdir()
         self.executor = ProcessPoolExecutor(max_workers=max_workers)
 
-        logger.info(f"AsyncASRProcessor initialized with {max_workers} workers, " f"temp_dir={self.temp_dir}")
+        logger.info(f"AsyncASRProcessor initialized with {max_workers} workers, temp_dir={self.temp_dir}")
 
     def process_media_url(self, media_url: str, item_dict: dict[str, Any]) -> "defer.Deferred":
         """Process media URL asynchronously (download + transcribe).

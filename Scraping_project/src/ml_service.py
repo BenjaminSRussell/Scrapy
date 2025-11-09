@@ -81,7 +81,7 @@ class ZeroShotClassifier:
         """
         if not TRANSFORMERS_AVAILABLE:
             raise ImportError(
-                "transformers library required for ZeroShotClassifier. " "Install with: pip install transformers torch"
+                "transformers library required for ZeroShotClassifier. Install with: pip install transformers torch"
             )
 
         self.model_name = model_name

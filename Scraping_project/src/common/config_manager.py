@@ -63,7 +63,7 @@ class DatabaseConfig(BaseModel):
         if v is None:
             import warnings
 
-            warnings.warn("Database password not set. Connection may fail.")
+            warnings.warn("Database password not set. Connection may fail.", stacklevel=2)
         return v
 
 

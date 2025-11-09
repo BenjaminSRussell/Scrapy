@@ -316,9 +316,7 @@ class ScoutSpider(BaseSpider):
             )
 
             logger.info(
-                f"[SCOUT] SeedManager results: "
-                f"seeds={result['seed_inserted']}, "
-                f"uconn={result['uconn_inserted']}"
+                f"[SCOUT] SeedManager results: seeds={result['seed_inserted']}, uconn={result['uconn_inserted']}"
             )
 
         except Exception as e:

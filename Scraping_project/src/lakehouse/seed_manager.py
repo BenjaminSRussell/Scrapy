@@ -23,7 +23,7 @@ All writes are idempotent via merge_into using url_hash as merge key.
 import datetime as dt
 import hashlib
 import logging
-from typing import Any, Callable, Iterable
+from collections.abc import Callable, Iterable
 from urllib.parse import urlparse
 
 from src.lakehouse.lakehouse_manager import LakehouseManager
@@ -122,13 +122,15 @@ class SeedManager:
         # Prepare base records
         rows = []
         for url in url_list:
-            rows.append({
-                "url": url,
-                "url_hash": self.url_hasher(url),
-                "discovered_at": now,
-                "source_url": source_url,
-                "source_spider": source_spider,
-            })
+            rows.append(
+                {
+                    "url": url,
+                    "url_hash": self.url_hasher(url),
+                    "discovered_at": now,
+                    "source_url": source_url,
+                    "source_spider": source_spider,
+                }
+            )
 
         # 1. Upsert into seed_urls
         try:
@@ -149,10 +151,7 @@ class SeedManager:
         if write_uconn_urls:
             try:
                 # Filter to only UConn URLs
-                uconn_rows = [
-                    r for r in rows
-                    if "uconn.edu" in urlparse(r["url"]).netloc.lower()
-                ]
+                uconn_rows = [r for r in rows if "uconn.edu" in urlparse(r["url"]).netloc.lower()]
 
                 if uconn_rows:
                     self.lakehouse.merge_into(
@@ -239,6 +238,7 @@ class SeedManager:
 # Legacy Compatibility
 # =====================================================================================
 
+
 # For backward compatibility, support the old DeltaLakeManager type
 # This will be deprecated in future versions
 def create_seed_manager_from_delta(delta_manager) -> SeedManager:
@@ -254,8 +254,5 @@ def create_seed_manager_from_delta(delta_manager) -> SeedManager:
     Deprecated:
         Use SeedManager(lakehouse) directly instead.
     """
-    logger.warning(
-        "create_seed_manager_from_delta() is deprecated. "
-        "Use SeedManager(lakehouse) directly instead."
-    )
+    logger.warning("create_seed_manager_from_delta() is deprecated. Use SeedManager(lakehouse) directly instead.")
     return SeedManager(delta_manager)

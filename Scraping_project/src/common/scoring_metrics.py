@@ -76,7 +76,7 @@ def calculate_decay_score(
 
     # Validate that publication_date is not in the future
     if time_delta.total_seconds() < 0:
-        raise ValueError(f"publication_date {publication_date} is in the future " f"(reference_date: {reference_date})")
+        raise ValueError(f"publication_date {publication_date} is in the future (reference_date: {reference_date})")
 
     # Convert to days (handle unit consistency)
     days_elapsed = time_delta.total_seconds() / 86400.0  # 86400 seconds in a day
@@ -116,7 +116,7 @@ def calculate_weighted_average(
 
     if len(values) != len(recency_scores):
         raise ValueError(
-            f"values and recency_scores must have same length " f"(got {len(values)} and {len(recency_scores)})"
+            f"values and recency_scores must have same length (got {len(values)} and {len(recency_scores)})"
         )
 
     # Validate recency scores

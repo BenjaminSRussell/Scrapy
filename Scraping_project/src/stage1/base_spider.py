@@ -576,10 +576,7 @@ class BaseSpider(scrapy.Spider):
         url_lower = url.lower()
 
         # Image extensions
-        if any(
-            url_lower.endswith(ext)
-            for ext in [".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".ico", ".tiff"]
-        ):
+        if any(url_lower.endswith(ext) for ext in [".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".ico", ".tiff"]):
             return "images"
 
         # Static assets (CSS, maps, fonts)
@@ -588,8 +585,7 @@ class BaseSpider(scrapy.Spider):
 
         # Media files (audio/video)
         elif any(
-            url_lower.endswith(ext)
-            for ext in [".mp3", ".mp4", ".avi", ".mov", ".wmv", ".flv", ".webm", ".m4a", ".wav"]
+            url_lower.endswith(ext) for ext in [".mp3", ".mp4", ".avi", ".mov", ".wmv", ".flv", ".webm", ".m4a", ".wav"]
         ):
             return "media_files"
 

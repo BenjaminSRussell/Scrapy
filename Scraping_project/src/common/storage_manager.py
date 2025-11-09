@@ -276,7 +276,7 @@ class StorageManager:
         # Close Redis
         if self._redis_instance is not None:
             try:
-                if isinstance(self._redis_instance, RedisManager):
+                if hasattr(self._redis_instance, "close"):
                     self._redis_instance.close()
                 logger.info("Redis closed")
             except Exception as e:

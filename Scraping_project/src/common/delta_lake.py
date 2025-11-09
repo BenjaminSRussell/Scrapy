@@ -41,12 +41,15 @@ Phase 3 (TODO): Incremental Updates
 from src.lakehouse.lakehouse_manager import (
     DELTA_AVAILABLE,
     DeltaLakeManager,  # Alias for LakehouseManager (backward compatibility)
-    InMemoryBackend as InMemoryDeltaManager,  # Alias for backward compatibility
+    InMemoryBackend,  # New name
     LakehouseManager,
     delta_session,  # Alias for lakehouse_session (backward compatibility)
     get_delta_manager,  # Alias for get_lakehouse_manager (backward compatibility)
     get_lakehouse_manager,
     lakehouse_session,
+)
+from src.lakehouse.lakehouse_manager import (
+    InMemoryBackend as InMemoryDeltaManager,  # Alias for backward compatibility
 )
 
 # Re-export for backward compatibility

@@ -72,11 +72,11 @@ class FactAggregator:
                 logger.info(f"Loading embedding model: {self.embedding_model_name}")
                 self._embedding_model = SentenceTransformer(self.embedding_model_name)
                 logger.info("✅ Embedding model loaded successfully")
-            except ImportError:
+            except ImportError as e:
                 raise ImportError(
                     "sentence-transformers is required for FactAggregator. "
                     "Install it with: pip install sentence-transformers"
-                )
+                ) from e
 
         return self._embedding_model
 
@@ -125,7 +125,7 @@ class FactAggregator:
 
             self.entity_facts[entity_name].append(fact_record)
 
-        logger.info(f"Added {len(entity_sentences)} facts for entity '{entity_name}' " f"from {source_url}")
+        logger.info(f"Added {len(entity_sentences)} facts for entity '{entity_name}' from {source_url}")
 
     def _parse_date(self, date_input: datetime | str | None) -> datetime | None:
         """Parse various date formats to datetime object.
@@ -266,7 +266,7 @@ class FactAggregator:
             representative["source_references"] = source_refs
             deduplicated.append(representative)
 
-        logger.info(f"✅ Deduplicated {len(facts)} facts → {len(deduplicated)} unique facts " f"for '{entity_name}'")
+        logger.info(f"✅ Deduplicated {len(facts)} facts → {len(deduplicated)} unique facts for '{entity_name}'")
 
         return deduplicated
 
@@ -472,11 +472,11 @@ class AbstractiveSummarizer:
                     device=self.device,
                 )
                 logger.info("✅ Summarization model loaded successfully")
-            except ImportError:
+            except ImportError as e:
                 raise ImportError(
                     "transformers is required for AbstractiveSummarizer. "
                     "Install it with: pip install transformers torch"
-                )
+                ) from e
 
         return self._summarizer
 
@@ -579,7 +579,7 @@ class AbstractiveSummarizer:
             if source_refs:
                 # Use the first (most recent) source
                 ref = source_refs[0]
-                url = ref.get("source_url", "")
+                _ = ref.get("source_url", "")  # Reserved for future citation formatting
                 citation_markers.append(f"[{num}]")
 
         # Append citation markers to summary
@@ -798,9 +798,9 @@ class Stage4EntityWorker:
                 facts=facts,
             )
 
-            logger.info(f"✅ Completed processing for entity '{entity_name}' " f"({len(facts)} unique facts)")
+            logger.info(f"✅ Completed processing for entity '{entity_name}' ({len(facts)} unique facts)")
 
-        logger.info(f"✅ Stage 4 processing complete. " f"Processed {len(all_entity_facts)} entities.")
+        logger.info(f"✅ Stage 4 processing complete. Processed {len(all_entity_facts)} entities.")
 
 
 # Example usage and integration

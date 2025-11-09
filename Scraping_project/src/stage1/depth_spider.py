@@ -266,9 +266,7 @@ class DepthSpider(BaseSpider):
             )
 
             logger.info(
-                f"[DEPTH] SeedManager results: "
-                f"seeds={result['seed_inserted']}, "
-                f"uconn={result['uconn_inserted']}"
+                f"[DEPTH] SeedManager results: seeds={result['seed_inserted']}, uconn={result['uconn_inserted']}"
             )
 
         except Exception as e:

@@ -480,7 +480,7 @@ class KafkaPipeline:
 
         except Exception as e:
             logger.error(f"Error processing item for Kafka: {e}")
-            raise DropItem(f"Failed to publish item to Kafka: {e}")
+            raise DropItem(f"Failed to publish item to Kafka: {e}") from e
 
         return item
 
@@ -1014,7 +1014,7 @@ class SchemaValidationPipeline:
                 logger.error(f"Error flushing Kafka producer: {e}")
 
         logger.info(
-            f"SchemaValidationPipeline stats - Validated: {self.items_validated}, " f"Dropped: {self.items_dropped}"
+            f"SchemaValidationPipeline stats - Validated: {self.items_validated}, Dropped: {self.items_dropped}"
         )
 
     def process_item(self, item: Any, spider: Spider) -> Any:
@@ -1062,7 +1062,7 @@ class SchemaValidationPipeline:
 
             if self.items_validated % 1000 == 0:
                 logger.info(
-                    f"SchemaValidation stats - Validated: {self.items_validated}, " f"Dropped: {self.items_dropped}"
+                    f"SchemaValidation stats - Validated: {self.items_validated}, Dropped: {self.items_dropped}"
                 )
 
             return item
@@ -1075,7 +1075,7 @@ class SchemaValidationPipeline:
             self._publish_validation_failure(item_dict, e, spider)
 
             # Drop the item
-            raise DropItem(f"Schema validation failed for {item_dict.get('url', 'unknown')}: {e}")
+            raise DropItem(f"Schema validation failed for {item_dict.get('url', 'unknown')}: {e}") from e
 
     def _coerce_currency_fields(self, item_dict: dict[str, Any]) -> dict[str, Any]:
         """Coerce currency string fields to floats.
@@ -1339,7 +1339,7 @@ class AggregationPipeline:
             return
 
         logger.info(f"Closing AggregationPipeline for spider: {spider.name}")
-        logger.info(f"Aggregated {self.items_aggregated} items into " f"{len(self.entity_groups)} entity groups")
+        logger.info(f"Aggregated {self.items_aggregated} items into {len(self.entity_groups)} entity groups")
 
         # Sort items within each group by recency_score (descending)
         for entity_id, items in self.entity_groups.items():
@@ -1381,8 +1381,8 @@ class AggregationPipeline:
 
         context = "\n".join(context_parts)
 
-        # Placeholder prompt
-        prompt = f"""Synthesize the following information about entity '{entity_id}'.
+        # Placeholder prompt (reserved for future LLM integration)
+        _ = f"""Synthesize the following information about entity '{entity_id}'.
 Prioritize facts from entries with higher recency scores (closer to 1.0).
 
 {context}
@@ -1553,7 +1553,9 @@ class MetadataExtractionPipeline:
 
         # Log progress
         if self.items_processed % 500 == 0:
-            logger.info(f"[METADATA] Processed {self.items_processed} items, extracted metadata from {len(self.batch)} pending")
+            logger.info(
+                f"[METADATA] Processed {self.items_processed} items, extracted metadata from {len(self.batch)} pending"
+            )
 
         return item
 
@@ -1613,7 +1615,7 @@ class MetadataExtractionPipeline:
             Tuple of (keywords list, entities dict)
         """
         try:
-            doc = self.extractor(text[: 1000000])  # Limit text length for spaCy
+            doc = self.extractor(text[:1000000])  # Limit text length for spaCy
 
             # Extract noun phrases as keywords
             keywords = []

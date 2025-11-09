@@ -409,7 +409,7 @@ class URLValueAssessor:
             if assessment.value_score >= min_value_score:
                 valuable_urls.append(url)
 
-        logger.info(f"[URL_ASSESSOR] Filtered {len(valuable_urls)}/{len(urls)} URLs " f"(min_score={min_value_score})")
+        logger.info(f"[URL_ASSESSOR] Filtered {len(valuable_urls)}/{len(urls)} URLs (min_score={min_value_score})")
 
         return valuable_urls
 

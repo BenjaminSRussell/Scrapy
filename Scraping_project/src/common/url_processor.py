@@ -587,7 +587,7 @@ def should_follow_url(url: str) -> bool:
             return False
 
         # Only allow HTTP(S)
-        if parsed.scheme not in ('http', 'https'):
+        if parsed.scheme not in ("http", "https"):
             return False
 
         path_lower = parsed.path.lower()
