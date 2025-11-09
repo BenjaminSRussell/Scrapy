@@ -1,0 +1,892 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pipeline Control Center - UConn Scraping</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --primary: #2563eb;
+            --primary-dark: #1e40af;
+            --secondary: #7c3aed;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --gray-50: #f9fafb;
+            --gray-100: #f3f4f6;
+            --gray-200: #e5e7eb;
+            --gray-300: #d1d5db;
+            --gray-700: #374151;
+            --gray-800: #1f2937;
+            --gray-900: #111827;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background-color: var(--gray-100);
+            color: var(--gray-900);
+        }
+
+        .topbar {
+            background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
+            color: white;
+            padding: 1.5rem 2rem;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            position: sticky;
+            top: 0;
+            z-index: 1000;
+        }
+
+        .topbar-content {
+            max-width: 1600px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .topbar-title h1 {
+            font-size: 1.75rem;
+            font-weight: 700;
+            margin-bottom: 0.25rem;
+        }
+
+        .topbar-title p {
+            font-size: 0.875rem;
+            opacity: 0.9;
+        }
+
+        .topbar-stats {
+            display: flex;
+            gap: 2rem;
+        }
+
+        .topbar-stat {
+            text-align: center;
+        }
+
+        .topbar-stat-label {
+            font-size: 0.75rem;
+            opacity: 0.8;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .topbar-stat-value {
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin-top: 0.25rem;
+        }
+
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        .tabs {
+            background: white;
+            border-radius: 0.5rem;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            margin-bottom: 2rem;
+            overflow: hidden;
+        }
+
+        .tab-buttons {
+            display: flex;
+            border-bottom: 1px solid var(--gray-200);
+        }
+
+        .tab-button {
+            flex: 1;
+            padding: 1rem 1.5rem;
+            background: white;
+            border: none;
+            border-bottom: 3px solid transparent;
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: var(--gray-700);
+            cursor: pointer;
+            transition: all 0.2s;
+            text-align: center;
+        }
+
+        .tab-button:hover {
+            background: var(--gray-50);
+        }
+
+        .tab-button.active {
+            color: var(--primary);
+            border-bottom-color: var(--primary);
+            background: var(--gray-50);
+        }
+
+        .tab-content {
+            display: none;
+            padding: 2rem;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .grid {
+            display: grid;
+            gap: 1.5rem;
+        }
+
+        .grid-2 {
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+        }
+
+        .grid-3 {
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        }
+
+        .grid-4 {
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        }
+
+        .card {
+            background: white;
+            border-radius: 0.5rem;
+            padding: 1.5rem;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+            padding-bottom: 0.75rem;
+            border-bottom: 2px solid var(--gray-100);
+        }
+
+        .card-title {
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: var(--gray-800);
+        }
+
+        .card-badge {
+            padding: 0.25rem 0.75rem;
+            border-radius: 9999px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .badge-success {
+            background: #d1fae5;
+            color: #065f46;
+        }
+
+        .badge-warning {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        .badge-danger {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        .badge-info {
+            background: #dbeafe;
+            color: #1e40af;
+        }
+
+        .metric-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.75rem 0;
+            border-bottom: 1px solid var(--gray-100);
+        }
+
+        .metric-row:last-child {
+            border-bottom: none;
+        }
+
+        .metric-label {
+            font-size: 0.9rem;
+            color: var(--gray-700);
+        }
+
+        .metric-value {
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: var(--gray-900);
+        }
+
+        .metric-value.success {
+            color: var(--success);
+        }
+
+        .metric-value.warning {
+            color: var(--warning);
+        }
+
+        .metric-value.danger {
+            color: var(--danger);
+        }
+
+        .stage-pipeline {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 1rem;
+            position: relative;
+        }
+
+        .stage-pipeline::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: linear-gradient(90deg, var(--primary) 0%, var(--secondary) 100%);
+            transform: translateY(-50%);
+            z-index: 0;
+        }
+
+        .stage-card {
+            background: white;
+            border-radius: 0.5rem;
+            padding: 1.5rem;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            position: relative;
+            z-index: 1;
+            border: 2px solid var(--gray-200);
+            transition: all 0.3s;
+        }
+
+        .stage-card.active {
+            border-color: var(--primary);
+            box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2);
+        }
+
+        .stage-number {
+            width: 2.5rem;
+            height: 2.5rem;
+            border-radius: 50%;
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 1.25rem;
+            margin-bottom: 1rem;
+        }
+
+        .stage-title {
+            font-size: 1rem;
+            font-weight: 700;
+            color: var(--gray-800);
+            margin-bottom: 1rem;
+        }
+
+        .stage-metrics {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .stage-metric {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.85rem;
+        }
+
+        .stage-metric-label {
+            color: var(--gray-700);
+        }
+
+        .stage-metric-value {
+            font-weight: 700;
+            color: var(--gray-900);
+        }
+
+        .chart-container {
+            position: relative;
+            height: 300px;
+            margin-top: 1rem;
+        }
+
+        .activity-feed {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .activity-item {
+            padding: 1rem;
+            border-left: 3px solid var(--gray-200);
+            margin-bottom: 1rem;
+            background: var(--gray-50);
+            border-radius: 0 0.25rem 0.25rem 0;
+        }
+
+        .activity-item.success {
+            border-left-color: var(--success);
+            background: #ecfdf5;
+        }
+
+        .activity-item.warning {
+            border-left-color: var(--warning);
+            background: #fffbeb;
+        }
+
+        .activity-item.danger {
+            border-left-color: var(--danger);
+            background: #fef2f2;
+        }
+
+        .activity-timestamp {
+            font-size: 0.75rem;
+            color: var(--gray-700);
+            margin-bottom: 0.25rem;
+        }
+
+        .activity-message {
+            font-size: 0.9rem;
+            color: var(--gray-900);
+        }
+
+        .status-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 1rem;
+            border-radius: 0.25rem;
+            font-weight: 600;
+        }
+
+        .status-indicator.online {
+            background: #d1fae5;
+            color: #065f46;
+        }
+
+        .status-indicator.offline {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        .status-dot {
+            width: 0.5rem;
+            height: 0.5rem;
+            border-radius: 50%;
+            background: currentColor;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% {
+                opacity: 1;
+            }
+            50% {
+                opacity: 0.5;
+            }
+        }
+
+        .system-health {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+        }
+
+        .health-item {
+            text-align: center;
+            padding: 1.5rem;
+            background: var(--gray-50);
+            border-radius: 0.5rem;
+            border: 2px solid var(--gray-200);
+        }
+
+        .health-item.healthy {
+            border-color: var(--success);
+            background: #ecfdf5;
+        }
+
+        .health-item.unhealthy {
+            border-color: var(--danger);
+            background: #fef2f2;
+        }
+
+        .health-icon {
+            font-size: 2rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .health-label {
+            font-size: 0.85rem;
+            color: var(--gray-700);
+            margin-bottom: 0.25rem;
+        }
+
+        .health-value {
+            font-size: 1.25rem;
+            font-weight: 700;
+        }
+
+        .refresh-bar {
+            background: white;
+            border-radius: 0.5rem;
+            padding: 1rem 1.5rem;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 2rem;
+        }
+
+        .refresh-info {
+            font-size: 0.9rem;
+            color: var(--gray-700);
+        }
+
+        .refresh-countdown {
+            font-weight: 700;
+            color: var(--primary);
+        }
+
+        @media (max-width: 1024px) {
+            .stage-pipeline {
+                grid-template-columns: repeat(2, 1fr);
+            }
+
+            .topbar-stats {
+                display: none;
+            }
+        }
+
+        @media (max-width: 640px) {
+            .stage-pipeline {
+                grid-template-columns: 1fr;
+            }
+
+            .tab-button {
+                font-size: 0.75rem;
+                padding: 0.75rem 0.5rem;
+            }
+
+            .container {
+                padding: 1rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="topbar">
+        <div class="topbar-content">
+            <div class="topbar-title">
+                <h1>🎛️ Pipeline Control Center</h1>
+                <p>UConn Web Scraping Pipeline - Real-time Operations Dashboard</p>
+            </div>
+            <div class="topbar-stats">
+                <div class="topbar-stat">
+                    <div class="topbar-stat-label">Status</div>
+                    <div class="topbar-stat-value" id="topbar-status">●●●</div>
+                </div>
+                <div class="topbar-stat">
+                    <div class="topbar-stat-label">Total URLs</div>
+                    <div class="topbar-stat-value" id="topbar-urls">0</div>
+                </div>
+                <div class="topbar-stat">
+                    <div class="topbar-stat-label">Summaries</div>
+                    <div class="topbar-stat-value" id="topbar-summaries">0</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="tabs">
+            <div class="tab-buttons">
+                <button class="tab-button active" data-tab="overview">📊 Overview</button>
+                <button class="tab-button" data-tab="pipeline">🔄 Pipeline Stages</button>
+                <button class="tab-button" data-tab="performance">📈 Performance</button>
+                <button class="tab-button" data-tab="system">⚙️ System Health</button>
+                <button class="tab-button" data-tab="activity">📋 Activity Log</button>
+            </div>
+
+            <!-- Overview Tab -->
+            <div class="tab-content active" id="tab-overview">
+                <div class="grid grid-4">
+                    <div class="card">
+                        <div class="card-header">
+                            <span class="card-title">Stage 1: Discovery</span>
+                            <span class="card-badge badge-info">Active</span>
+                        </div>
+                        <div class="metric-row">
+                            <span class="metric-label">URLs Found</span>
+                            <span class="metric-value" id="overview-s1-discovered">0</span>
+                        </div>
+                        <div class="metric-row">
+                            <span class="metric-label">Queued</span>
+                            <span class="metric-value" id="overview-s1-queued">0</span>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <span class="card-title">Stage 2: Analysis</span>
+                            <span class="card-badge badge-info">Active</span>
+                        </div>
+                        <div class="metric-row">
+                            <span class="metric-label">Pages Analyzed</span>
+                            <span class="metric-value" id="overview-s2-analyzed">0</span>
+                        </div>
+                        <div class="metric-row">
+                            <span class="metric-label">Quality Docs</span>
+                            <span class="metric-value success" id="overview-s2-quality">0</span>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <span class="card-title">Stage 3: Summarization</span>
+                            <span class="card-badge badge-success">Running</span>
+                        </div>
+                        <div class="metric-row">
+                            <span class="metric-label">Summaries</span>
+                            <span class="metric-value success" id="overview-s3-summaries">0</span>
+                        </div>
+                        <div class="metric-row">
+                            <span class="metric-label">Deduplicated</span>
+                            <span class="metric-value" id="overview-s3-dedup">0</span>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <span class="card-title">Stage 4: Large Docs</span>
+                            <span class="card-badge badge-info">Standby</span>
+                        </div>
+                        <div class="metric-row">
+                            <span class="metric-label">Processed</span>
+                            <span class="metric-value" id="overview-s4-summaries">0</span>
+                        </div>
+                        <div class="metric-row">
+                            <span class="metric-label">Compression</span>
+                            <span class="metric-value" id="overview-s4-compression">0x</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="grid grid-2" style="margin-top: 1.5rem;">
+                    <div class="card">
+                        <div class="card-header">
+                            <span class="card-title">Pipeline Throughput</span>
+                        </div>
+                        <div class="chart-container">
+                            <canvas id="throughput-chart"></canvas>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <span class="card-title">Recent Activity</span>
+                        </div>
+                        <div class="activity-feed" id="overview-activity">
+                            <div class="activity-item success">
+                                <div class="activity-timestamp">Just now</div>
+                                <div class="activity-message">Pipeline monitoring started</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Pipeline Tab -->
+            <div class="tab-content" id="tab-pipeline">
+                <div class="stage-pipeline">
+                    <div class="stage-card active">
+                        <div class="stage-number">1</div>
+                        <div class="stage-title">URL Discovery</div>
+                        <div class="stage-metrics">
+                            <div class="stage-metric">
+                                <span class="stage-metric-label">URLs Discovered</span>
+                                <span class="stage-metric-value" id="pipeline-s1-discovered">0</span>
+                            </div>
+                            <div class="stage-metric">
+                                <span class="stage-metric-label">Queued for Stage 2</span>
+                                <span class="stage-metric-value" id="pipeline-s1-queued">0</span>
+                            </div>
+                            <div class="stage-metric">
+                                <span class="stage-metric-label">Scout Instances</span>
+                                <span class="stage-metric-value">8</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="stage-card active">
+                        <div class="stage-number">2</div>
+                        <div class="stage-title">Page Analysis</div>
+                        <div class="stage-metrics">
+                            <div class="stage-metric">
+                                <span class="stage-metric-label">Pages Analyzed</span>
+                                <span class="stage-metric-value" id="pipeline-s2-analyzed">0</span>
+                            </div>
+                            <div class="stage-metric">
+                                <span class="stage-metric-label">Quality Documents</span>
+                                <span class="stage-metric-value" id="pipeline-s2-quality">0</span>
+                            </div>
+                            <div class="stage-metric">
+                                <span class="stage-metric-label">Massive Documents</span>
+                                <span class="stage-metric-value" id="pipeline-s2-massive">0</span>
+                            </div>
+                            <div class="stage-metric">
+                                <span class="stage-metric-label">Avg Word Count</span>
+                                <span class="stage-metric-value" id="pipeline-s2-words">0</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="stage-card">
+                        <div class="stage-number">3</div>
+                        <div class="stage-title">Summarization</div>
+                        <div class="stage-metrics">
+                            <div class="stage-metric">
+                                <span class="stage-metric-label">Summaries Created</span>
+                                <span class="stage-metric-value" id="pipeline-s3-summaries">0</span>
+                            </div>
+                            <div class="stage-metric">
+                                <span class="stage-metric-label">Deduplicated</span>
+                                <span class="stage-metric-value" id="pipeline-s3-dedup">0</span>
+                            </div>
+                            <div class="stage-metric">
+                                <span class="stage-metric-label">Processing Rate</span>
+                                <span class="stage-metric-value" id="pipeline-s3-rate">0/s</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="stage-card">
+                        <div class="stage-number">4</div>
+                        <div class="stage-title">Large Documents</div>
+                        <div class="stage-metrics">
+                            <div class="stage-metric">
+                                <span class="stage-metric-label">Large Summaries</span>
+                                <span class="stage-metric-value" id="pipeline-s4-summaries">0</span>
+                            </div>
+                            <div class="stage-metric">
+                                <span class="stage-metric-label">Avg Compression</span>
+                                <span class="stage-metric-value" id="pipeline-s4-compression">0x</span>
+                            </div>
+                            <div class="stage-metric">
+                                <span class="stage-metric-label">Processing Rate</span>
+                                <span class="stage-metric-value" id="pipeline-s4-rate">0/s</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="grid grid-2" style="margin-top: 2rem;">
+                    <div class="card">
+                        <div class="card-header">
+                            <span class="card-title">Stage Progression</span>
+                        </div>
+                        <div class="chart-container">
+                            <canvas id="stage-progression-chart"></canvas>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <span class="card-title">Document Routing</span>
+                        </div>
+                        <div class="chart-container">
+                            <canvas id="routing-chart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Performance Tab -->
+            <div class="tab-content" id="tab-performance">
+                <div class="grid grid-2">
+                    <div class="card">
+                        <div class="card-header">
+                            <span class="card-title">URLs Discovered Over Time</span>
+                        </div>
+                        <div class="chart-container">
+                            <canvas id="urls-chart"></canvas>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <span class="card-title">Pages Analyzed Over Time</span>
+                        </div>
+                        <div class="chart-container">
+                            <canvas id="pages-chart"></canvas>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <span class="card-title">Summaries Created Over Time</span>
+                        </div>
+                        <div class="chart-container">
+                            <canvas id="summaries-chart"></canvas>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <span class="card-title">Processing Rates</span>
+                        </div>
+                        <div class="metric-row">
+                            <span class="metric-label">Stage 1: URL Discovery</span>
+                            <span class="metric-value" id="perf-s1-rate">0 URLs/min</span>
+                        </div>
+                        <div class="metric-row">
+                            <span class="metric-label">Stage 2: Page Analysis</span>
+                            <span class="metric-value" id="perf-s2-rate">0 pages/sec</span>
+                        </div>
+                        <div class="metric-row">
+                            <span class="metric-label">Stage 3: Summarization</span>
+                            <span class="metric-value" id="perf-s3-rate">0 summaries/sec</span>
+                        </div>
+                        <div class="metric-row">
+                            <span class="metric-label">Stage 4: Large Docs</span>
+                            <span class="metric-value" id="perf-s4-rate">0 docs/sec</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- System Health Tab -->
+            <div class="tab-content" id="tab-system">
+                <div class="card" style="margin-bottom: 2rem;">
+                    <div class="card-header">
+                        <span class="card-title">System Status</span>
+                        <span class="status-indicator online" id="system-status">
+                            <span class="status-dot"></span>
+                            <span>Online</span>
+                        </span>
+                    </div>
+                    <div class="system-health">
+                        <div class="health-item healthy" id="redis-health">
+                            <div class="health-icon">🗄️</div>
+                            <div class="health-label">Redis</div>
+                            <div class="health-value">Healthy</div>
+                        </div>
+                        <div class="health-item healthy" id="metrics-health">
+                            <div class="health-icon">📊</div>
+                            <div class="health-label">Metrics</div>
+                            <div class="health-value">Collecting</div>
+                        </div>
+                        <div class="health-item healthy" id="stage1-health">
+                            <div class="health-icon">🔍</div>
+                            <div class="health-label">Stage 1</div>
+                            <div class="health-value">Running</div>
+                        </div>
+                        <div class="health-item healthy" id="stage2-health">
+                            <div class="health-icon">📄</div>
+                            <div class="health-label">Stage 2</div>
+                            <div class="health-value">Running</div>
+                        </div>
+                        <div class="health-item healthy" id="stage3-health">
+                            <div class="health-icon">📝</div>
+                            <div class="health-label">Stage 3</div>
+                            <div class="health-value">Running</div>
+                        </div>
+                        <div class="health-item healthy" id="stage4-health">
+                            <div class="health-icon">📚</div>
+                            <div class="health-label">Stage 4</div>
+                            <div class="health-value">Standby</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="grid grid-3">
+                    <div class="card">
+                        <div class="card-header">
+                            <span class="card-title">Redis Metrics</span>
+                        </div>
+                        <div class="metric-row">
+                            <span class="metric-label">Keys</span>
+                            <span class="metric-value" id="redis-keys">0</span>
+                        </div>
+                        <div class="metric-row">
+                            <span class="metric-label">Memory Used</span>
+                            <span class="metric-value" id="redis-memory">0 MB</span>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <span class="card-title">Delta Lake</span>
+                        </div>
+                        <div class="metric-row">
+                            <span class="metric-label">Tables</span>
+                            <span class="metric-value">12</span>
+                        </div>
+                        <div class="metric-row">
+                            <span class="metric-label">Status</span>
+                            <span class="metric-value success">Active</span>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <span class="card-title">Last Update</span>
+                        </div>
+                        <div class="metric-row">
+                            <span class="metric-label">Timestamp</span>
+                            <span class="metric-value" id="last-update">Never</span>
+                        </div>
+                        <div class="metric-row">
+                            <span class="metric-label">Uptime</span>
+                            <span class="metric-value" id="uptime">0s</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Activity Log Tab -->
+            <div class="tab-content" id="tab-activity">
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-title">Pipeline Activity Log</span>
+                        <span class="card-badge badge-info">Live</span>
+                    </div>
+                    <div class="activity-feed" id="activity-log">
+                        <div class="activity-item success">
+                            <div class="activity-timestamp">System initialized</div>
+                            <div class="activity-message">Pipeline Control Center started monitoring</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="refresh-bar">
+            <div class="refresh-info">
+                Auto-refresh: <span class="refresh-countdown" id="refresh-countdown">5</span> seconds
+            </div>
+            <div class="refresh-info">
+                Last updated: <span id="last-refresh-time">Never</span>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
