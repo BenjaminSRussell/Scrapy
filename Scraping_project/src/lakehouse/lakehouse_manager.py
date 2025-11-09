@@ -90,6 +90,7 @@ class LakehouseManager:
             "stage3_analytics": self.base_path / "stage3_analytics",
             "stage3_summaries": self.base_path / "stage3_summaries",
             "stage4_large_docs": self.base_path / "stage4_large_docs",
+            "stage4_large_doc_summaries": self.base_path / "stage4_large_doc_summaries",
             "stage4_summaries": self.base_path / "stage4_summaries",
         }
 

@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>UConn Scraping Pipeline Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .header {
+            text-align: center;
+            color: white;
+            margin-bottom: 40px;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+        }
+
+        .header .subtitle {
+            font-size: 1.2em;
+            opacity: 0.9;
+        }
+
+        .status-bar {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 30px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            display: flex;
+            justify-content: space-around;
+            flex-wrap: wrap;
+        }
+
+        .status-item {
+            text-align: center;
+            padding: 10px;
+        }
+
+        .status-item .label {
+            font-size: 0.9em;
+            color: #666;
+            margin-bottom: 5px;
+        }
+
+        .status-item .value {
+            font-size: 1.5em;
+            font-weight: bold;
+            color: #333;
+        }
+
+        .status-item.online .value {
+            color: #10b981;
+        }
+
+        .status-item.offline .value {
+            color: #ef4444;
+        }
+
+        .pipeline-flow {
+            background: white;
+            border-radius: 10px;
+            padding: 30px;
+            margin-bottom: 30px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+
+        .flow-title {
+            font-size: 1.5em;
+            font-weight: bold;
+            margin-bottom: 20px;
+            color: #333;
+        }
+
+        .stages {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 20px;
+        }
+
+        .stage {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 10px;
+            padding: 20px;
+            color: white;
+            position: relative;
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .stage:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 20px rgba(0,0,0,0.2);
+        }
+
+        .stage-header {
+            font-size: 1.3em;
+            font-weight: bold;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid rgba(255,255,255,0.3);
+        }
+
+        .metric {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10px;
+            padding: 8px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 5px;
+        }
+
+        .metric-label {
+            font-size: 0.9em;
+            opacity: 0.9;
+        }
+
+        .metric-value {
+            font-weight: bold;
+            font-size: 1.1em;
+        }
+
+        .refresh-info {
+            text-align: center;
+            color: white;
+            margin-top: 20px;
+            font-size: 0.9em;
+        }
+
+        .loading {
+            text-align: center;
+            color: white;
+            padding: 40px;
+            font-size: 1.2em;
+        }
+
+        .error {
+            background: #ef4444;
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .updating {
+            animation: pulse 1.5s infinite;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🚀 UConn Scraping Pipeline</h1>
+            <div class="subtitle">Real-time Monitoring Dashboard</div>
+        </div>
+
+        <div id="error-container"></div>
+
+        <div class="status-bar">
+            <div class="status-item" id="pipeline-status">
+                <div class="label">Pipeline Status</div>
+                <div class="value">Loading...</div>
+            </div>
+            <div class="status-item">
+                <div class="label">Last Update</div>
+                <div class="value" id="last-update">Never</div>
+            </div>
+            <div class="status-item">
+                <div class="label">Total URLs Discovered</div>
+                <div class="value" id="total-urls">0</div>
+            </div>
+            <div class="status-item">
+                <div class="label">Pages Processed</div>
+                <div class="value" id="pages-processed">0</div>
+            </div>
+        </div>
+
+        <div class="pipeline-flow">
+            <div class="flow-title">Pipeline Stages</div>
+            <div class="stages">
+                <!-- Stage 1 -->
+                <div class="stage">
+                    <div class="stage-header">Stage 1: URL Discovery</div>
+                    <div class="metric">
+                        <span class="metric-label">URLs Discovered</span>
+                        <span class="metric-value" id="s1-discovered">0</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">Queued for Stage 2</span>
+                        <span class="metric-value" id="s1-queued">0</span>
+                    </div>
+                </div>
+
+                <!-- Stage 2 -->
+                <div class="stage">
+                    <div class="stage-header">Stage 2: Page Analysis</div>
+                    <div class="metric">
+                        <span class="metric-label">Pages Analyzed</span>
+                        <span class="metric-value" id="s2-analyzed">0</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">Quality Docs</span>
+                        <span class="metric-value" id="s2-quality">0</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">Massive Docs</span>
+                        <span class="metric-value" id="s2-massive">0</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">Avg Word Count</span>
+                        <span class="metric-value" id="s2-words">0</span>
+                    </div>
+                </div>
+
+                <!-- Stage 3 -->
+                <div class="stage">
+                    <div class="stage-header">Stage 3: Summarization</div>
+                    <div class="metric">
+                        <span class="metric-label">Summaries Created</span>
+                        <span class="metric-value" id="s3-summaries">0</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">Deduplicated</span>
+                        <span class="metric-value" id="s3-dedup">0</span>
+                    </div>
+                </div>
+
+                <!-- Stage 4 -->
+                <div class="stage">
+                    <div class="stage-header">Stage 4: Large Docs</div>
+                    <div class="metric">
+                        <span class="metric-label">Large Summaries</span>
+                        <span class="metric-value" id="s4-summaries">0</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">Avg Compression</span>
+                        <span class="metric-value" id="s4-compression">0.00x</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="refresh-info">
+            Auto-refreshing every 5 seconds • <span id="refresh-countdown">5</span>s until next update
+        </div>
+    </div>
+
+    <script>
+        let countdown = 5;
+
+        function parseMetrics(text) {
+            const metrics = {};
+            const lines = text.split('\n');
+
+            for (const line of lines) {
+                if (line.startsWith('#') || line.trim() === '') continue;
+
+                const parts = line.split(' ');
+                if (parts.length >= 2) {
+                    const key = parts[0];
+                    const value = parseFloat(parts[1]);
+                    metrics[key] = value;
+                }
+            }
+
+            return metrics;
+        }
+
+        function updateDashboard(metrics) {
+            // Status bar
+            const pipelineStatus = document.getElementById('pipeline-status');
+            if (metrics['pipeline_running'] === 1) {
+                pipelineStatus.className = 'status-item online';
+                pipelineStatus.querySelector('.value').textContent = '🟢 Online';
+            } else {
+                pipelineStatus.className = 'status-item offline';
+                pipelineStatus.querySelector('.value').textContent = '🔴 Offline';
+            }
+
+            // Last update
+            const lastUpdate = new Date(metrics['pipeline_last_update_timestamp'] * 1000);
+            document.getElementById('last-update').textContent = lastUpdate.toLocaleTimeString();
+
+            // Summary stats
+            document.getElementById('total-urls').textContent = Math.round(metrics['stage1_urls_discovered_total'] || 0);
+            document.getElementById('pages-processed').textContent = Math.round(metrics['stage2_pages_analyzed_total'] || 0);
+
+            // Stage 1
+            document.getElementById('s1-discovered').textContent = Math.round(metrics['stage1_urls_discovered_total'] || 0);
+            document.getElementById('s1-queued').textContent = Math.round(metrics['stage1_urls_queued_total'] || 0);
+
+            // Stage 2
+            document.getElementById('s2-analyzed').textContent = Math.round(metrics['stage2_pages_analyzed_total'] || 0);
+            document.getElementById('s2-quality').textContent = Math.round(metrics['stage2_quality_docs_total'] || 0);
+            document.getElementById('s2-massive').textContent = Math.round(metrics['stage2_massive_docs_total'] || 0);
+            document.getElementById('s2-words').textContent = Math.round(metrics['stage2_avg_word_count'] || 0).toLocaleString();
+
+            // Stage 3
+            document.getElementById('s3-summaries').textContent = Math.round(metrics['stage3_summaries_created_total'] || 0);
+            document.getElementById('s3-dedup').textContent = Math.round(metrics['stage3_documents_deduplicated_total'] || 0);
+
+            // Stage 4
+            document.getElementById('s4-summaries').textContent = Math.round(metrics['stage4_large_doc_summaries_total'] || 0);
+            const compression = metrics['stage4_avg_compression_ratio'] || 0;
+            const compressionRatio = compression > 0 ? (1 / compression).toFixed(0) + 'x' : '0x';
+            document.getElementById('s4-compression').textContent = compressionRatio;
+
+            // Clear any errors
+            document.getElementById('error-container').innerHTML = '';
+        }
+
+        function showError(message) {
+            document.getElementById('error-container').innerHTML = `
+                <div class="error">
+                    ⚠️ Error: ${message}
+                </div>
+            `;
+        }
+
+        async function fetchMetrics() {
+            try {
+                const response = await fetch('http://localhost:9090/metrics');
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                const text = await response.text();
+                const metrics = parseMetrics(text);
+                updateDashboard(metrics);
+
+                // Reset countdown
+                countdown = 5;
+            } catch (error) {
+                console.error('Error fetching metrics:', error);
+                showError(`Cannot connect to metrics endpoint: ${error.message}`);
+            }
+        }
+
+        // Update countdown display
+        setInterval(() => {
+            countdown--;
+            if (countdown <= 0) {
+                countdown = 5;
+            }
+            document.getElementById('refresh-countdown').textContent = countdown;
+        }, 1000);
+
+        // Fetch metrics every 5 seconds
+        fetchMetrics();
+        setInterval(fetchMetrics, 5000);
+    </script>
+</body>
+</html>
