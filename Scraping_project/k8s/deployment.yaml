@@ -1,0 +1,176 @@
+# Kubernetes deployment configuration
+# Phase 10: Production Kubernetes deployment
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: uconn-scraper
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: scraper-config
+  namespace: uconn-scraper
+data:
+  REDIS_HOST: "redis-service"
+  REDIS_PORT: "6379"
+  DELTA_LAKE_PATH: "/data/delta"
+  LOG_LEVEL: "INFO"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: stage1-worker
+  namespace: uconn-scraper
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: stage1-worker
+  template:
+    metadata:
+      labels:
+        app: stage1-worker
+    spec:
+      containers:
+      - name: worker
+        image: uconn-scraper:latest
+        command: ["python", "-m", "src.workers.stage1_worker"]
+        envFrom:
+        - configMapRef:
+            name: scraper-config
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+        volumeMounts:
+        - name: data
+          mountPath: /data
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: scraper-data-pvc
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: stage2-worker
+  namespace: uconn-scraper
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: stage2-worker
+  template:
+    metadata:
+      labels:
+        app: stage2-worker
+    spec:
+      containers:
+      - name: worker
+        image: uconn-scraper:latest
+        command: ["python", "-m", "src.workers.stage2_worker"]
+        envFrom:
+        - configMapRef:
+            name: scraper-config
+        env:
+        - name: CONCURRENCY
+          value: "10"
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+        volumeMounts:
+        - name: data
+          mountPath: /data
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: scraper-data-pvc
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  namespace: uconn-scraper
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+    spec:
+      containers:
+      - name: redis
+        image: redis:7-alpine
+        args:
+        - --appendonly
+        - "yes"
+        - --maxmemory
+        - "2gb"
+        - --maxmemory-policy
+        - allkeys-lru
+        ports:
+        - containerPort: 6379
+        resources:
+          requests:
+            memory: "2Gi"
+            cpu: "500m"
+          limits:
+            memory: "4Gi"
+            cpu: "1000m"
+        volumeMounts:
+        - name: redis-data
+          mountPath: /data
+      volumes:
+      - name: redis-data
+        persistentVolumeClaim:
+          claimName: redis-data-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-service
+  namespace: uconn-scraper
+spec:
+  selector:
+    app: redis
+  ports:
+  - port: 6379
+    targetPort: 6379
+  type: ClusterIP
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: scraper-data-pvc
+  namespace: uconn-scraper
+spec:
+  accessModes:
+  - ReadWriteMany
+  resources:
+    requests:
+      storage: 100Gi
+  storageClassName: standard
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: redis-data-pvc
+  namespace: uconn-scraper
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: standard

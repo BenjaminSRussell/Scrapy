@@ -246,7 +246,7 @@ class LakehouseManager:
                 partition_by=partition_by,
             )
 
-            logger.info(f"✅ Wrote {len(data)} records to {table_name}")
+            logger.info(f" Wrote {len(data)} records to {table_name}")
         except Exception as e:
             self._handle_writer_exception(e, table_name)
 
@@ -315,7 +315,7 @@ class LakehouseManager:
             elif table_name == "stage2_page_analysis":
                 dt.optimize.z_order(["url_hash", "processed_at"])
 
-            logger.info(f"✅ Optimized {table_name}")
+            logger.info(f" Optimized {table_name}")
 
         except Exception as e:
             logger.warning(f"Optimization failed for {table_name}: {e}")
@@ -349,7 +349,7 @@ class LakehouseManager:
                 enforce_retention_duration=enforce_retention_duration,
                 dry_run=False,
             )
-            logger.info(f"✅ Vacuumed {table_name}")
+            logger.info(f" Vacuumed {table_name}")
         except Exception as e:
             logger.warning(f"Vacuum failed for {table_name}: {e}")
 
@@ -374,15 +374,15 @@ class LakehouseManager:
         remaining = self.write_queue.qsize()
 
         if remaining > 0:
-            logger.warning(f"⚠️  Queue not empty after {elapsed:.1f}s: {remaining} tasks remaining (forcing shutdown)")
+            logger.warning(f"  Queue not empty after {elapsed:.1f}s: {remaining} tasks remaining (forcing shutdown)")
         else:
-            logger.info(f"✅ Queue emptied in {elapsed:.1f}s")
+            logger.info(f" Queue emptied in {elapsed:.1f}s")
 
         logger.info("Checkpointing all Delta tables...")
         for name, table_path in self.tables.items():
             try:
                 if (table_path / "_delta_log").exists():
-                    logger.info(f"✅ Verified {name}")
+                    logger.info(f" Verified {name}")
             except Exception as e:
                 logger.error(f"Failed to checkpoint {name}: {e}")
 
@@ -424,16 +424,16 @@ class LakehouseManager:
                 thread.join(timeout=timeout / 2)
 
                 if thread.is_alive():
-                    logger.warning(f"⚠️  {name} did not stop in time")
+                    logger.warning(f"  {name} did not stop in time")
                 else:
-                    logger.info(f"✅ {name} stopped gracefully")
+                    logger.info(f" {name} stopped gracefully")
 
         self.checkpoint(timeout=min(timeout, 5))
 
         duration = time.time() - start_time
         if DELTA_MANAGER_SHUTDOWN_DURATION_SECONDS:
             DELTA_MANAGER_SHUTDOWN_DURATION_SECONDS.observe(duration)
-        logger.info(f"✅ LakehouseManager shutdown complete in {duration:.2f} seconds")
+        logger.info(f" LakehouseManager shutdown complete in {duration:.2f} seconds")
 
     def _shutdown_handler(self, signum, frame):
         signal_name = signal.Signals(signum).name
@@ -444,7 +444,7 @@ class LakehouseManager:
         except Exception as e:
             logger.error(f"Error during shutdown: {e}", exc_info=True)
         finally:
-            logger.info("✅ Shutdown handler complete")
+            logger.info(" Shutdown handler complete")
             sys.exit(0)
 
     def list_tables(self) -> list[dict[str, Any]]:
@@ -506,7 +506,7 @@ class LakehouseManager:
         else:
             raise ValueError(f"Unsupported format: {format}")
 
-        logger.info(f"✅ Exported {table_name} to {out_path} ({format})")
+        logger.info(f" Exported {table_name} to {out_path} ({format})")
 
         return {
             "table": table_name,
@@ -933,7 +933,7 @@ def get_lakehouse_manager(mode: str | None = None, **kwargs) -> LakehouseManager
 
     if mode == "memory":
         logger.warning(
-            "⚠️  Using in-memory Lakehouse backend! "
+            "  Using in-memory Lakehouse backend! "
             "All data is ephemeral and will be lost when the process exits. "
             "Set DELTA_BACKEND='lakehouse' for persistent storage."
         )

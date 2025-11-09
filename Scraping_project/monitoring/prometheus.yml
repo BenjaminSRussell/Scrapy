@@ -1,0 +1,34 @@
+# Prometheus configuration for monitoring
+# Phase 10: Production monitoring
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: 'scraper-workers'
+    static_configs:
+      - targets:
+        - 'stage1-worker:8000'
+        - 'stage2-worker:8000'
+        - 'stage3-worker:8000'
+        - 'stage4-worker:8000'
+
+  - job_name: 'redis'
+    static_configs:
+      - targets:
+        - 'redis:6379'
+
+  - job_name: 'prometheus'
+    static_configs:
+      - targets:
+        - 'localhost:9090'
+
+rule_files:
+  - 'alerts.yml'
+
+alerting:
+  alertmanagers:
+    - static_configs:
+      - targets:
+        - 'alertmanager:9093'

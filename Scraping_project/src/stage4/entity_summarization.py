@@ -41,7 +41,7 @@ class FactAggregator:
 
                 logger.info(f"Loading embedding model: {self.embedding_model_name}")
                 self._embedding_model = SentenceTransformer(self.embedding_model_name)
-                logger.info("✅ Embedding model loaded successfully")
+                logger.info(" Embedding model loaded successfully")
             except ImportError as e:
                 raise ImportError(
                     "sentence-transformers is required for FactAggregator. "
@@ -175,7 +175,7 @@ class FactAggregator:
             representative["source_references"] = source_refs
             deduplicated.append(representative)
 
-        logger.info(f"✅ Deduplicated {len(facts)} facts → {len(deduplicated)} unique facts for '{entity_name}'")
+        logger.info(f" Deduplicated {len(facts)} facts → {len(deduplicated)} unique facts for '{entity_name}'")
 
         return deduplicated
 
@@ -289,7 +289,7 @@ class AbstractiveSummarizer:
                     model=self.model_name,
                     device=self.device,
                 )
-                logger.info("✅ Summarization model loaded successfully")
+                logger.info(" Summarization model loaded successfully")
             except ImportError as e:
                 raise ImportError(
                     "transformers is required for AbstractiveSummarizer. "
@@ -448,7 +448,7 @@ class EntitySummaryStorage:
 
         self.delta.write(self.table_name, [record], mode="append")
 
-        logger.info(f"✅ Saved summary for '{entity_name}' to Delta Lake table '{self.table_name}'")
+        logger.info(f" Saved summary for '{entity_name}' to Delta Lake table '{self.table_name}'")
 
     def read_summaries(
         self,
@@ -507,7 +507,7 @@ class Stage4EntityWorker:
 
         self.storage = EntitySummaryStorage()
 
-        logger.info("✅ Stage4EntityWorker initialized")
+        logger.info(" Stage4EntityWorker initialized")
 
     def process_documents(self, documents: list[dict[str, Any]]):
         logger.info(f"Processing {len(documents)} documents...")
@@ -542,9 +542,9 @@ class Stage4EntityWorker:
                 facts=facts,
             )
 
-            logger.info(f"✅ Completed processing for entity '{entity_name}' ({len(facts)} unique facts)")
+            logger.info(f" Completed processing for entity '{entity_name}' ({len(facts)} unique facts)")
 
-        logger.info(f"✅ Stage 4 processing complete. Processed {len(all_entity_facts)} entities.")
+        logger.info(f" Stage 4 processing complete. Processed {len(all_entity_facts)} entities.")
 
 if __name__ == "__main__":
     sample_documents = [

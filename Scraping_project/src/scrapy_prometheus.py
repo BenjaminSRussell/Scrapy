@@ -211,7 +211,7 @@ class PrometheusExtension:
             tally_str = ", ".join(
                 [f"{reason}: {count}" for reason, count in sorted(SKIPPED_URL_TALLIES[spider.name].items())]
             )
-            logger.info(f"📊 FINAL SKIPPED URLs SUMMARY - Total: {total_skipped} | {tally_str}")
+            logger.info(f" FINAL SKIPPED URLs SUMMARY - Total: {total_skipped} | {tally_str}")
             del SKIPPED_URL_TALLIES[spider.name]
 
         SPIDER_OPENED.labels(spider=spider.name).set(0)
@@ -270,7 +270,7 @@ class PrometheusExtension:
             tally_str = ", ".join(
                 [f"{reason}: {count}" for reason, count in sorted(SKIPPED_URL_TALLIES[spider.name].items())]
             )
-            logger.info(f"🔄 SKIPPED URLs - Total: {total_skipped} | {tally_str}")
+            logger.info(f" SKIPPED URLs - Total: {total_skipped} | {tally_str}")
 
         logger.debug(f"Request dropped in {spider.name}: {drop_reason} - {request.url}")
 

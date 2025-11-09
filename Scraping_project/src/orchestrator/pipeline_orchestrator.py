@@ -73,7 +73,7 @@ class PipelineOrchestrator:
         try:
             queue = self.delta.read("stage2_queue")
             queued_count = len([item for item in queue if item.get('status') == 'pending'])
-            logger.info(f"✅ Stage 1 complete: {queued_count} URLs queued for Stage 2")
+            logger.info(f" Stage 1 complete: {queued_count} URLs queued for Stage 2")
             self.stats.stage1_urls_queued = queued_count
             return queued_count
         except Exception as e:
@@ -108,7 +108,7 @@ class PipelineOrchestrator:
             quality_docs = len([d for d in analysis if not d.get('is_massive_doc', False) and not d.get('is_low_quality', True)])
             massive_docs = len([d for d in analysis if d.get('is_massive_doc', False)])
 
-            logger.info(f"✅ Stage 2 complete: {analyzed_count} pages analyzed")
+            logger.info(f" Stage 2 complete: {analyzed_count} pages analyzed")
             logger.info(f"   - Quality docs: {quality_docs}")
             logger.info(f"   - Massive docs: {massive_docs}")
 
@@ -146,7 +146,7 @@ class PipelineOrchestrator:
             summaries = self.delta.read("stage4_summaries")
             summary_count = len(summaries)
 
-            logger.info(f"✅ Stage 3 complete: {summary_count} summaries created")
+            logger.info(f" Stage 3 complete: {summary_count} summaries created")
             self.stats.stage3_summaries_created = summary_count
 
             return summary_count
@@ -166,7 +166,7 @@ class PipelineOrchestrator:
             large_summaries = self.delta.read("stage4_large_doc_summaries")
             large_count = len(large_summaries)
 
-            logger.info(f"✅ Stage 4 complete: {large_count} large doc summaries created")
+            logger.info(f" Stage 4 complete: {large_count} large doc summaries created")
             self.stats.stage4_large_summaries = large_count
 
             return large_count
@@ -189,9 +189,9 @@ class PipelineOrchestrator:
         """
         self.stats.start_time = datetime.now()
 
-        logger.info("🚀 " * 40)
+        logger.info(" " * 40)
         logger.info("STARTING FULL PIPELINE EXECUTION")
-        logger.info("🚀 " * 40)
+        logger.info(" " * 40)
 
         try:
             self.run_stage1(url_limit=stage1_url_limit)
@@ -239,7 +239,7 @@ class PipelineOrchestrator:
         logger.info("=" * 80)
         logger.info(f"Duration: {self.stats.total_duration_seconds:.2f} seconds")
         logger.info("")
-        logger.info("📊 FINAL STATISTICS:")
+        logger.info(" FINAL STATISTICS:")
         logger.info("-" * 80)
         logger.info(f"  Stage 1 (URL Discovery):")
         logger.info(f"    - URLs queued for Stage 2: {self.stats.stage1_urls_queued}")
@@ -255,7 +255,7 @@ class PipelineOrchestrator:
         logger.info(f"  Stage 4 (Large Docs):")
         logger.info(f"    - Large doc summaries: {self.stats.stage4_large_summaries}")
         logger.info("=" * 80)
-        logger.info(f"✅ Total summaries created: {self.stats.stage3_summaries_created + self.stats.stage4_large_summaries}")
+        logger.info(f" Total summaries created: {self.stats.stage3_summaries_created + self.stats.stage4_large_summaries}")
         logger.info("=" * 80 + "\n")
 
 async def main():

@@ -94,7 +94,7 @@ def create_final_summary(analytics_data: dict) -> dict:
         "source_metadata": metadata,
     }
 
-    logger.info(f"✅ Created summary for {url}")
+    logger.info(f" Created summary for {url}")
 
     return final
 
@@ -108,6 +108,6 @@ def save_to_jsonl(summaries: list[dict], output_file: Path | None = None):
         for summary in summaries:
             f.write(json.dumps(summary, ensure_ascii=False) + "\n")
 
-    logger.info(f"✅ Saved {len(summaries)} summaries to {output_file}")
+    logger.info(f" Saved {len(summaries)} summaries to {output_file}")
 
     return output_file

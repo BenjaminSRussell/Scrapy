@@ -68,7 +68,7 @@ class Stage4Worker:
         if results:
             try:
                 self.delta.write("stage4_large_doc_summaries", results, mode="append")
-                logger.info(f"[STAGE4] ✅ Saved {len(results)} large document summaries")
+                logger.info(f"[STAGE4]  Saved {len(results)} large document summaries")
             except Exception as e:
                 logger.error(f"[STAGE4] Failed to save results: {e}")
 

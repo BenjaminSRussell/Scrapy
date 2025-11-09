@@ -344,7 +344,7 @@ class QueueItemPipeline:
 
         try:
             self.delta.write("js_spider_queue", self.js_queue_batch, mode="append")
-            logger.info(f"✅ Saved {batch_size} items to js_spider_queue")
+            logger.info(f" Saved {batch_size} items to js_spider_queue")
             self.js_queue_batch.clear()
         except Exception as e:
             logger.error(f"Failed to save JS queue batch: {e}")
@@ -357,7 +357,7 @@ class QueueItemPipeline:
 
         try:
             self.delta.write("stage2_queue", self.stage2_queue_batch, mode="append")
-            logger.info(f"✅ Saved {batch_size} items to stage2_queue")
+            logger.info(f" Saved {batch_size} items to stage2_queue")
             self.stage2_queue_batch.clear()
         except Exception as e:
             logger.error(f"Failed to save Stage 2 queue batch: {e}")
@@ -418,7 +418,7 @@ class OffsiteCandidatePipeline:
 
         try:
             self.delta.write("stage1_offsite_candidates", self.batch, mode="append")
-            logger.info(f"✅ Saved {batch_size} offsite candidates to Delta Lake")
+            logger.info(f" Saved {batch_size} offsite candidates to Delta Lake")
 
             try:
                 from src.scrapy_prometheus import OFFSITE_CANDIDATES_SAVED
@@ -512,7 +512,7 @@ class GrafanaSummaryPipeline:
             if CRAWLER_CONTENT_SUMMARY:
                 # Note: Prometheus Gauge doesn't accept string values directly
                 CRAWLER_CONTENT_SUMMARY.labels(spider=spider.name).set(len(self.sampled_content))
-                logger.info(f"📊 Content Summary ({len(self.sampled_content)} samples): {summary[:200]}...")
+                logger.info(f" Content Summary ({len(self.sampled_content)} samples): {summary[:200]}...")
         except ImportError:
             pass
 
@@ -1057,7 +1057,7 @@ class MetadataExtractionPipeline:
 
             delta = get_delta()
             delta.write("metadata_queue", self.batch, mode="append")
-            logger.info(f"✅ Saved {batch_size} metadata records to metadata_queue")
+            logger.info(f" Saved {batch_size} metadata records to metadata_queue")
 
             self.batch.clear()
         except Exception as e:

@@ -113,11 +113,11 @@ class BaseSpider(scrapy.Spider):
         self.start_urls = self._load_seed_urls()
         print(f"[{self.name}] Loaded {len(self.start_urls)} start_urls")
 
-        print(f"✅ BaseSpider.__init__() COMPLETE for {self.name}")
+        print(f" BaseSpider.__init__() COMPLETE for {self.name}")
 
     async def start(self):
-        print(f"🚀 [{self.name}] start() called!")
-        print(f"🚀 [{self.name}] Processing {len(self.start_urls)} start URLs...")
+        print(f" [{self.name}] start() called!")
+        print(f" [{self.name}] Processing {len(self.start_urls)} start URLs...")
 
         for i, url in enumerate(self.start_urls):
             if i < 5:
@@ -131,7 +131,7 @@ class BaseSpider(scrapy.Spider):
                 priority=0,
             )
 
-        print(f"✅ [{self.name}] start() generated {len(self.start_urls)} requests")
+        print(f" [{self.name}] start() generated {len(self.start_urls)} requests")
 
     def _hash_url(self, url: str) -> str:
         normalized = self.normalize_url(url)
@@ -636,8 +636,8 @@ class BaseSpider(scrapy.Spider):
         self._save_batch()
         self._save_error_batch()
 
-        logger.info(f"✅ Final stats: {self.perf_urls_processed} URLs processed")
-        logger.info(f"✅ Total URLs discovered: {self.total_urls_discovered}")
+        logger.info(f" Final stats: {self.perf_urls_processed} URLs processed")
+        logger.info(f" Total URLs discovered: {self.total_urls_discovered}")
 
         skip_summary = ", ".join([f"{k}: {v}" for k, v in sorted(self.skip_counters.items(), key=lambda x: -x[1])])
         logger.info(f"⏭️  Final skip stats: {skip_summary}")
