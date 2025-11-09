@@ -6,9 +6,9 @@ from typing import Any
 
 from datasketch import MinHash, MinHashLSH  # type: ignore[import-untyped]
 
-from src.common.constants import SUMMARY_LIMITS
-from src.common.delta_lake import get_delta_manager
-from src.common.postgres_manager import PostgresManager
+from src.core.constants import SUMMARY_LIMITS
+from src.utils.delta import get_delta
+from src.common.postgres_manager_deprecated import PostgresManager
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +18,7 @@ class Stage3Worker:
         self.max_concurrent = max_concurrent
         self.batch_size = batch_size
         self.semaphore = asyncio.Semaphore(max_concurrent)
-        self.delta = get_delta_manager()
+        self.delta = get_delta()
         self.postgres = PostgresManager.get_instance()
         self.SIMILARITY_THRESHOLD = 0.3
 

@@ -1,6 +1,6 @@
 """Helpers for assembling Scrapy settings from config.yml."""
 
-from src.common.config import Config
+from src.core.config import Config
 
 def get_spider_settings(spider_name: str) -> dict:
     config_instance = Config.get_instance()

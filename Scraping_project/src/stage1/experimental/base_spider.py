@@ -14,9 +14,9 @@ from scrapy.http import Request, Response
 from scrapy.spidermiddlewares.httperror import HttpError
 from twisted.internet.error import DNSLookupError, TCPTimedOutError, TimeoutError
 
-from src.common.config_manager import ConfigManager
-from src.common.storage_manager import StorageManager
-from src.common.url_processor import URLProcessor, should_follow_url
+from src.core.config import get_config
+from src.common.storage_manager_deprecated import StorageManager
+from src.stage1.processors.url_processor import URLProcessor, should_follow_url
 from src.items import OffsiteCandidateItem
 from src.stage1.js_detection import JSDetector
 

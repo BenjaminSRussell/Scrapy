@@ -3,7 +3,7 @@ import logging
 from datetime import datetime
 from typing import Any
 
-from src.common.delta_lake import get_delta_manager
+from src.utils.delta import get_delta
 from src.stage4.large_doc_processor import LargeDocProcessor
 
 logger = logging.getLogger(__name__)
@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 class Stage4Worker:
 
     def __init__(self, model_name: str = "facebook/bart-large-cnn"):
-        self.delta = get_delta_manager()
+        self.delta = get_delta()
         self.processor = LargeDocProcessor(model_name=model_name)
 
     async def run(self):

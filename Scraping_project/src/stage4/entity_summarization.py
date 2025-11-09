@@ -383,9 +383,9 @@ class EntitySummaryStorage:
 
     def __init__(self, delta_manager=None):
         if delta_manager is None:
-            from src.common.delta_lake import get_delta_manager
+            from src.utils.delta import get_delta
 
-            delta_manager = get_delta_manager()
+            delta_manager = get_delta()
 
         self.delta = delta_manager
         self.table_name = "entity_summaries"

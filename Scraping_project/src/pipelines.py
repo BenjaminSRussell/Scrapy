@@ -290,9 +290,9 @@ class QueueItemPipeline:
     BATCH_SIZE = 100
 
     def __init__(self):
-        from src.common.delta_lake import get_delta_manager
+        from src.utils.delta import get_delta
 
-        self.delta = get_delta_manager()
+        self.delta = get_delta()
         self.js_queue_batch = []
         self.stage2_queue_batch = []
         self.items_processed = 0
@@ -378,9 +378,9 @@ class OffsiteCandidatePipeline:
     BATCH_SIZE = 100
 
     def __init__(self):
-        from src.common.delta_lake import get_delta_manager
+        from src.utils.delta import get_delta
 
-        self.delta = get_delta_manager()
+        self.delta = get_delta()
         self.batch = []
         self.items_processed = 0
 
@@ -1053,9 +1053,9 @@ class MetadataExtractionPipeline:
         batch_size = len(self.batch)
 
         try:
-            from src.common.delta_lake import get_delta_manager
+            from src.utils.delta import get_delta
 
-            delta = get_delta_manager()
+            delta = get_delta()
             delta.write("metadata_queue", self.batch, mode="append")
             logger.info(f"✅ Saved {batch_size} metadata records to metadata_queue")
 

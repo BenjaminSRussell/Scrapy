@@ -4,6 +4,17 @@ Global constants for the UConn scraping pipeline.
 Consolidated from src/common/constants.py
 """
 
+from pathlib import Path
+from typing import Final
+
+# Project paths
+PROJECT_ROOT: Final[Path] = Path(__file__).parent.parent.parent
+DATA_DIR: Final[Path] = PROJECT_ROOT / "data"
+DELTA_LAKE: Final[Path] = DATA_DIR / "delta_lake"
+CONFIG_DIR: Final[Path] = DATA_DIR / "config"
+LOGS_DIR: Final[Path] = DATA_DIR / "logs"
+CACHE_DIR: Final[Path] = DATA_DIR / "cache"
+
 # Pipeline stages
 STAGE_1_URL_DISCOVERY = "stage1"
 STAGE_2_PAGE_ANALYSIS = "stage2"
@@ -57,3 +68,11 @@ MAX_BATCH_SIZE = 1000
 # Concurrency limits
 MAX_CONCURRENT_REQUESTS = 512
 MAX_CONCURRENT_WORKERS = 100
+
+# Summarization limits
+SUMMARY_LIMITS: Final[dict[str, int]] = {
+    "min_length": 30,
+    "max_length": 150,
+    "chunk_size": 1024,
+    "extractive_max_sentences": 5,
+}

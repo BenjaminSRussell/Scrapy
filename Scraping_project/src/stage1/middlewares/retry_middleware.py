@@ -175,8 +175,8 @@ class CircuitBreakerMiddleware:
 
     @classmethod
     def from_crawler(cls, crawler):
-        from src.common.config import Config
-        from src.common.redis_manager import get_redis_manager
+        from src.core.config import Config
+        from src.common.redis_manager_deprecated import get_redis_manager
 
         config = Config.get_instance()
         redis_config = config.redis_config

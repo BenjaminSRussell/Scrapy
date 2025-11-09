@@ -6,8 +6,8 @@ from typing import Any
 
 from scrapy.http import Response
 
-from src.common.hidden_url_extractor import HiddenURLExtractor
-from src.common.spider_config import get_spider_settings
+from src.stage1.processors.hidden_url_extractor import HiddenURLExtractor
+from src.stage1.middlewares.spider_config import get_spider_settings
 from src.stage1.base_spider import BaseSpider
 
 logger = logging.getLogger(__name__)

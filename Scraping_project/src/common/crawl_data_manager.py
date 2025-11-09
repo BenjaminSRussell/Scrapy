@@ -36,9 +36,9 @@ class CrawlDataManager:
 
     def __init__(self, delta_manager=None, lookback_days: int = 30):
         if delta_manager is None:
-            from src.common.delta_lake import get_delta_manager
+            from src.utils.delta import get_delta_manager
 
-            self.delta_manager = get_delta_manager()
+            self.delta_manager = get_delta()
         else:
             self.delta_manager = delta_manager
 

@@ -10,10 +10,10 @@ from urllib.parse import urljoin
 import scrapy
 from scrapy.http import Response
 
-from src.common.config_manager import ConfigManager
-from src.common.js_priority_queue import JSPriorityQueue
-from src.common.spider_config import get_spider_settings
-from src.common.storage_manager import get_delta
+from src.core.config import get_config
+from src.stage1.processors.js_priority_queue import JSPriorityQueue
+from src.stage1.middlewares.spider_config import get_spider_settings
+from src.common.storage_manager_deprecated import get_delta
 from src.lakehouse import SeedManager
 from src.stage1.base_spider import BaseSpider
 
@@ -54,7 +54,7 @@ class JavaScriptSpider(scrapy.Spider):
 
         self.seed_manager = SeedManager(self.delta)
 
-        from src.common.storage_manager import get_redis
+        from src.common.storage_manager_deprecated import get_redis
 
         redis_client = get_redis()
 

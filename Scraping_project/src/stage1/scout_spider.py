@@ -8,10 +8,10 @@ from urllib.parse import urlparse
 import scrapy
 from scrapy.http import Response
 
-from src.common.spider_config import get_spider_settings
-from src.common.storage_manager import get_delta, get_postgres
-from src.common.url_extractor import URLExtractor
-from src.common.url_processor import should_follow_url
+from src.stage1.middlewares.spider_config import get_spider_settings
+from src.common.storage_manager_deprecated import get_delta, get_postgres
+from src.stage1.processors.url_extractor import URLExtractor
+from src.stage1.processors.url_processor import should_follow_url
 from src.lakehouse import SeedManager
 from src.stage1.base_spider import BaseSpider
 from src.stage1.sitemap_parser import discover_sitemaps_sync
@@ -48,13 +48,13 @@ class ScoutSpider(BaseSpider):
         self._discovery_response: Response | None = None
         self._url_extractor: URLExtractor | None = None
 
-        from src.common.config_manager import ConfigManager
+        from src.core.config import get_config
 
-        config = ConfigManager.get_instance().config
+        config = get_config()
 
-        self.expand_seeds = getattr(config.stage1, "expand_seeds", True)
-        self.parse_sitemaps = getattr(config.stage1, "parse_sitemaps", True)
-        self.aggressive_collection = getattr(config.stage1, "aggressive_collection", True)
+        self.expand_seeds = config.get("stages.stage1.expand_seeds", True)
+        self.parse_sitemaps = config.get("stages.stage1.parse_sitemaps", True)
+        self.aggressive_collection = config.get("stages.stage1.aggressive_collection", True)
 
         self.seed_manager = SeedManager(self.delta)
 

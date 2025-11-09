@@ -6,7 +6,7 @@ from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 from scrapy.http import Response
 
-from src.common.url_extractor import URLExtractor
+from src.stage1.processors.url_extractor import URLExtractor
 from src.common.url_value_assessor import URLValueAssessor
 
 logger = logging.getLogger(__name__)

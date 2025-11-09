@@ -5,7 +5,7 @@ from typing import Any
 import httpx
 from bs4 import BeautifulSoup
 
-from src.common.delta_lake import get_delta_manager
+from src.utils.delta import get_delta
 
 logger = logging.getLogger(__name__)
 
@@ -13,7 +13,7 @@ class IntelligentAnalyzer:
 
     def __init__(self):
         self.client = httpx.Client(timeout=30, follow_redirects=True)
-        self.delta = get_delta_manager()
+        self.delta = get_delta()
 
         self.MIN_WORD_COUNT = 50
         self.MIN_TEXT_TO_HTML_RATIO = 0.1

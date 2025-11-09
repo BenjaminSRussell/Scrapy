@@ -6,7 +6,7 @@ import httpx
 from bs4 import BeautifulSoup
 from tenacity import retry, stop_after_attempt, wait_exponential
 
-from src.common.delta_lake import get_delta_manager
+from src.utils.delta import get_delta
 
 try:
     import sys
@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 class LargeDocProcessor:
 
     def __init__(self, model_name: str = "facebook/bart-large-cnn"):
-        self.delta = get_delta_manager()
+        self.delta = get_delta()
         self.model_name = model_name
         self.summarizer: Any = None
 

@@ -7,7 +7,7 @@ from typing import Literal
 from scrapy.crawler import CrawlerProcess
 from scrapy.utils.project import get_project_settings
 
-from src.common.delta_lake import get_delta_manager
+from src.utils.delta import get_delta
 from src.stage2.stage2_worker import Stage2Worker
 from src.stage3.stage3_worker import Stage3Worker
 from src.stage4.stage4_worker import Stage4Worker
@@ -36,7 +36,7 @@ class PipelineOrchestrator:
 
     def __init__(self, config: dict | None = None):
         self.config = config or {}
-        self.delta = get_delta_manager()
+        self.delta = get_delta()
         self.stats = PipelineStats()
 
     def run_stage1(

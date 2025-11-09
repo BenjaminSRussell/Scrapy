@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal, TypeAlias
 
-from src.common.config import Config
+from src.core.config import Config
 from src.scrapy_prometheus import (
     DELTA_MANAGER_CONTEXT_ENTER_TOTAL,
     DELTA_MANAGER_CONTEXT_EXIT_TOTAL,

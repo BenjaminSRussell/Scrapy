@@ -9,8 +9,8 @@ import pyarrow as pa
 from bs4 import BeautifulSoup
 from deltalake import DeltaTable
 
-from src.common.delta_lake import get_delta_manager
-from src.common.postgres_manager import get_postgres_manager
+from src.utils.delta import get_delta
+from src.common.postgres_manager_deprecated import get_postgres_manager
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +20,7 @@ class Stage2Worker:
         self.max_concurrent = max_concurrent
         self.batch_size = batch_size
         self.semaphore = asyncio.Semaphore(max_concurrent)
-        self.delta = get_delta_manager()
+        self.delta = get_delta()
         self.postgres = get_postgres_manager()
 
         self.MIN_WORD_COUNT = 50

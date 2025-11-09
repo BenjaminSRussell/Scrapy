@@ -2,7 +2,7 @@ import json
 import logging
 from pathlib import Path
 
-from src.common.constants import DATA_DIR, SUMMARY_LIMITS
+from src.core.constants import DATA_DIR, SUMMARY_LIMITS
 
 logger = logging.getLogger(__name__)
 

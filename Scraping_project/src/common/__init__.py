@@ -70,10 +70,10 @@ try:
     from src.core.exceptions import *
 
     # Legacy names for backward compatibility
-    def get_delta_manager():
+    def get_delta():
         """DEPRECATED: Use get_delta() instead."""
         warnings.warn(
-            "get_delta_manager() is deprecated. Use get_delta() instead.",
+            "get_delta() is deprecated. Use get_delta() instead.",
             DeprecationWarning,
             stacklevel=2
         )
