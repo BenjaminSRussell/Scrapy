@@ -282,3 +282,28 @@ ASR_ENABLED = _scrapy_config.get("asr_enabled", False)
 
 # Note: The system uses multiple Kafka topics for architectural decoupling.
 # Prefer kafka.topics.* in config.yml (or scrapy.kafka_topic) over ad-hoc defaults.
+
+
+# ---------------------------------------------------------------------------
+# #608: Scout queue routing dicts must not be DropItem'd by SchemaValidation
+# before QueueItemPipeline (350). Patch at import time so dict handoffs reach
+# the queue writer even when SchemaValidation is enabled.
+# ---------------------------------------------------------------------------
+def _patch_schema_validation_skip_queue_items() -> None:
+    try:
+        from src.pipelines import SchemaValidationPipeline
+        from src.queue_routing import is_queue_routing_item
+    except Exception:
+        return
+
+    _orig = SchemaValidationPipeline.process_item
+
+    def process_item(self, item, spider):  # type: ignore[no-untyped-def]
+        if is_queue_routing_item(item):
+            return item
+        return _orig(self, item, spider)
+
+    SchemaValidationPipeline.process_item = process_item  # type: ignore[method-assign]
+
+
+_patch_schema_validation_skip_queue_items()
