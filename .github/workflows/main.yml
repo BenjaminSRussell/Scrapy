@@ -14,7 +14,7 @@ jobs:
         python-version: ["3.11", "3.12"]
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
 
     - name: Set up Python ${{ matrix.python-version }}
       uses: actions/setup-python@v5
@@ -33,6 +33,13 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install -r Scraping_project/requirements.txt
+
+    - name: Assert core lock is torch-free (#144)
+      run: |
+        set -euo pipefail
+        ! grep -E '^(torch|transformers|easyocr|sentence-transformers|scikit-learn)==' Scraping_project/requirements.txt
+        grep -q 'pip-compile' Scraping_project/requirements.txt
+        python -c "import importlib.util; assert importlib.util.find_spec('torch') is None, 'torch should not be installed from core requirements'"
 
     - name: Lint with ruff
       run: |
@@ -65,7 +72,7 @@ jobs:
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
 
     - name: Set up Python
       uses: actions/setup-python@v5
