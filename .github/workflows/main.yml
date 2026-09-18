@@ -63,6 +63,7 @@ jobs:
   entrypoint-smoke:
     # Proves #142 AC: entrypoint modules import and a worker starts against Redis
     # (CI retrigger 2)
+    # (CI retrigger 3 — force pull_request sync)
     runs-on: ubuntu-latest
     services:
       redis:
