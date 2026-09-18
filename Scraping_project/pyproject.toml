@@ -58,6 +58,12 @@ ocr = [
     "PyPDF2>=3.0.0",
     "pillow>=11.0.0",
 ]
+otel = [
+    "opentelemetry-api==1.42.1",
+    "opentelemetry-sdk==1.42.1",
+    "opentelemetry-exporter-otlp-proto-grpc==1.42.1",
+    "opentelemetry-exporter-otlp-proto-http==1.42.1",
+]
 dev = [
     "pytest>=8.3.2",
     "pytest-asyncio>=0.23.8",
