@@ -37,7 +37,7 @@ USER scraper
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
     CMD python -c "import sys; sys.exit(0)"
 
-# Default command
+# Default command: thin entrypoint -> PipelineOrchestrator
 CMD ["python", "-m", "src.main"]
 
 
