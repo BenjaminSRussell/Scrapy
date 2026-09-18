@@ -97,7 +97,8 @@ jobs:
       run: |
         cd Scraping_project
         python -c "import src.main; import src.workers.stage1_worker, src.workers.stage2_worker, src.workers.stage3_worker, src.workers.stage4_worker; print('entrypoint imports ok')"
-        python -m pytest tests/unit/test_docker_entrypoints.py -v
+        # Clear project addopts (cov/xdist) — smoke job only installs pytest
+        python -m pytest tests/unit/test_docker_entrypoints.py -v -o addopts=
 
     - name: Redis + stage2 worker bring-up (no ModuleNotFoundError)
       env:
