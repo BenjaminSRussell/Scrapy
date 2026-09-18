@@ -1,15 +1,88 @@
 [build-system]
-requires = ["setuptools>=61", "wheel"]
+requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
-# Minimal [project] metadata so `python -m build` succeeds (CI package-smoke / deploy).
-# Full packaging (dependency metadata, entry points) is out of scope for #149.
 [project]
-name = "scraping-project"
-version = "0.2.0"
-description = "UConn scraping pipeline"
-requires-python = ">=3.11"
+name = "uconn-scraping-pipeline"
+version = "0.1.0"
+description = "Multi-stage web scraping pipeline with Delta Lake storage"
 readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+authors = [{ name = "BenjaminSRussell" }]
+dependencies = [
+    "scrapy>=2.13.3",
+    "deltalake>=1.1.0",
+    "pyarrow>=17.0.0",
+    "pandas>=2.0.0,<3.0.0",
+    "numpy>=1.26.0,<3.0.0",
+    "playwright>=1.49.0",
+    "scrapy-playwright>=0.0.41",
+    "httpx>=0.28.0",
+    "aiohttp>=3.12.0",
+    "beautifulsoup4>=4.12.0,<5.0.0",
+    "lxml>=6.0.0,<7.0.0",
+    "datasketch>=1.6.0,<2.0.0",
+    "yake>=0.6.0",
+    "networkx==3.5",
+    "psycopg2-binary>=2.9.0",
+    "redis>=5.0,<6.0",
+    "confluent-kafka>=2.3.0",
+    "prometheus-client>=0.20.0",
+    "kubernetes>=32.0.0",
+    "pyyaml>=6.0.2",
+    "tqdm>=4.65.0,<5.0.0",
+    "python-dotenv>=1.0.0",
+    "click>=8.1.0,<9.0.0",
+    "psutil>=5.9.5,<6.0.0",
+    "python-dateutil>=2.8.0,<3.0.0",
+    "typing-extensions>=4.12.2",
+    "pydantic>=2.0.0,<3.0.0",
+    "jsonlines>=3.0.0,<5.0.0",
+    "itemadapter>=0.12.0",
+    "requests>=2.32.3",
+    "w3lib>=2.3.1",
+    "Twisted>=24.7.0",
+]
+
+[project.optional-dependencies]
+ml = [
+    "transformers>=4.50.0",
+    "torch>=2.6.0",
+    "sentence-transformers>=2.0.0",
+    "scikit-learn>=1.3.0",
+]
+ocr = [
+    "easyocr>=1.7.0",
+    "pdf2image>=1.17.0",
+    "PyPDF2>=3.0.0",
+    "pillow>=11.0.0",
+]
+dev = [
+    "pytest>=8.3.2",
+    "pytest-asyncio>=0.23.8",
+    "pytest-cov>=4.1.0",
+    "pytest-html>=3.1.0",
+    "pytest-mock>=3.10.0",
+    "pytest-timeout>=2.3.1",
+    "requests-mock>=1.12.0",
+    "fakeredis>=2.23.0",
+    "black>=24.0.0",
+    "isort>=5.13.0",
+    "flake8>=7.0.0",
+    "mypy>=1.13.0",
+    "ruff>=0.9.0",
+    "bandit>=1.7.0",
+    "build>=1.2.0",
+]
+# Stage 3/4 full stack
+stage3-4 = [
+    "uconn-scraping-pipeline[ml,ocr]",
+]
+
+[project.urls]
+Repository = "https://github.com/BenjaminSRussell/Scrapy"
+Issues = "https://github.com/BenjaminSRussell/Scrapy/issues"
 
 [tool.setuptools.packages.find]
 where = ["."]
@@ -18,3 +91,12 @@ include = ["src*"]
 [tool.black]
 line-length = 120
 target-version = ["py311"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+no_strict_optional = true
