@@ -1,3 +1,20 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+# Minimal [project] metadata so `python -m build` succeeds (CI package-smoke / deploy).
+# Full packaging (dependency metadata, entry points) is out of scope for #149.
+[project]
+name = "scraping-project"
+version = "0.2.0"
+description = "UConn scraping pipeline"
+requires-python = ">=3.11"
+readme = "README.md"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*"]
+
 [tool.black]
 line-length = 120
 target-version = ["py311"]
