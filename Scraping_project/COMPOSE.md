@@ -76,3 +76,18 @@ Copy `.env.example` to `.env`. **Required** (no YAML defaults):
 | Loki | 3100 |
 | Jaeger UI | 16686 |
 | OTLP gRPC/HTTP | 4317 / 4318 |
+
+## Live dashboard check (AC3)
+
+Config smoke alone is not enough — prove `:8080` after bring-up:
+
+```bash
+cd Scraping_project
+export GRAFANA_ADMIN_PASSWORD=local-dev DB_PASSWORD=local-dev
+# Dashboard only (no core workers / #142 entrypoints required):
+docker compose --profile monitoring up -d --build --no-deps dashboard
+curl -sf http://127.0.0.1:8080/ | head
+docker compose --profile monitoring down
+```
+
+CI job `dashboard-live` in `.github/workflows/ci-compose.yml` runs this curl smoke.
