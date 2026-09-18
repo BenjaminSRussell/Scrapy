@@ -84,7 +84,7 @@ durationpy==0.10
     # via kubernetes
 easyocr==1.7.2
     # via -r Scraping_project/requirements.in
-fakeredis==2.32.0
+fakeredis==2.32.1
     # via -r Scraping_project/dev-requirements.in
 filelock==3.20.0
     # via
@@ -92,7 +92,6 @@ filelock==3.20.0
     #   huggingface-hub
     #   tldextract
     #   torch
-    #   transformers
 flake8==7.3.0
     # via -r Scraping_project/dev-requirements.in
 frozenlist==1.8.0
@@ -258,7 +257,6 @@ nvidia-nvjitlink-cu12==12.8.93
     #   nvidia-cufft-cu12
     #   nvidia-cusolver-cu12
     #   nvidia-cusparse-cu12
-    #   torch
 nvidia-nvtx-cu12==12.8.90
     # via torch
 oauthlib==3.3.1
@@ -419,7 +417,7 @@ pyyaml==6.0.3
     #   transformers
 queuelib==1.8.0
     # via scrapy
-redis==5.3.1
+redis==7.0.1
     # via
     #   -r Scraping_project/requirements.in
     #   fakeredis
