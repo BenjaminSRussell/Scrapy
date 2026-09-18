@@ -2,7 +2,8 @@
 # ML/OCR packages live in requirements-ml.in / requirements-ocr.in (optional extras).
 # Install core only:  pip install -r requirements.txt
 # Install Stage 3/4:  pip install -r requirements.txt -r requirements-ml.txt -r requirements-ocr.txt
-# Or:                pip install -e ".[ml,ocr]"  /  pip install -e ".[stage3-4]"
+# Recompile lock:     make update-deps   # or: pip-compile --output-file=requirements.txt requirements.in
+# Packaging extras (.[ml]/.[ocr]/.[stage3-4]) are owned by PR #289 / issue #143 — do not duplicate here.
 scrapy>=2.13.3
 
 # Data & State Management - Delta Lake as central nervous system
