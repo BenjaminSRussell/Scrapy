@@ -1,8 +1,4 @@
 #!/usr/bin/env python
-"""
-Test 2: Verify start_requests() is Being Called
-Purpose: Check if start_requests() method is actually executed
-"""
 
 import logging
 import sys
@@ -15,9 +11,7 @@ from scrapy.utils.project import get_project_settings
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
 
-
 class TestSpider(Spider):
-    """Minimal test spider to verify start_requests() is called"""
 
     name = "test_start_requests"
 
@@ -26,7 +20,6 @@ class TestSpider(Spider):
         print("\n" + "=" * 80)
         print("TEST SPIDER INITIALIZED")
         print("=" * 80)
-        # Set some test URLs
         self.start_urls = [
             "https://uconn.edu",
             "https://today.uconn.edu",
@@ -38,7 +31,6 @@ class TestSpider(Spider):
         print("=" * 80 + "\n")
 
     def start_requests(self):
-        """Generate test requests with extensive logging"""
         print("\n" + "🚀" * 40)
         print("🚀 start_requests() CALLED!")
         print("🚀" * 40)
@@ -60,14 +52,12 @@ class TestSpider(Spider):
         print("✅" * 40 + "\n")
 
     def parse(self, response):
-        """Parse callback - just log that we got a response"""
         print("\n" + "📄" * 40)
         print(f"📄 parse() CALLED for: {response.url}")
         print(f"📄 Status: {response.status}")
         print(f"📄 Content-Length: {len(response.body)} bytes")
         print("📄" * 40 + "\n")
         return {}
-
 
 def main():
     print("\n" + "=" * 80)
@@ -80,22 +70,17 @@ def main():
     print()
     print("-" * 80 + "\n")
 
-    # Get settings
     settings = get_project_settings()
 
-    # Override settings for testing
-    settings.set("LOG_LEVEL", "WARNING")  # Reduce Scrapy noise
-    settings.set("CLOSESPIDER_PAGECOUNT", 3)  # Stop after 3 pages
-    settings.set("CLOSESPIDER_TIMEOUT", 30)  # 30 second timeout
+    settings.set("LOG_LEVEL", "WARNING")
+    settings.set("CLOSESPIDER_PAGECOUNT", 3)
+    settings.set("CLOSESPIDER_TIMEOUT", 30)
 
-    # Create process
     process = CrawlerProcess(settings)
 
-    # Crawl test spider
     print("Starting test spider...")
     process.crawl(TestSpider)
 
-    # Start (blocks until done)
     print("Calling process.start()...")
     print("-" * 80 + "\n")
 
@@ -120,7 +105,6 @@ def main():
     print("- If you see 📄 messages: Requests are being processed")
     print("- If you see NEITHER: There's a fundamental issue with Scrapy setup")
     print("=" * 80 + "\n")
-
 
 if __name__ == "__main__":
     try:

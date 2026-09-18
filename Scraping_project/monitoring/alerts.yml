@@ -1,0 +1,51 @@
+# Prometheus alerting rules
+# Phase 10: Production alerts
+
+groups:
+  - name: scraper_alerts
+    interval: 30s
+    rules:
+      - alert: HighErrorRate
+        expr: rate(pipeline_errors_total[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High error rate detected"
+          description: "Error rate is {{ $value }} errors/sec for {{ $labels.stage }}"
+
+      - alert: WorkerDown
+        expr: up{job="scraper-workers"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Worker is down"
+          description: "{{ $labels.instance }} has been down for more than 2 minutes"
+
+      - alert: RedisDown
+        expr: up{job="redis"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Redis is down"
+          description: "Redis has been unavailable for more than 1 minute"
+
+      - alert: HighMemoryUsage
+        expr: container_memory_usage_bytes / container_spec_memory_limit_bytes > 0.9
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High memory usage"
+          description: "Memory usage is above 90% for {{ $labels.container }}"
+
+      - alert: QueueBacklog
+        expr: redis_queue_length > 10000
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Large queue backlog"
+          description: "Queue has {{ $value }} items pending"

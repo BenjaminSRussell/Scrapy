@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-
 def _patch_scrapy_response_meta() -> None:
-    """Patch Scrapy Response.meta to allow assignment in tests."""
     try:
         from scrapy.http import Request, Response  # type: ignore
     except Exception:
@@ -46,8 +44,68 @@ def _patch_scrapy_response_meta() -> None:
     )
     Response._meta_assignment_patched = True  # type: ignore[attr-defined]
 
-
 _patch_scrapy_response_meta()
 
+# ============================================================================
+# BACKWARD COMPATIBILITY - Reorganization in progress
+# ============================================================================
+# This package is being reorganized. Please update imports to use:
+# - src.utils.delta for Delta Lake operations
+# - src.utils.redis for Redis operations
+# - src.utils.validation for validation functions
+# - src.core.config for configuration
+# - src.core.constants for constants
+# - src.core.exceptions for exceptions
+# ============================================================================
 
-__all__: tuple[str, ...] = ()
+import warnings
+
+# Re-export from new locations for backward compatibility
+try:
+    from src.utils.delta import get_delta, DeltaHelper
+    from src.utils.redis import get_redis, RedisHelper
+    from src.utils.validation import is_valid_url, is_uconn_domain
+    from src.core.config import get_config, Config
+    from src.core.constants import *
+    from src.core.exceptions import *
+
+    # Legacy names for backward compatibility
+    def get_delta():
+        """DEPRECATED: Use get_delta() instead."""
+        warnings.warn(
+            "get_delta() is deprecated. Use get_delta() instead.",
+            DeprecationWarning,
+            stacklevel=2
+        )
+        return get_delta()
+
+    class RedisManager:
+        """DEPRECATED: Use get_redis() instead."""
+        def __init__(self, *args, **kwargs):
+            warnings.warn(
+                "RedisManager is deprecated. Use get_redis() instead.",
+                DeprecationWarning,
+                stacklevel=2
+            )
+            self._helper = get_redis()
+
+        def __getattr__(self, name):
+            return getattr(self._helper, name)
+
+    __all__: tuple[str, ...] = (
+        "get_delta",
+        "get_delta_manager",
+        "DeltaHelper",
+        "get_redis",
+        "RedisManager",
+        "RedisHelper",
+        "get_config",
+        "Config",
+        "is_valid_url",
+        "is_uconn_domain",
+    )
+
+except ImportError as e:
+    # If new modules don't exist yet, don't break existing code
+    warnings.warn(f"Could not import from new modules: {e}", ImportWarning)
+    __all__: tuple[str, ...] = ()

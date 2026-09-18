@@ -1,22 +1,4 @@
 #!/usr/bin/env python3
-"""Vacuum Delta Lake tables to remove old, unreferenced data files.
-
-This script should be run periodically (e.g., via cron) to clean up old
-Parquet files that are no longer referenced by the Delta transaction log.
-
-Usage:
-    # Vacuum with default 7-day retention
-    python scripts/vacuum_delta_tables.py
-
-    # Vacuum with custom retention (in hours)
-    python scripts/vacuum_delta_tables.py --retention-hours 336
-
-    # Vacuum specific tables only
-    python scripts/vacuum_delta_tables.py --tables stage1_discovery stage2_page_analysis
-
-Example cron job (run weekly on Sunday at 2 AM):
-    0 2 * * 0 cd /path/to/project && /path/to/.venv/bin/python scripts/vacuum_delta_tables.py
-"""
 
 import argparse
 import logging
@@ -26,25 +8,18 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
-
 def _ensure_project_root() -> None:
-    """Ensure the repository root is available on sys.path."""
     project_root = str(PROJECT_ROOT)
     if project_root not in sys.path:
         sys.path.insert(0, project_root)
 
-
 def _get_delta_manager():
-    """Import and return the project's Delta Lake manager factory."""
     _ensure_project_root()
     delta_module = import_module("src.common.delta_lake")
     return delta_module.get_delta_manager()
 
-
-# Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
-
 
 def main():
     parser = argparse.ArgumentParser(
@@ -81,10 +56,8 @@ def main():
         logger.info("DRY RUN MODE - No files will be deleted")
 
     try:
-        # Initialize Delta Lake manager
         manager = _get_delta_manager()
 
-        # Get list of tables to vacuum
         if args.tables:
             tables_to_vacuum = args.tables
             logger.info(f"Vacuuming specific tables: {', '.join(tables_to_vacuum)}")
@@ -92,7 +65,6 @@ def main():
             tables_to_vacuum = list(manager.tables.keys())
             logger.info("Vacuuming all tables")
 
-        # Vacuum each table
         vacuumed_count = 0
         skipped_count = 0
 
@@ -136,7 +108,6 @@ def main():
     except Exception as e:
         logger.error(f"Vacuum script failed: {e}", exc_info=True)
         return 1
-
 
 if __name__ == "__main__":
     sys.exit(main())

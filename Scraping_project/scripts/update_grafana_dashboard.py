@@ -8,27 +8,22 @@ from pathlib import Path
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-
 def add_stage4_panels(dashboard_path: Path):
-    """Add Stage 4 metrics panels to the Grafana dashboard JSON."""
 
     if not dashboard_path.exists():
         logger.error(f"Dashboard file not found: {dashboard_path}")
         return False
 
-    # Load existing dashboard
     with open(dashboard_path) as f:
         dashboard = json.load(f)
 
     logger.info(f"Loaded dashboard: {dashboard.get('title')}")
 
-    # Find the highest panel ID and Y position
     max_id = max(panel["id"] for panel in dashboard.get("panels", []))
     max_y = max(panel["gridPos"]["y"] + panel["gridPos"]["h"] for panel in dashboard.get("panels", []))
 
     logger.info(f"Max panel ID: {max_id}, Max Y position: {max_y}")
 
-    # Define new Stage 4 panels
     new_panels = [
         {
             "id": max_id + 1,
@@ -184,13 +179,10 @@ def add_stage4_panels(dashboard_path: Path):
         },
     ]
 
-    # Add new panels to dashboard
     dashboard["panels"].extend(new_panels)
 
-    # Update version
     dashboard["version"] = dashboard.get("version", 0) + 1
 
-    # Save updated dashboard
     backup_path = dashboard_path.with_suffix(".json.backup")
     dashboard_path.rename(backup_path)
     logger.info(f"Created backup: {backup_path}")
@@ -203,10 +195,7 @@ def add_stage4_panels(dashboard_path: Path):
 
     return True
 
-
 def main():
-    """Main entry point."""
-    # Find dashboard file
     project_root = Path(__file__).parent.parent
     dashboard_path = project_root / "monitoring" / "dashboards" / "unified_dashboard.json"
 
@@ -221,7 +210,6 @@ def main():
         logger.info("Restart Grafana to see the new panels")
     else:
         logger.error("❌ Dashboard update failed")
-
 
 if __name__ == "__main__":
     main()
