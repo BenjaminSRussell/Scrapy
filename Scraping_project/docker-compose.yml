@@ -77,7 +77,7 @@ services:
     build:
       context: .
       target: production
-    container_name: stage2-worker
+    # container_name omitted: incompatible with deploy.replicas (#142)
     restart: unless-stopped
     command: python -m src.workers.stage2_worker
     environment:
