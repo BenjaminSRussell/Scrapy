@@ -225,6 +225,12 @@ async def process_data(data):
 
 ## Configuration
 
+### Canonical config file
+
+Edit [`config.yml`](config.yml) — the single source of truth loaded by
+`src.core.config.get_config()` and used by Scrapy settings (`src/settings.py`).
+Do not rely on `config/{ENV}.yml` (not present for normal operation).
+
 ### Environment Variables
 
 ```bash
