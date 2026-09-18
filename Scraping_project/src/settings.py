@@ -1,22 +1,64 @@
-import logging
+"""Scrapy project settings.
+
+Canonical configuration lives in Scraping_project/config.yml and is loaded via
+``src.core.config.get_config()``. Scrapy settings are derived from that SSOT
+(with optional ``scrapy:`` overrides and env vars). Do not rely on
+``config/{ENV}.yml`` for normal operation — that path is unused.
+"""
+
+from __future__ import annotations
+
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
-import yaml  # type: ignore[import-untyped]
+from src.core.config import Config, get_config
 
 ENV = os.getenv("ENV", "development")
 PROJECT_ROOT = Path(__file__).parent.parent
-CONFIG_PATH = PROJECT_ROOT / "config" / f"{ENV}.yml"
 
-_config: dict[str, Any] = {}
-if CONFIG_PATH.exists():
-    try:
-        with open(CONFIG_PATH) as f:
-            _config = yaml.safe_load(f) or {}
-    except yaml.YAMLError as e:
-        logging.error(f"Error parsing YAML file: {e}")
-_scrapy_config: dict[str, Any] = _config.get("scrapy", {})
+
+def derive_scrapy_config(config: Optional[Config] = None) -> dict[str, Any]:
+    """Build the Scrapy settings overlay from config.yml / get_config().
+
+    Preference per key:
+    1. Explicit ``scrapy.*`` section in config.yml
+    2. Bridged values from other config.yml sections (kafka, logging, scout)
+    3. Hard-coded defaults at the assignment sites below
+
+    Env vars (e.g. KAFKA_BOOTSTRAP_SERVERS, KAFKA_TOPIC, LOG_LEVEL) still win
+    where applied at assignment time.
+    """
+    cfg = config if config is not None else get_config()
+    scrapy: dict[str, Any] = dict(cfg.get_section("scrapy") or {})
+
+    bridges: dict[str, Any] = {
+        "kafka_bootstrap_servers": cfg.get("kafka.bootstrap_servers"),
+        "kafka_topic": cfg.get("kafka.topics.scraped_items"),
+        "kafka_producer_config": (cfg.get_section("kafka") or {}).get("producer"),
+        "log_level": cfg.get("logging.level"),
+        # Scout spider settings are the default Scrapy concurrency baseline
+        "concurrent_requests": cfg.get("stage1.spiders.scout.concurrent_requests"),
+        "concurrent_requests_per_domain": cfg.get(
+            "stage1.spiders.scout.concurrent_requests_per_domain"
+        ),
+        "download_delay": cfg.get("stage1.spiders.scout.download_delay"),
+        "download_timeout": cfg.get("stage1.spiders.scout.download_timeout"),
+        "retry_times": cfg.get("stage1.spiders.scout.retry_times"),
+        "dns_timeout": cfg.get("stage1.spiders.scout.dns_timeout"),
+        "autothrottle_enabled": cfg.get("stage1.spiders.scout.autothrottle_enabled"),
+        "autothrottle_start_delay": cfg.get(
+            "stage1.spiders.scout.autothrottle_start_delay"
+        ),
+        "autothrottle_max_delay": cfg.get("stage1.spiders.scout.autothrottle_max_delay"),
+    }
+    for key, value in bridges.items():
+        if key not in scrapy and value is not None:
+            scrapy[key] = value
+    return scrapy
+
+
+_scrapy_config: dict[str, Any] = derive_scrapy_config()
 
 BOT_NAME = _scrapy_config.get("bot_name", "uconn_scraper")
 
@@ -55,7 +97,7 @@ DNS_TIMEOUT = _scrapy_config.get("dns_timeout", 5)
 RETRY_ENABLED = _scrapy_config.get("retry_enabled", True)
 RETRY_TIMES = _scrapy_config.get("retry_times", 2)
 
-LOG_LEVEL = _scrapy_config.get("log_level", "INFO")
+LOG_LEVEL = os.getenv("LOG_LEVEL", _scrapy_config.get("log_level", "INFO"))
 
 # ============================================================================
 # ============================================================================
@@ -70,9 +112,13 @@ AUTOTHROTTLE_DEBUG = _scrapy_config.get("autothrottle_debug", False)
 HTTPCACHE_ENABLED = _scrapy_config.get("httpcache_enabled", True)
 HTTPCACHE_EXPIRATION_SECS = _scrapy_config.get("httpcache_expiration_secs", 3600)
 HTTPCACHE_DIR = PROJECT_ROOT / "data" / "cache" / "scrapy"
-HTTPCACHE_STORAGE = _scrapy_config.get("httpcache_storage", "scrapy.extensions.httpcache.DbmCacheStorage")
+HTTPCACHE_STORAGE = _scrapy_config.get(
+    "httpcache_storage", "scrapy.extensions.httpcache.DbmCacheStorage"
+)
 
-TWISTED_REACTOR = _scrapy_config.get("twisted_reactor", "twisted.internet.asyncioreactor.AsyncioSelectorReactor")
+TWISTED_REACTOR = _scrapy_config.get(
+    "twisted_reactor", "twisted.internet.asyncioreactor.AsyncioSelectorReactor"
+)
 FEED_EXPORT_ENCODING = _scrapy_config.get("feed_export_encoding", "utf-8")
 
 # ============================================================================
@@ -85,7 +131,9 @@ DEPTH_PRIORITY = 1
 DEPTH_STATS_VERBOSE = True
 
 PLAYWRIGHT_BROWSER_TYPE = _scrapy_config.get("playwright_browser_type", "chromium")
-PLAYWRIGHT_LAUNCH_OPTIONS = _scrapy_config.get("playwright_launch_options", {"headless": True})
+PLAYWRIGHT_LAUNCH_OPTIONS = _scrapy_config.get(
+    "playwright_launch_options", {"headless": True}
+)
 
 # ============================================================================
 # ============================================================================
@@ -107,11 +155,15 @@ PROMETHEUS_PATH = _scrapy_config.get("prometheus_path", "metrics")
 # ============================================================================
 # ============================================================================
 
-KAFKA_BOOTSTRAP_SERVERS = _scrapy_config.get(
-    "kafka_bootstrap_servers", os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
+KAFKA_BOOTSTRAP_SERVERS = os.getenv(
+    "KAFKA_BOOTSTRAP_SERVERS",
+    _scrapy_config.get("kafka_bootstrap_servers", "localhost:9092"),
 )
 
-KAFKA_TOPIC = _scrapy_config.get("kafka_topic", os.getenv("KAFKA_TOPIC", "scraped-items"))
+KAFKA_TOPIC = os.getenv(
+    "KAFKA_TOPIC",
+    _scrapy_config.get("kafka_topic", "validated_items"),
+)
 
 KAFKA_PRODUCER_CONFIG = _scrapy_config.get("kafka_producer_config", {})
 
@@ -171,7 +223,9 @@ DELTA_BATCH_SIZE = _scrapy_config.get("delta_batch_size", 50)
 # ============================================================================
 SCHEMA_VALIDATION_ENABLED = _scrapy_config.get("schema_validation_enabled", True)
 
-VALIDATION_FAILURES_TOPIC = _scrapy_config.get("validation_failures_topic", "validation_failures")
+VALIDATION_FAILURES_TOPIC = _scrapy_config.get(
+    "validation_failures_topic", "validation_failures"
+)
 
 # ============================================================================
 # ============================================================================
@@ -183,7 +237,9 @@ RECENCY_DEFAULT_SCORE = _scrapy_config.get("recency_default_score", 0.5)
 # ============================================================================
 AGGREGATION_ENABLED = _scrapy_config.get("aggregation_enabled", True)
 
-AGGREGATION_OUTPUT_TOPIC = _scrapy_config.get("aggregation_output_topic", "entity_summaries")
+AGGREGATION_OUTPUT_TOPIC = _scrapy_config.get(
+    "aggregation_output_topic", "entity_summaries"
+)
 
 # ============================================================================
 # ============================================================================
@@ -206,8 +262,5 @@ ASR_MAX_WORKERS = _scrapy_config.get("asr_max_workers", 4)
 
 ASR_ENABLED = _scrapy_config.get("asr_enabled", False)
 
-# ============================================================================
-# ============================================================================
-KAFKA_TOPIC = _scrapy_config.get("kafka_topic", os.getenv("KAFKA_TOPIC", "validated_items"))
-
-# Note: The system uses multiple Kafka topics for architectural decoupling:
+# Note: The system uses multiple Kafka topics for architectural decoupling.
+# Prefer kafka.topics.* in config.yml (or scrapy.kafka_topic) over ad-hoc defaults.
