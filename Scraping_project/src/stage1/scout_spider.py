@@ -56,6 +56,11 @@ class ScoutSpider(BaseSpider):
         self.expand_seeds = config.get("stages.stage1.expand_seeds", True)
         self.parse_sitemaps = config.get("stages.stage1.parse_sitemaps", True)
         self.aggressive_collection = config.get("stages.stage1.aggressive_collection", True)
+        # Guardrail (#645): when JS path is off, do not enqueue js_spider_queue items.
+        js_flag = config.get("stages.stage1.enable_js_spider")
+        if js_flag is None:
+            js_flag = config.get("stage1.enable_js_spider", True)
+        self.enable_js_spider = bool(js_flag)
 
         self.seed_manager = SeedManager(self.delta)
 
@@ -63,6 +68,7 @@ class ScoutSpider(BaseSpider):
         logger.info(f"[SCOUT] Seed expansion enabled: {self.expand_seeds}")
         logger.info(f"[SCOUT] Sitemap parsing enabled: {self.parse_sitemaps}")
         logger.info(f"[SCOUT] Aggressive collection mode: {self.aggressive_collection}")
+        logger.info(f"[SCOUT] JS spider enqueue enabled: {self.enable_js_spider}")
 
         if self.parse_sitemaps and hasattr(self, "start_urls") and self.start_urls:
             self._discover_and_add_sitemap_urls()
@@ -118,10 +124,11 @@ class ScoutSpider(BaseSpider):
                 content_hint = self._guess_content_type(url)
 
                 if content_hint == "html":
-                    yield self._queue_for_javascript_spider(url, response.url)
+                    if self.enable_js_spider:
+                        yield self._queue_for_javascript_spider(url, response.url)
+                        self.scout_stats["html_queued_js"] += 1
                     yield self._queue_for_stage2(url, response.url, content_hint)
 
-                    self.scout_stats["html_queued_js"] += 1
                     self.scout_stats["pages_queued_stage2"] += 1
 
                     yield scrapy.Request(
