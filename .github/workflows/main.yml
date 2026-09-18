@@ -89,7 +89,7 @@ jobs:
 
     - name: Compose config resolves worker commands
       run: |
-        docker compose -f Scraping_project/docker-compose.yml config >/tmp/compose.yml
+        docker compose -f Scraping_project/docker-compose.yml --profile core config >/tmp/compose.yml
         grep -q "src.workers.stage2_worker" /tmp/compose.yml
         grep -q "src.main" Scraping_project/Dockerfile
 
