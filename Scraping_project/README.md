@@ -97,6 +97,20 @@ docker-compose logs -f stage2-worker
 docker-compose up -d --scale stage2-worker=3
 ```
 
+
+#### Happy path (Redis + one worker)
+
+Minimal check that entrypoints resolve after #142:
+
+```bash
+cd Scraping_project
+docker compose up -d redis stage2-worker
+docker compose logs -f stage2-worker
+```
+
+- Image default CMD: `python -m src.main` (full pipeline via `PipelineOrchestrator`)
+- Compose workers: `python -m src.workers.stage{1,2,3,4}_worker` (shims to orchestrator / `src.stageN`)
+
 #### Option 2: Kubernetes Deployment
 ```bash
 # Deploy to Kubernetes
