@@ -10,6 +10,7 @@ from bs4 import BeautifulSoup
 from deltalake import DeltaTable
 
 from src.utils.delta import get_delta
+from src.otel_tracing import ensure_crawl_job_id, init_tracing, start_span
 # # PostgreSQL support to be implemented in Phase 6
 get_postgres_manager = lambda: None
 get_postgres_manager = lambda: None  # TODO: Implement in Phase 6
@@ -33,6 +34,12 @@ class Stage2Worker:
         self.perf_urls_processed = 0
 
     async def run(self):
+        init_tracing(service_name="stage2-worker")
+        crawl_job_id = ensure_crawl_job_id()
+        with start_span("stage2.run", stage="stage2", crawl_job_id=crawl_job_id):
+            await self._run_traced()
+
+    async def _run_traced(self):
         logger.info(f"[STAGE2] Worker starting with {self.max_concurrent} concurrent workers")
 
         try:
