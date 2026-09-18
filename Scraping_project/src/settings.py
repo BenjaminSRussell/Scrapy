@@ -65,6 +65,11 @@ BOT_NAME = _scrapy_config.get("bot_name", "uconn_scraper")
 SPIDER_MODULES = _scrapy_config.get("spider_modules", ["src.stage1", "src.stage3"])
 NEWSPIDER_MODULE = _scrapy_config.get("newspider_module", "src.stage3")
 
+# ITEM_PIPELINES ordering (#608):
+# - SchemaValidation (200) skips Scout queue routing dicts (target_stage/target_spider)
+#   so they are not DropItem'd before QueueItemPipeline.
+# - QueueItemPipeline (350) persists those dicts to stage2_queue / js_spider_queue
+#   *before* KafkaPipeline (400), which may DropItem on publish failure.
 ITEM_PIPELINES = _scrapy_config.get(
     "item_pipelines",
     {
@@ -74,6 +79,7 @@ ITEM_PIPELINES = _scrapy_config.get(
         "src.pipelines.SchemaValidationPipeline": 200,
         "src.pipelines.MetadataPipeline": 250,
         "src.pipelines.RecencyScoringPipeline": 300,
+        "src.pipelines.QueueItemPipeline": 350,
         "src.pipelines.KafkaPipeline": 400,
         "src.pipelines.AggregationPipeline": 500,
         "src.pipelines.OffsiteCandidatePipeline": 800,
