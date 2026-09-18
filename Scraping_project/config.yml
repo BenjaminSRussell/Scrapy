@@ -33,6 +33,20 @@ stage1:
   aggressive_collection: true  # Capture EVERYTHING - Stage 2 will filter
   expand_seeds: true  # Auto-add discovered URLs back to seed_urls
   parse_sitemaps: true  # Auto-discover and parse sitemaps
+
+  # Dual discovery coordination (Python SitemapParser/Scout + rustmapper) — issue #647
+  # Modes:
+  #   shared_dedup (default): atomic Redis claim seen:{job}:{site}:{url_hash} before enqueue;
+  #                           stores discovery_source provenance; both engines may run in parallel.
+  #   mutex: per-job site lock discovery_mutex:{job_id}:{site}; one engine discovers at a time.
+  discovery:
+    mode: shared_dedup  # shared_dedup | mutex
+    job_id: default     # scopes claim/mutex keys per pipeline job
+    claim_ttl_seconds: 604800  # 7 days
+    ack_empty: false    # when true, empty handoff skips Stage2 without warning
+    rustmapper_enabled: false  # when true, consume rustmapper sitemap.jsonl handoff
+    handoff_path: null  # optional path to discovery_handoff.json sidecar
+    jsonl_path: null    # optional path to rustmapper sitemap.jsonl
   enable_depth_mode: true  # Switch to depth spider when idle
   enable_rescraping: true  # Re-scrape existing URLs to find missed links
 
