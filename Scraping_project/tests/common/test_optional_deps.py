@@ -2,7 +2,8 @@
 
 Proves:
 - core requirements lock does not pin torch / transformers / easyocr
-- require_stage3_deps / require_stage4_deps fail fast with install hints
+- require_stage3_deps checks datasketch (core) only — not torch
+- require_stage4_deps fail fast with ML + OCR install hints
 """
 
 from __future__ import annotations
@@ -14,8 +15,10 @@ import pytest
 
 from src.utils.optional_deps import (
     ML_INSTALL_HINT,
+    STAGE3_INSTALL_HINT,
     missing_ml_packages,
     missing_ocr_packages,
+    missing_stage3_packages,
     require_ml_deps,
     require_ocr_deps,
     require_stage3_deps,
@@ -51,10 +54,15 @@ def test_core_requirements_documents_recompile() -> None:
     assert "requirements.in" in text
 
 
+def test_core_requirements_includes_datasketch() -> None:
+    text = CORE_REQUIREMENTS.read_text(encoding="utf-8").lower()
+    assert "datasketch==" in text
+
+
 def test_require_ml_deps_fail_fast_when_missing() -> None:
     with patch("src.utils.optional_deps._missing", return_value=["torch", "transformers"]):
         with pytest.raises(ImportError) as excinfo:
-            require_ml_deps("Stage 3")
+            require_ml_deps("Stage 4")
     msg = str(excinfo.value)
     assert "torch" in msg
     assert "requirements-ml.txt" in msg
@@ -70,10 +78,28 @@ def test_require_ocr_deps_fail_fast_when_missing() -> None:
     assert "requirements-ocr.txt" in msg
 
 
-def test_require_stage3_deps_uses_ml_check() -> None:
+def test_require_stage3_deps_checks_datasketch_not_ml() -> None:
+    """Stage 3 worker only imports datasketch — must not require torch/ML."""
     with patch("src.utils.optional_deps.require_ml_deps") as mock_ml:
-        require_stage3_deps()
-        mock_ml.assert_called_once_with("Stage 3")
+        with patch(
+            "src.utils.optional_deps.missing_stage3_packages", return_value=[]
+        ) as mock_s3:
+            require_stage3_deps()
+            mock_s3.assert_called_once()
+            mock_ml.assert_not_called()
+
+
+def test_require_stage3_deps_fail_fast_when_datasketch_missing() -> None:
+    with patch(
+        "src.utils.optional_deps.missing_stage3_packages", return_value=["datasketch"]
+    ):
+        with pytest.raises(ImportError) as excinfo:
+            require_stage3_deps()
+    msg = str(excinfo.value)
+    assert "datasketch" in msg
+    assert "requirements.txt" in msg or STAGE3_INSTALL_HINT.splitlines()[0] in msg
+    assert "torch" not in msg.lower()
+    assert "requirements-ml.txt" not in msg
 
 
 def test_require_stage4_deps_checks_ml_and_ocr() -> None:
@@ -89,5 +115,7 @@ def test_missing_helpers_return_lists() -> None:
     # Smoke: helpers return list[str] without raising
     ml = missing_ml_packages()
     ocr = missing_ocr_packages()
+    s3 = missing_stage3_packages()
     assert isinstance(ml, list)
     assert isinstance(ocr, list)
+    assert isinstance(s3, list)

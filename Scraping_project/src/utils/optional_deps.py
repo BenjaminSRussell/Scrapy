@@ -1,7 +1,8 @@
 """Helpers for optional ML/OCR extras (#144).
 
-Core install (requirements.txt) supports Stage 1 discovery and Stage 2 analysis
-without torch. Stage 3/4 and ml_service require ML and/or OCR extras via
+Core install (requirements.txt) supports Stage 1 discovery, Stage 2 analysis,
+and light Stage 3 (datasketch MinHash dedupe + extractive summary) without
+torch. Stage 4 and ml_service require ML and/or OCR extras via
 requirements-ml.txt / requirements-ocr.txt.
 
 Packaging extras (.[ml]/.[ocr]/.[stage3-4]) are defined in PR #289 — prefer
@@ -16,7 +17,7 @@ ML_INSTALL_HINT = (
     "Install ML extras with:\n"
     "  pip install -r requirements-ml.txt\n"
     "  # (or, once PR #289 packaging lands: pip install -e '.[ml]')\n"
-    "Docker: build/run target `ml`, `stage3`, or `stage4` "
+    "Docker: build/run target `ml` or `stage4` "
     "(compose profile `ml` or `full`)."
 )
 
@@ -26,6 +27,12 @@ OCR_INSTALL_HINT = (
     "  # (or, once PR #289 packaging lands: pip install -e '.[ocr]')\n"
     "Also install system poppler-utils for pdf2image. "
     "Docker target `ml`/`stage4` includes OCR extras."
+)
+
+STAGE3_INSTALL_HINT = (
+    "Stage 3 (light) needs datasketch, which is part of the core install:\n"
+    "  pip install -r requirements.txt\n"
+    "Docker: build/run target `core` or `stage3` (no ML extras required)."
 )
 
 # (import_name, pip_package_name)
@@ -41,6 +48,11 @@ _OCR_MODULES: tuple[tuple[str, str], ...] = (
     ("pdf2image", "pdf2image"),
     ("PyPDF2", "PyPDF2"),
     ("PIL", "pillow"),
+)
+
+# Light Stage 3 path: MinHash dedupe only (already in requirements.in / core lock)
+_STAGE3_CORE_MODULES: tuple[tuple[str, str], ...] = (
+    ("datasketch", "datasketch"),
 )
 
 
@@ -62,6 +74,11 @@ def missing_ml_packages() -> list[str]:
 def missing_ocr_packages() -> list[str]:
     """Return pip names of missing OCR packages."""
     return _missing(_OCR_MODULES)
+
+
+def missing_stage3_packages() -> list[str]:
+    """Return pip names missing for light Stage 3 (datasketch / core)."""
+    return _missing(_STAGE3_CORE_MODULES)
 
 
 def require_ml_deps(context: str = "This component") -> None:
@@ -89,8 +106,18 @@ def require_ocr_deps(context: str = "This component") -> None:
 
 
 def require_stage3_deps() -> None:
-    """Stage 3 workers need the ML extra (transformers/torch stack)."""
-    require_ml_deps("Stage 3")
+    """Light Stage 3 needs datasketch only (core lock) — not torch/ML extras.
+
+    The current Stage 3 worker uses MinHashLSH dedupe + extractive sentence
+    truncation; it does not import torch/transformers. Keep fail-fast aligned
+    with those imports so a core image can run Stage 3.
+    """
+    missing = missing_stage3_packages()
+    if missing:
+        raise ImportError(
+            f"Stage 3 requires core deps; missing: {', '.join(missing)}.\n"
+            f"{STAGE3_INSTALL_HINT}"
+        )
 
 
 def require_stage4_deps() -> None:
