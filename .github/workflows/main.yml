@@ -54,6 +54,18 @@ jobs:
         cd Scraping_project
         python -m pytest tests/common/ tests/stage1/ -v --tb=short -m "not slow"
 
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: "20"
+
+    - name: Dashboard JS regressions (#154 XSS + chart.resize)
+      run: |
+        cd Scraping_project
+        # Node harness (primary); unittest wrapper discovers the same suite
+        node tests/unit/dashboard/test_activity_log_and_charts.mjs
+        python -m unittest tests.unit.dashboard.test_activity_log_and_charts -v
+
     - name: Run integration tests
       run: |
         cd Scraping_project

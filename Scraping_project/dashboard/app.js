@@ -222,6 +222,11 @@ function addActivityLogItem(type, message) {
     updateActivityLog();
 }
 
+function sanitizeActivityType(type) {
+    const allowed = new Set(['success', 'warning', 'danger', 'info']);
+    return allowed.has(type) ? type : 'info';
+}
+
 function updateActivityLog() {
     const logContainers = [
         document.getElementById('overview-activity'),
@@ -231,12 +236,23 @@ function updateActivityLog() {
     logContainers.forEach(container => {
         if (!container) return;
 
-        container.innerHTML = activityLog.map(item => `
-            <div class="activity-item ${item.type}">
-                <div class="activity-timestamp">${item.timestamp}</div>
-                <div class="activity-message">${item.message}</div>
-            </div>
-        `).join('');
+        // Rebuild with DOM APIs so message/timestamp never become markup
+        container.replaceChildren();
+        activityLog.forEach(item => {
+            const row = document.createElement('div');
+            row.className = `activity-item ${sanitizeActivityType(item.type)}`;
+
+            const ts = document.createElement('div');
+            ts.className = 'activity-timestamp';
+            ts.textContent = item.timestamp;
+
+            const msg = document.createElement('div');
+            msg.className = 'activity-message';
+            msg.textContent = item.message;
+
+            row.append(ts, msg);
+            container.appendChild(row);
+        });
     });
 }
 
@@ -462,6 +478,25 @@ async function fetchMetrics() {
     }
 }
 
+const TAB_CHARTS = {
+    overview: ['throughput'],
+    pipeline: ['stageProgression', 'routing'],
+    performance: ['urls', 'pages', 'summaries']
+};
+
+function resizeChartsForTab(tabName) {
+    const names = TAB_CHARTS[tabName] || [];
+    // Defer until layout is visible so Chart.js gets non-zero canvas size
+    requestAnimationFrame(() => {
+        names.forEach(name => {
+            const chart = charts[name];
+            if (chart) {
+                chart.resize();
+            }
+        });
+    });
+}
+
 function setupTabs() {
     const tabButtons = document.querySelectorAll('.tab-button');
     const tabContents = document.querySelectorAll('.tab-content');
@@ -475,6 +510,7 @@ function setupTabs() {
 
             button.classList.add('active');
             document.getElementById(`tab-${tabName}`).classList.add('active');
+            resizeChartsForTab(tabName);
         });
     });
 }
