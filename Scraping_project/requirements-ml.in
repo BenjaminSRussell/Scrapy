@@ -1,0 +1,7 @@
+# Optional ML/NLP extras for Stage 3 summarization and Stage 4 enrichment.
+# Install on top of core: pip install -r requirements.txt -r requirements-ml.txt
+# Or: pip install -e ".[ml]"
+torch>=2.6.0
+transformers>=4.50.0
+sentence-transformers>=2.0.0
+scikit-learn>=1.3.0

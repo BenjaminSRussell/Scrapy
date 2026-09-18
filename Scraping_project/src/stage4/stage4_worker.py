@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import Any
 
 from src.utils.delta import get_delta
+from src.utils.optional_deps import require_stage4_deps
 from src.stage4.large_doc_processor import LargeDocProcessor
 
 logger = logging.getLogger(__name__)
@@ -11,6 +12,7 @@ logger = logging.getLogger(__name__)
 class Stage4Worker:
 
     def __init__(self, model_name: str = "facebook/bart-large-cnn"):
+        require_stage4_deps()
         self.delta = get_delta()
         self.processor = LargeDocProcessor(model_name=model_name)
 
@@ -113,6 +115,7 @@ class Stage4Worker:
 
 async def run_stage4_worker():
     logger.info("[STAGE4] Worker starting in continuous mode...")
+    require_stage4_deps()
 
     while True:
         try:

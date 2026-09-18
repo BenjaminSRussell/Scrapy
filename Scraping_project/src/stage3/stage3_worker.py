@@ -8,6 +8,7 @@ from datasketch import MinHash, MinHashLSH  # type: ignore[import-untyped]
 
 from src.core.constants import SUMMARY_LIMITS
 from src.utils.delta import get_delta
+from src.utils.optional_deps import require_stage3_deps
 # PostgreSQL support to be implemented in Phase 6
 class PostgresManager:
     @staticmethod
@@ -18,6 +19,7 @@ logger = logging.getLogger(__name__)
 class Stage3Worker:
 
     def __init__(self, max_concurrent: int = 20, batch_size: int = 50):
+        require_stage3_deps()
         self.max_concurrent = max_concurrent
         self.batch_size = batch_size
         self.semaphore = asyncio.Semaphore(max_concurrent)
@@ -199,6 +201,7 @@ class Stage3Worker:
 
 async def run_stage3_worker():
     logger.info("Stage 3 Worker starting in continuous mode...")
+    require_stage3_deps()
 
     while True:
         try:

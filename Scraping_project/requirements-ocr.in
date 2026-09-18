@@ -1,0 +1,8 @@
+# Optional OCR/document extras for Stage 4 large-document processing.
+# Install on top of core: pip install -r requirements.txt -r requirements-ocr.txt
+# Or: pip install -e ".[ocr]"
+# System package often required for pdf2image: poppler-utils
+easyocr>=1.7.0
+pdf2image>=1.17.0
+PyPDF2>=3.0.0
+pillow>=11.0.0
