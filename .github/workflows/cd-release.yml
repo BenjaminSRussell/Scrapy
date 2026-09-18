@@ -14,7 +14,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -38,7 +38,7 @@ jobs:
             type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Build and push kafka-delta-ingest image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: ./Scraping_project
           file: ./Scraping_project/Dockerfile
@@ -62,7 +62,7 @@ jobs:
 
       - name: Upload kafka-delta-ingest SBOM
         if: secrets.GHCR_PAT != ''
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v5
         with:
           name: sbom-kafka-delta-ingest
           path: sbom-kafka-delta-ingest.spdx.json
@@ -78,7 +78,7 @@ jobs:
             type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Build and push crawler image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: ./Scraping_project
           file: ./Scraping_project/Dockerfile
@@ -102,7 +102,7 @@ jobs:
 
       - name: Upload crawler SBOM
         if: secrets.GHCR_PAT != ''
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v5
         with:
           name: sbom-crawler
           path: sbom-crawler.spdx.json
@@ -118,7 +118,7 @@ jobs:
             type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Build and push metrics image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: ./Scraping_project
           file: ./Scraping_project/Dockerfile
@@ -142,7 +142,7 @@ jobs:
 
       - name: Upload metrics SBOM
         if: secrets.GHCR_PAT != ''
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v5
         with:
           name: sbom-metrics
           path: sbom-metrics.spdx.json
