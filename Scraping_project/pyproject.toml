@@ -1,3 +1,37 @@
 [tool.black]
 line-length = 120
 target-version = ["py311"]
+
+# Optional dependency extras (#144). Core runtime deps remain in requirements.txt
+# for the existing pip-tools / Docker workflow.
+[project]
+name = "uconn-scraping-pipeline"
+version = "0.1.0"
+description = "UConn multi-stage web scraping pipeline"
+requires-python = ">=3.11"
+readme = "README.md"
+
+[project.optional-dependencies]
+ml = [
+    "torch>=2.6.0",
+    "transformers>=4.50.0",
+    "sentence-transformers>=2.0.0",
+    "scikit-learn>=1.3.0",
+]
+ocr = [
+    "easyocr>=1.7.0",
+    "pdf2image>=1.17.0",
+    "PyPDF2>=3.0.0",
+    "pillow>=11.0.0",
+]
+# Combined extra for Stage 3/4 workers and ml_service
+stage3-4 = [
+    "torch>=2.6.0",
+    "transformers>=4.50.0",
+    "sentence-transformers>=2.0.0",
+    "scikit-learn>=1.3.0",
+    "easyocr>=1.7.0",
+    "pdf2image>=1.17.0",
+    "PyPDF2>=3.0.0",
+    "pillow>=11.0.0",
+]

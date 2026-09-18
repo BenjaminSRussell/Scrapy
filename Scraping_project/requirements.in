@@ -1,4 +1,8 @@
 # Core Framework - Scrapy for high-speed crawling
+# ML/OCR packages live in requirements-ml.in / requirements-ocr.in (optional extras).
+# Install core only:  pip install -r requirements.txt
+# Install Stage 3/4:  pip install -r requirements.txt -r requirements-ml.txt -r requirements-ocr.txt
+# Or:                pip install -e ".[ml,ocr]"  /  pip install -e ".[stage3-4]"
 scrapy>=2.13.3
 
 # Data & State Management - Delta Lake as central nervous system
@@ -13,23 +17,12 @@ scrapy-playwright>=0.0.41  # Scrapy integration for Playwright
 httpx>=0.28.0  # Modern HTTP client
 aiohttp>=3.12.0  # Async HTTP client for Stage 2 worker
 
-# Analysis & Utility
+# Analysis & Utility (Stage 1-3; no torch)
 beautifulsoup4>=4.12.0,<5.0.0  # HTML parsing
 lxml>=6.0.0,<7.0.0  # Fast XML/HTML parsing
 datasketch>=1.6.0,<2.0.0  # Efficient similarity detection (Stage 3)
 yake>=0.6.0  # Keyword extraction
 networkx==3.5 # Pinned to resolve conflict
-
-# NLP & ML - For large document processing (Stage 4)
-transformers>=4.50.0
-torch>=2.6.0
-sentence-transformers>=2.0.0  # For semantic similarity and embeddings
-
-# OCR & Media - For document processing
-easyocr>=1.7.0
-pdf2image>=1.17.0
-PyPDF2>=3.0.0
-pillow>=11.0.0
 
 # Database
 psycopg2-binary>=2.9.0  # PostgreSQL adapter
@@ -42,9 +35,6 @@ confluent-kafka>=2.3.0  # High-performance Kafka client (librdkafka wrapper)
 prometheus-client>=0.20.0  # Prometheus metrics exporter
 kubernetes>=32.0.0  # Kubernetes Python client for health checks and service discovery
 requests-mock>=1.12.0  # Mock library for testing HTTP requests
-
-# Machine Learning
-scikit-learn>=1.3.0  # ML for error analysis
 
 # Utilities
 pyyaml>=6.0.2
