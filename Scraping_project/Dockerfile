@@ -1,12 +1,14 @@
 # Multi-stage Dockerfile for UConn Scraping Pipeline
-# Phase 10 + #144: lean core images vs ML/OCR Stage 3/4 images
+# Phase 10 + #144: lean core images vs ML/OCR Stage 4 images
 #
 # Targets:
-#   base / core / production  — core deps only (Stage 1–2, scraper); no torch
-#   ml / stage3 / stage4      — core + requirements-ml.txt + requirements-ocr.txt
+#   base / core / production / stage3 — core deps only (Stage 1–3, scraper); no torch
+#   ml / stage4                       — core + requirements-ml.txt + requirements-ocr.txt
 #
+# Stage 3 is light (datasketch MinHash + extractive summary) and runs on core.
 # Stage worker CMDs use #262 entrypoint shims (src.workers.*).
-# Expected size: Stage 1/2 images ~2–4 GB smaller without torch/transformers/easyocr.
+# Expected size: Stage 1–3 images ~2–4 GB smaller without torch/transformers/easyocr.
+# AC4: measure with `docker images` after local rebuild (blocked if Docker unavailable).
 
 FROM python:3.11-slim AS base
 
@@ -54,7 +56,12 @@ CMD ["python", "-m", "src.main"]
 FROM core AS production
 
 
-# Stage 3/4 image with ML + OCR extras
+# Light Stage 3: same as core (datasketch already in requirements.txt)
+FROM core AS stage3
+CMD ["python", "-m", "src.workers.stage3_worker"]
+
+
+# Stage 4 image with ML + OCR extras
 FROM base AS ml
 
 USER root
@@ -74,10 +81,6 @@ ENV ENVIRONMENT=production \
     SCRAPY_EXTRAS=ml,ocr
 
 CMD ["python", "-m", "src.main"]
-
-
-FROM ml AS stage3
-CMD ["python", "-m", "src.workers.stage3_worker"]
 
 
 FROM ml AS stage4

@@ -1,18 +1,18 @@
 # Docker Compose configuration for UConn Scraping Pipeline
-# Phase 10 + #144: lean core images; ML/OCR extras only on Stage 3/4
+# Phase 10 + #144: lean core images; ML/OCR extras only on Stage 4
 #
 # Profiles:
-#   (default)  — redis, scraper, stage1, stage2, prometheus, grafana (core only)
-#   ml / full  — also starts stage3-worker + stage4-worker (ML/OCR image)
+#   (default)  — redis, scraper, stage1, stage2, stage3, prometheus, grafana (core only)
+#   ml / full  — also starts stage4-worker (ML/OCR image)
 #
 # Examples:
-#   docker compose up -d                          # lean Stage 1–2 stack
-#   docker compose --profile ml up -d             # include Stage 3/4
+#   docker compose up -d                          # lean Stage 1–3 stack
+#   docker compose --profile ml up -d             # include Stage 4
 #   docker compose --profile full up -d           # alias of ml
 #
 # Local pip:
-#   pip install -r requirements.txt                                    # core
-#   pip install -r requirements.txt -r requirements-ml.txt -r requirements-ocr.txt
+#   pip install -r requirements.txt                                    # core (+ light Stage 3)
+#   pip install -r requirements.txt -r requirements-ml.txt -r requirements-ocr.txt  # Stage 4
 # Packaging extras (.[ml]/.[ocr]) land with PR #289 — prefer requirements-*.txt here.
 
 version: '3.8'
@@ -114,10 +114,9 @@ services:
           cpus: '1.0'
           memory: 2G
 
-  # Stage 3: Summarization Worker (requires ML extras)
+  # Stage 3: light summarization / MinHash dedupe (core image — datasketch only)
   # Commands use #262 entrypoint shims (src.workers.*)
   stage3-worker:
-    profiles: ["ml", "full"]
     build:
       context: .
       target: stage3
@@ -129,7 +128,6 @@ services:
       - REDIS_PORT=6379
       - DELTA_LAKE_PATH=/data/delta
       - WORKER_ID=stage3
-      - SCRAPY_EXTRAS=ml,ocr
     volumes:
       - ./data:/data
       - ./logs:/app/logs
