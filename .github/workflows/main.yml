@@ -11,7 +11,7 @@ on:
 # - Default pytest set: tests/ with -m "not slow and not kafka and not performance"
 #   (markers defined in Scraping_project/pytest.ini; kafka/performance/slow are optional/heavy)
 # - bandit severity gate: -ll (medium and high); low findings do not fail CI
-# - Tool versions come from Scraping_project/dev-requirements.txt (pinned)
+# - Tool versions come from Scraping_project/dev-requirements.txt + ci-tools.txt (pinned)
 # - Coverage uploaded as artifact; do not rely on committed coverage.xml
 
 jobs:
@@ -32,12 +32,14 @@ jobs:
         cache-dependency-path: |
           Scraping_project/requirements.txt
           Scraping_project/dev-requirements.txt
+          Scraping_project/ci-tools.txt
 
     - name: Install dependencies (pinned)
       run: |
         python -m pip install --upgrade pip
         pip install -r Scraping_project/requirements.txt
         pip install -r Scraping_project/dev-requirements.txt
+        pip install -r Scraping_project/ci-tools.txt
 
     - name: Lint with ruff
       working-directory: Scraping_project
