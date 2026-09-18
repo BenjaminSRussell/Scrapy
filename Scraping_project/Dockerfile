@@ -5,6 +5,7 @@
 #   base / core / production  — core deps only (Stage 1–2, scraper); no torch
 #   ml / stage3 / stage4      — core + requirements-ml.txt + requirements-ocr.txt
 #
+# Stage worker CMDs use #262 entrypoint shims (src.workers.*).
 # Expected size: Stage 1/2 images ~2–4 GB smaller without torch/transformers/easyocr.
 
 FROM python:3.11-slim AS base
@@ -76,8 +77,8 @@ CMD ["python", "-m", "src.main"]
 
 
 FROM ml AS stage3
-CMD ["python", "-m", "src.stage3.stage3_worker"]
+CMD ["python", "-m", "src.workers.stage3_worker"]
 
 
 FROM ml AS stage4
-CMD ["python", "-m", "src.stage4.stage4_worker"]
+CMD ["python", "-m", "src.workers.stage4_worker"]

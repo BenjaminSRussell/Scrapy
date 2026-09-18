@@ -1,7 +1,11 @@
 """Helpers for optional ML/OCR extras (#144).
 
 Core install (requirements.txt) supports Stage 1 discovery and Stage 2 analysis
-without torch. Stage 3/4 and ml_service require the `ml` and/or `ocr` extras.
+without torch. Stage 3/4 and ml_service require ML and/or OCR extras via
+requirements-ml.txt / requirements-ocr.txt.
+
+Packaging extras (.[ml]/.[ocr]/.[stage3-4]) are defined in PR #289 — prefer
+the requirements-*.txt install paths from this PR until that lands.
 """
 
 from __future__ import annotations
@@ -9,19 +13,17 @@ from __future__ import annotations
 from typing import Iterable
 
 ML_INSTALL_HINT = (
-    "Install ML extras with one of:\n"
+    "Install ML extras with:\n"
     "  pip install -r requirements-ml.txt\n"
-    "  pip install -e '.[ml]'\n"
-    "  pip install -e '.[stage3-4]'\n"
+    "  # (or, once PR #289 packaging lands: pip install -e '.[ml]')\n"
     "Docker: build/run target `ml`, `stage3`, or `stage4` "
     "(compose profile `ml` or `full`)."
 )
 
 OCR_INSTALL_HINT = (
-    "Install OCR extras with one of:\n"
+    "Install OCR extras with:\n"
     "  pip install -r requirements-ocr.txt\n"
-    "  pip install -e '.[ocr]'\n"
-    "  pip install -e '.[stage3-4]'\n"
+    "  # (or, once PR #289 packaging lands: pip install -e '.[ocr]')\n"
     "Also install system poppler-utils for pdf2image. "
     "Docker target `ml`/`stage4` includes OCR extras."
 )
