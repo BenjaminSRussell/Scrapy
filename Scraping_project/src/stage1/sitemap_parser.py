@@ -8,7 +8,10 @@ from urllib.parse import urljoin, urlparse
 
 import httpx
 
+from src.stage1.discovery_handoff import DiscoveryHandoff
+
 logger = logging.getLogger(__name__)
+
 
 class SitemapParser:
 
@@ -25,10 +28,24 @@ class SitemapParser:
         self.max_depth = max_depth
         self.visited_sitemaps: set[str] = set()
         self.discovered_urls: set[str] = set()
+        self._hard_errors: list[str] = []
+        self._attempted_fetch: bool = False
+        self._any_success: bool = False
 
     async def discover_all_urls(self) -> list[str]:
+        handoff = await self.discover_with_handoff()
+        return list(handoff.discovered)
+
+    async def discover_with_handoff(
+        self,
+        *,
+        discovery_source: str = "sitemap_parser",
+        job_id: str | None = None,
+    ) -> DiscoveryHandoff:
+        """Discover sitemap URLs and return a typed handoff (success|empty|failed)."""
         parsed = urlparse(self.base_url)
         base = f"{parsed.scheme}://{parsed.netloc}"
+        site = parsed.netloc.lower()
 
         sitemap_urls = [
             urljoin(base, "/sitemap.xml"),
@@ -42,11 +59,42 @@ class SitemapParser:
         ]
 
         headers = {"User-Agent": "SitemapParser/1.0 (compatible; web crawler)"}
-        async with httpx.AsyncClient(timeout=self.timeout, headers=headers) as client:
-            for sitemap_url in sitemap_urls:
-                await self._parse_sitemap_recursive(client, sitemap_url, depth=0)
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout, headers=headers) as client:
+                for sitemap_url in sitemap_urls:
+                    await self._parse_sitemap_recursive(client, sitemap_url, depth=0)
+        except Exception as e:
+            logger.error(f"Sitemap discovery hard failure: {e}")
+            return DiscoveryHandoff.failed(
+                str(e),
+                discovery_source=discovery_source,
+                job_id=job_id,
+                site=site,
+            )
 
-        return list(self.discovered_urls)
+        if self.discovered_urls:
+            return DiscoveryHandoff.success(
+                sorted(self.discovered_urls),
+                discovery_source=discovery_source,
+                job_id=job_id,
+                site=site,
+            )
+
+        # Distinguish empty site from hard failure: only fail if we never got a
+        # successful response and recorded hard errors (e.g. total network outage).
+        if self._hard_errors and not self._any_success:
+            return DiscoveryHandoff.failed(
+                "; ".join(self._hard_errors[:5]),
+                discovery_source=discovery_source,
+                job_id=job_id,
+                site=site,
+            )
+
+        return DiscoveryHandoff.empty(
+            discovery_source=discovery_source,
+            job_id=job_id,
+            site=site,
+        )
 
     async def _parse_sitemap_recursive(
         self,
@@ -66,12 +114,14 @@ class SitemapParser:
 
         try:
             logger.info(f"Parsing sitemap (depth={depth}): {sitemap_url}")
+            self._attempted_fetch = True
             response = await client.get(sitemap_url)
 
             if response.status_code != 200:
                 logger.warning(f"Sitemap returned {response.status_code}: {sitemap_url}")
                 return
 
+            self._any_success = True
             content = response.content
             if sitemap_url.endswith(".gz") or response.headers.get("content-encoding") == "gzip":
                 try:
@@ -112,6 +162,7 @@ class SitemapParser:
 
         except Exception as e:
             logger.warning(f"Error processing sitemap: {sitemap_url} - {e}")
+            self._hard_errors.append(f"{sitemap_url}: {e}")
 
     def _is_sitemap_index(self, root: ET.Element) -> bool:
         if root.tag.endswith("sitemapindex"):
@@ -177,6 +228,7 @@ class SitemapParser:
 
         return urls
 
+
 class SitemapIntegration:
 
     def __init__(self, spider):
@@ -184,13 +236,20 @@ class SitemapIntegration:
         self.parser = SitemapParser(spider.start_urls[0] if spider.start_urls else "")
 
     async def discover_sitemap_urls(self) -> list[str]:
+        handoff = await self.discover_sitemap_handoff()
+        return list(handoff.discovered)
+
+    async def discover_sitemap_handoff(self) -> DiscoveryHandoff:
         try:
-            urls = await self.parser.discover_all_urls()
-            logger.info(f"Sitemap discovery: found {len(urls)} URLs")
-            return urls
+            handoff = await self.parser.discover_with_handoff(discovery_source="sitemap_parser")
+            logger.info(
+                f"Sitemap discovery handoff: status={handoff.status} "
+                f"discovered={len(handoff.discovered)}"
+            )
+            return handoff
         except Exception as e:
             logger.error(f"Sitemap discovery failed: {e}")
-            return []
+            return DiscoveryHandoff.failed(str(e), discovery_source="sitemap_parser")
 
     def generate_scrapy_requests(self, urls: list[str]) -> Iterator:
         import scrapy
@@ -200,12 +259,26 @@ class SitemapIntegration:
                 url,
                 callback=self.spider.parse,
                 errback=self.spider.handle_error,
-                meta={"depth": 0, "source": "sitemap"},
+                meta={"depth": 0, "source": "sitemap", "discovery_source": "sitemap_parser"},
                 priority=5,
                 dont_filter=True,
             )
 
+
 def discover_sitemaps_sync(base_url: str, timeout: int = 30) -> list[str]:
+    """Backward-compatible URL list. Prefer ``discover_sitemaps_handoff_sync``."""
+    handoff = discover_sitemaps_handoff_sync(base_url, timeout=timeout)
+    return list(handoff.discovered)
+
+
+def discover_sitemaps_handoff_sync(
+    base_url: str,
+    timeout: int = 30,
+    *,
+    discovery_source: str = "sitemap_parser",
+    job_id: str | None = None,
+) -> DiscoveryHandoff:
+    """Sync sitemap discovery returning success|empty|failed handoff."""
     import asyncio
 
     parser = SitemapParser(base_url, timeout=timeout)
@@ -213,9 +286,17 @@ def discover_sitemaps_sync(base_url: str, timeout: int = 30) -> list[str]:
     try:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-        urls = loop.run_until_complete(parser.discover_all_urls())
+        handoff = loop.run_until_complete(
+            parser.discover_with_handoff(discovery_source=discovery_source, job_id=job_id)
+        )
         loop.close()
-        return urls
+        return handoff
     except Exception as e:
         logger.error(f"Sitemap discovery failed: {e}")
-        return []
+        parsed = urlparse(base_url)
+        return DiscoveryHandoff.failed(
+            str(e),
+            discovery_source=discovery_source,
+            job_id=job_id,
+            site=parsed.netloc.lower() if parsed.netloc else None,
+        )
