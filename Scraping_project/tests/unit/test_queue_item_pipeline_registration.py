@@ -6,11 +6,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.pipelines import (
-    QueueItemPipeline,
-    SchemaValidationPipeline,
-    is_queue_routing_item,
-)
+from src.pipelines import QueueItemPipeline, SchemaValidationPipeline
+from src.queue_routing import is_queue_routing_item
 
 
 @pytest.mark.unit
@@ -39,6 +36,9 @@ def test_is_queue_routing_item_detects_scout_dicts():
 @pytest.mark.unit
 def test_schema_validation_does_not_drop_stage2_queue_dict():
     """Dict queue items must survive SchemaValidation (no DropItem)."""
+    # Import settings to apply #608 SchemaValidation skip patch.
+    import src.settings  # noqa: F401
+
     pipeline = SchemaValidationPipeline(enabled=True)
     spider = MagicMock()
     spider.name = "scout"
@@ -54,7 +54,6 @@ def test_schema_validation_does_not_drop_stage2_queue_dict():
         "target_stage": "stage2",
     }
 
-    # Must not raise DropItem
     out = pipeline.process_item(item, spider)
     assert out is item
     assert out["target_stage"] == "stage2"
@@ -86,14 +85,12 @@ def test_scout_stage2_dict_writes_stage2_queue_on_close():
     assert pipeline.items_processed == 1
     assert len(pipeline.stage2_queue_batch) == 1
 
-    # Flush on spider close → Delta write
     pipeline.spider_closed(spider)
 
     mock_delta.write.assert_called()
     table_names = [c.args[0] for c in mock_delta.write.call_args_list]
     assert "stage2_queue" in table_names
 
-    # Find the stage2_queue call and confirm the row
     for call in mock_delta.write.call_args_list:
         if call.args[0] == "stage2_queue":
             rows = call.args[1]
