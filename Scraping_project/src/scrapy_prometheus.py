@@ -115,6 +115,11 @@ if PROMETHEUS_AVAILABLE:
         ["spider"],
     )
 
+    PIPELINE_JS_QUEUE_PENDING = Gauge(
+        "pipeline_js_queue_pending",
+        "Number of pending items in Delta js_spider_queue awaiting javascript spider drain",
+    )
+
     # --- Delta Lake Manager Metrics ---
     DELTA_MANAGER_CONTEXT_ENTER_TOTAL = Counter(
         "delta_manager_context_enter_total", "Total number of times a DeltaLakeManager context has been entered."
@@ -144,6 +149,14 @@ else:
     NEW_URLS_FOUND_PER_MINUTE = AVERAGE_FILE_SIZE_BYTES = None
     OFFSITE_LINKS_FOUND = OFFSITE_CANDIDATES_SAVED = None
     CRAWLER_CONTENT_SUMMARY = None
+    PIPELINE_JS_QUEUE_PENDING = None
+
+
+
+def set_pipeline_js_queue_pending(count: int) -> None:
+    """Update ``pipeline_js_queue_pending`` Gauge (no-op if prometheus unavailable)."""
+    if PIPELINE_JS_QUEUE_PENDING is not None:
+        PIPELINE_JS_QUEUE_PENDING.set(int(count))
 
 class PrometheusExtension:
 

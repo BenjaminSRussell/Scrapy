@@ -38,6 +38,10 @@ stage1:
 
   # JS Detection
   js_confidence_threshold: 0.5  # REDUCED - render more pages (was 0.7)
+  # Drain js_spider_queue via javascript spider between Scout and Stage2 (#645).
+  # Looked up as stages.stage1.enable_js_spider (or stage1.enable_js_spider);
+  # override with env ENABLE_JS_SPIDER=0/1/true/false.
+  enable_js_spider: true
 
   # Batch sizes
   batch_size: 50  # URLs to batch before writing to Delta Lake

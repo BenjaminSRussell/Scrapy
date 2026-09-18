@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal
@@ -18,6 +19,7 @@ logger = logging.getLogger(__name__)
 class PipelineStats:
     stage1_urls_discovered: int = 0
     stage1_urls_queued: int = 0
+    stage1_js_pending: int = 0
     stage2_pages_analyzed: int = 0
     stage2_quality_docs: int = 0
     stage2_massive_docs: int = 0
@@ -32,12 +34,130 @@ class PipelineStats:
             return (self.end_time - self.start_time).total_seconds()
         return 0.0
 
+
+def _update_js_queue_pending_metric(count: int) -> None:
+    """Best-effort update of ``pipeline_js_queue_pending`` Gauge."""
+    try:
+        from src.scrapy_prometheus import set_pipeline_js_queue_pending
+
+        set_pipeline_js_queue_pending(count)
+    except Exception as e:  # pragma: no cover - metrics optional
+        logger.debug("Could not update pipeline_js_queue_pending: %s", e)
+
+
 class PipelineOrchestrator:
 
     def __init__(self, config: dict | None = None):
         self.config = config or {}
         self.delta = get_delta()
         self.stats = PipelineStats()
+
+    def count_js_queue_pending(self) -> int:
+        """Count pending rows in Delta ``js_spider_queue``.
+
+        Items missing a ``status`` field default to pending (Scout contract).
+        """
+        try:
+            queue = self.delta.read("js_spider_queue")
+        except Exception as e:
+            logger.warning("Could not read js_spider_queue: %s", e)
+            return 0
+
+        pending = 0
+        for item in queue or []:
+            status = item.get("status", "pending")
+            if status == "pending" or status is None:
+                pending += 1
+        return pending
+
+    def _resolve_js_spider_enabled(self, enabled: bool | None = None) -> bool:
+        """Resolve JS spider enable flag: arg → config → env → True."""
+        if enabled is not None:
+            return bool(enabled)
+
+        cfg_val = None
+        if isinstance(self.config, dict) and "enable_js_spider" in self.config:
+            cfg_val = self.config.get("enable_js_spider")
+        else:
+            try:
+                from src.core.config import get_config
+
+                config = get_config()
+                # Canonical key from #645; also accept top-level stage1.* because
+                # config.yml stores stage settings under ``stage1:``.
+                cfg_val = config.get("stages.stage1.enable_js_spider")
+                if cfg_val is None:
+                    cfg_val = config.get("stage1.enable_js_spider")
+            except Exception as e:
+                logger.debug("get_config unavailable for enable_js_spider: %s", e)
+
+        if cfg_val is not None:
+            return bool(cfg_val)
+
+        env = os.environ.get("ENABLE_JS_SPIDER")
+        if env is not None and str(env).strip() != "":
+            return str(env).strip().lower() in ("1", "true", "yes", "on")
+
+        return True
+
+    def run_js_queue(self, enabled: bool | None = None) -> int:
+        """Drain ``js_spider_queue`` by running the ``javascript`` spider.
+
+        Uses the same CrawlerProcess pattern as :meth:`run_stage1`.
+
+        Args:
+            enabled: Override for ``stages.stage1.enable_js_spider`` /
+                ``ENABLE_JS_SPIDER``. ``None`` resolves from config/env.
+
+        Returns:
+            Remaining pending count after the drain attempt. Returns 0 when
+            the JS path is disabled or the queue had no pending items.
+        """
+        logger.info("=" * 80)
+        logger.info("STAGE 1b: JS SPIDER QUEUE DRAIN")
+        logger.info("=" * 80)
+
+        js_enabled = self._resolve_js_spider_enabled(enabled)
+        pending = self.count_js_queue_pending()
+        self.stats.stage1_js_pending = pending
+        _update_js_queue_pending_metric(pending)
+
+        if not js_enabled:
+            logger.info(
+                "JS spider path disabled "
+                "(stages.stage1.enable_js_spider / ENABLE_JS_SPIDER); skipping drain"
+            )
+            if pending > 0:
+                logger.warning(
+                    "Scout enqueued %s item(s) on js_spider_queue but JS path is off; "
+                    "pending items will not be drained",
+                    pending,
+                )
+            return 0
+
+        if pending == 0:
+            logger.info("js_spider_queue has no pending items; nothing to drain")
+            return 0
+
+        logger.info("Draining js_spider_queue: %s pending item(s)", pending)
+
+        settings = get_project_settings()
+        settings.set("EXTENSIONS", {})
+        settings.set("TWISTED_REACTOR", "twisted.internet.selectreactor.SelectReactor")
+
+        process = CrawlerProcess(settings)
+        process.crawl("javascript")
+        process.start()
+
+        remaining = self.count_js_queue_pending()
+        self.stats.stage1_js_pending = remaining
+        _update_js_queue_pending_metric(remaining)
+        logger.info(
+            " JS queue drain complete: %s pending remaining (was %s)",
+            remaining,
+            pending,
+        )
+        return remaining
 
     def run_stage1(
         self,
@@ -196,6 +316,10 @@ class PipelineOrchestrator:
         try:
             self.run_stage1(url_limit=stage1_url_limit)
 
+            # Scout may have written SPA/JS-needed URLs to js_spider_queue;
+            # drain them with the javascript spider before Stage 2 analysis.
+            self.run_js_queue()
+
             await self.run_stage2(max_concurrent=stage2_concurrent)
 
             await asyncio.gather(
@@ -243,6 +367,7 @@ class PipelineOrchestrator:
         logger.info("-" * 80)
         logger.info(f"  Stage 1 (URL Discovery):")
         logger.info(f"    - URLs queued for Stage 2: {self.stats.stage1_urls_queued}")
+        logger.info(f"    - JS queue pending (post-drain): {self.stats.stage1_js_pending}")
         logger.info("")
         logger.info(f"  Stage 2 (Page Analysis):")
         logger.info(f"    - Pages analyzed: {self.stats.stage2_pages_analyzed}")
