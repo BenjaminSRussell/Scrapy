@@ -30,12 +30,14 @@ install-dev: install ## Install development dependencies
 	pre-commit install
 	@echo "$(GREEN)✓ Development environment ready!$(NC)"
 
-update-deps: ## Update and compile dependencies
+update-deps: ## Update and compile dependencies (core + ML/OCR extras + dev)
 	@echo "$(BLUE)Updating dependencies...$(NC)"
 	pip install --upgrade pip pip-tools
-	pip-compile requirements.in --upgrade
-	pip-compile dev-requirements.in --upgrade
-	@echo "$(GREEN)✓ Dependencies updated$(NC)"
+	pip-compile --output-file=requirements.txt requirements.in --upgrade
+	pip-compile --output-file=requirements-ml.txt requirements-ml.in --upgrade
+	pip-compile --output-file=requirements-ocr.txt requirements-ocr.in --upgrade
+	pip-compile --output-file=dev-requirements.txt dev-requirements.in --upgrade
+	@echo "$(GREEN)✓ Dependencies updated (core lock must remain torch-free)$(NC)"
 
 ##@ Testing
 
