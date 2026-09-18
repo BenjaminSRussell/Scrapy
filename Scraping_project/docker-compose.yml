@@ -13,7 +13,7 @@
 # Local pip:
 #   pip install -r requirements.txt                                    # core
 #   pip install -r requirements.txt -r requirements-ml.txt -r requirements-ocr.txt
-#   pip install -e ".[stage3-4]"
+# Packaging extras (.[ml]/.[ocr]) land with PR #289 — prefer requirements-*.txt here.
 
 version: '3.8'
 
@@ -87,11 +87,11 @@ services:
       - scraper-network
 
   # Stage 2: Page Analysis Worker (core image)
+  # NOTE: no container_name — conflicts with deploy.replicas > 1
   stage2-worker:
     build:
       context: .
       target: core
-    container_name: stage2-worker
     restart: unless-stopped
     command: python -m src.workers.stage2_worker
     environment:
@@ -115,6 +115,7 @@ services:
           memory: 2G
 
   # Stage 3: Summarization Worker (requires ML extras)
+  # Commands use #262 entrypoint shims (src.workers.*)
   stage3-worker:
     profiles: ["ml", "full"]
     build:
@@ -122,7 +123,7 @@ services:
       target: stage3
     container_name: stage3-worker
     restart: unless-stopped
-    command: python -m src.stage3.stage3_worker
+    command: python -m src.workers.stage3_worker
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
@@ -145,7 +146,7 @@ services:
       target: stage4
     container_name: stage4-worker
     restart: unless-stopped
-    command: python -m src.stage4.stage4_worker
+    command: python -m src.workers.stage4_worker
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
