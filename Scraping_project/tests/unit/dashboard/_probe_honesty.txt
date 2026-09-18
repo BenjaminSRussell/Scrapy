@@ -1,0 +1,33 @@
+let lastSuccessfulFetchAt = null;
+const STALE_AFTER_MS = REFRESH_INTERVAL * 3;
+
+function setHealthTile(id, state, label) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.classList.remove('healthy', 'unhealthy', 'unknown');
+    if (state === 'healthy' || state === 'unhealthy' || state === 'unknown') {
+        el.classList.add(state);
+    }
+    const valueEl = el.querySelector('.health-value');
+    if (valueEl) {
+        valueEl.textContent = label;
+    }
+}
+
+function setSystemStatus(mode, label) {
+    const el = document.getElementById('system-status');
+    if (!el) return;
+    el.classList.remove('online', 'offline');
+    el.classList.add(mode === 'online' ? 'online' : 'offline');
+    const textSpan = el.querySelector('span:not(.status-dot)');
+    if (textSpan) {
+        textSpan.textContent = label;
+    } else {
+        const spans = el.querySelectorAll('span');
+        if (spans.length >= 2) {
+            spans[spans.length - 1].textContent = label;
+        }
+    }
+}
+
+PROBE_OK
