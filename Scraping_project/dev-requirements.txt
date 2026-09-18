@@ -327,7 +327,7 @@ propcache==0.4.1
     #   yarl
 protego==0.5.0
     # via scrapy
-psutil==5.9.8
+psutil==7.1.2
     # via -r Scraping_project/requirements.in
 psycopg2-binary==2.9.11
     # via -r Scraping_project/requirements.in
