@@ -467,13 +467,6 @@ pytest tests/test_models.py -v
 
 **Issue**: Redis connection errors
 ```bash
-# Solution: Check Redis is running
-docker-compose ps redis
-docker-compose restart redis
-```
-
-**Issue**: Circuit breaker open
-```bash
 # Solution: Check error logs and reset if needed
 # Circuit breaker will auto-recover after timeout
 ```
@@ -547,3 +540,17 @@ pool = ConnectionPool(
 **Production Status**: ✓ Ready for deployment
 
 Last Updated: 2025-11-09
+
+## Happy path (Redis + one worker)
+
+Minimal check that Docker entrypoints resolve after #142:
+
+```bash
+cd Scraping_project
+docker compose up -d redis
+docker compose up -d --no-deps stage2-worker
+# or locally (with deps + Redis):
+# python -m src.workers.stage2_worker
+```
+
+Default image CMD is `python -m src.main`. Compose stage workers use `python -m src.workers.stageN_worker`.
