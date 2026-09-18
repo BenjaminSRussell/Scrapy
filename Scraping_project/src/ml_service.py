@@ -52,7 +52,8 @@ class ZeroShotClassifier:
         if not TRANSFORMERS_AVAILABLE:
             raise ImportError(
                 "transformers library required for ZeroShotClassifier. "
-                "Install ML extras: pip install -r requirements-ml.txt (or: pip install -e '.[ml]')"
+                "Install ML extras: pip install -r requirements-ml.txt "
+                "(pyproject .[ml] extras land with PR #289)"
             )
 
         self.model_name = model_name
