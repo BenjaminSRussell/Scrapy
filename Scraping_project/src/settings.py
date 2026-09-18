@@ -65,6 +65,11 @@ BOT_NAME = _scrapy_config.get("bot_name", "uconn_scraper")
 SPIDER_MODULES = _scrapy_config.get("spider_modules", ["src.stage1", "src.stage3"])
 NEWSPIDER_MODULE = _scrapy_config.get("newspider_module", "src.stage3")
 
+# ITEM_PIPELINES ordering (#608):
+# - SchemaValidation (200) skips Scout queue routing dicts (target_stage/target_spider)
+#   so they are not DropItem'd before QueueItemPipeline.
+# - QueueItemPipeline (350) persists those dicts to stage2_queue / js_spider_queue
+#   *before* KafkaPipeline (400), which may DropItem on publish failure.
 ITEM_PIPELINES = _scrapy_config.get(
     "item_pipelines",
     {
@@ -74,6 +79,7 @@ ITEM_PIPELINES = _scrapy_config.get(
         "src.pipelines.SchemaValidationPipeline": 200,
         "src.pipelines.MetadataPipeline": 250,
         "src.pipelines.RecencyScoringPipeline": 300,
+        "src.pipelines.QueueItemPipeline": 350,
         "src.pipelines.KafkaPipeline": 400,
         "src.pipelines.AggregationPipeline": 500,
         "src.pipelines.OffsiteCandidatePipeline": 800,
@@ -276,3 +282,28 @@ ASR_ENABLED = _scrapy_config.get("asr_enabled", False)
 
 # Note: The system uses multiple Kafka topics for architectural decoupling.
 # Prefer kafka.topics.* in config.yml (or scrapy.kafka_topic) over ad-hoc defaults.
+
+
+# ---------------------------------------------------------------------------
+# #608: Scout queue routing dicts must not be DropItem'd by SchemaValidation
+# before QueueItemPipeline (350). Patch at import time so dict handoffs reach
+# the queue writer even when SchemaValidation is enabled.
+# ---------------------------------------------------------------------------
+def _patch_schema_validation_skip_queue_items() -> None:
+    try:
+        from src.pipelines import SchemaValidationPipeline
+        from src.queue_routing import is_queue_routing_item
+    except Exception:
+        return
+
+    _orig = SchemaValidationPipeline.process_item
+
+    def process_item(self, item, spider):  # type: ignore[no-untyped-def]
+        if is_queue_routing_item(item):
+            return item
+        return _orig(self, item, spider)
+
+    SchemaValidationPipeline.process_item = process_item  # type: ignore[method-assign]
+
+
+_patch_schema_validation_skip_queue_items()
