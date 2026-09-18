@@ -1,3 +1,12 @@
+# Default / core dependency pins for the scraping pipeline.
+#
+# Source of truth for *installable* packaging is Scraping_project/pyproject.toml
+# ([project] dependencies + optional-dependencies ml/ocr/dev).
+# This file feeds the historical requirements.txt lock for Docker/CI that still
+# use `pip install -r requirements.txt`. Prefer:
+#   pip install -e ".[dev]"
+# for local work after #143.
+#
 # Core Framework - Scrapy for high-speed crawling
 scrapy>=2.13.3
 
@@ -20,16 +29,12 @@ datasketch>=1.6.0,<2.0.0  # Efficient similarity detection (Stage 3)
 yake>=0.6.0  # Keyword extraction
 networkx==3.5 # Pinned to resolve conflict
 
-# NLP & ML - For large document processing (Stage 4)
-transformers>=4.50.0
-torch>=2.6.0
-sentence-transformers>=2.0.0  # For semantic similarity and embeddings
-
-# OCR & Media - For document processing
-easyocr>=1.7.0
-pdf2image>=1.17.0
-PyPDF2>=3.0.0
-pillow>=11.0.0
+# NLP / ML / OCR — NOT in the default pip-compile set anymore (#143 / #144).
+# Install via pyproject extras instead:
+#   pip install -e ".[ml]" / ".[ocr]" / ".[stage3-4]"
+# Docker: lean images use core only; stage3/4 use target "full" (see PACKAGING.md).
+# transformers / torch / sentence-transformers → optional-dependencies.ml
+# easyocr / pdf2image / PyPDF2 / pillow → optional-dependencies.ocr
 
 # Database
 psycopg2-binary>=2.9.0  # PostgreSQL adapter
@@ -43,8 +48,7 @@ prometheus-client>=0.20.0  # Prometheus metrics exporter
 kubernetes>=32.0.0  # Kubernetes Python client for health checks and service discovery
 requests-mock>=1.12.0  # Mock library for testing HTTP requests
 
-# Machine Learning
-scikit-learn>=1.3.0  # ML for error analysis
+# scikit-learn lives in pyproject [project.optional-dependencies].ml (#143)
 
 # Utilities
 pyyaml>=6.0.2
