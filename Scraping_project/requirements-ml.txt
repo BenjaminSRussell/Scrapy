@@ -1,0 +1,38 @@
+#
+# Optional ML/NLP extras (Stage 3/4). Install on top of core requirements.txt:
+#   pip install -r requirements.txt -r requirements-ml.txt
+# Docker: build target `ml` (or `stage3` / `stage4`).
+# Pins taken from the previous monolithic lockfile where available.
+#
+torch==2.8.0
+    # via -r requirements-ml.in
+transformers==4.57.1
+    # via -r requirements-ml.in
+sentence-transformers==5.1.1
+    # via -r requirements-ml.in
+scikit-learn==1.7.2
+    # via -r requirements-ml.in
+huggingface-hub==0.35.3
+    # via sentence-transformers, transformers
+tokenizers==0.22.1
+    # via transformers
+safetensors==0.6.2
+    # via transformers
+hf-xet==1.1.10
+    # via huggingface-hub
+fsspec==2025.9.0
+    # via huggingface-hub, torch
+jinja2==3.1.6
+    # via torch
+markupsafe==3.0.3
+    # via jinja2
+sympy==1.14.0
+    # via torch
+mpmath==1.3.0
+    # via sympy
+joblib==1.5.2
+    # via scikit-learn
+threadpoolctl==3.6.0
+    # via scikit-learn
+scipy==1.16.2
+    # via scikit-learn, sentence-transformers

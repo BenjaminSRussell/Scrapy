@@ -1,0 +1,35 @@
+#
+# Optional OCR/document extras (Stage 4). Install on top of core requirements.txt:
+#   pip install -r requirements.txt -r requirements-ocr.txt
+# Prefer also installing ML extras (easyocr depends on torch):
+#   pip install -r requirements.txt -r requirements-ml.txt -r requirements-ocr.txt
+# Docker: build target `ml` installs both. System: apt install poppler-utils
+#
+easyocr==1.7.2
+    # via -r requirements-ocr.in
+pdf2image==1.17.0
+    # via -r requirements-ocr.in
+pypdf2==3.0.1
+    # via -r requirements-ocr.in
+pillow==11.3.0
+    # via -r requirements-ocr.in, easyocr, pdf2image
+torchvision==0.23.0
+    # via easyocr
+opencv-python-headless==4.12.0.88
+    # via easyocr
+scikit-image==0.25.2
+    # via easyocr
+imageio==2.37.0
+    # via scikit-image
+lazy-loader==0.4
+    # via scikit-image
+tifffile==2025.10.4
+    # via scikit-image
+ninja==1.13.0
+    # via easyocr
+pyclipper==1.3.0.post6
+    # via easyocr
+python-bidi==0.6.6
+    # via easyocr
+shapely==2.1.2
+    # via easyocr
