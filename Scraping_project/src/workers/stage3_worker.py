@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-import asyncio
-
-from src.stage3.stage3_worker import run_stage3_worker
-
 
 def main() -> None:
+    import asyncio
+
+    from src.stage3.stage3_worker import run_stage3_worker
+
     asyncio.run(run_stage3_worker())
 
 

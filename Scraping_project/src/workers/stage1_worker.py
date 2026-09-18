@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import logging
 
-from src.orchestrator.pipeline_orchestrator import PipelineOrchestrator
-
 logger = logging.getLogger(__name__)
 
 
 def main() -> None:
+    # Deferred: PipelineOrchestrator pulls Stage 4 / optional deps at import time.
+    from src.orchestrator.pipeline_orchestrator import PipelineOrchestrator
+
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
