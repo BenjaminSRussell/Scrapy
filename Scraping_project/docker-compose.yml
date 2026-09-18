@@ -1,11 +1,14 @@
 # Docker Compose configuration for UConn Scraping Pipeline
-# Phase 10: Production deployment
-
-version: '3.8'
+# Profiles (#145): core | monitoring | streaming, plus ml | full for Stage 4 (#144).
+# Observability (Loki / Jaeger / OTEL) is the overlay docker-compose.observability.yml.
+# One command for the lean stack + monitoring (no torch, no Kafka):
+#   docker compose --profile core --profile monitoring up -d
+# See COMPOSE.md. Redis contract is REDIS_HOST / REDIS_PORT / REDIS_PASSWORD / REDIS_DB.
 
 services:
   # Main scraping application
   scraper:
+    profiles: ["core"]
     build:
       context: .
       target: production
@@ -36,6 +39,7 @@ services:
 
   # Redis for caching and queue management
   redis:
+    profiles: ["core", "monitoring", "ml", "full"]
     image: redis:7-alpine
     container_name: uconn-redis
     restart: unless-stopped
@@ -66,6 +70,7 @@ services:
 
   # PostgreSQL for pipeline metrics and error logs
   postgres:
+    profiles: ["core", "monitoring", "streaming"]
     image: postgres:16-alpine
     container_name: uconn-postgres
     restart: unless-stopped
@@ -94,6 +99,7 @@ services:
 
   # Stage 1: URL Discovery Worker
   stage1-worker:
+    profiles: ["core"]
     build:
       context: .
       target: production
@@ -116,6 +122,7 @@ services:
 
   # Stage 2: Page Analysis Worker
   stage2-worker:
+    profiles: ["core"]
     build:
       context: .
       target: production
@@ -151,6 +158,7 @@ services:
 
   # Stage 3: Summarization Worker (light — datasketch/core, no torch) (#144)
   stage3-worker:
+    profiles: ["core"]
     build:
       context: .
       target: stage3
@@ -177,8 +185,10 @@ services:
     networks:
       - scraper-network
 
-  # Stage 4: Large Document Worker (ML + OCR image). Off the default lean
-  # stack; `docker compose --profile ml up -d stage4-worker` (or profile `full`).
+  # Stage 4: Large Document Worker (ML + OCR image). Not part of `core` —
+  # that profile stays on the lean lock (no torch, #144). Enable with
+  # `docker compose --profile ml up -d stage4-worker` (or profile `full`).
+  # Redis is also on ml/full so this worker's depends_on still resolves.
   # Redis env stays REDIS_HOST / REDIS_PORT / REDIS_PASSWORD (#511).
   stage4-worker:
     profiles: ["ml", "full"]
@@ -206,6 +216,7 @@ services:
   # Exporters scraped by monitoring/prometheus.yml (#371). Redis and Postgres
   # do not serve Prometheus metrics themselves.
   redis-exporter:
+    profiles: ["monitoring"]
     image: oliver006/redis_exporter:v1.62.0
     restart: unless-stopped
     environment:
@@ -217,6 +228,7 @@ services:
       - scraper-network
 
   postgres-exporter:
+    profiles: ["monitoring"]
     image: prometheuscommunity/postgres-exporter:v0.15.0
     restart: unless-stopped
     environment:
@@ -227,7 +239,8 @@ services:
       - scraper-network
 
   prometheus:
-    image: prom/prometheus:latest
+    profiles: ["monitoring"]
+    image: prom/prometheus:v3.2.1
     container_name: prometheus
     restart: unless-stopped
     ports:
@@ -246,7 +259,8 @@ services:
       - '--storage.tsdb.path=/prometheus'
 
   grafana:
-    image: grafana/grafana:latest
+    profiles: ["monitoring"]
+    image: grafana/grafana:11.6.1
     container_name: grafana
     restart: unless-stopped
     ports:
@@ -271,6 +285,54 @@ services:
       - scraper-network
     depends_on:
       - prometheus
+
+
+  # Ops dashboard (dashboard/serve.py). Host port is loopback-only.
+  # serve.py binds 127.0.0.1 unless told otherwise (#735); the container must
+  # listen on all interfaces or the published port never answers.
+  dashboard:
+    profiles: ["monitoring"]
+    build:
+      context: .
+      target: production
+    container_name: pipeline-dashboard
+    restart: unless-stopped
+    command: python dashboard/serve.py --host 0.0.0.0 --port 8080
+    environment:
+      - CC_HOST=0.0.0.0
+      - CC_PORT=8080
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - ./dashboard:/app/dashboard:ro
+    networks:
+      - scraper-network
+
+  # Optional Kafka (streaming profile). KRaft combined mode, no ZooKeeper.
+  # In-network clients use kafka:9092. Host clients use localhost:9092
+  # (config.yml default), published on loopback only.
+  kafka:
+    profiles: ["streaming"]
+    image: apache/kafka:3.9.1
+    container_name: uconn-kafka
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:9092:9094"
+    environment:
+      - KAFKA_NODE_ID=1
+      - KAFKA_PROCESS_ROLES=broker,controller
+      - KAFKA_LISTENERS=PLAINTEXT://:9092,PLAINTEXT_HOST://:9094,CONTROLLER://:9093
+      - KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:9092
+      - KAFKA_INTER_BROKER_LISTENER_NAME=PLAINTEXT
+      - KAFKA_CONTROLLER_LISTENER_NAMES=CONTROLLER
+      - KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      - KAFKA_CONTROLLER_QUORUM_VOTERS=1@kafka:9093
+      - KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1
+      - KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR=1
+      - KAFKA_TRANSACTION_STATE_LOG_MIN_ISR=1
+      - KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS=0
+    networks:
+      - scraper-network
 
 volumes:
   redis-data:

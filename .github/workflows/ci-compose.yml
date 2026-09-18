@@ -1,0 +1,100 @@
+name: Compose profiles config
+
+on:
+  pull_request:
+    paths:
+      - "Scraping_project/docker-compose.yml"
+      - "Scraping_project/docker-compose.observability.yml"
+      - "Scraping_project/.env.example"
+      - "Scraping_project/COMPOSE.md"
+      - ".github/workflows/ci-compose.yml"
+  push:
+    branches: [main]
+    paths:
+      - "Scraping_project/docker-compose.yml"
+      - "Scraping_project/docker-compose.observability.yml"
+      - "Scraping_project/.env.example"
+      - "Scraping_project/COMPOSE.md"
+      - ".github/workflows/ci-compose.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  compose-config:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Validate profile rendering (no containers started)
+        working-directory: Scraping_project
+        env:
+          GRAFANA_ADMIN_PASSWORD: ci-placeholder
+          DB_PASSWORD: ci-placeholder
+          POSTGRES_PASSWORD: ci-placeholder
+          APP_DB_PASSWORD: ci-placeholder
+        run: |
+          set -euo pipefail
+          docker compose --profile core --profile monitoring config > /tmp/compose-config.yml
+          grep -E 'dashboard|8080' /tmp/compose-config.yml
+          grep -q "src.workers.stage2_worker" /tmp/compose-config.yml
+          # Stage 4 stays on ml/full (#144). core+monitoring must not render it.
+          if grep -q "src.workers.stage4_worker" /tmp/compose-config.yml; then
+            echo "stage4-worker rendered under core+monitoring"
+            exit 1
+          fi
+          if grep -E 'POSTGRES_PASSWORD=postgres$|postgres:postgres@' docker-compose.yml; then
+            echo "literal postgres password in compose"
+            exit 1
+          fi
+          if grep -q 'REDIS_URL' docker-compose.yml; then
+            echo "REDIS_URL must not be published in compose"
+            exit 1
+          fi
+          if grep -E '^  (loki|jaeger|otel-collector):' docker-compose.yml; then
+            echo "observability services belong in docker-compose.observability.yml"
+            exit 1
+          fi
+          docker compose --profile streaming config > /tmp/stream.yml
+          grep -q 'container_name: uconn-kafka' /tmp/stream.yml
+          docker compose -f docker-compose.yml -f docker-compose.observability.yml \
+            --profile observability config > /tmp/obs.yml
+          grep -q 'container_name: scraping_loki' /tmp/obs.yml
+
+  dashboard-live:
+    # AC3: monitoring dashboard answers on loopback :8080. No other services.
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Up dashboard only and request :8080
+        working-directory: Scraping_project
+        env:
+          GRAFANA_ADMIN_PASSWORD: ci-placeholder
+          DB_PASSWORD: ci-placeholder
+          POSTGRES_PASSWORD: ci-placeholder
+          APP_DB_PASSWORD: ci-placeholder
+        run: |
+          set -euo pipefail
+          docker compose --profile monitoring up -d --build --no-deps dashboard
+          ok=0
+          for i in $(seq 1 45); do
+            code=$(curl -sf -o /tmp/dash.html -w "%{http_code}" http://127.0.0.1:8080/ || true)
+            if printf '%s' "$code" | grep -qE '200|301|302'; then
+              echo "dashboard :8080 reachable (attempt $i, HTTP $code)"
+              head -c 200 /tmp/dash.html || true
+              ok=1
+              break
+            fi
+            sleep 2
+          done
+          if [ "$ok" != "1" ]; then
+            echo "dashboard :8080 did not become ready"
+            docker compose --profile monitoring ps
+            docker compose --profile monitoring logs dashboard || true
+            exit 1
+          fi
+          docker compose --profile monitoring down --remove-orphans || true

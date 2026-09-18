@@ -4,7 +4,11 @@
 # Scraping_project/ together with docker-compose.yml so the services share the
 # app's `scraper-network` and the ./monitoring mounts resolve:
 #
-#   docker compose -f docker-compose.yml -f docker-compose.observability.yml up -d
+#   docker compose -f docker-compose.yml -f docker-compose.observability.yml \
+#     --profile core --profile monitoring --profile observability up -d
+#
+# The services below are on the `observability` profile (#145), so a bare
+# `up` does not start them.
 #
 # Then point the app at the collector: OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
 # (from containers) or http://localhost:4317 (from the host). See ../MONITORING.md.
@@ -14,6 +18,7 @@ services:
   # Log Aggregation - Loki
   # ============================================
   loki:
+    profiles: ["observability"]
     image: grafana/loki:2.9.3
     container_name: scraping_loki
     ports:
@@ -35,6 +40,7 @@ services:
   # Distributed Tracing - Jaeger
   # ============================================
   jaeger:
+    profiles: ["observability"]
     image: jaegertracing/all-in-one:1.52
     container_name: scraping_jaeger
     ports:
@@ -62,6 +68,7 @@ services:
   # OpenTelemetry Collector
   # ============================================
   otel-collector:
+    profiles: ["observability"]
     image: otel/opentelemetry-collector:0.91.0
     container_name: scraping_otel_collector
     ports:
