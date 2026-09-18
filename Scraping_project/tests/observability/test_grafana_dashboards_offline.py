@@ -4,7 +4,6 @@ from pathlib import Path
 
 import pytest
 
-# Configuration: Paths and Metric Name Rules
 DASHBOARD_PATHS = [
     Path(__file__).parent.parent.parent / "monitoring" / "dashboards",
     Path(__file__).parent.parent.parent / "ops" / "grafana" / "dashboards",
@@ -12,18 +11,14 @@ DASHBOARD_PATHS = [
 METRIC_PREFIX_ALLOWLIST = {"scrapy_", "app_", "kafka_"}
 METRIC_NAME_DENYLIST = {"scrapy_pages_scraped_total", "old_request_errors_total"}
 
-
 def find_dashboard_files() -> list[Path]:
-    """Finds all Grafana dashboard JSON files in the configured paths."""
     found_files: list[Path] = []
     for path in DASHBOARD_PATHS:
         if path.is_dir():
             found_files.extend(path.rglob("*.json"))
     return found_files
 
-
 def extract_prometheus_expressions(panel: dict) -> list[str]:
-    """Recursively extracts Prometheus 'expr' values from a panel's targets."""
     expressions = []
     if "targets" in panel:
         for target in panel.get("targets", []):
@@ -36,9 +31,7 @@ def extract_prometheus_expressions(panel: dict) -> list[str]:
 
     return expressions
 
-
 PROMQL_KEYWORDS = {
-    # Functions
     "abs",
     "absent",
     "avg_over_time",
@@ -85,7 +78,6 @@ PROMQL_KEYWORDS = {
     "timestamp",
     "vector",
     "year",
-    # Aggregation operators
     "sum",
     "min",
     "max",
@@ -98,7 +90,6 @@ PROMQL_KEYWORDS = {
     "bottomk",
     "topk",
     "quantile",
-    # Keywords
     "by",
     "without",
     "on",
@@ -107,24 +98,14 @@ PROMQL_KEYWORDS = {
     "group_right",
 }
 
-
 def get_all_metric_names_from_expr(expr: str) -> set[str]:
-    """
-    Extracts potential metric names from a PromQL expression, filtering out keywords.
-    """
-    # This regex finds things that look like metric names or functions.
     potential_names = set(re.findall(r"\b([a-zA-Z_:][a-zA-Z0-9_:]+)\b", expr))
 
-    # Filter out known PromQL keywords/functions and pure numbers.
     metric_names = {name for name in potential_names if name not in PROMQL_KEYWORDS and not name.isdigit()}
     return metric_names
 
-
 @pytest.mark.parametrize("dashboard_path", find_dashboard_files())
 def test_grafana_dashboard_validity(dashboard_path: Path):
-    """
-    Tests a single Grafana dashboard for JSON validity and panel correctness.
-    """
     if not find_dashboard_files():
         pytest.skip("No Grafana dashboards found to test.")
 

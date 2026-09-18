@@ -1,43 +1,29 @@
 #!/usr/bin/env python3
-"""Update Grafana Dashboard with Offsite Link Panels
-
-This script adds three new panels for monitoring the two-pipeline URL collection system:
-1. Off-site Links Found Rate
-2. Total Off-site Candidates
-3. Updated Scraping Speed Comparison (including offsite metrics)
-"""
 
 import json
 import sys
 from pathlib import Path
 
-# Paths
 SCRIPT_DIR = Path(__file__).parent
 PROJECT_ROOT = SCRIPT_DIR.parent
 DASHBOARD_PATH = PROJECT_ROOT / "monitoring" / "dashboards" / "unified_dashboard.json.backup"
 
-
 def add_offsite_panels(dashboard_path: Path):
-    """Add offsite link monitoring panels to the Grafana dashboard."""
 
     print(f"Loading dashboard from: {dashboard_path}")
 
-    # Load existing dashboard
     with open(dashboard_path) as f:
         dashboard = json.load(f)
 
     print(f"Dashboard title: {dashboard.get('title')}")
 
-    # Find max panel ID and Y position
     max_id = max(panel["id"] for panel in dashboard["panels"])
     max_y = max(panel["gridPos"]["y"] + panel["gridPos"]["h"] for panel in dashboard["panels"])
 
     print(f"Max panel ID: {max_id}")
     print(f"Max Y position: {max_y}")
 
-    # Define new panels
     new_panels = [
-        # Panel 1: Off-site Links Found Rate
         {
             "id": max_id + 1,
             "title": "Off-site Links Found Rate",
@@ -69,7 +55,6 @@ def add_offsite_panels(dashboard_path: Path):
                 "tooltip": {"mode": "multi"},
             },
         },
-        # Panel 2: Total Off-site Candidates
         {
             "id": max_id + 2,
             "title": "Total Off-site Candidates",
@@ -106,7 +91,6 @@ def add_offsite_panels(dashboard_path: Path):
                 "reduceOptions": {"values": False, "calcs": ["lastNotNull"]},
             },
         },
-        # Panel 3: Scraping Speed Comparison
         {
             "id": max_id + 3,
             "title": "Scraping Speed Comparison",
@@ -162,17 +146,14 @@ def add_offsite_panels(dashboard_path: Path):
         },
     ]
 
-    # Add new panels to dashboard
     dashboard["panels"].extend(new_panels)
 
-    # Update dashboard version
     dashboard["version"] = dashboard.get("version", 0) + 1
 
     print(f"\n✅ Added {len(new_panels)} new panels:")
     for panel in new_panels:
         print(f"  - Panel {panel['id']}: {panel['title']}")
 
-    # Save dashboard
     print(f"\nSaving dashboard to: {dashboard_path}")
     with open(dashboard_path, "w") as f:
         json.dump(dashboard, f, indent=2)
@@ -181,9 +162,7 @@ def add_offsite_panels(dashboard_path: Path):
     print(f"\nNew panels positioned at Y={max_y}")
     print("Restart Grafana or reload the dashboard to see changes.")
 
-
 def main():
-    """Main entry point."""
     if not DASHBOARD_PATH.exists():
         print(f"❌ Dashboard file not found: {DASHBOARD_PATH}")
         sys.exit(1)
@@ -205,7 +184,6 @@ def main():
 
         traceback.print_exc()
         sys.exit(1)
-
 
 if __name__ == "__main__":
     main()
