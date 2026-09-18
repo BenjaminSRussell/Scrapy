@@ -19,7 +19,6 @@ def _resolve_app_js() -> Path:
     if env:
         return Path(env)
     candidates = [
-        Path("/workspace/scrapy-154/dashboard/app.js"),
         HERE.parents[3] / "dashboard" / "app.js",  # Scraping_project/dashboard/app.js
         HERE.parents[2] / "dashboard" / "app.js",
     ]
