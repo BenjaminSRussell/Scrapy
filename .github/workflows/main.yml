@@ -6,6 +6,14 @@ on:
   pull_request:
     branches: [ main ]
 
+# Quality gates (issue #149):
+# - ruff / mypy / bandit are blocking (no || true)
+# - Default pytest set: tests/ with -m "not slow and not kafka and not performance"
+#   (markers defined in Scraping_project/pytest.ini; kafka/performance/slow are optional/heavy)
+# - bandit severity gate: -ll (medium and high); low findings do not fail CI
+# - Tool versions come from Scraping_project/dev-requirements.txt + ci-tools.txt (pinned)
+# - Coverage uploaded as artifact; do not rely on committed coverage.xml
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -14,76 +22,96 @@ jobs:
         python-version: ["3.11", "3.12"]
 
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v4
 
     - name: Set up Python ${{ matrix.python-version }}
       uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
+        cache: pip
+        cache-dependency-path: |
+          Scraping_project/requirements.txt
+          Scraping_project/dev-requirements.txt
+          Scraping_project/ci-tools.txt
 
-    - name: Cache dependencies
-      uses: actions/cache@v4
-      with:
-        path: ~/.cache/pip
-        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
-        restore-keys: |
-          ${{ runner.os }}-pip-
-
-    - name: Install dependencies
+    - name: Install dependencies (pinned)
       run: |
         python -m pip install --upgrade pip
         pip install -r Scraping_project/requirements.txt
+        pip install -r Scraping_project/dev-requirements.txt
+        pip install -r Scraping_project/ci-tools.txt
 
     - name: Lint with ruff
+      working-directory: Scraping_project
       run: |
-        pip install ruff
-        ruff check Scraping_project/src/ --select F,E4,E7,E9 --output-format=github
+        ruff check src/ --select F,E4,E7,E9 --output-format=github
 
     - name: Type check with mypy
+      working-directory: Scraping_project
       run: |
-        pip install mypy
-        mypy Scraping_project/src/ --ignore-missing-imports --no-strict-optional || true
+        mypy src/ --config-file mypy.ini --ignore-missing-imports --no-strict-optional
 
     - name: Security check with bandit
+      working-directory: Scraping_project
       run: |
-        pip install bandit
-        bandit -r Scraping_project/src/ -ll -f github || true
+        # Blocking at medium+ (-ll). Low-severity findings are reported but do not fail.
+        bandit -r src/ -ll -f github
 
-    - name: Run unit tests
+    - name: Run default test suite
+      working-directory: Scraping_project
+      env:
+        OBS_OFFLINE: "1"
       run: |
-        cd Scraping_project
-        python -m pytest tests/common/ tests/stage1/ -v --tb=short -m "not slow"
+        # Broader default paths under tests/; skip optional/heavy markers.
+        # Clear pytest.ini addopts (-n auto requires unpinned pytest-xdist).
+        # Coverage threshold not enforced here — report is uploaded as artifact.
+        python -m pytest tests/ \
+          -v --tb=short \
+          -m "not slow and not kafka and not performance" \
+          -o addopts= \
+          --strict-markers \
+          --cov=src \
+          --cov-branch \
+          --cov-report=xml:coverage.xml \
+          --cov-report=term-missing:skip-covered \
+          --cov-fail-under=0
 
-    - name: Run integration tests
-      run: |
-        cd Scraping_project
-        python -m pytest tests/integration/ -v --tb=short --maxfail=5 -m "not slow"
+    - name: Upload coverage artifact
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: coverage-py${{ matrix.python-version }}
+        path: Scraping_project/coverage.xml
+        if-no-files-found: warn
 
-  package:
+  package-smoke:
+    name: Package build smoke
+    needs: test
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
 
-    - name: Set up Python 3.11
+    - name: Set up Python
       uses: actions/setup-python@v5
       with:
-        python-version: "3.11"
+        python-version: "3.12"
 
-    - name: Packaging smoke (build + install + import src)
+    - name: Build wheel and smoke import
+      working-directory: Scraping_project
       run: |
-        python -m pip install --upgrade pip build
-        cd Scraping_project
+        python -m pip install --upgrade pip
+        pip install "build==1.2.2"
         python -m build
-        python -m pip install dist/*.whl
-        python -c "import src; print('src ok', getattr(src, '__file__', src))"
+        pip install dist/*.whl
+        python -c "import src; print('smoke ok', getattr(src, '__version__', 'unknown'))"
 
   deploy:
-    needs: [test, package]
+    needs: [test, package-smoke]
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
 
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v4
 
     - name: Set up Python
       uses: actions/setup-python@v5
@@ -91,9 +119,10 @@ jobs:
         python-version: "3.12"
 
     - name: Build package
+      working-directory: Scraping_project
       run: |
-        cd Scraping_project
-        python -m pip install build
+        python -m pip install --upgrade pip
+        pip install "build==1.2.2"
         python -m build
 
     - name: Deploy to Production

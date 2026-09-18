@@ -20,6 +20,7 @@ ruff>=0.9.0
 
 # Security
 pip-audit>=2.7.0
+bandit==1.8.3
 
 # Kubernetes Development Tools
 pykube-ng>=23.6.0  # Kubernetes API client for testing
