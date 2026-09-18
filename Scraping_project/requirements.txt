@@ -395,3 +395,5 @@ zope-interface==8.0.1
 
 # The following packages are considered to be unsafe in a requirements file:
 # setuptools
+
+tenacity>=8.0.0
