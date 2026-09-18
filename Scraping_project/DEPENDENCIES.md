@@ -9,18 +9,27 @@ pip install -r dev-requirements.txt  # optional, for development
 **Stage 3/4 / `ml_service` (ML + OCR extras):**
 ```bash
 pip install -r requirements.txt -r requirements-ml.txt -r requirements-ocr.txt
-# or, from Scraping_project/:
-pip install -e ".[ml,ocr]"
-# combined alias:
-pip install -e ".[stage3-4]"
 ```
+
+Packaging extras (`pip install -e ".[ml,ocr]"` / `.[stage3-4]`) are owned by
+**PR #289** (complete `pyproject.toml`). Prefer `requirements-*.txt` from this
+issue (#144) until that packaging PR lands — do not rely on a partial
+`[project.optional-dependencies]` table in this branch.
 
 | Extra | Packages (direct) | Needed by |
 |-------|-------------------|-----------|
 | *(core)* | Scrapy, deltalake/pyarrow, redis, httpx/aiohttp, prometheus-client, pydantic, confluent-kafka, … | `scraper`, `stage1-worker`, `stage2-worker` |
-| `ml` | torch, transformers, sentence-transformers, scikit-learn | `stage3-worker`, `stage4-worker`, `src/ml_service.py` |
-| `ocr` | easyocr, pdf2image, PyPDF2, pillow | `stage4-worker` (PDF/image docs) |
-| `stage3-4` | `ml` + `ocr` | Stage 3/4 images |
+| `ml` (`requirements-ml.txt`) | torch, transformers, sentence-transformers, scikit-learn | `stage3-worker`, `stage4-worker`, `src/ml_service.py` |
+| `ocr` (`requirements-ocr.txt`) | easyocr, pdf2image, PyPDF2, pillow | `stage4-worker` (PDF/image docs) |
+
+**Recompile locks (pip-tools / Makefile):**
+```bash
+make update-deps
+# or:
+pip-compile --output-file=requirements.txt requirements.in
+pip-compile --output-file=requirements-ml.txt requirements-ml.in
+pip-compile --output-file=requirements-ocr.txt requirements-ocr.in
+```
 
 **Docker Compose profiles:**
 ```bash
@@ -33,6 +42,12 @@ docker compose --profile ml up -d
 docker compose --profile full up -d
 ```
 
-Stage 3 and Stage 4 **fail fast** at startup if ML (and for Stage 4, OCR) extras are missing, with install hints pointing at the commands above.
+Stage 3 and Stage 4 **fail fast** at startup if ML (and for Stage 4, OCR) extras
+are missing, with install hints pointing at the commands above.
 
-**Image size:** Stage 1/2 / `production` targets install core only. Expect roughly **2–4 GB** smaller images vs the previous monolithic `requirements.txt` (torch + transformers + easyocr trees). Confirm locally with `docker images` before/after rebuild.
+Worker entrypoints use `python -m src.workers.stageN_worker` (#262 shims).
+
+**Image size:** Stage 1/2 / `production` targets install core only. Expect roughly
+**2–4 GB** smaller images vs the previous monolithic `requirements.txt`
+(torch + transformers + easyocr trees). Confirm locally with `docker images`
+before/after rebuild.
