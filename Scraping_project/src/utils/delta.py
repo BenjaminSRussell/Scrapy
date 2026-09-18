@@ -275,3 +275,6 @@ def reset_delta():
     """Reset global Delta helper instance (useful for testing)."""
     global _delta_helper
     _delta_helper = None
+
+# Canonical factory is get_delta; alias kept for older call sites (#294).
+get_delta_manager = get_delta
