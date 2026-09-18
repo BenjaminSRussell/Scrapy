@@ -15,7 +15,14 @@ from src.stage1.processors.url_extractor import URLExtractor
 from src.stage1.processors.url_processor import should_follow_url
 from src.lakehouse import SeedManager
 from src.stage1.base_spider import BaseSpider
-from src.stage1.sitemap_parser import discover_sitemaps_sync
+from src.stage1.sitemap_parser import discover_sitemaps_handoff_sync
+from src.stage1.discovery_dedup import DiscoveryDedup, get_discovery_dedup_from_config
+from src.stage1.discovery_handoff import (
+    DiscoveryEmptyNeedsAck,
+    DiscoveryHandoffError,
+    DiscoveryStatus,
+    ingest_handoff_via_seed_manager,
+)
 from src.stage1.section_noise import SectionNoiseTracker, section_of
 
 try:
@@ -42,6 +49,7 @@ _core_get_delta_manager = get_delta_manager
 
 logger = logging.getLogger(__name__)
 
+
 class ScoutSpider(BaseSpider):
 
     name = "scout"
@@ -58,10 +66,14 @@ class ScoutSpider(BaseSpider):
             "pages_queued_stage2": 0,
             "static_discarded": 0,
             "urls_added_to_seeds": 0,
+            "discovery_dedup_skipped": 0,
+            "discovery_empty_acks": 0,
+            "discovery_failures": 0,
         }
 
         self._discovery_response: Response | None = None
         self._url_extractor: URLExtractor | None = None
+        self._last_discovery_handoff = None
 
         from src.core.config import get_config
 
@@ -72,16 +84,37 @@ class ScoutSpider(BaseSpider):
         self.expand_seeds = _stage1_flag(config, "expand_seeds", True)
         self.parse_sitemaps = _stage1_flag(config, "parse_sitemaps", True)
         self.aggressive_collection = _stage1_flag(config, "aggressive_collection", True)
+        self.job_id = kwargs.get("job_id") or config.get("stage1.discovery.job_id") or "default"
+        self.ack_empty_discovery = bool(
+            kwargs.get("ack_empty_discovery")
+            or config.get("stage1.discovery.ack_empty", False)
+            or config.get("stages.stage1.discovery.ack_empty", False)
+        )
 
         self.seed_manager = SeedManager(self.delta)
+        self.discovery_dedup = self._init_discovery_dedup(config)
 
         logger.info(f"[SCOUT] Initialized with allowed_domains={self.allowed_domains}")
         logger.info(f"[SCOUT] Seed expansion enabled: {self.expand_seeds}")
         logger.info(f"[SCOUT] Sitemap parsing enabled: {self.parse_sitemaps}")
         logger.info(f"[SCOUT] Aggressive collection mode: {self.aggressive_collection}")
+        logger.info(
+            f"[SCOUT] Discovery dedup mode={self.discovery_dedup.mode.value} job_id={self.job_id}"
+        )
 
         if self.parse_sitemaps and hasattr(self, "start_urls") and self.start_urls:
             self._discover_and_add_sitemap_urls()
+
+    def _init_discovery_dedup(self, config) -> DiscoveryDedup:
+        # BaseSpider already resolved REDIS_HOST/PORT/PASSWORD/DB. Reuse that
+        # client so claims stay on the injected store (tests) and do not open
+        # a second connection or read REDIS_URL. A failing SET falls back to
+        # process-local claims inside DiscoveryDedup.
+        return get_discovery_dedup_from_config(
+            config,
+            redis_client=getattr(self, "redis_client", None),
+            job_id=self.job_id,
+        )
 
     def parse(self, response: Response) -> Iterator:
         decision = classify_response(response)  # #662: no binary into HTML parsing
@@ -119,6 +152,17 @@ class ScoutSpider(BaseSpider):
             return
 
         new_urls, _ = self._deduplicate_urls(discovered_urls)
+
+        # Cross-engine shared claim before Stage2 enqueue
+        claimed, claim_results = self.discovery_dedup.claim_urls(
+            new_urls,
+            discovery_source="scout",
+            site=urlparse(response.url).netloc,
+        )
+        skipped = len(claim_results) - len(claimed)
+        if skipped:
+            self.scout_stats["discovery_dedup_skipped"] += skipped
+        new_urls = claimed
 
         depth = response.meta.get("depth", 0)
 
@@ -168,7 +212,7 @@ class ScoutSpider(BaseSpider):
                         url,
                         callback=self.parse,
                         errback=self.handle_error,
-                        meta={"depth": depth + 1},
+                        meta={"depth": depth + 1, "discovery_source": "scout"},
                         priority=-1 if noisy else 0,
                         dont_filter=False,
                     )
@@ -285,6 +329,7 @@ class ScoutSpider(BaseSpider):
             "status": "pending",
             "queued_at": datetime.now().isoformat(),
             "queued_by": "scout",
+            "discovery_source": "scout",
             "target_spider": "javascript",
         }
 
@@ -297,6 +342,7 @@ class ScoutSpider(BaseSpider):
             "status": "pending",
             "queued_at": datetime.now().isoformat(),
             "queued_by": "scout",
+            "discovery_source": "scout",
             "target_stage": "stage2",
         }
 
@@ -304,20 +350,84 @@ class ScoutSpider(BaseSpider):
         if not self.start_urls:
             return
 
+        base_url = self.start_urls[0]
+        site = urlparse(base_url).netloc
+        source = "sitemap_parser"
+
+        if not self.discovery_dedup.acquire_mutex(site, source):
+            logger.info(
+                f"[SCOUT] Discovery mutex held for {site}; skipping Python sitemap pass "
+                f"(another engine owns this job/site)"
+            )
+            return
+
         try:
-            base_url = self.start_urls[0]
             logger.info(f"[SCOUT] Discovering sitemap URLs from {base_url}")
 
-            sitemap_urls = discover_sitemaps_sync(base_url, timeout=30)
+            handoff = discover_sitemaps_handoff_sync(
+                base_url,
+                timeout=30,
+                discovery_source=source,
+                job_id=self.job_id,
+            )
+            self._last_discovery_handoff = handoff
 
-            if sitemap_urls:
-                logger.info(f"[SCOUT] Found {len(sitemap_urls)} URLs from sitemaps")
-                self._add_urls_to_seeds(sitemap_urls, source_url=f"{base_url}/sitemap.xml")
-            else:
-                logger.info(f"[SCOUT] No sitemap URLs discovered for {base_url}")
+            if handoff.status == DiscoveryStatus.FAILED:
+                self.scout_stats["discovery_failures"] += 1
+                logger.error(
+                    f"[SCOUT] Sitemap discovery FAILED (abort Stage2 ingest): {handoff.error}"
+                )
+                return
+
+            if handoff.status == DiscoveryStatus.EMPTY:
+                if self.ack_empty_discovery:
+                    self.scout_stats["discovery_empty_acks"] += 1
+                    logger.info(
+                        f"[SCOUT] Empty sitemap handoff for {base_url} — acked; skipping Stage2 seed"
+                    )
+                else:
+                    logger.warning(
+                        f"[SCOUT] Empty sitemap handoff for {base_url} — needs ack/skip Stage2 "
+                        f"(set stage1.discovery.ack_empty=true to acknowledge)"
+                    )
+                return
+
+            logger.info(
+                f"[SCOUT] Sitemap handoff success: {len(handoff.discovered)} URLs "
+                f"checksum={handoff.checksum}"
+            )
+            self._ingest_discovery_handoff(handoff, source_url=f"{base_url}/sitemap.xml")
 
         except Exception as e:
+            self.scout_stats["discovery_failures"] += 1
             logger.warning(f"[SCOUT] Sitemap discovery failed: {e}")
+        finally:
+            self.discovery_dedup.release_mutex(site, source)
+
+    def _ingest_discovery_handoff(self, handoff, source_url: str) -> None:
+        try:
+            result = ingest_handoff_via_seed_manager(
+                self.seed_manager,
+                handoff,
+                source_url=source_url,
+                dedup=self.discovery_dedup,
+                ack_empty=self.ack_empty_discovery,
+                write_uconn_urls=True,
+                enqueue_stage2=False,
+            )
+            self.scout_stats["urls_added_to_seeds"] += result.get("seed_inserted", 0)
+            self.scout_stats["discovery_dedup_skipped"] += result.get("skipped_dedup", 0)
+            logger.info(
+                f"[SCOUT] Discovery ingest: status={result.get('status')} "
+                f"seeds={result.get('seed_inserted')} claimed={result.get('claimed')} "
+                f"dedup_skipped={result.get('skipped_dedup')} "
+                f"source={result.get('discovery_source')}"
+            )
+        except DiscoveryHandoffError as e:
+            self.scout_stats["discovery_failures"] += 1
+            logger.error(f"[SCOUT] Discovery handoff abort: {e}")
+        except DiscoveryEmptyNeedsAck as e:
+            logger.warning(f"[SCOUT] {e}")
 
     def _add_urls_to_seeds(self, urls: list[str], source_url: str) -> None:
         if not urls:
@@ -345,7 +455,10 @@ class ScoutSpider(BaseSpider):
             f"HTML→JS: {self.scout_stats['html_queued_js']} | "
             f"Pages→Stage2: {self.scout_stats['pages_queued_stage2']} | "
             f"Static discarded: {self.scout_stats['static_discarded']} | "
-            f"Seeds added: {self.scout_stats['urls_added_to_seeds']}"
+            f"Seeds added: {self.scout_stats['urls_added_to_seeds']} | "
+            f"Dedup skipped: {self.scout_stats['discovery_dedup_skipped']} | "
+            f"Empty acks: {self.scout_stats['discovery_empty_acks']} | "
+            f"Failures: {self.scout_stats['discovery_failures']}"
         )
 
     def closed(self, reason):
