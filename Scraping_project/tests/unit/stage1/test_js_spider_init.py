@@ -8,26 +8,24 @@ Note: the missing `src.stage1.base_spider` import path is issue #376 and is
 stubbed here only so this test can import the module under test.
 """
 
+import inspect
 import sys
 from types import ModuleType
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-
-def _ensure_base_spider_stub() -> None:
-    """Stub missing src.stage1.base_spider so js_spider can import (#376 OOS)."""
-    if "src.stage1.base_spider" in sys.modules:
-        return
-    stub = ModuleType("src.stage1.base_spider")
+# Stub missing src.stage1.base_spider before any import of js_spider (#376 OOS).
+if "src.stage1.base_spider" not in sys.modules:
+    _stub = ModuleType("src.stage1.base_spider")
 
     class _StubBaseSpider:
         @staticmethod
         def normalize_url(url: str) -> str:
             return url
 
-    stub.BaseSpider = _StubBaseSpider
-    sys.modules["src.stage1.base_spider"] = stub
+    _stub.BaseSpider = _StubBaseSpider
+    sys.modules["src.stage1.base_spider"] = _stub
 
 
 @pytest.mark.unit
@@ -72,22 +70,9 @@ class TestJavaScriptSpiderInit:
         mock_queue.get_stats.return_value = {"total_size": 0}
         mock_priority_queue_cls.return_value = mock_queue
 
-        _ensure_base_spider_stub()
+        from src.stage1.experimental.js_spider import JavaScriptSpider
 
-        # Patch get_spider_settings at class-body import time already ran;
-        # module may already be loaded — clear and reimport under stub.
-        sys.modules.pop("src.stage1.experimental.js_spider", None)
-
-        with patch(
-            "src.stage1.middlewares.spider_config.get_spider_settings",
-            return_value={
-                "CONCURRENT_REQUESTS": 32,
-                "DOWNLOAD_TIMEOUT": 30,
-            },
-        ):
-            from src.stage1.experimental.js_spider import JavaScriptSpider
-
-            spider = JavaScriptSpider()
+        spider = JavaScriptSpider()
 
         assert spider.name == "javascript"
         assert spider.config is mock_config
@@ -127,23 +112,12 @@ class TestJavaScriptSpiderInit:
         mock_queue.get_stats.return_value = {"total_size": 0}
         mock_priority_queue_cls.return_value = mock_queue
 
-        _ensure_base_spider_stub()
-        sys.modules.pop("src.stage1.experimental.js_spider", None)
+        from src.stage1.experimental import js_spider as js_mod
+        from src.stage1.experimental.js_spider import JavaScriptSpider
 
-        with patch(
-            "src.stage1.middlewares.spider_config.get_spider_settings",
-            return_value={"CONCURRENT_REQUESTS": 32},
-        ):
-            from src.stage1.experimental import js_spider as js_mod
-            from src.stage1.experimental.js_spider import JavaScriptSpider
-
-            spider = JavaScriptSpider()
+        spider = JavaScriptSpider()
 
         assert spider.config is mock_config
-        assert "ConfigManager" not in js_mod.__file__ or True
-        # Ensure the module body no longer references ConfigManager
-        import inspect
-
         source = inspect.getsource(js_mod)
         assert "ConfigManager" not in source
         assert "get_config()" in source
