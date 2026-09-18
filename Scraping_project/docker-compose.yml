@@ -1,10 +1,24 @@
 # Docker Compose configuration for UConn Scraping Pipeline
-# Phase 10: Production deployment
+# Phase 10 + #144: lean core images; ML/OCR extras only on Stage 3/4
+#
+# Profiles:
+#   (default)  — redis, scraper, stage1, stage2, prometheus, grafana (core only)
+#   ml / full  — also starts stage3-worker + stage4-worker (ML/OCR image)
+#
+# Examples:
+#   docker compose up -d                          # lean Stage 1–2 stack
+#   docker compose --profile ml up -d             # include Stage 3/4
+#   docker compose --profile full up -d           # alias of ml
+#
+# Local pip:
+#   pip install -r requirements.txt                                    # core
+#   pip install -r requirements.txt -r requirements-ml.txt -r requirements-ocr.txt
+#   pip install -e ".[stage3-4]"
 
 version: '3.8'
 
 services:
-  # Main scraping application
+  # Main scraping application (core deps — no torch)
   scraper:
     build:
       context: .
@@ -51,11 +65,11 @@ services:
       timeout: 3s
       retries: 3
 
-  # Stage 1: URL Discovery Worker
+  # Stage 1: URL Discovery Worker (core image)
   stage1-worker:
     build:
       context: .
-      target: production
+      target: core
     container_name: stage1-worker
     restart: unless-stopped
     command: python -m src.workers.stage1_worker
@@ -72,11 +86,11 @@ services:
     networks:
       - scraper-network
 
-  # Stage 2: Page Analysis Worker
+  # Stage 2: Page Analysis Worker (core image)
   stage2-worker:
     build:
       context: .
-      target: production
+      target: core
     container_name: stage2-worker
     restart: unless-stopped
     command: python -m src.workers.stage2_worker
@@ -100,19 +114,21 @@ services:
           cpus: '1.0'
           memory: 2G
 
-  # Stage 3: Summarization Worker
+  # Stage 3: Summarization Worker (requires ML extras)
   stage3-worker:
+    profiles: ["ml", "full"]
     build:
       context: .
-      target: production
+      target: stage3
     container_name: stage3-worker
     restart: unless-stopped
-    command: python -m src.workers.stage3_worker
+    command: python -m src.stage3.stage3_worker
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - DELTA_LAKE_PATH=/data/delta
       - WORKER_ID=stage3
+      - SCRAPY_EXTRAS=ml,ocr
     volumes:
       - ./data:/data
       - ./logs:/app/logs
@@ -121,19 +137,21 @@ services:
     networks:
       - scraper-network
 
-  # Stage 4: Large Document Worker
+  # Stage 4: Large Document Worker (requires ML + OCR extras)
   stage4-worker:
+    profiles: ["ml", "full"]
     build:
       context: .
-      target: production
+      target: stage4
     container_name: stage4-worker
     restart: unless-stopped
-    command: python -m src.workers.stage4_worker
+    command: python -m src.stage4.stage4_worker
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - DELTA_LAKE_PATH=/data/delta
       - WORKER_ID=stage4
+      - SCRAPY_EXTRAS=ml,ocr
     volumes:
       - ./data:/data
       - ./logs:/app/logs
