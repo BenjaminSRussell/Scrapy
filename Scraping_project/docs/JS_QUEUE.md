@@ -3,8 +3,9 @@
 ## Hop contract
 
 1. **Scout** discovers HTML URLs and, when `enable_js_spider` is true, yields
-   queue items targeting the `javascript` spider.
-2. **QueueItemPipeline** appends those items to Delta table `js_spider_queue`
+   queue items targeting the `javascript` spider **only** (no Stage2 dual-queue
+   for those URLs). When the flag is false, HTML goes to `stage2_queue` as usual.
+2. **QueueItemPipeline** appends JS items to Delta table `js_spider_queue`
    (`status: pending`).
 3. **PipelineOrchestrator.run_full_pipeline** runs Scout (`run_stage1`), then
    **`run_js_queue()`**, which starts the Scrapy `javascript` spider against
@@ -21,8 +22,10 @@ If the JS path is disabled, Scout must not enqueue JS queue items (guardrail in
 | Source | Key | Default |
 |--------|-----|---------|
 | Config | `stages.stage1.enable_js_spider` or `stage1.enable_js_spider` in `config.yml` | `true` |
-| Env | `ENABLE_JS_SPIDER` (`0`/`1`/`true`/`false`/`yes`/`on`) | unset → use config |
+| Env | `ENABLE_JS_SPIDER` (`0`/`1`/`true`/`false`/`yes`/`on`) | unset → use config / default true |
 | Arg | `PipelineOrchestrator.run_js_queue(enabled=...)` | overrides all |
+
+Scout and orchestrator both honor config then `ENABLE_JS_SPIDER`.
 
 ## Metric
 
@@ -34,11 +37,12 @@ If the JS path is disabled, Scout must not enqueue JS queue items (guardrail in
 
 - Pending should trend toward 0 after a green full-pipeline run with JS enabled.
 - Alert if `pipeline_js_queue_pending > 0` with no javascript spider activity.
-- Full Playwright E2E fixture (AC1) is a follow-up; unit coverage lives in
-  `tests/unit/test_js_queue_drain.py`.
+- Full Playwright E2E / JS-only fixture (AC1) is **deferred** — do not treat this
+  PR as closing #645 until that fixture lands. Unit coverage lives in
+  `tests/stage1/test_js_queue_drain.py`.
 
 ## Verify
 
 ```bash
-pytest tests/unit/test_js_queue_drain.py -v -o addopts=
+pytest tests/stage1/test_js_queue_drain.py -v -o addopts=
 ```

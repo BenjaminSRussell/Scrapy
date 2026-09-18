@@ -1,6 +1,7 @@
 """Scout spider focused on fast URL discovery."""
 
 import logging
+import os
 from collections.abc import Iterable, Iterator
 from datetime import datetime
 from urllib.parse import urlparse
@@ -57,9 +58,16 @@ class ScoutSpider(BaseSpider):
         self.parse_sitemaps = config.get("stages.stage1.parse_sitemaps", True)
         self.aggressive_collection = config.get("stages.stage1.aggressive_collection", True)
         # Guardrail (#645): when JS path is off, do not enqueue js_spider_queue items.
+        # Resolve: config → ENABLE_JS_SPIDER env → True (mirrors orchestrator).
         js_flag = config.get("stages.stage1.enable_js_spider")
         if js_flag is None:
-            js_flag = config.get("stage1.enable_js_spider", True)
+            js_flag = config.get("stage1.enable_js_spider")
+        if js_flag is None:
+            env = os.environ.get("ENABLE_JS_SPIDER")
+            if env is not None and str(env).strip() != "":
+                js_flag = str(env).strip().lower() in ("1", "true", "yes", "on")
+            else:
+                js_flag = True
         self.enable_js_spider = bool(js_flag)
 
         self.seed_manager = SeedManager(self.delta)
@@ -125,11 +133,12 @@ class ScoutSpider(BaseSpider):
 
                 if content_hint == "html":
                     if self.enable_js_spider:
+                        # JS path owns these URLs — do not dual-queue Stage2 (#645 RC).
                         yield self._queue_for_javascript_spider(url, response.url)
                         self.scout_stats["html_queued_js"] += 1
-                    yield self._queue_for_stage2(url, response.url, content_hint)
-
-                    self.scout_stats["pages_queued_stage2"] += 1
+                    else:
+                        yield self._queue_for_stage2(url, response.url, content_hint)
+                        self.scout_stats["pages_queued_stage2"] += 1
 
                     yield scrapy.Request(
                         url,
