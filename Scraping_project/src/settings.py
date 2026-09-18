@@ -68,6 +68,7 @@ NEWSPIDER_MODULE = _scrapy_config.get("newspider_module", "src.stage3")
 ITEM_PIPELINES = _scrapy_config.get(
     "item_pipelines",
     {
+        "src.otel_tracing.OtelItemPipeline": 50,
         "src.pipelines.DataValidationPipeline": 100,
         "src.pipelines.DataCleansingPipeline": 150,
         "src.pipelines.SchemaValidationPipeline": 200,
@@ -141,6 +142,7 @@ EXTENSIONS = _scrapy_config.get(
     "extensions",
     {
         "src.scrapy_prometheus.PrometheusExtension": 500,
+        "src.otel_tracing.OtelTracingExtension": 510,
     },
 )
 
@@ -151,6 +153,16 @@ PROMETHEUS_ENABLED = _scrapy_config.get("prometheus_enabled", True)
 PROMETHEUS_PORT = _scrapy_config.get("prometheus_port", 9410)
 PROMETHEUS_HOST = _scrapy_config.get("prometheus_host", "0.0.0.0")
 PROMETHEUS_PATH = _scrapy_config.get("prometheus_path", "metrics")
+
+# ============================================================================
+# OpenTelemetry tracing (no-op unless OTEL_EXPORTER_OTLP_ENDPOINT is set
+# and optional [otel] packages are installed: pip install -e ".[otel]")
+# ============================================================================
+OTEL_ENABLED = _scrapy_config.get("otel_enabled", True)
+
+OTEL_SERVICE_NAME = _scrapy_config.get(
+    "otel_service_name", os.getenv("OTEL_SERVICE_NAME", "scrapy-pipeline")
+)
 
 # ============================================================================
 # ============================================================================
