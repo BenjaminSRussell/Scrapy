@@ -65,11 +65,29 @@ class DeltaHelper:
             logger.error(f"Failed to read from {table_name}: {e}")
             return []
 
+    def read_table(self, table_name: str, **kwargs) -> List[Dict]:
+        """
+        Proxy for LakehouseManager.read_table (Stage2-style API).
+
+        Args:
+            table_name: Name of the table to read
+            **kwargs: Optional filters/columns forwarded to the manager
+
+        Returns:
+            List of dictionaries representing rows (empty list on error / missing data)
+        """
+        try:
+            return self.manager.read_table(table_name, **kwargs)
+        except Exception as e:
+            logger.error(f"Failed to read_table from {table_name}: {e}")
+            return []
+
     def write(
         self,
         table_name: str,
         data: List[Dict],
-        mode: str = "append"
+        mode: str = "append",
+        async_write: bool = True,
     ) -> bool:
         """
         Write to Delta table.
@@ -78,6 +96,7 @@ class DeltaHelper:
             table_name: Name of the table to write to
             data: List of dictionaries to write
             mode: Write mode ('append' or 'overwrite')
+            async_write: If True, queue the write; if False, write synchronously
 
         Returns:
             True if successful, False otherwise
@@ -85,9 +104,10 @@ class DeltaHelper:
         Example:
             delta = get_delta()
             success = delta.write("stage1_discovery", urls, mode="append")
+            delta.write("stage2_page_analysis", rows, mode="append", async_write=False)
         """
         try:
-            self.manager.write(table_name, data, mode=mode)
+            self.manager.write(table_name, data, mode=mode, async_write=async_write)
             return True
         except Exception as e:
             logger.error(f"Failed to write to {table_name}: {e}")
@@ -134,7 +154,7 @@ class DeltaHelper:
             True if successful, False otherwise
         """
         try:
-            self.write(table_name, [], mode="overwrite")
+            self.write(table_name, [], mode="overwrite", async_write=False)
             return True
         except Exception as e:
             logger.error(f"Failed to clear {table_name}: {e}")

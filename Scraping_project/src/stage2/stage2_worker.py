@@ -36,8 +36,12 @@ class Stage2Worker:
         logger.info(f"[STAGE2] Worker starting with {self.max_concurrent} concurrent workers")
 
         try:
-            queue_table = self.delta.read_table("stage2_queue")
-            all_queue_items = queue_table.to_pylist()
+            queue_data = self.delta.read_table("stage2_queue")
+            # LakehouseManager / DeltaHelper return list[dict]; tolerate pyarrow Table
+            if hasattr(queue_data, "to_pylist"):
+                all_queue_items = queue_data.to_pylist()
+            else:
+                all_queue_items = queue_data or []
         except Exception as e:
             logger.warning(f"[STAGE2] No URLs found in stage2_queue: {e}")
             return
