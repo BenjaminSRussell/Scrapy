@@ -1,0 +1,9 @@
+# Example orchestrator flags for #646 (copy keys under `orchestrator:` in config.yml).
+# Defaults are also applied in PipelineOrchestrator when keys are absent.
+orchestrator:
+  allow_partial: false
+  hop_reconciliation_tolerance: 0
+  stage2_barrier_enabled: true
+  batch_mode: true
+  stage3_4_parallel: false  # keep false until Stage2 barrier is proven safe
+  late_data_policy: flag      # flag | process | quarantine (full #310 out of scope)
