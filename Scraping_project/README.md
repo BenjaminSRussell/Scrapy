@@ -467,6 +467,13 @@ pytest tests/test_models.py -v
 
 **Issue**: Redis connection errors
 ```bash
+# Solution: Check Redis is running
+docker-compose ps redis
+docker-compose restart redis
+```
+
+**Issue**: Circuit breaker open
+```bash
 # Solution: Check error logs and reset if needed
 # Circuit breaker will auto-recover after timeout
 ```
