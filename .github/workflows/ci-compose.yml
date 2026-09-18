@@ -1,0 +1,34 @@
+name: Compose profiles config
+
+on:
+  pull_request:
+    paths:
+      - "Scraping_project/docker-compose.yml"
+      - "Scraping_project/.env.example"
+      - "Scraping_project/COMPOSE.md"
+      - ".github/workflows/ci-compose.yml"
+  push:
+    branches: [main]
+    paths:
+      - "Scraping_project/docker-compose.yml"
+      - "Scraping_project/.env.example"
+      - "Scraping_project/COMPOSE.md"
+      - ".github/workflows/ci-compose.yml"
+
+jobs:
+  compose-config:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Validate core+monitoring compose config (AC3 smoke)
+        working-directory: Scraping_project
+        env:
+          GRAFANA_ADMIN_PASSWORD: ci-placeholder
+          DB_PASSWORD: ci-placeholder
+        run: |
+          docker compose --profile core --profile monitoring config > /tmp/compose-config.yml
+          # Dashboard service + published :8080 must be present in rendered config
+          grep -E 'dashboard|8080' /tmp/compose-config.yml
+          # No hard-coded password defaults left in YAML interpolation
+          ! grep -E 'GRAFANA_ADMIN_PASSWORD:-|DB_PASSWORD:-postgres' docker-compose.yml

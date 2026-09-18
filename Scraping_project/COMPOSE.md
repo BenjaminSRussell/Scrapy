@@ -13,10 +13,35 @@ Unified stack for the scraping pipeline. Obsolete Compose `version:` key is omit
 
 All services share the internal `scraper-network` (no external `scraping_network` required).
 
+## Dependency: worker entrypoints (#142)
+
+The `core` profile runs `python -m src.workers.stage{1,2,3,4}_worker`. Those modules come from the #142 / #262 worker package (`src.workers`). Until that lands on the branch you run against, `docker compose --profile core … up` will fail at container start even if `compose config` succeeds.
+
 ## One command (core + monitoring)
 
 ```bash
+# Requires .env with GRAFANA_ADMIN_PASSWORD (and DB_PASSWORD if using streaming)
+cp .env.example .env   # then edit passwords
 docker compose --profile core --profile monitoring up -d
+```
+
+## Validate config (no containers)
+
+```bash
+# CI and local smoke without `up`:
+GRAFANA_ADMIN_PASSWORD=dev DB_PASSWORD=dev \
+  docker compose --profile core --profile monitoring config
+# Expect rendered output to include the dashboard service and published 8080.
+```
+
+## Verify ops dashboard on :8080 (after up)
+
+```bash
+docker compose --profile core --profile monitoring up -d
+# Wait for the dashboard container, then:
+curl -sf -o /dev/null -w "%{http_code}\n" http://localhost:8080/
+# Expect HTTP 200 (or another non-5xx from dashboard/serve.py).
+# Browser: http://localhost:8080/
 ```
 
 ## Optional profiles
@@ -31,7 +56,12 @@ docker compose --profile core --profile monitoring --profile observability up -d
 
 ## Secrets
 
-Copy `.env.example` to `.env`. Grafana uses `${GRAFANA_ADMIN_PASSWORD:-admin}` — set a real password for anything beyond local smoke tests. Postgres uses `DB_*` variables (see `.env.example`).
+Copy `.env.example` to `.env`. **Required** (no YAML defaults):
+
+- `GRAFANA_ADMIN_PASSWORD` → `GF_SECURITY_ADMIN_PASSWORD`
+- `DB_PASSWORD` → `POSTGRES_PASSWORD` (streaming profile)
+
+`.env.example` uses Compose service DNS (`DB_HOST=postgres`, `KAFKA_BOOTSTRAP_SERVERS=kafka:9092`). Host-side clients should use `localhost` / `localhost:9092` instead.
 
 ## Ports
 
