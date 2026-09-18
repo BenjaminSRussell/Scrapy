@@ -19,6 +19,7 @@ from src.stage1.base_spider import BaseSpider
 
 logger = logging.getLogger(__name__)
 
+
 class JavaScriptSpider(scrapy.Spider):
 
     name = "javascript"
@@ -49,7 +50,7 @@ class JavaScriptSpider(scrapy.Spider):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        self.config = ConfigManager.get_instance()
+        self.config = get_config()
         self.delta = get_delta()
 
         self.seed_manager = SeedManager(self.delta)
