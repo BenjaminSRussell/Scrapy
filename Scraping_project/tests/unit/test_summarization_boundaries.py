@@ -1,11 +1,6 @@
-"""
-Tests for the boundary between Stage 3 (extractive) and Stage 4 (abstractive) summarization.
-"""
-
 import sys
 from pathlib import Path
 
-# Add project root to path to allow absolute imports from src
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 import asyncio
@@ -15,7 +10,6 @@ from unittest.mock import MagicMock, patch
 from src.common.constants import SUMMARY_LIMITS
 from src.stage3.stage3_worker import Stage3Worker
 
-# A long sample text for testing summarization
 LONG_TEXT = (
     "The James Webb Space Telescope (JWST) is a space telescope developed by NASA with contributions from the "
     "European Space Agency (ESA) and the Canadian Space Agency (CSA). It is intended to succeed the Hubble Space "
@@ -31,17 +25,9 @@ LONG_TEXT = (
     "are too old and too distant for Hubble to observe."
 )
 
-
 class TestSummarizationBoundaries(unittest.TestCase):
-    """Verify extractive vs. abstractive summarization differences."""
 
     def test_summarization_outputs_and_limits(self):
-        """
-        Tests that Stage 3 produces an extractive summary and Stage 4 produces
-        an abstractive one, and that both respect their length limits.
-        """
-        # Mock the 'transformers' library and its 'pipeline' function.
-        # The 'pipeline' function returns a callable 'summarizer' object.
         mock_summarizer = MagicMock(
             return_value=[
                 {
@@ -55,21 +41,17 @@ class TestSummarizationBoundaries(unittest.TestCase):
 
         with patch.dict(sys.modules, {"transformers": mock_transformers}):
             # --- Test Stage 4 (Abstractive) ---
-            # We must re-import the module AFTER the patch is in place
-            # so that it sees our mocked 'transformers' library
             from src.stage4 import summarization
 
             s4_summary = summarization.summarize_with_heavy_model(LONG_TEXT)
 
         # --- Test Stage 3 (Extractive) ---
         async def run_stage3_test():
-            # We instantiate the worker but don't need its dependencies for this test
             worker = Stage3Worker()
             doc = {"text_content": LONG_TEXT}
             extractive_summary = await worker._summarize_document(doc)
             return extractive_summary["summary"]
 
-        # Run the async test
         s3_summary = asyncio.run(run_stage3_test())
 
         # --- Assertions for Stage 4 ---
@@ -89,7 +71,7 @@ class TestSummarizationBoundaries(unittest.TestCase):
         )
         self.assertGreaterEqual(
             s4_word_count,
-            SUMMARY_LIMITS["min_length"] / 2,  # Loosen min check for mock
+            SUMMARY_LIMITS["min_length"] / 2,
             "Stage 4 summary should be close to the min word length.",
         )
 
@@ -104,7 +86,6 @@ class TestSummarizationBoundaries(unittest.TestCase):
             SUMMARY_LIMITS["extractive_max_sentences"],
             "Stage 3 summary should not exceed the max sentence limit.",
         )
-
 
 if __name__ == "__main__":
     unittest.main()

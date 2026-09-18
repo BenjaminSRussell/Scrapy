@@ -4,24 +4,19 @@ import unittest
 
 import yaml
 
-# Directories containing dashboards and rules
 DASHBOARD_DIR = "Scraping_project/monitoring/dashboards"
 RULES_DIR = "Scraping_project/monitoring"
 
-# Labels to check
 INCORRECT_LABELS = {"consumergroup", "group", "consumer_group"}
 CORRECT_LABEL = "client_id"
 
-# Metrics to check for incorrect labels
 KAFKA_CONSUMER_METRICS = [
     "kafka_consumer_records_lag",
     "kafka_consumergroup_lag",
 ]
 
-
 class TestKafkaLabelConsistency(unittest.TestCase):
     def test_no_incorrect_labels_in_dashboards(self):
-        """Dashboards should not use 'consumergroup' or 'group' for consumer lag metrics."""
         offending_panels = []
 
         if not os.path.exists(DASHBOARD_DIR):
@@ -68,7 +63,6 @@ class TestKafkaLabelConsistency(unittest.TestCase):
         )
 
     def test_no_incorrect_labels_in_rules(self):
-        """Prometheus rules should not use 'consumergroup' or 'group' for consumer lag metrics."""
         offending_rules = []
 
         for filename in ["alerting_rules.yml", "recording_rules.yml"]:
@@ -95,7 +89,6 @@ class TestKafkaLabelConsistency(unittest.TestCase):
             0,
             f"Found incorrect labels in the following rules:\n{rules_message}",
         )
-
 
 if __name__ == "__main__":
     unittest.main()

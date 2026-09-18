@@ -1,8 +1,4 @@
 #!/usr/bin/env python
-"""
-Test 3: Minimal URLs Test (Bypass Delta Lake)
-Purpose: Test with hardcoded URLs to bypass Delta Lake loading
-"""
 
 import logging
 import sys
@@ -15,13 +11,10 @@ from scrapy.utils.project import get_project_settings
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
 
-
 class MinimalTestSpider(Spider):
-    """Minimal spider with hardcoded URLs"""
 
     name = "test_minimal"
 
-    # Hardcode 5 simple URLs (no Delta Lake)
     start_urls = [
         "https://uconn.edu",
         "https://today.uconn.edu",
@@ -35,7 +28,6 @@ class MinimalTestSpider(Spider):
         print(f"\n✅ MinimalTestSpider initialized with {len(self.start_urls)} URLs")
 
     def start_requests(self):
-        """Generate requests with logging"""
         print(f"\n🚀 start_requests() called - Generating {len(self.start_urls)} requests")
 
         for i, url in enumerate(self.start_urls, 1):
@@ -50,18 +42,14 @@ class MinimalTestSpider(Spider):
         print(f"✅ Yielded {len(self.start_urls)} requests\n")
 
     def parse(self, response):
-        """Parse callback"""
         print(f"📄 Parsed: {response.url} (Status: {response.status}, Size: {len(response.body)} bytes)")
-        # Extract some links for visibility
         links = response.css("a::attr(href)").getall()[:5]
         if links:
             print(f"   Found {len(links)} sample links: {links}")
         return {"url": response.url, "status": response.status, "link_count": len(links)}
 
     def handle_error(self, failure):
-        """Error handler"""
         print(f"❌ Error: {failure.request.url} - {failure.value}")
-
 
 def main():
     print("\n" + "=" * 80)
@@ -73,23 +61,18 @@ def main():
     print()
     print("-" * 80 + "\n")
 
-    # Get settings
     settings = get_project_settings()
 
-    # Override settings for testing
     settings.set("LOG_LEVEL", "WARNING")
-    settings.set("CLOSESPIDER_TIMEOUT", 60)  # 60 second timeout
-    settings.set("CONCURRENT_REQUESTS", 2)  # Low concurrency for visibility
-    settings.set("DUPEFILTER_CLASS", "scrapy.dupefilters.BaseDupeFilter")  # No filtering
+    settings.set("CLOSESPIDER_TIMEOUT", 60)
+    settings.set("CONCURRENT_REQUESTS", 2)
+    settings.set("DUPEFILTER_CLASS", "scrapy.dupefilters.BaseDupeFilter")
 
-    # Create process
     process = CrawlerProcess(settings)
 
-    # Crawl test spider
     print("Starting minimal test spider...")
     process.crawl(MinimalTestSpider)
 
-    # Start
     print("Starting crawl...\n")
     print("-" * 80 + "\n")
 
@@ -114,7 +97,6 @@ def main():
     print("- If 0 URLs were crawled: There's a fundamental Scrapy configuration issue")
     print("- If some URLs were crawled: Network or filtering issue")
     print("=" * 80 + "\n")
-
 
 if __name__ == "__main__":
     try:

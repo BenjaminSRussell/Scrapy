@@ -1,626 +1,184 @@
-# Scraping pipeline stack.
-# Quick start: docker-compose up -d
-# Stop:        docker-compose down
-# Logs:        docker-compose logs -f
+# Docker Compose configuration for UConn Scraping Pipeline
+# Phase 10: Production deployment
+
+version: '3.8'
 
 services:
-  # Redis for queues and rate limiting
+  # Main scraping application
+  scraper:
+    build:
+      context: .
+      target: production
+    container_name: uconn-scraper
+    restart: unless-stopped
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - DELTA_LAKE_PATH=/data/delta
+      - LOG_LEVEL=INFO
+      - WORKERS=4
+    volumes:
+      - ./data:/data
+      - ./logs:/app/logs
+    depends_on:
+      - redis
+    networks:
+      - scraper-network
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 4G
+        reservations:
+          cpus: '1.0'
+          memory: 2G
+
+  # Redis for caching and queue management
   redis:
-    image: redis:7.4-alpine
-    container_name: scraping_redis
+    image: redis:7-alpine
+    container_name: uconn-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 2gb --maxmemory-policy allkeys-lru
     ports:
       - "6379:6379"
     volumes:
-      - redis_data:/data
-    command: redis-server --appendonly yes --maxmemory 2gb --maxmemory-policy allkeys-lru
-    restart: unless-stopped
+      - redis-data:/data
+    networks:
+      - scraper-network
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 3s
-      retries: 5
-    networks:
-      - scraping_network
+      retries: 3
 
-  # PostgreSQL backing metrics store
-  postgres:
-    image: postgres:17-alpine
-    container_name: scraping_postgres
-    ports:
-      - "5432:5432"
-    environment:
-      POSTGRES_DB: scraping_pipeline
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./docker/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d scraping_pipeline"]
-      interval: 10s
-      timeout: 3s
-      retries: 5
-    networks:
-      - scraping_network
-
-  # Zookeeper for Kafka
-  zookeeper:
-    image: confluentinc/cp-zookeeper:7.9.1
-    container_name: scraping_zookeeper
-    ports:
-      - "2181:2181"
-    environment:
-      ZOOKEEPER_CLIENT_PORT: 2181
-      ZOOKEEPER_TICK_TIME: 2000
-      ZOOKEEPER_SYNC_LIMIT: 5
-    volumes:
-      - zookeeper_data:/var/lib/zookeeper/data
-      - zookeeper_logs:/var/lib/zookeeper/log
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "echo", "ruok", "|", "nc", "localhost", "2181"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    networks:
-      - scraping_network
-
-  # Kafka broker
-  kafka:
-    image: confluentinc/cp-kafka:7.9.1
-    container_name: scraping_kafka
-    ports:
-      - "9092:9092"
-      - "9094:9093"
-      - "9999:9999"  # JMX metrics port
-    environment:
-      KAFKA_BROKER_ID: 1
-      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-
-      KAFKA_LISTENERS: INTERNAL://0.0.0.0:9092,EXTERNAL://0.0.0.0:9093
-      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:9092,EXTERNAL://localhost:9094
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
-      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
-
-      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
-      KAFKA_DELETE_TOPIC_ENABLE: "true"
-      KAFKA_NUM_PARTITIONS: 3
-      KAFKA_DEFAULT_REPLICATION_FACTOR: 1
-
-      KAFKA_LOG_RETENTION_HOURS: 168
-      KAFKA_LOG_SEGMENT_BYTES: 1073741824
-      KAFKA_LOG_RETENTION_CHECK_INTERVAL_MS: 300000
-      KAFKA_COMPRESSION_TYPE: snappy
-
-      KAFKA_HEAP_OPTS: "-Xmx1G -Xms1G"
-      KAFKA_JMX_PORT: 9999
-      KAFKA_JMX_HOSTNAME: kafka
-      KAFKA_JMX_OPTS: "-Dcom.sun.management.jmxremote -Dcom.sun.management.jmxremote.authenticate=false -Dcom.sun.management.jmxremote.ssl=false -Dcom.sun.management.jmxremote.local.only=false -Dcom.sun.management.jmxremote.rmi.port=9999"
-
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
-      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
-    volumes:
-      - kafka_data:/var/lib/kafka/data
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
-      interval: 10s
-      timeout: 10s
-      retries: 5
-      start_period: 40s
-    networks:
-      - scraping_network
-    depends_on:
-      zookeeper:
-        condition: service_healthy
-
-  # Prometheus replica A
-  prometheus-a:
-    image: prom/prometheus:v3.2.1
-    container_name: scraping_prometheus_a
-    ports:
-      - "9091:9090"
-    volumes:
-      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
-      - ./monitoring/recording_rules.yml:/etc/prometheus/recording_rules.yml
-      - ./monitoring/alerting_rules.yml:/etc/prometheus/alerting_rules.yml
-      - prometheus_a_data:/prometheus
-    command:
-      - '--config.file=/etc/prometheus/prometheus.yml'
-      - '--storage.tsdb.path=/prometheus'
-      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
-      - '--web.console.templates=/usr/share/prometheus/consoles'
-      - '--storage.tsdb.retention.time=30d'
-      - '--web.enable-lifecycle'
-      - '--web.enable-admin-api'
-    environment:
-      - PROMETHEUS_REPLICA=a
-    restart: unless-stopped
-    networks:
-      - scraping_network
-    depends_on:
-      redis:
-        condition: service_healthy
-      postgres:
-        condition: service_healthy
-
-  # Prometheus replica B
-  prometheus-b:
-    image: prom/prometheus:v3.2.1
-    container_name: scraping_prometheus_b
-    ports:
-      - "9097:9090"
-    volumes:
-      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
-      - ./monitoring/recording_rules.yml:/etc/prometheus/recording_rules.yml
-      - ./monitoring/alerting_rules.yml:/etc/prometheus/alerting_rules.yml
-      - prometheus_b_data:/prometheus
-    command:
-      - '--config.file=/etc/prometheus/prometheus.yml'
-      - '--storage.tsdb.path=/prometheus'
-      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
-      - '--web.console.templates=/usr/share/prometheus/consoles'
-      - '--storage.tsdb.retention.time=30d'
-      - '--web.enable-lifecycle'
-      - '--web.enable-admin-api'
-    environment:
-      - PROMETHEUS_REPLICA=b
-    restart: unless-stopped
-    networks:
-      - scraping_network
-    depends_on:
-      redis:
-        condition: service_healthy
-      postgres:
-        condition: service_healthy
-
-  # Alertmanager replica 1
-  alertmanager-1:
-    image: prom/alertmanager:v0.28.1
-    container_name: scraping_alertmanager_1
-    ports:
-      - "9093:9093"
-    volumes:
-      - ./monitoring/alertmanager.yml:/etc/alertmanager/alertmanager.yml
-      - alertmanager_1_data:/alertmanager
-    command:
-      - '--config.file=/etc/alertmanager/alertmanager.yml'
-      - '--storage.path=/alertmanager'
-      - '--cluster.listen-address=0.0.0.0:9094'
-      - '--cluster.peer=alertmanager-2:9094'
-      - '--cluster.peer=alertmanager-3:9094'
-    restart: unless-stopped
-    networks:
-      - scraping_network
-
-  # Alertmanager replica 2
-  alertmanager-2:
-    image: prom/alertmanager:v0.28.1
-    container_name: scraping_alertmanager_2
-    ports:
-      - "9095:9093"
-    volumes:
-      - ./monitoring/alertmanager.yml:/etc/alertmanager/alertmanager.yml
-      - alertmanager_2_data:/alertmanager
-    command:
-      - '--config.file=/etc/alertmanager/alertmanager.yml'
-      - '--storage.path=/alertmanager'
-      - '--cluster.listen-address=0.0.0.0:9094'
-      - '--cluster.peer=alertmanager-1:9094'
-      - '--cluster.peer=alertmanager-3:9094'
-    restart: unless-stopped
-    networks:
-      - scraping_network
-
-  # Alertmanager replica 3
-  alertmanager-3:
-    image: prom/alertmanager:v0.28.1
-    container_name: scraping_alertmanager_3
-    ports:
-      - "9096:9093"
-    volumes:
-      - ./monitoring/alertmanager.yml:/etc/alertmanager/alertmanager.yml
-      - alertmanager_3_data:/alertmanager
-    command:
-      - '--config.file=/etc/alertmanager/alertmanager.yml'
-      - '--storage.path=/alertmanager'
-      - '--cluster.listen-address=0.0.0.0:9094'
-      - '--cluster.peer=alertmanager-1:9094'
-      - '--cluster.peer=alertmanager-2:9094'
-    restart: unless-stopped
-    networks:
-      - scraping_network
-
-  # Grafana dashboards
-  grafana:
-    image: grafana/grafana:11.6.1
-    container_name: scraping_grafana
-    ports:
-      - "3001:3000"
-    environment:
-      - GF_SECURITY_ADMIN_USER=admin
-      # SECURITY WARNING: Default password is 'admin' for development convenience
-      # For production: Set a secure GRAFANA_ADMIN_PASSWORD in your .env file
-      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
-      - GF_SECURITY_PASSWORD_POLICY=none
-      - GF_PLUGINS_PREINSTALL=redis-datasource
-      - GF_SERVER_DOMAIN=localhost
-      - GF_SERVER_HTTP_PORT=3000
-      - GF_AUTH_BASIC_ENABLED=true
-      - GF_SERVER_ROOT_URL=%(protocol)s://%(domain)s:%(http_port)s/
-      - GF_SERVER_SERVE_FROM_SUB_PATH=false
-      - GF_SERVER_APP_SUB_URL=
-      - GF_SERVER_ENFORCE_DOMAIN=false
-      - GF_USERS_ALLOW_SIGN_UP=false
-      - GF_PATHS_PROVISIONING=/etc/grafana/provisioning
-      - GF_LOG_LEVEL=info
-    volumes:
-      - grafana_data:/var/lib/grafana
-      - ./monitoring/grafana_datasource.yml:/etc/grafana/provisioning/datasources/datasource.yml
-      - ./monitoring/grafana_dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml
-      - ./monitoring/alerting:/etc/grafana/provisioning/alerting
-      - ./monitoring/dashboards:/etc/grafana/provisioning/dashboards
-    command: >
-      bash -c "
-        echo 'Waiting for dashboards to be available...'
-        while ! find /etc/grafana/provisioning/dashboards -mindepth 1 -maxdepth 1 -name '*.json' | read; do
-          sleep 1
-        done
-        echo 'Dashboards found. Starting Grafana.'
-        /run.sh
-      "
-    restart: unless-stopped
-    networks:
-      - scraping_network
-    depends_on:
-      - prometheus-a
-      - prometheus-b
-      - alertmanager-1
-      - redis
-
-  # Scrapy workers
-  scrapy-app:
+  # Stage 1: URL Discovery Worker
+  stage1-worker:
     build:
       context: .
-      dockerfile: Dockerfile
-      target: crawler
-    container_name: scraping_scrapy_app
-    command: python run_multiple_scouts.py
-    ports:
-      - "9410-9420:9410-9420"  # Prometheus metrics endpoints for multiple instances
-    env_file:
-      - .env
+      target: production
+    container_name: stage1-worker
+    restart: unless-stopped
+    command: python -m src.workers.stage1_worker
     environment:
-      - PYTHONPATH=/app
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-      - POSTGRES_HOST=postgres
-      - POSTGRES_PORT=5432
-      - POSTGRES_DB=scraping_pipeline
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
-      - DB_HOST=postgres
-      - DB_PORT=5432
-      - DB_NAME=scraping_pipeline
-      - DB_USER=postgres
-      - DB_PASSWORD=postgres
-      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
-      # Kafka topic is now configurable via config.yml (kafka.topics.scraped_items)
-      # This env var is kept for backward compatibility
-      - KAFKA_TOPIC=${KAFKA_TOPIC:-scraped-items}
-      - SCRAPY_SETTINGS_MODULE=src.settings
-      - ENV=development
-      - SCOUT_INSTANCES=${SCOUT_INSTANCES:-8}
+      - DELTA_LAKE_PATH=/data/delta
+      - WORKER_ID=stage1
     volumes:
-      - ./src:/app/src:ro
-      - ./config:/app/config:ro
-      - ./data/raw:/app/data/raw:ro
-      - ./data:/app/data
-      - ./run_multiple_scouts.py:/app/run_multiple_scouts.py:ro
-      - ./reseed.py:/app/reseed.py:ro
-    restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          cpus: '8.0'
-          memory: 16G
-        reservations:
-          cpus: '4.0'
-          memory: 8G
-    networks:
-      - scraping_network
+      - ./data:/data
+      - ./logs:/app/logs
     depends_on:
-      redis:
-        condition: service_healthy
-      postgres:
-        condition: service_healthy
-      kafka:
-        condition: service_healthy
-      metrics-exporter:
-        condition: service_started
+      - redis
+    networks:
+      - scraper-network
 
-  # Stage 2 worker
+  # Stage 2: Page Analysis Worker
   stage2-worker:
     build:
       context: .
-      dockerfile: Dockerfile
-      target: crawler
-    container_name: scraping_stage2_worker
-    command: python -u src/stage2/stage2_worker.py
-    env_file:
-      - .env
+      target: production
+    container_name: stage2-worker
+    restart: unless-stopped
+    command: python -m src.workers.stage2_worker
     environment:
-      - PYTHONPATH=/app
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-      - POSTGRES_HOST=postgres
-      - POSTGRES_PORT=5432
-      - POSTGRES_DB=scraping_pipeline
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
-      - DB_HOST=postgres
-      - DB_PORT=5432
-      - DB_NAME=scraping_pipeline
-      - DB_USER=postgres
-      - DB_PASSWORD=postgres
-      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      - DELTA_LAKE_PATH=/data/delta
+      - WORKER_ID=stage2
+      - CONCURRENCY=10
     volumes:
-      - ./src:/app/src:ro
-      - ./data:/app/data
-    restart: unless-stopped
-    networks:
-      - scraping_network
+      - ./data:/data
+      - ./logs:/app/logs
     depends_on:
-      redis:
-        condition: service_healthy
-      postgres:
-        condition: service_healthy
-      kafka:
-        condition: service_healthy
+      - redis
+    networks:
+      - scraper-network
+    deploy:
+      replicas: 2
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 2G
 
-  # Stage 3 worker
+  # Stage 3: Summarization Worker
   stage3-worker:
     build:
       context: .
-      dockerfile: Dockerfile
-      target: crawler
-    container_name: scraping_stage3_worker
-    command: python -u src/stage3/stage3_worker.py
-    env_file:
-      - .env
+      target: production
+    container_name: stage3-worker
+    restart: unless-stopped
+    command: python -m src.workers.stage3_worker
     environment:
-      - PYTHONPATH=/app
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-      - POSTGRES_HOST=postgres
-      - POSTGRES_PORT=5432
-      - POSTGRES_DB=scraping_pipeline
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
-      - DB_HOST=postgres
-      - DB_PORT=5432
-      - DB_NAME=scraping_pipeline
-      - DB_USER=postgres
-      - DB_PASSWORD=postgres
-      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
-
+      - DELTA_LAKE_PATH=/data/delta
+      - WORKER_ID=stage3
     volumes:
-      - ./src:/app/src:ro
-      - ./data:/app/data
-    restart: unless-stopped
-    networks:
-      - scraping_network
+      - ./data:/data
+      - ./logs:/app/logs
     depends_on:
-      redis:
-        condition: service_healthy
-      postgres:
-        condition: service_healthy
-      kafka:
-        condition: service_healthy
+      - redis
+    networks:
+      - scraper-network
 
-  # Stage 4 worker
+  # Stage 4: Large Document Worker
   stage4-worker:
     build:
       context: .
-      dockerfile: Dockerfile
-      target: crawler
-    container_name: scraping_stage4_worker
-    command: python -u src/stage4/large_doc_processor.py
-    env_file:
-      - .env
+      target: production
+    container_name: stage4-worker
+    restart: unless-stopped
+    command: python -m src.workers.stage4_worker
     environment:
-      - PYTHONPATH=/app
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-      - POSTGRES_HOST=postgres
-      - POSTGRES_PORT=5432
-      - POSTGRES_DB=scraping_pipeline
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
-      - DB_HOST=postgres
-      - DB_PORT=5432
-      - DB_NAME=scraping_pipeline
-      - DB_USER=postgres
-      - DB_PASSWORD=postgres
-      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      - DELTA_LAKE_PATH=/data/delta
+      - WORKER_ID=stage4
     volumes:
-      - ./src:/app/src:ro
-      - ./data:/app/data
-    restart: unless-stopped
-    networks:
-      - scraping_network
+      - ./data:/data
+      - ./logs:/app/logs
     depends_on:
-      redis:
-        condition: service_healthy
-      postgres:
-        condition: service_healthy
-      kafka:
-        condition: service_healthy
-
-  # Kafka to Delta Lake ingestor
-  kafka-delta-ingestor:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      target: kafka-delta-ingest
-    container_name: scraping_kafka_delta_ingest
-    command: >
-      ingest scraped-items /delta/delta_lake/scraped_data
-      --kafka kafka:9092
-      --app-id scrapy-ingestor
-      --auto-offset-reset earliest
-      --allowed-latency 60
-      --max-messages-per-batch 1000
-      --transform 'date: substr(scraped_at_utc, `0`, `10`)'
-    env_file:
-      - .env
-    environment:
-      - STATSD_HOST=${STATSD_HOST:-statsd-exporter}
-      - STATSD_PORT=${STATSD_PORT:-9125}
-      - RUST_LOG=${RUST_LOG:-info}
-      - RUST_BACKTRACE=${RUST_BACKTRACE:-1}
-    volumes:
-      - delta_data:/delta
-    restart: unless-stopped
-    healthcheck:
-      # Improved health check: verify process is running AND check recent write activity
-      # This catches process crashes and hangs
-      test: ["CMD-SHELL", "pgrep -f kafka-delta-ingest > /dev/null && (test ! -d /delta/delta_lake/scraped_data || find /delta/delta_lake/scraped_data -type f -mmin -5 | grep -q . || exit 0)"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
+      - redis
     networks:
-      - scraping_network
-    depends_on:
-      kafka:
-        condition: service_healthy
-      statsd-exporter:
-        condition: service_started
+      - scraper-network
 
-  metrics-exporter:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      target: metrics
-    container_name: scraping_metrics_exporter
+  # Monitoring dashboard (optional)
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    restart: unless-stopped
     ports:
       - "9090:9090"
-    environment:
-      - PYTHONPATH=/app
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
     volumes:
-      - ./data:/app/data
-      - ./src:/app/src:ro
-      - ./config:/app/config:ro
-      - ./monitoring/metrics_exporter.py:/app/metrics_exporter.py:ro
-    command: python metrics_exporter.py --port 9090 --interval 5
-    restart: unless-stopped
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
     networks:
-      - scraping_network
-    depends_on:
-      redis:
-        condition: service_healthy
-
-  # Redis exporter
-  redis-exporter:
-    image: oliver006/redis_exporter:v1.67.0-alpine
-    container_name: scraping_redis_exporter
-    ports:
-      - "9121:9121"
-    environment:
-      - REDIS_ADDR=redis:6379
-    restart: unless-stopped
-    networks:
-      - scraping_network
-    depends_on:
-      redis:
-        condition: service_healthy
-
-  # PostgreSQL exporter
-  postgres-exporter:
-    image: quay.io/prometheuscommunity/postgres-exporter:v0.18.1
-    container_name: scraping_postgres_exporter
-    ports:
-      - "9187:9187"
-    environment:
-      - DATA_SOURCE_NAME=postgresql://postgres:postgres@postgres:5432/scraping_pipeline?sslmode=disable
-    restart: unless-stopped
-    networks:
-      - scraping_network
-    depends_on:
-      postgres:
-        condition: service_healthy
-
-  # Kafka JMX exporter
-  kafka-jmx-exporter:
-    image: bitnami/jmx-exporter:latest
-    container_name: scraping_kafka_jmx_exporter
-    ports:
-      - "5556:5556"
-    environment:
-      - SERVICE_PORT=5556
-      - JMX_HOST=kafka
-      - JMX_PORT=9999
+      - scraper-network
     command:
-      - "5556"
-      - "/etc/jmx-exporter/config.yml"
-    volumes:
-      - ./monitoring/kafka_jmx_config.yml:/etc/jmx-exporter/config.yml:ro
-    restart: unless-stopped
-    networks:
-      - scraping_network
-    depends_on:
-      kafka:
-        condition: service_healthy
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
 
-  # StatsD exporter used by kafka-delta-ingest
-  statsd-exporter:
-    image: prom/statsd-exporter:v0.28.0
-    container_name: scraping_statsd_exporter
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    restart: unless-stopped
     ports:
-      - "9102:9102"
-      - "9125:9125/udp"
-    command:
-      - "--statsd.mapping-config=/etc/statsd/statsd_mapping.yml"
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
     volumes:
-      - ./monitoring/statsd_mapping.yml:/etc/statsd/statsd_mapping.yml:ro
-    restart: unless-stopped
+      - grafana-data:/var/lib/grafana
     networks:
-      - scraping_network
+      - scraper-network
+    depends_on:
+      - prometheus
 
-# Volumes
 volumes:
-  redis_data:
-    driver: local
-  postgres_data:
-    driver: local
-  zookeeper_data:
-    driver: local
-  zookeeper_logs:
-    driver: local
-  kafka_data:
-    driver: local
-  delta_data:
-    driver: local
-  prometheus_a_data:
-    driver: local
-  prometheus_b_data:
-    driver: local
-  alertmanager_1_data:
-    driver: local
-  alertmanager_2_data:
-    driver: local
-  alertmanager_3_data:
-    driver: local
-  grafana_data:
-    driver: local
+  redis-data:
+  prometheus-data:
+  grafana-data:
 
-# Networks
 networks:
-  scraping_network:
-    name: scraping_network
+  scraper-network:
     driver: bridge

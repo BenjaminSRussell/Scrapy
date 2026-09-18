@@ -1,5 +1,3 @@
-# Scraping_project/tests/observability/test_alert_intervals.py
-
 import os
 import re
 import subprocess
@@ -12,11 +10,9 @@ import yaml
 
 from monitoring.metrics_exporter import test_alert_interval_path_resolution_success
 
-
 def parse_duration_to_seconds(duration_str):
-    """Converts a duration string like '15s', '1m' to seconds."""
     if not isinstance(duration_str, str):
-        return duration_str  # Assume it's already a number
+        return duration_str
 
     match = re.match(r"(\d+)([smhdw])", duration_str)
     if not match:
@@ -31,30 +27,19 @@ def parse_duration_to_seconds(duration_str):
         return value * 60
     elif unit == "h":
         return value * 3600
-    # Add other units if needed
     return value
 
-
 class TestAlertIntervals(unittest.TestCase):
-    """
-    Validates that Grafana alert evaluation intervals are aligned with
-    the Prometheus scrape interval to prevent flapping alerts.
-    """
 
     @classmethod
     def setUpClass(cls):
-        """
-        Starts the monitoring stack and waits for it to become healthy.
-        """
         if os.environ.get("OBS_OFFLINE") == "1":
             cls.min_scrape_interval = cls.get_min_scrape_interval()
             return
 
         cls.min_scrape_interval = cls.get_min_scrape_interval()
 
-        # Start docker-compose services
         print("Starting monitoring stack...")
-        # Use a detached state to run in the background
         base_dir = os.path.dirname(__file__)
         compose_file = os.path.abspath(os.path.join(base_dir, "../..", "docker-compose.yml"))
         project_root = os.path.abspath(os.path.join(base_dir, "../.."))
@@ -65,14 +50,10 @@ class TestAlertIntervals(unittest.TestCase):
             cwd=project_root,
         )
 
-        # Wait for Grafana to be healthy
         cls.wait_for_grafana()
 
     @classmethod
     def tearDownClass(cls):
-        """
-        Stops the monitoring stack.
-        """
         if os.environ.get("OBS_OFFLINE") == "1":
             return
 
@@ -89,10 +70,6 @@ class TestAlertIntervals(unittest.TestCase):
 
     @staticmethod
     def get_min_scrape_interval():
-        """
-        Parses prometheus.yml to find the minimum scrape interval.
-        """
-        # Construct path relative to this file's location
         base_dir = os.path.dirname(__file__)
         config_path = os.path.abspath(os.path.join(base_dir, "../..", "monitoring", "prometheus.yml"))
         test_alert_interval_path_resolution_success.inc()
@@ -112,9 +89,8 @@ class TestAlertIntervals(unittest.TestCase):
 
     @staticmethod
     def wait_for_grafana():
-        """Waits for the Grafana API to become responsive."""
         grafana_url = "http://admin:admin@localhost:3000/api/health"
-        max_attempts = 60  # Increased to 60 seconds
+        max_attempts = 60
         for attempt in range(max_attempts):
             try:
                 response = requests.get(grafana_url, timeout=5)
@@ -131,7 +107,6 @@ class TestAlertIntervals(unittest.TestCase):
                 print(f"Attempt {attempt + 1}/{max_attempts}: Unexpected error: {e}")
             time.sleep(1)
 
-        # Check if Grafana container is running
         try:
             result = subprocess.run(
                 "docker compose ps grafana",
@@ -142,7 +117,6 @@ class TestAlertIntervals(unittest.TestCase):
             )
             print(f"Grafana container status:\n{result.stdout}")
 
-            # Check Grafana logs for errors
             logs_result = subprocess.run(
                 "docker compose logs --tail=50 grafana",
                 shell=True,
@@ -157,19 +131,15 @@ class TestAlertIntervals(unittest.TestCase):
         raise RuntimeError("Grafana did not become healthy in time.")
 
     def _validate_rules(self, rules_response):
-        """
-        Shared logic to validate the structure and intervals of Grafana alert rules.
-        """
         self.assertGreater(len(rules_response), 0, "No Grafana alert rule groups found.")
 
         for group_name, rules in rules_response.items():
             self.assertIn("rules", rules)
             self.assertGreater(len(rules["rules"]), 0, f"No rules found in group '{group_name}'")
             for rule in rules["rules"]:
-                # Handle different structures for online (API) vs offline (YAML)
-                if "grafana_alert" in rule:  # Online mode, from API
+                if "grafana_alert" in rule:
                     evaluate_every_str = rule["grafana_alert"].get("interval", "1m")
-                else:  # Offline mode, from rules.yml
+                else:
                     evaluate_every_str = rule.get("every", "1m")
 
                 evaluate_every = parse_duration_to_seconds(evaluate_every_str)
@@ -190,9 +160,6 @@ class TestAlertIntervals(unittest.TestCase):
                 )
 
     def test_alert_intervals_are_valid_online(self):
-        """
-        Fetches Grafana alert rules and asserts their intervals are valid.
-        """
         if os.environ.get("OBS_OFFLINE") == "1":
             self.skipTest("Skipping online test in offline mode")
 
@@ -209,13 +176,9 @@ class TestAlertIntervals(unittest.TestCase):
 
     @requests_mock.Mocker()
     def test_alert_intervals_are_valid_offline(self, m):
-        """
-        Statically validates alert provisioning and rule schema.
-        """
         if os.environ.get("OBS_OFFLINE") != "1":
             self.skipTest("Skipping offline test in online mode")
 
-        # 1. Validate docker-compose volume mount
         base_dir = os.path.dirname(__file__)
         compose_path = os.path.abspath(os.path.join(base_dir, "../..", "docker-compose.yml"))
         with open(compose_path) as f:
@@ -230,7 +193,6 @@ class TestAlertIntervals(unittest.TestCase):
             f"Missing expected volume mount in docker-compose.yml: {expected_mount}",
         )
 
-        # 2. Validate and mock rules.yml
         rules_path = os.path.abspath(os.path.join(base_dir, "../..", "monitoring", "alerting", "rules.yml"))
         self.assertTrue(
             os.path.exists(rules_path),
@@ -240,7 +202,6 @@ class TestAlertIntervals(unittest.TestCase):
         with open(rules_path) as f:
             rules_content = yaml.safe_load(f)
 
-        # Create a mock response that mimics the real API structure
         mock_api_response = {}
         for group in rules_content.get("groups", []):
             group_name = group.get("name")
@@ -252,28 +213,20 @@ class TestAlertIntervals(unittest.TestCase):
             json=mock_api_response,
         )
 
-        # 3. Reuse validation logic with mocked data
         grafana_rules_url = "http://admin:admin@localhost:3000/api/ruler/grafana/api/v1/rules"
         response = requests.get(grafana_rules_url)
         self.assertEqual(response.status_code, 200)
 
         self._validate_rules(response.json())
 
-
     def test_path_resolution_from_different_directory(self):
-        """
-        Ensures prometheus.yml can be found regardless of the execution directory.
-        """
         original_cwd = os.getcwd()
-        # Simulate running tests from a subdirectory
         os.chdir(os.path.dirname(__file__))
         try:
-            # This should now pass with the new implementation
             interval = self.get_min_scrape_interval()
             self.assertIsInstance(interval, (int, float))
         finally:
             os.chdir(original_cwd)
-
 
 if __name__ == "__main__":
     unittest.main()

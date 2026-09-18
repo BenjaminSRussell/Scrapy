@@ -1,8 +1,4 @@
 #!/usr/bin/env python
-"""
-Test 1: Single Scout Spider Instance
-Purpose: Verify that a single scout spider can start and crawl without multiprocessing
-"""
 
 import logging
 import sys
@@ -12,7 +8,6 @@ from scrapy.utils.project import get_project_settings
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
-
 
 def main():
     print("=" * 80)
@@ -24,22 +19,17 @@ def main():
     print()
     print("-" * 80)
 
-    # Get settings
     settings = get_project_settings()
 
-    # Override settings for testing
     settings.set("LOG_LEVEL", "INFO")
-    settings.set("CLOSESPIDER_PAGECOUNT", 10)  # Stop after 10 pages
-    settings.set("CLOSESPIDER_TIMEOUT", 60)  # 60 second timeout
+    settings.set("CLOSESPIDER_PAGECOUNT", 10)
+    settings.set("CLOSESPIDER_TIMEOUT", 60)
 
-    # Create process
     process = CrawlerProcess(settings)
 
-    # Crawl scout spider
     print("Starting scout spider...")
     process.crawl("scout")
 
-    # Start (blocks until done)
     print("Calling process.start()...")
     print("-" * 80)
     print()
@@ -60,7 +50,6 @@ def main():
     print("=" * 80)
     print("TEST 1 COMPLETED")
     print("=" * 80)
-
 
 if __name__ == "__main__":
     try:

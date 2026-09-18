@@ -1,10 +1,3 @@
-"""Stage 2 Asynchronous Worker
-High-concurrency worker for page analysis & quality control.
-
-REFACTORED: Reads from stage2_queue table (populated by ScoutSpider).
-Downloads and analyzes URLs queued for Stage 2 processing.
-"""
-
 import asyncio
 import logging
 import time
@@ -14,47 +7,34 @@ from typing import Any
 import aiohttp
 import pyarrow as pa
 from bs4 import BeautifulSoup
+from deltalake import DeltaTable
 
-from src.common.delta_lake import DeltaTable, get_delta_manager
-from src.common.postgres_manager import get_postgres_manager
+from src.utils.delta import get_delta
+# # PostgreSQL support to be implemented in Phase 6
+get_postgres_manager = lambda: None
+get_postgres_manager = lambda: None  # TODO: Implement in Phase 6
 
 logger = logging.getLogger(__name__)
 
-
 class Stage2Worker:
-    """Async worker for Stage 2 page analysis with quality control."""
 
     def __init__(self, max_concurrent: int = 50, batch_size: int = 100):
-        """Initialize Stage 2 worker.
-
-        Args:
-            max_concurrent: Max concurrent HTTP requests
-            batch_size: Number of URLs to process per batch
-
-        """
         self.max_concurrent = max_concurrent
         self.batch_size = batch_size
         self.semaphore = asyncio.Semaphore(max_concurrent)
-        self.delta = get_delta_manager()
+        self.delta = get_delta()
         self.postgres = get_postgres_manager()
 
-        # Quality thresholds
         self.MIN_WORD_COUNT = 50
         self.MIN_TEXT_TO_HTML_RATIO = 0.1
-        self.MASSIVE_DOC_THRESHOLD = 50000  # 50k characters
+        self.MASSIVE_DOC_THRESHOLD = 50000
 
-        # Performance tracking
         self.perf_start_time = None
         self.perf_urls_processed = 0
 
     async def run(self):
-        """Main worker loop - process all pending URLs from stage2_queue.
-
-        REFACTORED: Reads from stage2_queue table instead of stage1_discovery.
-        """
         logger.info(f"[STAGE2] Worker starting with {self.max_concurrent} concurrent workers")
 
-        # Read all URLs from stage2_queue (populated by ScoutSpider)
         try:
             queue_table = self.delta.read_table("stage2_queue")
             all_queue_items = queue_table.to_pylist()
@@ -66,7 +46,6 @@ class Stage2Worker:
             logger.warning("[STAGE2] No URLs found in stage2_queue")
             return
 
-        # Filter to pending items only (status='pending')
         pending = [item for item in all_queue_items if item.get("status") == "pending"]
 
         logger.info(f"[STAGE2] Found {len(pending)} pending URLs to analyze (out of {len(all_queue_items)} total)")
@@ -75,25 +54,19 @@ class Stage2Worker:
             logger.info("[STAGE2] No pending URLs to process")
             return
 
-        # Process in batches
         for i in range(0, len(pending), self.batch_size):
             batch = pending[i : i + self.batch_size]
             logger.info(f"Processing batch {i // self.batch_size + 1}: {len(batch)} URLs")
 
-            # Track performance
             batch_start = time.time()
 
-            # Process batch concurrently
             tasks = [self._analyze_url(record) for record in batch]
             results = await asyncio.gather(*tasks, return_exceptions=True)
 
-            # Calculate batch time
             batch_time = time.time() - batch_start
 
-            # Filter successful results
             valid_results = [r for r in results if isinstance(r, dict) and not isinstance(r, Exception)]
 
-            # Save to Delta Lake
             if valid_results:
                 self.delta.write(
                     "stage2_page_analysis",
@@ -103,11 +76,9 @@ class Stage2Worker:
                 )
                 logger.info(f"[STAGE2] Saved {len(valid_results)} analysis results")
 
-            # Update queue status for processed items
             if valid_results:
                 await self._update_queue_status([r["url"] for r in valid_results])
 
-            # Log performance to PostgreSQL
             if self.postgres and len(valid_results) > 0:
                 try:
                     self.postgres.log_performance_metric(
@@ -122,20 +93,10 @@ class Stage2Worker:
         logger.info("[STAGE2] Worker completed all batches")
 
     async def _update_queue_status(self, completed_urls: list[str], table_name: str = "stage2_queue"):
-        """ARCHITECTURAL FIX: Update queue status using Delta Lake MERGE.
-
-        This is far more efficient than overwriting the entire table on every batch.
-        It atomically updates the status of completed URLs from 'pending' to 'completed'.
-
-        Args:
-            completed_urls: List of URLs that were successfully processed.
-            table_name: The name of the queue table to update.
-        """
         if not completed_urls:
             return
 
         try:
-            # 1. Create a PyArrow Table for the updates
             update_data = {
                 "url": pa.array(completed_urls, type=pa.string()),
                 "status": pa.array(["completed"] * len(completed_urls), type=pa.string()),
@@ -146,10 +107,8 @@ class Stage2Worker:
             }
             updates_table = pa.Table.from_pydict(update_data)
 
-            # 2. Get the target DeltaTable
             target_table = DeltaTable(self.delta.get_table_path(table_name))
 
-            # 3. Perform the MERGE operation
             (
                 target_table.merge(
                     source=updates_table,
@@ -171,7 +130,6 @@ class Stage2Worker:
         except Exception as e:
             logger.error(f"[STAGE2] Failed to update queue status via MERGE: {e}")
             logger.info("[STAGE2] Falling back to overwrite method for this batch")
-            # Fallback to the old method in case of MERGE errors
             try:
                 all_items = self.delta.read(table_name)
                 self._update_queue_status_overwrite(all_items, completed_urls, table_name)
@@ -185,13 +143,11 @@ class Stage2Worker:
         try:
             completed_set = set(completed_urls)
 
-            # Update status for completed items
             for item in all_queue_items:
                 if item.get("url") in completed_set:
                     item["status"] = "completed"
                     item["completed_at"] = datetime.now().isoformat()
 
-            # Write back to Delta Lake
             self.delta.write(table_name, all_queue_items, mode="overwrite", async_write=False)
             logger.info(f"[STAGE2] Marked {len(completed_urls)} items as completed in {table_name} (overwrite)")
 
@@ -199,7 +155,6 @@ class Stage2Worker:
             logger.error(f"[STAGE2] Failed to update queue status (overwrite): {e}")
 
     async def _analyze_url(self, record: dict[str, Any]) -> dict[str, Any]:
-        """Analyze single URL with quality control and triage."""
         url_value = record.get("url")
         url_hash_value = record.get("url_hash")
 
@@ -222,15 +177,12 @@ class Stage2Worker:
 
                         content_type = response.headers.get("Content-Type", "").lower()
 
-                        # Route based on content type
                         if "text/html" in content_type:
                             html = await response.text()
                             return await self._analyze_html(url, url_hash, html, is_heavy)
                         elif "application/pdf" in content_type:
-                            # PDF handling - route to stage4 for large docs
                             return self._route_pdf_to_stage4(url, url_hash)
                         else:
-                            # Other content types - minimal processing
                             return self._minimal_record(url, url_hash, content_type)
 
             except TimeoutError as e:
@@ -246,43 +198,34 @@ class Stage2Worker:
                 return self._error_record(url, url_hash, 0, f"error: {str(e)}")
 
     async def _analyze_html(self, url: str, url_hash: str, html: str, is_heavy: bool) -> dict[str, Any]:
-        """Analyze HTML content with quality control."""
         soup = BeautifulSoup(html, "html.parser")
 
-        # Extract title
         title_tag = soup.find("title")
         title = title_tag.get_text(strip=True) if title_tag else "Untitled"
 
-        # Remove noise
         for tag in soup(["script", "style", "nav", "header", "footer", "aside", "iframe"]):
             tag.decompose()
 
-        # Extract text
         text = soup.get_text(separator=" ", strip=True)
-        text = " ".join(text.split())  # Clean whitespace
+        text = " ".join(text.split())
 
-        # Quality metrics
         word_count = len(text.split())
         content_length = len(text)
         html_length = len(html)
         text_to_html_ratio = content_length / html_length if html_length > 0 else 0
 
-        # Quality checks
         is_low_quality = word_count < self.MIN_WORD_COUNT or text_to_html_ratio < self.MIN_TEXT_TO_HTML_RATIO
 
-        # Document triage - massive docs go to Stage 4
         is_massive_doc = content_length > self.MASSIVE_DOC_THRESHOLD
 
         if is_massive_doc and not is_low_quality:
             await self._route_to_stage4(url, url_hash, text, word_count, content_length)
             logger.info(f"Routed large doc ({content_length} chars) to Stage 4: {url[:80]}")
 
-        # Extract keywords using YAKE (only for non-massive, quality docs)
         keywords = []
         if not is_low_quality and not is_massive_doc:
             keywords = await self._extract_keywords_async(text, is_heavy)
 
-        # Quality score
         quality_score = self._calculate_quality_score(word_count, text_to_html_ratio)
 
         return {
@@ -297,18 +240,16 @@ class Stage2Worker:
             "is_massive_doc": is_massive_doc if is_massive_doc is not None else False,
             "quality_score": quality_score if quality_score is not None else 0.0,
             "text_content": text[:10000] if (not is_low_quality and text) else "",
-            "keywords": (keywords if keywords else [""]),  # Empty string to avoid null type in PyArrow
+            "keywords": (keywords if keywords else [""]),
             "has_error": False,
             "processed_at": datetime.now().isoformat(),
         }
 
     async def _extract_keywords_async(self, text: str, is_heavy: bool) -> list[str]:
-        """Extract keywords using YAKE in async context."""
         if not text or len(text) < 50:
             return []
 
         try:
-            # Run YAKE in thread pool to avoid blocking
             loop = asyncio.get_running_loop()
             keywords = await loop.run_in_executor(None, self._extract_keywords_sync, text, is_heavy)
             return keywords
@@ -317,7 +258,6 @@ class Stage2Worker:
             return []
 
     def _extract_keywords_sync(self, text: str, is_heavy: bool) -> list[str]:
-        """Synchronous YAKE keyword extraction."""
         try:
             import yake
 
@@ -341,18 +281,14 @@ class Stage2Worker:
             return []
 
     def _calculate_quality_score(self, word_count: int, text_ratio: float) -> float:
-        """Calculate quality score 0-1."""
         word_score = min(word_count / 1000, 0.6)
         ratio_score = min(text_ratio * 0.4, 0.4)
         return round(word_score + ratio_score, 3)
 
     async def _route_to_stage4(self, url: str, url_hash: str, text: str, word_count: int, content_length: int):
-        """Route large document to Stage 4 for heavyweight processing."""
-        # Enhanced: Remove 'text' key to decouple architecture - Stage 4 will fetch on-demand
         record = {
             "url": url,
             "url_hash": url_hash,
-            # 'text': text,  # Removed - Stage 4 will fetch content on-demand
             "word_count": word_count,
             "content_length": content_length,
             "status": "pending",
@@ -365,12 +301,9 @@ class Stage2Worker:
             logger.error(f"Failed to route to Stage 4: {e}")
 
     def _route_pdf_to_stage4(self, url: str, url_hash: str) -> dict[str, Any]:
-        """Route PDF to Stage 4 and create minimal record."""
-        # Enhanced: Remove 'text' key - Stage 4 will fetch content on-demand
         record = {
             "url": url,
             "url_hash": url_hash,
-            # 'text': '',  # Removed - Stage 4 will fetch content on-demand
             "word_count": 0,
             "content_length": 0,
             "status": "pending",
@@ -392,7 +325,7 @@ class Stage2Worker:
             "is_massive_doc": False,
             "quality_score": 0.0,
             "text_content": "",
-            "keywords": [""],  # Empty string to avoid null type
+            "keywords": [""],
             "is_pdf": True,
             "routed_to_stage4": True,
             "has_error": False,
@@ -400,7 +333,6 @@ class Stage2Worker:
         }
 
     def _minimal_record(self, url: str, url_hash: str, content_type: str) -> dict[str, Any]:
-        """Create minimal record for non-HTML/PDF content."""
         return {
             "url": url or "",
             "url_hash": url_hash or "",
@@ -414,13 +346,12 @@ class Stage2Worker:
             "is_massive_doc": False,
             "quality_score": 0.0,
             "text_content": "",
-            "keywords": [""],  # Empty string to avoid null type
+            "keywords": [""],
             "has_error": False,
             "processed_at": datetime.now().isoformat(),
         }
 
     def _error_record(self, url: str, url_hash: str, error_code: int, error_msg: str) -> dict[str, Any]:
-        """Create error record."""
         return {
             "url": url or "",
             "url_hash": url_hash or "",
@@ -436,7 +367,7 @@ class Stage2Worker:
             "is_massive_doc": False,
             "quality_score": 0.0,
             "text_content": "",
-            "keywords": [""],  # Empty string to avoid null type
+            "keywords": [""],
             "processed_at": datetime.now().isoformat(),
         }
 
@@ -460,16 +391,13 @@ class Stage2Worker:
             except Exception as e:
                 logger.debug(f"Failed to log error to PostgreSQL: {e}")
 
-
 async def run_stage2_worker():
-    """Run Stage 2 worker in continuous mode."""
     logger.info("Stage 2 Worker starting in continuous mode...")
 
     while True:
         try:
             worker = Stage2Worker(max_concurrent=50, batch_size=100)
             await worker.run()
-            # Wait 30 seconds before checking for new work
             logger.info("Waiting 30 seconds before next check...")
             await asyncio.sleep(30)
         except KeyboardInterrupt:
@@ -477,9 +405,7 @@ async def run_stage2_worker():
             break
         except Exception as e:
             logger.error(f"Error in Stage 2 Worker loop: {e}")
-            # Wait a bit before retrying on error
             await asyncio.sleep(10)
-
 
 if __name__ == "__main__":
     asyncio.run(run_stage2_worker())
