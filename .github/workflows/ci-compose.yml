@@ -1,0 +1,66 @@
+name: Compose profiles config
+
+on:
+  pull_request:
+    paths:
+      - "Scraping_project/docker-compose.yml"
+      - "Scraping_project/.env.example"
+      - "Scraping_project/COMPOSE.md"
+      - ".github/workflows/ci-compose.yml"
+  push:
+    branches: [main]
+    paths:
+      - "Scraping_project/docker-compose.yml"
+      - "Scraping_project/.env.example"
+      - "Scraping_project/COMPOSE.md"
+      - ".github/workflows/ci-compose.yml"
+
+jobs:
+  compose-config:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Validate core+monitoring compose config (AC3 smoke)
+        working-directory: Scraping_project
+        env:
+          GRAFANA_ADMIN_PASSWORD: ci-placeholder
+          DB_PASSWORD: ci-placeholder
+        run: |
+          docker compose --profile core --profile monitoring config > /tmp/compose-config.yml
+          # Dashboard service + published :8080 must be present in rendered config
+          grep -E 'dashboard|8080' /tmp/compose-config.yml
+          # No hard-coded password defaults left in YAML interpolation
+          ! grep -E 'GRAFANA_ADMIN_PASSWORD:-|DB_PASSWORD:-postgres' docker-compose.yml
+
+  dashboard-live:
+    # AC3: prove monitoring dashboard is reachable on :8080 (no core workers required)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Up dashboard only + curl :8080
+        working-directory: Scraping_project
+        env:
+          GRAFANA_ADMIN_PASSWORD: ci-placeholder
+          DB_PASSWORD: ci-placeholder
+        run: |
+          set -euo pipefail
+          docker compose --profile monitoring up -d --build --no-deps dashboard
+          ok=0
+          for i in $(seq 1 45); do
+            if curl -sf -o /tmp/dash.html -w "%{http_code}" http://127.0.0.1:8080/ | grep -qE '200|301|302'; then
+              echo "dashboard :8080 reachable (attempt $i)"
+              head -c 200 /tmp/dash.html || true
+              ok=1
+              break
+            fi
+            sleep 2
+          done
+          if [ "$ok" != "1" ]; then
+            echo "dashboard :8080 did not become ready"
+            docker compose --profile monitoring ps
+            docker compose --profile monitoring logs dashboard || true
+            exit 1
+          fi
+          docker compose --profile monitoring down --remove-orphans || true

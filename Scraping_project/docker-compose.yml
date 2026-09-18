@@ -1,11 +1,13 @@
-# Docker Compose configuration for UConn Scraping Pipeline
-# Phase 10: Production deployment
-
-version: '3.8'
+# Docker Compose for UConn Scraping Pipeline
+# Profiles: core | monitoring | streaming | observability
+# Example (core + monitoring):
+#   docker compose --profile core --profile monitoring up -d
+# See COMPOSE.md for more profile combinations.
 
 services:
-  # Main scraping application
+  # ---- core ----
   scraper:
+    profiles: [core]
     build:
       context: .
       target: production
@@ -17,6 +19,12 @@ services:
       - DELTA_LAKE_PATH=/data/delta
       - LOG_LEVEL=INFO
       - WORKERS=4
+      - DB_HOST=${DB_HOST:-postgres}
+      - DB_PORT=${DB_PORT:-5432}
+      - DB_NAME=${DB_NAME:-scraping_pipeline}
+      - DB_USER=${DB_USER:-postgres}
+      - DB_PASSWORD=${DB_PASSWORD:-}
+      - KAFKA_BOOTSTRAP_SERVERS=${KAFKA_BOOTSTRAP_SERVERS:-kafka:9092}
     volumes:
       - ./data:/data
       - ./logs:/app/logs
@@ -33,8 +41,8 @@ services:
           cpus: '1.0'
           memory: 2G
 
-  # Redis for caching and queue management
   redis:
+    profiles: [core]
     image: redis:7-alpine
     container_name: uconn-redis
     restart: unless-stopped
@@ -51,8 +59,8 @@ services:
       timeout: 3s
       retries: 3
 
-  # Stage 1: URL Discovery Worker
   stage1-worker:
+    profiles: [core]
     build:
       context: .
       target: production
@@ -72,12 +80,12 @@ services:
     networks:
       - scraper-network
 
-  # Stage 2: Page Analysis Worker
+  # No container_name when deploy.replicas > 1 (Compose Swarm conflict)
   stage2-worker:
+    profiles: [core]
     build:
       context: .
       target: production
-    # container_name omitted: incompatible with deploy.replicas (#142)
     restart: unless-stopped
     command: python -m src.workers.stage2_worker
     environment:
@@ -100,8 +108,8 @@ services:
           cpus: '1.0'
           memory: 2G
 
-  # Stage 3: Summarization Worker
   stage3-worker:
+    profiles: [core]
     build:
       context: .
       target: production
@@ -121,8 +129,8 @@ services:
     networks:
       - scraper-network
 
-  # Stage 4: Large Document Worker
   stage4-worker:
+    profiles: [core]
     build:
       context: .
       target: production
@@ -142,9 +150,10 @@ services:
     networks:
       - scraper-network
 
-  # Monitoring dashboard (optional)
+  # ---- monitoring / ops ----
   prometheus:
-    image: prom/prometheus:latest
+    profiles: [monitoring]
+    image: prom/prometheus:v2.54.1
     container_name: prometheus
     restart: unless-stopped
     ports:
@@ -159,13 +168,14 @@ services:
       - '--storage.tsdb.path=/prometheus'
 
   grafana:
-    image: grafana/grafana:latest
+    profiles: [monitoring]
+    image: grafana/grafana:11.2.0
     container_name: grafana
     restart: unless-stopped
     ports:
       - "3000:3000"
     environment:
-      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}
       - GF_USERS_ALLOW_SIGN_UP=false
     volumes:
       - grafana-data:/var/lib/grafana
@@ -174,10 +184,137 @@ services:
     depends_on:
       - prometheus
 
+  # Ops dashboard (dashboard/serve.py) — monitoring/ops profile
+  dashboard:
+    profiles: [monitoring]
+    build:
+      context: .
+      target: production
+    container_name: pipeline-dashboard
+    restart: unless-stopped
+    command: python dashboard/serve.py
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./dashboard:/app/dashboard:ro
+    networks:
+      - scraper-network
+
+  # ---- streaming (optional Postgres + Kafka matching config.yml) ----
+  postgres:
+    profiles: [streaming]
+    image: postgres:16-alpine
+    container_name: uconn-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:-scraping_pipeline}
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - scraper-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  kafka:
+    profiles: [streaming]
+    image: bitnami/kafka:3.7.1
+    container_name: uconn-kafka
+    restart: unless-stopped
+    ports:
+      - "9092:9092"
+    environment:
+      # KRaft single-node (no ZooKeeper)
+      KAFKA_CFG_NODE_ID: 0
+      KAFKA_CFG_PROCESS_ROLES: controller,broker
+      KAFKA_CFG_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: 0@kafka:9093
+      KAFKA_CFG_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CFG_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      ALLOW_PLAINTEXT_LISTENER: "yes"
+    volumes:
+      - kafka-data:/bitnami/kafka
+    networks:
+      - scraper-network
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics.sh --bootstrap-server localhost:9092 --list || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 8
+
+  # ---- observability (from root docker-compose.production.yml) ----
+  loki:
+    profiles: [observability]
+    image: grafana/loki:2.9.3
+    container_name: scraping_loki
+    ports:
+      - "3100:3100"
+    volumes:
+      - ../monitoring/loki-config.yml:/etc/loki/local-config.yaml
+      - loki_data:/loki
+    command: -config.file=/etc/loki/local-config.yaml
+    restart: unless-stopped
+    networks:
+      - scraper-network
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3100/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  jaeger:
+    profiles: [observability]
+    image: jaegertracing/all-in-one:1.52
+    container_name: scraping_jaeger
+    ports:
+      - "5775:5775/udp"
+      - "6831:6831/udp"
+      - "6832:6832/udp"
+      - "5778:5778"
+      - "16686:16686"
+      - "14268:14268"
+      - "14250:14250"
+      - "9411:9411"
+    environment:
+      - COLLECTOR_ZIPKIN_HOST_PORT=:9411
+      - COLLECTOR_OTLP_ENABLED=true
+    restart: unless-stopped
+    networks:
+      - scraper-network
+
+  otel-collector:
+    profiles: [observability]
+    image: otel/opentelemetry-collector:0.91.0
+    container_name: scraping_otel_collector
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+      - "8888:8888"
+      - "8889:8889"
+    volumes:
+      - ../monitoring/otel-collector-config.yml:/etc/otel/config.yaml
+    command: ["--config=/etc/otel/config.yaml"]
+    restart: unless-stopped
+    networks:
+      - scraper-network
+    depends_on:
+      - jaeger
+      - loki
+
 volumes:
   redis-data:
   prometheus-data:
   grafana-data:
+  postgres-data:
+  kafka-data:
+  loki_data:
 
 networks:
   scraper-network:
