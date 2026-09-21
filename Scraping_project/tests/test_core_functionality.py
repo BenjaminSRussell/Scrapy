@@ -17,52 +17,50 @@ class TestDeltaLake:
             yield Path(tmpdir)
 
     def test_delta_manager_initialization(self, temp_delta_path):
-        from src.common.delta_lake import DeltaLakeManager
+        from src.lakehouse.lakehouse_manager import DeltaLakeManager
 
-        manager = DeltaLakeManager()
+        manager = DeltaLakeManager(base_path=str(temp_delta_path), start_workers=False)
         assert manager.base_path is not None
         assert "stage1_discovery" in manager.tables
         assert "stage2_page_analysis" in manager.tables
 
     def test_write_and_read_data(self, temp_delta_path):
-        from src.common.delta_lake import DeltaLakeManager
+        from src.lakehouse.lakehouse_manager import DeltaLakeManager
 
-        with patch("src.common.constants.DELTA_LAKE", temp_delta_path):
-            manager = DeltaLakeManager()
+        manager = DeltaLakeManager(base_path=str(temp_delta_path), start_workers=False)
 
-            import uuid
+        import uuid
 
-            unique_id = str(uuid.uuid4())
-            test_data = [
-                {
-                    "url": f"https://testwrite_{unique_id}.com",
-                    "url_hash": f"hash_{unique_id}_1",
-                    "depth": 0,
-                },
-                {
-                    "url": f"https://testwrite_{unique_id}_2.com",
-                    "url_hash": f"hash_{unique_id}_2",
-                    "depth": 1,
-                },
-            ]
+        unique_id = str(uuid.uuid4())
+        test_data = [
+            {
+                "url": f"https://testwrite_{unique_id}.com",
+                "url_hash": f"hash_{unique_id}_1",
+                "depth": 0,
+            },
+            {
+                "url": f"https://testwrite_{unique_id}_2.com",
+                "url_hash": f"hash_{unique_id}_2",
+                "depth": 1,
+            },
+        ]
 
-            manager.write("stage1_discovery", test_data, mode="append", async_write=False)
+        manager.write("stage1_discovery", test_data, mode="append", async_write=False)
 
-            results = manager.read("stage1_discovery")
+        results = manager.read("stage1_discovery")
 
-            assert len(results) >= 2
-            our_results = [r for r in results if unique_id in r["url"]]
-            assert len(our_results) == 2
+        assert len(results) >= 2
+        our_results = [r for r in results if unique_id in r["url"]]
+        assert len(our_results) == 2
 
     def test_list_tables(self, temp_delta_path):
-        from src.common.delta_lake import DeltaLakeManager
+        from src.lakehouse.lakehouse_manager import DeltaLakeManager
 
-        with patch("src.common.constants.DELTA_LAKE", temp_delta_path):
-            manager = DeltaLakeManager()
+        manager = DeltaLakeManager(base_path=str(temp_delta_path), start_workers=False)
 
-            tables = manager.list_tables()
-            assert len(tables) > 0
-            assert any(t["name"] == "stage1_discovery" for t in tables)
+        tables = manager.list_tables()
+        assert len(tables) > 0
+        assert any(t["name"] == "stage1_discovery" for t in tables)
 
 # ============================================================================
 # ============================================================================
@@ -127,7 +125,7 @@ class TestStage2Worker:
         from src.stage2.stage2_worker import Stage2Worker
 
         with patch(
-            "src.stage2.stage2_worker.get_delta_manager",
+            "src.stage2.stage2_worker.get_delta",
             return_value=mock_delta_manager,
         ):
             worker = Stage2Worker(max_concurrent=50, batch_size=100)
@@ -142,7 +140,7 @@ class TestStage2Worker:
         from src.stage2.stage2_worker import Stage2Worker
 
         with patch(
-            "src.stage2.stage2_worker.get_delta_manager",
+            "src.stage2.stage2_worker.get_delta",
             return_value=mock_delta_manager,
         ):
             worker = Stage2Worker()
@@ -172,7 +170,7 @@ class TestStage2Worker:
         from src.stage2.stage2_worker import Stage2Worker
 
         with patch(
-            "src.stage2.stage2_worker.get_delta_manager",
+            "src.stage2.stage2_worker.get_delta",
             return_value=mock_delta_manager,
         ):
             worker = Stage2Worker()
@@ -199,7 +197,7 @@ class TestStage3Worker:
         from src.stage3.stage3_worker import Stage3Worker
 
         with patch(
-            "src.stage3.stage3_worker.get_delta_manager",
+            "src.stage3.stage3_worker.get_delta",
             return_value=mock_delta_manager,
         ):
             worker = Stage3Worker(max_concurrent=20, batch_size=50)
@@ -214,7 +212,7 @@ class TestStage3Worker:
         from src.stage3.stage3_worker import Stage3Worker
 
         with patch(
-            "src.stage3.stage3_worker.get_delta_manager",
+            "src.stage3.stage3_worker.get_delta",
             return_value=mock_delta_manager,
         ):
             worker = Stage3Worker()
@@ -255,21 +253,20 @@ class TestDrainLake:
     def test_drain_lake_function(self, temp_delta_path):
         import shutil
 
-        from src.common.delta_lake import DeltaLakeManager
+        from src.lakehouse.lakehouse_manager import DeltaLakeManager
 
-        with patch("src.common.constants.DELTA_LAKE", temp_delta_path):
-            manager = DeltaLakeManager()
+        manager = DeltaLakeManager(base_path=str(temp_delta_path), start_workers=False)
 
-            test_data = [{"url": "https://testdrain.com", "url_hash": "drain123"}]
-            manager.write("stage1_discovery", test_data, mode="append", async_write=False)
+        test_data = [{"url": "https://testdrain.com", "url_hash": "drain123"}]
+        manager.write("stage1_discovery", test_data, mode="append", async_write=False)
 
-            before = manager.read("stage1_discovery")
-            assert len(before) >= 1
+        before = manager.read("stage1_discovery")
+        assert len(before) >= 1
 
-            table_path = manager.tables["stage1_discovery"]
-            if table_path.exists():
-                shutil.rmtree(table_path)
-                table_path.mkdir(parents=True, exist_ok=True)
+        table_path = manager.tables["stage1_discovery"]
+        if table_path.exists():
+            shutil.rmtree(table_path)
+            table_path.mkdir(parents=True, exist_ok=True)
 
             try:
                 after = manager.read("stage1_discovery")
@@ -355,17 +352,16 @@ class TestMLErrorAnalyzer:
 class TestIntegration:
 
     def test_delta_to_stage2_flow(self):
-        from src.common.delta_lake import DeltaLakeManager
+        from src.lakehouse.lakehouse_manager import DeltaLakeManager
         from src.stage2.stage2_worker import Stage2Worker
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            with patch("src.common.constants.DELTA_LAKE", Path(tmpdir)):
-                delta = DeltaLakeManager()
-                worker = Stage2Worker(max_concurrent=1, batch_size=10)
+            delta = DeltaLakeManager(base_path=tmpdir, start_workers=False)
+            worker = Stage2Worker(max_concurrent=1, batch_size=10)
 
-                assert delta is not None
-                assert worker is not None
-                assert worker.delta is not None
+            assert delta is not None
+            assert worker is not None
+            assert worker.delta is not None
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
