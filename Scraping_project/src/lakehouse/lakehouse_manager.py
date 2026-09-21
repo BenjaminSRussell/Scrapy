@@ -335,11 +335,22 @@ class LakehouseManager:
             logger.info(f"Optimizing {table_name} with compaction...")
             dt.optimize.compact()
 
-            logger.info(f"Z-ordering {table_name} by url_hash and discovered_at...")
-            if table_name == "stage1_discovery":
-                dt.optimize.z_order(["url_hash", "discovered_at"])
-            elif table_name == "stage2_page_analysis":
-                dt.optimize.z_order(["url_hash", "processed_at"])
+            z_order_columns_by_table = {
+                "stage1_discovery": ["url_hash", "discovered_at"],
+                "stage2_page_analysis": ["url_hash", "processed_at"],
+            }
+            z_order_columns = z_order_columns_by_table.get(table_name)
+            if z_order_columns:
+                schema_fields = {field.name for field in dt.schema().to_arrow()}
+                missing = [col for col in z_order_columns if col not in schema_fields]
+                if missing:
+                    logger.debug(
+                        f"Skipping Z-order for {table_name}: columns {missing} not in "
+                        f"current schema (writer didn't include them for this batch)"
+                    )
+                else:
+                    logger.info(f"Z-ordering {table_name} by {', '.join(z_order_columns)}...")
+                    dt.optimize.z_order(z_order_columns)
 
             logger.info(f" Optimized {table_name}")
 
