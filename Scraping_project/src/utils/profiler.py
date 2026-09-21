@@ -24,7 +24,7 @@ class PerformanceTimer:
     def __init__(self, name: str, log_threshold_ms: Optional[float] = None):
         self.name = name
         self.log_threshold_ms = log_threshold_ms
-        self.start_time: Optional<float> = None
+        self.start_time: Optional[float] = None
         self.duration_ms: Optional[float] = None
 
     def __enter__(self):

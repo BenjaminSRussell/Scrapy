@@ -475,7 +475,7 @@ class GrafanaSummaryPipeline:
                     truncated_content += "..."
 
                 self.sampled_content.append(truncated_content)
-                logger.debug(f"Sampled content from item
+                logger.debug(f"Sampled content from item #{self.items_processed}")
 
                 if len(self.sampled_content) >= self.BATCH_SIZE:
                     self._generate_and_export_summary(spider)

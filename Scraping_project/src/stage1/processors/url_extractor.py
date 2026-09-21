@@ -11,8 +11,8 @@ logger = logging.getLogger(__name__)
 class URLExtractor:
 
     URL_REGEX = re.compile(
-        r"(?<![{\[<$%
-        r"|(?<![{\[<$%
+        r"(?<![{\[<$%#])(?:(?:https?|ftp):)?//[\w\-\.]+(?::\d+)?(?:/[\w\-\./?%&=]*)?"
+        r"|(?<![{\[<$%#])(?:www\.)?[\w\-]+\.(?:edu|com|org|net|gov|io|co)(?:/[\w\-\./?%&=]*)?",
         re.IGNORECASE,
     )
 
@@ -215,7 +215,7 @@ class URLExtractor:
             "[%",
             "%]",
             "__",
-            "
+            "##",
         ]
         return any(indicator in url for indicator in template_indicators)
 
@@ -244,7 +244,7 @@ class URLExtractor:
 
         if (
             not url
-            or url == "
+            or url == "#"
             or url.startswith("javascript:")
             or url.startswith("mailto:")
             or url.startswith("tel:")

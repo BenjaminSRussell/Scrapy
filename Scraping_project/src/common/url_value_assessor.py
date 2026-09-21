@@ -79,7 +79,7 @@ class URLValueAssessor:
         r"/admin/",
         r"/editor/",
         r"/viewer/",
-        r"/
+        r"/#/",
         r"/spa/",
     ]
 
@@ -252,7 +252,7 @@ class URLValueAssessor:
         if self.js_regex.search(url.lower()):
             return 15
 
-        if "/
+        if "/#/" in url or "/app/" in url.lower():
             return 25
 
         return 0
@@ -422,7 +422,7 @@ def example_usage():
     test_urls = [
         "https://www.uconn.edu/research/faculty/",
         "https://www.uconn.edu/login",
-        "https://portal.uconn.edu/app/dashboard/
+        "https://portal.uconn.edu/app/dashboard/#/home",
         "https://www.uconn.edu/documents/report.pdf",
         "https://www.uconn.edu/static/assets/logo.png",
         "https://www.uconn.edu/news/article/2024/breakthrough",

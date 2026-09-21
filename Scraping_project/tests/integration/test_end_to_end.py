@@ -33,6 +33,8 @@ class TestEndToEndCrawl:
 
     @pytest.mark.skip(reason="Requires full Scrapy reactor setup")
     def test_deep_dive_spider_respects_depth_limit(self, delta_sandbox, redis_clean):
+        pass
+
 
 @pytest.mark.integration
 class TestDeltaLakeUnderLoad:

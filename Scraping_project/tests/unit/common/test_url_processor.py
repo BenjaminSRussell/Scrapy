@@ -1,6 +1,6 @@
 from scrapy.http import HtmlResponse
 
-from src.common.url_processor import URLProcessor
+from src.stage1.processors.url_processor import URLProcessor
 
 class TestURLProcessorInitialization:
 
@@ -44,10 +44,10 @@ class TestURLNormalization:
         assert normalized.startswith("https://example.com")
 
     def test_normalize_removes_fragment(self):
-        url = "https://example.com/page
+        url = "https://example.com/page#section"
         normalized = self.processor.normalize_url(url)
 
-        assert "
+        assert "#section" not in normalized
 
     def test_normalize_removes_default_ports(self):
         url = "http://example.com:80/page"
