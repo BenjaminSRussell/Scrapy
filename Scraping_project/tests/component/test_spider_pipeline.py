@@ -62,21 +62,22 @@ class TestDeepDiveSpiderComponents:
 @pytest.mark.component
 class TestJSSpiderComponents:
 
-    @pytest.mark.skip(reason="Requires scrapy-playwright installation")
     def test_js_spider_initialization(self):
-        from src.stage1.js_spider import JSSpider
+        # scrapy_playwright is only referenced by dotted-path string in
+        # DOWNLOAD_HANDLERS (resolved lazily by Scrapy on first real
+        # request), so constructing the spider never needs it installed.
+        from src.stage1.experimental.js_spider import JavaScriptSpider
 
-        spider = JSSpider()
+        spider = JavaScriptSpider()
 
-        assert spider.name == "js_spider"
+        assert spider.name == "javascript"
         assert "DOWNLOAD_HANDLERS" in spider.custom_settings
         assert "scrapy_playwright" in str(spider.custom_settings["DOWNLOAD_HANDLERS"])
 
-    @pytest.mark.skip(reason="Requires scrapy-playwright installation")
     def test_js_spider_resource_blocking_configured(self):
-        from src.stage1.js_spider import JSSpider
+        from src.stage1.experimental.js_spider import JavaScriptSpider
 
-        spider = JSSpider()
+        spider = JavaScriptSpider()
 
         assert hasattr(spider, "BLOCKED_RESOURCE_TYPES")
         assert "image" in spider.BLOCKED_RESOURCE_TYPES
