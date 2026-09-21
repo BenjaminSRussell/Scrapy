@@ -1,53 +1,51 @@
+"""Tests for monitoring/metrics_exporter.py's MetricsExporter.
+
+Rewritten against the current UDP-StatsD, fire-and-forget design
+(StatsDClient.gauge()/counter() sending UDP packets). The previous
+version of this file tested a module-level prometheus_client Gauge
+design (monkeypatching module attributes like exporter_module.
+redis_queue_length) that hasn't existed since metrics_exporter.py was
+rewritten - see the fix in this same branch that repointed it from the
+deleted get_redis_manager()/config.redis_config to the current
+src.utils.redis / src.core.config APIs.
+"""
+
 from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any
 
 import pytest
 
+from unittest.mock import MagicMock
+
 from monitoring import metrics_exporter as exporter_module
 
-class MetricHandle:
-
-    def __init__(self, store: dict[tuple[tuple[str, str], ...], float], key: tuple[tuple[str, str], ...]):
-        self._store = store
-        self._key = key
-
-    def set(self, value: float) -> None:
-        self._store[self._key] = value
-
-    def inc(self, amount: float = 1.0) -> None:
-        self._store[self._key] = self._store.get(self._key, 0.0) + amount
-
-class MetricStub:
+class StatsDRecorder:
+    """Records gauge()/counter() calls in place of real UDP sends."""
 
     def __init__(self) -> None:
-        self.values: dict[tuple[tuple[str, str], ...], float] = {}
-        self.val: float = 0.0
+        self.gauges: dict[tuple[str, tuple[tuple[str, str], ...]], float] = {}
+        self.counters: dict[tuple[str, tuple[tuple[str, str], ...]], float] = {}
 
-    def labels(self, **labels: str) -> MetricHandle:
-        key = tuple(sorted(labels.items()))
-        return MetricHandle(self.values, key)
+    def gauge(self, name: str, value: float, tags: dict[str, str] | None = None) -> None:
+        key = (name, tuple(sorted((tags or {}).items())))
+        self.gauges[key] = value
 
-    def set(self, value: float) -> None:
-        self.val = value
+    def counter(self, name: str, value: float = 1, tags: dict[str, str] | None = None) -> None:
+        key = (name, tuple(sorted((tags or {}).items())))
+        self.counters[key] = self.counters.get(key, 0) + value
+
+    def timing(self, name: str, value_ms: float, tags: dict[str, str] | None = None) -> None:
+        pass
 
 @dataclass
-class FakeRedisManager:
-    queue_stats: dict[str, int] = field(default_factory=dict)
+class FakeJSPriorityQueue:
     queue_size: int = 0
-    open_circuits: list[str] = field(default_factory=list)
 
-    def get_all_queue_stats(self) -> dict[str, int]:
-        return self.queue_stats
-
-    def get_queue_size(self) -> int:
+    def size(self) -> int:
         return self.queue_size
-
-    def get_open_circuits(self) -> list[str]:
-        return self.open_circuits
 
 @dataclass
 class FakeDeltaManager:
@@ -57,99 +55,56 @@ class FakeDeltaManager:
         return self.tables.get(table_name, [])
 
 class FakeConfig:
-    redis_config = {
-        "host": "localhost",
-        "port": 6379,
-        "db": 0,
-        "password": None,
-    }
+    def get_section(self, section: str) -> dict[str, Any]:
+        if section == "redis":
+            return {"host": "localhost", "port": 6379, "db": 0, "password": None}
+        return {}
 
     def get(self, key: str, default: Any = None) -> Any:
-        if key == "delta_lake.base_path":
-            return "./data/delta_lake"
-        if key == "delta_lake.queue_maxsize":
-            return 50
         return default
 
 @pytest.fixture
-def metric_stubs(monkeypatch):
-    stubs = {
-        "redis_queue_length": MetricStub(),
-        "delta_lake_records": MetricStub(),
-        "delta_lake_total_records": MetricStub(),
-        "delta_lake_size_bytes": MetricStub(),
-        "urls_processed_total": MetricStub(),
-        "urls_processed_per_second": MetricStub(),
-        "errors_total": MetricStub(),
-        "total_urls_discovered": MetricStub(),
-    }
+def exporter(tmp_path, monkeypatch):
+    fake_redis_helper = MagicMock()
+    fake_redis_helper.client = MagicMock()
+    fake_redis_helper.get_open_circuits.return_value = []
 
-    for name, stub in stubs.items():
-        monkeypatch.setattr(exporter_module, name, stub)
+    monkeypatch.setattr(exporter_module.Config, "get_instance", staticmethod(lambda: FakeConfig()))
+    monkeypatch.setattr(exporter_module.DeltaLakeManager, "get_instance", staticmethod(lambda: FakeDeltaManager()))
+    monkeypatch.setattr(exporter_module, "get_redis", lambda **kwargs: fake_redis_helper)
+    monkeypatch.setattr(exporter_module, "JSPriorityQueue", lambda client: FakeJSPriorityQueue())
 
-    return stubs
-
-@pytest.fixture
-def fake_backends(monkeypatch):
-    redis_backend = FakeRedisManager()
-    delta_backend = FakeDeltaManager()
-
-    monkeypatch.setattr("src.common.config.Config.get_instance", lambda: FakeConfig())
-    monkeypatch.setattr(exporter_module, "get_redis_manager", lambda **kwargs: redis_backend)
-    monkeypatch.setattr("src.common.delta_lake.DeltaLakeManager.get_instance", lambda: delta_backend)
-
-    return redis_backend, delta_backend
-
-@pytest.fixture
-def exporter(tmp_path, metric_stubs, fake_backends):
     exporter_instance = exporter_module.MetricsExporter(
-        port=9999,
+        statsd_port=19999,
         update_interval=5,
         exports_dir=tmp_path / "exports",
     )
+    exporter_instance.statsd = StatsDRecorder()
     return exporter_instance
 
-def test_update_queue_metrics_records_lengths(exporter, metric_stubs, fake_backends):
-    redis_backend, _ = fake_backends
-    redis_backend.queue_stats = {"stage2_queue": 7}
-    redis_backend.queue_size = 3
+def test_update_queue_metrics_records_priority_queue_size(exporter):
+    exporter.js_priority_queue.queue_size = 7
 
     exporter._update_queue_metrics()
 
-    gauge_values = metric_stubs["redis_queue_length"].values
-    assert gauge_values[(("queue", "stage2_queue"),)] == 7
-    assert gauge_values[(("queue", "priority_queue"),)] == 3
+    assert exporter.statsd.gauges[("redis.queue.length", (("queue", "priority_queue"),))] == 7
 
-def test_update_delta_lake_metrics_tracks_counts_and_sizes(
-    tmp_path, exporter, metric_stubs, fake_backends, monkeypatch
-):
-    _, delta_backend = fake_backends
-    delta_backend.tables = {
+def test_update_delta_lake_metrics_tracks_counts(exporter):
+    exporter.delta.tables = {
         "stage1_discovery": [{"url": "http://example.com"}] * 5,
         "stage2_page_analysis": [{"url": "http://example.com"}],
     }
 
-    monkeypatch.chdir(tmp_path)
-    discovery_path = Path("data/delta_lake/stage1_discovery")
-    discovery_path.mkdir(parents=True)
-    (discovery_path / "part-0000.parquet").write_bytes(b"0123456789")
-
     exporter._update_delta_lake_metrics()
 
-    records_gauge = metric_stubs["delta_lake_records"].values
-    size_gauge = metric_stubs["delta_lake_size_bytes"].values
-    total_gauge = metric_stubs["delta_lake_total_records"].values
-    discovered_total = metric_stubs["total_urls_discovered"].values
+    records = exporter.statsd.gauges
+    assert records[("delta_lake.records", (("table", "stage1_discovery"),))] == 5
+    assert records[("delta_lake.records", (("table", "stage2_page_analysis"),))] == 1
+    assert records[("urls.discovered.total", ())] == 5
+    assert records[("delta_lake.total_records", ())] == 6
 
-    assert records_gauge[(("table", "stage1_discovery"),)] == 5
-    assert records_gauge[(("table", "stage2_page_analysis"),)] == 1
-    assert size_gauge[(("table", "stage1_discovery"),)] == 10
-    assert metric_stubs["delta_lake_total_records"].val == 6
-    assert metric_stubs["total_urls_discovered"].val == 5
-
-def test_update_throughput_metrics_increments_counters(monkeypatch, exporter, metric_stubs, fake_backends):
-    _, delta_backend = fake_backends
-    delta_backend.tables = {
+def test_update_throughput_metrics_increments_counters(exporter, monkeypatch):
+    exporter.delta.tables = {
         "stage1_discovery": [{}] * 20,
         "stage2_page_analysis": [{}] * 4,
         "stage3_summaries": [{}] * 2,
@@ -167,17 +122,16 @@ def test_update_throughput_metrics_increments_counters(monkeypatch, exporter, me
 
     exporter._update_throughput_metrics()
 
-    counter_values = metric_stubs["urls_processed_total"].values
-    rate_values = metric_stubs["urls_processed_per_second"].values
+    counters = exporter.statsd.counters
+    gauges = exporter.statsd.gauges
 
-    assert counter_values[(("stage", "stage1"),)] == 10
-    assert rate_values[(("stage", "stage1"),)] == pytest.approx(1.0)
-    assert counter_values[(("stage", "stage2"),)] == 3
-    assert rate_values[(("stage", "stage2"),)] == pytest.approx(0.3)
+    assert counters[("urls.processed.total", (("stage", "stage1"),))] == 10
+    assert gauges[("urls.processed.per_second", (("stage", "stage1"),))] == pytest.approx(1.0)
+    assert counters[("urls.processed.total", (("stage", "stage2"),))] == 3
+    assert gauges[("urls.processed.per_second", (("stage", "stage2"),))] == pytest.approx(0.3)
 
-def test_update_error_metrics_writes_summary(tmp_path, exporter, metric_stubs, fake_backends):
-    _, delta_backend = fake_backends
-    delta_backend.tables = {
+def test_update_error_metrics_writes_summary(exporter):
+    exporter.delta.tables = {
         "stage1_errors": [
             {"error_type": "Timeout"},
             {"error_type": "Timeout"},
@@ -187,9 +141,9 @@ def test_update_error_metrics_writes_summary(tmp_path, exporter, metric_stubs, f
 
     exporter._update_error_metrics()
 
-    counter_values = metric_stubs["errors_total"].values
-    assert counter_values[(("error_type", "Timeout"), ("stage", "stage1"))] == 2
-    assert counter_values[(("error_type", "DNS"), ("stage", "stage1"))] == 1
+    counters = exporter.statsd.counters
+    assert counters[("errors.total", (("error_type", "Timeout"), ("stage", "stage1")))] == 2
+    assert counters[("errors.total", (("error_type", "DNS"), ("stage", "stage1")))] == 1
 
     summary_path = exporter.error_summary_path
     assert summary_path.exists()
@@ -198,3 +152,10 @@ def test_update_error_metrics_writes_summary(tmp_path, exporter, metric_stubs, f
     assert summary["total_errors"] == 3
     error_types = {entry["type"]: entry["count"] for entry in summary["error_types"]}
     assert error_types == {"Timeout": 2, "DNS": 1}
+
+def test_update_circuit_breaker_metrics_counts_open_circuits(exporter, monkeypatch):
+    monkeypatch.setattr(exporter.redis, "get_open_circuits", lambda: ["a.example.com", "b.example.com"])
+
+    exporter._update_circuit_breaker_metrics()
+
+    assert exporter.statsd.gauges[("circuit_breaker.open_count", ())] == 2
