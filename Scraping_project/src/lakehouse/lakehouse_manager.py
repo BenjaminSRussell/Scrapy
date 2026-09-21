@@ -192,8 +192,11 @@ class LakehouseManager:
                 record["_stage"] = table_name
 
         try:
+            import time
+
             import pyarrow as pa
             from deltalake import WriterProperties, write_deltalake
+            from deltalake._internal import CommitFailedError
 
             if table_name not in self.schema_cache:
                 table = pa.Table.from_pylist(data)
@@ -237,14 +240,31 @@ class LakehouseManager:
 
             writer_props = WriterProperties(compression="ZSTD")
 
-            write_deltalake(
-                str(table_path),
-                table,
-                mode=mode,
-                schema_mode="merge" if mode == "append" else "overwrite",
-                writer_properties=writer_props,
-                partition_by=partition_by,
-            )
+            max_attempts = 5
+            for attempt in range(1, max_attempts + 1):
+                try:
+                    write_deltalake(
+                        str(table_path),
+                        table,
+                        mode=mode,
+                        schema_mode="merge" if mode == "append" else "overwrite",
+                        writer_properties=writer_props,
+                        partition_by=partition_by,
+                    )
+                    break
+                except CommitFailedError:
+                    if attempt == max_attempts:
+                        raise
+                    # Another writer committed a newer version between our
+                    # read and this commit attempt (concurrent writers to
+                    # the same table race on Delta Lake's optimistic
+                    # concurrency control) - back off and retry against the
+                    # now-current table state.
+                    logger.warning(
+                        f"Commit conflict writing {table_name} "
+                        f"(attempt {attempt}/{max_attempts}), retrying"
+                    )
+                    time.sleep(0.05 * attempt)
 
             logger.info(f" Wrote {len(data)} records to {table_name}")
         except Exception as e:

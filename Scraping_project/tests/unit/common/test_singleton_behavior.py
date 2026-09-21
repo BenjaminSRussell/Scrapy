@@ -18,13 +18,22 @@ def test_config_singleton_reset():
     assert config2.get("test.key") is None
 
 def test_delta_lake_manager_singleton_bug():
+    # Other tests in the suite may have already created the singleton
+    # (e.g. via get_instance() elsewhere); start from a known-clean state
+    # rather than assuming this test runs first.
+    DeltaLakeManager.reset_instance()
+
     manager1 = DeltaLakeManager.get_instance(start_workers=False)
     assert manager1._workers_started is False
 
     manager2 = DeltaLakeManager.get_instance(start_workers=True)
     assert manager2._workers_started is False
 
+    DeltaLakeManager.reset_instance()
+
 def test_delta_lake_manager_singleton_reset_allows_reinitialization():
+    DeltaLakeManager.reset_instance()
+
     manager1 = DeltaLakeManager.get_instance(start_workers=False)
     assert manager1._workers_started is False
 
@@ -32,3 +41,5 @@ def test_delta_lake_manager_singleton_reset_allows_reinitialization():
 
     manager2 = DeltaLakeManager.get_instance(start_workers=True)
     assert manager2._workers_started is True
+
+    DeltaLakeManager.reset_instance()

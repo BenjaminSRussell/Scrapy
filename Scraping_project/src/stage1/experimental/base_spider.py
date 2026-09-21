@@ -53,8 +53,11 @@ class BaseSpider(scrapy.Spider):
 
         self.allowed_domains = ["uconn.edu"]
 
+        default_ignored_extensions = list(URLProcessor.IGNORED_EXTENSIONS)
         self.IGNORED_EXTENSIONS = (
-            getattr(self, "settings", {}).get("IGNORED_EXTENSIONS", []) if hasattr(self, "settings") else []
+            self.settings.get("IGNORED_EXTENSIONS", default_ignored_extensions)
+            if hasattr(self, "settings") and self.settings
+            else default_ignored_extensions
         )
         self.ignored_extensions = list(self.IGNORED_EXTENSIONS)
 

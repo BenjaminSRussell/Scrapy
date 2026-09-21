@@ -165,7 +165,7 @@ def mock_spider_crawler(mock_scrapy_settings):
 @pytest.fixture
 def test_html_response():
     """HtmlResponse with a stable set of links for extract_links()-style tests."""
-    from scrapy.http import HtmlResponse
+    from scrapy.http import HtmlResponse, Request
 
     html = """
     <html>
@@ -179,27 +179,39 @@ def test_html_response():
         </body>
     </html>
     """
+    request = Request(url="https://example.com/index.html", meta={"depth": 0})
     return HtmlResponse(
         url="https://example.com/index.html",
         body=html.encode("utf-8"),
         encoding="utf-8",
+        request=request,
     )
 
 
+class _TimingResult:
+    """Holds the elapsed time from one `with performance_timer as result:` block."""
+
+    def __init__(self):
+        self.elapsed = None
+
+
 class _PerformanceTimer:
-    """Context manager that records wall-clock elapsed time."""
+    """Context manager factory: each `with performance_timer as x:` gets its
+    own _TimingResult, so multiple timed blocks in the same test (e.g.
+    comparing timer_small vs timer_large) don't share state.
+    """
 
     def __enter__(self):
         import time
 
         self._start = time.perf_counter()
-        self.elapsed = None
-        return self
+        self._result = _TimingResult()
+        return self._result
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         import time
 
-        self.elapsed = time.perf_counter() - self._start
+        self._result.elapsed = time.perf_counter() - self._start
         return False
 
 
