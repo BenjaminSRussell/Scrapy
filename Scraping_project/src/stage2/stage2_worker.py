@@ -110,7 +110,7 @@ class Stage2Worker:
                 "url": pa.array(completed_urls, type=pa.string()),
                 "status": pa.array(["completed"] * len(completed_urls), type=pa.string()),
                 "completed_at": pa.array(
-                    [datetime.now().isoformat() for _ in completed_urls],
+                    [datetime.now() for _ in completed_urls],
                     type=pa.timestamp("ms"),
                 ),
             }
@@ -126,7 +126,7 @@ class Stage2Worker:
                     target_alias="target",
                 )
                 .when_matched_update(
-                    set_updates={
+                    updates={
                         "status": "source.status",
                         "completed_at": "source.completed_at",
                     }
