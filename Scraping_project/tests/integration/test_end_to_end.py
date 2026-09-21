@@ -44,7 +44,7 @@ class TestDeltaLakeUnderLoad:
 
         def write_batch(batch_id):
             data = [{"url": f"https://example.com/page{i}", "batch": batch_id} for i in range(10)]
-            delta_sandbox.write("concurrent_test", data, mode="append")
+            delta_sandbox.write("concurrent_test", data, mode="append", async_write=False)
 
         threads = []
         for i in range(5):
@@ -62,13 +62,13 @@ class TestDeltaLakeUnderLoad:
         import threading
         import time
 
-        delta_sandbox.write("rw_test", [{"url": "initial"}], mode="overwrite")
+        delta_sandbox.write("rw_test", [{"url": "initial"}], mode="overwrite", async_write=False)
 
         results = []
 
         def write_continuously():
             for i in range(10):
-                delta_sandbox.write("rw_test", [{"url": f"write{i}"}], mode="append")
+                delta_sandbox.write("rw_test", [{"url": f"write{i}"}], mode="append", async_write=False)
                 time.sleep(0.1)
 
         def read_continuously():
@@ -127,7 +127,7 @@ class TestQueueFlow:
             }
         ]
 
-        delta_sandbox.write("js_spider_queue", js_items, mode="overwrite")
+        delta_sandbox.write("js_spider_queue", js_items, mode="overwrite", async_write=False)
 
         queue = delta_sandbox.read("js_spider_queue")
         assert len(queue) == 1

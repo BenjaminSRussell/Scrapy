@@ -42,17 +42,15 @@ class SeedSpider(BaseSpider):
 def test_seed_urls_deduplicated(delta_with_seed_urls, monkeypatch):
     fake_redis = RedisSetStub(existing=set())
 
-    class MockStorageManager:
-        def __init__(self):
-            self.delta = delta_with_seed_urls
-            self.postgres = object()
-            self.redis = fake_redis
+    # StorageManager was removed (see PR #599: "StorageManager removed -
+    # use get_delta() and get_redis() directly"). BaseSpider.__init__ now
+    # calls get_delta()/get_redis() directly (imported at module scope in
+    # src.stage1.experimental.base_spider, which src.stage1.base_spider
+    # re-exports BaseSpider from), and uses redis_helper.client if present.
+    fake_redis_helper = type("FakeRedisHelper", (), {"client": fake_redis})()
 
-        @classmethod
-        def get_instance(cls):
-            return cls()
-
-    monkeypatch.setattr("src.stage1.base_spider.StorageManager", MockStorageManager)
+    monkeypatch.setattr("src.stage1.experimental.base_spider.get_delta", lambda: delta_with_seed_urls)
+    monkeypatch.setattr("src.stage1.experimental.base_spider.get_redis", lambda: fake_redis_helper)
 
     spider = SeedSpider()
 
