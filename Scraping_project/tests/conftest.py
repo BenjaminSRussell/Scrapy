@@ -185,6 +185,7 @@ def test_html_response():
         body=html.encode("utf-8"),
         encoding="utf-8",
         request=request,
+        headers={"Content-Type": "text/html; charset=utf-8"},
     )
 
 

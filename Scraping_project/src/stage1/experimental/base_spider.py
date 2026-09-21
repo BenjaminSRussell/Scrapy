@@ -315,6 +315,12 @@ class BaseSpider(scrapy.Spider):
 
     def _extract_urls(self, response: Response) -> list[str]:
         self.url_processor.base_url = response.url
+        # URLExtractor.discover_all_urls() resolves relative links via its
+        # own base_url attribute, set once at URLProcessor construction
+        # time - without updating it per-response too, every page after
+        # the spider's first request resolves relative links against a
+        # stale base URL instead of the current one.
+        self.url_processor.extractor.base_url = response.url
         discovered_urls = self.url_processor.extractor.discover_all_urls(response)
         return [self.normalize_url(url) for url in discovered_urls]
 

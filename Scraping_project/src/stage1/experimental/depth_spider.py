@@ -124,7 +124,7 @@ class DepthSpider(BaseSpider):
             return
 
         depth = response.meta.get("depth", 0)
-        self._record_successful_page(
+        self._record_discovery(
             response=response,
             url_hash=url_hash,
             depth=depth,

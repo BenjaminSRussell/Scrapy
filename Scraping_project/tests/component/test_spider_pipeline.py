@@ -20,10 +20,15 @@ class TestScoutSpiderComponents:
 
         assert len(spider.start_urls) > 0
 
-    @pytest.mark.skip(reason="MockRedis fixture needs improvement - execute() returns fixed 10 False values")
-    def test_scout_spider_parse_html(self, test_html_response):
+    def test_scout_spider_parse_html(self, test_html_response, redis_clean):
         spider = ScoutSpider()
-        spider.redis_client = MockRedis()
+        # ScoutSpider defaults to allowed_domains=["uconn.edu"]; match it to
+        # test_html_response's example.com URLs so parse() has in-domain
+        # links to discover.
+        spider.allowed_domains = ["example.com"]
+        spider.url_processor.allowed_domains = spider.allowed_domains
+        spider.url_processor.extractor.allowed_domains = spider.allowed_domains
+        spider.redis_client = redis_clean
 
         results = list(spider.parse(test_html_response))
 
@@ -118,27 +123,3 @@ class TestRedisQueueIntegration:
 
         is_duplicate = redis_clean.sismember(spider.url_hashes_key, url_hash)
         assert is_duplicate
-
-# ============================================================================
-# ============================================================================
-
-class MockRedis:
-
-    def __init__(self):
-        self.data = set()
-
-    def pipeline(self):
-        return self
-
-    def sismember(self, key, value):
-        return self
-
-    def sadd(self, key, value):
-        self.data.add(value)
-        return self
-
-    def execute(self):
-        return [False] * 10
-
-    def scard(self, key):
-        return len(self.data)
