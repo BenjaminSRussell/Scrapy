@@ -220,3 +220,36 @@ class _PerformanceTimer:
 def performance_timer():
     """Usable as `with performance_timer as timer: ...; timer.elapsed`."""
     return _PerformanceTimer()
+
+
+@pytest.fixture
+def postgres_clean():
+    """Real PostgresManager, truncated before and after the test.
+
+    Skips (rather than being marked skip) when no Postgres is reachable,
+    matching PostgresManager's own graceful-degradation design - CI's
+    postgres service container makes this a real integration test there.
+    """
+    import os
+
+    from src.utils.postgres import POSTGRES_AVAILABLE, PostgresManager
+
+    if not POSTGRES_AVAILABLE:
+        pytest.skip("psycopg2 not installed")
+
+    try:
+        manager = PostgresManager(
+            host=os.getenv("DB_HOST", "localhost"),
+            port=int(os.getenv("DB_PORT", "5432")),
+            database=os.getenv("DB_NAME", "scraping_pipeline"),
+            user=os.getenv("DB_USER", "postgres"),
+            password=os.getenv("DB_PASSWORD", "postgres"),
+        )
+    except Exception as exc:
+        pytest.skip(f"Postgres not reachable: {exc}")
+
+    tables = "spider_stats, performance_metrics, error_logs, error_analysis_reports"
+    manager.execute(f"TRUNCATE {tables}")
+    yield manager
+    manager.execute(f"TRUNCATE {tables}")
+    manager.close()

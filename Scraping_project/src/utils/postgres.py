@@ -157,6 +157,26 @@ class PostgresManager:
 
             cursor.execute(
                 """
+                CREATE TABLE IF NOT EXISTS spider_stats (
+                    id SERIAL PRIMARY KEY,
+                    spider_name VARCHAR(50) NOT NULL,
+                    urls_processed INTEGER NOT NULL,
+                    errors INTEGER NOT NULL DEFAULT 0,
+                    timestamp TIMESTAMP NOT NULL,
+                    created_at TIMESTAMP NOT NULL DEFAULT NOW()
+                );
+            """
+            )
+
+            cursor.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_spider_stats_name_time
+                ON spider_stats(spider_name, timestamp DESC);
+            """
+            )
+
+            cursor.execute(
+                """
                 CREATE TABLE IF NOT EXISTS error_analysis_reports (
                     id SERIAL PRIMARY KEY,
                     analysis_timestamp TIMESTAMP NOT NULL DEFAULT NOW(),
@@ -186,6 +206,15 @@ class PostgresManager:
             cursor = conn.cursor()
             cursor.execute(query, params)
             cursor.close()
+
+    def query(self, query: str, params: Sequence[Any] | None = None) -> list[dict[str, Any]]:
+        with self.get_connection() as conn:
+            cursor = conn.cursor(cursor_factory=RealDictCursor)
+            cursor.execute(query, params)
+            results = cursor.fetchall()
+            cursor.close()
+
+        return [dict(row) for row in results]
 
     def log_performance_metric(
         self,

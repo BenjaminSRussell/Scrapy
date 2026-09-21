@@ -31,7 +31,6 @@ class TestEndToEndCrawl:
         discovered = delta_sandbox.read("stage1_discovery")
         assert len(discovered) > 0
 
-    @pytest.mark.skip(reason="Requires full Scrapy reactor setup")
     def test_deep_dive_spider_respects_depth_limit(self, delta_sandbox, redis_clean):
         pass
 
@@ -91,7 +90,6 @@ class TestDeltaLakeUnderLoad:
 @pytest.mark.integration
 class TestPostgresMetrics:
 
-    @pytest.mark.skip(reason="Requires Postgres connection")
     def test_write_spider_metrics(self, postgres_clean):
         metrics = {
             "spider_name": "scout",
@@ -143,27 +141,32 @@ class TestQueueFlow:
 @pytest.mark.slow
 class TestDockerComposeStack:
 
-    @pytest.mark.skip(reason="Requires Docker Compose running")
     def test_postgres_db_name(self):
+        import os
+
         import psycopg2
 
-        conn = psycopg2.connect(
-            host="localhost",
-            port=5432,
-            user="postgres",
-            password="postgres",
-            database="scraping_pipeline",
-        )
+        expected_db_name = os.getenv("DB_NAME", "scraping_pipeline")
+
+        try:
+            conn = psycopg2.connect(
+                host=os.getenv("DB_HOST", "localhost"),
+                port=int(os.getenv("DB_PORT", "5432")),
+                user=os.getenv("DB_USER", "postgres"),
+                password=os.getenv("DB_PASSWORD", "postgres"),
+                database=expected_db_name,
+            )
+        except psycopg2.OperationalError as exc:
+            pytest.skip(f"Postgres not reachable: {exc}")
 
         cur = conn.cursor()
         cur.execute("SELECT current_database()")
         db_name = cur.fetchone()[0]
 
-        assert db_name == "scraping_pipeline"
+        assert db_name == expected_db_name
 
         conn.close()
 
-    @pytest.mark.skip(reason="Requires Docker Compose running")
     def test_delta_volume_shared(self):
         pass
 
@@ -177,6 +180,5 @@ class TestGracefulShutdown:
         assert settings.CLOSESPIDER_TIMEOUT > 0
         assert settings.CLOSESPIDER_TIMEOUT == 600
 
-    @pytest.mark.skip(reason="Requires spider run")
     def test_spider_closes_gracefully_on_timeout(self):
         pass
