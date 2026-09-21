@@ -15,7 +15,8 @@ from scrapy.spidermiddlewares.httperror import HttpError
 from twisted.internet.error import DNSLookupError, TCPTimedOutError, TimeoutError
 
 from src.core.config import get_config
-# StorageManager removed - use get_delta() and get_redis() directly
+from src.utils.delta import get_delta
+from src.utils.redis import get_redis
 from src.stage1.processors.url_processor import URLProcessor, should_follow_url
 from src.items import OffsiteCandidateItem
 from src.stage1.js_detection import JSDetector
@@ -47,11 +48,8 @@ class BaseSpider(scrapy.Spider):
         return cls(name=kw.pop("name", "test_base"), **kw)
 
     def __init__(self, *args, **kwargs):
-        print(f"\n🕷️  BaseSpider.__init__() called for {kwargs.get('name', 'unknown')}")
         self.name = kwargs.pop("name", self.name)
-        print("🕷️  Calling super().__init__...")
         super().__init__(*args, **kwargs)
-        print(f"🕷️  super().__init__() complete for {self.name}")
 
         self.allowed_domains = ["uconn.edu"]
 
@@ -60,14 +58,11 @@ class BaseSpider(scrapy.Spider):
         )
         self.ignored_extensions = list(self.IGNORED_EXTENSIONS)
 
-        self.config_manager = ConfigManager.get_instance()
-        self.config = self.config_manager.config
-
-        self.storage = StorageManager.get_instance()
-
-        self.delta = self.storage.delta
-        self.postgres = self.storage.postgres
-        self.redis_client = self.storage.redis.redis if hasattr(self.storage.redis, "redis") else self.storage.redis
+        self.config = get_config()
+        self.delta = get_delta()
+        redis_helper = get_redis()
+        # Prefer RedisHelper.client (raw redis) for pipeline/scard usage
+        self.redis_client = redis_helper.client if hasattr(redis_helper, "client") else redis_helper
 
         self.url_hashes_key = f"{self.name}:url_hashes"
 
@@ -103,26 +98,15 @@ class BaseSpider(scrapy.Spider):
         self.file_size_window = deque(maxlen=100)
         self.last_metric_update = time.time()
 
-        self.js_confidence_threshold = self.config_manager.stage1.js_confidence_threshold
-
-        self.batch_size = self.config_manager.stage1.batch_size
+        self.js_confidence_threshold = self.config.get("stage1.js_confidence_threshold", 0.5)
+        self.batch_size = self.config.get("stage1.batch_size", 50)
 
         self.max_depth = self.settings.getint("MAX_DEPTH") if hasattr(self, "settings") and self.settings else None
 
-        print(f"[{self.name}] Loading start_urls from Delta Lake...")
         self.start_urls = self._load_seed_urls()
-        print(f"[{self.name}] Loaded {len(self.start_urls)} start_urls")
-
-        print(f" BaseSpider.__init__() COMPLETE for {self.name}")
 
     async def start(self):
-        print(f" [{self.name}] start() called!")
-        print(f" [{self.name}] Processing {len(self.start_urls)} start URLs...")
-
-        for i, url in enumerate(self.start_urls):
-            if i < 5:
-                print(f"  - URL {i}: {url[:80]}")
-
+        for url in self.start_urls:
             yield scrapy.Request(
                 url,
                 callback=self.parse,
@@ -130,8 +114,6 @@ class BaseSpider(scrapy.Spider):
                 dont_filter=True,
                 priority=0,
             )
-
-        print(f" [{self.name}] start() generated {len(self.start_urls)} requests")
 
     def _hash_url(self, url: str) -> str:
         normalized = self.normalize_url(url)
