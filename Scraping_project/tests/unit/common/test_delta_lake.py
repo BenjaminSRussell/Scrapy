@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from src.common.delta_lake import DeltaLakeManager
+from src.lakehouse.lakehouse_manager import DeltaLakeManager
 
 class TestDeltaLakeManagerInit:
 

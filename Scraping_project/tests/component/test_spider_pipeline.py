@@ -1,7 +1,7 @@
 import pytest
 from scrapy.http import Request
 
-from src.stage1.deep_dive_spider import DeepDiveSpider
+from src.stage1.experimental.deep_dive_spider import DeepDiveSpider
 from src.stage1.scout_spider import ScoutSpider
 
 @pytest.mark.component

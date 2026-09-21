@@ -1,5 +1,5 @@
-from src.common.config import Config
-from src.common.delta_lake import DeltaLakeManager
+from src.core.config import Config
+from src.lakehouse.lakehouse_manager import DeltaLakeManager
 
 def test_config_singleton_persists_state():
     config1 = Config.get_instance()

@@ -7,7 +7,7 @@ import asyncio
 import unittest
 from unittest.mock import MagicMock, patch
 
-from src.common.constants import SUMMARY_LIMITS
+from src.core.constants import SUMMARY_LIMITS
 from src.stage3.stage3_worker import Stage3Worker
 
 LONG_TEXT = (

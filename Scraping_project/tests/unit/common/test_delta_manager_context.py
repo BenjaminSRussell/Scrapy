@@ -5,11 +5,11 @@ from unittest.mock import patch, MagicMock
 
 import pytest
 
-from src.common.delta_lake import DeltaLakeManager, InMemoryDeltaManager
+from src.lakehouse.lakehouse_manager import DeltaLakeManager, InMemoryDeltaManager
 
 class TestDeltaManagerContext(unittest.TestCase):
 
-    @patch("src.common.delta_lake.DeltaLakeManager.shutdown")
+    @patch("src.lakehouse.lakehouse_manager.DeltaLakeManager.shutdown")
     def test_delta_manager_context_calls_shutdown_when_started(self, mock_shutdown: MagicMock):
         with patch("signal.signal"):
             manager = DeltaLakeManager(start_workers=True)
@@ -22,7 +22,7 @@ class TestDeltaManagerContext(unittest.TestCase):
 
         mock_shutdown.assert_called_once_with(timeout=5)
 
-    @patch("src.common.delta_lake.DeltaLakeManager.shutdown")
+    @patch("src.lakehouse.lakehouse_manager.DeltaLakeManager.shutdown")
     def test_delta_manager_context_no_shutdown_when_not_started(self, mock_shutdown: MagicMock):
         manager = DeltaLakeManager(start_workers=False)
 
@@ -46,10 +46,10 @@ class TestDeltaManagerContext(unittest.TestCase):
             with manager:
                 raise TestException("This should be re-raised")
 
-@patch("src.common.delta_lake.DELTA_MANAGER_SHUTDOWN_DURATION_SECONDS")
-@patch("src.common.delta_lake.DELTA_MANAGER_SHUTDOWN_TOTAL")
-@patch("src.common.delta_lake.DELTA_MANAGER_CONTEXT_EXIT_TOTAL")
-@patch("src.common.delta_lake.DELTA_MANAGER_CONTEXT_ENTER_TOTAL")
+@patch("src.lakehouse.lakehouse_manager.DELTA_MANAGER_SHUTDOWN_DURATION_SECONDS")
+@patch("src.lakehouse.lakehouse_manager.DELTA_MANAGER_SHUTDOWN_TOTAL")
+@patch("src.lakehouse.lakehouse_manager.DELTA_MANAGER_CONTEXT_EXIT_TOTAL")
+@patch("src.lakehouse.lakehouse_manager.DELTA_MANAGER_CONTEXT_ENTER_TOTAL")
 class TestDeltaManagerObservability(unittest.TestCase):
 
     def test_context_usage_increments_counters(
