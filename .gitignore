@@ -187,6 +187,11 @@ yarn-error.log*
 *.parquet
 *.avro
 
+# Grafana dashboard exports are source-controlled config, not generated
+# data - *.json above would otherwise silently exclude them (this is
+# exactly how monitoring/dashboards/unified_dashboard.json went missing).
+!Scraping_project/monitoring/dashboards/*.json
+
 # ====================================
 # Jupyter Notebook
 # ====================================

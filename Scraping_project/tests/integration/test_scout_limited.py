@@ -13,9 +13,9 @@ original_load_seed_urls = scout_spider.ScoutSpider._load_seed_urls if hasattr(sc
 def limited_load_seed_urls(self):
     print("\n🔧 MONKEY PATCH: Loading only first 10 seed URLs...")
     try:
-        from src.common.storage_manager import get_delta_manager
+        from src.utils.delta import get_delta
 
-        delta = get_delta_manager()
+        delta = get_delta()
         seed_records = delta.read("seed_urls")
         all_urls = [record["url"] for record in seed_records]
         limited_urls = all_urls[:10]
