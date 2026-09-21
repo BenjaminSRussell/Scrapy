@@ -86,7 +86,7 @@ class TestDeltaLakeIntegration:
             {"url": "https://example.com/2", "depth": 1},
         ]
 
-        delta_sandbox.write("test_table", test_data, mode="overwrite")
+        delta_sandbox.write("test_table", test_data, mode="overwrite", async_write=False)
 
         read_data = delta_sandbox.read("test_table")
 
@@ -97,8 +97,8 @@ class TestDeltaLakeIntegration:
         initial_data = [{"url": "https://example.com/1", "depth": 0}]
         additional_data = [{"url": "https://example.com/2", "depth": 1}]
 
-        delta_sandbox.write("test_table", initial_data, mode="overwrite")
-        delta_sandbox.write("test_table", additional_data, mode="append")
+        delta_sandbox.write("test_table", initial_data, mode="overwrite", async_write=False)
+        delta_sandbox.write("test_table", additional_data, mode="append", async_write=False)
 
         read_data = delta_sandbox.read("test_table")
         assert len(read_data) == 2

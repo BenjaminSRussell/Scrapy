@@ -21,7 +21,7 @@ class DeepDiveSpider(BaseSpider):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        configured_domains = self.config_manager.stage1.allowed_domains
+        configured_domains = self.config.get("stage1.allowed_domains")
 
         if configured_domains:
             self.allowed_domains = configured_domains

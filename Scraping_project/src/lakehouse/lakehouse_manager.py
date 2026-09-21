@@ -267,7 +267,13 @@ class LakehouseManager:
         else:
             self._write_sync(table_name, data, mode)
 
-    def read(self, table_name: str, filters: Any = None, columns: list[str] | None = None) -> list[dict]:
+    def read(
+        self,
+        table_name: str,
+        filters: Any = None,
+        columns: list[str] | None = None,
+        version: int | None = None,
+    ) -> list[dict]:
         from deltalake import DeltaTable
 
         table_path = self.tables.get(table_name)
@@ -278,7 +284,7 @@ class LakehouseManager:
             logger.warning(f"No data found in {table_name}")
             return []
 
-        table = DeltaTable(str(table_path))
+        table = DeltaTable(str(table_path), version=version)
         pa_table = table.to_pyarrow_table(filters=filters, columns=columns)
         return pa_table.to_pylist()
 
@@ -544,7 +550,7 @@ class LakehouseManager:
             raise ValueError(f"No data found in {table_name}")
 
         table = DeltaTable(str(table_path))
-        return table.schema().to_pyarrow()
+        return table.schema().to_arrow()
 
     def table_exists(self, table_name: str) -> bool:
         table_path = self.tables.get(table_name)

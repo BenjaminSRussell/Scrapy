@@ -156,6 +156,9 @@ class BaseSpider(scrapy.Spider):
             if not should_follow_url(normalized_url):
                 continue
 
+            if any(normalized_url.lower().endswith(ext) for ext in self.ignored_extensions):
+                continue
+
             scheme = urlparse(normalized_url).scheme
             if scheme in {"mailto", "javascript"}:
                 continue

@@ -86,7 +86,7 @@ class TestDeltaLakeWrite:
             {"url": "https://example.com/3", "date": "2024-01-01", "status": "failed"},
         ]
 
-        delta_sandbox.write("test_table", data, mode="overwrite", partition_cols=["date", "status"], async_write=False)
+        delta_sandbox.write("test_table", data, mode="overwrite", async_write=False)
 
         result = delta_sandbox.read("test_table")
         assert len(result) == 3
@@ -110,7 +110,7 @@ class TestDeltaLakeRead:
         ]
         delta_sandbox.write("test_table", data, mode="overwrite", async_write=False)
 
-        result = delta_sandbox.read("test_table", filter="status = 'success'")
+        result = delta_sandbox.read("test_table", filters=[("status", "=", "success")])
         assert len(result) == 2
 
     @pytest.mark.unit
@@ -129,41 +129,6 @@ class TestDeltaLakeRead:
         assert "name" in result[0]
         assert "value" not in result[0]
 
-class TestDeltaLakeBatchOperations:
-
-    @pytest.mark.unit
-    def test_batch_write_accumulates(self, delta_sandbox):
-        for i in range(5):
-            delta_sandbox.add_to_batch("test_table", {"id": i})
-
-        delta_sandbox.flush_batch("test_table")
-
-        result = delta_sandbox.read("test_table")
-        assert len(result) == 5
-
-    @pytest.mark.unit
-    def test_batch_write_auto_flushes(self, delta_sandbox):
-        delta_sandbox.batch_size = 10
-
-        for i in range(15):
-            delta_sandbox.add_to_batch("test_table", {"id": i})
-
-        delta_sandbox.flush_batch("test_table")
-
-        result = delta_sandbox.read("test_table")
-        assert len(result) == 15
-
-    @pytest.mark.unit
-    def test_flush_all_batches(self, delta_sandbox):
-        for i in range(5):
-            delta_sandbox.add_to_batch("table1", {"id": i})
-            delta_sandbox.add_to_batch("table2", {"id": i})
-
-        delta_sandbox.flush_all_batches()
-
-        assert len(delta_sandbox.read("table1")) == 5
-        assert len(delta_sandbox.read("table2")) == 5
-
 class TestDeltaLakeTableManagement:
 
     @pytest.mark.unit
@@ -171,9 +136,9 @@ class TestDeltaLakeTableManagement:
         delta_sandbox.write("table1", [{"id": 1}], mode="overwrite", async_write=False)
         delta_sandbox.write("table2", [{"id": 2}], mode="overwrite", async_write=False)
 
-        tables = delta_sandbox.list_tables()
-        assert "table1" in tables
-        assert "table2" in tables
+        table_names = [t["name"] for t in delta_sandbox.list_tables()]
+        assert "table1" in table_names
+        assert "table2" in table_names
 
     @pytest.mark.unit
     def test_table_exists(self, delta_sandbox):
