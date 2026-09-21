@@ -10,10 +10,9 @@ from src.stage1.scout_spider import ScoutSpider
 class TestScoutSpider(unittest.TestCase):
     def setUp(self):
         with patch("src.stage1.scout_spider.get_delta_manager"):
-            with patch("src.stage1.scout_spider.get_postgres_manager"):
-                self.spider = ScoutSpider()
-                self.spider.allowed_domains = ["example.com"]
-                self.spider._initialize_discovery(HtmlResponse(url="https://example.com", body=b""))
+            self.spider = ScoutSpider()
+            self.spider.allowed_domains = ["example.com"]
+            self.spider._initialize_discovery(HtmlResponse(url="https://example.com", body=b""))
 
     # ============================================================================
     # ============================================================================

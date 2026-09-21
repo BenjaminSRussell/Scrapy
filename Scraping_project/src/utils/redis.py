@@ -6,6 +6,7 @@ Replaces src/common/redis_manager.py with a simpler, more consistent API.
 """
 
 from typing import Optional, Set, List
+import json
 import redis
 import logging
 from functools import wraps
@@ -17,7 +18,7 @@ logger = logging.getLogger(__name__)
 class RedisHelper:
     """Centralized Redis operations."""
 
-    def __init__(self, host: str = "localhost", port: int = 6379, db: int = 0):
+    def __init__(self, host: str = "localhost", port: int = 6379, db: int = 0, password: Optional[str] = None):
         """
         Initialize Redis helper.
 
@@ -25,10 +26,12 @@ class RedisHelper:
             host: Redis host address
             port: Redis port number
             db: Redis database number
+            password: Optional Redis AUTH password
         """
         self.host = host
         self.port = port
         self.db = db
+        self.password = password
         self._client: Optional[redis.Redis] = None
 
     @property
@@ -40,6 +43,7 @@ class RedisHelper:
                     host=self.host,
                     port=self.port,
                     db=self.db,
+                    password=self.password,
                     decode_responses=True,
                     socket_timeout=5,
                     socket_connect_timeout=5
@@ -254,12 +258,64 @@ class RedisHelper:
             logger.error(f"Redis ping failed: {e}")
             return False
 
+    def open_circuit(self, domain: str, duration_seconds: int = 900, reason: Optional[str] = None) -> bool:
+        """
+        Open the circuit breaker for a domain, blocking requests to it for a
+        limited time.
+
+        Args:
+            domain: Domain to block
+            duration_seconds: How long the circuit stays open
+            reason: Optional human-readable reason, stored alongside the key
+
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            key = f"circuit:{domain}"
+            value = json.dumps({"reason": reason, "opened_at": time.time()})
+            self.client.set(key, value, ex=duration_seconds)
+            return True
+        except Exception as e:
+            logger.error(f"Failed to open circuit for {domain}: {e}")
+            return False
+
+    def is_circuit_open(self, domain: str) -> bool:
+        """
+        Check whether the circuit breaker for a domain is currently open.
+
+        Args:
+            domain: Domain to check
+
+        Returns:
+            True if the circuit is open (requests should be skipped)
+        """
+        try:
+            return self.client.exists(f"circuit:{domain}") > 0
+        except Exception as e:
+            logger.error(f"Failed to check circuit for {domain}: {e}")
+            return False
+
+    def get_open_circuits(self) -> List[str]:
+        """
+        List domains whose circuit breaker is currently open.
+
+        Returns:
+            List of domain names with an open circuit
+        """
+        try:
+            keys = self.client.keys("circuit:*")
+            return [key.split("circuit:", 1)[1] for key in keys]
+        except Exception as e:
+            logger.error(f"Failed to list open circuits: {e}")
+            return []
+
 
 # Global instance
 _redis_helper: Optional[RedisHelper] = None
 
 
-def get_redis(host: str = "localhost", port: int = 6379, db: int = 0) -> RedisHelper:
+def get_redis(host: str = "localhost", port: int = 6379, db: int = 0, password: Optional[str] = None) -> RedisHelper:
     """
     Get global Redis helper instance.
 
@@ -269,6 +325,7 @@ def get_redis(host: str = "localhost", port: int = 6379, db: int = 0) -> RedisHe
         host: Redis host address
         port: Redis port number
         db: Redis database number
+        password: Optional Redis AUTH password
 
     Returns:
         RedisHelper instance
@@ -283,7 +340,7 @@ def get_redis(host: str = "localhost", port: int = 6379, db: int = 0) -> RedisHe
     """
     global _redis_helper
     if _redis_helper is None:
-        _redis_helper = RedisHelper(host, port, db)
+        _redis_helper = RedisHelper(host, port, db, password)
     return _redis_helper
 
 

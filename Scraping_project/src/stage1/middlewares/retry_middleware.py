@@ -175,20 +175,20 @@ class CircuitBreakerMiddleware:
 
     @classmethod
     def from_crawler(cls, crawler):
-        from src.core.config import Config
+        from src.core.config import get_config
         from src.utils.redis import get_redis
 
-        config = Config.get_instance()
-        redis_config = config.redis_config
+        config = get_config()
+        redis_config = config.get_section("redis")
 
-        redis_manager = get_redis_manager(
+        redis_helper = get_redis(
             host=redis_config.get("host", "localhost"),
             port=redis_config.get("port", 6379),
             db=redis_config.get("db", 0),
             password=redis_config.get("password"),
         )
 
-        return cls(redis_manager)
+        return cls(redis_helper)
 
     def process_request(self, request: Request, spider: Spider):
         from urllib.parse import urlparse
