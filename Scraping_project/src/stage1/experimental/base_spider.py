@@ -460,16 +460,30 @@ class BaseSpider(scrapy.Spider):
     def _categorize_skip_reason(self, url: str) -> str:
         url_lower = url.lower()
 
-        if any(url_lower.endswith(ext) for ext in [".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".ico", ".tiff"]):
+        if any(
+            url_lower.endswith(ext)
+            for ext in [".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".ico", ".tiff", ".svg"]
+        ):
             return "images"
 
-        elif any(url_lower.endswith(ext) for ext in [".css", ".map", ".woff", ".woff2", ".ttf", ".eot", ".otf"]):
+        elif any(
+            url_lower.endswith(ext) for ext in [".css", ".map", ".js", ".woff", ".woff2", ".ttf", ".eot", ".otf"]
+        ):
             return "static_assets"
+
+        elif any(
+            url_lower.endswith(ext)
+            for ext in [".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx"]
+        ):
+            return "documents"
 
         elif any(
             url_lower.endswith(ext) for ext in [".mp3", ".mp4", ".avi", ".mov", ".wmv", ".flv", ".webm", ".m4a", ".wav"]
         ):
             return "media_files"
+
+        elif any(url_lower.endswith(ext) for ext in [".zip", ".tar.gz", ".rar", ".7z", ".tar"]):
+            return "archives"
 
         elif any(url_lower.endswith(ext) for ext in [".exe", ".dmg", ".pkg", ".deb", ".rpm"]):
             return "executables"
@@ -583,7 +597,7 @@ class BaseSpider(scrapy.Spider):
             logger.error(f"DNS lookup failed: {request.url[:80]}")
         elif failure.check(TimeoutError, TCPTimedOutError):
             retry_count = request.meta.get("retry_times", 0)
-            max_retries = self.settings.get("RETRY_TIMES", 3)
+            max_retries = self.settings.get("RETRY_TIMES", 3) if hasattr(self, "settings") and self.settings else 3
 
             if retry_count >= max_retries:
                 logger.error(f"Timeout after {retry_count} retries: {request.url[:80]}")

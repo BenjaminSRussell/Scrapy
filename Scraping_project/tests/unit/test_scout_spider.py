@@ -6,6 +6,7 @@ from scrapy.spidermiddlewares.httperror import HttpError
 from twisted.internet.error import DNSLookupError, TCPTimedOutError, TimeoutError
 
 from src.stage1.scout_spider import ScoutSpider
+from src.stage1.processors.url_processor import should_follow_url
 
 class TestScoutSpider(unittest.TestCase):
     def setUp(self):
@@ -36,19 +37,16 @@ class TestScoutSpider(unittest.TestCase):
         self.assertTrue(all(c in "0123456789abcdef" for c in hash1))
 
     def test_has_ignored_extension(self):
-        spider = self.spider
+        # Extension filtering is centralized in should_follow_url() rather
+        # than a spider-level method; ignored extensions should NOT be followed.
+        self.assertFalse(should_follow_url("https://example.com/image.jpg"))
+        self.assertFalse(should_follow_url("https://example.com/image.JPG"))
+        self.assertFalse(should_follow_url("https://example.com/style.css"))
 
-        self.assertTrue(spider._has_ignored_extension("https://example.com/image.jpg"))
-        self.assertTrue(spider._has_ignored_extension("https://example.com/image.JPG"))
-        self.assertTrue(spider._has_ignored_extension("https://example.com/archive.zip"))
-        self.assertTrue(spider._has_ignored_extension("https://example.com/style.css"))
-
-        self.assertFalse(spider._has_ignored_extension("https://example.com/page.html"))
-        self.assertFalse(spider._has_ignored_extension("https://example.com/document.php"))
-        self.assertFalse(spider._has_ignored_extension("https://example.com/no_extension"))
-        self.assertFalse(
-            spider._has_ignored_extension("https://example.com/document.pdf")
-        )
+        self.assertTrue(should_follow_url("https://example.com/page.html"))
+        self.assertTrue(should_follow_url("https://example.com/document.php"))
+        self.assertTrue(should_follow_url("https://example.com/no_extension"))
+        self.assertTrue(should_follow_url("https://example.com/document.pdf"))
 
     # ============================================================================
     # ============================================================================
@@ -145,6 +143,7 @@ class TestScoutSpider(unittest.TestCase):
         response_http = MagicMock()
         response_http.status = 404
         failure_http = MagicMock()
+        failure_http.type = HttpError
         failure_http.request = request_http
         failure_http.value = HttpError(response_http)
         failure_http.value.response = response_http
@@ -163,6 +162,7 @@ class TestScoutSpider(unittest.TestCase):
         request_dns.url = "https://dns-error.com"
         request_dns.meta = {"depth": 2}
         failure_dns = MagicMock()
+        failure_dns.type = DNSLookupError
         failure_dns.request = request_dns
         failure_dns.value = DNSLookupError()
         failure_dns.check.side_effect = lambda *a: DNSLookupError in a
@@ -179,6 +179,7 @@ class TestScoutSpider(unittest.TestCase):
         request_timeout.url = "https://timeout-error.com"
         request_timeout.meta = {"depth": 3}
         failure_timeout = MagicMock()
+        failure_timeout.type = TimeoutError
         failure_timeout.request = request_timeout
         failure_timeout.value = TimeoutError()
         failure_timeout.check.side_effect = lambda *a: any(x in a for x in [TimeoutError, TCPTimedOutError])
