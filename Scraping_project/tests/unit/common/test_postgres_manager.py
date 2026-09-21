@@ -6,8 +6,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src.common import postgres_manager as pg_module
-from src.common.postgres_manager import PostgresManager
+from src.utils import postgres as pg_module
+from src.utils.postgres import PostgresManager
 
 @dataclass
 class CursorStub:

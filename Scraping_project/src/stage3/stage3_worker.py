@@ -8,11 +8,8 @@ from datasketch import MinHash, MinHashLSH  # type: ignore[import-untyped]
 
 from src.core.constants import SUMMARY_LIMITS
 from src.utils.delta import get_delta
+from src.utils.postgres import PostgresManager
 from src.otel_tracing import ensure_crawl_job_id, init_tracing, start_span
-# PostgreSQL support to be implemented in Phase 6
-class PostgresManager:
-    @staticmethod
-    def get_instance(): return None
 
 logger = logging.getLogger(__name__)
 

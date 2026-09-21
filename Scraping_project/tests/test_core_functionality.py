@@ -68,7 +68,7 @@ class TestDeltaLake:
 class TestPostgresManager:
 
     def test_postgres_manager_graceful_degradation(self):
-        from src.common.postgres_manager import get_postgres_manager
+        from src.utils.postgres import get_postgres_manager
 
         old_password = os.environ.get("DB_PASSWORD")
         if "DB_PASSWORD" in os.environ:
@@ -85,7 +85,7 @@ class TestPostgresManager:
         if not importlib.util.find_spec("psycopg2"):
             pytest.skip("psycopg2 not installed")
 
-        from src.common.postgres_manager import PostgresManager
+        from src.utils.postgres import PostgresManager
 
         try:
             manager = PostgresManager(
@@ -105,7 +105,7 @@ class TestPostgresManager:
         if importlib.util.find_spec("psycopg2") is None:
             pytest.skip("psycopg2 not installed")
 
-        from src.common.postgres_manager import PostgresManager
+        from src.utils.postgres import PostgresManager
 
         assert hasattr(PostgresManager, "log_performance_metric")
 
