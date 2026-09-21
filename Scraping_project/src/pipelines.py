@@ -1053,10 +1053,27 @@ class MetadataExtractionPipeline:
         batch_size = len(self.batch)
 
         try:
+            import json
+
             from src.utils.delta import get_delta
 
+            # Parquet can't write a struct column with zero fields, which
+            # is exactly what pyarrow infers for "entities" when every
+            # record in the batch has {} (the common case: the "simple"
+            # extractor never populates it, and most pages have no named
+            # entities). JSON-encode it as a string column instead of a
+            # nested struct, same pattern EntitySummaryStorage uses for
+            # source_references - keeps writes working regardless of
+            # whether entities happens to be empty for a whole batch.
+            records_to_write = [
+                {**record, "entities": json.dumps(record.get("entities", {}))} for record in self.batch
+            ]
+
             delta = get_delta()
-            delta.write("metadata_queue", self.batch, mode="append")
+            # Synchronous: this can be the final flush from spider_closed(),
+            # and an async-queued write has no guarantee of draining before
+            # the process exits, which would silently drop the batch.
+            delta.write("metadata_queue", records_to_write, mode="append", async_write=False)
             logger.info(f" Saved {batch_size} metadata records to metadata_queue")
 
             self.batch.clear()

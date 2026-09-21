@@ -296,9 +296,7 @@ class LakehouseManager:
     ) -> list[dict]:
         from deltalake import DeltaTable
 
-        table_path = self.tables.get(table_name)
-        if not table_path:
-            raise ValueError(f"Unknown table: {table_name}")
+        table_path = self.get_table_path(table_name)
 
         if not (table_path / "_delta_log").exists():
             logger.warning(f"No data found in {table_name}")
@@ -311,9 +309,7 @@ class LakehouseManager:
     def count(self, table_name: str) -> int:
         from deltalake import DeltaTable
 
-        table_path = self.tables.get(table_name)
-        if not table_path:
-            raise ValueError(f"Unknown table: {table_name}")
+        table_path = self.get_table_path(table_name)
 
         if not (table_path / "_delta_log").exists():
             return 0
@@ -514,9 +510,7 @@ class LakehouseManager:
         import pyarrow.parquet as pq
         from deltalake import DeltaTable
 
-        table_path = self.tables.get(table_name)
-        if not table_path:
-            raise ValueError(f"Unknown table: {table_name}")
+        table_path = self.get_table_path(table_name)
 
         out_path = Path(output_path)
         out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -573,9 +567,7 @@ class LakehouseManager:
     def get_table_schema(self, table_name: str):
         from deltalake import DeltaTable
 
-        table_path = self.tables.get(table_name)
-        if not table_path:
-            raise ValueError(f"Unknown table: {table_name}")
+        table_path = self.get_table_path(table_name)
 
         if not (table_path / "_delta_log").exists():
             raise ValueError(f"No data found in {table_name}")
@@ -690,9 +682,7 @@ class LakehouseManager:
     def get_table_history(self, table_name: str) -> list[dict]:
         from deltalake import DeltaTable
 
-        table_path = self.tables.get(table_name)
-        if not table_path:
-            raise ValueError(f"Unknown table: {table_name}")
+        table_path = self.get_table_path(table_name)
 
         if not (table_path / "_delta_log").exists():
             return []
@@ -716,6 +706,16 @@ class LakehouseManager:
 
     def get_table_path(self, table_name: str) -> Path:
         table_path = self.tables.get(table_name)
+        if not table_path:
+            # Not registered on this instance yet - a separate
+            # LakehouseManager/DeltaHelper instance pointed at the same
+            # base_path may have already written this table to disk.
+            # self.tables is per-instance in-memory state, not derived
+            # from the filesystem, so auto-discover before giving up.
+            candidate_path = self.base_path / table_name
+            if (candidate_path / "_delta_log").exists():
+                self.tables[table_name] = candidate_path
+                table_path = candidate_path
         if not table_path:
             raise ValueError(f"Unknown table: {table_name}")
         return table_path
