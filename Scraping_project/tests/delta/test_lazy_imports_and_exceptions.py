@@ -30,7 +30,7 @@ def test_lazy_imports_on_first_write(delta_manager, caplog):
     assert "deltalake" in sys.modules, "deltalake should be imported after first write"
     assert "pyarrow" in sys.modules, "pyarrow should be imported after first write"
 
-    assert "✅ Wrote 1 records to stage1_errors" in caplog.text
+    assert "Wrote 1 records to stage1_errors" in caplog.text
     assert delta_manager.count("stage1_errors") == 1
 
 @patch("deltalake.write_deltalake")
