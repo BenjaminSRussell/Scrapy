@@ -1,6 +1,6 @@
 import pytest
+import pytest_twisted
 from scrapy.crawler import CrawlerRunner
-from twisted.internet import defer, reactor
 
 from src.stage1.scout_spider import ScoutSpider
 
@@ -8,25 +8,49 @@ from src.stage1.scout_spider import ScoutSpider
 @pytest.mark.slow
 class TestEndToEndCrawl:
 
-    @pytest.mark.skip(reason="Requires full Scrapy reactor setup")
-    def test_scout_spider_full_crawl(self, delta_sandbox, redis_clean, http_server):
+    @pytest_twisted.inlineCallbacks
+    def test_scout_spider_full_crawl(self, delta_sandbox, redis_clean, http_server, monkeypatch):
+        import src.utils.delta as delta_module
+        import src.utils.redis as redis_module
+        from src.utils.delta import DeltaHelper
+        from src.utils.redis import RedisHelper
+
+        # Route the spider's global get_delta()/get_redis() singletons to this
+        # test's sandboxed instances, so its writes land where the assertion
+        # reads from (get_delta() otherwise defaults to the real ./data/delta_lake
+        # path - a separate on-disk location from delta_sandbox's temp dir).
+        delta_helper = DeltaHelper(base_path=delta_sandbox.base_path)
+        delta_helper._manager = delta_sandbox
+        original_write = delta_helper.write
+
+        def sync_write(table_name, data, mode="append", async_write=True):
+            # delta_sandbox is constructed with start_workers=False, so an
+            # async (queued) write would never drain - force synchronous.
+            return original_write(table_name, data, mode=mode, async_write=False)
+
+        monkeypatch.setattr(delta_helper, "write", sync_write)
+        monkeypatch.setattr(delta_module, "_delta_helper", delta_helper)
+
+        redis_helper = RedisHelper()
+        redis_helper._client = redis_clean
+        monkeypatch.setattr(redis_module, "_redis_helper", redis_helper)
+
         host, port = http_server
         start_url = f"http://{host}:{port}/index.html"
 
         settings = {
             "CLOSESPIDER_TIMEOUT": 10,
             "DEPTH_LIMIT": 2,
+            # pytest-twisted installs the plain SelectReactor by default (it
+            # doesn't touch asyncio, so it doesn't fight pytest-asyncio's own
+            # per-test event loop management elsewhere in the suite). Scrapy
+            # normally insists on AsyncioSelectorReactor; tell it to accept
+            # whatever reactor is already installed instead.
+            "TWISTED_REACTOR": None,
         }
 
         runner = CrawlerRunner(settings=settings)
-
-        @defer.inlineCallbacks
-        def crawl():
-            yield runner.crawl(ScoutSpider, start_urls=[start_url])
-            reactor.stop()
-
-        crawl()
-        reactor.run()
+        yield runner.crawl(ScoutSpider, start_urls=[start_url], allowed_domains=["127.0.0.1"])
 
         discovered = delta_sandbox.read("stage1_discovery")
         assert len(discovered) > 0

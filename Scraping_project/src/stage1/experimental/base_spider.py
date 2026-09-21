@@ -51,7 +51,7 @@ class BaseSpider(scrapy.Spider):
         self.name = kwargs.pop("name", self.name)
         super().__init__(*args, **kwargs)
 
-        self.allowed_domains = ["uconn.edu"]
+        self.allowed_domains = kwargs.get("allowed_domains") or ["uconn.edu"]
 
         default_ignored_extensions = list(URLProcessor.IGNORED_EXTENSIONS)
         self.IGNORED_EXTENSIONS = (
@@ -106,7 +106,7 @@ class BaseSpider(scrapy.Spider):
 
         self.max_depth = self.settings.getint("MAX_DEPTH") if hasattr(self, "settings") and self.settings else None
 
-        self.start_urls = self._load_seed_urls()
+        self.start_urls = kwargs.get("start_urls") or self._load_seed_urls()
 
     async def start(self):
         for url in self.start_urls:

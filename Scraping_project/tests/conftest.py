@@ -253,3 +253,46 @@ def postgres_clean():
     yield manager
     manager.execute(f"TRUNCATE {tables}")
     manager.close()
+
+
+@pytest.fixture
+def http_server():
+    """Real local HTTP server serving a tiny linked site, for spider integration tests."""
+    import http.server
+    import threading
+
+    pages = {
+        "/index.html": b"""<html><body>
+            <a href="/page1.html">Page 1</a>
+            <a href="/page2.html">Page 2</a>
+        </body></html>""",
+        "/page1.html": b'<html><body><a href="/page2.html">Page 2</a></body></html>',
+        "/page2.html": b"<html><body>No more links here.</body></html>",
+    }
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            body = pages.get(self.path)
+            if body is None:
+                self.send_response(404)
+                self.end_headers()
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, format, *args):
+            pass
+
+    server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+
+    host, port = server.server_address
+    yield host, port
+
+    server.shutdown()
+    server.server_close()
+    thread.join(timeout=5)
