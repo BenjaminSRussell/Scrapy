@@ -169,6 +169,7 @@ services:
       - GF_USERS_ALLOW_SIGN_UP=false
     volumes:
       - grafana-data:/var/lib/grafana
+      - ./monitoring/alerting:/etc/grafana/provisioning/alerting
     networks:
       - scraper-network
     depends_on:
