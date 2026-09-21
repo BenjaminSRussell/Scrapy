@@ -230,7 +230,7 @@ class TestBaseSpiderDuplicateDetection:
         urls = [
             "https://example.com/page",
             "https://example.com/page/",
-            "https://example.com/page
+            "https://example.com/page#section",
             "https://example.com/page?utm_source=123",
         ]
         normalized = [spider.normalize_url(url) for url in urls]
