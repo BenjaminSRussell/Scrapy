@@ -12,6 +12,7 @@ Phase 6 Enhancement: Added type-safe operations with Pydantic validation
 from typing import List, Dict, Any, Optional, TypeVar, Type, Generic
 from pathlib import Path
 import logging
+import os
 from pydantic import BaseModel, ValidationError
 
 logger = logging.getLogger(__name__)
@@ -27,10 +28,11 @@ class DeltaHelper:
         Initialize Delta helper.
 
         Args:
-            base_path: Base path for Delta Lake storage. Defaults to ./data/delta_lake
+            base_path: Base path for Delta Lake storage. Defaults to the
+                DELTA_LAKE_PATH env var, then ./data/delta_lake.
         """
         if base_path is None:
-            base_path = Path("./data/delta_lake")
+            base_path = os.getenv("DELTA_LAKE_PATH", "./data/delta_lake")
 
         self.base_path = Path(base_path)
         self.base_path.mkdir(parents=True, exist_ok=True)

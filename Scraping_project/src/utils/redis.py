@@ -7,6 +7,7 @@ Replaces src/common/redis_manager.py with a simpler, more consistent API.
 
 from typing import Optional, Set, List
 import json
+import os
 import redis
 import logging
 from functools import wraps
@@ -18,18 +19,24 @@ logger = logging.getLogger(__name__)
 class RedisHelper:
     """Centralized Redis operations."""
 
-    def __init__(self, host: str = "localhost", port: int = 6379, db: int = 0, password: Optional[str] = None):
+    def __init__(
+        self,
+        host: Optional[str] = None,
+        port: Optional[int] = None,
+        db: int = 0,
+        password: Optional[str] = None,
+    ):
         """
         Initialize Redis helper.
 
         Args:
-            host: Redis host address
-            port: Redis port number
+            host: Redis host address (default: REDIS_HOST env var, then localhost)
+            port: Redis port number (default: REDIS_PORT env var, then 6379)
             db: Redis database number
             password: Optional Redis AUTH password
         """
-        self.host = host
-        self.port = port
+        self.host = host or os.getenv("REDIS_HOST", "localhost")
+        self.port = port or int(os.getenv("REDIS_PORT", "6379"))
         self.db = db
         self.password = password
         self._client: Optional[redis.Redis] = None
@@ -315,15 +322,17 @@ class RedisHelper:
 _redis_helper: Optional[RedisHelper] = None
 
 
-def get_redis(host: str = "localhost", port: int = 6379, db: int = 0, password: Optional[str] = None) -> RedisHelper:
+def get_redis(
+    host: Optional[str] = None, port: Optional[int] = None, db: int = 0, password: Optional[str] = None
+) -> RedisHelper:
     """
     Get global Redis helper instance.
 
     This is the primary way to access Redis operations throughout the pipeline.
 
     Args:
-        host: Redis host address
-        port: Redis port number
+        host: Redis host address (default: REDIS_HOST env var, then localhost)
+        port: Redis port number (default: REDIS_PORT env var, then 6379)
         db: Redis database number
         password: Optional Redis AUTH password
 
