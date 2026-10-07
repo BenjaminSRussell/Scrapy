@@ -269,6 +269,38 @@ groups:
           action: "Check Delta Lake storage performance and network"
 
   # ============================================
+  # Lakehouse (Python writer) durability (#225, #167)
+  # ============================================
+  - name: delta_lakehouse_writes
+    interval: 30s
+    rules:
+      # Sustained async write failures: batches are being spilled, not written.
+      - alert: DeltaWriteFailuresSustained
+        expr: sum by (table) (increase(delta_write_failures_total{outcome="spilled"}[15m])) > 0
+        for: 15m
+        labels:
+          severity: critical
+          component: delta
+        annotations:
+          summary: "Delta writes for {{ $labels.table }} keep failing and spilling to disk"
+          description: "{{ $value }} batches for {{ $labels.table }} exhausted retries in 15m and were spilled to _write_spill/."
+          impact: "High - Data is durable on local disk but missing from the lake until replayed"
+          action: "Fix the Delta/storage error, then run LakehouseManager.replay_spilled_writes()"
+
+      # Producers hitting a full async queue (backpressure) instead of hanging.
+      - alert: DeltaWriteQueueSaturated
+        expr: sum(increase(delta_write_queue_full_total[10m])) > 0
+        for: 10m
+        labels:
+          severity: warning
+          component: delta
+        annotations:
+          summary: "Delta async write queue is saturated"
+          description: "Writers found the queue full for queue_put_timeout_seconds and spilled {{ $value }} batches in 10m (depth: delta_write_queue_depth)."
+          impact: "Medium - Writer thread cannot keep up; batches spilled to disk"
+          action: "Check writer thread health and storage latency; raise delta_lake.queue_maxsize only if storage is healthy"
+
+  # ============================================
   # Infrastructure Alerts
   # ============================================
   - name: infrastructure
