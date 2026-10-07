@@ -87,11 +87,14 @@ def cast_rows_to_schema(
     row index, column, value, error and the row itself.
     """
     columns = {f.name: [row.get(f.name) for row in rows] for f in schema}
-    try:
-        arrays = [pa.array(columns[f.name], type=f.type) for f in schema]
-        return pa.Table.from_arrays(arrays, schema=schema), rows, []
-    except (pa.ArrowInvalid, pa.ArrowTypeError, TypeError, ValueError, OverflowError):
-        pass
+    # Non-nullable (required) fields must never be null-filled (#226).
+    required_ok = all(v is not None for f in schema if not f.nullable for v in columns[f.name])
+    if required_ok:
+        try:
+            arrays = [pa.array(columns[f.name], type=f.type) for f in schema]
+            return pa.Table.from_arrays(arrays, schema=schema), rows, []
+        except (pa.ArrowInvalid, pa.ArrowTypeError, TypeError, ValueError, OverflowError):
+            pass
 
     kept: list[dict[str, Any]] = []
     failures: list[dict[str, Any]] = []
@@ -100,6 +103,18 @@ def cast_rows_to_schema(
         drop = False
         for f in schema:
             value = row.get(f.name)
+            if value is None and not f.nullable:
+                failures.append(
+                    {
+                        "row_index": idx,
+                        "column": f.name,
+                        "value": None,
+                        "error": "required (non-nullable) field is missing or null",
+                        "row": row,
+                    }
+                )
+                drop = True
+                continue
             try:
                 pa.array([value], type=f.type)
             except (pa.ArrowInvalid, pa.ArrowTypeError, TypeError, ValueError, OverflowError) as e:
@@ -117,6 +132,47 @@ def cast_rows_to_schema(
         return None, [], failures
     arrays = [pa.array([r.get(f.name) for r in kept], type=f.type) for f in schema]
     return pa.Table.from_arrays(arrays, schema=schema), kept, failures
+
+
+def evolve_table(table: Any, rows: list[dict[str, Any]], known: set[str]) -> tuple[Any, list[str]]:
+    """Append columns present in ``rows`` but not in ``known`` (additive evolution, #229).
+
+    Types are inferred from the batch. Columns that are null in every row carry
+    no data and no usable type, so they are skipped until a value shows up.
+    Returns ``(table, added_column_names)``.
+    """
+    new_cols: list[str] = []
+    for row in rows:
+        for col in row:
+            if col not in known and col not in new_cols:
+                new_cols.append(col)
+    added: list[str] = []
+    for col in new_cols:
+        arr = pa.array([row.get(col) for row in rows])
+        if pa.types.is_null(arr.type):
+            continue
+        table = table.append_column(col, arr)
+        added.append(col)
+    return table, added
+
+
+def infer_table(rows: list[dict[str, Any]]) -> Any:
+    """Arrow table inferred from ``rows``, dropping all-null (untyped) columns."""
+    table = pa.Table.from_pylist(rows)
+    keep = [name for name, typ in zip(table.column_names, table.schema.types) if not pa.types.is_null(typ)]
+    return table.select(keep)
+
+
+try:  # schema evolution visibility (#226)
+    from prometheus_client import Counter as _SCounter
+
+    DELTA_SCHEMA_EVOLUTIONS = _SCounter(
+        "delta_schema_evolutions_total",
+        "Columns added to a Delta table by additive schema evolution, by table.",
+        ["table"],
+    )
+except Exception:
+    DELTA_SCHEMA_EVOLUTIONS = None
 
 
 WriteMode: TypeAlias = Literal["append", "overwrite", "error", "ignore"]
@@ -395,46 +451,38 @@ class LakehouseManager:
         try:
             import time
 
-            import pyarrow as pa
+            import pyarrow as pa  # noqa: F401  (lazy import: loads pyarrow on first write)
             from deltalake import WriterProperties, write_deltalake
             from deltalake.exceptions import CommitFailedError, DeltaError
 
-            if table_name not in self.schema_cache:
-                table = pa.Table.from_pylist(data)
-                self.schema_cache[table_name] = table.schema
-                logger.debug(f"Cached schema for {table_name}: {table.schema}")
+            # #226/#229: the authoritative schema is the table's own, read from
+            # _delta_log on every write - not whatever this process happened to
+            # infer from its first batch. Policy is additive-only: existing
+            # columns keep their types (rows are cast, failures quarantined),
+            # new columns are appended via schema_mode="merge", and required
+            # (non-nullable) columns are never null-filled.
+            table_schema = self._table_schema(table_path) if mode == "append" else None
+            if table_schema is None:
+                table = infer_table(data)
             else:
-                cached_schema = self.schema_cache[table_name]
-
-                cached_field_names = {field.name for field in cached_schema}
-                incoming_field_names: set[str] = set()
-                for row in data:
-                    incoming_field_names.update(row.keys())
-
-                new_columns = incoming_field_names - cached_field_names
-
-                if new_columns:
-                    logger.warning(
-                        f"[SCHEMA REFRESH] Detected {len(new_columns)} new columns in {table_name}: {new_columns}"
+                cast_table, kept, failures = cast_rows_to_schema(
+                    data, table_schema, getattr(self, "cast_mode", "strict")
+                )
+                if failures:
+                    self._record_cast_failures(table_name, failures)
+                if cast_table is None:
+                    logger.error(
+                        f"[CAST] All {len(data)} rows for {table_name} failed to cast; "
+                        f"quarantined to {CAST_QUARANTINE_TABLE}"
                     )
-                    table = pa.Table.from_pylist(data)
-                    self.schema_cache[table_name] = table.schema
-                    logger.info(f"[SCHEMA REFRESH] Updated schema for {table_name}: {table.schema}")
-                else:
-
-                    cast_table, kept, failures = cast_rows_to_schema(
-                        data, cached_schema, getattr(self, "cast_mode", "strict")
-                    )
-                    if failures:
-                        self._record_cast_failures(table_name, failures)
-                    if cast_table is None:
-                        logger.error(
-                            f"[CAST] All {len(data)} rows for {table_name} failed to cast; "
-                            f"quarantined to {CAST_QUARANTINE_TABLE}"
-                        )
-                        return True  # handled: every row is recorded in quarantine
-                    table = cast_table
-                    data = kept
+                    return True  # handled: every row is recorded in quarantine
+                data = kept
+                table, added = evolve_table(cast_table, data, set(table_schema.names))
+                if added:
+                    if DELTA_SCHEMA_EVOLUTIONS is not None:
+                        DELTA_SCHEMA_EVOLUTIONS.labels(table=table_name).inc(len(added))
+                    logger.warning(f"[SCHEMA EVOLUTION] {table_name}: adding columns {added}")
+            self.schema_cache[table_name] = table.schema  # informational only
 
             partition_by = None
             if table_name in ["stage1_discovery", "stage2_page_analysis"]:
@@ -482,6 +530,12 @@ class LakehouseManager:
         if table_name in ["stage1_discovery", "stage2_page_analysis"] and len(data) >= 1000:
             self.maintenance_queue.put(("optimize", table_name, 0))
         return True
+
+    def _table_schema(self, table_path: Path) -> Any:
+        """Current Arrow schema from the table's _delta_log, or None if no table yet."""
+        if not (table_path / "_delta_log").exists():
+            return None
+        return pa.schema(DeltaTable(str(table_path)).schema().to_arrow())
 
     def _record_cast_failures(self, table_name: str, failures: list[dict[str, Any]]) -> None:
         """Count, log and quarantine rows/values that failed to cast (#818)."""
