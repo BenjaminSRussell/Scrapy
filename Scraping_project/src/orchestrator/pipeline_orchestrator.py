@@ -194,7 +194,7 @@ class PipelineOrchestrator:
         summary_count = 0
         for table in (TABLE_STAGE3_SUMMARIES, LEGACY_TABLE_STAGE3_SUMMARIES):
             try:
-                summary_count += len(self.delta.read(table) or [])
+                summary_count += int(self.delta.count(table) or 0)  # metadata count, no full read (#372)
             except Exception as e:
                 logger.warning(f"Could not read {table}: {e}")
 
@@ -216,8 +216,8 @@ class PipelineOrchestrator:
             return written
 
         try:
-            large_summaries = self.delta.read("stage4_large_doc_summaries")
-            large_count = len(large_summaries)
+            # metadata count, no full read (#372)
+            large_count = int(self.delta.count("stage4_large_doc_summaries") or 0)
 
             logger.info(f" Stage 4 complete: {large_count} large doc summaries created")
             self.stats.stage4_large_summaries = large_count

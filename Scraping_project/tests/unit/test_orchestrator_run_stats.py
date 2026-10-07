@@ -45,8 +45,12 @@ class _FakeDelta:
     def __init__(self, tables):
         self.tables = tables
 
+    def count(self, name):
+        return len(self.tables.get(name, []))
+
     def read(self, name, **kwargs):
-        return list(self.tables.get(name, []))
+        # The stage3/4 fallback must use count(), never materialize (#372).
+        raise AssertionError(f"read({name!r}) called; use count()")
 
 
 @pytest.fixture
