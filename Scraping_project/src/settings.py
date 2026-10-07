@@ -254,6 +254,10 @@ AGGREGATION_ENABLED = _scrapy_config.get("aggregation_enabled", True)
 AGGREGATION_OUTPUT_TOPIC = _scrapy_config.get(
     "aggregation_output_topic", "entity_summaries"
 )
+# Most-recent items kept in memory per entity, and whether summaries are
+# written to the Delta table named by AGGREGATION_OUTPUT_TOPIC (#790).
+AGGREGATION_MAX_ITEMS_PER_ENTITY = _scrapy_config.get("aggregation_max_items_per_entity", 10)
+AGGREGATION_PERSIST = _scrapy_config.get("aggregation_persist", True)
 
 # ============================================================================
 # ============================================================================
