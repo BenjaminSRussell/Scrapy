@@ -13,6 +13,7 @@ src.utils.redis / src.core.config APIs.
 from __future__ import annotations
 
 import json
+import sys
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -159,3 +160,75 @@ def test_update_circuit_breaker_metrics_counts_open_circuits(exporter, monkeypat
     exporter._update_circuit_breaker_metrics()
 
     assert exporter.statsd.gauges[("circuit_breaker.open_count", ())] == 2
+
+
+# ---- #208: no blocking wait; HTTP health for k8s probes --------------------
+
+def test_start_does_not_wait_for_crawl_data(exporter, monkeypatch):
+    """With no seeds/discovery the first update cycle must still run at once."""
+    import time as _time
+
+    cycles = []
+
+    def one_cycle():
+        cycles.append(_time.monotonic())
+        raise KeyboardInterrupt  # stop the infinite loop after the first cycle
+
+    monkeypatch.setattr(exporter, "_update_queue_metrics", one_cycle)
+    t0 = _time.monotonic()
+    with pytest.raises(KeyboardInterrupt):
+        exporter.start()
+    assert cycles and cycles[0] - t0 < 1.0
+    assert not hasattr(exporter, "_wait_for_scraping_to_start")
+
+
+def test_health_endpoints_ready_without_seeds(exporter):
+    import urllib.error
+    import urllib.request
+
+    server = exporter.start_health_server(0, host="127.0.0.1")
+    port = server.server_address[1]
+    try:
+        body = urllib.request.urlopen(f"http://127.0.0.1:{port}/metrics", timeout=5).read().decode()
+        assert "metrics_exporter_up 1" in body
+        assert urllib.request.urlopen(f"http://127.0.0.1:{port}/healthz", timeout=5).status == 200
+
+        exporter.update_interval = 1
+        exporter.started_ts = exporter.last_update_ts = 0.0  # loop stalled long ago
+        with pytest.raises(urllib.error.HTTPError) as err:
+            urllib.request.urlopen(f"http://127.0.0.1:{port}/healthz", timeout=5)
+        assert err.value.code == 503
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_update_cycle_records_progress(exporter, monkeypatch):
+    for name in ("_update_queue_metrics", "_update_circuit_breaker_metrics", "_update_delta_lake_metrics",
+                 "_update_error_metrics", "_update_throughput_metrics"):
+        monkeypatch.setattr(exporter, name, lambda: None)
+
+    def stop(_seconds):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(exporter_module.time, "sleep", stop)
+    with pytest.raises(KeyboardInterrupt):
+        exporter._update_loop()
+    assert exporter.updates_total == 1 and exporter.last_update_ts > 0
+    assert exporter.is_healthy()
+
+
+def test_cli_accepts_port_flag_used_by_helm(monkeypatch):
+    captured = {}
+
+    class Stub:
+        def __init__(self, **kw):
+            captured["init"] = kw
+
+        def start(self, health_port=0):
+            captured["port"] = health_port
+
+    monkeypatch.setattr(exporter_module, "MetricsExporter", Stub)
+    monkeypatch.setattr(sys, "argv", ["metrics_exporter.py", "--port", "9100", "--interval", "5"])
+    exporter_module.main()
+    assert captured["port"] == 9100 and captured["init"]["update_interval"] == 5
