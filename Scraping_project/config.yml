@@ -194,7 +194,9 @@ kafka:
 # ============================================
 delta_lake:
   base_path: ./data/delta_lake
-  checkpoint_interval: 100  # Checkpoint every N writes
+  # Delta log checkpoint every N commits (sets the delta.checkpointInterval table
+  # property); checkpoint()/shutdown also writes one explicitly (#274).
+  checkpoint_interval: 100
   force_shutdown_timeout: 15  # Seconds before forced shutdown
   queue_maxsize: 1000  # Maximum queue size to prevent memory overload
   # Producers wait this long for queue space, then spill to _write_spill/ (#167).

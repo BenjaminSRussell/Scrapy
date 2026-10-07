@@ -70,7 +70,30 @@ try:  # async write durability (#225) and queue backpressure (#167)
 except Exception:
     DELTA_WRITE_FAILURES = DELTA_WRITE_QUEUE_FULL = DELTA_WRITE_QUEUE_DEPTH = None
 
+try:  # Delta log checkpoints (#274)
+    from prometheus_client import Counter as _CCounter
+
+    DELTA_CHECKPOINTS = _CCounter(
+        "delta_checkpoints_total",
+        "Explicit Delta log checkpoints, by table and outcome (created|failed).",
+        ["table", "outcome"],
+    )
+except Exception:
+    DELTA_CHECKPOINTS = None
+
 SPILL_DIR_NAME = "_write_spill"
+CHECKPOINT_INTERVAL_PROPERTY = "delta.checkpointInterval"
+
+
+def last_checkpoint_version(table_path: Path) -> int | None:
+    """Version recorded in ``_delta_log/_last_checkpoint``, or None if absent/unreadable."""
+    import json as _json
+
+    marker = Path(table_path) / "_delta_log" / "_last_checkpoint"
+    try:
+        return int(_json.loads(marker.read_text())["version"])
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
 
 
 def cast_rows_to_schema(
@@ -207,6 +230,10 @@ class LakehouseManager:
         self.write_retries = max(1, int(config.get("delta_lake.write_retries", 3)))
         self.write_retry_backoff = float(config.get("delta_lake.write_retry_backoff_seconds", 0.5))
         self.spill_path = self.base_path / SPILL_DIR_NAME
+        # #274: delta-rs writes a log checkpoint every N commits, where N is the
+        # table property delta.checkpointInterval. Keep it in sync with config.
+        self.checkpoint_interval = max(1, int(config.get("delta_lake.checkpoint_interval", 100)))
+        self._checkpoint_interval_synced: set[str] = set()
 
         self.schema_cache: dict[str, Any] = {}
 
@@ -489,6 +516,8 @@ class LakehouseManager:
                         schema_mode="merge" if mode == "append" else "overwrite",
                         writer_properties=writer_props,
                         partition_by=partition_by,
+                        # Applied when this write creates the table (#274).
+                        configuration={CHECKPOINT_INTERVAL_PROPERTY: str(self.checkpoint_interval)},
                     )
                     break
                 except (CommitFailedError, DeltaError) as commit_error:
@@ -515,6 +544,8 @@ class LakehouseManager:
         except Exception as e:
             self._handle_writer_exception(e, table_name)
             return False
+
+        self._sync_checkpoint_interval(table_name, table_path)
 
         if table_name in ["stage1_discovery", "stage2_page_analysis"] and len(data) >= 1000:
             self.maintenance_queue.put(("optimize", table_name, 0))
@@ -699,6 +730,52 @@ class LakehouseManager:
         for table_name in self.tables.keys():
             self._vacuum_table(table_name, retention_hours)
 
+    def _sync_checkpoint_interval(self, table_name: str, table_path: Path) -> None:
+        """Set delta.checkpointInterval on tables created before it was configured (#274).
+
+        Done once per table per process; failures only log, since delta-rs
+        still checkpoints at its default interval.
+        """
+        if table_name in self._checkpoint_interval_synced:
+            return
+        self._checkpoint_interval_synced.add(table_name)
+        want = str(self.checkpoint_interval)
+        try:
+            dt = DeltaTable(str(table_path))
+            if dt.metadata().configuration.get(CHECKPOINT_INTERVAL_PROPERTY) != want:
+                dt.alter.set_table_properties({CHECKPOINT_INTERVAL_PROPERTY: want})
+                logger.info(f"Set {CHECKPOINT_INTERVAL_PROPERTY}={want} on {table_name}")
+        except Exception as e:
+            logger.warning(f"Could not set {CHECKPOINT_INTERVAL_PROPERTY} on {table_name}: {e}")
+
+    def create_checkpoints(self) -> dict[str, int]:
+        """Write a Delta log checkpoint for every table with commits since the last one (#274).
+
+        Returns {table_name: checkpointed_version} for tables that got a new checkpoint.
+        """
+        created: dict[str, int] = {}
+        if not DELTA_AVAILABLE:
+            return created
+        for name, table_path in self.tables.items():
+            if not (table_path / "_delta_log").exists():
+                continue
+            try:
+                dt = DeltaTable(str(table_path))
+                version = dt.version()
+                last = last_checkpoint_version(table_path)
+                if last is not None and last >= version:
+                    continue
+                dt.create_checkpoint()
+                created[name] = version
+                if DELTA_CHECKPOINTS is not None:
+                    DELTA_CHECKPOINTS.labels(table=name, outcome="created").inc()
+                logger.info(f" Checkpointed {name} at version {version}")
+            except Exception as e:
+                if DELTA_CHECKPOINTS is not None:
+                    DELTA_CHECKPOINTS.labels(table=name, outcome="failed").inc()
+                logger.error(f"Failed to checkpoint {name}: {e}")
+        return created
+
     def checkpoint(self, timeout: int = 30):
 
         logger.info(f"Waiting for queue to finish (timeout: {timeout}s)...")
@@ -721,12 +798,7 @@ class LakehouseManager:
             logger.info(f" Queue emptied in {elapsed:.1f}s")
 
         logger.info("Checkpointing all Delta tables...")
-        for name, table_path in self.tables.items():
-            try:
-                if (table_path / "_delta_log").exists():
-                    logger.info(f" Verified {name}")
-            except Exception as e:
-                logger.error(f"Failed to checkpoint {name}: {e}")
+        self.create_checkpoints()
 
     def shutdown(self, timeout: int = 15):
         if not self._workers_started:
