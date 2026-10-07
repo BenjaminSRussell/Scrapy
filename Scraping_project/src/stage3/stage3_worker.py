@@ -6,7 +6,11 @@ from typing import Any
 
 from datasketch import MinHash, MinHashLSH
 
-from src.core.constants import SUMMARY_LIMITS
+from src.core.constants import (
+    LEGACY_TABLE_STAGE3_SUMMARIES,
+    SUMMARY_LIMITS,
+    TABLE_STAGE3_SUMMARIES,
+)
 from src.utils.delta import get_delta
 from src.utils.postgres import PostgresManager
 from src.otel_tracing import ensure_crawl_job_id, init_tracing, start_span
@@ -22,6 +26,23 @@ class Stage3Worker:
         self.delta = get_delta()
         self.postgres = PostgresManager.get_instance()
         self.SIMILARITY_THRESHOLD = 0.3
+
+    def _processed_hashes(self) -> set:
+        """url_hashes Stage 3 has already summarized (#316/#612).
+
+        Stage 3's output table is TABLE_STAGE3_SUMMARIES. Lakes written before
+        #612 hold Stage 3 rows under LEGACY_TABLE_STAGE3_SUMMARIES, so both are
+        read: dropping the legacy read would re-summarize every old document.
+        Each table is optional; a missing one contributes nothing.
+        """
+        hashes: set = set()
+        for table in (TABLE_STAGE3_SUMMARIES, LEGACY_TABLE_STAGE3_SUMMARIES):
+            try:
+                rows = self.delta.read(table) or []
+            except Exception:
+                continue
+            hashes.update(r["url_hash"] for r in rows if r.get("url_hash"))
+        return hashes
 
     async def run(self):
         init_tracing(service_name="stage3-worker")
@@ -53,11 +74,7 @@ class Stage3Worker:
             logger.info("No quality documents to process")
             return
 
-        try:
-            processed = self.delta.read("stage4_summaries")
-            processed_hashes = {r["url_hash"] for r in processed}
-        except Exception:
-            processed_hashes = set()
+        processed_hashes = self._processed_hashes()
 
         pending = [doc for doc in quality_docs if doc.get("url_hash") not in processed_hashes]
 
@@ -84,7 +101,7 @@ class Stage3Worker:
             valid_results = [r for r in results if isinstance(r, dict) and not isinstance(r, Exception)]
 
             if valid_results:
-                self.delta.write("stage4_summaries", valid_results, mode="append", async_write=False)
+                self.delta.write(TABLE_STAGE3_SUMMARIES, valid_results, mode="append", async_write=False)
                 logger.info(f"Saved {len(valid_results)} summaries")
 
                 if self.postgres:

@@ -29,6 +29,10 @@ TABLE_STAGE1_ERRORS = "stage1_errors"
 TABLE_STAGE2_QUEUE = "stage2_queue"
 TABLE_STAGE2_PAGE_ANALYSIS = "stage2_page_analysis"
 TABLE_STAGE3_SUMMARIES = "stage3_summaries"
+# Where Stage 3 wrote before #612. Read alongside TABLE_STAGE3_SUMMARIES so a
+# lake populated under the old name is not re-summarized; never written to by
+# Stage 3 any more. Drop once existing lakes have been compacted forward.
+LEGACY_TABLE_STAGE3_SUMMARIES = "stage4_summaries"
 TABLE_STAGE4_LARGE_DOC_SUMMARIES = "stage4_large_doc_summaries"
 
 # Document classification thresholds

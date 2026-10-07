@@ -7,6 +7,7 @@ from typing import Literal
 from scrapy.crawler import CrawlerProcess
 from scrapy.utils.project import get_project_settings
 
+from src.core.constants import LEGACY_TABLE_STAGE3_SUMMARIES, TABLE_STAGE3_SUMMARIES
 from src.utils.delta import get_delta
 from src.stage2.stage2_worker import Stage2Worker
 from src.stage3.stage3_worker import Stage3Worker
@@ -142,17 +143,18 @@ class PipelineOrchestrator:
         worker = Stage3Worker(max_concurrent=max_concurrent, batch_size=batch_size)
         await worker.run()
 
-        try:
-            summaries = self.delta.read("stage4_summaries")
-            summary_count = len(summaries)
+        # Canonical Stage 3 table plus the pre-#612 legacy name, so a lake
+        # written under the old name still reports its summaries.
+        summary_count = 0
+        for table in (TABLE_STAGE3_SUMMARIES, LEGACY_TABLE_STAGE3_SUMMARIES):
+            try:
+                summary_count += len(self.delta.read(table) or [])
+            except Exception as e:
+                logger.warning(f"Could not read {table}: {e}")
 
-            logger.info(f" Stage 3 complete: {summary_count} summaries created")
-            self.stats.stage3_summaries_created = summary_count
-
-            return summary_count
-        except Exception as e:
-            logger.warning(f"Could not read stage4_summaries: {e}")
-            return 0
+        logger.info(f" Stage 3 complete: {summary_count} summaries created")
+        self.stats.stage3_summaries_created = summary_count
+        return summary_count
 
     async def run_stage4(self) -> int:
         logger.info("=" * 80)

@@ -118,6 +118,8 @@ SCHEMA_REGISTRY: Final[Dict[str, pa.Schema]] = {
     "stage2_queue": STAGE2_QUEUE_SCHEMA,
     "stage2_page_analysis": STAGE2_ANALYSIS_SCHEMA,
     "stage3_queue": STAGE3_SUMMARY_SCHEMA,  # Reuse for queue
+    "stage3_summaries": STAGE3_SUMMARY_SCHEMA,
+    # Legacy name for Stage 3 output (#612); still read, no longer written by Stage 3.
     "stage4_summaries": STAGE3_SUMMARY_SCHEMA,
     "stage4_large_docs": STAGE4_LARGE_DOC_SCHEMA,
     "stage4_large_doc_summaries": STAGE4_LARGE_DOC_SCHEMA,
