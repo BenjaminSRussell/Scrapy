@@ -1,10 +1,19 @@
 version: 2
 updates:
+  # Python manifests live under Scraping_project/, not the repo root (#480).
   - package-ecosystem: "pip"
-    directory: "/"
+    directory: "/Scraping_project"
     schedule:
       interval: "weekly"
   - package-ecosystem: "github-actions"
     directory: "/"
+    schedule:
+      interval: "weekly"
+  - package-ecosystem: "docker"
+    directory: "/Scraping_project"
+    schedule:
+      interval: "weekly"
+  - package-ecosystem: "cargo"
+    directory: "/Scraping_project/kafka-delta-ingest"
     schedule:
       interval: "weekly"
