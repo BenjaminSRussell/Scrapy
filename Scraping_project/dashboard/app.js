@@ -181,45 +181,7 @@ function initializeCharts() {
     });
 }
 
-function parseMetrics(text) {
-    const metrics = {};
-    const lines = text.split('\n');
-
-    for (const line of lines) {
-        if (line.startsWith('#') || line.trim() === '') continue;
-
-        const parts = line.split(' ');
-        if (parts.length >= 2) {
-            const key = parts[0];
-            const value = parseFloat(parts[1]);
-            if (!isNaN(value)) {
-                metrics[key] = value;
-            }
-        }
-    }
-
-    return metrics;
-}
-
-function formatNumber(num) {
-    if (num >= 1000000) {
-        return (num / 1000000).toFixed(1) + 'M';
-    } else if (num >= 1000) {
-        return (num / 1000).toFixed(1) + 'K';
-    }
-    return Math.round(num).toLocaleString();
-}
-
-function formatBytes(bytes) {
-    if (bytes >= 1073741824) {
-        return (bytes / 1073741824).toFixed(2) + ' GB';
-    } else if (bytes >= 1048576) {
-        return (bytes / 1048576).toFixed(2) + ' MB';
-    } else if (bytes >= 1024) {
-        return (bytes / 1024).toFixed(2) + ' KB';
-    }
-    return bytes + ' B';
-}
+// parseMetrics / formatNumber / formatBytes come from format-utils.js (#1043)
 
 function getUptime() {
     const seconds = Math.floor((Date.now() - startTime) / 1000);
@@ -448,14 +410,39 @@ function setMetricText(id, value) {
     }
 }
 
-function updateDashboard(metrics);
-        checkMilestones(metrics);
-        if (metricsWasDown) {
-            metricsWasDown = false;
-            const ann = document.getElementById('metrics-reconnect-announce') || document.getElementById('refresh-status');
-            if (ann) ann.textContent = 'Metrics connection restored';
-            addActivityLogItem('success', 'Metrics connection restored');
-        } {
+const MILESTONES = [1000, 10000, 100000, 1000000];
+const milestonesHit = {};
+let milestonesPrimed = false;
+
+function checkMilestones(metrics) {
+    const tracked = {
+        stage1_urls_discovered_total: 'URLs discovered',
+        stage2_pages_analyzed_total: 'pages analyzed',
+    };
+    for (const [key, label] of Object.entries(tracked)) {
+        const value = metrics[key] || 0;
+        for (const m of MILESTONES) {
+            const id = key + ':' + m;
+            if (value >= m && !milestonesHit[id]) {
+                milestonesHit[id] = true;
+                // Milestones already passed on first load are recorded silently.
+                if (milestonesPrimed) {
+                    addActivityLogItem('success', `Milestone: ${formatNumber(m)} ${label}`);
+                }
+            }
+        }
+    }
+    milestonesPrimed = true;
+}
+
+function updateDashboard(metrics) {
+    checkMilestones(metrics);
+    if (metricsWasDown) {
+        metricsWasDown = false;
+        const ann = document.getElementById('metrics-reconnect-announce') || document.getElementById('refresh-status');
+        if (ann) ann.textContent = 'Metrics connection restored';
+        addActivityLogItem('success', 'Metrics connection restored');
+    }
     const s1Discovered = metrics['stage1_urls_discovered_total'] || 0;
     const s1Queued = metrics['stage1_urls_queued_total'] || 0;
     const s2Analyzed = metrics['stage2_pages_analyzed_total'] || 0;
@@ -933,10 +920,16 @@ function applyFeatureFlags() {
     applyEnvBadge();
 }
 
+function applyVersionWatermark() {
+    const el = document.getElementById('cc-version');
+    if (el) el.textContent = 'v' + (window.__CC_VERSION__ || 'dev');
+}
+
 function initialize() {
     console.log('Initializing Pipeline Control Center...');
 
     applyFeatureFlags();
+    applyVersionWatermark();
     setupTabs();
     const deep = tabFromLocation();
     if (deep) activateTab(deep, false);
