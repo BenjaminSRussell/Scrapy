@@ -95,5 +95,5 @@ class TestRedisIntegration:
         assert not helper.check_url_seen("https://example.com/x", "cleanup")
 
         helper.increment_counter("some_counter")
-        helper.clear_all()
+        helper.clear_all(confirm=True)
         assert helper.get_key_count() == 0
