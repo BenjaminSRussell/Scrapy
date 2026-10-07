@@ -30,6 +30,17 @@ try:  # accepted vs quarantined Stage 2 rows (#331)
 except Exception:  # prometheus_client missing or metric already registered
     STAGE2_ROWS = None
 
+try:  # exceptions escaping _analyze_url inside gather (#214)
+    from prometheus_client import Counter as _Counter
+
+    STAGE2_GATHER_EXCEPTIONS = _Counter(
+        "stage2_gather_exceptions_total",
+        "Exceptions raised out of Stage 2 URL analysis inside asyncio.gather.",
+        ["exception"],
+    )
+except Exception:
+    STAGE2_GATHER_EXCEPTIONS = None
+
 
 def split_stage2_results(results: list[Any]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Split a batch into (accepted analysis rows, quarantined error rows) (#331)."""
@@ -180,7 +191,7 @@ class Stage2Worker:
 
             batch_time = time.time() - batch_start
 
-            valid_results = [r for r in results if isinstance(r, dict) and not isinstance(r, Exception)]
+            valid_results = self._normalize_gather_results(batch, results)
             # Silver analysis excludes failures; they go to a quarantine table (#331).
             accepted, quarantined = split_stage2_results(valid_results)
 
@@ -239,6 +250,35 @@ class Stage2Worker:
 
         logger.info("[STAGE2] Worker completed all batches")
         return counts
+
+    def _normalize_gather_results(
+        self, batch: list[dict[str, Any]], results: list[Any]
+    ) -> list[dict[str, Any]]:
+        """Turn exceptions from ``gather`` into error records instead of dropping them (#214).
+
+        An exception result becomes a normal ``has_error`` row for its input URL, so
+        it is quarantined to stage2_errors and follows the retry/DLQ policy (#160)
+        like any other failure. ``results`` is in ``batch`` order (``gather`` keeps it).
+        """
+        rows: list[dict[str, Any]] = []
+        for record, result in zip(batch, results, strict=False):
+            if isinstance(result, dict):
+                rows.append(result)
+                continue
+            url = record.get("url") if isinstance(record.get("url"), str) else ""
+            url_hash = record.get("url_hash") if isinstance(record.get("url_hash"), str) else ""
+            if isinstance(result, BaseException):
+                name = type(result).__name__
+                logger.error(f"[STAGE2] Unhandled {name} analysing {str(url)[:80]}: {result}", exc_info=result)
+                message = f"exception: {name}: {result}"
+            else:
+                name = type(result).__name__
+                logger.error(f"[STAGE2] Unexpected {name} result for {str(url)[:80]}; recording as error")
+                message = f"unexpected_result: {name}"
+            if STAGE2_GATHER_EXCEPTIONS is not None:
+                STAGE2_GATHER_EXCEPTIONS.labels(exception=name).inc()
+            rows.append(self._error_record(url or "", url_hash or "", 0, message[:500]))
+        return rows
 
     async def _update_queue_status(
         self, completed_urls: list[str], table_name: str = "stage2_queue", status: str = "completed"
