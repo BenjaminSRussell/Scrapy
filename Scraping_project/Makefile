@@ -1,4 +1,10 @@
-.PHONY: help install install-dev test test-unit test-integration test-coverage lint format security clean docker-up docker-down pre-commit ci
+# Every recipe is phony (none produce a file named after the target) (#796).
+.PHONY: help install install-dev update-deps test test-unit test-integration test-fast \
+	test-coverage test-coverage-min test-watch lint lint-fix format typecheck security \
+	security-full docker-build docker-up docker-down docker-down-clean docker-logs docker-ps \
+	docker-shell docker-test pre-commit pre-commit-update ci ci-docker clean clean-all dev \
+	serve stop restart shell notebook db-migrate db-reset logs metrics prometheus docs \
+	docs-coverage benchmark quick-test quick-check quick-commit show-config tree size
 
 # Default target
 .DEFAULT_GOAL := help
@@ -78,12 +84,13 @@ test-watch: ## Run tests in watch mode (needs `pip install pytest-watch`)
 
 ##@ Code Quality
 
-lint: ## Run all linters
+# ruff covers the pyflakes/pycodestyle checks flake8 ran; flake8 had no config
+# and duplicated (and disagreed with) ruff, so it is no longer part of lint (#361).
+lint: ## Run all linters (ruff, black, isort)
 	@echo "$(BLUE)Running linters...$(NC)"
 	ruff check .
 	black --check src tests
 	isort --check-only src tests
-	flake8 src tests
 	@echo "$(GREEN)✓ Linting complete$(NC)"
 
 lint-fix: ## Fix linting issues automatically
