@@ -6,7 +6,7 @@ rust-version = "1.90"
 
 [dependencies]
 # Kafka client - Latest stable version with all features
-rdkafka = { version = "0.38", features = ["cmake-build", "ssl", "sasl", "zstd"] }
+rdkafka = { version = "0.39", features = ["cmake-build", "ssl", "sasl", "zstd"] }
 
 # Delta Lake - Latest version with DataFusion support
 deltalake = { version = "0.28", features = ["datafusion"] }
