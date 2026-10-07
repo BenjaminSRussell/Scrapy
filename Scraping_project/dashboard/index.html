@@ -547,7 +547,15 @@
         @media (hover: none) {
             .card:hover { transform: none; }
         }
-    </style>
+    
+        .chart-data-table { margin-top: 0.5rem; font-size: 0.85rem; }
+        .chart-data-table summary { cursor: pointer; color: var(--text-muted, #94a3b8); }
+        .table-scroll { overflow-x: auto; max-width: 100%; }
+        .data-fallback-table { width: 100%; border-collapse: collapse; margin-top: 0.5rem; }
+        .data-fallback-table th, .data-fallback-table td { border: 1px solid #334155; padding: 0.25rem 0.5rem; text-align: left; }
+        .legend-toggles { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.5rem; }
+        .legend-toggles button { font-size: 0.8rem; }
+        </style>
 </head>
 <body>
     <noscript>
@@ -590,7 +598,7 @@
                 <button type="button" class="tab-button" data-tab="pipeline">🔄 Pipeline Stages</button>
                 <button type="button" class="tab-button" data-tab="performance">📈 Performance</button>
                 <button type="button" class="tab-button" data-tab="system">⚙️ System Health</button>
-                <button type="button" class="tab-button" data-tab="activity">📋 Activity Log <button type="button" id="clear-activity" class="btn" style="margin-left:0.5rem;font-size:0.8rem">Clear</button></button>
+                <button type="button" class="tab-button" data-tab="activity">📋 Activity Log</button>
             </div>
 
             <!-- Overview Tab -->
@@ -665,6 +673,17 @@
                         <div class="chart-container">
                             <figure class="chart-figure"><figcaption class="visually-hidden">Pipeline throughput over time</figcaption><canvas id="throughput-chart" role="img" aria-label="Pipeline throughput over time"></canvas></figure>
                         </div>
+                        <details class="chart-data-table" id="table-throughput-details">
+                            <summary>View data table — Pipeline throughput</summary>
+                            <div class="table-scroll" tabindex="0">
+                                <table id="table-throughput" class="data-fallback-table">
+                                    <caption class="visually-hidden">Pipeline throughput data</caption>
+                                    <thead></thead>
+                                    <tbody></tbody>
+                                </table>
+                            </div>
+                            <div class="legend-toggles" id="table-throughput-legend" role="group" aria-label="Pipeline throughput series toggles"></div>
+                        </details>
                     </div>
 
                     <div class="card">
@@ -773,6 +792,17 @@
                         <div class="chart-container">
                             <figure class="chart-figure"><figcaption class="visually-hidden">Stage progression over time</figcaption><canvas id="stage-progression-chart" role="img" aria-label="Stage progression over time"></canvas></figure>
                         </div>
+                        <details class="chart-data-table" id="table-stage-details">
+                            <summary>View data table — Stage progression</summary>
+                            <div class="table-scroll" tabindex="0">
+                                <table id="table-stage" class="data-fallback-table">
+                                    <caption class="visually-hidden">Stage progression data</caption>
+                                    <thead></thead>
+                                    <tbody></tbody>
+                                </table>
+                            </div>
+                            <div class="legend-toggles" id="table-stage-legend" role="group" aria-label="Stage progression series toggles"></div>
+                        </details>
                     </div>
 
                     <div class="card">
@@ -782,6 +812,17 @@
                         <div class="chart-container">
                             <figure class="chart-figure"><figcaption class="visually-hidden">Traffic routing breakdown</figcaption><canvas id="routing-chart" role="img" aria-label="Traffic routing breakdown"></canvas></figure>
                         </div>
+                        <details class="chart-data-table" id="table-routing-details">
+                            <summary>View data table — Traffic routing</summary>
+                            <div class="table-scroll" tabindex="0">
+                                <table id="table-routing" class="data-fallback-table">
+                                    <caption class="visually-hidden">Traffic routing data</caption>
+                                    <thead></thead>
+                                    <tbody></tbody>
+                                </table>
+                            </div>
+                            <div class="legend-toggles" id="table-routing-legend" role="group" aria-label="Traffic routing series toggles"></div>
+                        </details>
                     </div>
                 </div>
             </div>
@@ -796,6 +837,17 @@
                         <div class="chart-container">
                             <figure class="chart-figure"><figcaption class="visually-hidden">URLs discovered over time</figcaption><canvas id="urls-chart" role="img" aria-label="URLs discovered over time"></canvas></figure>
                         </div>
+                        <details class="chart-data-table" id="table-urls-details">
+                            <summary>View data table — URLs discovered</summary>
+                            <div class="table-scroll" tabindex="0">
+                                <table id="table-urls" class="data-fallback-table">
+                                    <caption class="visually-hidden">URLs discovered data</caption>
+                                    <thead></thead>
+                                    <tbody></tbody>
+                                </table>
+                            </div>
+                            <div class="legend-toggles" id="table-urls-legend" role="group" aria-label="URLs discovered series toggles"></div>
+                        </details>
                     </div>
 
                     <div class="card">
@@ -805,6 +857,17 @@
                         <div class="chart-container">
                             <figure class="chart-figure"><figcaption class="visually-hidden">Pages analyzed over time</figcaption><canvas id="pages-chart" role="img" aria-label="Pages analyzed over time"></canvas></figure>
                         </div>
+                        <details class="chart-data-table" id="table-pages-details">
+                            <summary>View data table — Pages analyzed</summary>
+                            <div class="table-scroll" tabindex="0">
+                                <table id="table-pages" class="data-fallback-table">
+                                    <caption class="visually-hidden">Pages analyzed data</caption>
+                                    <thead></thead>
+                                    <tbody></tbody>
+                                </table>
+                            </div>
+                            <div class="legend-toggles" id="table-pages-legend" role="group" aria-label="Pages analyzed series toggles"></div>
+                        </details>
                     </div>
 
                     <div class="card">
@@ -814,6 +877,17 @@
                         <div class="chart-container">
                             <figure class="chart-figure"><figcaption class="visually-hidden">Summaries produced over time</figcaption><canvas id="summaries-chart" role="img" aria-label="Summaries produced over time"></canvas></figure>
                         </div>
+                        <details class="chart-data-table" id="table-summaries-details">
+                            <summary>View data table — Summaries produced</summary>
+                            <div class="table-scroll" tabindex="0">
+                                <table id="table-summaries" class="data-fallback-table">
+                                    <caption class="visually-hidden">Summaries produced data</caption>
+                                    <thead></thead>
+                                    <tbody></tbody>
+                                </table>
+                            </div>
+                            <div class="legend-toggles" id="table-summaries-legend" role="group" aria-label="Summaries produced series toggles"></div>
+                        </details>
                     </div>
 
                     <div class="card">
@@ -933,11 +1007,16 @@
             <!-- Activity Log Tab -->
             <div class="tab-content" id="tab-activity">
                 <div class="card">
-                    <div class="card-header">
+                    <div class="card-header" style="flex-wrap:wrap;gap:0.5rem">
                         <span class="card-title">Pipeline Activity Log</span>
                         <span class="card-badge badge-info">Live</span>
+                        <div style="margin-left:auto;display:flex;gap:0.5rem;flex-wrap:wrap">
+                            <button type="button" id="export-activity-json" class="btn" aria-label="Export activity log as JSON">Export JSON</button>
+                            <button type="button" id="export-activity-csv" class="btn" aria-label="Export activity log as CSV">Export CSV</button>
+                            <button type="button" id="clear-activity" class="btn" aria-label="Clear activity log">Clear</button>
+                        </div>
                     </div>
-                    <div class="activity-feed" id="activity-log">
+                    <div class="activity-feed" id="activity-log" role="log" aria-live="polite">
                         <div class="activity-item success">
                             <div class="activity-timestamp">System initialized</div>
                             <div class="activity-message">Pipeline Control Center started monitoring</div>
