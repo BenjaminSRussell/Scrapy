@@ -252,3 +252,15 @@ python -m cli data gc --ttl-days 14 --apply
 `--apply` is required to delete. Default roots: `data/logs`, `data/cache`,
 `data/temp`, `logs`, `data/raw/tmp`.
 
+
+## Seed registry CLI (#1100)
+
+```bash
+python -m cli seeds add https://example.com/page
+python -m cli seeds list
+python -m cli seeds disable https://example.com/page
+python -m cli seeds audit
+```
+
+Registry: `data/ops/seeds.json`. Append-only audit: `data/ops/seed_audit.jsonl`.
+Disable keeps the URL for history but removes it from active scheduling lists.
