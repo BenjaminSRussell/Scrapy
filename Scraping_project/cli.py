@@ -470,6 +470,34 @@ def cmd_data_gc(args):
     )
 
 
+
+def cmd_seeds(args):
+    """List/add/disable seed URLs with append-only audit log."""
+    from src.common.seed_ops import SeedRegistry
+
+    base = Path(__file__).parent / "data" / "ops"
+    registry = SeedRegistry(base / "seeds.json", base / "seed_audit.jsonl")
+    if args.seeds_command == "list":
+        rows = registry.list_seeds(include_disabled=not args.active_only)
+        for r in rows:
+            print(f"{r.status:8}  {r.updated_at}  {r.url}")
+        print(f"{len(rows)} seed(s)")
+        return
+    if args.seeds_command == "add":
+        rec = registry.add(args.url, note=args.note or "", actor=args.actor)
+        print(f"added {rec.url} ({rec.status})")
+        return
+    if args.seeds_command == "disable":
+        rec = registry.disable(args.url, actor=args.actor)
+        print(f"disabled {rec.url}")
+        return
+    if args.seeds_command == "audit":
+        for row in registry.read_audit(limit=args.limit):
+            print(row)
+        return
+    raise SystemExit("unknown seeds command")
+
+
 # ============================================================================
 # MAIN CLI
 # ============================================================================
@@ -561,6 +589,25 @@ def main():
         help="Override artifact roots relative to Scraping_project/",
     )
     gc_parser.set_defaults(func=cmd_data_gc)
+
+    # seeds — operator seed registry + audit (#1100)
+    seeds_parser = subparsers.add_parser("seeds", help="List/add/disable seed URLs with audit log")
+    seeds_sub = seeds_parser.add_subparsers(dest="seeds_command", required=True)
+    seeds_list = seeds_sub.add_parser("list", help="List seeds")
+    seeds_list.add_argument("--active-only", action="store_true")
+    seeds_list.set_defaults(func=cmd_seeds)
+    seeds_add = seeds_sub.add_parser("add", help="Add or re-enable a seed URL")
+    seeds_add.add_argument("url")
+    seeds_add.add_argument("--note", default="")
+    seeds_add.add_argument("--actor", default="operator")
+    seeds_add.set_defaults(func=cmd_seeds)
+    seeds_dis = seeds_sub.add_parser("disable", help="Disable a seed without deleting")
+    seeds_dis.add_argument("url")
+    seeds_dis.add_argument("--actor", default="operator")
+    seeds_dis.set_defaults(func=cmd_seeds)
+    seeds_audit = seeds_sub.add_parser("audit", help="Show recent audit log rows")
+    seeds_audit.add_argument("--limit", type=int, default=50)
+    seeds_audit.set_defaults(func=cmd_seeds)
 
     # Parse and execute
     args = parser.parse_args()
