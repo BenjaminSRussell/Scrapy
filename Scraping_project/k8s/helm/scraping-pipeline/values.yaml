@@ -151,7 +151,12 @@ kafka:
   config:
     brokerId: 1
     numPartitions: 3
+    # Producers use acks=all (#174). That only protects against broker loss
+    # when topics are replicated: for multi-broker production set
+    # kafka.replicas>=3, defaultReplicationFactor: 3 and minInsyncReplicas: 2.
+    # The bundled single broker keeps 1/1 (acks=all then equals leader-ack).
     defaultReplicationFactor: 1
+    minInsyncReplicas: 1
     logRetentionHours: 168
     logSegmentBytes: 1073741824
     compressionType: "snappy"

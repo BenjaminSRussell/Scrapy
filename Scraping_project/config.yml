@@ -181,7 +181,10 @@ kafka:
     dead_letter: scraped-items-dlq  # Dead letter queue for invalid messages
   producer:
     compression.type: snappy
-    acks: "1"  # 0=no ack, 1=leader ack, all=all replicas ack
+    # all = every in-sync replica acks (no loss on leader failover); 1 = leader
+    # only (can lose unreplicated messages). See src/utils/kafka_config.py (#174).
+    acks: "all"
+    enable.idempotence: true  # requires acks=all; retries never duplicate/reorder
     retries: 3
   consumer:
     group_id: scraping-pipeline
