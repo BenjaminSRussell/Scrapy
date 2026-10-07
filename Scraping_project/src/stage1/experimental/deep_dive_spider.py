@@ -81,7 +81,10 @@ class DeepDiveSpider(BaseSpider):
                 if assessment.value_score >= 70:
                     self.depth_stats["high_value_urls"] += 1
 
-                self.redis_client.sadd(self.url_hashes_key, url_hash)
+                # Atomic claim (#159): another worker may have admitted it since
+                # the cheap SISMEMBER pre-check above.
+                if not self.redis_client.sadd(self.url_hashes_key, url_hash):
+                    continue
 
                 if assessment.recommended_spider == "js":
                     yield self._queue_for_js_spider(url, response.url, assessment)

@@ -173,7 +173,11 @@ class MockRedisPipeline:
             if command == "sismember":
                 results.append(value in self._parent.data)
             elif command == "sadd":
+                # Like real Redis: every queued command yields a result, and
+                # SADD returns 1 only when it inserted the member.
+                added = value not in self._parent.data
                 self._parent.data.add(value)
+                results.append(int(added))
 
         self._commands.clear()
         return results

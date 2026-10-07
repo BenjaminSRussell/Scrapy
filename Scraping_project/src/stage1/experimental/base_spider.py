@@ -388,28 +388,19 @@ class BaseSpider(scrapy.Spider):
         if not urls:
             return [], {}
 
+        # One SADD per hash: its return value (1 = inserted) is the atomic
+        # first-seen claim, so two workers can never both own a URL (#159).
         pipeline = self.redis_client.pipeline()
         url_hash_map: dict[str, str] = {}
 
         for url in urls:
             url_hash = self._hash_url(url)
             url_hash_map[url] = url_hash
-            pipeline.sismember(self.url_hashes_key, url_hash)
+            pipeline.sadd(self.url_hashes_key, url_hash)
 
-        existence_results = pipeline.execute()
+        added_results = pipeline.execute()
 
-        new_urls: list[str] = []
-
-        for url, exists in zip(urls, existence_results, strict=False):
-            if not exists:
-                url_hash = url_hash_map[url]
-                pipeline.sadd(self.url_hashes_key, url_hash)
-                new_urls.append(url)
-
-        if new_urls:
-            pipeline.execute()
-        else:
-            pipeline.reset()
+        new_urls = [url for url, added in zip(urls, added_results, strict=False) if int(added or 0) == 1]
 
         new_url_hashes = {url: url_hash_map[url] for url in new_urls}
         return new_urls, new_url_hashes

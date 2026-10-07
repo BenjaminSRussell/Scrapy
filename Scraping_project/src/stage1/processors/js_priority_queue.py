@@ -44,11 +44,10 @@ class JSPriorityQueue:
             True if URL was added, False if already in queue
         """
         try:
-            if self.redis.sismember(self.hash_key, url):
+            # SADD is the atomic "first to queue" claim (#159).
+            if not self.redis.sadd(self.hash_key, url):
                 logger.debug(f"[JS_QUEUE] URL already queued: {url[:80]}")
                 return False
-
-            self.redis.sadd(self.hash_key, url)
 
             priority_score = -priority
 
@@ -83,12 +82,17 @@ class JSPriorityQueue:
             return 0
 
         try:
+            # Phase 1: atomic per-URL claims (#159); phase 2: queue only the winners.
+            claim = self.redis.pipeline()
+            for url, _priority, _metadata in urls:
+                claim.sadd(self.hash_key, url)
+            claimed = claim.execute()
+
             pipeline = self.redis.pipeline()
             enqueued_count = 0
 
-            for url, priority, metadata in urls:
-                if not self.redis.sismember(self.hash_key, url):
-                    pipeline.sadd(self.hash_key, url)
+            for (url, priority, metadata), added in zip(urls, claimed, strict=False):
+                if int(added or 0) == 1:
                     pipeline.zadd(self.queue_key, {url: -priority})
 
                     if metadata:
