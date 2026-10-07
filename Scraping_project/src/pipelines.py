@@ -33,6 +33,7 @@ from scrapy.crawler import Crawler
 from scrapy.exceptions import DropItem, NotConfigured
 
 from src.items import OffsiteCandidateItem
+from src.core.timeutil import utc_now_iso
 
 logger = logging.getLogger(__name__)
 
@@ -151,7 +152,7 @@ class MetadataPipeline:
     def process_item(self, item: Any, spider: Spider) -> Any:
         adapter = ItemAdapter(item)
 
-        adapter["scraped_at_utc"] = datetime.utcnow().isoformat() + "Z"
+        adapter["scraped_at_utc"] = utc_now_iso()
         adapter["spider_name"] = spider.name
         adapter["pipeline_version"] = self.PIPELINE_VERSION
 
@@ -1042,7 +1043,7 @@ class MetadataExtractionPipeline:
             "title": adapter.get("title", ""),
             "keywords": metadata.get("keywords", []),
             "entities": metadata.get("entities", {}),
-            "extraction_timestamp": datetime.utcnow().isoformat() + "Z",
+            "extraction_timestamp": utc_now_iso(),
             "spider_name": spider.name,
         }
 

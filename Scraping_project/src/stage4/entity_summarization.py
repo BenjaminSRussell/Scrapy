@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import Any
 
 import numpy as np
+from src.core.timeutil import utc_now, utc_now_iso
 
 logger = logging.getLogger(__name__)
 
@@ -87,7 +88,7 @@ class FactAggregator:
                 "source_url": source_url,
                 "publication_date": pub_date,
                 "metadata": metadata or {},
-                "timestamp_added": datetime.utcnow(),
+                "timestamp_added": utc_now(),
             }
 
             self.entity_facts[entity_name].append(fact_record)
@@ -436,7 +437,7 @@ class EntitySummaryStorage:
             if fact.get("publication_date"):
                 all_dates.append(fact["publication_date"])
 
-        last_updated = max(all_dates).isoformat() if all_dates else datetime.utcnow().isoformat()
+        last_updated = max(all_dates).isoformat() if all_dates else utc_now_iso()
 
         record = {
             "entity_name": entity_name,
@@ -445,7 +446,7 @@ class EntitySummaryStorage:
             "source_references": json.dumps(source_refs_map),
             "last_updated": last_updated,
             "fact_count": len(facts),
-            "created_at": datetime.utcnow().isoformat(),
+            "created_at": utc_now_iso(),
         }
 
         self.delta.write(self.table_name, [record], mode="append")
