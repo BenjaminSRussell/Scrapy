@@ -230,6 +230,10 @@
         }
 
         .metric-value {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            max-width: 100%;
             font-size: 1.25rem;
             font-weight: 700;
             color: var(--gray-900);
@@ -596,7 +600,7 @@
                             <span class="metric-value" id="overview-s4-summaries">0</span>
                         </div>
                         <div class="metric-row">
-                            <span class="metric-label">Compression</span>
+                            <span class="metric-label" title="Stage 4 compression = compressed output size ÷ input size; values under 1.0x mean more compact storage">Compression (out÷in)</span>
                             <span class="metric-value" id="overview-s4-compression">0x</span>
                         </div>
                     </div>
@@ -893,7 +897,8 @@
         </div>
 
         <div class="refresh-bar">
-            <div class="refresh-info">
+            <div id="refresh-status" class="visually-hidden" role="status" aria-live="polite" aria-atomic="true"></div>
+                <div class="refresh-info">
                 Auto-refresh: <span class="refresh-countdown" id="refresh-countdown">5</span> seconds
             </div>
             <div class="refresh-info">

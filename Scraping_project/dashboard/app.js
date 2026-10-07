@@ -512,12 +512,22 @@ function setupTabs() {
 }
 
 function startCountdown() {
+    let lastAnnounced = null;
     setInterval(() => {
         countdown--;
         if (countdown <= 0) {
             countdown = 5;
         }
-        document.getElementById('refresh-countdown').textContent = countdown;
+        const el = document.getElementById('refresh-countdown');
+        if (el) el.textContent = countdown;
+        // Throttle aria announcements to each full cycle reset (#1093)
+        const live = document.getElementById('refresh-status');
+        if (live && countdown === 5 && lastAnnounced !== 'refreshed') {
+            live.textContent = 'Metrics refreshed';
+            lastAnnounced = 'refreshed';
+        } else if (countdown !== 5) {
+            lastAnnounced = null;
+        }
     }, 1000);
 }
 
