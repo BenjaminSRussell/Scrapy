@@ -15,6 +15,50 @@ import time
 
 logger = logging.getLogger(__name__)
 
+# ---------------------------------------------------------------------------
+# Seen-URL store policy (#159, #163)
+#
+# Keys: ``{key_prefix}:urls`` (a Redis SET). Namespace a site or tenant by
+# putting it in the prefix, e.g. ``key_prefix=f"{site_id}:scout"`` gives
+# ``uconn:scout:urls``. Never share a prefix between sites.
+#
+# Ownership: ``claim_url`` / ``claim_urls`` use one ``SADD`` per URL, which
+# returns 1 only for the caller that inserted it. That single atomic op
+# decides first-seen ownership; a separate SISMEMBER-then-SADD can't, because
+# two workers can both see "absent" before either adds.
+#
+# Failure policy: when Redis errors, the seen helpers fail CLOSED by default.
+# They raise ``SeenStoreUnavailable`` rather than reporting a URL as unseen
+# (which would cause duplicate crawls) or silently not recording it (which
+# would cause endless re-crawls). Callers should pause enqueueing and retry
+# later. Set ``REDIS_SEEN_FAIL_MODE=open`` to restore the old behaviour
+# (treat as unseen, log) for local debugging. Every error increments
+# ``redis_seen_check_errors_total{op=...}`` either way.
+# ---------------------------------------------------------------------------
+
+SEEN_FAIL_MODE_ENV = "REDIS_SEEN_FAIL_MODE"
+
+
+class SeenStoreUnavailable(RuntimeError):
+    """Redis seen-URL store is unreachable; admission must pause (fail-closed)."""
+
+
+try:
+    from prometheus_client import Counter as _PromCounter
+
+    REDIS_SEEN_ERRORS: Any = _PromCounter(
+        "redis_seen_check_errors_total",
+        "Redis seen-URL store errors by operation (check/mark/claim).",
+        ["op"],
+    )
+except Exception:  # prometheus_client missing or metric already registered
+    REDIS_SEEN_ERRORS = None
+
+
+def seen_fail_mode() -> str:
+    mode = os.getenv(SEEN_FAIL_MODE_ENV, "closed").strip().lower()
+    return "open" if mode == "open" else "closed"
+
 
 class RedisHelper:
     """Centralized Redis operations."""
@@ -82,8 +126,7 @@ class RedisHelper:
             key = f"{key_prefix}:urls"
             return bool(self.client.sismember(key, url))
         except Exception as e:
-            logger.error(f"Failed to check URL in Redis: {e}")
-            return False
+            return bool(self._seen_store_error("check", e, fallback=False))
 
     def mark_url_seen(self, url: str, key_prefix: str = "seen") -> bool:
         """
@@ -105,8 +148,44 @@ class RedisHelper:
             self.client.sadd(key, url)
             return True
         except Exception as e:
-            logger.error(f"Failed to mark URL in Redis: {e}")
-            return False
+            return bool(self._seen_store_error("mark", e, fallback=False))
+
+    def claim_url(self, url: str, key_prefix: str = "seen") -> bool:
+        """Atomically claim first-seen ownership of ``url`` (#159).
+
+        Returns True for exactly one caller across all processes (the one whose
+        SADD inserted the member); False if it was already seen. Raises
+        ``SeenStoreUnavailable`` on Redis errors unless fail mode is ``open``.
+        """
+        try:
+            return int(cast(int, self.client.sadd(f"{key_prefix}:urls", url))) == 1
+        except Exception as e:
+            # Fail-open treats the URL as unseen, i.e. claimed (old behaviour).
+            return bool(self._seen_store_error("claim", e, fallback=True))
+
+    def claim_urls(self, urls: list[str], key_prefix: str = "seen") -> list[str]:
+        """Claim many URLs in one round trip; returns those this caller now owns."""
+        if not urls:
+            return []
+        try:
+            pipe = self.client.pipeline(transaction=False)
+            for url in urls:
+                pipe.sadd(f"{key_prefix}:urls", url)
+            results = pipe.execute()
+            return [u for u, added in zip(urls, results, strict=False) if int(added) == 1]
+        except Exception as e:
+            self._seen_store_error("claim", e, fallback=None)
+            return list(urls)
+
+    def _seen_store_error(self, op: str, error: Exception, fallback: Any) -> Any:
+        """Apply the seen-store failure policy: count, then raise or fall back."""
+        if REDIS_SEEN_ERRORS is not None:
+            REDIS_SEEN_ERRORS.labels(op=op).inc()
+        if seen_fail_mode() == "open":
+            logger.error(f"Redis seen-store {op} failed; failing OPEN ({SEEN_FAIL_MODE_ENV}=open): {error}")
+            return fallback
+        logger.error(f"Redis seen-store {op} failed; failing CLOSED, pausing admission: {error}")
+        raise SeenStoreUnavailable(f"Redis seen-URL store unavailable during {op}: {error}") from error
 
     def add_to_set(self, key: str, *values: str) -> int:
         """
