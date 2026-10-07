@@ -9,7 +9,7 @@ This module merges functionality from:
 Phase 6 Enhancement: Added type-safe operations with Pydantic validation
 """
 
-from typing import List, Dict, Any, Optional, TypeVar, Type, Generic
+from typing import List, Dict, Optional, TypeVar, Type
 from pathlib import Path
 import logging
 import os

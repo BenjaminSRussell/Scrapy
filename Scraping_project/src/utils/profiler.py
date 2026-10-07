@@ -9,9 +9,8 @@ import logging
 import asyncio
 from typing import Optional, Dict, Any, Callable, TypeVar
 from functools import wraps
-from contextlib import contextmanager, asynccontextmanager
+from contextlib import asynccontextmanager
 from collections import defaultdict
-from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -128,7 +127,7 @@ def profile(func: Callable[..., T]) -> Callable[..., T]:
         try:
             result = await func(*args, **kwargs)
             return result
-        except Exception as e:
+        except Exception:
             error = True
             raise
         finally:
@@ -147,7 +146,7 @@ def profile(func: Callable[..., T]) -> Callable[..., T]:
         try:
             result = func(*args, **kwargs)
             return result
-        except Exception as e:
+        except Exception:
             error = True
             raise
         finally:
