@@ -117,6 +117,8 @@ SCHEMA_REGISTRY: Final[Dict[str, pa.Schema]] = {
     "stage1_discovery": STAGE1_DISCOVERY_SCHEMA,
     "stage2_queue": STAGE2_QUEUE_SCHEMA,
     "stage2_page_analysis": STAGE2_ANALYSIS_SCHEMA,
+    # Quarantined Stage 2 failures (#331): same row shape, separate table.
+    "stage2_errors": STAGE2_ANALYSIS_SCHEMA,
     "stage3_queue": STAGE3_SUMMARY_SCHEMA,  # Reuse for queue
     "stage3_summaries": STAGE3_SUMMARY_SCHEMA,
     # Legacy name for Stage 3 output (#612); still read, no longer written by Stage 3.
