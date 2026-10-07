@@ -72,6 +72,9 @@ ITEM_PIPELINES = _scrapy_config.get(
         "src.otel_tracing.OtelItemPipeline": 50,
         "src.pipelines.DataValidationPipeline": 100,
         "src.pipelines.DataCleansingPipeline": 150,
+        # Stage1 -> Stage2 / JS queue handoff (#608). Before SchemaValidation:
+        # Scout's routing dicts are not content records and must not be dropped.
+        "src.pipelines.QueueItemPipeline": 175,
         "src.pipelines.SchemaValidationPipeline": 200,
         "src.pipelines.MetadataPipeline": 250,
         "src.pipelines.RecencyScoringPipeline": 300,
