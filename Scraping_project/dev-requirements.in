@@ -22,7 +22,7 @@ mypy>=1.13.0
 types-defusedxml>=0.7
 types-PyYAML>=6.0.12
 types-requests>=2.32,<2.33  # match requests 2.32.x
-ruff>=0.9.0
+ruff>=0.16.10
 
 # Security
 pip-audit>=2.7.0
