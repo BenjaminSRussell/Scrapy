@@ -485,7 +485,33 @@ function updateDashboard(metrics) {
     previousMetrics = { ...metrics };
 }
 
+
+function setConnectionStatus(kind) {
+    // kind: 'online' | 'never' | 'offline'
+    const sys = document.getElementById('system-status');
+    const top = document.getElementById('topbar-status');
+    const labels = {
+        online: 'Online',
+        never: 'Not connected',
+        offline: 'Disconnected',
+    };
+    const topLabels = {
+        online: '● Online',
+        never: '○ Not connected',
+        offline: '● Disconnected',
+    };
+    if (sys) {
+        sys.classList.remove('online', 'offline', 'never');
+        sys.classList.add(kind === 'online' ? 'online' : kind === 'never' ? 'never' : 'offline');
+        const span = sys.querySelector('span:last-child');
+        if (span) span.textContent = labels[kind] || kind;
+    }
+    if (top) top.textContent = topLabels[kind] || kind;
+}
+
 async function fetchMetrics() {
+    const main = document.getElementById('dashboard-main') || document.querySelector('.container');
+    if (main) main.setAttribute('aria-busy', 'true');
     try {
         const response = await fetch(METRICS_URL);
         if (!response.ok) {
@@ -495,15 +521,21 @@ async function fetchMetrics() {
         const text = await response.text();
         const metrics = parseMetrics(text);
         updateDashboard(metrics);
+        hasEverSucceeded = true;
+        lastMetricsAt = Date.now();
+        setConnectionStatus('online');
 
         countdown = 5;
     } catch (error) {
         console.error('Error fetching metrics:', error);
         addActivityLogItem('danger', `Failed to fetch metrics: ${error.message}`);
+        setConnectionStatus(hasEverSucceeded ? 'offline' : 'never');
         if (typeof setHealthTile === 'function') {
             setHealthTile('metrics-health', 'Metrics', false, 'Fetch failed');
             setHealthTile('redis-health', 'Redis', false, 'Unknown');
         }
+    } finally {
+        if (main) main.setAttribute('aria-busy', 'false');
     }
 }
 
@@ -546,6 +578,7 @@ function formatRelative(ts) {
     return Math.floor(sec / 3600) + 'h ago';
 }
 let lastMetricsAt = null;
+let hasEverSucceeded = false;
 
 function startCountdown() {
 
