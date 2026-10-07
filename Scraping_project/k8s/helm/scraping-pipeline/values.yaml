@@ -19,6 +19,13 @@ namespaceQuota:
 # ============================================
 redis:
   enabled: true
+  # #184: Redis requires AUTH. The password is read from this Secret (created
+  # from secrets.redis.password unless secrets.useExternalSecrets=true) and
+  # injected as REDIS_PASSWORD into Redis and every app pod.
+  auth:
+    enabled: true
+    existingSecret: redis-credentials
+    passwordKey: REDIS_PASSWORD
   image:
     repository: redis
     tag: "7.4-alpine"
@@ -515,6 +522,9 @@ secrets:
   grafana:
     adminUser: "admin"
     adminPassword: ""  # MUST BE SET - see warning above
+
+  redis:
+    password: ""  # MUST BE SET when redis.auth.enabled (default) - see warning above
 
   aws:
     accessKeyId: ""

@@ -33,6 +33,13 @@ spec:
         env:
         - name: REDIS_ADDR
           value: "redis://{{ $redisService }}:{{ .Values.redis.service.port }}"
+        {{- if .Values.redis.auth.enabled }}
+        - name: REDIS_PASSWORD  # redis_exporter authenticates with this (#184)
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.redis.auth.existingSecret }}
+              key: {{ .Values.redis.auth.passwordKey }}
+        {{- end }}
         livenessProbe:
           httpGet:
             path: /metrics

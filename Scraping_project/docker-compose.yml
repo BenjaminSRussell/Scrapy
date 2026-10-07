@@ -14,6 +14,7 @@ services:
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
       - DELTA_LAKE_PATH=/data/delta
       - LOG_LEVEL=INFO
       - WORKERS=4
@@ -38,15 +39,24 @@ services:
     image: redis:7-alpine
     container_name: uconn-redis
     restart: unless-stopped
-    command: redis-server --appendonly yes --maxmemory 2gb --maxmemory-policy allkeys-lru
+    # #184: set REDIS_PASSWORD (e.g. in .env) to require AUTH. Leaving it unset
+    # keeps an open Redis for local dev ONLY - the app logs a warning. The port
+    # is bound to localhost so the host never exposes Redis to its network.
+    # $$ defers expansion to the container shell (not compose interpolation).
+    command: >-
+      sh -c 'exec redis-server --appendonly yes --maxmemory 2gb
+      --maxmemory-policy allkeys-lru $${REDIS_PASSWORD:+--requirepass "$$REDIS_PASSWORD"}'
+    environment:
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     volumes:
       - redis-data:/data
     networks:
       - scraper-network
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      # NOAUTH also proves the server is up, so no password is needed here.
+      test: ["CMD-SHELL", "redis-cli ping | grep -Eq 'PONG|NOAUTH'"]
       interval: 10s
       timeout: 3s
       retries: 3
@@ -83,6 +93,7 @@ services:
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
       - DELTA_LAKE_PATH=/data/delta
       - WORKER_ID=stage1
     volumes:
@@ -104,6 +115,7 @@ services:
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
       - DELTA_LAKE_PATH=/data/delta
       - WORKER_ID=stage2
       - CONCURRENCY=10
@@ -138,6 +150,7 @@ services:
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
       - DELTA_LAKE_PATH=/data/delta
       - WORKER_ID=stage3
       - DB_HOST=postgres
@@ -165,6 +178,7 @@ services:
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
       - DELTA_LAKE_PATH=/data/delta
       - WORKER_ID=stage4
     volumes:

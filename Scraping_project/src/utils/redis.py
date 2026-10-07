@@ -82,7 +82,9 @@ class RedisHelper:
         self.host = host or os.getenv("REDIS_HOST", "localhost")
         self.port = port or int(os.getenv("REDIS_PORT", "6379"))
         self.db = db
-        self.password = password
+        # #184: AUTH password comes from the caller, else REDIS_PASSWORD (Helm
+        # secret / compose .env). Empty means no AUTH (local dev only).
+        self.password = password or os.getenv("REDIS_PASSWORD") or None
         self._client: Optional[redis.Redis] = None
 
     @property
@@ -101,6 +103,11 @@ class RedisHelper:
                 )
                 self._client.ping()
                 logger.info(f"Connected to Redis at {self.host}:{self.port}")
+                if not self.password:
+                    logger.warning(
+                        "Redis AUTH is not configured (REDIS_PASSWORD unset). "
+                        "Acceptable for local dev only; set REDIS_PASSWORD in any shared environment."
+                    )
             except redis.ConnectionError as e:
                 logger.error(f"Failed to connect to Redis: {e}")
                 raise
