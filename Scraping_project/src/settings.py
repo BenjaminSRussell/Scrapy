@@ -128,7 +128,14 @@ FEED_EXPORT_ENCODING = _scrapy_config.get("feed_export_encoding", "utf-8")
 
 # ============================================================================
 # ============================================================================
-DUPEFILTER_CLASS = "scrapy.dupefilters.BaseDupeFilter"
+# Request dedup (#197). RFPDupeFilter drops repeat requests by fingerprint
+# inside one crawl process, at no network cost, so a Redis blip can no longer
+# turn into duplicate fetches. The Redis seen-URL sets stay the cross-process
+# and cross-run control; the two are complementary. Seeds, sitemap entries and
+# retries that must re-fetch pass dont_filter=True explicitly.
+# BaseDupeFilter (no dedup at all) should only be selected via config for
+# debugging.
+DUPEFILTER_CLASS = _scrapy_config.get("dupefilter_class", "scrapy.dupefilters.RFPDupeFilter")
 
 COOKIES_ENABLED = False
 DEPTH_LIMIT = 10
