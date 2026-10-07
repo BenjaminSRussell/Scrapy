@@ -211,6 +211,15 @@ function getUptime() {
     return `${secs}s`;
 }
 
+function escapeHtml(s) {
+    return String(s ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
 function addActivityLogItem(type, message) {
     const timestamp = new Date().toLocaleTimeString();
     activityLog.unshift({ type, message, timestamp });
@@ -245,9 +254,9 @@ function updateActivityLog() {
 
         if (activityPinned && container.id === "activity-log") return;
         container.innerHTML = activityLog.map(item => `
-            <li class="activity-item ${item.type}">
-                <div class="activity-timestamp">${item.timestamp}</div>
-                <div class="activity-message">${item.message}</div>
+            <li class="activity-item ${escapeHtml(item.type)}">
+                <div class="activity-timestamp">${escapeHtml(item.timestamp)}</div>
+                <div class="activity-message">${escapeHtml(item.message)}</div>
             </li>
         `).join('');
     });
@@ -544,6 +553,19 @@ async function fetchMetrics() {
         console.error('Error fetching metrics:', error);
         addActivityLogItem('danger', `Failed to fetch metrics: ${error.message}`);
         setConnectionStatus(hasEverSucceeded ? 'offline' : 'never');
+        document.querySelectorAll('.card-badge.badge-info, .card-badge.badge-success').forEach(b => {
+            b.textContent = 'Unknown';
+            b.classList.remove('badge-info', 'badge-success');
+            b.classList.add('badge-danger');
+        });
+        document.querySelectorAll('.health-item.healthy').forEach(el => {
+            el.classList.remove('healthy');
+            el.classList.add('unhealthy');
+            const v = el.querySelector('.health-value');
+            if (v) v.textContent = 'Unreachable';
+        });
+        const delta = document.getElementById('delta-tables');
+        if (delta) delta.textContent = '—';
         if (typeof setHealthTile === 'function') {
             setHealthTile('metrics-health', 'Metrics', false, 'Fetch failed');
             setHealthTile('redis-health', 'Redis', false, 'Unknown');
@@ -580,6 +602,12 @@ function setupTabs() {
             panel.classList.add('active');
             panel.setAttribute('tabindex', '-1');
             panel.focus();
+            // Charts init while hidden tabs have 0 size (#154) — resize after show.
+            requestAnimationFrame(() => {
+                Object.values(charts || {}).forEach(ch => {
+                    try { ch.resize(); } catch (_) {}
+                });
+            });
         });
     });
 }
