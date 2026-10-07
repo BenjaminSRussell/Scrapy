@@ -4,7 +4,6 @@ import os
 import socket
 import sys
 import time
-from datetime import datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -13,6 +12,7 @@ from src.core.config import Config
 from src.lakehouse.lakehouse_manager import DeltaLakeManager
 from src.utils.redis import get_redis
 from src.stage1.processors.js_priority_queue import JSPriorityQueue
+from src.core.timeutil import utc_now_iso
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -343,7 +343,7 @@ class MetricsExporter:
             total_errors = sum(counts.values())
             top_errors = sorted(counts.items(), key=lambda item: item[1], reverse=True)
             summary = {
-                "generated_at": datetime.utcnow().isoformat() + "Z",
+                "generated_at": utc_now_iso(),
                 "total_errors": total_errors,
                 "error_types": [
                     {

@@ -20,13 +20,13 @@ Schema Assumptions:
 All writes are idempotent via merge_into using url_hash as merge key.
 """
 
-import datetime as dt
 import hashlib
 import logging
 from collections.abc import Callable, Iterable
 from urllib.parse import urlparse
 
 from src.lakehouse.lakehouse_manager import LakehouseManager
+from src.core.timeutil import utc_now_iso
 
 logger = logging.getLogger(__name__)
 
@@ -125,7 +125,7 @@ class SeedManager:
         if not url_list:
             return {"seed_inserted": 0, "uconn_inserted": 0, "stage2_enqueued": 0}
 
-        now = dt.datetime.utcnow().isoformat()
+        now = utc_now_iso()
 
         # Prepare base records
         rows = []
