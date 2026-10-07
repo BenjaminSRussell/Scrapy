@@ -131,6 +131,23 @@ class DeltaHelper:
             logger.error(f"Failed to write to {table_name}: {e}")
             return False
 
+    def merge_into(
+        self,
+        table_name: str,
+        updates_data: List[Dict],
+        merge_key: Union[str, List[str]],
+        update_columns: List[str],
+    ) -> int:
+        """Upsert rows by key via Delta MERGE (see LakehouseManager.merge_into).
+
+        Returns rows updated + inserted, or -1 on failure (nothing committed).
+        """
+        try:
+            return self.manager.merge_into(table_name, updates_data, merge_key, update_columns)
+        except Exception as e:
+            logger.error(f"Failed to merge into {table_name}: {e}")
+            return -1
+
     def table_exists(self, table_name: str) -> bool:
         """
         Check if table exists.

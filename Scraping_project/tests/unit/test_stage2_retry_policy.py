@@ -47,6 +47,16 @@ class FakeDelta:
     def write(self, name, rows, mode="append", async_write=True):
         self.tables.setdefault(name, []).extend(dict(r) for r in rows)
 
+    def merge_into(self, name, rows, merge_key, update_columns):  # analysis upsert (#311)
+        table = self.tables.setdefault(name, [])
+        keys = {r[merge_key]: i for i, r in enumerate(table)}
+        for r in rows:
+            if r[merge_key] in keys:
+                table[keys[r[merge_key]]].update(r)
+            else:
+                table.append(dict(r))
+        return len(rows)
+
 
 def _worker(monkeypatch, tmp_path, delta, outcomes):
     w = Stage2Worker.__new__(Stage2Worker)

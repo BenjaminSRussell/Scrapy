@@ -18,6 +18,10 @@ class _FakeDelta:
         self.writes.append((table, list(rows)))
         return True
 
+    def merge_into(self, table, rows, merge_key, update_columns):  # analysis upsert (#311)
+        self.writes.append((table, list(rows)))
+        return len(rows)
+
 
 def _worker(queue):
     w = s2.Stage2Worker.__new__(s2.Stage2Worker)
