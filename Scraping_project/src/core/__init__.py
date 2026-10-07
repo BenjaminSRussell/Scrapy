@@ -8,8 +8,8 @@ This package provides:
 """
 
 from .config import get_config, Config
-from .constants import *
-from .exceptions import *
+from .constants import *  # noqa: F403 - intentional re-export
+from .exceptions import *  # noqa: F403 - intentional re-export
 
 __all__ = [
     "get_config",

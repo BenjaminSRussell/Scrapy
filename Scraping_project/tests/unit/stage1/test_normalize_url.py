@@ -11,11 +11,11 @@ class TestURLNormalization(unittest.TestCase):
 
     def test_normalization_logic(self):
         test_cases = {
-            "https://www.uconn.edu/index.html
+            "https://www.uconn.edu/index.html#section1": "https://www.uconn.edu/index.html",
             "HTTPS://WWW.UCONN.EDU/": "https://www.uconn.edu/",
             "https://www.uconn.edu/?utm_source=test&variable=1": "https://www.uconn.edu/?variable=1",
             "https://www.uconn.edu/?utm_source=test&utm_medium=cpc&variable=1": "https://www.uconn.edu/?variable=1",
-            "https://www.uconn.edu/page?utm_source=x
+            "https://www.uconn.edu/page?utm_source=x#abc": "https://www.uconn.edu/page",
             "https://www.uconn.edu/clean/path": "https://www.uconn.edu/clean/path",
             "https://www.external.com/page?utm_campaign=spring&id=123": "https://www.external.com/page?id=123",
             "https://www.uconn.edu/path?utm_source=news": "https://www.uconn.edu/path",

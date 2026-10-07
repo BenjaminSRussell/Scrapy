@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import MagicMock
 
-from src.common.retry_middleware import IntelligentRetryMiddleware
+from src.stage1.middlewares.retry_middleware import IntelligentRetryMiddleware
 
 class TestIntelligentRetryMiddleware(unittest.TestCase):
     def test_calculate_backoff_delay_exceeds_max_with_jitter(self):

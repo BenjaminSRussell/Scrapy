@@ -9,12 +9,32 @@ import pyarrow as pa
 from bs4 import BeautifulSoup
 from deltalake import DeltaTable
 
+from src.core.config import stage_worker_settings
+from src.core.constants import TABLE_STAGE2_ERRORS
 from src.utils.delta import get_delta
-# # PostgreSQL support to be implemented in Phase 6
-get_postgres_manager = lambda: None
-get_postgres_manager = lambda: None  # TODO: Implement in Phase 6
+from src.utils.postgres import get_postgres_manager
+from src.otel_tracing import ensure_crawl_job_id, init_tracing, start_span
 
 logger = logging.getLogger(__name__)
+
+try:  # accepted vs quarantined Stage 2 rows (#331)
+    from prometheus_client import Counter
+
+    STAGE2_ROWS = Counter(
+        "stage2_rows_total",
+        "Stage 2 rows by outcome: accepted (stage2_page_analysis) or quarantined (stage2_errors).",
+        ["outcome"],
+    )
+except Exception:  # prometheus_client missing or metric already registered
+    STAGE2_ROWS = None
+
+
+def split_stage2_results(results: list[Any]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Split a batch into (accepted analysis rows, quarantined error rows) (#331)."""
+    rows = [r for r in results if isinstance(r, dict)]
+    accepted = [r for r in rows if not r.get("has_error")]
+    quarantined = [r for r in rows if r.get("has_error")]
+    return accepted, quarantined
 
 class Stage2Worker:
 
@@ -32,19 +52,31 @@ class Stage2Worker:
         self.perf_start_time = None
         self.perf_urls_processed = 0
 
-    async def run(self):
+    async def run(self) -> dict[str, int]:
+        """Analyze pending URLs; returns this run's counts (analyzed/quality_docs/massive_docs/errors)."""
+        init_tracing(service_name="stage2-worker")
+        crawl_job_id = ensure_crawl_job_id()
+        with start_span("stage2.run", stage="stage2", crawl_job_id=crawl_job_id):
+            return await self._run_traced()
+
+    async def _run_traced(self) -> dict[str, int]:
+        counts = {"analyzed": 0, "quality_docs": 0, "massive_docs": 0, "errors": 0}
         logger.info(f"[STAGE2] Worker starting with {self.max_concurrent} concurrent workers")
 
         try:
-            queue_table = self.delta.read_table("stage2_queue")
-            all_queue_items = queue_table.to_pylist()
+            queue_data = self.delta.read_table("stage2_queue")
+            # LakehouseManager / DeltaHelper return list[dict]; tolerate pyarrow Table
+            if hasattr(queue_data, "to_pylist"):
+                all_queue_items = queue_data.to_pylist()
+            else:
+                all_queue_items = queue_data or []
         except Exception as e:
             logger.warning(f"[STAGE2] No URLs found in stage2_queue: {e}")
-            return
+            return counts
 
         if not all_queue_items:
             logger.warning("[STAGE2] No URLs found in stage2_queue")
-            return
+            return counts
 
         pending = [item for item in all_queue_items if item.get("status") == "pending"]
 
@@ -52,7 +84,7 @@ class Stage2Worker:
 
         if not pending:
             logger.info("[STAGE2] No pending URLs to process")
-            return
+            return counts
 
         for i in range(0, len(pending), self.batch_size):
             batch = pending[i : i + self.batch_size]
@@ -66,15 +98,37 @@ class Stage2Worker:
             batch_time = time.time() - batch_start
 
             valid_results = [r for r in results if isinstance(r, dict) and not isinstance(r, Exception)]
+            # Silver analysis excludes failures; they go to a quarantine table (#331).
+            accepted, quarantined = split_stage2_results(valid_results)
 
-            if valid_results:
+            if accepted:
                 self.delta.write(
                     "stage2_page_analysis",
-                    valid_results,
+                    accepted,
                     mode="append",
                     async_write=False,
                 )
-                logger.info(f"[STAGE2] Saved {len(valid_results)} analysis results")
+                logger.info(f"[STAGE2] Saved {len(accepted)} analysis results")
+            if quarantined:
+                self.delta.write(
+                    TABLE_STAGE2_ERRORS,
+                    quarantined,
+                    mode="append",
+                    async_write=False,
+                )
+                logger.info(f"[STAGE2] Quarantined {len(quarantined)} failed URLs to {TABLE_STAGE2_ERRORS}")
+            if STAGE2_ROWS is not None:
+                STAGE2_ROWS.labels(outcome="accepted").inc(len(accepted))
+                STAGE2_ROWS.labels(outcome="quarantined").inc(len(quarantined))
+
+            for r in valid_results:
+                counts["analyzed"] += 1
+                if r.get("has_error"):
+                    counts["errors"] += 1
+                elif r.get("is_massive_doc"):
+                    counts["massive_docs"] += 1
+                elif not r.get("is_low_quality", True):
+                    counts["quality_docs"] += 1
 
             if valid_results:
                 await self._update_queue_status([r["url"] for r in valid_results])
@@ -91,6 +145,7 @@ class Stage2Worker:
                     logger.debug(f"Failed to log performance to PostgreSQL: {e}")
 
         logger.info("[STAGE2] Worker completed all batches")
+        return counts
 
     async def _update_queue_status(self, completed_urls: list[str], table_name: str = "stage2_queue"):
         if not completed_urls:
@@ -101,7 +156,7 @@ class Stage2Worker:
                 "url": pa.array(completed_urls, type=pa.string()),
                 "status": pa.array(["completed"] * len(completed_urls), type=pa.string()),
                 "completed_at": pa.array(
-                    [datetime.now().isoformat() for _ in completed_urls],
+                    [datetime.now() for _ in completed_urls],
                     type=pa.timestamp("ms"),
                 ),
             }
@@ -117,7 +172,7 @@ class Stage2Worker:
                     target_alias="target",
                 )
                 .when_matched_update(
-                    set_updates={
+                    updates={
                         "status": "source.status",
                         "completed_at": "source.completed_at",
                     }
@@ -394,9 +449,12 @@ class Stage2Worker:
 async def run_stage2_worker():
     logger.info("Stage 2 Worker starting in continuous mode...")
 
+    max_concurrent, batch_size = stage_worker_settings(2, 50, 100)
+    logger.info("Stage 2 Worker concurrency=%d batch_size=%d", max_concurrent, batch_size)
+
     while True:
         try:
-            worker = Stage2Worker(max_concurrent=50, batch_size=100)
+            worker = Stage2Worker(max_concurrent=max_concurrent, batch_size=batch_size)
             await worker.run()
             logger.info("Waiting 30 seconds before next check...")
             await asyncio.sleep(30)

@@ -110,7 +110,7 @@ class TestDepthTracking:
         assert child_depth == 1
 
     def test_depth_limit_enforced(self):
-        from src.common.spider_config import get_spider_settings
+        from src.stage1.middlewares.spider_config import get_spider_settings
 
         settings = get_spider_settings("deep_dive")
         max_depth = settings["DEPTH_LIMIT"]
@@ -157,7 +157,10 @@ class TestDeltaLakeContract:
         ]
 
         for table in required_tables:
-            delta_sandbox.write(table, [{"test": "data"}], mode="overwrite")
+            # stage1_discovery is partitioned by "domain" (see
+            # LakehouseManager._write_sync); include it for every table so
+            # the same write call works across all of them.
+            delta_sandbox.write(table, [{"test": "data", "domain": "example.com"}], mode="overwrite", async_write=False)
 
             data = delta_sandbox.read(table)
             assert len(data) > 0
@@ -197,7 +200,7 @@ class TestScrapySettingsContract:
         assert hasattr(settings, "CLOSESPIDER_TIMEOUT")
 
     def test_depth_middleware_enabled(self):
-        from src.common.spider_config import get_spider_settings
+        from src.stage1.middlewares.spider_config import get_spider_settings
 
         settings = get_spider_settings("deep_dive")
 

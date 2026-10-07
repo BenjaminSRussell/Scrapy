@@ -10,6 +10,13 @@ YELLOW := \033[0;33m
 RED := \033[0;31m
 NC := \033[0m  # No Color
 
+# Compose v2 plugin syntax; override with `make COMPOSE=docker-compose ...`.
+COMPOSE ?= docker compose
+# The service defined in docker-compose.yml (#322).
+APP_SERVICE ?= scraper
+# Cross-platform "open this": Linux `xdg-open`, macOS `open`, else just print (#339).
+OPEN := $(shell command -v xdg-open 2>/dev/null || command -v open 2>/dev/null || echo echo)
+
 ##@ General
 
 help: ## Display this help message
@@ -64,9 +71,10 @@ test-coverage-min: ## Check minimum coverage threshold
 	@echo "$(BLUE)Checking coverage threshold...$(NC)"
 	pytest --cov=src --cov-fail-under=70
 
-test-watch: ## Run tests in watch mode
+test-watch: ## Run tests in watch mode (needs `pip install pytest-watch`)
+	@command -v ptw >/dev/null 2>&1 || { echo "$(YELLOW)pytest-watch is not installed: pip install pytest-watch$(NC)"; exit 1; }
 	@echo "$(BLUE)Running tests in watch mode...$(NC)"
-	pytest-watch
+	ptw -- -o addopts=
 
 ##@ Code Quality
 
@@ -110,37 +118,37 @@ security-full: ## Run comprehensive security scan
 
 docker-build: ## Build Docker images
 	@echo "$(BLUE)Building Docker images...$(NC)"
-	docker-compose build --parallel
+	$(COMPOSE) build --parallel
 
 docker-up: ## Start Docker services
 	@echo "$(BLUE)Starting Docker services...$(NC)"
-	docker-compose up -d
+	$(COMPOSE) up -d
 	@echo "$(GREEN)✓ Services started$(NC)"
 	@echo "Run 'make docker-logs' to view logs"
 
 docker-down: ## Stop Docker services
 	@echo "$(BLUE)Stopping Docker services...$(NC)"
-	docker-compose down
+	$(COMPOSE) down
 	@echo "$(GREEN)✓ Services stopped$(NC)"
 
 docker-down-clean: ## Stop and remove volumes
 	@echo "$(YELLOW)Stopping services and removing volumes...$(NC)"
-	docker-compose down -v
+	$(COMPOSE) down -v
 	@echo "$(GREEN)✓ Services and volumes removed$(NC)"
 
 docker-logs: ## View Docker logs
-	docker-compose logs -f
+	$(COMPOSE) logs -f
 
 docker-ps: ## Show running containers
-	docker-compose ps
+	$(COMPOSE) ps
 
 docker-shell: ## Open shell in scrapy container
-	docker-compose exec scrapy-app /bin/bash
+	$(COMPOSE) exec $(APP_SERVICE) /bin/bash
 
 docker-test: docker-up ## Run tests in Docker
 	@echo "$(BLUE)Running tests in Docker...$(NC)"
 	@sleep 5  # Wait for services to be ready
-	docker-compose exec -T scrapy-app pytest -v
+	$(COMPOSE) exec -T $(APP_SERVICE) pytest -v
 	@make docker-down
 
 ##@ Pre-commit
@@ -199,7 +207,7 @@ dev: install-dev docker-up ## Setup complete development environment
 serve: docker-up ## Start all services
 	@echo "$(GREEN)Services are running$(NC)"
 	@echo "Grafana: http://localhost:3000"
-	@echo "Prometheus: http://localhost:9091"
+	@echo "Prometheus: http://localhost:9090"
 
 stop: docker-down ## Stop all services
 
@@ -213,13 +221,13 @@ notebook: ## Start Jupyter notebook
 
 ##@ Database
 
-db-migrate: ## Run database migrations
-	@echo "$(BLUE)Running database migrations...$(NC)"
-	python -m alembic upgrade head
+db-migrate: ## Create/upgrade the Postgres metrics schema (idempotent CREATE IF NOT EXISTS)
+	@echo "$(BLUE)Initializing database schema...$(NC)"
+	python -c "from src.utils.postgres import PostgresManager; m = PostgresManager.get_instance(); assert m is not None, 'Postgres is not configured (DB_HOST/DB_USER/...)'; m.initialize_schema()"
 
 db-reset: ## Reset database (WARNING: deletes all data)
 	@echo "$(RED)Resetting database...$(NC)"
-	docker-compose down postgres
+	$(COMPOSE) down postgres
 	docker volume rm scraping_project_postgres_data || true
 	@make docker-up
 	@sleep 5
@@ -231,21 +239,21 @@ logs: docker-logs ## View logs (alias)
 
 metrics: ## Open Grafana dashboard
 	@echo "$(BLUE)Opening Grafana...$(NC)"
-	open http://localhost:3000
+	$(OPEN) http://localhost:3000
 
 prometheus: ## Open Prometheus UI
 	@echo "$(BLUE)Opening Prometheus...$(NC)"
-	open http://localhost:9091
+	$(OPEN) http://localhost:9090
 
 ##@ Documentation
 
-docs: ## Open testing documentation
-	@echo "$(BLUE)Opening documentation...$(NC)"
-	open TESTING.md || cat TESTING.md
+docs: ## Show testing documentation (tests/README.md)
+	@echo "$(BLUE)Testing documentation: tests/README.md$(NC)"
+	@cat tests/README.md
 
 docs-coverage: test-coverage ## Generate and open coverage report
 	@echo "$(BLUE)Opening coverage report...$(NC)"
-	open htmlcov/index.html
+	$(OPEN) htmlcov/index.html
 
 ##@ Benchmarks
 
@@ -272,7 +280,7 @@ show-config: ## Show current configuration
 	@echo "Python version: $$(python --version)"
 	@echo "Pip version: $$(pip --version)"
 	@echo "Docker version: $$(docker --version)"
-	@echo "Docker Compose version: $$(docker-compose --version)"
+	@echo "Docker Compose version: $$($(COMPOSE) version)"
 	@echo ""
 	@echo "Installed packages:"
 	@pip list | head -20

@@ -64,7 +64,7 @@ class TestDeltaLakePerformance:
         ]
 
         with performance_timer as timer:
-            delta_sandbox.write("perf_test", records, mode="overwrite")
+            delta_sandbox.write("perf_test", records, mode="overwrite", async_write=False)
 
         throughput = len(records) / timer.elapsed
         assert throughput > 100, f"Write throughput {throughput:.0f} records/sec (expected > 100)"
@@ -73,7 +73,7 @@ class TestDeltaLakePerformance:
 
     def test_delta_read_throughput(self, delta_sandbox, performance_timer):
         records = [{"url": f"https://example.com/page{i}"} for i in range(1000)]
-        delta_sandbox.write("perf_test", records, mode="overwrite")
+        delta_sandbox.write("perf_test", records, mode="overwrite", async_write=False)
 
         with performance_timer as timer:
             for _ in range(10):
@@ -94,9 +94,9 @@ class TestDeltaLakePerformance:
                 }
                 for i in range(100)
             ]
-            delta_sandbox.write("concurrent_perf", records, mode="append")
+            delta_sandbox.write("concurrent_perf", records, mode="append", async_write=False)
 
-        delta_sandbox.write("concurrent_perf", [{"url": "init"}], mode="overwrite")
+        delta_sandbox.write("concurrent_perf", [{"url": "init"}], mode="overwrite", async_write=False)
 
         with performance_timer as timer:
             with ThreadPoolExecutor(max_workers=10) as executor:
@@ -205,12 +205,12 @@ class TestBatchingPerformance:
         with performance_timer as timer_small:
             for i in range(0, len(records), 10):
                 batch = records[i : i + 10]
-                delta_sandbox.write("batch_test_small", batch, mode="append" if i > 0 else "overwrite")
+                delta_sandbox.write("batch_test_small", batch, mode="append" if i > 0 else "overwrite", async_write=False)
 
         with performance_timer as timer_large:
             for i in range(0, len(records), 100):
                 batch = records[i : i + 100]
-                delta_sandbox.write("batch_test_large", batch, mode="append" if i > 0 else "overwrite")
+                delta_sandbox.write("batch_test_large", batch, mode="append" if i > 0 else "overwrite", async_write=False)
 
         assert (
             timer_large.elapsed < timer_small.elapsed

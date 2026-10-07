@@ -241,8 +241,8 @@ def demo_full_pipeline():
     print("=" * 80)
     print("\nEntity summaries have been stored in Delta Lake table: 'entity_summaries'")
     print("\nTo query the results, run:")
-    print("  from src.common.delta_lake import get_delta_manager")
-    print("  delta = get_delta_manager()")
+    print("  from src.utils.delta import get_delta")
+    print("  delta = get_delta()")
     print("  summaries = delta.read('entity_summaries')")
     print()
 

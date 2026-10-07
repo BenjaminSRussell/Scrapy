@@ -6,6 +6,14 @@ on:
   pull_request:
     branches: [ main ]
 
+# Quality gates (issue #149):
+# - ruff / mypy / bandit are blocking (no || true)
+# - Default pytest set: tests/ with -m "not slow and not kafka and not performance"
+#   (markers defined in Scraping_project/pytest.ini; kafka/performance/slow are optional/heavy)
+# - bandit severity gate: -ll (medium and high); low findings do not fail CI
+# - Tool versions come from Scraping_project/dev-requirements.txt + ci-tools.txt (pinned)
+# - Coverage uploaded as artifact; do not rely on committed coverage.xml
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -13,90 +21,211 @@ jobs:
       matrix:
         python-version: ["3.11", "3.12"]
 
+    services:
+      redis:
+        image: redis:7.2
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: pipeline_metrics_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
 
     - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v5
+      uses: actions/setup-python@v7
       with:
         python-version: ${{ matrix.python-version }}
+        cache: pip
+        cache-dependency-path: |
+          Scraping_project/requirements.txt
+          Scraping_project/dev-requirements.txt
+          Scraping_project/ci-tools.txt
 
-    - name: Cache dependencies
-      uses: actions/cache@v4
+    - name: Install dependencies (pinned)
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r Scraping_project/requirements.txt
+        pip install -r Scraping_project/dev-requirements.txt
+        pip install -r Scraping_project/ci-tools.txt
+
+    - name: Lint with ruff
+      working-directory: Scraping_project
+      run: |
+        ruff check src/ --select F,E4,E7,E9 --output-format=github
+
+    - name: Type check with mypy
+      working-directory: Scraping_project
+      run: |
+        mypy src/ --config-file mypy.ini --ignore-missing-imports --no-strict-optional
+
+    - name: Security check with bandit
+      working-directory: Scraping_project
+      run: |
+        # Blocking at medium+ (-ll). Low-severity findings are reported but do not fail.
+        # bandit has no built-in "github" formatter (exit 2: invalid choice);
+        # emit GitHub annotations through the custom template instead.
+        bandit -r src/ -ll -f custom --msg-template '::error file=Scraping_project/{relpath},line={line}::{test_id} [{severity}] {msg}'
+
+    - name: Run default test suite
+      working-directory: Scraping_project
+      env:
+        OBS_OFFLINE: "1"
+        REDIS_HOST: localhost
+        REDIS_PORT: "6379"
+        DB_HOST: localhost
+        DB_PORT: "5432"
+        DB_USER: postgres
+        DB_PASSWORD: postgres
+        DB_NAME: pipeline_metrics_test
+      run: |
+        # Broader default paths under tests/; skip optional/heavy markers.
+        # Clear pytest.ini addopts (-n auto requires unpinned pytest-xdist).
+        # Coverage threshold not enforced here — report is uploaded as artifact.
+        python -m pytest tests/ \
+          -v --tb=short \
+          -m "not slow and not kafka and not performance" \
+          -o addopts= \
+          --strict-markers \
+          --cov=src \
+          --cov-branch \
+          --cov-report=xml:coverage.xml \
+          --cov-report=term-missing:skip-covered \
+          --cov-fail-under=0
+
+    - name: Upload coverage artifact
+      if: always()
+      uses: actions/upload-artifact@v6
       with:
-        path: ~/.cache/pip
-        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
-        restore-keys: |
-          ${{ runner.os }}-pip-
+        name: coverage-py${{ matrix.python-version }}
+        path: Scraping_project/coverage.xml
+        if-no-files-found: warn
+
+  entrypoint-smoke:
+    # Proves #142 AC: entrypoint modules import and a worker starts against Redis
+    runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    steps:
+    - uses: actions/checkout@v7
+
+    - name: Set up Python 3.11
+      uses: actions/setup-python@v7
+      with:
+        python-version: "3.11"
 
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
         pip install -r Scraping_project/requirements.txt
+        pip install pytest
 
-    - name: Lint with ruff
+    - name: Compose config resolves worker commands
       run: |
-        pip install ruff
-        ruff check Scraping_project/src/ --select F,E4,E7,E9 --output-format=github
+        docker compose -f Scraping_project/docker-compose.yml config >/tmp/compose.yml
+        grep -q "src.workers.stage2_worker" /tmp/compose.yml
+        grep -q "src.main" Scraping_project/Dockerfile
 
-    - name: Type check with mypy
-      run: |
-        pip install mypy
-        mypy Scraping_project/src/ --ignore-missing-imports --no-strict-optional || true
-
-    - name: Security check with bandit
-      run: |
-        pip install bandit
-        bandit -r Scraping_project/src/ -ll -f github || true
-
-    - name: Run unit tests
+    - name: Import smoke (src.main + stage workers)
       run: |
         cd Scraping_project
-        python -m pytest tests/common/ tests/stage1/ -v --tb=short -m "not slow"
+        python -c "import src.main; import src.workers.stage1_worker, src.workers.stage2_worker, src.workers.stage3_worker, src.workers.stage4_worker; print('entrypoint imports ok')"
+        # Clear project addopts (cov/xdist) — smoke job only installs pytest
+        python -m pytest tests/unit/test_docker_entrypoints.py -v -o addopts=
 
-    - name: Run integration tests
+    - name: Redis + stage2 worker bring-up (no ModuleNotFoundError)
+      env:
+        REDIS_HOST: localhost
+        REDIS_PORT: "6379"
       run: |
         cd Scraping_project
-        python -m pytest tests/integration/ -v --tb=short --maxfail=5 -m "not slow"
+        set +e
+        timeout 20 python -m src.workers.stage2_worker
+        code=$?
+        set -e
+        if [ "$code" = "124" ] || [ "$code" = "0" ]; then
+          echo "stage2 worker bring-up ok (exit=$code)"
+          exit 0
+        fi
+        echo "stage2 worker failed early (exit=$code)"
+        exit "$code"
 
-  package:
+  package-smoke:
+    name: Package build smoke
+    needs: test
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
-
-    - name: Set up Python 3.11
-      uses: actions/setup-python@v5
-      with:
-        python-version: "3.11"
-
-    - name: Packaging smoke (build + install + import src)
-      run: |
-        python -m pip install --upgrade pip build
-        cd Scraping_project
-        python -m build
-        python -m pip install dist/*.whl
-        python -c "import src; print('src ok', getattr(src, '__file__', src))"
-
-  deploy:
-    needs: [test, package]
-    runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-
-    steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
 
     - name: Set up Python
-      uses: actions/setup-python@v5
+      uses: actions/setup-python@v7
+      with:
+        python-version: "3.12"
+
+    - name: Build wheel and smoke import
+      working-directory: Scraping_project
+      run: |
+        python -m pip install --upgrade pip
+        pip install "build==1.2.2"
+        python -m build
+        pip install dist/*.whl
+        python -c "import src; print('smoke ok', getattr(src, '__version__', 'unknown'))"
+
+  deploy:
+    needs: [test, entrypoint-smoke, package-smoke]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    # Deploy only when the target is configured. Without DEPLOY_HOST every
+    # push to main failed here (scp to an empty hostname) even with all tests
+    # green. `secrets` is not allowed in step `if:`, hence the job env flag.
+    env:
+      HAS_DEPLOY_TARGET: ${{ secrets.DEPLOY_HOST != '' && secrets.DEPLOY_USER != '' && secrets.DEPLOY_KEY != '' }}
+
+    steps:
+    - uses: actions/checkout@v7
+
+    - name: Deploy target not configured
+      if: env.HAS_DEPLOY_TARGET != 'true'
+      run: echo "::notice::DEPLOY_HOST/DEPLOY_USER/DEPLOY_KEY secrets are not set; skipping production deploy."
+
+    - name: Set up Python
+      uses: actions/setup-python@v7
       with:
         python-version: "3.12"
 
     - name: Build package
+      working-directory: Scraping_project
       run: |
-        cd Scraping_project
-        python -m pip install build
+        python -m pip install --upgrade pip
+        pip install "build==1.2.2"
         python -m build
 
     - name: Deploy to Production
+      if: env.HAS_DEPLOY_TARGET == 'true'
       env:
         DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
         DEPLOY_USER: ${{ secrets.DEPLOY_USER }}

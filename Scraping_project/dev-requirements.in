@@ -5,21 +5,28 @@
 pytest>=8.3.2
 pytest-asyncio>=0.23.8
 pytest-cov>=4.1.0
+pytest-env>=1.1.3,<1.3  # 1.3+ requires pytest>=9 (pytest pinned 8.x for pytest-asyncio 1.2)
 pytest-html>=3.1.0
 pytest-mock>=3.10.0
 pytest-timeout>=2.3.1
+pytest-twisted>=1.14.3
+pytest-xdist>=3.6.0
 requests-mock>=1.11.0
-fakeredis>=2.23.0
+fakeredis>=2.32.1
 
 # Code Quality
 black>=24.0.0
 isort>=5.13.0
 flake8>=7.0.0
 mypy>=1.13.0
+types-defusedxml>=0.7
+types-PyYAML>=6.0.12
+types-requests>=2.32,<2.33  # match requests 2.32.x
 ruff>=0.9.0
 
 # Security
 pip-audit>=2.7.0
+bandit==1.8.3
 
 # Kubernetes Development Tools
 pykube-ng>=23.6.0  # Kubernetes API client for testing

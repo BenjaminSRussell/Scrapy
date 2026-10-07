@@ -187,6 +187,11 @@ yarn-error.log*
 *.parquet
 *.avro
 
+# Grafana dashboard exports are source-controlled config, not generated
+# data - *.json above would otherwise silently exclude them (this is
+# exactly how monitoring/dashboards/unified_dashboard.json went missing).
+!Scraping_project/monitoring/dashboards/*.json
+
 # ====================================
 # Jupyter Notebook
 # ====================================
@@ -206,3 +211,24 @@ yarn-error.log*
 !tsconfig.json
 !Cargo.toml
 !Cargo.lock
+
+# ====================================
+# Crawl artifacts (#797): screenshots, WARC archives, profiler dumps, exports.
+# Scraping_project/data/config/ and tests/**/fixtures/ stay tracked.
+# ====================================
+Scraping_project/data/screenshots/
+Scraping_project/data/warc/
+Scraping_project/data/profiles/
+Scraping_project/data/exports/*
+!Scraping_project/data/exports/.gitkeep
+Scraping_project/screenshots/
+Scraping_project/profiles/
+/screenshots/
+*.warc
+*.warc.gz
+*.arc.gz
+*.prof
+*.pstats
+*.cprofile
+!**/tests/**/fixtures/**/*.warc
+!**/tests/**/fixtures/**/*.warc.gz

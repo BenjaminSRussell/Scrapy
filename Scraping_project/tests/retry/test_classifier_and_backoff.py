@@ -4,7 +4,7 @@ import unittest
 
 from scrapy.settings import Settings
 
-from src.common.retry_middleware import IntelligentRetryMiddleware
+from src.stage1.middlewares.retry_middleware import IntelligentRetryMiddleware
 
 class TestClassifierAndBackoff(unittest.TestCase):
 

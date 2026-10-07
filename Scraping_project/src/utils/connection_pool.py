@@ -7,13 +7,11 @@ Phase 8: Performance optimization through efficient resource management.
 import asyncio
 import logging
 from typing import Optional, Any, Callable, TypeVar, Generic
-from datetime import datetime, timedelta
+from datetime import datetime
 from contextlib import asynccontextmanager
 
 from src.core.exceptions import (
-    PoolExhausted,
-    ConnectionPoolTimeout,
-    ResourceExhaustedError
+    PoolExhausted
 )
 
 logger = logging.getLogger(__name__)
@@ -168,7 +166,7 @@ class ConnectionPool(Generic[T]):
         
         while not self._pool.empty():
             try:
-                conn, _ = await self._pool.get_nowait()
+                conn, _ = self._pool.get_nowait()
                 # Call close if connection has close method
                 if hasattr(conn, 'close'):
                     try:

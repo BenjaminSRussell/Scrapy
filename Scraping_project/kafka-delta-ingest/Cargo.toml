@@ -6,13 +6,13 @@ rust-version = "1.90"
 
 [dependencies]
 # Kafka client - Latest stable version with all features
-rdkafka = { version = "0.38", features = ["cmake-build", "ssl", "sasl", "zstd"] }
+rdkafka = { version = "0.39", features = ["cmake-build", "ssl", "sasl", "zstd"] }
 
 # Delta Lake - Latest version with DataFusion support
-deltalake = { version = "0.28", features = ["datafusion"] }
+deltalake = { version = "0.29", features = ["datafusion"] }
 
 # Arrow - Explicit version matching deltalake
-arrow = "55"
+arrow = "56"
 
 # Time handling - Latest stable
 chrono = "0.4"
@@ -34,19 +34,19 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # Error handling - Latest stable
 anyhow = "1.0"
-thiserror = "1.0"
+thiserror = "2.0"
 
 # Metrics (StatsD) - Latest stable
 cadence = "1.6"
 
 # Redis - Latest stable with async support
-redis = { version = "0.27", features = ["tokio-comp", "connection-manager"] }
+redis = { version = "1.2", features = ["tokio-comp", "connection-manager"] }
 
 # Environment variables - Latest stable
 dotenv = "0.15"
 
 # JSON Schema validation
-jsonschema = "0.17"
+jsonschema = "0.33"
 
 [profile.release]
 opt-level = 3

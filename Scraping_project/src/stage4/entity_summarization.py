@@ -30,7 +30,8 @@ class FactAggregator:
         self.min_fact_length = min_fact_length
         self.max_fact_length = max_fact_length
 
-        self._embedding_model = None
+        # Lazily-loaded optional dependency (sentence_transformers).
+        self._embedding_model: Any = None
 
         self.entity_facts: dict[str, list[dict[str, Any]]] = defaultdict(list)
 
@@ -183,7 +184,7 @@ class FactAggregator:
         norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
         normalized = embeddings / (norms + 1e-10)
 
-        similarity = np.dot(normalized, normalized.T)
+        similarity: np.ndarray = np.dot(normalized, normalized.T)
 
         return similarity
 
@@ -276,7 +277,8 @@ class AbstractiveSummarizer:
         self.min_length = min_length
         self.device = device
 
-        self._summarizer = None
+        # Lazily-loaded optional dependency (transformers pipeline).
+        self._summarizer: Any = None
 
     def _get_summarizer(self):
         if self._summarizer is None:
@@ -464,16 +466,13 @@ class EntitySummaryStorage:
         Returns:
             List of entity summary records
         """
-        filters = []
+        # Filter in Python: the old SQL-string filter was not a valid deltalake
+        # filter (and interpolated user input into an expression).
+        records: list[dict[str, Any]] = self.delta.read(self.table_name)
         if entity_name:
-            filters.append(f"entity_name = '{entity_name}'")
+            records = [r for r in records if r.get("entity_name") == entity_name]
         if entity_type:
-            filters.append(f"entity_type = '{entity_type}'")
-
-        filter_expr = " AND ".join(filters) if filters else None
-
-        records = self.delta.read(self.table_name, filters=filter_expr)
-
+            records = [r for r in records if r.get("entity_type") == entity_type]
         return records
 
 class Stage4EntityWorker:

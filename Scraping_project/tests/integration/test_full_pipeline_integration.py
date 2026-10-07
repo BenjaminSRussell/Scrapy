@@ -26,7 +26,10 @@ from typing import List, Dict
 project_root = Path(__file__).parent.parent.parent / "Scraping_project"
 sys.path.insert(0, str(project_root))
 
-from src.lakehouse.lakehouse_manager import LakehouseManager, get_delta_manager
+import shutil
+import tempfile
+
+from src.lakehouse.lakehouse_manager import LakehouseManager
 from src.orchestrator.pipeline_orchestrator import PipelineOrchestrator
 
 
@@ -35,10 +38,20 @@ class TestFullPipelineIntegration:
 
     @pytest.fixture(autouse=True)
     def setup_teardown(self):
-        """Setup and teardown for each test."""
-        self.delta = get_delta_manager()
+        """Setup and teardown for each test.
+
+        Uses a throwaway temp directory rather than the global
+        get_delta_manager() singleton (which points at the real
+        ./data/delta_lake project path) - these tests were previously
+        writing to and reading from real project data, leaking state
+        between test runs and between tests in this same class.
+        """
+        temp_dir = tempfile.mkdtemp(prefix="full_pipeline_test_")
+        self.delta = LakehouseManager(base_path=temp_dir, start_workers=False)
         yield
+        self.delta.shutdown()
         self.delta = None
+        shutil.rmtree(temp_dir, ignore_errors=True)
 
     def test_01_delta_lake_connection(self):
         """Test Delta Lake connection and table initialization."""
@@ -68,7 +81,7 @@ class TestFullPipelineIntegration:
         ]
 
         try:
-            self.delta.write("seed_urls", test_urls, mode="overwrite")
+            self.delta.write("seed_urls", test_urls, mode="overwrite", async_write=False)
             print("✅ Wrote seed URLs")
         except Exception as e:
             pytest.fail(f"Failed to write seed URLs: {e}")
@@ -100,7 +113,7 @@ class TestFullPipelineIntegration:
         ]
 
         try:
-            self.delta.write("stage1_discovery", stage1_data, mode="overwrite")
+            self.delta.write("stage1_discovery", stage1_data, mode="overwrite", async_write=False)
             print("✅ Wrote Stage 1 discovery data")
         except Exception as e:
             pytest.fail(f"Failed to write Stage 1 data: {e}")
@@ -129,7 +142,7 @@ class TestFullPipelineIntegration:
         ]
 
         try:
-            self.delta.write("stage2_page_analysis", stage2_data, mode="overwrite")
+            self.delta.write("stage2_page_analysis", stage2_data, mode="overwrite", async_write=False)
             print("✅ Wrote Stage 2 analysis data")
         except Exception as e:
             pytest.fail(f"Failed to write Stage 2 data: {e}")
@@ -177,7 +190,7 @@ class TestFullPipelineIntegration:
         ]
 
         try:
-            self.delta.write("stage2_page_analysis", stage2_mixed, mode="overwrite")
+            self.delta.write("stage2_page_analysis", stage2_mixed, mode="overwrite", async_write=False)
             print("✅ Wrote mixed Stage 2 data")
         except Exception as e:
             pytest.fail(f"Failed to write mixed data: {e}")
@@ -208,7 +221,7 @@ class TestFullPipelineIntegration:
         ]
 
         try:
-            self.delta.write("stage3_summaries", stage3_data, mode="overwrite")
+            self.delta.write("stage3_summaries", stage3_data, mode="overwrite", async_write=False)
             print("✅ Wrote Stage 3 summaries")
         except Exception as e:
             pytest.fail(f"Failed to write Stage 3 data: {e}")
@@ -240,7 +253,7 @@ class TestFullPipelineIntegration:
         ]
 
         try:
-            self.delta.write("stage4_large_doc_summaries", stage4_data, mode="overwrite")
+            self.delta.write("stage4_large_doc_summaries", stage4_data, mode="overwrite", async_write=False)
             print("✅ Wrote Stage 4 large doc summaries")
         except Exception as e:
             pytest.fail(f"Failed to write Stage 4 data: {e}")
@@ -263,13 +276,13 @@ class TestFullPipelineIntegration:
         initial_urls = 5
 
         seed_urls = [{"url": f"https://uconn.edu/test{i}", "priority": 1} for i in range(initial_urls)]
-        self.delta.write("seed_urls", seed_urls, mode="overwrite")
+        self.delta.write("seed_urls", seed_urls, mode="overwrite", async_write=False)
 
         stage1_discoveries = [
             {"url": f"https://uconn.edu/test{i}", "depth": 0}
             for i in range(initial_urls)
         ]
-        self.delta.write("stage1_discovery", stage1_discoveries, mode="overwrite")
+        self.delta.write("stage1_discovery", stage1_discoveries, mode="overwrite", async_write=False)
 
         stage2_analyses = [
             {
@@ -280,7 +293,7 @@ class TestFullPipelineIntegration:
             }
             for i in range(initial_urls)
         ]
-        self.delta.write("stage2_page_analysis", stage2_analyses, mode="overwrite")
+        self.delta.write("stage2_page_analysis", stage2_analyses, mode="overwrite", async_write=False)
 
         seed_count = len(self.delta.read("seed_urls"))
         stage1_count = len(self.delta.read("stage1_discovery"))
@@ -302,7 +315,7 @@ class TestFullPipelineIntegration:
                     {"url": f"https://uconn.edu/concurrent_{batch_id}_{i}", "batch": batch_id}
                     for i in range(10)
                 ]
-                self.delta.write("stage1_discovery", data, mode="append")
+                self.delta.write("stage1_discovery", data, mode="append", async_write=False)
                 return batch_id, True
             except Exception as e:
                 return batch_id, False
@@ -327,7 +340,7 @@ class TestFullPipelineIntegration:
         """Test error handling in pipeline operations."""
         try:
             invalid_data = [{"url": "not_a_url", "invalid_field": None}]
-            self.delta.write("stage1_discovery", invalid_data, mode="append")
+            self.delta.write("stage1_discovery", invalid_data, mode="append", async_write=False)
             print("✅ Invalid data write handled gracefully")
         except Exception as e:
             print(f"⚠️  Invalid data rejected as expected: {type(e).__name__}")

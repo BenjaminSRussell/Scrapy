@@ -118,7 +118,7 @@ python -m src.workers.stage1_worker
 python -m src.workers.stage2_worker
 
 # Run with custom config
-REDIS_HOST=localhost DELTA_LAKE_PATH=/data python -m src.workers.stage2_worker
+REDIS_HOST=localhost DELTA_LAKE_PATH=/data/delta python -m src.workers.stage2_worker
 ```
 
 ## Architecture
@@ -247,7 +247,18 @@ LOG_LEVEL=INFO
 # Workers
 WORKERS=4
 CONCURRENCY=10
+
+# Continuous Stage 2/3 workers (override config.yml stage2/stage3 max_workers + batch_size)
+STAGE2_CONCURRENT=100
+STAGE2_BATCH_SIZE=50
+STAGE3_CONCURRENT=50
+STAGE3_BATCH_SIZE=100
 ```
+
+Continuous Stage 2/3 workers resolve concurrency and batch size from
+`STAGE{N}_CONCURRENT` / `STAGE{N}_BATCH_SIZE`, then `config.yml`
+`stage{N}.max_workers` / `stage{N}.batch_size`, and finally built-in defaults
+(see `src.core.config.stage_worker_settings`).
 
 ### Docker Configuration
 
@@ -547,3 +558,17 @@ pool = ConnectionPool(
 **Production Status**: ✓ Ready for deployment
 
 Last Updated: 2025-11-09
+
+## Happy path (Redis + one worker)
+
+Minimal check that Docker entrypoints resolve after #142:
+
+```bash
+cd Scraping_project
+docker compose up -d redis
+docker compose up -d --no-deps stage2-worker
+# or locally (with deps + Redis):
+# python -m src.workers.stage2_worker
+```
+
+Default image CMD is `python -m src.main`. Compose stage workers use `python -m src.workers.stageN_worker`.

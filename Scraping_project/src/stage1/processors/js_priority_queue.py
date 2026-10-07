@@ -3,7 +3,7 @@
 import json
 import logging
 from datetime import datetime
-from typing import Any
+from typing import Any, cast
 
 import redis
 
@@ -111,7 +111,7 @@ class JSPriorityQueue:
 
     def dequeue(self, count: int = 1) -> list[dict[str, Any]]:
         try:
-            urls = self.redis.zrange(self.queue_key, 0, count - 1)
+            urls = cast(list[Any], self.redis.zrange(self.queue_key, 0, count - 1))
 
             if not urls:
                 return []
@@ -147,7 +147,10 @@ class JSPriorityQueue:
 
     def peek(self, count: int = 10) -> list[tuple[str, int]]:
         try:
-            results = self.redis.zrange(self.queue_key, 0, count - 1, withscores=True)
+            results = cast(
+                list[tuple[Any, float]],
+                self.redis.zrange(self.queue_key, 0, count - 1, withscores=True),
+            )
 
             return [
                 (
@@ -163,7 +166,7 @@ class JSPriorityQueue:
 
     def size(self) -> int:
         try:
-            return self.redis.zcard(self.queue_key)
+            return cast(int, self.redis.zcard(self.queue_key))
         except Exception as e:
             logger.error(f"[JS_QUEUE] Size check failed: {e}")
             return 0
@@ -185,7 +188,9 @@ class JSPriorityQueue:
         try:
             total_size = self.size()
 
-            all_scores = self.redis.zrange(self.queue_key, 0, -1, withscores=True)
+            all_scores = cast(
+                list[tuple[Any, float]], self.redis.zrange(self.queue_key, 0, -1, withscores=True)
+            )
 
             priority_dist = {
                 "critical": 0,

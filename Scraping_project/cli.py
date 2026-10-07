@@ -446,6 +446,58 @@ def cmd_validate(args):
     logger.info("=" * 60)
 
 
+
+def cmd_data_gc(args):
+    """TTL GC for crawl artifacts (logs/cache/temp). Dry-run by default."""
+    from src.common.crawl_artifact_gc import apply_gc, format_report, plan_gc
+
+    base = Path(__file__).parent
+    report = plan_gc(base_dir=base, ttl_days=args.ttl_days, roots=args.roots)
+    if args.apply:
+        if args.dry_run:
+            logger.error("Pass --apply without --dry-run to delete (or omit --dry-run).")
+            # still allow --apply alone
+        report = apply_gc(report)
+    else:
+        report.dry_run = True
+    print(format_report(report, verbose=args.verbose))
+    logger.info(
+        "[monitoring] crawl_artifact_gc mode=%s files=%d bytes=%d deleted_files=%d",
+        "apply" if args.apply else "dry-run",
+        report.total_files,
+        report.total_bytes,
+        report.deleted_files,
+    )
+
+
+
+def cmd_seeds(args):
+    """List/add/disable seed URLs with append-only audit log."""
+    from src.common.seed_ops import SeedRegistry
+
+    base = Path(__file__).parent / "data" / "ops"
+    registry = SeedRegistry(base / "seeds.json", base / "seed_audit.jsonl")
+    if args.seeds_command == "list":
+        rows = registry.list_seeds(include_disabled=not args.active_only)
+        for r in rows:
+            print(f"{r.status:8}  {r.updated_at}  {r.url}")
+        print(f"{len(rows)} seed(s)")
+        return
+    if args.seeds_command == "add":
+        rec = registry.add(args.url, note=args.note or "", actor=args.actor)
+        print(f"added {rec.url} ({rec.status})")
+        return
+    if args.seeds_command == "disable":
+        rec = registry.disable(args.url, actor=args.actor)
+        print(f"disabled {rec.url}")
+        return
+    if args.seeds_command == "audit":
+        for row in registry.read_audit(limit=args.limit):
+            print(row)
+        return
+    raise SystemExit("unknown seeds command")
+
+
 # ============================================================================
 # MAIN CLI
 # ============================================================================
@@ -512,6 +564,50 @@ def main():
     # Validate command
     validate_parser = subparsers.add_parser("validate", help="Validate Delta Lake tables")
     validate_parser.set_defaults(func=cmd_validate)
+
+    # data gc — TTL retention for on-disk crawl artifacts (#1102)
+    data_parser = subparsers.add_parser("data", help="Data / artifact operations")
+    data_sub = data_parser.add_subparsers(dest="data_command")
+    gc_parser = data_sub.add_parser("gc", help="TTL delete for logs/cache/temp artifacts")
+    gc_parser.add_argument("--ttl-days", type=float, default=14.0, help="Delete files older than N days")
+    gc_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        default=True,
+        help="Report only (default). Ignored when --apply is set.",
+    )
+    gc_parser.add_argument(
+        "--apply",
+        action="store_true",
+        help="Actually delete expired files (required to mutate disk)",
+    )
+    gc_parser.add_argument("--verbose", action="store_true", help="List candidate paths")
+    gc_parser.add_argument(
+        "--roots",
+        nargs="*",
+        default=None,
+        help="Override artifact roots relative to Scraping_project/",
+    )
+    gc_parser.set_defaults(func=cmd_data_gc)
+
+    # seeds — operator seed registry + audit (#1100)
+    seeds_parser = subparsers.add_parser("seeds", help="List/add/disable seed URLs with audit log")
+    seeds_sub = seeds_parser.add_subparsers(dest="seeds_command", required=True)
+    seeds_list = seeds_sub.add_parser("list", help="List seeds")
+    seeds_list.add_argument("--active-only", action="store_true")
+    seeds_list.set_defaults(func=cmd_seeds)
+    seeds_add = seeds_sub.add_parser("add", help="Add or re-enable a seed URL")
+    seeds_add.add_argument("url")
+    seeds_add.add_argument("--note", default="")
+    seeds_add.add_argument("--actor", default="operator")
+    seeds_add.set_defaults(func=cmd_seeds)
+    seeds_dis = seeds_sub.add_parser("disable", help="Disable a seed without deleting")
+    seeds_dis.add_argument("url")
+    seeds_dis.add_argument("--actor", default="operator")
+    seeds_dis.set_defaults(func=cmd_seeds)
+    seeds_audit = seeds_sub.add_parser("audit", help="Show recent audit log rows")
+    seeds_audit.add_argument("--limit", type=int, default=50)
+    seeds_audit.set_defaults(func=cmd_seeds)
 
     # Parse and execute
     args = parser.parse_args()

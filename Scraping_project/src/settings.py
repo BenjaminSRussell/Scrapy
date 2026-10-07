@@ -62,14 +62,19 @@ _scrapy_config: dict[str, Any] = derive_scrapy_config()
 
 BOT_NAME = _scrapy_config.get("bot_name", "uconn_scraper")
 
-SPIDER_MODULES = _scrapy_config.get("spider_modules", ["src.stage1", "src.stage3"])
-NEWSPIDER_MODULE = _scrapy_config.get("newspider_module", "src.stage3")
+# src.stage3 holds the Stage3 worker, not spiders (#628).
+SPIDER_MODULES = _scrapy_config.get("spider_modules", ["src.stage1"])
+NEWSPIDER_MODULE = _scrapy_config.get("newspider_module", "src.stage1")
 
 ITEM_PIPELINES = _scrapy_config.get(
     "item_pipelines",
     {
+        "src.otel_tracing.OtelItemPipeline": 50,
         "src.pipelines.DataValidationPipeline": 100,
         "src.pipelines.DataCleansingPipeline": 150,
+        # Stage1 -> Stage2 / JS queue handoff (#608). Before SchemaValidation:
+        # Scout's routing dicts are not content records and must not be dropped.
+        "src.pipelines.QueueItemPipeline": 175,
         "src.pipelines.SchemaValidationPipeline": 200,
         "src.pipelines.MetadataPipeline": 250,
         "src.pipelines.RecencyScoringPipeline": 300,
@@ -141,6 +146,7 @@ EXTENSIONS = _scrapy_config.get(
     "extensions",
     {
         "src.scrapy_prometheus.PrometheusExtension": 500,
+        "src.otel_tracing.OtelTracingExtension": 510,
     },
 )
 
@@ -149,8 +155,19 @@ EXTENSIONS = _scrapy_config.get(
 PROMETHEUS_ENABLED = _scrapy_config.get("prometheus_enabled", True)
 
 PROMETHEUS_PORT = _scrapy_config.get("prometheus_port", 9410)
-PROMETHEUS_HOST = _scrapy_config.get("prometheus_host", "0.0.0.0")
+# All interfaces by design (scraped as scrapy-app:9410 in compose/k8s).
+PROMETHEUS_HOST = _scrapy_config.get("prometheus_host", "0.0.0.0")  # nosec B104
 PROMETHEUS_PATH = _scrapy_config.get("prometheus_path", "metrics")
+
+# ============================================================================
+# OpenTelemetry tracing (no-op unless OTEL_EXPORTER_OTLP_ENDPOINT is set
+# and optional [otel] packages are installed: pip install -e ".[otel]")
+# ============================================================================
+OTEL_ENABLED = _scrapy_config.get("otel_enabled", True)
+
+OTEL_SERVICE_NAME = _scrapy_config.get(
+    "otel_service_name", os.getenv("OTEL_SERVICE_NAME", "scrapy-pipeline")
+)
 
 # ============================================================================
 # ============================================================================
@@ -240,6 +257,10 @@ AGGREGATION_ENABLED = _scrapy_config.get("aggregation_enabled", True)
 AGGREGATION_OUTPUT_TOPIC = _scrapy_config.get(
     "aggregation_output_topic", "entity_summaries"
 )
+# Most-recent items kept in memory per entity, and whether summaries are
+# written to the Delta table named by AGGREGATION_OUTPUT_TOPIC (#790).
+AGGREGATION_MAX_ITEMS_PER_ENTITY = _scrapy_config.get("aggregation_max_items_per_entity", 10)
+AGGREGATION_PERSIST = _scrapy_config.get("aggregation_persist", True)
 
 # ============================================================================
 # ============================================================================

@@ -1,6 +1,8 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+    <link rel="dns-prefetch" href="https://cdn.jsdelivr.net">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Pipeline Control Center - UConn Scraping</title>
@@ -28,6 +30,33 @@
             --gray-900: #111827;
         }
 
+        .skip-to-main {
+            position: absolute;
+            left: -9999px;
+            top: 0;
+            z-index: 10000;
+            padding: 0.75rem 1rem;
+            background: #111827;
+            color: #fff;
+            text-decoration: none;
+            border-radius: 0 0 4px 0;
+        }
+        .skip-to-main:focus {
+            left: 0;
+        }
+        .metric-value.flash, .stage-metric-value.flash {
+            animation: metricFlash 1.2s ease;
+        }
+        @keyframes metricFlash {
+            0% { background: #fde68a; }
+            100% { background: transparent; }
+        }
+        html {
+            scroll-padding-bottom: 80px;
+        }
+        .container {
+            padding-bottom: 88px;
+        }
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
             background-color: var(--gray-100);
@@ -92,6 +121,7 @@
         }
 
         .tabs {
+            overflow: visible;
             background: white;
             border-radius: 0.5rem;
             box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
@@ -228,6 +258,11 @@
         }
 
         .metric-value {
+            font-variant-numeric: tabular-nums;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            max-width: 100%;
             font-size: 1.25rem;
             font-weight: 700;
             color: var(--gray-900);
@@ -381,6 +416,11 @@
             color: #065f46;
         }
 
+        .status-indicator.never {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
         .status-indicator.offline {
             background: #fee2e2;
             color: #991b1b;
@@ -488,14 +528,113 @@
                 padding: 1rem;
             }
         }
-    </style>
+    
+        .visually-hidden {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            white-space: nowrap;
+            border: 0;
+        }
+    
+        @media (hover: hover) and (pointer: fine) {
+            .card:hover { transform: translateY(-2px); }
+        }
+        @media (hover: none) {
+            .card:hover { transform: none; }
+        }
+    
+        .chart-data-table { margin-top: 0.5rem; font-size: 0.85rem; }
+        .chart-data-table summary { cursor: pointer; color: var(--text-muted, #94a3b8); }
+        .table-scroll { overflow-x: auto; max-width: 100%; }
+        .data-fallback-table { width: 100%; border-collapse: collapse; margin-top: 0.5rem; }
+        .data-fallback-table th, .data-fallback-table td { border: 1px solid #334155; padding: 0.25rem 0.5rem; text-align: left; }
+        .legend-toggles { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.5rem; }
+        .legend-toggles button { font-size: 0.8rem; }
+        
+        .topbar-title { min-width: 0; flex-shrink: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .title-short { display: none; }
+        @media (max-width: 640px) {
+            .title-full { display: none; }
+            .title-short { display: inline; }
+        }
+        .overview-spark { height: 28px; width: 100%; margin-top: 0.35rem; }
+        .overview-spark-dir { font-size: 0.75rem; color: #94a3b8; }
+        
+        .tab-buttons-wrap {
+            position: relative;
+            margin-bottom: 0.5rem;
+        }
+        .tab-buttons-wrap::after {
+            content: "";
+            pointer-events: none;
+            position: absolute;
+            top: 0; right: 0; bottom: 0;
+            width: 2rem;
+            background: linear-gradient(to right, transparent, var(--bg, #0f172a));
+            opacity: 0;
+        }
+        @media (max-width: 640px) {
+            .tab-buttons {
+                display: flex;
+                flex-wrap: nowrap;
+                overflow-x: auto;
+                -webkit-overflow-scrolling: touch;
+                scrollbar-width: thin;
+                gap: 0.25rem;
+            }
+            .tab-buttons-wrap::after { opacity: 1; }
+            .tab-button { flex: 0 0 auto; white-space: nowrap; }
+        }
+        
+        .chart-empty-placeholder {
+            position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+            color: #94a3b8; font-size: 0.85rem; pointer-events: none;
+        }
+        .chart-container { position: relative; }
+        .chart-container.is-empty canvas { opacity: 0.15; }
+        
+        :root {
+            --chart-h-sm: 160px;
+            --chart-h-md: 240px;
+            --chart-h-lg: 300px;
+            --chart-height: var(--chart-h-lg);
+        }
+        @media (max-width: 640px) { :root { --chart-height: var(--chart-h-sm); } }
+        @media (min-width: 641px) and (max-width: 1024px) { :root { --chart-height: var(--chart-h-md); } }
+        .chart-container { height: var(--chart-height); min-height: var(--chart-height); }
+        .env-badge { font-size: 0.7rem; padding: 0.15rem 0.5rem; border-radius: 999px; margin-left: 0.5rem; vertical-align: middle; }
+        .env-badge.env-local { background: #334155; color: #e2e8f0; }
+        .env-badge.env-staging { background: #ca8a04; color: #111; }
+        .env-badge.env-prod { background: #b91c1c; color: #fff; font-weight: 700; }
+        .milestone-badge { display: inline-block; margin-left: 0.35rem; padding: 0.1rem 0.4rem; border-radius: 0.25rem; background: #14532d; color: #bbf7d0; font-size: 0.75rem; }
+        </style>
 </head>
 <body>
+    <noscript>
+        <div role="alert" style="margin:0;padding:1rem 1.5rem;background:#fef3c7;color:#92400e;border-bottom:2px solid #f59e0b;font-family:system-ui,sans-serif;">
+            <strong>JavaScript required.</strong>
+            The Pipeline Control Center is a client-side dashboard and cannot run with JavaScript disabled.
+            Start the local server with <code>python Scraping_project/dashboard/serve.py</code> (see README),
+            then open this page with JS enabled. Metrics may also be available at <code>:9090/metrics</code>.
+        </div>
+    </noscript>
+    <a class="skip-to-main" href="#main">Skip to main content</a>
+
     <div class="topbar">
         <div class="topbar-content">
-            <div class="topbar-title">
-                <h1>🎛️ Pipeline Control Center</h1>
-                <p>UConn Web Scraping Pipeline - Real-time Operations Dashboard</p>
+            <div class="topbar-title" title="Pipeline Control Center">
+                <h1>
+                    <span class="title-full">🕷️ Pipeline Control Center</span>
+                    <span class="title-short">Control Center</span>
+                    <span id="env-badge" class="env-badge env-local" title="Runtime environment">local</span>
+                </h1>
+                <p class="title-full">UConn Web Scraping Pipeline - Real-time Operations Dashboard</p>
+                <p class="title-short visually-hidden">Pipeline Control Center</p>
             </div>
             <div class="topbar-stats">
                 <div class="topbar-stat">
@@ -514,15 +653,15 @@
         </div>
     </div>
 
-    <div class="container">
+    <div class="container" id="main" role="main">
         <div class="tabs">
-            <div class="tab-buttons">
-                <button class="tab-button active" data-tab="overview">📊 Overview</button>
-                <button class="tab-button" data-tab="pipeline">🔄 Pipeline Stages</button>
-                <button class="tab-button" data-tab="performance">📈 Performance</button>
-                <button class="tab-button" data-tab="system">⚙️ System Health</button>
-                <button class="tab-button" data-tab="activity">📋 Activity Log</button>
-            </div>
+            <div class="tab-buttons-wrap"><div class="tab-buttons">
+                <button type="button" class="tab-button active" data-tab="overview">📊 Overview</button>
+                <button type="button" class="tab-button" data-tab="pipeline">🔄 Pipeline Stages</button>
+                <button type="button" class="tab-button" data-tab="performance">📈 Performance</button>
+                <button type="button" class="tab-button" data-tab="system">⚙️ System Health</button>
+                <button type="button" class="tab-button" data-tab="activity">📋 Activity Log</button>
+            </div></div>
 
             <!-- Overview Tab -->
             <div class="tab-content active" id="tab-overview">
@@ -530,11 +669,15 @@
                     <div class="card">
                         <div class="card-header">
                             <span class="card-title">Stage 1: Discovery</span>
-                            <span class="card-badge badge-info">Active</span>
+                            <span class="card-badge badge-info">Pending</span>
                         </div>
                         <div class="metric-row">
                             <span class="metric-label">URLs Found</span>
                             <span class="metric-value" id="overview-s1-discovered">0</span>
+                        </div>
+                        <div class="overview-spark-wrap">
+                            <svg class="overview-spark" id="spark-overview-s1-discovered" role="img" aria-label="Stage 1 discovery trend" viewBox="0 0 100 28" preserveAspectRatio="none"></svg>
+                            <div class="overview-spark-dir" id="spark-dir-overview-s1-discovered" aria-live="polite">Trend: waiting for samples</div>
                         </div>
                         <div class="metric-row">
                             <span class="metric-label">Queued</span>
@@ -545,11 +688,15 @@
                     <div class="card">
                         <div class="card-header">
                             <span class="card-title">Stage 2: Analysis</span>
-                            <span class="card-badge badge-info">Active</span>
+                            <span class="card-badge badge-info">Pending</span>
                         </div>
                         <div class="metric-row">
                             <span class="metric-label">Pages Analyzed</span>
                             <span class="metric-value" id="overview-s2-analyzed">0</span>
+                        </div>
+                        <div class="overview-spark-wrap">
+                            <svg class="overview-spark" id="spark-overview-s2-analyzed" role="img" aria-label="Stage 2 analyze trend" viewBox="0 0 100 28" preserveAspectRatio="none"></svg>
+                            <div class="overview-spark-dir" id="spark-dir-overview-s2-analyzed" aria-live="polite">Trend: waiting for samples</div>
                         </div>
                         <div class="metric-row">
                             <span class="metric-label">Quality Docs</span>
@@ -566,6 +713,10 @@
                             <span class="metric-label">Summaries</span>
                             <span class="metric-value success" id="overview-s3-summaries">0</span>
                         </div>
+                        <div class="overview-spark-wrap">
+                            <svg class="overview-spark" id="spark-overview-s3-summaries" role="img" aria-label="Stage 3 summaries trend" viewBox="0 0 100 28" preserveAspectRatio="none"></svg>
+                            <div class="overview-spark-dir" id="spark-dir-overview-s3-summaries" aria-live="polite">Trend: waiting for samples</div>
+                        </div>
                         <div class="metric-row">
                             <span class="metric-label">Deduplicated</span>
                             <span class="metric-value" id="overview-s3-dedup">0</span>
@@ -581,8 +732,12 @@
                             <span class="metric-label">Processed</span>
                             <span class="metric-value" id="overview-s4-summaries">0</span>
                         </div>
+                        <div class="overview-spark-wrap">
+                            <svg class="overview-spark" id="spark-overview-s4-summaries" role="img" aria-label="Stage 4 large-doc trend" viewBox="0 0 100 28" preserveAspectRatio="none"></svg>
+                            <div class="overview-spark-dir" id="spark-dir-overview-s4-summaries" aria-live="polite">Trend: waiting for samples</div>
+                        </div>
                         <div class="metric-row">
-                            <span class="metric-label">Compression</span>
+                            <span class="metric-label" title="Stage 4 compression = compressed output size ÷ input size; values under 1.0x mean more compact storage">Compression (out÷in)</span>
                             <span class="metric-value" id="overview-s4-compression">0x</span>
                         </div>
                     </div>
@@ -594,8 +749,19 @@
                             <span class="card-title">Pipeline Throughput</span>
                         </div>
                         <div class="chart-container">
-                            <canvas id="throughput-chart"></canvas>
+                            <figure class="chart-figure"><figcaption class="visually-hidden">Pipeline throughput over time</figcaption><canvas id="throughput-chart" role="img" aria-label="Pipeline throughput over time"></canvas></figure>
                         </div>
+                        <details class="chart-data-table" id="table-throughput-details">
+                            <summary>View data table — Pipeline throughput</summary>
+                            <div class="table-scroll" tabindex="0">
+                                <table id="table-throughput" class="data-fallback-table">
+                                    <caption class="visually-hidden">Pipeline throughput data</caption>
+                                    <thead></thead>
+                                    <tbody></tbody>
+                                </table>
+                            </div>
+                            <div class="legend-toggles" id="table-throughput-legend" role="group" aria-label="Pipeline throughput series toggles"></div>
+                        </details>
                     </div>
 
                     <div class="card">
@@ -629,7 +795,7 @@
                             </div>
                             <div class="stage-metric">
                                 <span class="stage-metric-label">Scout Instances</span>
-                                <span class="stage-metric-value">8</span>
+                                <span class="stage-metric-value" id="scout-instances" title="Not reported by the metrics exporter">&mdash;</span>
                             </div>
                         </div>
                     </div>
@@ -702,8 +868,19 @@
                             <span class="card-title">Stage Progression</span>
                         </div>
                         <div class="chart-container">
-                            <canvas id="stage-progression-chart"></canvas>
+                            <figure class="chart-figure"><figcaption class="visually-hidden">Stage progression over time</figcaption><canvas id="stage-progression-chart" role="img" aria-label="Stage progression over time"></canvas></figure>
                         </div>
+                        <details class="chart-data-table" id="table-stage-details">
+                            <summary>View data table — Stage progression</summary>
+                            <div class="table-scroll" tabindex="0">
+                                <table id="table-stage" class="data-fallback-table">
+                                    <caption class="visually-hidden">Stage progression data</caption>
+                                    <thead></thead>
+                                    <tbody></tbody>
+                                </table>
+                            </div>
+                            <div class="legend-toggles" id="table-stage-legend" role="group" aria-label="Stage progression series toggles"></div>
+                        </details>
                     </div>
 
                     <div class="card">
@@ -711,22 +888,49 @@
                             <span class="card-title">Document Routing</span>
                         </div>
                         <div class="chart-container">
-                            <canvas id="routing-chart"></canvas>
+                            <figure class="chart-figure"><figcaption class="visually-hidden">Traffic routing breakdown</figcaption><canvas id="routing-chart" role="img" aria-label="Traffic routing breakdown"></canvas></figure>
                         </div>
+                        <details class="chart-data-table" id="table-routing-details">
+                            <summary>View data table — Traffic routing</summary>
+                            <div class="table-scroll" tabindex="0">
+                                <table id="table-routing" class="data-fallback-table">
+                                    <caption class="visually-hidden">Traffic routing data</caption>
+                                    <thead></thead>
+                                    <tbody></tbody>
+                                </table>
+                            </div>
+                            <div class="legend-toggles" id="table-routing-legend" role="group" aria-label="Traffic routing series toggles"></div>
+                        </details>
                     </div>
                 </div>
             </div>
 
             <!-- Performance Tab -->
             <div class="tab-content" id="tab-performance">
+                <div class="card" style="margin-bottom:1rem;padding:0.75rem 1rem;display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap">
+                    <span>Performance chart history</span>
+                    <button type="button" id="reset-chart-history" class="btn" aria-label="Reset chart history buffers">Reset chart history</button>
+                </div>
+
                 <div class="grid grid-2">
                     <div class="card">
                         <div class="card-header">
                             <span class="card-title">URLs Discovered Over Time</span>
                         </div>
                         <div class="chart-container">
-                            <canvas id="urls-chart"></canvas>
+                            <figure class="chart-figure"><figcaption class="visually-hidden">URLs discovered over time</figcaption><canvas id="urls-chart" role="img" aria-label="URLs discovered over time"></canvas></figure>
                         </div>
+                        <details class="chart-data-table" id="table-urls-details">
+                            <summary>View data table — URLs discovered</summary>
+                            <div class="table-scroll" tabindex="0">
+                                <table id="table-urls" class="data-fallback-table">
+                                    <caption class="visually-hidden">URLs discovered data</caption>
+                                    <thead></thead>
+                                    <tbody></tbody>
+                                </table>
+                            </div>
+                            <div class="legend-toggles" id="table-urls-legend" role="group" aria-label="URLs discovered series toggles"></div>
+                        </details>
                     </div>
 
                     <div class="card">
@@ -734,8 +938,19 @@
                             <span class="card-title">Pages Analyzed Over Time</span>
                         </div>
                         <div class="chart-container">
-                            <canvas id="pages-chart"></canvas>
+                            <figure class="chart-figure"><figcaption class="visually-hidden">Pages analyzed over time</figcaption><canvas id="pages-chart" role="img" aria-label="Pages analyzed over time"></canvas></figure>
                         </div>
+                        <details class="chart-data-table" id="table-pages-details">
+                            <summary>View data table — Pages analyzed</summary>
+                            <div class="table-scroll" tabindex="0">
+                                <table id="table-pages" class="data-fallback-table">
+                                    <caption class="visually-hidden">Pages analyzed data</caption>
+                                    <thead></thead>
+                                    <tbody></tbody>
+                                </table>
+                            </div>
+                            <div class="legend-toggles" id="table-pages-legend" role="group" aria-label="Pages analyzed series toggles"></div>
+                        </details>
                     </div>
 
                     <div class="card">
@@ -743,8 +958,19 @@
                             <span class="card-title">Summaries Created Over Time</span>
                         </div>
                         <div class="chart-container">
-                            <canvas id="summaries-chart"></canvas>
+                            <figure class="chart-figure"><figcaption class="visually-hidden">Summaries produced over time</figcaption><canvas id="summaries-chart" role="img" aria-label="Summaries produced over time"></canvas></figure>
                         </div>
+                        <details class="chart-data-table" id="table-summaries-details">
+                            <summary>View data table — Summaries produced</summary>
+                            <div class="table-scroll" tabindex="0">
+                                <table id="table-summaries" class="data-fallback-table">
+                                    <caption class="visually-hidden">Summaries produced data</caption>
+                                    <thead></thead>
+                                    <tbody></tbody>
+                                </table>
+                            </div>
+                            <div class="legend-toggles" id="table-summaries-legend" role="group" aria-label="Summaries produced series toggles"></div>
+                        </details>
                     </div>
 
                     <div class="card">
@@ -781,34 +1007,35 @@
                             <span>Online</span>
                         </span>
                     </div>
+                    <div id="health-announce" class="visually-hidden" role="status" aria-live="polite" aria-atomic="true"></div>
                     <div class="system-health">
-                        <div class="health-item healthy" id="redis-health">
-                            <div class="health-icon">🗄️</div>
+                        <div class="health-item" id="redis-health">
+                            <div class="health-icon" aria-hidden="true">🗄️</div>
                             <div class="health-label">Redis</div>
                             <div class="health-value">Healthy</div>
                         </div>
-                        <div class="health-item healthy" id="metrics-health">
-                            <div class="health-icon">📊</div>
+                        <div class="health-item" id="metrics-health">
+                            <div class="health-icon" aria-hidden="true">📊</div>
                             <div class="health-label">Metrics</div>
                             <div class="health-value">Collecting</div>
                         </div>
-                        <div class="health-item healthy" id="stage1-health">
-                            <div class="health-icon">🔍</div>
+                        <div class="health-item" id="stage1-health">
+                            <div class="health-icon" aria-hidden="true">🔍</div>
                             <div class="health-label">Stage 1</div>
                             <div class="health-value">Running</div>
                         </div>
-                        <div class="health-item healthy" id="stage2-health">
-                            <div class="health-icon">📄</div>
+                        <div class="health-item" id="stage2-health">
+                            <div class="health-icon" aria-hidden="true">📄</div>
                             <div class="health-label">Stage 2</div>
                             <div class="health-value">Running</div>
                         </div>
-                        <div class="health-item healthy" id="stage3-health">
-                            <div class="health-icon">📝</div>
+                        <div class="health-item" id="stage3-health">
+                            <div class="health-icon" aria-hidden="true">📝</div>
                             <div class="health-label">Stage 3</div>
                             <div class="health-value">Running</div>
                         </div>
                         <div class="health-item healthy" id="stage4-health">
-                            <div class="health-icon">📚</div>
+                            <div class="health-icon" aria-hidden="true">📚</div>
                             <div class="health-label">Stage 4</div>
                             <div class="health-value">Standby</div>
                         </div>
@@ -836,11 +1063,11 @@
                         </div>
                         <div class="metric-row">
                             <span class="metric-label">Tables</span>
-                            <span class="metric-value">12</span>
+                            <span class="metric-value" id="delta-table-count" title="Not reported by the metrics exporter">&mdash;</span>
                         </div>
                         <div class="metric-row">
                             <span class="metric-label">Status</span>
-                            <span class="metric-value success">Active</span>
+                            <span class="metric-value success">Pending</span>
                         </div>
                     </div>
 
@@ -853,21 +1080,26 @@
                             <span class="metric-value" id="last-update">Never</span>
                         </div>
                         <div class="metric-row">
-                            <span class="metric-label">Uptime</span>
+                            <span class="metric-label">Session uptime</span>
                             <span class="metric-value" id="uptime">0s</span>
                         </div>
                     </div>
-                </div>
+                </ul>
             </div>
 
             <!-- Activity Log Tab -->
             <div class="tab-content" id="tab-activity">
                 <div class="card">
-                    <div class="card-header">
+                    <div class="card-header" style="flex-wrap:wrap;gap:0.5rem">
                         <span class="card-title">Pipeline Activity Log</span>
                         <span class="card-badge badge-info">Live</span>
+                        <div style="margin-left:auto;display:flex;gap:0.5rem;flex-wrap:wrap">
+                            <button type="button" id="export-activity-json" class="btn" aria-label="Export activity log as JSON">Export JSON</button>
+                            <button type="button" id="export-activity-csv" class="btn" aria-label="Export activity log as CSV">Export CSV</button>
+                            <button type="button" id="clear-activity" class="btn" aria-label="Clear activity log">Clear</button>
+                        </div>
                     </div>
-                    <div class="activity-feed" id="activity-log">
+                    <div class="activity-feed" id="activity-log" role="log" aria-live="polite">
                         <div class="activity-item success">
                             <div class="activity-timestamp">System initialized</div>
                             <div class="activity-message">Pipeline Control Center started monitoring</div>
@@ -878,15 +1110,30 @@
         </div>
 
         <div class="refresh-bar">
-            <div class="refresh-info">
+            <div id="refresh-status" class="visually-hidden" role="status" aria-live="polite" aria-atomic="true"></div>
+            <div id="metrics-reconnect-announce" class="visually-hidden" role="status" aria-live="polite" aria-atomic="true"></div>
+            <div class="refresh-info">Updated <span id="last-updated-rel">just now</span> · 
                 Auto-refresh: <span class="refresh-countdown" id="refresh-countdown">5</span> seconds
             </div>
             <div class="refresh-info">
                 Last updated: <span id="last-refresh-time">Never</span>
             </div>
+            <button type="button" id="pause-refresh" class="btn" aria-pressed="false" aria-label="Pause auto-refresh">Pause</button>
+            <span class="refresh-info" id="cc-version" title="Control Center build">v—</span>
+            <button type="button" id="manual-refresh" class="btn" aria-label="Refresh metrics now">Refresh now</button>
         </div>
     </div>
 
+    <script>
+        window.__CC_FEATURES__ = window.__CC_FEATURES__ || {
+            jobs: false,
+            dark: true,
+            sw: false,
+            env: (window.__CC_ENV__ || 'local')
+        };
+        </script>
+    <script src="format-utils.js"></script>
+    <script src="version.js"></script>
     <script src="app.js"></script>
 </body>
 </html>

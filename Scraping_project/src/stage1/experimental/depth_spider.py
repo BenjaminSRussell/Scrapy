@@ -1,6 +1,7 @@
 import logging
 from collections.abc import Iterator
 from datetime import datetime, timedelta
+from typing import Optional, cast
 
 import scrapy
 from scrapy.http import Response
@@ -24,14 +25,14 @@ class DepthSpider(BaseSpider):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        config = ConfigManager.get_instance().config
-        depth_config = config.get("stage1", {}).get("depth_spider", {})
+        config = get_config()
+        depth_config = config.get("stage1.depth_spider", {})
 
         self.max_depth = depth_config.get("max_depth", 50)
         self.rescrape_interval_hours = depth_config.get("rescrape_interval_hours", 24)
         self.enabled = depth_config.get("enabled", True)
 
-        self.redis_client = get_redis()
+        self.redis_client = get_redis().client
         self.delta = get_delta()
 
         self.seed_manager = SeedManager(self.delta)
@@ -82,11 +83,11 @@ class DepthSpider(BaseSpider):
 
             for url in all_seed_urls[:5000]:
                 last_crawl_key = f"depth:last_crawl:{self._hash_url(url)}"
-                last_crawl_str = self.redis_client.get(last_crawl_key)
+                last_crawl_str = cast(Optional[str], self.redis_client.get(last_crawl_key))
 
                 if last_crawl_str:
                     try:
-                        last_crawl = datetime.fromisoformat(last_crawl_str.decode("utf-8"))
+                        last_crawl = datetime.fromisoformat(last_crawl_str)
                         if last_crawl > rescrape_threshold:
                             continue
                     except Exception:
@@ -124,7 +125,7 @@ class DepthSpider(BaseSpider):
             return
 
         depth = response.meta.get("depth", 0)
-        self._record_successful_page(
+        self._record_discovery(
             response=response,
             url_hash=url_hash,
             depth=depth,

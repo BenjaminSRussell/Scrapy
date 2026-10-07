@@ -1,8 +1,33 @@
 import json
+import sys
+import types
 from datetime import datetime
 from unittest import mock
 
 import pytest
+
+def _patch_sentence_transformers(mock_model):
+    """FactAggregator._get_embedding_model() does a lazy
+    `from sentence_transformers import SentenceTransformer` inside the
+    method body (so importing entity_summarization.py doesn't pull in
+    the whole ML stack) - there's no module-level name to
+    mock.patch("src.stage4.entity_summarization.SentenceTransformer")
+    against. Inject a fake sentence_transformers module into sys.modules
+    instead, which the lazy import picks up whether or not the real
+    package is installed.
+    """
+    fake_module = types.ModuleType("sentence_transformers")
+    fake_module.SentenceTransformer = mock.MagicMock(return_value=mock_model)
+    return mock.patch.dict(sys.modules, {"sentence_transformers": fake_module})
+
+def _patch_transformers_pipeline(mock_pipeline_fn):
+    """Same lazy-import situation as _patch_sentence_transformers(), for
+    AbstractiveSummarizer._get_summarizer()'s `from transformers import
+    pipeline`.
+    """
+    fake_module = types.ModuleType("transformers")
+    fake_module.pipeline = mock_pipeline_fn
+    return mock.patch.dict(sys.modules, {"transformers": fake_module})
 
 class TestFactAggregator:
 
@@ -11,10 +36,13 @@ class TestFactAggregator:
 
         aggregator = FactAggregator()
 
+        # _filter_entity_sentences() keeps only sentences containing one of
+        # the entity name's words (no coreference resolution), so every
+        # sentence here mentions "Jane" or "Doe" explicitly.
         content = (
             "Professor Jane Doe joined UConn in 2020. "
-            "She received the NSF CAREER Award in 2021. "
-            "Jane Doe published a paper in Nature in 2023."
+            "Jane Doe received the NSF CAREER Award in 2021. "
+            "Doe published a paper in Nature in 2023."
         )
 
         aggregator.add_document(
@@ -39,22 +67,21 @@ class TestFactAggregator:
     def test_semantic_deduplication(self):
         from src.stage4.entity_summarization import FactAggregator
 
-        with mock.patch("src.stage4.entity_summarization.SentenceTransformer") as mock_transformer:
-            mock_model = mock.MagicMock()
+        mock_model = mock.MagicMock()
 
-            import numpy as np
+        import numpy as np
 
-            mock_embeddings = np.array(
-                [
-                    [1.0, 0.0, 0.0],
-                    [0.99, 0.01, 0.0],
-                    [0.0, 0.0, 1.0],
-                ]
-            )
+        mock_embeddings = np.array(
+            [
+                [1.0, 0.0, 0.0],
+                [0.99, 0.01, 0.0],
+                [0.0, 0.0, 1.0],
+            ]
+        )
 
-            mock_model.encode.return_value = mock_embeddings
-            mock_transformer.return_value = mock_model
+        mock_model.encode.return_value = mock_embeddings
 
+        with _patch_sentence_transformers(mock_model):
             aggregator = FactAggregator(similarity_threshold=0.85)
 
             aggregator.entity_facts["Jane Doe"] = [
@@ -168,11 +195,11 @@ class TestAbstractiveSummarizer:
     def test_summarize_with_mock_model(self):
         from src.stage4.entity_summarization import AbstractiveSummarizer
 
-        with mock.patch("src.stage4.entity_summarization.pipeline") as mock_pipeline:
-            mock_summarizer = mock.MagicMock()
-            mock_summarizer.return_value = [{"summary_text": "Mocked summary."}]
-            mock_pipeline.return_value = mock_summarizer
+        mock_summarizer = mock.MagicMock()
+        mock_summarizer.return_value = [{"summary_text": "Mocked summary."}]
+        mock_pipeline_fn = mock.MagicMock(return_value=mock_summarizer)
 
+        with _patch_transformers_pipeline(mock_pipeline_fn):
             summarizer = AbstractiveSummarizer()
 
             input_text = "(2021-03-15): Jane Doe received an award.\n(2023-06-01): She published a paper."
@@ -277,26 +304,29 @@ class TestStage4EntityWorker:
     def test_process_documents_end_to_end(self):
         from src.stage4.entity_summarization import Stage4EntityWorker
 
+        mock_embedding_model = mock.MagicMock()
+        import numpy as np
+
+        mock_embedding_model.encode.return_value = np.array(
+            [
+                [1.0, 0.0],
+                [0.0, 1.0],
+            ]
+        )
+
+        mock_summarizer = mock.MagicMock()
+        mock_summarizer.return_value = [{"summary_text": "Jane Doe is a professor at UConn."}]
+        mock_pipeline_fn = mock.MagicMock(return_value=mock_summarizer)
+
         with (
-            mock.patch("src.stage4.entity_summarization.SentenceTransformer") as mock_st,
-            mock.patch("src.stage4.entity_summarization.pipeline") as mock_pipeline,
+            _patch_sentence_transformers(mock_embedding_model),
+            _patch_transformers_pipeline(mock_pipeline_fn),
         ):
-            mock_embedding_model = mock.MagicMock()
-            import numpy as np
-
-            mock_embedding_model.encode.return_value = np.array(
-                [
-                    [1.0, 0.0],
-                    [0.0, 1.0],
-                ]
-            )
-            mock_st.return_value = mock_embedding_model
-
-            mock_summarizer = mock.MagicMock()
-            mock_summarizer.return_value = [{"summary_text": "Jane Doe is a professor at UConn."}]
-            mock_pipeline.return_value = mock_summarizer
-
-            with mock.patch("src.stage4.entity_summarization.get_delta_manager") as mock_get_delta:
+            # EntitySummaryStorage() also lazily imports (from
+            # src.utils.delta import get_delta) - patch it at its real
+            # source so the lazy re-import inside Stage4EntityWorker's
+            # storage backend picks up the mock too.
+            with mock.patch("src.utils.delta.get_delta") as mock_get_delta:
                 mock_delta = mock.MagicMock()
                 mock_get_delta.return_value = mock_delta
 
@@ -335,6 +365,7 @@ class TestStage4EntityWorker:
 @pytest.mark.integration
 class TestIntegration:
 
+    @pytest.mark.slow  # downloads MiniLM + bart-large-cnn (~2 GB)
     def test_real_models_with_sample_data(self):
         pytest.importorskip("sentence_transformers")
         pytest.importorskip("transformers")
@@ -348,26 +379,25 @@ class TestIntegration:
             device=-1,
         )
 
-        with mock.patch("src.stage4.entity_summarization.get_delta_manager") as mock_get_delta:
-            mock_delta = mock.MagicMock()
-            mock_get_delta.return_value = mock_delta
+        # Storage writes go through worker.storage.delta; inject a mock there
+        # (the module has no get_delta_manager attribute to patch).
+        mock_delta = mock.MagicMock()
+        worker.storage.delta = mock_delta
 
-            worker.storage.delta = mock_delta
+        documents = [
+            {
+                "entity_name": "Test Entity",
+                "entity_type": "organization",
+                "content": (
+                    "Test Entity was founded in 2020. "
+                    "It is a research organization. "
+                    "Test Entity has published many papers."
+                ),
+                "source_url": "https://example.com/test",
+                "publication_date": datetime(2020, 1, 1),
+            },
+        ]
 
-            documents = [
-                {
-                    "entity_name": "Test Entity",
-                    "entity_type": "organization",
-                    "content": (
-                        "Test Entity was founded in 2020. "
-                        "It is a research organization. "
-                        "Test Entity has published many papers."
-                    ),
-                    "source_url": "https://example.com/test",
-                    "publication_date": datetime(2020, 1, 1),
-                },
-            ]
+        worker.process_documents(documents)
 
-            worker.process_documents(documents)
-
-            mock_delta.write.assert_called()
+        mock_delta.write.assert_called()

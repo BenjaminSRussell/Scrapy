@@ -1,6 +1,6 @@
 from scrapy.http import HtmlResponse
 
-from src.common.url_processor import URLProcessor
+from src.stage1.processors.url_processor import URLProcessor
 
 class TestURLProcessorInitialization:
 
@@ -44,10 +44,10 @@ class TestURLNormalization:
         assert normalized.startswith("https://example.com")
 
     def test_normalize_removes_fragment(self):
-        url = "https://example.com/page
+        url = "https://example.com/page#section"
         normalized = self.processor.normalize_url(url)
 
-        assert "
+        assert "#section" not in normalized
 
     def test_normalize_removes_default_ports(self):
         url = "http://example.com:80/page"
@@ -96,9 +96,10 @@ class TestURLValidation:
             assert self.processor.should_follow_url(url) is False
 
     def test_should_not_follow_static_assets(self):
+        # .js is deliberately NOT filtered here: Stage 1 should capture
+        # everything, Stage 2 validates (see URLProcessor.should_follow_url).
         static_urls = [
             "https://example.com/style.css",
-            "https://example.com/script.js",
             "https://example.com/font.woff",
         ]
 
@@ -256,6 +257,10 @@ class TestBatchOperations:
             assert "priority" in result
 
     def test_process_batch_filters_invalid(self):
+        # Only the static asset extension is filtered: should_follow_url()
+        # deliberately does not block generic "/login" paths (only
+        # wp-login.php specifically) - Stage 1 captures everything, Stage 2
+        # validates.
         urls = [
             "https://example.com/page",
             "https://example.com/login",
@@ -264,7 +269,9 @@ class TestBatchOperations:
 
         results = self.processor.process_batch(urls=urls, parent_url="https://example.com", depth=1)
 
-        assert len(results) <= 1
+        assert len(results) <= 2
+        result_urls = {r["url"] for r in results}
+        assert not any(url.endswith(".jpg") for url in result_urls)
 
 class TestDiscoveryAndAssessment:
 
@@ -386,4 +393,3 @@ class TestURLProcessorIntegration:
 
         urls = [r["url"] for r in results]
         assert not any(url.endswith(".css") for url in urls)
-        assert not any(url.endswith(".js") for url in urls)

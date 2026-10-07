@@ -22,7 +22,7 @@ class TestBaseSpiderInit:
         spider = BaseSpider.from_crawler(mock_spider_crawler)
 
         assert hasattr(spider, "delta")
-        assert hasattr(spider, "storage")
+        assert hasattr(spider, "redis_client")
 
     @pytest.mark.unit
     @pytest.mark.stage1
@@ -95,7 +95,7 @@ class TestBaseSpiderURLExtraction:
         <html>
             <body>
                 <a href="  /page1  ">Page 1</a>
-                <a href="/page2
+                <a href="/page2#section">Page 2</a>
                 <a href="/page3?utm_source=tracker">Page 3</a>
             </body>
         </html>
@@ -230,7 +230,7 @@ class TestBaseSpiderDuplicateDetection:
         urls = [
             "https://example.com/page",
             "https://example.com/page/",
-            "https://example.com/page
+            "https://example.com/page#section",
             "https://example.com/page?utm_source=123",
         ]
         normalized = [spider.normalize_url(url) for url in urls]

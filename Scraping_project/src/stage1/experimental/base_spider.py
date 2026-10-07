@@ -6,16 +6,18 @@ import time
 from collections import deque
 from collections.abc import Callable, Iterator
 from datetime import datetime
-from typing import Any
+from typing import Any, cast
 from urllib.parse import urlparse
 
+import redis
 import scrapy
 from scrapy.http import Request, Response
 from scrapy.spidermiddlewares.httperror import HttpError
 from twisted.internet.error import DNSLookupError, TCPTimedOutError, TimeoutError
 
 from src.core.config import get_config
-# StorageManager removed - use get_delta() and get_redis() directly
+from src.utils.delta import get_delta
+from src.utils.redis import get_redis
 from src.stage1.processors.url_processor import URLProcessor, should_follow_url
 from src.items import OffsiteCandidateItem
 from src.stage1.js_detection import JSDetector
@@ -47,27 +49,25 @@ class BaseSpider(scrapy.Spider):
         return cls(name=kw.pop("name", "test_base"), **kw)
 
     def __init__(self, *args, **kwargs):
-        print(f"\n🕷️  BaseSpider.__init__() called for {kwargs.get('name', 'unknown')}")
         self.name = kwargs.pop("name", self.name)
-        print("🕷️  Calling super().__init__...")
         super().__init__(*args, **kwargs)
-        print(f"🕷️  super().__init__() complete for {self.name}")
 
-        self.allowed_domains = ["uconn.edu"]
+        self.allowed_domains = kwargs.get("allowed_domains") or ["uconn.edu"]
 
+        default_ignored_extensions = list(URLProcessor.IGNORED_EXTENSIONS)
         self.IGNORED_EXTENSIONS = (
-            getattr(self, "settings", {}).get("IGNORED_EXTENSIONS", []) if hasattr(self, "settings") else []
+            self.settings.get("IGNORED_EXTENSIONS", default_ignored_extensions)
+            if hasattr(self, "settings") and self.settings
+            else default_ignored_extensions
         )
         self.ignored_extensions = list(self.IGNORED_EXTENSIONS)
 
-        self.config_manager = ConfigManager.get_instance()
-        self.config = self.config_manager.config
-
-        self.storage = StorageManager.get_instance()
-
-        self.delta = self.storage.delta
-        self.postgres = self.storage.postgres
-        self.redis_client = self.storage.redis.redis if hasattr(self.storage.redis, "redis") else self.storage.redis
+        self.config = get_config()
+        self.delta = get_delta()
+        redis_helper = get_redis()
+        # Prefer RedisHelper.client (raw redis) for pipeline/scard usage
+        # Tests may inject a raw redis/fakeredis client via get_redis().
+        self.redis_client: redis.Redis = cast(redis.Redis, getattr(redis_helper, "client", redis_helper))
 
         self.url_hashes_key = f"{self.name}:url_hashes"
 
@@ -99,30 +99,19 @@ class BaseSpider(scrapy.Spider):
         self.total_urls_discovered = 0
         self.total_file_size = 0
 
-        self.url_discovery_window = deque(maxlen=60)
-        self.file_size_window = deque(maxlen=100)
+        self.url_discovery_window: deque[tuple[float, int]] = deque(maxlen=60)
+        self.file_size_window: deque[int] = deque(maxlen=100)
         self.last_metric_update = time.time()
 
-        self.js_confidence_threshold = self.config_manager.stage1.js_confidence_threshold
-
-        self.batch_size = self.config_manager.stage1.batch_size
+        self.js_confidence_threshold = self.config.get("stage1.js_confidence_threshold", 0.5)
+        self.batch_size = self.config.get("stage1.batch_size", 50)
 
         self.max_depth = self.settings.getint("MAX_DEPTH") if hasattr(self, "settings") and self.settings else None
 
-        print(f"[{self.name}] Loading start_urls from Delta Lake...")
-        self.start_urls = self._load_seed_urls()
-        print(f"[{self.name}] Loaded {len(self.start_urls)} start_urls")
-
-        print(f" BaseSpider.__init__() COMPLETE for {self.name}")
+        self.start_urls = kwargs.get("start_urls") or self._load_seed_urls()
 
     async def start(self):
-        print(f" [{self.name}] start() called!")
-        print(f" [{self.name}] Processing {len(self.start_urls)} start URLs...")
-
-        for i, url in enumerate(self.start_urls):
-            if i < 5:
-                print(f"  - URL {i}: {url[:80]}")
-
+        for url in self.start_urls:
             yield scrapy.Request(
                 url,
                 callback=self.parse,
@@ -130,8 +119,6 @@ class BaseSpider(scrapy.Spider):
                 dont_filter=True,
                 priority=0,
             )
-
-        print(f" [{self.name}] start() generated {len(self.start_urls)} requests")
 
     def _hash_url(self, url: str) -> str:
         normalized = self.normalize_url(url)
@@ -147,13 +134,18 @@ class BaseSpider(scrapy.Spider):
             urls = [record["url"] for record in seed_records]
             logger.info(f"Loaded {len(urls)} seed URLs from Delta Lake (will attempt all)")
 
-            url_count_in_redis = self.redis_client.scard(self.url_hashes_key) if hasattr(self, "url_hashes_key") else 0
-            logger.info(f"Redis currently tracking {url_count_in_redis} URLs (dupefilter will handle during crawl)")
-
-            return urls
         except Exception as e:
             logger.error(f"Could not load seed URLs from Delta Lake: {e}")
             return []
+
+        # Informational only: a Redis outage must not discard the seeds above.
+        try:
+            url_count_in_redis = self.redis_client.scard(self.url_hashes_key) if hasattr(self, "url_hashes_key") else 0
+            logger.info(f"Redis currently tracking {url_count_in_redis} URLs (dupefilter will handle during crawl)")
+        except Exception as e:
+            logger.warning(f"Could not read Redis URL count: {e}")
+
+        return urls
 
     def _load_existing_urls(self):
         pass
@@ -174,6 +166,9 @@ class BaseSpider(scrapy.Spider):
             if not should_follow_url(normalized_url):
                 continue
 
+            if any(normalized_url.lower().endswith(ext) for ext in self.ignored_extensions):
+                continue
+
             scheme = urlparse(normalized_url).scheme
             if scheme in {"mailto", "javascript"}:
                 continue
@@ -187,8 +182,8 @@ class BaseSpider(scrapy.Spider):
         if max_depth is None:
             return True
 
-        current_depth = request.meta.get("depth", 0)
-        return current_depth < max_depth
+        current_depth = int(request.meta.get("depth", 0))
+        return current_depth < int(max_depth)
 
     def create_request(
         self,
@@ -327,6 +322,12 @@ class BaseSpider(scrapy.Spider):
 
     def _extract_urls(self, response: Response) -> list[str]:
         self.url_processor.base_url = response.url
+        # URLExtractor.discover_all_urls() resolves relative links via its
+        # own base_url attribute, set once at URLProcessor construction
+        # time - without updating it per-response too, every page after
+        # the spider's first request resolves relative links against a
+        # stale base URL instead of the current one.
+        self.url_processor.extractor.base_url = response.url
         discovered_urls = self.url_processor.extractor.discover_all_urls(response)
         return [self.normalize_url(url) for url in discovered_urls]
 
@@ -475,16 +476,30 @@ class BaseSpider(scrapy.Spider):
     def _categorize_skip_reason(self, url: str) -> str:
         url_lower = url.lower()
 
-        if any(url_lower.endswith(ext) for ext in [".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".ico", ".tiff"]):
+        if any(
+            url_lower.endswith(ext)
+            for ext in [".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".ico", ".tiff", ".svg"]
+        ):
             return "images"
 
-        elif any(url_lower.endswith(ext) for ext in [".css", ".map", ".woff", ".woff2", ".ttf", ".eot", ".otf"]):
+        elif any(
+            url_lower.endswith(ext) for ext in [".css", ".map", ".js", ".woff", ".woff2", ".ttf", ".eot", ".otf"]
+        ):
             return "static_assets"
+
+        elif any(
+            url_lower.endswith(ext)
+            for ext in [".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx"]
+        ):
+            return "documents"
 
         elif any(
             url_lower.endswith(ext) for ext in [".mp3", ".mp4", ".avi", ".mov", ".wmv", ".flv", ".webm", ".m4a", ".wav"]
         ):
             return "media_files"
+
+        elif any(url_lower.endswith(ext) for ext in [".zip", ".tar.gz", ".rar", ".7z", ".tar"]):
+            return "archives"
 
         elif any(url_lower.endswith(ext) for ext in [".exe", ".dmg", ".pkg", ".deb", ".rpm"]):
             return "executables"
@@ -598,7 +613,7 @@ class BaseSpider(scrapy.Spider):
             logger.error(f"DNS lookup failed: {request.url[:80]}")
         elif failure.check(TimeoutError, TCPTimedOutError):
             retry_count = request.meta.get("retry_times", 0)
-            max_retries = self.settings.get("RETRY_TIMES", 3)
+            max_retries = self.settings.get("RETRY_TIMES", 3) if hasattr(self, "settings") and self.settings else 3
 
             if retry_count >= max_retries:
                 logger.error(f"Timeout after {retry_count} retries: {request.url[:80]}")

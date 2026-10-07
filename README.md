@@ -9,7 +9,7 @@
 [![Scrapy](https://img.shields.io/badge/scrapy-2.11+-green.svg)](https://scrapy.org/)
 [![License](https://img.shields.io/badge/license-MIT-purple.svg)](LICENSE)
 
-[Quick Start](#-quick-start) • [Features](#-features) • [Architecture](#-architecture) • [Monitoring](#-monitoring) • [Docs](ARCHITECTURE.md)
+[Quick Start](#-quick-start) • [Features](#-features) • [Architecture](#-architecture) • [Monitoring](#-monitoring) • [Docs](Scraping_project/README.md#architecture)
 
 </div>
 
@@ -104,9 +104,9 @@ Open **http://localhost:3000** (login: `admin` / `admin`)
 | Service | URL | Purpose |
 |---------|-----|---------|
 | 📊 **Grafana** | `localhost:3000` | Visual dashboards |
-| 🔥 **Prometheus** | `localhost:9091` | Metrics database |
-| 🕷️ **Spider Metrics** | `localhost:9410` | Spider stats |
-| 📮 **Redis Metrics** | `localhost:9090` | Queue depth |
+| 🔥 **Prometheus** | `localhost:9090` | Metrics database (published by `docker-compose.yml`) |
+| 🕷️ **Spider Metrics** | `scrapy-app:9410` | Spider stats (scraped by Prometheus inside the compose network) |
+| 📮 **Queue / exporter metrics** | `metrics-exporter:9090` | Queue depth (scrape target in `monitoring/prometheus.yml`; not published to the host) |
 
 </div>
 
@@ -326,7 +326,7 @@ redis_host = config.redis.host          # Type-safe!
 batch_size = config.stage1.batch_size   # IDE autocomplete
 ```
 
-📚 **[Full Configuration Guide →](ARCHITECTURE.md)**
+📚 **[Full Configuration Guide →](Scraping_project/README.md#configuration)**
 
 ---
 
@@ -467,7 +467,7 @@ python start.py --env k8s --stage all-stages \
 - Rolling updates supported
 - Health checks configured
 
-📚 **[Kubernetes Guide →](k8s/DEPLOYMENT_GUIDE.md)**
+📚 **[Kubernetes Guide →](Scraping_project/DEPLOYMENT.md#kubernetes-deployment)**
 
 ---
 
@@ -511,17 +511,17 @@ pytest -m "not slow"
 <td width="50%">
 
 ### 📖 Documentation
-- **[Architecture Guide](ARCHITECTURE.md)** - Detailed technical docs
-- **[Refactoring Summary](REFACTORING_SUMMARY.md)** - Recent changes
-- **[K8s Deployment](k8s/DEPLOYMENT_GUIDE.md)** - Production setup
+- **[Architecture Guide](Scraping_project/README.md#architecture)** - Detailed technical docs
+- **[Evolution Roadmap](Scraping_project/EVOLUTION_ROADMAP.md)** - Recent and planned changes
+- **[K8s Deployment](Scraping_project/DEPLOYMENT.md#kubernetes-deployment)** - Production setup (see also [k8s/README.md](Scraping_project/k8s/README.md))
 
 </td>
 <td width="50%">
 
 ### 🎯 Examples
-- **[ConfigManager Tests](tests/unit/common/test_config_manager.py)** - Usage examples
-- **[BaseSpider](src/stage1/base_spider.py)** - Integration patterns
-- **[Worker Template](src/stage2/stage2_worker.py)** - Worker structure
+- **[ConfigManager Tests](Scraping_project/tests/unit/common/test_config_manager.py)** - Usage examples
+- **[BaseSpider](Scraping_project/src/stage1/base_spider.py)** - Integration patterns
+- **[Worker Template](Scraping_project/src/stage2/stage2_worker.py)** - Worker structure
 
 </td>
 </tr>

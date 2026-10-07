@@ -1,112 +1,173 @@
-import json
-from unittest.mock import patch
+"""Unit tests for RedisHelper (src/utils/redis.py).
+
+Replaces the old RedisManager test suite - see the module docstring in
+tests/integration/test_redis_integration.py for why the queue-push/pop
+methods it tested don't exist anymore.
+"""
+
+from unittest.mock import MagicMock, patch
 
 import pytest
-import redis  # type: ignore[import-untyped]
+import redis
 
-from src.common.redis_manager import RedisManager
+from src.utils.redis import RedisHelper
 
-class TestRedisManagerInit:
-
-    @pytest.mark.unit
-    def test_init_with_defaults(self):
-        with patch("redis.ConnectionPool") as mock_pool:
-            RedisManager()
-            mock_pool.assert_called_with(
-                host="localhost",
-                port=6379,
-                db=0,
-                password=None,
-                max_connections=50,
-                decode_responses=True,
-                socket_keepalive=True,
-                retry_on_timeout=True,
-                socket_connect_timeout=5.0,
-                socket_timeout=5.0,
-            )
+class TestRedisHelperInit:
 
     @pytest.mark.unit
-    def test_connection_failure(self):
-        with patch("redis.Redis") as mock_redis:
-            mock_redis.return_value.ping.side_effect = redis.exceptions.ConnectionError
-            with pytest.raises(redis.exceptions.RedisError):
-                RedisManager()
+    def test_init_stores_connection_params(self):
+        helper = RedisHelper(host="127.0.0.1", port=6380, db=2, password="secret")
 
-class TestRedisManagerQueue:
+        assert helper.host == "127.0.0.1"
+        assert helper.port == 6380
+        assert helper.db == 2
+        assert helper.password == "secret"
+        assert helper._client is None
 
     @pytest.mark.unit
-    @pytest.mark.redis
-    def test_push_to_queue(self, redis_clean):
-        manager = RedisManager(
-            host="127.0.0.1",
-            port=6379,
-            db=redis_clean.connection_pool.connection_kwargs["db"],
-        )
+    def test_client_is_lazy(self):
+        helper = RedisHelper()
+        assert helper._client is None
 
-        test_item = {"url": "https://example.com", "depth": 1}
-        manager.push_to_queue("test_queue", test_item)
+    @pytest.mark.unit
+    def test_client_connection_failure_raises(self):
+        helper = RedisHelper(host="127.0.0.1", port=1)
 
-        result = redis_clean.lrange("queue:test_queue", 0, -1)
-        assert len(result) == 1
-        pushed_item = json.loads(result[0])
-        assert pushed_item["url"] == test_item["url"]
-        assert pushed_item["depth"] == test_item["depth"]
+        with patch("redis.Redis") as mock_redis_cls:
+            mock_redis_cls.return_value.ping.side_effect = redis.exceptions.ConnectionError
+            with pytest.raises(redis.exceptions.ConnectionError):
+                _ = helper.client
+
+class TestRedisHelperUrlDedup:
 
     @pytest.mark.unit
     @pytest.mark.redis
-    def test_pop_from_queue(self, redis_clean):
-        manager = RedisManager(
-            host="127.0.0.1",
-            port=6379,
-            db=redis_clean.connection_pool.connection_kwargs["db"],
-        )
+    def test_mark_and_check_url_seen(self, redis_clean):
+        helper = RedisHelper()
+        helper._client = redis_clean
 
-        test_item = {"url": "https://example.com", "depth": 1}
-        manager.push_to_queue("test_queue", test_item)
+        url = "https://example.com/test"
+        assert not helper.check_url_seen(url, "scout")
 
-        result = manager.pop_from_queue("test_queue")
-        assert result["url"] == test_item["url"]
-        assert result["depth"] == test_item["depth"]
+        helper.mark_url_seen(url, "scout")
+        assert helper.check_url_seen(url, "scout")
 
     @pytest.mark.unit
     @pytest.mark.redis
-    def test_pop_from_empty_queue(self, redis_clean):
-        manager = RedisManager(
-            host="127.0.0.1",
-            port=6379,
-            db=redis_clean.connection_pool.connection_kwargs["db"],
-        )
+    def test_different_prefixes_are_isolated(self, redis_clean):
+        helper = RedisHelper()
+        helper._client = redis_clean
 
-        result = manager.pop_from_queue("empty_queue")
-        assert result is None
+        url = "https://example.com/test"
+        helper.mark_url_seen(url, "scout")
 
-    @pytest.mark.unit
-    @pytest.mark.redis
-    def test_get_queue_length(self, redis_clean):
-        manager = RedisManager(
-            host="127.0.0.1",
-            port=6379,
-            db=redis_clean.connection_pool.connection_kwargs["db"],
-        )
+        assert not helper.check_url_seen(url, "deep_dive")
 
-        for i in range(5):
-            manager.push_to_queue("test_queue", {"id": i})
-
-        length = manager.get_queue_length("test_queue")
-        assert length == 5
+class TestRedisHelperSets:
 
     @pytest.mark.unit
     @pytest.mark.redis
-    def test_clear_queue(self, redis_clean):
-        manager = RedisManager(
-            host="127.0.0.1",
-            port=6379,
-            db=redis_clean.connection_pool.connection_kwargs["db"],
-        )
+    def test_add_to_set_and_get_members(self, redis_clean):
+        helper = RedisHelper()
+        helper._client = redis_clean
 
-        for i in range(5):
-            manager.push_to_queue("test_queue", {"id": i})
+        added = helper.add_to_set("my_set", "a", "b", "c")
+        assert added == 3
+        assert helper.get_set_members("my_set") == {"a", "b", "c"}
+        assert helper.get_set_size("my_set") == 3
 
-        manager.clear_queue("test_queue")
+class TestRedisHelperCounters:
 
-        assert manager.get_queue_length("test_queue") == 0
+    @pytest.mark.unit
+    @pytest.mark.redis
+    def test_increment_counter_default_amount(self, redis_clean):
+        helper = RedisHelper()
+        helper._client = redis_clean
+
+        assert helper.increment_counter("hits") == 1
+        assert helper.increment_counter("hits") == 2
+
+    @pytest.mark.unit
+    @pytest.mark.redis
+    def test_increment_counter_custom_amount(self, redis_clean):
+        helper = RedisHelper()
+        helper._client = redis_clean
+
+        assert helper.increment_counter("hits", amount=5) == 5
+
+    @pytest.mark.unit
+    @pytest.mark.redis
+    def test_get_counter_defaults_to_zero(self, redis_clean):
+        helper = RedisHelper()
+        helper._client = redis_clean
+
+        assert helper.get_counter("never_set") == 0
+
+class TestRedisHelperCircuitBreaker:
+
+    @pytest.mark.unit
+    @pytest.mark.redis
+    def test_open_and_check_circuit(self, redis_clean):
+        helper = RedisHelper()
+        helper._client = redis_clean
+
+        assert not helper.is_circuit_open("bad.example.com")
+
+        helper.open_circuit("bad.example.com", duration_seconds=60, reason="timeout")
+
+        assert helper.is_circuit_open("bad.example.com")
+
+    @pytest.mark.unit
+    @pytest.mark.redis
+    def test_get_open_circuits_lists_all(self, redis_clean):
+        helper = RedisHelper()
+        helper._client = redis_clean
+
+        helper.open_circuit("a.example.com")
+        helper.open_circuit("b.example.com")
+
+        open_circuits = helper.get_open_circuits()
+        assert set(open_circuits) == {"a.example.com", "b.example.com"}
+
+class TestRedisHelperMaintenance:
+
+    @pytest.mark.unit
+    @pytest.mark.redis
+    def test_delete_key(self, redis_clean):
+        helper = RedisHelper()
+        helper._client = redis_clean
+
+        helper.mark_url_seen("https://example.com", "x")
+        assert helper.delete_key("x:urls") is True
+        assert not helper.check_url_seen("https://example.com", "x")
+
+    @pytest.mark.unit
+    @pytest.mark.redis
+    def test_get_key_count(self, redis_clean):
+        helper = RedisHelper()
+        helper._client = redis_clean
+
+        assert helper.get_key_count() == 0
+        helper.mark_url_seen("https://example.com", "x")
+        assert helper.get_key_count() == 1
+
+    @pytest.mark.unit
+    @pytest.mark.redis
+    def test_clear_all(self, redis_clean):
+        helper = RedisHelper()
+        helper._client = redis_clean
+
+        helper.mark_url_seen("https://example.com", "x")
+        # #203/#381: refused without explicit confirmation, nothing deleted.
+        assert helper.clear_all() is False
+        assert helper.get_key_count() == 1
+        assert helper.clear_all(confirm=True) is True
+        assert helper.get_key_count() == 0
+
+    @pytest.mark.unit
+    @pytest.mark.redis
+    def test_ping(self, redis_clean):
+        helper = RedisHelper()
+        helper._client = redis_clean
+
+        assert helper.ping() is True

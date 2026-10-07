@@ -28,16 +28,79 @@ try:
 except ImportError:
     DELTA_AVAILABLE = False
     DeltaTable = None  # type: ignore
-    write_deltalake = None  # type: ignore
+    write_deltalake = None
     WriterProperties = None  # type: ignore
-    pa = None  # type: ignore
-    pa_csv = None  # type: ignore
-    pq = None  # type: ignore
+    pa = None
+    pa_csv = None
+    pq = None
 
 logger = logging.getLogger(__name__)
 
-WriteTask: TypeAlias = tuple[str, list[dict[str, Any]], str]
-MaintenanceTask: TypeAlias = tuple[str, ...]
+CAST_QUARANTINE_TABLE = "cast_quarantine"
+CastMode: TypeAlias = Literal["strict", "coerce"]
+
+try:  # cast failures by table/column (#818)
+    from prometheus_client import Counter as _Counter
+
+    DELTA_CAST_FAILURES = _Counter(
+        "delta_cast_failures_total",
+        "Values that failed to cast to the cached Arrow schema, by table and column.",
+        ["table", "column"],
+    )
+except Exception:  # prometheus_client missing or metric already registered
+    DELTA_CAST_FAILURES = None
+
+
+def cast_rows_to_schema(
+    rows: list[dict[str, Any]], schema: Any, mode: str = "strict"
+) -> tuple[Any, list[dict[str, Any]], list[dict[str, Any]]]:
+    """Build an Arrow table for ``rows`` under ``schema`` without poisoning the batch (#818).
+
+    Fast path: one vectorized cast per column. If any column fails, each row is
+    cast individually. ``strict`` drops rows with any bad value; ``coerce``
+    nulls bad values in nullable columns and keeps the row (non-nullable
+    failures are still dropped).
+
+    Returns ``(table_or_None, kept_rows, failures)``. Each failure carries the
+    row index, column, value, error and the row itself.
+    """
+    columns = {f.name: [row.get(f.name) for row in rows] for f in schema}
+    try:
+        arrays = [pa.array(columns[f.name], type=f.type) for f in schema]
+        return pa.Table.from_arrays(arrays, schema=schema), rows, []
+    except (pa.ArrowInvalid, pa.ArrowTypeError, TypeError, ValueError, OverflowError):
+        pass
+
+    kept: list[dict[str, Any]] = []
+    failures: list[dict[str, Any]] = []
+    for idx, row in enumerate(rows):
+        fixed = dict(row)
+        drop = False
+        for f in schema:
+            value = row.get(f.name)
+            try:
+                pa.array([value], type=f.type)
+            except (pa.ArrowInvalid, pa.ArrowTypeError, TypeError, ValueError, OverflowError) as e:
+                failures.append(
+                    {"row_index": idx, "column": f.name, "value": value, "error": str(e), "row": row}
+                )
+                if mode == "coerce" and f.nullable:
+                    fixed[f.name] = None
+                else:
+                    drop = True
+        if not drop:
+            kept.append(fixed)
+
+    if not kept:
+        return None, [], failures
+    arrays = [pa.array([r.get(f.name) for r in kept], type=f.type) for f in schema]
+    return pa.Table.from_arrays(arrays, schema=schema), kept, failures
+
+
+WriteMode: TypeAlias = Literal["append", "overwrite", "error", "ignore"]
+WriteTask: TypeAlias = tuple[str, list[dict[str, Any]], WriteMode]
+# (task_type, table_name, retention_hours); retention_hours is only used by "vacuum".
+MaintenanceTask: TypeAlias = tuple[str, str, int]
 
 class LakehouseManager:
 
@@ -46,9 +109,16 @@ class LakehouseManager:
         config = Config.get_instance()
 
         if base_path is None:
-            base_path = config.get("delta_lake.base_path", "./data/delta_lake")
+            # Same contract as DeltaHelper (src/utils/delta.py): DELTA_LAKE_PATH
+            # wins so compose/k8s workers and the metrics exporter share a lake.
+            base_path = os.getenv("DELTA_LAKE_PATH") or config.get(
+                "delta_lake.base_path", "./data/delta_lake"
+            )
         self.base_path = Path(base_path)
         self.base_path.mkdir(parents=True, exist_ok=True)
+        # #818: "strict" quarantines rows with uncastable values; "coerce"
+        # nulls the bad value (nullable columns) and keeps the row.
+        self.cast_mode = str(config.get("delta_lake.cast_mode", "strict")).lower()
 
         self.tables = {
             "seed_urls": self.base_path / "seed_urls",
@@ -59,6 +129,7 @@ class LakehouseManager:
             "js_spider_queue": self.base_path / "js_spider_queue",
             "stage2_queue": self.base_path / "stage2_queue",
             "stage2_page_analysis": self.base_path / "stage2_page_analysis",
+            "stage2_errors": self.base_path / "stage2_errors",
             "stage3_analytics": self.base_path / "stage3_analytics",
             "stage3_summaries": self.base_path / "stage3_summaries",
             "stage4_large_docs": self.base_path / "stage4_large_docs",
@@ -73,6 +144,13 @@ class LakehouseManager:
         self.write_queue: queue.Queue[WriteTask | None] = queue.Queue(maxsize=queue_maxsize)
 
         self.schema_cache: dict[str, Any] = {}
+
+        # Delta Lake commits are optimistic: two threads in this process
+        # writing the same table race (e.g. both try to create version 0).
+        # Serialize in-process writes per table; cross-process conflicts are
+        # still handled by the commit retry loop in _write_sync_locked.
+        self._table_locks: dict[str, threading.Lock] = {}
+        self._table_locks_guard = threading.Lock()
 
         self.maintenance_queue: queue.Queue[MaintenanceTask | None] = queue.Queue()
 
@@ -108,14 +186,12 @@ class LakehouseManager:
                 if task is None:
                     break
 
-                task_type, *args = task
+                task_type, table_name, retention_hours = task
 
                 try:
                     if task_type == "optimize":
-                        table_name = args[0]
                         self._optimize_table(table_name)
                     elif task_type == "vacuum":
-                        table_name, retention_hours = args
                         self._vacuum_table(table_name, retention_hours)
                 except Exception as e:
                     logger.error(f"Maintenance task failed ({task_type}): {e}", exc_info=True)
@@ -150,6 +226,13 @@ class LakehouseManager:
     def _handle_writer_exception(self, e: Exception, table_name: str):
         logger.error(f"Write failed for {table_name}: {e}", exc_info=True)
 
+    def _table_lock(self, table_name: str) -> threading.Lock:
+        with self._table_locks_guard:
+            lock = self._table_locks.get(table_name)
+            if lock is None:
+                lock = self._table_locks[table_name] = threading.Lock()
+            return lock
+
     def _write_sync(
         self,
         table_name: str,
@@ -158,6 +241,15 @@ class LakehouseManager:
     ):
         if not data:
             return
+        with self._table_lock(table_name):
+            self._write_sync_locked(table_name, data, mode)
+
+    def _write_sync_locked(
+        self,
+        table_name: str,
+        data: list[dict[str, Any]],
+        mode: Literal["append", "overwrite", "error", "ignore"],
+    ):
 
         table_path = self.tables.get(table_name)
         if not table_path:
@@ -192,8 +284,11 @@ class LakehouseManager:
                 record["_stage"] = table_name
 
         try:
+            import time
+
             import pyarrow as pa
             from deltalake import WriterProperties, write_deltalake
+            from deltalake.exceptions import CommitFailedError, DeltaError
 
             if table_name not in self.schema_cache:
                 table = pa.Table.from_pylist(data)
@@ -203,7 +298,7 @@ class LakehouseManager:
                 cached_schema = self.schema_cache[table_name]
 
                 cached_field_names = {field.name for field in cached_schema}
-                incoming_field_names = set()
+                incoming_field_names: set[str] = set()
                 for row in data:
                     incoming_field_names.update(row.keys())
 
@@ -218,18 +313,19 @@ class LakehouseManager:
                     logger.info(f"[SCHEMA REFRESH] Updated schema for {table_name}: {table.schema}")
                 else:
 
-                    columns_data = {}
-                    for field in cached_schema:
-                        col_name = field.name
-                        columns_data[col_name] = [row.get(col_name) for row in data]
-
-                    arrays = []
-                    for field in cached_schema:
-                        col_name = field.name
-                        col_data = columns_data[col_name]
-                        arrays.append(pa.array(col_data, type=field.type))
-
-                    table = pa.Table.from_arrays(arrays, schema=cached_schema)
+                    cast_table, kept, failures = cast_rows_to_schema(
+                        data, cached_schema, getattr(self, "cast_mode", "strict")
+                    )
+                    if failures:
+                        self._record_cast_failures(table_name, failures)
+                    if cast_table is None:
+                        logger.error(
+                            f"[CAST] All {len(data)} rows for {table_name} failed to cast; "
+                            f"quarantined to {CAST_QUARANTINE_TABLE}"
+                        )
+                        return
+                    table = cast_table
+                    data = kept
 
             partition_by = None
             if table_name in ["stage1_discovery", "stage2_page_analysis"]:
@@ -237,21 +333,77 @@ class LakehouseManager:
 
             writer_props = WriterProperties(compression="ZSTD")
 
-            write_deltalake(
-                str(table_path),
-                table,
-                mode=mode,
-                schema_mode="merge" if mode == "append" else "overwrite",
-                writer_properties=writer_props,
-                partition_by=partition_by,
-            )
+            max_attempts = 5
+            for attempt in range(1, max_attempts + 1):
+                try:
+                    write_deltalake(
+                        str(table_path),
+                        table,
+                        mode=mode,
+                        schema_mode="merge" if mode == "append" else "overwrite",
+                        writer_properties=writer_props,
+                        partition_by=partition_by,
+                    )
+                    break
+                except (CommitFailedError, DeltaError) as commit_error:
+                    # CommitFailedError: lost an optimistic-concurrency race.
+                    # "version N already exists": another process committed
+                    # the same version first (e.g. both creating the table).
+                    is_conflict = isinstance(commit_error, CommitFailedError) or (
+                        "already exists" in str(commit_error)
+                    )
+                    if not is_conflict or attempt == max_attempts:
+                        raise
+                    # Another writer committed a newer version between our
+                    # read and this commit attempt (concurrent writers to
+                    # the same table race on Delta Lake's optimistic
+                    # concurrency control) - back off and retry against the
+                    # now-current table state.
+                    logger.warning(
+                        f"Commit conflict writing {table_name} "
+                        f"(attempt {attempt}/{max_attempts}), retrying"
+                    )
+                    time.sleep(0.05 * attempt)
 
             logger.info(f" Wrote {len(data)} records to {table_name}")
         except Exception as e:
             self._handle_writer_exception(e, table_name)
 
         if table_name in ["stage1_discovery", "stage2_page_analysis"] and len(data) >= 1000:
-            self.maintenance_queue.put(("optimize", table_name))
+            self.maintenance_queue.put(("optimize", table_name, 0))
+
+    def _record_cast_failures(self, table_name: str, failures: list[dict[str, Any]]) -> None:
+        """Count, log and quarantine rows/values that failed to cast (#818)."""
+        import json as _json
+
+        for failure in failures:
+            if DELTA_CAST_FAILURES is not None:
+                DELTA_CAST_FAILURES.labels(table=table_name, column=failure["column"]).inc()
+        urls = sorted({str(f["row"].get("url", "")) for f in failures if f["row"].get("url")})[:5]
+        logger.warning(
+            f"[CAST] {len(failures)} value(s) failed to cast for {table_name} "
+            f"(mode={getattr(self, 'cast_mode', 'strict')}); e.g. URLs: {urls}"
+        )
+        if table_name == CAST_QUARANTINE_TABLE:
+            return  # never recurse
+        now = datetime.now(UTC).isoformat()
+        rows = [
+            {
+                "source_table": table_name,
+                "column": str(f["column"]),
+                "value": repr(f["value"])[:500],
+                "error": str(f["error"])[:500],
+                "url": str(f["row"].get("url") or ""),
+                "row_json": _json.dumps(f["row"], default=str)[:10000],
+                "cast_mode": str(getattr(self, "cast_mode", "strict")),
+                "quarantined_at": now,
+            }
+            for f in failures
+        ]
+        try:
+            self._write_sync(CAST_QUARANTINE_TABLE, rows, "append")
+        except Exception as e:
+            logger.error(f"[CAST] Failed to write {len(rows)} quarantine rows: {e}")
 
     def write(
         self,
@@ -267,34 +419,37 @@ class LakehouseManager:
         else:
             self._write_sync(table_name, data, mode)
 
-    def read(self, table_name: str, filters: Any = None, columns: list[str] | None = None) -> list[dict]:
+    def read(
+        self,
+        table_name: str,
+        filters: Any = None,
+        columns: list[str] | None = None,
+        version: int | None = None,
+    ) -> list[dict]:
         from deltalake import DeltaTable
 
-        table_path = self.tables.get(table_name)
-        if not table_path:
-            raise ValueError(f"Unknown table: {table_name}")
+        table_path = self.get_table_path(table_name)
 
         if not (table_path / "_delta_log").exists():
             logger.warning(f"No data found in {table_name}")
             return []
 
-        table = DeltaTable(str(table_path))
+        table = DeltaTable(str(table_path), version=version)
         pa_table = table.to_pyarrow_table(filters=filters, columns=columns)
-        return pa_table.to_pylist()
+        rows: list[dict] = pa_table.to_pylist()
+        return rows
 
     def count(self, table_name: str) -> int:
         from deltalake import DeltaTable
 
-        table_path = self.tables.get(table_name)
-        if not table_path:
-            raise ValueError(f"Unknown table: {table_name}")
+        table_path = self.get_table_path(table_name)
 
         if not (table_path / "_delta_log").exists():
             return 0
 
         table = DeltaTable(str(table_path))
         pa_table = table.to_pyarrow_table(columns=[])
-        return pa_table.num_rows
+        return int(pa_table.num_rows)
 
     def _optimize_table(self, table_name: str):
         from deltalake import DeltaTable
@@ -309,11 +464,22 @@ class LakehouseManager:
             logger.info(f"Optimizing {table_name} with compaction...")
             dt.optimize.compact()
 
-            logger.info(f"Z-ordering {table_name} by url_hash and discovered_at...")
-            if table_name == "stage1_discovery":
-                dt.optimize.z_order(["url_hash", "discovered_at"])
-            elif table_name == "stage2_page_analysis":
-                dt.optimize.z_order(["url_hash", "processed_at"])
+            z_order_columns_by_table = {
+                "stage1_discovery": ["url_hash", "discovered_at"],
+                "stage2_page_analysis": ["url_hash", "processed_at"],
+            }
+            z_order_columns = z_order_columns_by_table.get(table_name)
+            if z_order_columns:
+                schema_fields = {field.name for field in dt.schema().fields}
+                missing = [col for col in z_order_columns if col not in schema_fields]
+                if missing:
+                    logger.debug(
+                        f"Skipping Z-order for {table_name}: columns {missing} not in "
+                        f"current schema (writer didn't include them for this batch)"
+                    )
+                else:
+                    logger.info(f"Z-ordering {table_name} by {', '.join(z_order_columns)}...")
+                    dt.optimize.z_order(z_order_columns)
 
             logger.info(f" Optimized {table_name}")
 
@@ -477,9 +643,7 @@ class LakehouseManager:
         import pyarrow.parquet as pq
         from deltalake import DeltaTable
 
-        table_path = self.tables.get(table_name)
-        if not table_path:
-            raise ValueError(f"Unknown table: {table_name}")
+        table_path = self.get_table_path(table_name)
 
         out_path = Path(output_path)
         out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -536,15 +700,13 @@ class LakehouseManager:
     def get_table_schema(self, table_name: str):
         from deltalake import DeltaTable
 
-        table_path = self.tables.get(table_name)
-        if not table_path:
-            raise ValueError(f"Unknown table: {table_name}")
+        table_path = self.get_table_path(table_name)
 
         if not (table_path / "_delta_log").exists():
             raise ValueError(f"No data found in {table_name}")
 
         table = DeltaTable(str(table_path))
-        return table.schema().to_pyarrow()
+        return table.schema().to_arrow()
 
     def table_exists(self, table_name: str) -> bool:
         table_path = self.tables.get(table_name)
@@ -653,9 +815,7 @@ class LakehouseManager:
     def get_table_history(self, table_name: str) -> list[dict]:
         from deltalake import DeltaTable
 
-        table_path = self.tables.get(table_name)
-        if not table_path:
-            raise ValueError(f"Unknown table: {table_name}")
+        table_path = self.get_table_path(table_name)
 
         if not (table_path / "_delta_log").exists():
             return []
@@ -674,11 +834,28 @@ class LakehouseManager:
         self.write(table_name, records, mode="append", async_write=True)
         logger.debug(f"[append_to_table] Appended {len(records)} records to {table_name}")
 
+    def get_table_size(self, table_name: str) -> int:
+        """Total bytes of all files under the table directory (0 if absent)."""
+        table_path = self.get_table_path(table_name)
+        if not table_path.exists():
+            return 0
+        return sum(p.stat().st_size for p in table_path.rglob("*") if p.is_file())
+
     def read_table(self, table_name: str, **kwargs) -> list[dict]:
         return self.read(table_name, **kwargs)
 
     def get_table_path(self, table_name: str) -> Path:
         table_path = self.tables.get(table_name)
+        if not table_path:
+            # Not registered on this instance yet - a separate
+            # LakehouseManager/DeltaHelper instance pointed at the same
+            # base_path may have already written this table to disk.
+            # self.tables is per-instance in-memory state, not derived
+            # from the filesystem, so auto-discover before giving up.
+            candidate_path = self.base_path / table_name
+            if (candidate_path / "_delta_log").exists():
+                self.tables[table_name] = candidate_path
+                table_path = candidate_path
         if not table_path:
             raise ValueError(f"Unknown table: {table_name}")
         return table_path
@@ -912,6 +1089,13 @@ class InMemoryBackend:
             return
         self.write(table_name, records, mode="append")
 
+    def get_table_size(self, table_name: str) -> int:
+        """Total bytes of all files under the table directory (0 if absent)."""
+        table_path = self.get_table_path(table_name)
+        if not table_path.exists():
+            return 0
+        return sum(p.stat().st_size for p in table_path.rglob("*") if p.is_file())
+
     def read_table(self, table_name: str, **kwargs) -> list[dict]:
         return self.read(table_name, **kwargs)
 
@@ -929,9 +1113,20 @@ class InMemoryBackend:
 # =====================================================================================
 # =====================================================================================
 def get_lakehouse_manager(mode: str | None = None, **kwargs) -> LakehouseManager | InMemoryBackend:
+    from_env = mode is None
     mode = mode or os.getenv("DELTA_BACKEND", "lakehouse")
 
     if mode == "memory":
+        # #621: an env typo or leftover DELTA_BACKEND=memory used to make a
+        # whole crawl run write nowhere, with only a warning. Selecting the
+        # ephemeral backend from the environment now needs an explicit opt-in;
+        # code that passes mode="memory" deliberately (tests, demos) is unaffected.
+        if from_env and os.getenv("ALLOW_INMEMORY_DELTA") != "1":
+            raise RuntimeError(
+                "DELTA_BACKEND=memory selects an ephemeral lake that loses every write "
+                "when the process exits. Set ALLOW_INMEMORY_DELTA=1 to use it on purpose, "
+                "or DELTA_BACKEND=lakehouse for durable storage."
+            )
         logger.warning(
             "  Using in-memory Lakehouse backend! "
             "All data is ephemeral and will be lost when the process exits. "
