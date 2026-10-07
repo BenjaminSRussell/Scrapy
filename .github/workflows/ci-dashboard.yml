@@ -1,0 +1,33 @@
+# Pure-JS dashboard helpers (format-utils.js) had node tests that no workflow
+# ran (#1043). Cheap: no install step, node ships on the runner image.
+name: CI Dashboard
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "Scraping_project/dashboard/**"
+      - ".github/workflows/ci-dashboard.yml"
+  pull_request:
+    paths:
+      - "Scraping_project/dashboard/**"
+      - ".github/workflows/ci-dashboard.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  dashboard-js:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Syntax check
+        run: |
+          node --check Scraping_project/dashboard/app.js
+          node --check Scraping_project/dashboard/format-utils.js
+      - name: Unit tests
+        run: node --test Scraping_project/dashboard/tests/
