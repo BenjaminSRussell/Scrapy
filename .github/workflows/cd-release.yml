@@ -67,7 +67,7 @@ jobs:
 
       - name: Upload kafka-delta-ingest SBOM
         if: env.HAS_GHCR_PAT == 'true'
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: sbom-kafka-delta-ingest
           path: sbom-kafka-delta-ingest.spdx.json
@@ -107,7 +107,7 @@ jobs:
 
       - name: Upload crawler SBOM
         if: env.HAS_GHCR_PAT == 'true'
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: sbom-crawler
           path: sbom-crawler.spdx.json
@@ -147,7 +147,7 @@ jobs:
 
       - name: Upload metrics SBOM
         if: env.HAS_GHCR_PAT == 'true'
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: sbom-metrics
           path: sbom-metrics.spdx.json
