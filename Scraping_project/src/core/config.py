@@ -210,3 +210,40 @@ def reset_config():
     global _config_instance
     _config_instance = None
     Config.reset_instance()
+
+
+def _positive_int(value: Any) -> Optional[int]:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed > 0 else None
+
+
+def stage_worker_settings(
+    stage: int,
+    default_concurrent: int,
+    default_batch_size: int,
+    config: Optional[Config] = None,
+) -> tuple[int, int]:
+    """Resolve (max_concurrent, batch_size) for a continuous stage worker.
+
+    Precedence: env ``STAGE{N}_CONCURRENT`` / ``STAGE{N}_BATCH_SIZE`` >
+    config.yml ``stage{N}.max_workers`` / ``stage{N}.batch_size`` >
+    legacy ``stages.stage{N}.concurrent`` > the given defaults.
+    Invalid or non-positive values fall through to the next source.
+    """
+    cfg = config if config is not None else get_config()
+    concurrent = (
+        _positive_int(os.getenv(f"STAGE{stage}_CONCURRENT"))
+        or _positive_int(cfg.get(f"stage{stage}.max_workers"))
+        or _positive_int(cfg.get(f"stages.stage{stage}.concurrent"))
+        or default_concurrent
+    )
+    batch_size = (
+        _positive_int(os.getenv(f"STAGE{stage}_BATCH_SIZE"))
+        or _positive_int(cfg.get(f"stage{stage}.batch_size"))
+        or _positive_int(cfg.get(f"stages.stage{stage}.batch_size"))
+        or default_batch_size
+    )
+    return concurrent, batch_size

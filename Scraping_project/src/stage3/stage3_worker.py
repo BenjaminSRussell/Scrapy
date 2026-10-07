@@ -11,6 +11,7 @@ from src.core.constants import (
     SUMMARY_LIMITS,
     TABLE_STAGE3_SUMMARIES,
 )
+from src.core.config import stage_worker_settings
 from src.utils.delta import get_delta
 from src.utils.postgres import PostgresManager
 from src.otel_tracing import ensure_crawl_job_id, init_tracing, start_span
@@ -221,9 +222,12 @@ class Stage3Worker:
 async def run_stage3_worker():
     logger.info("Stage 3 Worker starting in continuous mode...")
 
+    max_concurrent, batch_size = stage_worker_settings(3, 20, 50)
+    logger.info("Stage 3 Worker concurrency=%d batch_size=%d", max_concurrent, batch_size)
+
     while True:
         try:
-            worker = Stage3Worker(max_concurrent=20, batch_size=50)
+            worker = Stage3Worker(max_concurrent=max_concurrent, batch_size=batch_size)
             await worker.run()
             logger.info("Waiting 30 seconds before next check...")
             await asyncio.sleep(30)
