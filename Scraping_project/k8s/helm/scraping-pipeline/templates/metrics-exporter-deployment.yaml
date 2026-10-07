@@ -54,6 +54,10 @@ spec:
             name: {{ include "scraping-pipeline.fullname" . }}-app-env
         - secretRef:
             name: {{ .Values.postgresql.auth.existingSecret }}
+        {{- if .Values.redis.auth.enabled }}
+        - secretRef:  # REDIS_PASSWORD for Redis AUTH (#184)
+            name: {{ .Values.redis.auth.existingSecret }}
+        {{- end }}
         resources:
           {{- toYaml .Values.metricsExporter.resources | nindent 10 }}
         volumeMounts:

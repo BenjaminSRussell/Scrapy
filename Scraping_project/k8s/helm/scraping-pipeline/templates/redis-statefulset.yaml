@@ -35,6 +35,22 @@ spec:
           - {{ .Values.redis.config.maxmemory | quote }}
           - --maxmemory-policy
           - {{ .Values.redis.config.maxmemoryPolicy | quote }}
+          {{- if .Values.redis.auth.enabled }}
+          - --requirepass
+          - $(REDIS_PASSWORD)
+        env:
+        # #184: AUTH required; the password comes from a Secret, never values in plain text.
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.redis.auth.existingSecret }}
+              key: {{ .Values.redis.auth.passwordKey }}
+        - name: REDISCLI_AUTH  # lets the redis-cli liveness probe authenticate
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.redis.auth.existingSecret }}
+              key: {{ .Values.redis.auth.passwordKey }}
+          {{- end }}
         livenessProbe:
           exec:
             command:

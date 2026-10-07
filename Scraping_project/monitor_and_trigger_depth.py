@@ -12,6 +12,7 @@ Usage:
 
 import argparse
 import logging
+import os
 import subprocess
 import time
 from datetime import datetime
@@ -58,7 +59,7 @@ class DepthSpiderMonitor:
             host=redis_config.get("host", "localhost"),
             port=redis_config.get("port", 6379),
             db=redis_config.get("db", 0),
-            password=redis_config.get("password"),
+            password=redis_config.get("password") or os.getenv("REDIS_PASSWORD") or None,
             decode_responses=True,
         )
 
