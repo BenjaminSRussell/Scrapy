@@ -1,6 +1,7 @@
 import logging
 from collections.abc import Iterator
 from datetime import datetime, timedelta
+from typing import Optional, cast
 
 import scrapy
 from scrapy.http import Response
@@ -82,7 +83,7 @@ class DepthSpider(BaseSpider):
 
             for url in all_seed_urls[:5000]:
                 last_crawl_key = f"depth:last_crawl:{self._hash_url(url)}"
-                last_crawl_str = self.redis_client.get(last_crawl_key)
+                last_crawl_str = cast(Optional[str], self.redis_client.get(last_crawl_key))
 
                 if last_crawl_str:
                     try:

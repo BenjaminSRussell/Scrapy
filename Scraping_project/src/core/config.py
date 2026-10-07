@@ -144,7 +144,8 @@ class Config:
             config = get_config()
             redis_config = config.get_section("redis")
         """
-        return self._config.get(section, {})
+        section_config: dict = self._config.get(section, {})
+        return section_config
 
     def reload(self) -> None:
         """Reload configuration from file."""

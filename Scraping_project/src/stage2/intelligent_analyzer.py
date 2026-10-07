@@ -69,7 +69,8 @@ class IntelligentAnalyzer:
         if not is_low_quality and not is_massive_doc:
             keywords = self._extract_keywords(text, is_heavy)
 
-        pdf_links = [a["href"] for a in soup.find_all("a", href=True) if a["href"].endswith(".pdf")]
+        hrefs = [str(a["href"]) for a in soup.find_all("a", href=True)]
+        pdf_links = [href for href in hrefs if href.endswith(".pdf")]
 
         return {
             "url": url,

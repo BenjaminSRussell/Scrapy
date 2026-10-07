@@ -5,6 +5,9 @@ import gzip
 import logging
 import threading
 import xml.etree.ElementTree as ET
+
+from defusedxml import DefusedXmlException
+from defusedxml.ElementTree import fromstring as safe_fromstring
 from collections.abc import Iterator
 from urllib.parse import urljoin, urlparse
 
@@ -84,7 +87,9 @@ class SitemapParser:
                     return
 
             try:
-                root = ET.fromstring(content)
+                # defusedxml: sitemaps are untrusted remote XML (entity
+                # expansion / XXE). Returns a stdlib Element.
+                root = safe_fromstring(content)
 
                 if self._is_sitemap_index(root):
                     logger.info(f"Found sitemap index: {sitemap_url}")
@@ -98,6 +103,9 @@ class SitemapParser:
                     self.discovered_urls.update(urls)
                     logger.info(f"Extracted {len(urls)} URLs from {sitemap_url}")
 
+            except DefusedXmlException as e:
+                logger.warning(f"Rejected unsafe XML in sitemap {sitemap_url}: {e}")
+                return
             except ET.ParseError as e:
                 content_type = response.headers.get("content-type", "").lower()
                 if "text/plain" in content_type or "text/html" in content_type:

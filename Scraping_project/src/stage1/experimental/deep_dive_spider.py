@@ -4,7 +4,7 @@ import logging
 from collections.abc import Iterator
 from typing import Any
 
-from scrapy.http import Response
+from scrapy.http import Request, Response
 
 from src.stage1.processors.hidden_url_extractor import HiddenURLExtractor
 from src.stage1.middlewares.spider_config import get_spider_settings
@@ -103,7 +103,7 @@ class DeepDiveSpider(BaseSpider):
             "target_spider": "javascript",
         }
 
-    def _queue_for_depth_crawl(self, url: str, parent_url: str, assessment: Any, depth: int) -> dict:
+    def _queue_for_depth_crawl(self, url: str, parent_url: str, assessment: Any, depth: int) -> Request:
         import scrapy
 
         return scrapy.Request(

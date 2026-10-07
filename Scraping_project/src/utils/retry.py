@@ -9,7 +9,7 @@ import logging
 import random
 from datetime import datetime
 from functools import wraps
-from typing import TypeVar, Callable, Optional, Type, Tuple
+from typing import Any, Awaitable, TypeVar, Callable, Optional, Type, Tuple, cast
 
 from src.core.exceptions import (
     PipelineException,
@@ -137,9 +137,9 @@ def with_retry(
         async def fetch_url(url: str) -> str:
             return await http_client.get(url)
     """
-    def decorator(func: Callable[..., T]) -> Callable[..., T]:
+    def decorator(func: Callable[..., Awaitable[T]]) -> Callable[..., Awaitable[T]]:
         @wraps(func)
-        async def async_wrapper(*args, **kwargs) -> T:
+        async def async_wrapper(*args: Any, **kwargs: Any) -> T:
             last_exception = None
 
             for attempt in range(max_attempts):
@@ -210,7 +210,7 @@ def with_retry(
             )
 
         @wraps(func)
-        def sync_wrapper(*args, **kwargs) -> T:
+        def sync_wrapper(*args: Any, **kwargs: Any) -> Any:
             """Synchronous wrapper (runs async in new event loop)."""
             # For sync functions, we'd need different logic
             # For now, we'll require async functions
@@ -219,7 +219,8 @@ def with_retry(
         # Return async wrapper if function is async
         if asyncio.iscoroutinefunction(func):
             return async_wrapper
-        return sync_wrapper
+        # Calling a non-async function raises NotImplementedError immediately.
+        return cast(Callable[..., Awaitable[T]], sync_wrapper)
 
     return decorator
 

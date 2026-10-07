@@ -7,7 +7,7 @@ Phase 8: Performance optimization through profiling and monitoring.
 import time
 import logging
 import asyncio
-from typing import Optional, Dict, Any, Callable, TypeVar
+from typing import Optional, Dict, Any, Awaitable, Callable, TypeVar, cast
 from functools import wraps
 from contextlib import asynccontextmanager
 from collections import defaultdict
@@ -15,6 +15,8 @@ from collections import defaultdict
 logger = logging.getLogger(__name__)
 
 T = TypeVar('T')
+# Signature-preserving decorator type (works for sync and async callables).
+F = TypeVar('F', bound=Callable[..., Any])
 
 
 class PerformanceTimer:
@@ -110,7 +112,7 @@ class FunctionProfiler:
 _global_profiler = FunctionProfiler()
 
 
-def profile(func: Callable[..., T]) -> Callable[..., T]:
+def profile(func: F) -> F:
     """
     Decorator to profile function execution.
     
@@ -120,7 +122,7 @@ def profile(func: Callable[..., T]) -> Callable[..., T]:
             await asyncio.sleep(1)
     """
     @wraps(func)
-    async def async_wrapper(*args, **kwargs) -> T:
+    async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
         start_time = time.perf_counter()
         error = False
         
@@ -139,7 +141,7 @@ def profile(func: Callable[..., T]) -> Callable[..., T]:
             )
 
     @wraps(func)
-    def sync_wrapper(*args, **kwargs) -> T:
+    def sync_wrapper(*args: Any, **kwargs: Any) -> Any:
         start_time = time.perf_counter()
         error = False
         
@@ -162,8 +164,8 @@ def profile(func: Callable[..., T]) -> Callable[..., T]:
                 stat["errors"] += 1
 
     if asyncio.iscoroutinefunction(func):
-        return async_wrapper
-    return sync_wrapper
+        return cast(F, async_wrapper)
+    return cast(F, sync_wrapper)
 
 
 def get_profiler() -> FunctionProfiler:
@@ -178,9 +180,9 @@ def log_slow_queries(threshold_ms: float = 1000):
     Args:
         threshold_ms: Log queries slower than this threshold
     """
-    def decorator(func: Callable[..., T]) -> Callable[..., T]:
+    def decorator(func: Callable[..., Awaitable[T]]) -> Callable[..., Awaitable[T]]:
         @wraps(func)
-        async def wrapper(*args, **kwargs) -> T:
+        async def wrapper(*args: Any, **kwargs: Any) -> T:
             async with async_timer(f"Query: {func.__name__}", log_threshold_ms=threshold_ms):
                 return await func(*args, **kwargs)
         return wrapper

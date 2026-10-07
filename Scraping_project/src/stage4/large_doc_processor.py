@@ -1,6 +1,6 @@
 import logging
 from datetime import datetime
-from typing import Any
+from typing import Any, Optional
 
 import httpx
 from bs4 import BeautifulSoup
@@ -8,20 +8,22 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 
 from src.utils.delta import get_delta
 
+# Stage 4 HTTP metrics. These were imported from monitoring.metrics_exporter,
+# which never defined them (it reports via StatsD), so the import always failed
+# and the counters were silently disabled. Define them here instead.
+stage4_http_requests_total: Optional["Counter"] = None
+stage4_http_failures_total: Optional["Counter"] = None
 try:
-    import sys
-    from pathlib import Path
+    from prometheus_client import Counter
 
-    sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-    from monitoring.metrics_exporter import (
-        stage4_http_failures_total,
-        stage4_http_requests_total,
+    stage4_http_requests_total = Counter(
+        "stage4_http_requests_total", "Stage 4 document download requests"
     )
-
+    stage4_http_failures_total = Counter(
+        "stage4_http_failures_total", "Stage 4 document download failures", ["error_type"]
+    )
     PROMETHEUS_AVAILABLE = True
 except ImportError:
-    stage4_http_requests_total = None
-    stage4_http_failures_total = None
     PROMETHEUS_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
@@ -246,7 +248,7 @@ class LargeDocProcessor:
                 tmp.write(doc_content)
                 tmp_path = tmp.name
 
-            text = textract.process(tmp_path).decode("utf-8")
+            text: str = textract.process(tmp_path).decode("utf-8")
 
             import os
 
@@ -418,7 +420,7 @@ class LargeDocProcessor:
 
             result = self.summarizer(text, max_length=150, min_length=30, do_sample=False)
 
-            return result[0]["summary_text"]
+            return str(result[0]["summary_text"])
 
         except Exception as e:
             logger.error(f"Chunk summarization failed: {e}")

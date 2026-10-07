@@ -548,6 +548,12 @@ twisted==25.5.0
     # via
     #   -r Scraping_project/requirements.in
     #   scrapy
+types-defusedxml==0.7.0.20250822
+    # via -r Scraping_project/dev-requirements.in
+types-pyyaml==6.0.12.20250915
+    # via -r Scraping_project/dev-requirements.in
+types-requests==2.32.4.20250913
+    # via -r Scraping_project/dev-requirements.in
 typing-extensions==4.15.0
     # via
     #   -r Scraping_project/requirements.in

@@ -19,6 +19,9 @@ black>=24.0.0
 isort>=5.13.0
 flake8>=7.0.0
 mypy>=1.13.0
+types-defusedxml>=0.7
+types-PyYAML>=6.0.12
+types-requests>=2.32,<2.33  # match requests 2.32.x
 ruff>=0.9.0
 
 # Security

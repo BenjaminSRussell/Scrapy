@@ -151,7 +151,8 @@ EXTENSIONS = _scrapy_config.get(
 PROMETHEUS_ENABLED = _scrapy_config.get("prometheus_enabled", True)
 
 PROMETHEUS_PORT = _scrapy_config.get("prometheus_port", 9410)
-PROMETHEUS_HOST = _scrapy_config.get("prometheus_host", "0.0.0.0")
+# All interfaces by design (scraped as scrapy-app:9410 in compose/k8s).
+PROMETHEUS_HOST = _scrapy_config.get("prometheus_host", "0.0.0.0")  # nosec B104
 PROMETHEUS_PATH = _scrapy_config.get("prometheus_path", "metrics")
 
 # ============================================================================

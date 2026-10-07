@@ -28,16 +28,18 @@ try:
 except ImportError:
     DELTA_AVAILABLE = False
     DeltaTable = None  # type: ignore
-    write_deltalake = None  # type: ignore
+    write_deltalake = None
     WriterProperties = None  # type: ignore
-    pa = None  # type: ignore
-    pa_csv = None  # type: ignore
-    pq = None  # type: ignore
+    pa = None
+    pa_csv = None
+    pq = None
 
 logger = logging.getLogger(__name__)
 
-WriteTask: TypeAlias = tuple[str, list[dict[str, Any]], str]
-MaintenanceTask: TypeAlias = tuple[str, ...]
+WriteMode: TypeAlias = Literal["append", "overwrite", "error", "ignore"]
+WriteTask: TypeAlias = tuple[str, list[dict[str, Any]], WriteMode]
+# (task_type, table_name, retention_hours); retention_hours is only used by "vacuum".
+MaintenanceTask: TypeAlias = tuple[str, str, int]
 
 class LakehouseManager:
 
@@ -108,14 +110,12 @@ class LakehouseManager:
                 if task is None:
                     break
 
-                task_type, *args = task
+                task_type, table_name, retention_hours = task
 
                 try:
                     if task_type == "optimize":
-                        table_name = args[0]
                         self._optimize_table(table_name)
                     elif task_type == "vacuum":
-                        table_name, retention_hours = args
                         self._vacuum_table(table_name, retention_hours)
                 except Exception as e:
                     logger.error(f"Maintenance task failed ({task_type}): {e}", exc_info=True)
@@ -206,7 +206,7 @@ class LakehouseManager:
                 cached_schema = self.schema_cache[table_name]
 
                 cached_field_names = {field.name for field in cached_schema}
-                incoming_field_names = set()
+                incoming_field_names: set[str] = set()
                 for row in data:
                     incoming_field_names.update(row.keys())
 
@@ -271,7 +271,7 @@ class LakehouseManager:
             self._handle_writer_exception(e, table_name)
 
         if table_name in ["stage1_discovery", "stage2_page_analysis"] and len(data) >= 1000:
-            self.maintenance_queue.put(("optimize", table_name))
+            self.maintenance_queue.put(("optimize", table_name, 0))
 
     def write(
         self,
@@ -304,7 +304,8 @@ class LakehouseManager:
 
         table = DeltaTable(str(table_path), version=version)
         pa_table = table.to_pyarrow_table(filters=filters, columns=columns)
-        return pa_table.to_pylist()
+        rows: list[dict] = pa_table.to_pylist()
+        return rows
 
     def count(self, table_name: str) -> int:
         from deltalake import DeltaTable
@@ -316,7 +317,7 @@ class LakehouseManager:
 
         table = DeltaTable(str(table_path))
         pa_table = table.to_pyarrow_table(columns=[])
-        return pa_table.num_rows
+        return int(pa_table.num_rows)
 
     def _optimize_table(self, table_name: str):
         from deltalake import DeltaTable
@@ -337,7 +338,7 @@ class LakehouseManager:
             }
             z_order_columns = z_order_columns_by_table.get(table_name)
             if z_order_columns:
-                schema_fields = {field.name for field in dt.schema().to_arrow()}
+                schema_fields = {field.name for field in dt.schema().fields}
                 missing = [col for col in z_order_columns if col not in schema_fields]
                 if missing:
                     logger.debug(
@@ -701,6 +702,13 @@ class LakehouseManager:
         self.write(table_name, records, mode="append", async_write=True)
         logger.debug(f"[append_to_table] Appended {len(records)} records to {table_name}")
 
+    def get_table_size(self, table_name: str) -> int:
+        """Total bytes of all files under the table directory (0 if absent)."""
+        table_path = self.get_table_path(table_name)
+        if not table_path.exists():
+            return 0
+        return sum(p.stat().st_size for p in table_path.rglob("*") if p.is_file())
+
     def read_table(self, table_name: str, **kwargs) -> list[dict]:
         return self.read(table_name, **kwargs)
 
@@ -948,6 +956,13 @@ class InMemoryBackend:
         if not records:
             return
         self.write(table_name, records, mode="append")
+
+    def get_table_size(self, table_name: str) -> int:
+        """Total bytes of all files under the table directory (0 if absent)."""
+        table_path = self.get_table_path(table_name)
+        if not table_path.exists():
+            return 0
+        return sum(p.stat().st_size for p in table_path.rglob("*") if p.is_file())
 
     def read_table(self, table_name: str, **kwargs) -> list[dict]:
         return self.read(table_name, **kwargs)
