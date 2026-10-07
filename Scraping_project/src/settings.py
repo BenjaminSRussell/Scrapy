@@ -261,6 +261,10 @@ AGGREGATION_OUTPUT_TOPIC = _scrapy_config.get(
 # written to the Delta table named by AGGREGATION_OUTPUT_TOPIC (#790).
 AGGREGATION_MAX_ITEMS_PER_ENTITY = _scrapy_config.get("aggregation_max_items_per_entity", 10)
 AGGREGATION_PERSIST = _scrapy_config.get("aggregation_persist", True)
+# Max entity groups held in memory (LRU spill beyond it) and periodic full
+# flush every N aggregated items; 0 disables periodic flushing (#201).
+AGGREGATION_MAX_ENTITIES = _scrapy_config.get("aggregation_max_entities", 10000)
+AGGREGATION_FLUSH_EVERY_ITEMS = _scrapy_config.get("aggregation_flush_every_items", 50000)
 
 # ============================================================================
 # ============================================================================
