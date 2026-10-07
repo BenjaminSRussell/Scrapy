@@ -343,6 +343,7 @@ function updatePerformanceCharts() {
         charts.throughput.data.datasets[1].data = pagesRate;
         charts.throughput.update('none');
     }
+    syncAllChartTables();
 }
 
 function calculateRates(metrics) {
@@ -497,6 +498,7 @@ function updateDashboard(metrics) {
     if (charts.routing) {
         charts.routing.data.datasets[0].data = [s2Quality, s2Massive];
         charts.routing.update('none');
+        syncAllChartTables();
     }
 
     if (Object.keys(previousMetrics).length > 0) {
@@ -575,6 +577,94 @@ async function fetchMetrics() {
     }
 }
 
+
+function downloadBlob(filename, mime, text) {
+    const blob = new Blob([text], { type: mime });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.rel = 'noopener';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    const live = document.getElementById('refresh-status');
+    if (live) live.textContent = `Downloaded ${filename}`;
+}
+
+function exportActivityLog(format) {
+    const rows = activityLog.map(item => ({
+        timestamp: item.timestamp || '',
+        type: item.type || '',
+        message: item.message || ''
+    }));
+    if (format === 'json') {
+        downloadBlob('activity-log.json', 'application/json', JSON.stringify(rows, null, 2));
+        return;
+    }
+    const esc = (v) => `"${String(v).replace(/"/g, '""')}"`;
+    const lines = ['timestamp,type,message'];
+    for (const r of rows) {
+        lines.push([esc(r.timestamp), esc(r.type), esc(r.message)].join(','));
+    }
+    downloadBlob('activity-log.csv', 'text/csv', lines.join('\n'));
+}
+
+function syncChartDataTable(chart, tableId) {
+    const table = document.getElementById(tableId);
+    if (!table || !chart) return;
+    const thead = table.querySelector('thead');
+    const tbody = table.querySelector('tbody');
+    const labels = chart.data.labels || [];
+    const datasets = chart.data.datasets || [];
+    thead.innerHTML = `<tr><th scope="col">Label</th>${datasets.map(ds => `<th scope="col">${escapeHtml(ds.label || 'Series')}</th>`).join('')}</tr>`;
+    const n = Math.max(labels.length, ...datasets.map(ds => (ds.data || []).length), 0);
+    let body = '';
+    for (let i = 0; i < n; i++) {
+        body += `<tr><th scope="row">${escapeHtml(labels[i] ?? i)}</th>`;
+        for (const ds of datasets) {
+            const v = (ds.data || [])[i];
+            body += `<td>${v == null ? '' : escapeHtml(v)}</td>`;
+        }
+        body += '</tr>';
+    }
+    tbody.innerHTML = body;
+
+    const legend = document.getElementById(`${tableId}-legend`);
+    if (legend && datasets.length) {
+        legend.innerHTML = datasets.map((ds, idx) => {
+            const hidden = typeof chart.getDatasetMeta === 'function' && chart.getDatasetMeta(idx)?.hidden;
+            const pressed = hidden ? 'false' : 'true';
+            return `<button type="button" class="btn" data-dataset-index="${idx}" aria-pressed="${pressed}">${escapeHtml(ds.label || `Series ${idx + 1}`)}</button>`;
+        }).join('');
+        legend.querySelectorAll('button[data-dataset-index]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const i = Number(btn.getAttribute('data-dataset-index'));
+                const meta = chart.getDatasetMeta(i);
+                meta.hidden = !meta.hidden;
+                chart.update();
+                btn.setAttribute('aria-pressed', meta.hidden ? 'false' : 'true');
+            });
+        });
+    }
+}
+
+function syncAllChartTables() {
+    const map = [
+        ['throughput', 'table-throughput'],
+        ['stageProgression', 'table-stage'],
+        ['routing', 'table-routing'],
+        ['urls', 'table-urls'],
+        ['pages', 'table-pages'],
+        ['summaries', 'table-summaries'],
+    ];
+    for (const [key, tid] of map) {
+        if (charts[key]) syncChartDataTable(charts[key], tid);
+    }
+}
+
+
 function setupTabs() {
     const clearBtn = document.getElementById('clear-activity');
     if (clearBtn) {
@@ -582,8 +672,13 @@ function setupTabs() {
             const log = document.getElementById('activity-log');
             if (log) log.innerHTML = '';
             if (typeof activityLog !== 'undefined') activityLog.length = 0;
+            updateActivityLog();
         });
     }
+    const exportJson = document.getElementById('export-activity-json');
+    if (exportJson) exportJson.addEventListener('click', () => exportActivityLog('json'));
+    const exportCsv = document.getElementById('export-activity-csv');
+    if (exportCsv) exportCsv.addEventListener('click', () => exportActivityLog('csv'));
 
     const tabButtons = document.querySelectorAll('.tab-button');
     const tabContents = document.querySelectorAll('.tab-content');
