@@ -36,6 +36,7 @@ from scrapy.exceptions import DropItem, NotConfigured
 
 from src.items import OffsiteCandidateItem
 from src.core.timeutil import utc_now_iso
+from src.utils.kafka_config import producer_durability_config
 
 logger = logging.getLogger(__name__)
 
@@ -274,9 +275,10 @@ class KafkaPipeline:
             "linger.ms": 10,
             "batch.size": 16384,
             "compression.type": "snappy",
-            "acks": 1,
             "retries": 3,
             "max.in.flight.requests.per.connection": 5,
+            # acks=all + idempotence: no loss on leader failover (#174).
+            **producer_durability_config(),
         }
 
         security_protocol = os.getenv("KAFKA_SECURITY_PROTOCOL")
@@ -721,7 +723,7 @@ class SchemaValidationPipeline:
                 "bootstrap.servers": bootstrap_servers,
                 "linger.ms": 10,
                 "compression.type": "snappy",
-                "acks": 1,
+                **producer_durability_config(),  # #174
             }
 
             security_protocol = os.getenv("KAFKA_SECURITY_PROTOCOL")

@@ -22,6 +22,7 @@ except ImportError:
     pipeline = None
 
 from src.schemas import CategoryType, LowConfidenceRecord
+from src.utils.kafka_config import producer_durability_config
 
 logger = logging.getLogger(__name__)
 
@@ -192,7 +193,7 @@ class ZSCMicroservice:
             "bootstrap.servers": self.bootstrap_servers,
             "linger.ms": 10,
             "compression.type": "snappy",
-            "acks": 1,
+            **producer_durability_config(),  # acks=all + idempotence (#174)
         }
 
         self._add_security_config(producer_config)

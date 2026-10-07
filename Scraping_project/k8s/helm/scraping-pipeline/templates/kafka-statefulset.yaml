@@ -54,6 +54,8 @@ spec:
           value: {{ .Values.kafka.config.numPartitions | quote }}
         - name: KAFKA_DEFAULT_REPLICATION_FACTOR
           value: {{ .Values.kafka.config.defaultReplicationFactor | quote }}
+        - name: KAFKA_MIN_INSYNC_REPLICAS
+          value: {{ .Values.kafka.config.minInsyncReplicas | default 1 | quote }}
         - name: KAFKA_LOG_RETENTION_HOURS
           value: {{ .Values.kafka.config.logRetentionHours | quote }}
         - name: KAFKA_LOG_SEGMENT_BYTES
