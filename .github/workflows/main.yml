@@ -199,9 +199,18 @@ jobs:
     needs: [test, entrypoint-smoke, package-smoke]
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    # Deploy only when the target is configured. Without DEPLOY_HOST every
+    # push to main failed here (scp to an empty hostname) even with all tests
+    # green. `secrets` is not allowed in step `if:`, hence the job env flag.
+    env:
+      HAS_DEPLOY_TARGET: ${{ secrets.DEPLOY_HOST != '' && secrets.DEPLOY_USER != '' && secrets.DEPLOY_KEY != '' }}
 
     steps:
     - uses: actions/checkout@v4
+
+    - name: Deploy target not configured
+      if: env.HAS_DEPLOY_TARGET != 'true'
+      run: echo "::notice::DEPLOY_HOST/DEPLOY_USER/DEPLOY_KEY secrets are not set; skipping production deploy."
 
     - name: Set up Python
       uses: actions/setup-python@v5
@@ -216,6 +225,7 @@ jobs:
         python -m build
 
     - name: Deploy to Production
+      if: env.HAS_DEPLOY_TARGET == 'true'
       env:
         DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
         DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
