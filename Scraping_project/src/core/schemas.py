@@ -162,13 +162,9 @@ def validate_data_schema(data: list[dict], table_name: str) -> bool:
     if not data:
         return True
 
-    schema = get_schema(table_name)
-    expected_fields = {field.name for field in schema}
-
-    # Check first record has required fields
-    actual_fields = set(data[0].keys())
-
-    # Allow extra fields, but ensure required fields exist
-    # Note: This is permissive - add stricter validation if needed
+    # Validates that the table has a known schema (raises otherwise).
+    # Field-level checks are intentionally permissive for now: extra and
+    # missing fields are both allowed.
+    get_schema(table_name)
 
     return True

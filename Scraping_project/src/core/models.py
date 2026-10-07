@@ -10,7 +10,7 @@ These models provide:
 
 from datetime import datetime
 from typing import Literal, Optional
-from pydantic import BaseModel, Field, HttpUrl, field_validator, ConfigDict
+from pydantic import BaseModel, Field, field_validator, ConfigDict
 
 
 class URLRecord(BaseModel):

@@ -7,7 +7,7 @@ Phase 7: Resilience utilities for handling transient failures.
 import asyncio
 import logging
 import random
-from datetime import datetime, timedelta
+from datetime import datetime
 from functools import wraps
 from typing import TypeVar, Callable, Optional, Type, Tuple
 
@@ -15,7 +15,6 @@ from src.core.exceptions import (
     PipelineException,
     CircuitBreakerOpen,
     MaxRetriesExceeded,
-    NetworkError,
     RateLimitError,
 )
 

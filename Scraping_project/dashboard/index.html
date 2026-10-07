@@ -1119,6 +1119,7 @@
                 Last updated: <span id="last-refresh-time">Never</span>
             </div>
             <button type="button" id="pause-refresh" class="btn" aria-pressed="false" aria-label="Pause auto-refresh">Pause</button>
+            <span class="refresh-info" id="cc-version" title="Control Center build">v—</span>
             <button type="button" id="manual-refresh" class="btn" aria-label="Refresh metrics now">Refresh now</button>
         </div>
     </div>
@@ -1131,6 +1132,8 @@
             env: (window.__CC_ENV__ || 'local')
         };
         </script>
+    <script src="format-utils.js"></script>
+    <script src="version.js"></script>
     <script src="app.js"></script>
 </body>
 </html>

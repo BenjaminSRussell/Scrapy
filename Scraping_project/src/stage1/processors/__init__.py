@@ -11,7 +11,7 @@ Modules:
 - js_priority_queue.py - Priority queue for JavaScript URLs
 """
 
-from .url_extractor import *
-from .url_processor import *
+from .url_extractor import *  # noqa: F403 - intentional re-export
+from .url_processor import *  # noqa: F403 - intentional re-export
 
 __all__ = []
