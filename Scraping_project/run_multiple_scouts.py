@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 """
 Run multiple concurrent scout spider instances for maximum throughput
 """
