@@ -385,7 +385,7 @@ pytest-asyncio==1.2.0
     # via -r Scraping_project/dev-requirements.in
 pytest-cov==7.0.0
     # via -r Scraping_project/dev-requirements.in
-pytest-env==1.7.1
+pytest-env==1.2.0
     # via -r Scraping_project/dev-requirements.in
 pytest-html==4.1.1
     # via -r Scraping_project/dev-requirements.in
