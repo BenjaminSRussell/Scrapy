@@ -150,6 +150,21 @@ kubectl logs -f deployment/scraping-pipeline-scrapy -n scraping-pipeline
 kubectl logs -f -l app.kubernetes.io/component=scrapy -n scraping-pipeline
 ```
 
+### Graceful shutdown and Kafka delivery
+
+On SIGTERM, Scrapy closes the spider and `KafkaPipeline` flushes the producer
+for `KAFKA_CLOSE_FLUSH_TIMEOUT` seconds (default 30). Anything still
+undelivered after that, plus produce/delivery failures during the crawl, is
+written to `KAFKA_SPILL_DIR/<topic>.jsonl` (default `data/kafka_spill/`) and
+counted in `kafka_produce_failures_total{reason}` /
+`kafka_spilled_messages_total`, instead of being dropped.
+
+Keep `scrapyApp.terminationGracePeriodSeconds` (Helm default 120) comfortably
+above that flush timeout plus the rest of spider shutdown. If the kubelet
+SIGKILLs the pod mid-flush, neither the flush nor the spill can finish. Put
+the spill directory on a persistent volume if spilled messages must survive
+pod replacement.
+
 ## Upgrading
 
 ```bash
