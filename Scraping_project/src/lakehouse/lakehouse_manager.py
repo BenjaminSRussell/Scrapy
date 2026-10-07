@@ -65,6 +65,7 @@ class LakehouseManager:
             "js_spider_queue": self.base_path / "js_spider_queue",
             "stage2_queue": self.base_path / "stage2_queue",
             "stage2_page_analysis": self.base_path / "stage2_page_analysis",
+            "stage2_errors": self.base_path / "stage2_errors",
             "stage3_analytics": self.base_path / "stage3_analytics",
             "stage3_summaries": self.base_path / "stage3_summaries",
             "stage4_large_docs": self.base_path / "stage4_large_docs",

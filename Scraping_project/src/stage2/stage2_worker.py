@@ -10,11 +10,31 @@ from bs4 import BeautifulSoup
 from deltalake import DeltaTable
 
 from src.core.config import stage_worker_settings
+from src.core.constants import TABLE_STAGE2_ERRORS
 from src.utils.delta import get_delta
 from src.utils.postgres import get_postgres_manager
 from src.otel_tracing import ensure_crawl_job_id, init_tracing, start_span
 
 logger = logging.getLogger(__name__)
+
+try:  # accepted vs quarantined Stage 2 rows (#331)
+    from prometheus_client import Counter
+
+    STAGE2_ROWS = Counter(
+        "stage2_rows_total",
+        "Stage 2 rows by outcome: accepted (stage2_page_analysis) or quarantined (stage2_errors).",
+        ["outcome"],
+    )
+except Exception:  # prometheus_client missing or metric already registered
+    STAGE2_ROWS = None
+
+
+def split_stage2_results(results: list[Any]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Split a batch into (accepted analysis rows, quarantined error rows) (#331)."""
+    rows = [r for r in results if isinstance(r, dict)]
+    accepted = [r for r in rows if not r.get("has_error")]
+    quarantined = [r for r in rows if r.get("has_error")]
+    return accepted, quarantined
 
 class Stage2Worker:
 
@@ -78,23 +98,37 @@ class Stage2Worker:
             batch_time = time.time() - batch_start
 
             valid_results = [r for r in results if isinstance(r, dict) and not isinstance(r, Exception)]
+            # Silver analysis excludes failures; they go to a quarantine table (#331).
+            accepted, quarantined = split_stage2_results(valid_results)
 
-            if valid_results:
+            if accepted:
                 self.delta.write(
                     "stage2_page_analysis",
-                    valid_results,
+                    accepted,
                     mode="append",
                     async_write=False,
                 )
-                logger.info(f"[STAGE2] Saved {len(valid_results)} analysis results")
-                for r in valid_results:
-                    counts["analyzed"] += 1
-                    if r.get("has_error"):
-                        counts["errors"] += 1
-                    elif r.get("is_massive_doc"):
-                        counts["massive_docs"] += 1
-                    elif not r.get("is_low_quality", True):
-                        counts["quality_docs"] += 1
+                logger.info(f"[STAGE2] Saved {len(accepted)} analysis results")
+            if quarantined:
+                self.delta.write(
+                    TABLE_STAGE2_ERRORS,
+                    quarantined,
+                    mode="append",
+                    async_write=False,
+                )
+                logger.info(f"[STAGE2] Quarantined {len(quarantined)} failed URLs to {TABLE_STAGE2_ERRORS}")
+            if STAGE2_ROWS is not None:
+                STAGE2_ROWS.labels(outcome="accepted").inc(len(accepted))
+                STAGE2_ROWS.labels(outcome="quarantined").inc(len(quarantined))
+
+            for r in valid_results:
+                counts["analyzed"] += 1
+                if r.get("has_error"):
+                    counts["errors"] += 1
+                elif r.get("is_massive_doc"):
+                    counts["massive_docs"] += 1
+                elif not r.get("is_low_quality", True):
+                    counts["quality_docs"] += 1
 
             if valid_results:
                 await self._update_queue_status([r["url"] for r in valid_results])

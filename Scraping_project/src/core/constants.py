@@ -28,6 +28,8 @@ TABLE_STAGE1_DISCOVERY = "stage1_discovery"
 TABLE_STAGE1_ERRORS = "stage1_errors"
 TABLE_STAGE2_QUEUE = "stage2_queue"
 TABLE_STAGE2_PAGE_ANALYSIS = "stage2_page_analysis"
+# Quarantine for Stage 2 fetch/parse failures (#331); never read as silver analysis.
+TABLE_STAGE2_ERRORS = "stage2_errors"
 TABLE_STAGE3_SUMMARIES = "stage3_summaries"
 # Where Stage 3 wrote before #612. Read alongside TABLE_STAGE3_SUMMARIES so a
 # lake populated under the old name is not re-summarized; never written to by
