@@ -72,6 +72,50 @@ except Exception:
 
 SPILL_DIR_NAME = "_write_spill"
 
+# merge_into (#169): real Delta MERGE, retried on optimistic-concurrency conflicts.
+MERGE_MAX_ATTEMPTS = 6
+MERGE_RETRY_BACKOFF_SECONDS = 0.05
+
+try:
+    from prometheus_client import Counter as _MCounter
+
+    DELTA_MERGE_FAILURES = _MCounter(
+        "delta_merge_failures_total",
+        "merge_into calls that failed after retries (nothing committed), by table.",
+        ["table"],
+    )
+except Exception:
+    DELTA_MERGE_FAILURES = None
+
+
+def _dedupe_by_key(rows: list[dict[str, Any]], keys: list[str]) -> list[dict[str, Any]]:
+    """Keep the last row per key; MERGE rejects multiple source rows matching one target row."""
+    by_key: dict[tuple, dict[str, Any]] = {}
+    for row in rows:
+        by_key[tuple(row.get(k) for k in keys)] = row
+    return list(by_key.values())
+
+
+def _source_table(rows: list[dict[str, Any]], target_schema: Any) -> Any:
+    """Arrow table for ``rows``, casting columns the target already has to its types."""
+    columns: list[str] = []
+    for row in rows:
+        for col in row:
+            if col not in columns:
+                columns.append(col)
+    target_types = {f.name: f.type for f in target_schema}
+    arrays = []
+    for col in columns:
+        arr = pa.array([row.get(col) for row in rows])
+        want = target_types.get(col)
+        if want is not None and arr.type != want:
+            try:
+                arr = arr.cast(want)
+            except (pa.ArrowInvalid, pa.ArrowNotImplementedError):
+                pass  # let MERGE report the mismatch
+        arrays.append(arr)
+    return pa.Table.from_arrays(arrays, names=columns)
+
 
 def cast_rows_to_schema(
     rows: list[dict[str, Any]], schema: Any, mode: str = "strict"
@@ -878,11 +922,12 @@ class LakehouseManager:
             update_columns: Columns to update on match (e.g., ["url", "discovered_at"])
 
         Returns:
-            Number of rows affected (or -1 if unavailable)
+            Number of rows updated + inserted, or -1 on failure
 
         Note:
-            Falls back to append+dedup by key if MERGE not supported.
-            For production Delta Lake, this uses proper MERGE semantics.
+            Uses a Delta MERGE committed with optimistic concurrency and retried
+            on conflict, so concurrent callers never lose each other's rows
+            (#169). On failure nothing is committed and -1 is returned.
 
         Examples:
             >>> lakehouse.merge_into(
@@ -896,57 +941,90 @@ class LakehouseManager:
             logger.debug(f"[merge_into] No data to merge for {table_name}")
             return 0
 
+        # #169: a real Delta MERGE, committed with optimistic concurrency and
+        # retried on conflict. The old read-all/merge-in-memory/overwrite path
+        # let concurrent writers clobber each other (last writer won).
+        from deltalake.exceptions import CommitFailedError, DeltaError
+
+        merge_keys = [merge_key] if isinstance(merge_key, str) else list(merge_key)
+        rows = _dedupe_by_key(updates_data, merge_keys)
         try:
+            table_path = self.get_table_path(table_name)
+        except ValueError:  # unregistered table: create it, as write() does
+            table_path = self.base_path / table_name
+            table_path.mkdir(parents=True, exist_ok=True)
+            self.tables[table_name] = table_path
 
-            merge_keys = [merge_key] if isinstance(merge_key, str) else merge_key
-
+        failure: Exception | None = None
+        for attempt in range(1, MERGE_MAX_ATTEMPTS + 1):
             try:
-                existing_data = self.read(table_name)
-                existing_keys = {tuple(row.get(k) for k in merge_keys) for row in existing_data}
-            except Exception:
-                existing_keys = set()
-                existing_data = []
+                with self._table_lock(table_name):
+                    if not (table_path / "_delta_log").exists() and self._create_from_rows(table_path, rows):
+                        logger.info(f"[merge_into] {table_name}: created with {len(rows)} rows")
+                        return len(rows)
+                    return self._merge_rows(table_name, table_path, rows, merge_keys, update_columns)
+            except (CommitFailedError, DeltaError) as e:
+                conflict = isinstance(e, CommitFailedError) or "already exists" in str(e)
+                if conflict and attempt < MERGE_MAX_ATTEMPTS:
+                    logger.warning(
+                        f"[merge_into] Commit conflict on {table_name} "
+                        f"(attempt {attempt}/{MERGE_MAX_ATTEMPTS}), retrying"
+                    )
+                    time.sleep(MERGE_RETRY_BACKOFF_SECONDS * (2 ** (attempt - 1)))
+                    continue
+                failure = e
+            except Exception as e:
+                failure = e
+            break
 
-            inserts = []
-            updates_map = {}
+        # No overwrite/append fallback: either would lose concurrent updates or
+        # duplicate keys. Nothing was committed, so callers may simply retry.
+        if DELTA_MERGE_FAILURES is not None:
+            DELTA_MERGE_FAILURES.labels(table=table_name).inc()
+        logger.error(f"[merge_into] Failed for {table_name}: {failure}", exc_info=True)
+        return -1
 
-            for row in updates_data:
-                row_key = tuple(row.get(k) for k in merge_keys)
-                if row_key in existing_keys:
-                    updates_map[row_key] = row
-                else:
-                    inserts.append(row)
-
-            updated_data = []
-            for existing_row in existing_data:
-                row_key = tuple(existing_row.get(k) for k in merge_keys)
-                if row_key in updates_map:
-                    update_row = updates_map[row_key]
-                    merged_row = existing_row.copy()
-                    for col in update_columns:
-                        if col in update_row:
-                            merged_row[col] = update_row[col]
-                    updated_data.append(merged_row)
-                else:
-                    updated_data.append(existing_row)
-
-            final_data = updated_data + inserts
-
-            if final_data:
-                self._write_sync(table_name, final_data, mode="overwrite")
-
-            affected = len(updates_map) + len(inserts)
-            logger.info(f"[merge_into] {table_name}: {len(updates_map)} updated, {len(inserts)} inserted")
-            return affected
-
+    def _create_from_rows(self, table_path: Path, rows: list[dict[str, Any]]) -> bool:
+        """Create the table from ``rows``; False if another writer created it first."""
+        try:
+            write_deltalake(
+                str(table_path),
+                pa.Table.from_pylist(rows),
+                mode="error",
+            )
+            return True
         except Exception as e:
-            logger.error(f"[merge_into] Failed for {table_name}: {e}", exc_info=True)
-            try:
-                self._write_sync(table_name, updates_data, mode="append")
-                return len(updates_data)
-            except Exception as fallback_error:
-                logger.error(f"[merge_into] Fallback append also failed: {fallback_error}")
-                return -1
+            if (table_path / "_delta_log").exists():
+                logger.debug(f"[merge_into] {table_path.name} created concurrently ({e}); merging instead")
+                return False
+            raise
+
+    def _merge_rows(
+        self,
+        table_name: str,
+        table_path: Path,
+        rows: list[dict[str, Any]],
+        merge_keys: list[str],
+        update_columns: list[str],
+    ) -> int:
+        target = DeltaTable(str(table_path))
+        source = _source_table(rows, pa.schema(target.schema().to_arrow()))
+        predicate = " AND ".join(f"target.{k} = source.{k}" for k in merge_keys)
+        updates = {c: f"source.{c}" for c in update_columns if c in source.column_names}
+        merger = target.merge(
+            source=source,
+            predicate=predicate,
+            source_alias="source",
+            target_alias="target",
+            merge_schema=True,
+        )
+        if updates:
+            merger = merger.when_matched_update(updates=updates)
+        metrics = merger.when_not_matched_insert_all().execute()
+        updated = int(metrics.get("num_target_rows_updated", 0) or 0)
+        inserted = int(metrics.get("num_target_rows_inserted", 0) or 0)
+        logger.info(f"[merge_into] {table_name}: {updated} updated, {inserted} inserted")
+        return updated + inserted
 
     def get_table_history(self, table_name: str) -> list[dict]:
         from deltalake import DeltaTable
