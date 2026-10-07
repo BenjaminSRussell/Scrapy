@@ -235,15 +235,25 @@ class RedisHelper:
             logger.error(f"Failed to delete key {key}: {e}")
             return False
 
-    def clear_all(self) -> bool:
+    def clear_all(self, confirm: bool = False) -> bool:
         """
         Clear all keys from current database.
 
-        WARNING: This deletes ALL data in the current Redis database!
+        WARNING: This deletes ALL data in the current Redis database -- seen-URL
+        sets, queues and counters shared by every worker (#203/#381).
+
+        Refuses unless the caller passes ``confirm=True`` or the process runs
+        with ``ALLOW_REDIS_FLUSH=1``, so a stray call cannot wipe the shared
+        data plane.
 
         Returns:
-            True if successful, False otherwise
+            True if successful, False otherwise (including when refused)
         """
+        if not confirm and os.getenv("ALLOW_REDIS_FLUSH") != "1":
+            logger.error(
+                "Refusing Redis flushdb: pass confirm=True or set ALLOW_REDIS_FLUSH=1"
+            )
+            return False
         try:
             self.client.flushdb()
             logger.warning("Cleared all keys from Redis database")
