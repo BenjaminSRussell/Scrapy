@@ -34,7 +34,7 @@ jobs:
 
       - name: Extract metadata for kafka-delta-ingest image
         id: meta-kafka-delta-ingest
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ghcr.io/${{ github.repository }}/kafka-delta-ingest
           tags: |
@@ -74,7 +74,7 @@ jobs:
 
       - name: Extract metadata for crawler image
         id: meta-crawler
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ghcr.io/${{ github.repository }}/crawler
           tags: |
@@ -114,7 +114,7 @@ jobs:
 
       - name: Extract metadata for metrics image
         id: meta-metrics
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ghcr.io/${{ github.repository }}/metrics
           tags: |
