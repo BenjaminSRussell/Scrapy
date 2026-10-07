@@ -94,6 +94,7 @@
         }
 
         .tabs {
+            overflow: visible;
             background: white;
             border-radius: 0.5rem;
             box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
@@ -230,6 +231,7 @@
         }
 
         .metric-value {
+            font-variant-numeric: tabular-nums;
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
@@ -506,6 +508,13 @@
             white-space: nowrap;
             border: 0;
         }
+    
+        @media (hover: hover) and (pointer: fine) {
+            .card:hover { transform: translateY(-2px); }
+        }
+        @media (hover: none) {
+            .card:hover { transform: none; }
+        }
     </style>
 </head>
 <body>
@@ -539,7 +548,7 @@
                 <button type="button" class="tab-button" data-tab="pipeline">🔄 Pipeline Stages</button>
                 <button type="button" class="tab-button" data-tab="performance">📈 Performance</button>
                 <button type="button" class="tab-button" data-tab="system">⚙️ System Health</button>
-                <button type="button" class="tab-button" data-tab="activity">📋 Activity Log</button>
+                <button type="button" class="tab-button" data-tab="activity">📋 Activity Log <button type="button" id="clear-activity" class="btn" style="margin-left:0.5rem;font-size:0.8rem">Clear</button></button>
             </div>
 
             <!-- Overview Tab -->
@@ -872,11 +881,11 @@
                             <span class="metric-value" id="last-update">Never</span>
                         </div>
                         <div class="metric-row">
-                            <span class="metric-label">Uptime</span>
+                            <span class="metric-label">Session uptime</span>
                             <span class="metric-value" id="uptime">0s</span>
                         </div>
                     </div>
-                </div>
+                </ul>
             </div>
 
             <!-- Activity Log Tab -->
@@ -898,7 +907,7 @@
 
         <div class="refresh-bar">
             <div id="refresh-status" class="visually-hidden" role="status" aria-live="polite" aria-atomic="true"></div>
-                <div class="refresh-info">
+                <div class="refresh-info">Updated <span id="last-updated-rel">just now</span> · 
                 Auto-refresh: <span class="refresh-countdown" id="refresh-countdown">5</span> seconds
             </div>
             <div class="refresh-info">
