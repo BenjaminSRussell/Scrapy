@@ -200,9 +200,62 @@ def normalize_url(url: str) -> str:
         return url
 
 
+_TLD_EXTRACT = None
+
+
+def _tld_extractor():
+    """Offline public-suffix extractor (bundled snapshot; never hits the network)."""
+    global _TLD_EXTRACT
+    if _TLD_EXTRACT is None:
+        import tldextract  # a Scrapy dependency, always installed
+
+        # Private suffixes too (github.io, blogspot.com...): each site is its own key.
+        _TLD_EXTRACT = tldextract.TLDExtract(
+            suffix_list_urls=(), cache_dir=None, include_psl_private_domains=True
+        )
+    return _TLD_EXTRACT
+
+
+def registrable_domain(url_or_host: str) -> str:
+    """Public-suffix-aware registrable domain ("eTLD+1") for a URL or hostname (#251).
+
+    This is the Delta partition key for stage1_discovery/stage2_page_analysis.
+    It deliberately differs from ``extract_domain`` (the full host): partitions
+    group all of a site's subdomains, so ``www.cs.uconn.edu`` and ``uconn.edu``
+    share ``uconn.edu``, and ``news.bbc.co.uk`` is ``bbc.co.uk``, not ``co.uk``.
+
+    IP addresses and single-label hosts (``localhost``) are returned as-is;
+    empty or unparsable input returns ``"unknown"``.
+    """
+    import ipaddress
+
+    value = (url_or_host or "").strip()
+    if not value:
+        return "unknown"
+    try:
+        host = urlparse(value).hostname if "://" in value else value.split("/", 1)[0].split(":", 1)[0]
+    except ValueError:
+        return "unknown"
+    host = (host or "").strip(".").lower()
+    if not host:
+        return "unknown"
+    try:
+        ipaddress.ip_address(host.strip("[]"))
+        return host.strip("[]")
+    except ValueError:
+        pass
+    parts = _tld_extractor()(host)
+    if parts.domain and parts.suffix:
+        return f"{parts.domain}.{parts.suffix}"
+    return host  # e.g. localhost, intranet names, bare suffixes
+
+
 def extract_domain(url: str) -> str:
     """
     Extract domain from URL.
+
+    Returns the full host (netloc). For the registrable domain used as the
+    Delta partition key, see ``registrable_domain``.
 
     Args:
         url: URL to extract domain from
