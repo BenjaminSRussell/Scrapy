@@ -376,21 +376,13 @@ class LakehouseManager:
             logger.info(f"Dynamically created new table path for: {table_name}")
 
         if table_name in ["stage1_discovery", "stage2_page_analysis"]:
-            from urllib.parse import urlparse
+            # Partition key: public-suffix-aware registrable domain (#251).
+            from src.utils.validation import registrable_domain
 
             for record in data:
                 if "url" in record and "domain" not in record:
                     try:
-                        parsed = urlparse(record["url"])
-                        hostname = parsed.hostname
-                        if hostname:
-                            domain_parts = hostname.lower().split(".")
-                            if len(domain_parts) >= 2:
-                                record["domain"] = ".".join(domain_parts[-2:])
-                            else:
-                                record["domain"] = hostname.lower()
-                        else:
-                            record["domain"] = "unknown"
+                        record["domain"] = registrable_domain(str(record["url"] or ""))
                     except Exception:
                         record["domain"] = "unknown"
 
