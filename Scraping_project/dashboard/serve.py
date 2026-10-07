@@ -21,6 +21,7 @@ Grafana Purpose (Different):
 import http.server
 import socketserver
 import os
+import subprocess
 from pathlib import Path
 
 PORT = 8080
@@ -42,7 +43,33 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
     def do_GET(self):
         if self.path == '/':
             self.path = '/index.html'
+        if self.path.split('?')[0] == '/version.js':
+            version = _cc_version()
+            body = f"window.__CC_VERSION__ = {version!r};\n".encode('utf-8')
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/javascript; charset=utf-8')
+            self.send_header('Content-Length', str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
         return super().do_GET()
+
+
+def _cc_version() -> str:
+    """CC_VERSION env, else `git describe --always --dirty`, else 'dev' (#1041)."""
+    env = os.environ.get('CC_VERSION')
+    if env:
+        return env
+    try:
+        out = subprocess.run(
+            ['git', 'describe', '--always', '--dirty'],
+            cwd=str(DASHBOARD_DIR), capture_output=True, text=True, timeout=2,
+        )
+        if out.returncode == 0 and out.stdout.strip():
+            return out.stdout.strip()
+    except Exception:
+        pass
+    return 'dev'
 
 def main():
     print("=" * 80)

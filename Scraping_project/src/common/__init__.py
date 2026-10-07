@@ -4,7 +4,7 @@ from __future__ import annotations
 
 def _patch_scrapy_response_meta() -> None:
     try:
-        from scrapy.http import Request, Response  # type: ignore
+        from scrapy.http import Request, Response
     except Exception:
         return
 
@@ -19,7 +19,8 @@ def _patch_scrapy_response_meta() -> None:
         fget = original_property.fget
         if fget is None:
             return {}
-        return fget(instance)  # type: ignore[attr-defined]
+        result: dict = fget(instance)
+        return result
 
     def _meta_set(instance: Response, value: dict) -> None:
         if value is None:
@@ -58,7 +59,7 @@ _patch_scrapy_response_meta()
 # - src.core.exceptions for exceptions
 # ============================================================================
 
-import warnings
+import warnings  # noqa: E402
 
 # Re-export from new locations for backward compatibility
 try:
@@ -66,14 +67,19 @@ try:
     from src.utils.redis import get_redis, RedisHelper
     from src.utils.validation import is_valid_url, is_uconn_domain
     from src.core.config import get_config, Config
-    from src.core.constants import *
-    from src.core.exceptions import *
+    from src.core.constants import *  # noqa: F403 - intentional re-export
+    from src.core.exceptions import *  # noqa: F403 - intentional re-export
 
     # Legacy names for backward compatibility
-    def get_delta():
-        """DEPRECATED: Use get_delta() instead."""
+    def get_delta_manager():
+        """DEPRECATED: Use get_delta() instead.
+
+        Previously defined as ``get_delta`` calling itself (infinite
+        recursion) while ``__all__`` exported an undefined
+        ``get_delta_manager``.
+        """
         warnings.warn(
-            "get_delta() is deprecated. Use get_delta() instead.",
+            "get_delta_manager() is deprecated. Use get_delta() instead.",
             DeprecationWarning,
             stacklevel=2
         )
@@ -108,4 +114,4 @@ try:
 except ImportError as e:
     # If new modules don't exist yet, don't break existing code
     warnings.warn(f"Could not import from new modules: {e}", ImportWarning)
-    __all__: tuple[str, ...] = ()
+    __all__ = ()

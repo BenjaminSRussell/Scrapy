@@ -5,7 +5,9 @@ Centralizes all Redis operations to eliminate duplicate code across the pipeline
 Replaces src/common/redis_manager.py with a simpler, more consistent API.
 """
 
-from typing import Optional, Set, List
+from typing import Any, Optional, Set, List, cast
+import json
+import os
 import redis
 import logging
 from functools import wraps
@@ -17,18 +19,26 @@ logger = logging.getLogger(__name__)
 class RedisHelper:
     """Centralized Redis operations."""
 
-    def __init__(self, host: str = "localhost", port: int = 6379, db: int = 0):
+    def __init__(
+        self,
+        host: Optional[str] = None,
+        port: Optional[int] = None,
+        db: int = 0,
+        password: Optional[str] = None,
+    ):
         """
         Initialize Redis helper.
 
         Args:
-            host: Redis host address
-            port: Redis port number
+            host: Redis host address (default: REDIS_HOST env var, then localhost)
+            port: Redis port number (default: REDIS_PORT env var, then 6379)
             db: Redis database number
+            password: Optional Redis AUTH password
         """
-        self.host = host
-        self.port = port
+        self.host = host or os.getenv("REDIS_HOST", "localhost")
+        self.port = port or int(os.getenv("REDIS_PORT", "6379"))
         self.db = db
+        self.password = password
         self._client: Optional[redis.Redis] = None
 
     @property
@@ -40,6 +50,7 @@ class RedisHelper:
                     host=self.host,
                     port=self.port,
                     db=self.db,
+                    password=self.password,
                     decode_responses=True,
                     socket_timeout=5,
                     socket_connect_timeout=5
@@ -69,7 +80,7 @@ class RedisHelper:
         """
         try:
             key = f"{key_prefix}:urls"
-            return self.client.sismember(key, url)
+            return bool(self.client.sismember(key, url))
         except Exception as e:
             logger.error(f"Failed to check URL in Redis: {e}")
             return False
@@ -109,7 +120,7 @@ class RedisHelper:
             Number of values added
         """
         try:
-            return self.client.sadd(key, *values)
+            return cast(int, self.client.sadd(key, *values))
         except Exception as e:
             logger.error(f"Failed to add to set {key}: {e}")
             return 0
@@ -125,7 +136,7 @@ class RedisHelper:
             Set of members
         """
         try:
-            return self.client.smembers(key)
+            return cast(Set[str], self.client.smembers(key))
         except Exception as e:
             logger.error(f"Failed to get set members from {key}: {e}")
             return set()
@@ -141,7 +152,7 @@ class RedisHelper:
             Number of members in set
         """
         try:
-            return self.client.scard(key)
+            return cast(int, self.client.scard(key))
         except Exception as e:
             logger.error(f"Failed to get set size for {key}: {e}")
             return 0
@@ -158,7 +169,7 @@ class RedisHelper:
             New counter value
         """
         try:
-            return self.client.incrby(key, amount)
+            return cast(int, self.client.incrby(key, amount))
         except Exception as e:
             logger.error(f"Failed to increment counter {key}: {e}")
             return 0
@@ -174,7 +185,7 @@ class RedisHelper:
             Counter value, or 0 if not set
         """
         try:
-            value = self.client.get(key)
+            value = cast(Optional[str], self.client.get(key))
             return int(value) if value else 0
         except Exception as e:
             logger.error(f"Failed to get counter {key}: {e}")
@@ -188,8 +199,8 @@ class RedisHelper:
             Memory usage in bytes
         """
         try:
-            info = self.client.info("memory")
-            return info.get("used_memory", 0)
+            info = cast(dict[str, Any], self.client.info("memory"))
+            return int(info.get("used_memory", 0))
         except Exception as e:
             logger.error(f"Failed to get memory usage: {e}")
             return 0
@@ -202,7 +213,7 @@ class RedisHelper:
             Number of keys
         """
         try:
-            return self.client.dbsize()
+            return cast(int, self.client.dbsize())
         except Exception as e:
             logger.error(f"Failed to get key count: {e}")
             return 0
@@ -224,15 +235,25 @@ class RedisHelper:
             logger.error(f"Failed to delete key {key}: {e}")
             return False
 
-    def clear_all(self) -> bool:
+    def clear_all(self, confirm: bool = False) -> bool:
         """
         Clear all keys from current database.
 
-        WARNING: This deletes ALL data in the current Redis database!
+        WARNING: This deletes ALL data in the current Redis database -- seen-URL
+        sets, queues and counters shared by every worker (#203/#381).
+
+        Refuses unless the caller passes ``confirm=True`` or the process runs
+        with ``ALLOW_REDIS_FLUSH=1``, so a stray call cannot wipe the shared
+        data plane.
 
         Returns:
-            True if successful, False otherwise
+            True if successful, False otherwise (including when refused)
         """
+        if not confirm and os.getenv("ALLOW_REDIS_FLUSH") != "1":
+            logger.error(
+                "Refusing Redis flushdb: pass confirm=True or set ALLOW_REDIS_FLUSH=1"
+            )
+            return False
         try:
             self.client.flushdb()
             logger.warning("Cleared all keys from Redis database")
@@ -249,26 +270,81 @@ class RedisHelper:
             True if Redis responds, False otherwise
         """
         try:
-            return self.client.ping()
+            return bool(self.client.ping())
         except Exception as e:
             logger.error(f"Redis ping failed: {e}")
             return False
+
+    def open_circuit(self, domain: str, duration_seconds: int = 900, reason: Optional[str] = None) -> bool:
+        """
+        Open the circuit breaker for a domain, blocking requests to it for a
+        limited time.
+
+        Args:
+            domain: Domain to block
+            duration_seconds: How long the circuit stays open
+            reason: Optional human-readable reason, stored alongside the key
+
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            key = f"circuit:{domain}"
+            value = json.dumps({"reason": reason, "opened_at": time.time()})
+            self.client.set(key, value, ex=duration_seconds)
+            return True
+        except Exception as e:
+            logger.error(f"Failed to open circuit for {domain}: {e}")
+            return False
+
+    def is_circuit_open(self, domain: str) -> bool:
+        """
+        Check whether the circuit breaker for a domain is currently open.
+
+        Args:
+            domain: Domain to check
+
+        Returns:
+            True if the circuit is open (requests should be skipped)
+        """
+        try:
+            return cast(int, self.client.exists(f"circuit:{domain}")) > 0
+        except Exception as e:
+            logger.error(f"Failed to check circuit for {domain}: {e}")
+            return False
+
+    def get_open_circuits(self) -> List[str]:
+        """
+        List domains whose circuit breaker is currently open.
+
+        Returns:
+            List of domain names with an open circuit
+        """
+        try:
+            keys = cast(List[str], self.client.keys("circuit:*"))
+            return [key.split("circuit:", 1)[1] for key in keys]
+        except Exception as e:
+            logger.error(f"Failed to list open circuits: {e}")
+            return []
 
 
 # Global instance
 _redis_helper: Optional[RedisHelper] = None
 
 
-def get_redis(host: str = "localhost", port: int = 6379, db: int = 0) -> RedisHelper:
+def get_redis(
+    host: Optional[str] = None, port: Optional[int] = None, db: int = 0, password: Optional[str] = None
+) -> RedisHelper:
     """
     Get global Redis helper instance.
 
     This is the primary way to access Redis operations throughout the pipeline.
 
     Args:
-        host: Redis host address
-        port: Redis port number
+        host: Redis host address (default: REDIS_HOST env var, then localhost)
+        port: Redis port number (default: REDIS_PORT env var, then 6379)
         db: Redis database number
+        password: Optional Redis AUTH password
 
     Returns:
         RedisHelper instance
@@ -283,7 +359,7 @@ def get_redis(host: str = "localhost", port: int = 6379, db: int = 0) -> RedisHe
     """
     global _redis_helper
     if _redis_helper is None:
-        _redis_helper = RedisHelper(host, port, db)
+        _redis_helper = RedisHelper(host, port, db, password)
     return _redis_helper
 
 

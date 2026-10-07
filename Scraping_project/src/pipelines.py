@@ -36,6 +36,15 @@ from src.items import OffsiteCandidateItem
 
 logger = logging.getLogger(__name__)
 
+def is_queue_routing_item(item: Any) -> bool:
+    """True for Scout's plain-dict queue handoffs (``target_stage``/``target_spider``).
+
+    These are persisted by QueueItemPipeline (#608) and are not content records,
+    so content pipelines (schema validation, Kafka) must pass them through.
+    """
+    return isinstance(item, dict) and bool(item.get("target_stage") or item.get("target_spider"))
+
+
 class DataValidationPipeline:
 
     def __init__(self, required_fields: list[str] | None = None):
@@ -263,6 +272,8 @@ class KafkaPipeline:
                 logger.info(f"Message delivered to {msg.topic()} [{msg.partition()}] at offset {msg.offset()}")
 
     def process_item(self, item: Any, spider: Spider) -> Any:
+        if is_queue_routing_item(item):
+            return item  # queue handoff, persisted by QueueItemPipeline (#608)
         try:
             item_dict = ItemAdapter(item).asdict()
 
@@ -312,21 +323,26 @@ class QueueItemPipeline:
         target_spider = item.get("target_spider")
         target_stage = item.get("target_stage")
 
+        # Copy: later pipelines (Metadata, Recency) mutate the item in place and
+        # must not add columns to the queued row before the batch flushes.
         if target_spider == "javascript":
-            self.js_queue_batch.append(item)
+            self.js_queue_batch.append(dict(item))
             self.items_processed += 1
 
             if len(self.js_queue_batch) >= self.BATCH_SIZE:
                 self._save_js_queue_batch()
 
         elif target_stage == "stage2":
-            self.stage2_queue_batch.append(item)
+            self.stage2_queue_batch.append(dict(item))
             self.items_processed += 1
 
             if len(self.stage2_queue_batch) >= self.BATCH_SIZE:
                 self._save_stage2_queue_batch()
         else:
-            logger.warning(f"QueueItemPipeline: Received a dict item with no routing metadata: {item}")
+            # Content records (dicts without routing metadata) are not queue
+            # handoffs; pass them through untouched now that this pipeline is
+            # registered for every crawl (#608).
+            return item
 
         if self.items_processed % 500 == 0:
             logger.info(
@@ -475,7 +491,7 @@ class GrafanaSummaryPipeline:
                     truncated_content += "..."
 
                 self.sampled_content.append(truncated_content)
-                logger.debug(f"Sampled content from item
+                logger.debug(f"Sampled content from item #{self.items_processed}")
 
                 if len(self.sampled_content) >= self.BATCH_SIZE:
                     self._generate_and_export_summary(spider)
@@ -626,7 +642,7 @@ class SchemaValidationPipeline:
         if not self.enabled:
             return item
 
-        if isinstance(item, OffsiteCandidateItem):
+        if isinstance(item, OffsiteCandidateItem) or is_queue_routing_item(item):
             return item
 
         adapter = ItemAdapter(item)
@@ -773,33 +789,69 @@ class RecencyScoringPipeline:
         return item
 
 class AggregationPipeline:
+    """Group items by ``entity_id`` and persist one summary row per entity (#790).
+
+    Memory is bounded: each entity keeps only its ``max_items_per_entity``
+    most recent items (by ``recency_score``) plus a running total count.
+    On spider close the summaries are written synchronously to the Delta
+    table ``output_topic`` (default ``entity_summaries``).
+    """
+
+    DEFAULT_MAX_ITEMS_PER_ENTITY = 10
 
     def __init__(
         self,
         enabled: bool = True,
         output_topic: str = "entity_summaries",
+        max_items_per_entity: int = DEFAULT_MAX_ITEMS_PER_ENTITY,
+        persist: bool = True,
+        delta: Any = None,
     ):
         """Initialize the aggregation pipeline.
 
         Args:
             enabled: Whether aggregation is enabled
-            output_topic: Kafka topic for entity summaries
+            output_topic: Delta table (and topic name) for entity summaries
+            max_items_per_entity: Most-recent items retained per entity
+            persist: Write summaries to Delta on spider close
+            delta: Optional DeltaHelper-like sink (defaults to get_delta())
         """
         self.enabled = enabled
         self.output_topic = output_topic
+        self.max_items_per_entity = max(1, int(max_items_per_entity))
+        self.persist = persist
+        self._delta = delta
         self.entity_groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
+        self.entity_counts: dict[str, int] = defaultdict(int)
         self.items_aggregated = 0
+        self.summaries_written = 0
 
     @classmethod
     def from_crawler(cls, crawler: Crawler) -> "AggregationPipeline":
         enabled = crawler.settings.getbool("AGGREGATION_ENABLED", True)
         output_topic = crawler.settings.get("AGGREGATION_OUTPUT_TOPIC", "entity_summaries")
+        max_items = crawler.settings.getint(
+            "AGGREGATION_MAX_ITEMS_PER_ENTITY", cls.DEFAULT_MAX_ITEMS_PER_ENTITY
+        )
+        persist = crawler.settings.getbool("AGGREGATION_PERSIST", True)
 
-        pipeline = cls(enabled=enabled, output_topic=output_topic)
+        pipeline = cls(
+            enabled=enabled,
+            output_topic=output_topic,
+            max_items_per_entity=max_items,
+            persist=persist,
+        )
 
         crawler.signals.connect(pipeline.close_spider, signal=signals.spider_closed)
 
         return pipeline
+
+    @staticmethod
+    def _recency(item: dict[str, Any]) -> float:
+        try:
+            return float(item.get("recency_score") or 0.0)
+        except (TypeError, ValueError):
+            return 0.0
 
     def process_item(self, item: Any, spider: Spider) -> Any:
         if not self.enabled:
@@ -812,11 +864,45 @@ class AggregationPipeline:
         entity_id = adapter.get("entity_id")
 
         if entity_id:
-            item_dict = adapter.asdict()
-            self.entity_groups[entity_id].append(item_dict)
+            group = self.entity_groups[entity_id]
+            group.append(adapter.asdict())
+            self.entity_counts[entity_id] += 1
             self.items_aggregated += 1
+            # Bounded memory: keep only the N most recent items per entity.
+            if len(group) > self.max_items_per_entity:
+                group.sort(key=self._recency, reverse=True)
+                del group[self.max_items_per_entity:]
 
         return item
+
+    def _get_delta(self) -> Any:
+        if self._delta is None:
+            from src.utils.delta import get_delta
+
+            self._delta = get_delta()
+        return self._delta
+
+    def build_summary_rows(self, spider_name: str) -> list[dict[str, Any]]:
+        created_at = datetime.now().isoformat()
+        rows: list[dict[str, Any]] = []
+        for entity_id, items in self.entity_groups.items():
+            items.sort(key=self._recency, reverse=True)
+            summary = self._generate_entity_summary(entity_id, items)
+            if not summary:
+                continue
+            urls = [str(i.get("url") or i.get("source_url") or "") for i in items]
+            rows.append(
+                {
+                    "entity_id": str(entity_id),
+                    "summary": summary,
+                    "source_count": int(self.entity_counts.get(entity_id, len(items))),
+                    "top_urls": json.dumps([u for u in urls if u]),
+                    "max_recency_score": float(self._recency(items[0])) if items else 0.0,
+                    "spider": spider_name,
+                    "created_at": created_at,
+                }
+            )
+        return rows
 
     def close_spider(self, spider: Spider) -> None:
         if not self.enabled:
@@ -825,14 +911,23 @@ class AggregationPipeline:
         logger.info(f"Closing AggregationPipeline for spider: {spider.name}")
         logger.info(f"Aggregated {self.items_aggregated} items into {len(self.entity_groups)} entity groups")
 
-        for entity_id, items in self.entity_groups.items():
-            items.sort(key=lambda x: x.get("recency_score", 0.0), reverse=True)
+        rows = self.build_summary_rows(str(getattr(spider, "name", "") or ""))
+        for row in rows:
+            logger.debug(f"Entity {row['entity_id']}: summary from {row['source_count']} items")
 
-            summary = self._generate_entity_summary(entity_id, items)
+        if not rows or not self.persist:
+            return
 
-            if summary:
-                logger.info(f"Entity {entity_id}: Generated summary from {len(items)} items")
-                logger.debug(f"Summary: {summary[:200]}...")
+        try:
+            ok = self._get_delta().write(self.output_topic, rows, mode="append", async_write=False)
+        except Exception as e:  # never fail spider shutdown on persistence
+            logger.error(f"Failed to persist {len(rows)} entity summaries: {e}")
+            return
+        if ok is False:
+            logger.error(f"Failed to persist {len(rows)} entity summaries to {self.output_topic}")
+            return
+        self.summaries_written += len(rows)
+        logger.info(f"Persisted {len(rows)} entity summaries to {self.output_topic}")
 
     def _generate_entity_summary(self, entity_id: str, items: list[dict[str, Any]]) -> str:
 
@@ -878,7 +973,7 @@ class MetadataExtractionPipeline:
         self.extractor_type = extractor_type
         self.batch_size = batch_size
         self.max_keywords = max_keywords
-        self.batch = []
+        self.batch: list[dict[str, Any]] = []
         self.items_processed = 0
 
         self.extractor = self._init_extractor(extractor_type)
@@ -965,7 +1060,7 @@ class MetadataExtractionPipeline:
         return item
 
     def _extract_metadata(self, text: str, adapter: ItemAdapter) -> dict[str, Any]:
-        metadata = {"keywords": [], "entities": {}}
+        metadata: dict[str, Any] = {"keywords": [], "entities": {}}
 
         if self.extractor:
             if self.extractor_type == "yake":
@@ -994,7 +1089,7 @@ class MetadataExtractionPipeline:
         try:
             doc = self.extractor(text[:1000000])
 
-            keywords = []
+            keywords: list[str] = []
             for chunk in doc.noun_chunks:
                 if len(keywords) < self.max_keywords:
                     keywords.append(chunk.text.lower())
@@ -1053,10 +1148,27 @@ class MetadataExtractionPipeline:
         batch_size = len(self.batch)
 
         try:
+            import json
+
             from src.utils.delta import get_delta
 
+            # Parquet can't write a struct column with zero fields, which
+            # is exactly what pyarrow infers for "entities" when every
+            # record in the batch has {} (the common case: the "simple"
+            # extractor never populates it, and most pages have no named
+            # entities). JSON-encode it as a string column instead of a
+            # nested struct, same pattern EntitySummaryStorage uses for
+            # source_references - keeps writes working regardless of
+            # whether entities happens to be empty for a whole batch.
+            records_to_write = [
+                {**record, "entities": json.dumps(record.get("entities", {}))} for record in self.batch
+            ]
+
             delta = get_delta()
-            delta.write("metadata_queue", self.batch, mode="append")
+            # Synchronous: this can be the final flush from spider_closed(),
+            # and an async-queued write has no guarantee of draining before
+            # the process exits, which would silently drop the batch.
+            delta.write("metadata_queue", records_to_write, mode="append", async_write=False)
             logger.info(f" Saved {batch_size} metadata records to metadata_queue")
 
             self.batch.clear()

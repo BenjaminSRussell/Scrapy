@@ -12,10 +12,10 @@ jobs:
 
     steps:
       - name: Check out code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Set up Python
-        uses: actions/setup-python@v3
+        uses: actions/setup-python@v7
         with:
           python-version: '3.x'
 
@@ -34,7 +34,7 @@ jobs:
           python3 -m unittest Scraping_project/tests/observability/test_recording_rules.py
 
       - name: Archive rules for inspection
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: prometheus-rules
           path: |

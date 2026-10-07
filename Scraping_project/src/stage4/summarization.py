@@ -27,7 +27,7 @@ def summarize_with_heavy_model(text: str) -> str:
             do_sample=False,
         )
 
-        return summary[0]["summary_text"]
+        return str(summary[0]["summary_text"])
 
     except ImportError:
         logger.warning("Transformers not installed for summarization")

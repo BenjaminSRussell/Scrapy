@@ -1,3 +1,12 @@
+# Default / core dependency pins for the scraping pipeline.
+#
+# Source of truth for *installable* packaging is Scraping_project/pyproject.toml
+# ([project] dependencies + optional-dependencies ml/ocr/dev).
+# This file feeds the historical requirements.txt lock for Docker/CI that still
+# use `pip install -r requirements.txt`. Prefer:
+#   pip install -e ".[dev]"
+# for local work after #143.
+#
 # Core Framework - Scrapy for high-speed crawling
 scrapy>=2.13.3
 
@@ -20,20 +29,16 @@ datasketch>=1.6.0,<2.0.0  # Efficient similarity detection (Stage 3)
 yake>=0.6.0  # Keyword extraction
 networkx==3.5 # Pinned to resolve conflict
 
-# NLP & ML - For large document processing (Stage 4)
-transformers>=4.50.0
-torch>=2.6.0
-sentence-transformers>=2.0.0  # For semantic similarity and embeddings
-
-# OCR & Media - For document processing
-easyocr>=1.7.0
-pdf2image>=1.17.0
-PyPDF2>=3.0.0
-pillow>=11.0.0
+# NLP / ML / OCR — NOT in the default pip-compile set anymore (#143 / #144).
+# Install via pyproject extras instead:
+#   pip install -e ".[ml]" / ".[ocr]" / ".[stage3-4]"
+# Docker: lean images use core only; stage3/4 use target "full" (see PACKAGING.md).
+# transformers / torch / sentence-transformers → optional-dependencies.ml
+# easyocr / pdf2image / PyPDF2 / pillow → optional-dependencies.ocr
 
 # Database
 psycopg2-binary>=2.9.0  # PostgreSQL adapter
-redis>=5.0,<6.0  # Redis for distributed queues and caching (pinned to 5.x for fakeredis compatibility)
+redis>=5.0,<8.0  # Redis for distributed queues and caching (MAJOR: was <6 for fakeredis; verify fakeredis compatibility with redis-py 7.x)
 
 # Message Queue - Kafka for event streaming
 confluent-kafka>=2.3.0  # High-performance Kafka client (librdkafka wrapper)
@@ -43,15 +48,14 @@ prometheus-client>=0.20.0  # Prometheus metrics exporter
 kubernetes>=32.0.0  # Kubernetes Python client for health checks and service discovery
 requests-mock>=1.12.0  # Mock library for testing HTTP requests
 
-# Machine Learning
-scikit-learn>=1.3.0  # ML for error analysis
+# scikit-learn lives in pyproject [project.optional-dependencies].ml (#143)
 
 # Utilities
 pyyaml>=6.0.2
 tqdm>=4.65.0,<5.0.0
 python-dotenv>=1.0.0
 click>=8.1.0,<9.0.0
-psutil>=5.9.5,<6.0.0
+psutil>=5.9.5,<8.0.0
 python-dateutil>=2.8.0,<3.0.0
 typing-extensions>=4.12.2
 pydantic>=2.0.0,<3.0.0
@@ -64,3 +68,7 @@ itemadapter>=0.12.0
 requests>=2.32.3
 w3lib>=2.3.1
 Twisted>=24.7.0
+
+# Retries (Stage 4 large doc processor)
+tenacity>=8.0.0
+defusedxml>=0.7.1  # safe parsing of untrusted sitemap XML

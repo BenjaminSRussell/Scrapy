@@ -250,7 +250,7 @@ class JSDetector:
 
         for root_id in root_ids:
             if f'id="{root_id}"' in self.html or f"id='{root_id}'" in self.html:
-                return f"
+                return f"#{root_id}"
 
         root_classes = ["app", "application", "spa-root", "root"]
 
@@ -263,7 +263,7 @@ class JSDetector:
 def detect_js_requirement(response: Response) -> bool:
     detector = JSDetector(response)
     result = detector.requires_js_rendering()
-    return result["requires_js"]
+    return bool(result["requires_js"])
 
 def detect_js_with_details(response: Response) -> dict[str, Any]:
     detector = JSDetector(response)

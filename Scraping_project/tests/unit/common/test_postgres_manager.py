@@ -6,8 +6,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src.common import postgres_manager as pg_module
-from src.common.postgres_manager import PostgresManager
+from src.utils import postgres as pg_module
+from src.utils.postgres import PostgresManager
 
 @dataclass
 class CursorStub:
@@ -83,6 +83,9 @@ def patched_postgres(monkeypatch):
 
 def test_init_requires_password(monkeypatch):
     monkeypatch.setattr(pg_module, "POSTGRES_AVAILABLE", True)
+    # CI exports DB_PASSWORD for the postgres service; the env fallback must
+    # not satisfy the "password required" check in this test.
+    monkeypatch.delenv("DB_PASSWORD", raising=False)
     with pytest.raises(ValueError):
         PostgresManager(password=None)
 

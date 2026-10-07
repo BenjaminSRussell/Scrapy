@@ -4,7 +4,7 @@ import tempfile
 import shutil
 import time
 import pytest
-from src.common.delta_lake import DeltaLakeManager
+from src.lakehouse.lakehouse_manager import DeltaLakeManager
 
 @pytest.mark.integration
 def test_delta_manager_context_terminates_threads():

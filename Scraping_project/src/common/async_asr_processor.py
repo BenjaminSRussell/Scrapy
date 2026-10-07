@@ -133,7 +133,7 @@ class AsyncASRProcessor:
             logger.debug(f"Unsupported media format: {media_url}")
             return defer.succeed(item_dict)
 
-        download_deferred = threads.deferToThread(self._download_media, media_url)
+        download_deferred: "defer.Deferred[Any]" = threads.deferToThread(self._download_media, media_url)
 
         download_deferred.addCallback(lambda local_path: self._transcribe_async(local_path, item_dict))
 
@@ -169,7 +169,7 @@ class AsyncASRProcessor:
 
         future = self.executor.submit(transcribe_audio_file, local_path)
 
-        deferred = defer.Deferred()
+        deferred: "defer.Deferred[Any]" = defer.Deferred()
 
         def on_complete(result_future):
             try:

@@ -1,189 +1,99 @@
-import time
+"""Integration tests for RedisHelper.
+
+The old RedisManager's generic named-queue API (push_to_queue/
+pop_from_queue/get_queue_length/clear_queue) has no callers anywhere in
+src/ - queueing moved to Delta Lake tables (stage2_queue,
+js_spider_queue) and the Redis-backed JSPriorityQueue (sorted sets) for
+the one case that still needs Redis-speed ordering. RedisHelper's own
+surface (URL dedup sets, counters, circuit breaker) is what's actually
+live, so that's what these integration tests exercise.
+"""
+
+import threading
 
 import pytest
 
-from src.common.redis_manager import RedisManager
+from src.utils.redis import RedisHelper
 
 @pytest.mark.integration
 @pytest.mark.redis
 class TestRedisIntegration:
 
-    def test_queue_operations_end_to_end(self, redis_clean):
-        manager = RedisManager(
+    def _helper(self, redis_clean) -> RedisHelper:
+        helper = RedisHelper(
             host="127.0.0.1",
             port=6379,
             db=redis_clean.connection_pool.connection_kwargs["db"],
         )
+        helper._client = redis_clean
+        return helper
 
-        test_items = [{"url": f"https://example.com/{i}", "priority": i} for i in range(10)]
+    def test_url_dedup_end_to_end(self, redis_clean):
+        helper = self._helper(redis_clean)
 
-        for item in test_items:
-            manager.push_to_queue("test_pipeline", item)
+        urls = [f"https://example.com/{i}" for i in range(10)]
+        for url in urls:
+            assert not helper.check_url_seen(url, "scout")
+            helper.mark_url_seen(url, "scout")
 
-        assert manager.get_queue_length("test_pipeline") == 10
+        for url in urls:
+            assert helper.check_url_seen(url, "scout")
 
-        processed = []
-        while manager.get_queue_length("test_pipeline") > 0:
-            item = manager.pop_from_queue("test_pipeline")
-            if item:
-                processed.append(item)
+        assert helper.get_set_size("scout:urls") == 10
 
-        assert len(processed) == 10
-        assert processed == test_items
+    def test_circuit_breaker_end_to_end(self, redis_clean):
+        helper = self._helper(redis_clean)
 
-    @pytest.mark.skip(reason="Cache methods not yet implemented in RedisManager")
-    def test_cache_expiration_timing(self, redis_clean):
-        manager = RedisManager(
-            host="127.0.0.1",
-            port=6379,
-            db=redis_clean.connection_pool.connection_kwargs["db"],
-        )
+        assert not helper.is_circuit_open("flaky.example.com")
 
-        manager.set_cache("expiring_key", {"data": "value"}, ttl=2)
+        helper.open_circuit("flaky.example.com", duration_seconds=60, reason="high_error_rate")
 
-        assert manager.cache_exists("expiring_key")
-        assert manager.get_cache("expiring_key") == {"data": "value"}
+        assert helper.is_circuit_open("flaky.example.com")
+        assert "flaky.example.com" in helper.get_open_circuits()
+        assert not helper.is_circuit_open("healthy.example.com")
 
-        time.sleep(1)
-        assert manager.cache_exists("expiring_key")
-
-        time.sleep(2)
-        assert not manager.cache_exists("expiring_key")
-        assert manager.get_cache("expiring_key") is None
-
-    @pytest.mark.slow
-    @pytest.mark.skip(reason="Rate limiting methods not yet implemented in RedisManager")
-    def test_rate_limiting_enforcement(self, redis_clean):
-        manager = RedisManager(
-            host="127.0.0.1",
-            port=6379,
-            db=redis_clean.connection_pool.connection_kwargs["db"],
-        )
-
-        domain = "example.com"
-        limit = 5
-        window = 2
-
-        allowed_count = 0
-        blocked_count = 0
-
-        for _ in range(10):
-            if manager.check_rate_limit(domain, limit, window):
-                allowed_count += 1
-            else:
-                blocked_count += 1
-
-        assert allowed_count == 5
-        assert blocked_count == 5
-
-        time.sleep(3)
-
-        assert manager.check_rate_limit(domain, limit, window)
-
-    def test_concurrent_queue_access(self, redis_clean):
-        import threading
-
-        manager = RedisManager(
-            host="127.0.0.1",
-            port=6379,
-            db=redis_clean.connection_pool.connection_kwargs["db"],
-        )
-
+    def test_concurrent_set_access(self, redis_clean):
+        helper = self._helper(redis_clean)
         results = []
         lock = threading.Lock()
 
-        def producer(n):
-            for i in range(n):
-                manager.push_to_queue(
-                    "concurrent_queue",
-                    {"id": i, "thread": threading.current_thread().name},
-                )
-
-        def consumer(n):
-            consumed = []
-            for _ in range(n):
-                item = manager.pop_from_queue("concurrent_queue")
-                if item:
-                    consumed.append(item)
+        def worker(offset: int):
+            added = []
+            for i in range(5):
+                url = f"https://example.com/{offset}-{i}"
+                helper.mark_url_seen(url, "concurrent")
+                added.append(url)
             with lock:
-                results.extend(consumed)
+                results.extend(added)
 
-        producers = [threading.Thread(target=producer, args=(5,)) for _ in range(3)]
-        consumers = [threading.Thread(target=consumer, args=(5,)) for _ in range(3)]
-
-        for t in producers + consumers:
+        threads = [threading.Thread(target=worker, args=(n,)) for n in range(3)]
+        for t in threads:
             t.start()
-
-        for t in producers + consumers:
+        for t in threads:
             t.join()
 
         assert len(results) == 15
+        assert helper.get_set_size("concurrent:urls") == 15
 
-    @pytest.mark.skip(reason="Cache methods not yet implemented in RedisManager")
-    def test_large_data_serialization(self, redis_clean):
-        manager = RedisManager(
-            host="127.0.0.1",
-            port=6379,
-            db=redis_clean.connection_pool.connection_kwargs["db"],
-        )
+    def test_counter_increment_and_read(self, redis_clean):
+        helper = self._helper(redis_clean)
 
-        large_data = {
-            "urls": [f"https://example.com/page{i}" for i in range(1000)],
-            "metadata": {
-                "timestamp": "2024-01-01T00:00:00",
-                "nested": {"data": [{"id": i, "value": f"item_{i}"} for i in range(100)]},
-            },
-        }
+        assert helper.get_counter("pages_scraped") == 0
 
-        manager.set_cache("large_data", large_data)
-        retrieved = manager.get_cache("large_data")
+        for _ in range(5):
+            helper.increment_counter("pages_scraped")
 
-        assert retrieved == large_data
-        assert len(retrieved["urls"]) == 1000
-        assert len(retrieved["metadata"]["nested"]["data"]) == 100
+        assert helper.get_counter("pages_scraped") == 5
 
-    @pytest.mark.skip(reason="Cache methods not yet implemented in RedisManager")
-    def test_connection_pool_reuse(self, redis_clean):
-        managers = [
-            RedisManager(
-                host="127.0.0.1",
-                port=6379,
-                db=redis_clean.connection_pool.connection_kwargs["db"],
-            )
-            for _ in range(5)
-        ]
+    def test_delete_key_and_clear_all(self, redis_clean):
+        helper = self._helper(redis_clean)
 
-        for i, manager in enumerate(managers):
-            manager.set_cache(f"key_{i}", f"value_{i}")
+        helper.mark_url_seen("https://example.com/x", "cleanup")
+        assert helper.get_key_count() > 0
 
-        for i, manager in enumerate(managers):
-            assert manager.get_cache(f"key_{i}") == f"value_{i}"
+        helper.delete_key("cleanup:urls")
+        assert not helper.check_url_seen("https://example.com/x", "cleanup")
 
-    def test_pipeline_with_error_recovery(self, redis_clean):
-        manager = RedisManager(
-            host="127.0.0.1",
-            port=6379,
-            db=redis_clean.connection_pool.connection_kwargs["db"],
-        )
-
-        valid_items = [{"url": f"https://example.com/{i}"} for i in range(5)]
-        for item in valid_items:
-            manager.push_to_queue("error_queue", item)
-
-        processed = []
-        failed = []
-
-        while manager.get_queue_length("error_queue") > 0:
-            item = manager.pop_from_queue("error_queue")
-            if item:
-                try:
-                    if int(item["url"][-1]) % 2 == 0:
-                        processed.append(item)
-                    else:
-                        manager.push_to_queue("error_queue_retry", item)
-                        failed.append(item)
-                except Exception:
-                    failed.append(item)
-
-        assert len(processed) > 0
-        assert manager.get_queue_length("error_queue_retry") == len(failed)
+        helper.increment_counter("some_counter")
+        helper.clear_all(confirm=True)
+        assert helper.get_key_count() == 0

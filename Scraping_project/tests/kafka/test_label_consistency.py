@@ -4,8 +4,9 @@ import unittest
 
 import yaml
 
-DASHBOARD_DIR = "Scraping_project/monitoring/dashboards"
-RULES_DIR = "Scraping_project/monitoring"
+_BASE_DIR = os.path.dirname(__file__)
+DASHBOARD_DIR = os.path.abspath(os.path.join(_BASE_DIR, "..", "..", "monitoring", "dashboards"))
+RULES_DIR = os.path.abspath(os.path.join(_BASE_DIR, "..", "..", "monitoring"))
 
 INCORRECT_LABELS = {"consumergroup", "group", "consumer_group"}
 CORRECT_LABEL = "client_id"

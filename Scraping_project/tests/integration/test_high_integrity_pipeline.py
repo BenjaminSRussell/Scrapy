@@ -229,7 +229,7 @@ class TestPipelineIntegration:
         assert 0.0 <= result["recency_score"] <= 1.0
 
     def test_aggregation_pipeline_grouping(self, mock_spider):
-        pipeline = AggregationPipeline(enabled=True)
+        pipeline = AggregationPipeline(enabled=True, persist=False)
 
         items = [
             {

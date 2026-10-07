@@ -68,7 +68,7 @@ kubectl autoscale deployment stage2-worker \
 
 - `REDIS_HOST` - Redis server hostname
 - `REDIS_PORT` - Redis server port (default: 6379)
-- `DELTA_LAKE_PATH` - Path to Delta Lake storage
+- `DELTA_LAKE_PATH` - Path to Delta Lake storage. Read by both `get_delta()` (DeltaHelper) and `LakehouseManager` (including the metrics exporter); it takes precedence over config.yml `delta_lake.base_path`. Compose/k8s use `/data/delta`, which compose mounts from host `./data/delta`. Local runs without the env var use `./data/delta_lake`.
 - `LOG_LEVEL` - Logging level (DEBUG, INFO, WARNING, ERROR)
 - `WORKERS` - Number of concurrent workers
 - `CONCURRENCY` - Concurrency per worker
@@ -235,3 +235,32 @@ python -m src.utils.maintenance compact
 # Remove old logs
 find /app/logs -name "*.log" -mtime +30 -delete
 ```
+
+## Crawl artifact retention (`data gc`)
+
+Long Kafka→Delta runs fill `data/logs`, `data/cache`, `data/temp`, and `logs`.
+Use the CLI (also exposed as `scrapy-ops` when packaged):
+
+```bash
+# Dry-run: print candidate counts/bytes, delete nothing
+python -m cli data gc --ttl-days 14 --verbose
+
+# Apply: delete only files older than the TTL
+python -m cli data gc --ttl-days 14 --apply
+```
+
+`--apply` is required to delete. Default roots: `data/logs`, `data/cache`,
+`data/temp`, `logs`, `data/raw/tmp`.
+
+
+## Seed registry CLI (#1100)
+
+```bash
+python -m cli seeds add https://example.com/page
+python -m cli seeds list
+python -m cli seeds disable https://example.com/page
+python -m cli seeds audit
+```
+
+Registry: `data/ops/seeds.json`. Append-only audit: `data/ops/seed_audit.jsonl`.
+Disable keeps the URL for history but removes it from active scheduling lists.

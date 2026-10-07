@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import MagicMock, patch
 
-from src.common.retry_middleware import IntelligentRetryMiddleware
+from src.stage1.middlewares.retry_middleware import IntelligentRetryMiddleware
 
 class TestIntelligentRetryMiddleware(unittest.TestCase):
     def test_no_random_import_in_backoff_calculation(self):

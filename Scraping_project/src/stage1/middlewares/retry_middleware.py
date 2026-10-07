@@ -40,7 +40,7 @@ class IntelligentRetryMiddleware(RetryMiddleware):
         if jitter:
             j = (self._rng.random() * 2 - 1.0) * jitter
         delay = min(max(delay + j, 0.0), max_backoff)
-        return delay
+        return float(delay)
 
     def _classify_status(self, status: int) -> str:
         if status in self.TRANSIENT_STATUS_CODES:
@@ -62,7 +62,9 @@ class IntelligentRetryMiddleware(RetryMiddleware):
         return response
 
     def process_exception(self, request: Request, exception: Exception, spider: Spider):
-        if isinstance(exception, self.EXCEPTIONS_TO_RETRY):
+        # Scrapy >= 2.10 exposes the RETRY_EXCEPTIONS tuple as an instance
+        # attribute; the old class constant no longer exists.
+        if isinstance(exception, self.exceptions_to_retry):
             logger.debug(f"Retryable exception for {request.url[:80]}: {exception}")
             return self._retry_with_backoff(
                 request,
@@ -138,7 +140,7 @@ class IntelligentRetryMiddleware(RetryMiddleware):
 
         delay = min(delay, self.backoff_max)
 
-        return delay
+        return float(delay)
 
 class RateLimitMiddleware:
 
@@ -175,20 +177,20 @@ class CircuitBreakerMiddleware:
 
     @classmethod
     def from_crawler(cls, crawler):
-        from src.core.config import Config
+        from src.core.config import get_config
         from src.utils.redis import get_redis
 
-        config = Config.get_instance()
-        redis_config = config.redis_config
+        config = get_config()
+        redis_config = config.get_section("redis")
 
-        redis_manager = get_redis_manager(
+        redis_helper = get_redis(
             host=redis_config.get("host", "localhost"),
             port=redis_config.get("port", 6379),
             db=redis_config.get("db", 0),
             password=redis_config.get("password"),
         )
 
-        return cls(redis_manager)
+        return cls(redis_helper)
 
     def process_request(self, request: Request, spider: Spider):
         from urllib.parse import urlparse

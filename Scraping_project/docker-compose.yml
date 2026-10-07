@@ -51,6 +51,27 @@ services:
       timeout: 3s
       retries: 3
 
+  # PostgreSQL for pipeline metrics and error logs
+  postgres:
+    image: postgres:16-alpine
+    container_name: uconn-postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=scraping_pipeline
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - scraper-network
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
   # Stage 1: URL Discovery Worker
   stage1-worker:
     build:
@@ -77,7 +98,7 @@ services:
     build:
       context: .
       target: production
-    container_name: stage2-worker
+    # container_name omitted: incompatible with deploy.replicas (#142)
     restart: unless-stopped
     command: python -m src.workers.stage2_worker
     environment:
@@ -86,11 +107,17 @@ services:
       - DELTA_LAKE_PATH=/data/delta
       - WORKER_ID=stage2
       - CONCURRENCY=10
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=scraping_pipeline
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
     volumes:
       - ./data:/data
       - ./logs:/app/logs
     depends_on:
       - redis
+      - postgres
     networks:
       - scraper-network
     deploy:
@@ -113,11 +140,17 @@ services:
       - REDIS_PORT=6379
       - DELTA_LAKE_PATH=/data/delta
       - WORKER_ID=stage3
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=scraping_pipeline
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
     volumes:
       - ./data:/data
       - ./logs:/app/logs
     depends_on:
       - redis
+      - postgres
     networks:
       - scraper-network
 
@@ -165,10 +198,12 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - GF_SECURITY_ADMIN_PASSWORD=admin
+      # From .env (GRAFANA_ADMIN_PASSWORD); the default is for local dev only (#439/#187).
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
       - GF_USERS_ALLOW_SIGN_UP=false
     volumes:
       - grafana-data:/var/lib/grafana
+      - ./monitoring/alerting:/etc/grafana/provisioning/alerting
     networks:
       - scraper-network
     depends_on:
@@ -176,6 +211,7 @@ services:
 
 volumes:
   redis-data:
+  postgres-data:
   prometheus-data:
   grafana-data:
 

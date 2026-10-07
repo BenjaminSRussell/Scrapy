@@ -44,9 +44,10 @@ k8s/
 │           ├── kafka-statefulset.yaml
 │           ├── scrapy-deployment.yaml
 │           └── delta-lake-pvc.yaml
-├── DEPLOYMENT_GUIDE.md            # Detailed deployment guide
 └── README.md                      # This file
 ```
+
+Detailed deployment steps: [../DEPLOYMENT.md](../DEPLOYMENT.md#kubernetes-deployment).
 
 ## Architecture
 
@@ -171,7 +172,7 @@ kubectl delete namespace scraping-pipeline
 
 ## Documentation
 
-- **[DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md)**: Comprehensive deployment guide
+- **[DEPLOYMENT.md](../DEPLOYMENT.md#kubernetes-deployment)**: Comprehensive deployment guide
 - **[values.yaml](helm/scraping-pipeline/values.yaml)**: Configuration options
 - **[Chart.yaml](helm/scraping-pipeline/Chart.yaml)**: Chart metadata
 

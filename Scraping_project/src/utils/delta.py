@@ -9,10 +9,14 @@ This module merges functionality from:
 Phase 6 Enhancement: Added type-safe operations with Pydantic validation
 """
 
-from typing import List, Dict, Any, Optional, TypeVar, Type, Generic
+from typing import TYPE_CHECKING, List, Dict, Optional, TypeVar, Type, Union
 from pathlib import Path
 import logging
+import os
 from pydantic import BaseModel, ValidationError
+
+if TYPE_CHECKING:
+    from src.lakehouse.lakehouse_manager import LakehouseManager, WriteMode
 
 logger = logging.getLogger(__name__)
 
@@ -22,35 +26,47 @@ T = TypeVar('T', bound=BaseModel)
 class DeltaHelper:
     """Centralized Delta Lake operations."""
 
-    def __init__(self, base_path: Optional[Path] = None):
+    def __init__(self, base_path: Optional[Union[str, Path]] = None):
         """
         Initialize Delta helper.
 
         Args:
-            base_path: Base path for Delta Lake storage. Defaults to ./data/delta_lake
+            base_path: Base path for Delta Lake storage. Defaults to the
+                DELTA_LAKE_PATH env var, then config ``delta_lake.base_path``,
+                then ./data/delta_lake (same order as LakehouseManager).
         """
         if base_path is None:
-            base_path = Path("./data/delta_lake")
+            base_path = os.getenv("DELTA_LAKE_PATH")
+        if not base_path:
+            from src.core.config import get_config
+
+            base_path = get_config().get("delta_lake.base_path", "./data/delta_lake")
 
         self.base_path = Path(base_path)
         self.base_path.mkdir(parents=True, exist_ok=True)
-        self._manager = None
+        self._manager: Optional["LakehouseManager"] = None
 
     @property
-    def manager(self):
+    def manager(self) -> "LakehouseManager":
         """Lazy load lakehouse manager."""
         if self._manager is None:
             from src.lakehouse.lakehouse_manager import LakehouseManager
-            self._manager = LakehouseManager(self.base_path)
+            self._manager = LakehouseManager(str(self.base_path))
         return self._manager
 
-    def read(self, table_name: str, filters: Optional[List] = None) -> List[Dict]:
+    def read(
+        self,
+        table_name: str,
+        filters: Optional[List] = None,
+        columns: Optional[List[str]] = None,
+    ) -> List[Dict]:
         """
         Read from Delta table.
 
         Args:
             table_name: Name of the table to read
             filters: Optional filters to apply
+            columns: Optional subset of columns to read
 
         Returns:
             List of dictionaries representing rows
@@ -60,16 +76,34 @@ class DeltaHelper:
             seed_urls = delta.read("seed_urls")
         """
         try:
-            return self.manager.read(table_name)
+            return self.manager.read(table_name, filters=filters, columns=columns)
         except Exception as e:
             logger.error(f"Failed to read from {table_name}: {e}")
+            return []
+
+    def read_table(self, table_name: str, **kwargs) -> List[Dict]:
+        """
+        Proxy for LakehouseManager.read_table (Stage2-style API).
+
+        Args:
+            table_name: Name of the table to read
+            **kwargs: Optional filters/columns forwarded to the manager
+
+        Returns:
+            List of dictionaries representing rows (empty list on error / missing data)
+        """
+        try:
+            return self.manager.read_table(table_name, **kwargs)
+        except Exception as e:
+            logger.error(f"Failed to read_table from {table_name}: {e}")
             return []
 
     def write(
         self,
         table_name: str,
         data: List[Dict],
-        mode: str = "append"
+        mode: "WriteMode" = "append",
+        async_write: bool = True,
     ) -> bool:
         """
         Write to Delta table.
@@ -78,6 +112,7 @@ class DeltaHelper:
             table_name: Name of the table to write to
             data: List of dictionaries to write
             mode: Write mode ('append' or 'overwrite')
+            async_write: If True, queue the write; if False, write synchronously
 
         Returns:
             True if successful, False otherwise
@@ -85,9 +120,10 @@ class DeltaHelper:
         Example:
             delta = get_delta()
             success = delta.write("stage1_discovery", urls, mode="append")
+            delta.write("stage2_page_analysis", rows, mode="append", async_write=False)
         """
         try:
-            self.manager.write(table_name, data, mode=mode)
+            self.manager.write(table_name, data, mode=mode, async_write=async_write)
             return True
         except Exception as e:
             logger.error(f"Failed to write to {table_name}: {e}")
@@ -117,11 +153,14 @@ class DeltaHelper:
             Number of rows, or 0 if error
         """
         try:
-            data = self.read(table_name)
-            return len(data)
+            return self.manager.count(table_name)
         except Exception as e:
             logger.error(f"Failed to get row count for {table_name}: {e}")
             return 0
+
+    def count(self, table_name: str) -> int:
+        """Alias of get_row_count (LakehouseManager-compatible name)."""
+        return self.get_row_count(table_name)
 
     def clear_table(self, table_name: str) -> bool:
         """
@@ -134,7 +173,7 @@ class DeltaHelper:
             True if successful, False otherwise
         """
         try:
-            self.write(table_name, [], mode="overwrite")
+            self.write(table_name, [], mode="overwrite", async_write=False)
             return True
         except Exception as e:
             logger.error(f"Failed to clear {table_name}: {e}")
@@ -202,7 +241,7 @@ class DeltaHelper:
         self,
         table_name: str,
         data: List[T],
-        mode: str = "append"
+        mode: "WriteMode" = "append"
     ) -> bool:
         """
         Write validated Pydantic models to Delta table.
@@ -275,3 +314,6 @@ def reset_delta():
     """Reset global Delta helper instance (useful for testing)."""
     global _delta_helper
     _delta_helper = None
+
+# Canonical factory is get_delta; alias kept for older call sites (#294).
+get_delta_manager = get_delta

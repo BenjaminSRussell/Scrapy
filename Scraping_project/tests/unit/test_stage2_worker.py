@@ -2,7 +2,7 @@ import pyarrow as pa
 import pytest
 from deltalake import DeltaTable
 
-from src.common.delta_lake import DeltaLakeManager
+from src.lakehouse.lakehouse_manager import DeltaLakeManager
 from src.stage2.stage2_worker import Stage2Worker
 
 @pytest.fixture

@@ -1,0 +1,108 @@
+# Grafana-native alert rule provisioning.
+#
+# Mirrors the Prometheus alerting_rules.yml alerts that matter most for
+# on-call visibility inside Grafana's own alerting UI. Kept in sync by
+# hand for now; Prometheus's rule_files remain the source of truth for
+# actual alert firing.
+#
+# every/for must satisfy: every >= min Prometheus scrape_interval (15s,
+# see monitoring/prometheus.yml), and for %% every == 0
+# (tests/observability/test_alert_intervals.py enforces both).
+
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: kafka_infrastructure
+    folder: Pipeline Alerts
+    interval: 1m
+    rules:
+      - uid: kafka-broker-down
+        title: Kafka broker is down
+        condition: A
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            model:
+              expr: up{job="kafka_jmx"} == 0
+        every: 1m
+        for: 1m
+        labels:
+          severity: critical
+          component: kafka
+        annotations:
+          summary: Kafka broker is down
+
+      - uid: kafka-consumer-lag-slo
+        title: Kafka consumer lag SLO breach
+        condition: A
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            model:
+              expr: max_over_time(kafka_consumergroup_lag_max[5m]) > 250000
+        every: 1m
+        for: 15m
+        labels:
+          severity: critical
+          component: kafka
+        annotations:
+          summary: Kafka consumer lag has breached the SLO
+
+  - orgId: 1
+    name: scrapy_application
+    folder: Pipeline Alerts
+    interval: 1m
+    rules:
+      - uid: scrapy-app-down
+        title: Scrapy application is down
+        condition: A
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            model:
+              expr: up{job="scrapy_app"} == 0
+        every: 1m
+        for: 2m
+        labels:
+          severity: critical
+          component: scrapy
+        annotations:
+          summary: Scrapy application is down
+
+      - uid: scrapy-no-items
+        title: Scrapy is not scraping any items
+        condition: A
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            model:
+              expr: rate(scrapy_items_scraped_total[5m]) == 0
+        every: 1m
+        for: 10m
+        labels:
+          severity: warning
+          component: scrapy
+        annotations:
+          summary: No items scraped in 10 minutes
+
+  - orgId: 1
+    name: infrastructure
+    folder: Pipeline Alerts
+    interval: 1m
+    rules:
+      - uid: redis-down
+        title: Redis is down
+        condition: A
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            model:
+              expr: up{job="redis"} == 0
+        every: 1m
+        for: 1m
+        labels:
+          severity: critical
+          component: redis
+        annotations:
+          summary: Redis has been unreachable for more than 1 minute

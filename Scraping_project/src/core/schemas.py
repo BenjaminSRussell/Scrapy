@@ -117,7 +117,11 @@ SCHEMA_REGISTRY: Final[Dict[str, pa.Schema]] = {
     "stage1_discovery": STAGE1_DISCOVERY_SCHEMA,
     "stage2_queue": STAGE2_QUEUE_SCHEMA,
     "stage2_page_analysis": STAGE2_ANALYSIS_SCHEMA,
+    # Quarantined Stage 2 failures (#331): same row shape, separate table.
+    "stage2_errors": STAGE2_ANALYSIS_SCHEMA,
     "stage3_queue": STAGE3_SUMMARY_SCHEMA,  # Reuse for queue
+    "stage3_summaries": STAGE3_SUMMARY_SCHEMA,
+    # Legacy name for Stage 3 output (#612); still read, no longer written by Stage 3.
     "stage4_summaries": STAGE3_SUMMARY_SCHEMA,
     "stage4_large_docs": STAGE4_LARGE_DOC_SCHEMA,
     "stage4_large_doc_summaries": STAGE4_LARGE_DOC_SCHEMA,
@@ -162,13 +166,9 @@ def validate_data_schema(data: list[dict], table_name: str) -> bool:
     if not data:
         return True
 
-    schema = get_schema(table_name)
-    expected_fields = {field.name for field in schema}
-
-    # Check first record has required fields
-    actual_fields = set(data[0].keys())
-
-    # Allow extra fields, but ensure required fields exist
-    # Note: This is permissive - add stricter validation if needed
+    # Validates that the table has a known schema (raises otherwise).
+    # Field-level checks are intentionally permissive for now: extra and
+    # missing fields are both allowed.
+    get_schema(table_name)
 
     return True

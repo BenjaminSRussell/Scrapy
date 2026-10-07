@@ -30,8 +30,6 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 project_root = Path(__file__).parent.parent.parent / "Scraping_project"
 sys.path.insert(0, str(project_root))
 
-from src.lakehouse.lakehouse_manager import get_delta_manager
-
 
 @dataclass
 class LoadTestResults:
@@ -93,12 +91,28 @@ class TestLoadStress:
 
     @pytest.fixture(autouse=True)
     def setup_teardown(self):
-        """Setup and teardown for each test."""
-        self.delta = get_delta_manager()
+        """Setup and teardown for each test.
+
+        Uses a throwaway temp directory rather than the global
+        get_delta_manager() singleton (which points at the real
+        ./data/delta_lake project path). That was leaking state between
+        tests in this class, and between separate pytest runs, since
+        nothing ever cleaned up the real path - see the identical fix in
+        tests/integration/test_full_pipeline_integration.py.
+        """
+        import shutil
+        import tempfile
+
+        from src.lakehouse.lakehouse_manager import LakehouseManager
+
+        temp_dir = tempfile.mkdtemp(prefix="load_stress_test_")
+        self.delta = LakehouseManager(base_path=temp_dir, start_workers=False)
         self.monitor = PerformanceMonitor()
         yield
+        self.delta.shutdown()
         self.delta = None
         self.monitor = None
+        shutil.rmtree(temp_dir, ignore_errors=True)
 
     def test_01_high_volume_url_seeding(self):
         """Test seeding 10,000 URLs."""
@@ -121,7 +135,7 @@ class TestLoadStress:
             for i in range(0, url_count, batch_size):
                 batch = urls[i:i+batch_size]
                 try:
-                    self.delta.write("seed_urls", batch, mode="append")
+                    self.delta.write("seed_urls", batch, mode="append", async_write=False)
                     self.monitor.measure()
                 except Exception as e:
                     errors.append(f"Batch {i//batch_size}: {str(e)}")
@@ -175,7 +189,7 @@ class TestLoadStress:
 
         def process_batch(batch_id, data_batch):
             try:
-                self.delta.write("stage2_page_analysis", data_batch, mode="append")
+                self.delta.write("stage2_page_analysis", data_batch, mode="append", async_write=False)
                 return batch_id, True, None
             except Exception as e:
                 return batch_id, False, str(e)
@@ -242,7 +256,7 @@ class TestLoadStress:
                     for j in range(i, i + 100)
                 ]
 
-                self.delta.write("stage2_page_analysis", batch, mode="append")
+                self.delta.write("stage2_page_analysis", batch, mode="append", async_write=False)
                 self.monitor.measure()
 
             duration = self.monitor.get_duration()
@@ -274,7 +288,7 @@ class TestLoadStress:
         ]
 
         try:
-            self.delta.write("stage1_discovery", test_data, mode="overwrite")
+            self.delta.write("stage1_discovery", test_data, mode="overwrite", async_write=False)
             print(f"📝 Wrote {record_count} records")
 
             self.monitor.start()
@@ -319,7 +333,7 @@ class TestLoadStress:
                 ]
 
                 try:
-                    self.delta.write("stage1_discovery", batch, mode="append")
+                    self.delta.write("stage1_discovery", batch, mode="append", async_write=False)
                     if i % 100 == 0:
                         self.monitor.measure()
                 except Exception as e:
@@ -425,7 +439,7 @@ class TestLoadStress:
                 ]
 
                 try:
-                    self.delta.write("stage1_discovery", batch, mode="append")
+                    self.delta.write("stage1_discovery", batch, mode="append", async_write=False)
                     total_processed += batch_size
                     self.monitor.measure()
                 except Exception as e:
@@ -466,7 +480,7 @@ class TestLoadStress:
                     "url": f"https://uconn.edu/burst{record_id}",
                     "value": record_id
                 }]
-                self.delta.write("stage1_discovery", data, mode="append")
+                self.delta.write("stage1_discovery", data, mode="append", async_write=False)
                 return record_id, True, None
             except Exception as e:
                 return record_id, False, str(e)

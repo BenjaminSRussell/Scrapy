@@ -1,8 +1,13 @@
 """Parse sitemaps (including nested and gzipped variants) to collect URLs."""
 
+import asyncio
 import gzip
 import logging
+import threading
 import xml.etree.ElementTree as ET
+
+from defusedxml import DefusedXmlException
+from defusedxml.ElementTree import fromstring as safe_fromstring
 from collections.abc import Iterator
 from urllib.parse import urljoin, urlparse
 
@@ -82,7 +87,9 @@ class SitemapParser:
                     return
 
             try:
-                root = ET.fromstring(content)
+                # defusedxml: sitemaps are untrusted remote XML (entity
+                # expansion / XXE). Returns a stdlib Element.
+                root = safe_fromstring(content)
 
                 if self._is_sitemap_index(root):
                     logger.info(f"Found sitemap index: {sitemap_url}")
@@ -96,6 +103,9 @@ class SitemapParser:
                     self.discovered_urls.update(urls)
                     logger.info(f"Extracted {len(urls)} URLs from {sitemap_url}")
 
+            except DefusedXmlException as e:
+                logger.warning(f"Rejected unsafe XML in sitemap {sitemap_url}: {e}")
+                return
             except ET.ParseError as e:
                 content_type = response.headers.get("content-type", "").lower()
                 if "text/plain" in content_type or "text/html" in content_type:
@@ -206,16 +216,32 @@ class SitemapIntegration:
             )
 
 def discover_sitemaps_sync(base_url: str, timeout: int = 30) -> list[str]:
-    import asyncio
-
     parser = SitemapParser(base_url, timeout=timeout)
 
     try:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        urls = loop.run_until_complete(parser.discover_all_urls())
-        loop.close()
-        return urls
-    except Exception as e:
-        logger.error(f"Sitemap discovery failed: {e}")
-        return []
+        asyncio.get_running_loop()
+    except RuntimeError:
+        # No event loop running on this thread - safe to drive one directly.
+        try:
+            return asyncio.run(parser.discover_all_urls())
+        except Exception as e:
+            logger.error(f"Sitemap discovery failed: {e}")
+            return []
+
+    # A loop is already running on this thread (e.g. Scrapy's own Twisted
+    # asyncio reactor calling this during spider construction) - asyncio
+    # forbids nesting event loops, so run the coroutine on a dedicated
+    # thread with its own loop instead.
+    result: list[str] = []
+
+    def _worker():
+        nonlocal result
+        try:
+            result = asyncio.run(parser.discover_all_urls())
+        except Exception as e:
+            logger.error(f"Sitemap discovery failed: {e}")
+
+    thread = threading.Thread(target=_worker)
+    thread.start()
+    thread.join(timeout=timeout + 5)
+    return result

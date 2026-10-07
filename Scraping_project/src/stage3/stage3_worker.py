@@ -4,14 +4,17 @@ import time
 from datetime import datetime
 from typing import Any
 
-from datasketch import MinHash, MinHashLSH  # type: ignore[import-untyped]
+from datasketch import MinHash, MinHashLSH
 
-from src.core.constants import SUMMARY_LIMITS
+from src.core.constants import (
+    LEGACY_TABLE_STAGE3_SUMMARIES,
+    SUMMARY_LIMITS,
+    TABLE_STAGE3_SUMMARIES,
+)
+from src.core.config import stage_worker_settings
 from src.utils.delta import get_delta
-# PostgreSQL support to be implemented in Phase 6
-class PostgresManager:
-    @staticmethod
-    def get_instance(): return None
+from src.utils.postgres import PostgresManager
+from src.otel_tracing import ensure_crawl_job_id, init_tracing, start_span
 
 logger = logging.getLogger(__name__)
 
@@ -25,14 +28,39 @@ class Stage3Worker:
         self.postgres = PostgresManager.get_instance()
         self.SIMILARITY_THRESHOLD = 0.3
 
-    async def run(self):
+    def _processed_hashes(self) -> set:
+        """url_hashes Stage 3 has already summarized (#316/#612).
+
+        Stage 3's output table is TABLE_STAGE3_SUMMARIES. Lakes written before
+        #612 hold Stage 3 rows under LEGACY_TABLE_STAGE3_SUMMARIES, so both are
+        read: dropping the legacy read would re-summarize every old document.
+        Each table is optional; a missing one contributes nothing.
+        """
+        hashes: set = set()
+        for table in (TABLE_STAGE3_SUMMARIES, LEGACY_TABLE_STAGE3_SUMMARIES):
+            try:
+                rows = self.delta.read(table) or []
+            except Exception:
+                continue
+            hashes.update(r["url_hash"] for r in rows if r.get("url_hash"))
+        return hashes
+
+    async def run(self) -> int:
+        """Summarize pending quality docs; returns summaries written this run."""
+        init_tracing(service_name="stage3-worker")
+        crawl_job_id = ensure_crawl_job_id()
+        with start_span("stage3.run", stage="stage3", crawl_job_id=crawl_job_id):
+            return await self._run_traced()
+
+    async def _run_traced(self) -> int:
+        written = 0
         logger.info(f"Stage 3 Worker starting with {self.max_concurrent} concurrent workers")
 
         all_docs = self.delta.read("stage2_page_analysis")
 
         if not all_docs:
             logger.warning("No documents found in stage2_page_analysis")
-            return
+            return written
 
         quality_docs = [
             doc
@@ -47,19 +75,15 @@ class Stage3Worker:
 
         if not quality_docs:
             logger.info("No quality documents to process")
-            return
+            return written
 
-        try:
-            processed = self.delta.read("stage4_summaries")
-            processed_hashes = {r["url_hash"] for r in processed}
-        except Exception:
-            processed_hashes = set()
+        processed_hashes = self._processed_hashes()
 
         pending = [doc for doc in quality_docs if doc.get("url_hash") not in processed_hashes]
 
         if not pending:
             logger.info("All quality documents already processed")
-            return
+            return written
 
         logger.info(f"Processing {len(pending)} pending documents")
 
@@ -80,7 +104,8 @@ class Stage3Worker:
             valid_results = [r for r in results if isinstance(r, dict) and not isinstance(r, Exception)]
 
             if valid_results:
-                self.delta.write("stage4_summaries", valid_results, mode="append", async_write=False)
+                self.delta.write(TABLE_STAGE3_SUMMARIES, valid_results, mode="append", async_write=False)
+                written += len(valid_results)
                 logger.info(f"Saved {len(valid_results)} summaries")
 
                 if self.postgres:
@@ -95,6 +120,7 @@ class Stage3Worker:
                         logger.debug(f"Failed to log performance to PostgreSQL: {e}")
 
         logger.info("Stage 3 Worker completed all batches")
+        return written
 
     async def _deduplicate_documents(self, documents: list[dict[str, Any]]) -> list[dict[str, Any]]:
         logger.info(f"Running similarity detection on {len(documents)} documents")
@@ -200,9 +226,12 @@ class Stage3Worker:
 async def run_stage3_worker():
     logger.info("Stage 3 Worker starting in continuous mode...")
 
+    max_concurrent, batch_size = stage_worker_settings(3, 20, 50)
+    logger.info("Stage 3 Worker concurrency=%d batch_size=%d", max_concurrent, batch_size)
+
     while True:
         try:
-            worker = Stage3Worker(max_concurrent=20, batch_size=50)
+            worker = Stage3Worker(max_concurrent=max_concurrent, batch_size=batch_size)
             await worker.run()
             logger.info("Waiting 30 seconds before next check...")
             await asyncio.sleep(30)

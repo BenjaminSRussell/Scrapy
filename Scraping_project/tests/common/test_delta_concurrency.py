@@ -3,7 +3,7 @@ from typing import Literal
 
 import pandas as pd
 
-from src.common.delta_lake import DeltaLakeManager
+from src.lakehouse.lakehouse_manager import DeltaLakeManager
 
 def write_records(
     manager: DeltaLakeManager,

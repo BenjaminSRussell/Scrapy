@@ -1,7 +1,7 @@
 import logging
 from datetime import datetime
 
-from src.common.delta_lake import get_delta_manager
+from src.utils.delta import get_delta
 from src.stage4.entity_summarization import Stage4EntityWorker
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
@@ -24,7 +24,7 @@ class EntityWorkerRunner:
         self.input_table = input_table
         self.batch_size = batch_size
 
-        self.delta = get_delta_manager()
+        self.delta = get_delta()
 
         self.worker = Stage4EntityWorker(
             embedding_model="sentence-transformers/all-MiniLM-L6-v2",

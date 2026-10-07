@@ -8,8 +8,6 @@ import requests
 import requests_mock
 import yaml
 
-from monitoring.metrics_exporter import test_alert_interval_path_resolution_success
-
 def parse_duration_to_seconds(duration_str):
     if not isinstance(duration_str, str):
         return duration_str
@@ -72,7 +70,6 @@ class TestAlertIntervals(unittest.TestCase):
     def get_min_scrape_interval():
         base_dir = os.path.dirname(__file__)
         config_path = os.path.abspath(os.path.join(base_dir, "../..", "monitoring", "prometheus.yml"))
-        test_alert_interval_path_resolution_success.inc()
 
         with open(config_path) as f:
             config = yaml.safe_load(f)

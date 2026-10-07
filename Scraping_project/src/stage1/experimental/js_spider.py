@@ -12,12 +12,13 @@ from scrapy.http import Response
 
 from src.core.config import get_config
 from src.stage1.processors.js_priority_queue import JSPriorityQueue
+from src.stage1.processors.url_processor import URLProcessor
 from src.stage1.middlewares.spider_config import get_spider_settings
 from src.utils.delta import get_delta
 from src.lakehouse import SeedManager
-from src.stage1.base_spider import BaseSpider
 
 logger = logging.getLogger(__name__)
+
 
 class JavaScriptSpider(scrapy.Spider):
 
@@ -49,14 +50,14 @@ class JavaScriptSpider(scrapy.Spider):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        self.config = ConfigManager.get_instance()
+        self.config = get_config()
         self.delta = get_delta()
 
         self.seed_manager = SeedManager(self.delta)
 
         from src.utils.redis import get_redis
 
-        redis_client = get_redis()
+        redis_client = get_redis().client
 
         self.priority_queue = JSPriorityQueue(redis_client, queue_key="js_spider:priority_queue")
 
@@ -263,7 +264,20 @@ class JavaScriptSpider(scrapy.Spider):
             if absolute_url.startswith("http"):
                 urls.append(absolute_url)
 
-        return [BaseSpider.normalize_url(url) for url in urls]
+        # Was `BaseSpider.normalize_url(url)`: an unbound method call on a
+        # class this spider does not inherit from (TypeError: missing `url`).
+        return [self._normalize_url(url) for url in urls]
+
+    def _normalize_url(self, url: str) -> str:
+        processor = getattr(self, "_url_processor", None)
+        if processor is None:
+            processor = URLProcessor(
+                base_url="",
+                allowed_domains=list(getattr(self, "allowed_domains", None) or []),
+                use_historical_data=False,
+            )
+            self._url_processor = processor
+        return processor.normalize_url(url) or url
 
     def _hash_url(self, url: str) -> str:
         return hashlib.sha256(url.encode("utf-8")).hexdigest()

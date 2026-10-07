@@ -8,7 +8,7 @@ import json
 import logging
 import traceback
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -55,7 +55,7 @@ class DeadLetterQueue:
             Entry ID for tracking
         """
         # Build error information
-        error_info = {
+        error_info: Dict[str, Any] = {
             "type": type(error).__name__,
             "message": str(error),
             "traceback": traceback.format_exc()
@@ -126,7 +126,7 @@ class DeadLetterQueue:
             for file_path in self.base_path.glob("*.json"):
                 try:
                     with open(file_path) as f:
-                        entry = json.load(f)
+                        entry: Dict[str, Any] = json.load(f)
 
                     # Filter by stage if specified
                     if stage is None or entry.get("stage") == stage:
@@ -176,7 +176,7 @@ class DeadLetterQueue:
                 entry = json.load(f)
 
             # Get original item and increment retry count
-            item = entry["item"].copy()
+            item: Dict[str, Any] = entry["item"].copy()
             item["_retry_count"] = entry.get("retry_count", 0) + 1
             item["_dlq_entry_id"] = entry_id
             item["_replayed_at"] = datetime.now().isoformat()
@@ -240,10 +240,12 @@ class DeadLetterQueue:
         try:
             all_items = self.list_failed()
 
-            stats = {
+            by_stage: Dict[str, int] = {}
+            by_error_type: Dict[str, int] = {}
+            stats: Dict[str, Any] = {
                 "total_failed": len(all_items),
-                "by_stage": {},
-                "by_error_type": {},
+                "by_stage": by_stage,
+                "by_error_type": by_error_type,
                 "oldest_failure": None,
                 "newest_failure": None,
             }
@@ -252,11 +254,11 @@ class DeadLetterQueue:
                 # Group by stage
                 for item in all_items:
                     stage = item.get("stage", "unknown")
-                    stats["by_stage"][stage] = stats["by_stage"].get(stage, 0) + 1
+                    by_stage[stage] = by_stage.get(stage, 0) + 1
 
                     # Group by error type
                     error_type = item.get("error", {}).get("type", "unknown")
-                    stats["by_error_type"][error_type] = stats["by_error_type"].get(error_type, 0) + 1
+                    by_error_type[error_type] = by_error_type.get(error_type, 0) + 1
 
                 # Get oldest and newest
                 stats["oldest_failure"] = all_items[-1].get("timestamp")

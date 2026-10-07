@@ -10,7 +10,6 @@ from scrapy.http import Response
 
 from src.stage1.middlewares.spider_config import get_spider_settings
 from src.utils.delta import get_delta
-# get_postgres removed - implement in Phase 6
 from src.stage1.processors.url_extractor import URLExtractor
 from src.stage1.processors.url_processor import should_follow_url
 from src.lakehouse import SeedManager
@@ -20,11 +19,7 @@ from src.stage1.sitemap_parser import discover_sitemaps_sync
 def get_delta_manager(*args, **kwargs):
     return get_delta()
 
-def get_postgres_manager(*args, **kwargs):
-    return get_postgres()
-
 _core_get_delta_manager = get_delta_manager
-_core_get_postgres_manager = get_postgres_manager
 
 logger = logging.getLogger(__name__)
 
@@ -78,7 +73,7 @@ class ScoutSpider(BaseSpider):
 
         url_hash = self._hash_url(response.url)
         depth = response.meta.get("depth", 0)
-        self._record_successful_page(
+        self._record_discovery(
             response=response,
             url_hash=url_hash,
             depth=depth,

@@ -3,8 +3,11 @@
 import logging
 import re
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any, Optional
 from urllib.parse import urlparse
+
+if TYPE_CHECKING:
+    from src.common.crawl_data_manager import CrawlDataManager
 
 logger = logging.getLogger(__name__)
 
@@ -79,7 +82,7 @@ class URLValueAssessor:
         r"/admin/",
         r"/editor/",
         r"/viewer/",
-        r"/
+        r"/#/",
         r"/spa/",
     ]
 
@@ -106,7 +109,11 @@ class URLValueAssessor:
         ".xlsx": 25,
     }
 
-    def __init__(self, crawl_data_manager=None, use_historical_data: bool = True):
+    def __init__(
+        self,
+        crawl_data_manager: Optional["CrawlDataManager"] = None,
+        use_historical_data: bool = True,
+    ):
         self.high_value_regex = re.compile("|".join(self.HIGH_VALUE_PATTERNS), re.IGNORECASE)
         self.low_value_regex = re.compile("|".join(self.LOW_VALUE_PATTERNS), re.IGNORECASE)
         self.js_regex = re.compile("|".join(self.JS_PATTERNS), re.IGNORECASE)
@@ -252,7 +259,7 @@ class URLValueAssessor:
         if self.js_regex.search(url.lower()):
             return 15
 
-        if "/
+        if "/#/" in url or "/app/" in url.lower():
             return 25
 
         return 0
@@ -422,7 +429,7 @@ def example_usage():
     test_urls = [
         "https://www.uconn.edu/research/faculty/",
         "https://www.uconn.edu/login",
-        "https://portal.uconn.edu/app/dashboard/
+        "https://portal.uconn.edu/app/dashboard/#/home",
         "https://www.uconn.edu/documents/report.pdf",
         "https://www.uconn.edu/static/assets/logo.png",
         "https://www.uconn.edu/news/article/2024/breakthrough",
