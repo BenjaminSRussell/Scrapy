@@ -555,6 +555,15 @@
         .data-fallback-table th, .data-fallback-table td { border: 1px solid #334155; padding: 0.25rem 0.5rem; text-align: left; }
         .legend-toggles { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.5rem; }
         .legend-toggles button { font-size: 0.8rem; }
+        
+        .topbar-title { min-width: 0; flex-shrink: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .title-short { display: none; }
+        @media (max-width: 640px) {
+            .title-full { display: none; }
+            .title-short { display: inline; }
+        }
+        .overview-spark { height: 28px; width: 100%; margin-top: 0.35rem; }
+        .overview-spark-dir { font-size: 0.75rem; color: #94a3b8; }
         </style>
 </head>
 <body>
@@ -570,9 +579,13 @@
 
     <div class="topbar">
         <div class="topbar-content">
-            <div class="topbar-title">
-                <h1>🎛️ Pipeline Control Center</h1>
-                <p>UConn Web Scraping Pipeline - Real-time Operations Dashboard</p>
+            <div class="topbar-title" title="Pipeline Control Center">
+                <h1>
+                    <span class="title-full">🕷️ Pipeline Control Center</span>
+                    <span class="title-short">Control Center</span>
+                </h1>
+                <p class="title-full">UConn Web Scraping Pipeline - Real-time Operations Dashboard</p>
+                <p class="title-short visually-hidden">Pipeline Control Center</p>
             </div>
             <div class="topbar-stats">
                 <div class="topbar-stat">
@@ -613,6 +626,10 @@
                             <span class="metric-label">URLs Found</span>
                             <span class="metric-value" id="overview-s1-discovered">0</span>
                         </div>
+                        <div class="overview-spark-wrap">
+                            <svg class="overview-spark" id="spark-overview-s1-discovered" role="img" aria-label="Stage 1 discovery trend" viewBox="0 0 100 28" preserveAspectRatio="none"></svg>
+                            <div class="overview-spark-dir" id="spark-dir-overview-s1-discovered" aria-live="polite">Trend: waiting for samples</div>
+                        </div>
                         <div class="metric-row">
                             <span class="metric-label">Queued</span>
                             <span class="metric-value" id="overview-s1-queued">0</span>
@@ -627,6 +644,10 @@
                         <div class="metric-row">
                             <span class="metric-label">Pages Analyzed</span>
                             <span class="metric-value" id="overview-s2-analyzed">0</span>
+                        </div>
+                        <div class="overview-spark-wrap">
+                            <svg class="overview-spark" id="spark-overview-s2-analyzed" role="img" aria-label="Stage 2 analyze trend" viewBox="0 0 100 28" preserveAspectRatio="none"></svg>
+                            <div class="overview-spark-dir" id="spark-dir-overview-s2-analyzed" aria-live="polite">Trend: waiting for samples</div>
                         </div>
                         <div class="metric-row">
                             <span class="metric-label">Quality Docs</span>
@@ -643,6 +664,10 @@
                             <span class="metric-label">Summaries</span>
                             <span class="metric-value success" id="overview-s3-summaries">0</span>
                         </div>
+                        <div class="overview-spark-wrap">
+                            <svg class="overview-spark" id="spark-overview-s3-summaries" role="img" aria-label="Stage 3 summaries trend" viewBox="0 0 100 28" preserveAspectRatio="none"></svg>
+                            <div class="overview-spark-dir" id="spark-dir-overview-s3-summaries" aria-live="polite">Trend: waiting for samples</div>
+                        </div>
                         <div class="metric-row">
                             <span class="metric-label">Deduplicated</span>
                             <span class="metric-value" id="overview-s3-dedup">0</span>
@@ -657,6 +682,10 @@
                         <div class="metric-row">
                             <span class="metric-label">Processed</span>
                             <span class="metric-value" id="overview-s4-summaries">0</span>
+                        </div>
+                        <div class="overview-spark-wrap">
+                            <svg class="overview-spark" id="spark-overview-s4-summaries" role="img" aria-label="Stage 4 large-doc trend" viewBox="0 0 100 28" preserveAspectRatio="none"></svg>
+                            <div class="overview-spark-dir" id="spark-dir-overview-s4-summaries" aria-live="polite">Trend: waiting for samples</div>
                         </div>
                         <div class="metric-row">
                             <span class="metric-label" title="Stage 4 compression = compressed output size ÷ input size; values under 1.0x mean more compact storage">Compression (out÷in)</span>
@@ -829,6 +858,11 @@
 
             <!-- Performance Tab -->
             <div class="tab-content" id="tab-performance">
+                <div class="card" style="margin-bottom:1rem;padding:0.75rem 1rem;display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap">
+                    <span>Performance chart history</span>
+                    <button type="button" id="reset-chart-history" class="btn" aria-label="Reset chart history buffers">Reset chart history</button>
+                </div>
+
                 <div class="grid grid-2">
                     <div class="card">
                         <div class="card-header">
