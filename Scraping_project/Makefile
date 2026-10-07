@@ -207,7 +207,7 @@ dev: install-dev docker-up ## Setup complete development environment
 serve: docker-up ## Start all services
 	@echo "$(GREEN)Services are running$(NC)"
 	@echo "Grafana: http://localhost:3000"
-	@echo "Prometheus: http://localhost:9091"
+	@echo "Prometheus: http://localhost:9090"
 
 stop: docker-down ## Stop all services
 
@@ -243,7 +243,7 @@ metrics: ## Open Grafana dashboard
 
 prometheus: ## Open Prometheus UI
 	@echo "$(BLUE)Opening Prometheus...$(NC)"
-	$(OPEN) http://localhost:9091
+	$(OPEN) http://localhost:9090
 
 ##@ Documentation
 

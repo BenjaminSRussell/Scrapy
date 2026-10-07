@@ -104,9 +104,9 @@ Open **http://localhost:3000** (login: `admin` / `admin`)
 | Service | URL | Purpose |
 |---------|-----|---------|
 | 📊 **Grafana** | `localhost:3000` | Visual dashboards |
-| 🔥 **Prometheus** | `localhost:9091` | Metrics database |
-| 🕷️ **Spider Metrics** | `localhost:9410` | Spider stats |
-| 📮 **Redis Metrics** | `localhost:9090` | Queue depth |
+| 🔥 **Prometheus** | `localhost:9090` | Metrics database (published by `docker-compose.yml`) |
+| 🕷️ **Spider Metrics** | `scrapy-app:9410` | Spider stats (scraped by Prometheus inside the compose network) |
+| 📮 **Queue / exporter metrics** | `metrics-exporter:9090` | Queue depth (scrape target in `monitoring/prometheus.yml`; not published to the host) |
 
 </div>
 
