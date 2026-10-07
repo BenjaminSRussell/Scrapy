@@ -71,3 +71,4 @@ Twisted>=24.7.0
 
 # Retries (Stage 4 large doc processor)
 tenacity>=8.0.0
+defusedxml>=0.7.1  # safe parsing of untrusted sitemap XML

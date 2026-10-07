@@ -9,11 +9,14 @@ This module merges functionality from:
 Phase 6 Enhancement: Added type-safe operations with Pydantic validation
 """
 
-from typing import List, Dict, Optional, TypeVar, Type
+from typing import TYPE_CHECKING, List, Dict, Optional, TypeVar, Type, Union
 from pathlib import Path
 import logging
 import os
 from pydantic import BaseModel, ValidationError
+
+if TYPE_CHECKING:
+    from src.lakehouse.lakehouse_manager import LakehouseManager, WriteMode
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +26,7 @@ T = TypeVar('T', bound=BaseModel)
 class DeltaHelper:
     """Centralized Delta Lake operations."""
 
-    def __init__(self, base_path: Optional[Path] = None):
+    def __init__(self, base_path: Optional[Union[str, Path]] = None):
         """
         Initialize Delta helper.
 
@@ -36,23 +39,29 @@ class DeltaHelper:
 
         self.base_path = Path(base_path)
         self.base_path.mkdir(parents=True, exist_ok=True)
-        self._manager = None
+        self._manager: Optional["LakehouseManager"] = None
 
     @property
-    def manager(self):
+    def manager(self) -> "LakehouseManager":
         """Lazy load lakehouse manager."""
         if self._manager is None:
             from src.lakehouse.lakehouse_manager import LakehouseManager
-            self._manager = LakehouseManager(self.base_path)
+            self._manager = LakehouseManager(str(self.base_path))
         return self._manager
 
-    def read(self, table_name: str, filters: Optional[List] = None) -> List[Dict]:
+    def read(
+        self,
+        table_name: str,
+        filters: Optional[List] = None,
+        columns: Optional[List[str]] = None,
+    ) -> List[Dict]:
         """
         Read from Delta table.
 
         Args:
             table_name: Name of the table to read
             filters: Optional filters to apply
+            columns: Optional subset of columns to read
 
         Returns:
             List of dictionaries representing rows
@@ -62,7 +71,7 @@ class DeltaHelper:
             seed_urls = delta.read("seed_urls")
         """
         try:
-            return self.manager.read(table_name)
+            return self.manager.read(table_name, filters=filters, columns=columns)
         except Exception as e:
             logger.error(f"Failed to read from {table_name}: {e}")
             return []
@@ -88,7 +97,7 @@ class DeltaHelper:
         self,
         table_name: str,
         data: List[Dict],
-        mode: str = "append",
+        mode: "WriteMode" = "append",
         async_write: bool = True,
     ) -> bool:
         """
@@ -139,11 +148,14 @@ class DeltaHelper:
             Number of rows, or 0 if error
         """
         try:
-            data = self.read(table_name)
-            return len(data)
+            return self.manager.count(table_name)
         except Exception as e:
             logger.error(f"Failed to get row count for {table_name}: {e}")
             return 0
+
+    def count(self, table_name: str) -> int:
+        """Alias of get_row_count (LakehouseManager-compatible name)."""
+        return self.get_row_count(table_name)
 
     def clear_table(self, table_name: str) -> bool:
         """
@@ -224,7 +236,7 @@ class DeltaHelper:
         self,
         table_name: str,
         data: List[T],
-        mode: str = "append"
+        mode: "WriteMode" = "append"
     ) -> bool:
         """
         Write validated Pydantic models to Delta table.

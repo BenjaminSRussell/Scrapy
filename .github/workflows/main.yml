@@ -79,7 +79,9 @@ jobs:
       working-directory: Scraping_project
       run: |
         # Blocking at medium+ (-ll). Low-severity findings are reported but do not fail.
-        bandit -r src/ -ll -f github
+        # bandit has no built-in "github" formatter (exit 2: invalid choice);
+        # emit GitHub annotations through the custom template instead.
+        bandit -r src/ -ll -f custom --msg-template '::error file=Scraping_project/{relpath},line={line}::{test_id} [{severity}] {msg}'
 
     - name: Run default test suite
       working-directory: Scraping_project

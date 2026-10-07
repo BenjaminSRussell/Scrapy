@@ -878,7 +878,7 @@ class MetadataExtractionPipeline:
         self.extractor_type = extractor_type
         self.batch_size = batch_size
         self.max_keywords = max_keywords
-        self.batch = []
+        self.batch: list[dict[str, Any]] = []
         self.items_processed = 0
 
         self.extractor = self._init_extractor(extractor_type)
@@ -965,7 +965,7 @@ class MetadataExtractionPipeline:
         return item
 
     def _extract_metadata(self, text: str, adapter: ItemAdapter) -> dict[str, Any]:
-        metadata = {"keywords": [], "entities": {}}
+        metadata: dict[str, Any] = {"keywords": [], "entities": {}}
 
         if self.extractor:
             if self.extractor_type == "yake":
@@ -994,7 +994,7 @@ class MetadataExtractionPipeline:
         try:
             doc = self.extractor(text[:1000000])
 
-            keywords = []
+            keywords: list[str] = []
             for chunk in doc.noun_chunks:
                 if len(keywords) < self.max_keywords:
                     keywords.append(chunk.text.lower())

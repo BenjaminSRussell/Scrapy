@@ -97,8 +97,8 @@ class CrawlDataManager:
                         path_pattern = "/" + "/".join(path_parts)
                         path_counts[path_pattern] += 1
 
-            most_valuable_paths = sorted(path_counts.items(), key=lambda x: x[1], reverse=True)[:10]
-            most_valuable_paths = [path for path, _ in most_valuable_paths]
+            top_paths = sorted(path_counts.items(), key=lambda x: x[1], reverse=True)[:10]
+            most_valuable_paths = [path for path, _ in top_paths]
 
             error_data = self._read_table_safe("stage1_errors", columns=["url", "domain", "error_type"])
             domain_errors = [row for row in error_data if row.get("domain") == domain]

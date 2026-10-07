@@ -7,9 +7,9 @@ try:
 
     PROMETHEUS_AVAILABLE = True
 except ImportError:
+    # Metric names are only defined (and only referenced) when
+    # PROMETHEUS_AVAILABLE is True; every use below is guarded by it.
     PROMETHEUS_AVAILABLE = False
-    Counter = Gauge = Histogram = None
-    start_http_server = None
 
 from scrapy import Spider, signals
 from scrapy.crawler import Crawler
@@ -162,7 +162,9 @@ class PrometheusExtension:
             raise NotConfigured("Prometheus extension is disabled")
 
         port = crawler.settings.getint("PROMETHEUS_PORT", 9410)
-        host = crawler.settings.get("PROMETHEUS_HOST", "0.0.0.0")
+        # All interfaces by design: Prometheus scrapes scrapy-app:9410 across the
+        # compose/k8s network. Override with PROMETHEUS_HOST=127.0.0.1 locally.
+        host = crawler.settings.get("PROMETHEUS_HOST", "0.0.0.0")  # nosec B104
 
         ext = cls(port=port, host=host)
 

@@ -40,7 +40,7 @@ class IntelligentRetryMiddleware(RetryMiddleware):
         if jitter:
             j = (self._rng.random() * 2 - 1.0) * jitter
         delay = min(max(delay + j, 0.0), max_backoff)
-        return delay
+        return float(delay)
 
     def _classify_status(self, status: int) -> str:
         if status in self.TRANSIENT_STATUS_CODES:
@@ -62,7 +62,9 @@ class IntelligentRetryMiddleware(RetryMiddleware):
         return response
 
     def process_exception(self, request: Request, exception: Exception, spider: Spider):
-        if isinstance(exception, self.EXCEPTIONS_TO_RETRY):
+        # Scrapy >= 2.10 exposes the RETRY_EXCEPTIONS tuple as an instance
+        # attribute; the old class constant no longer exists.
+        if isinstance(exception, self.exceptions_to_retry):
             logger.debug(f"Retryable exception for {request.url[:80]}: {exception}")
             return self._retry_with_backoff(
                 request,
@@ -138,7 +140,7 @@ class IntelligentRetryMiddleware(RetryMiddleware):
 
         delay = min(delay, self.backoff_max)
 
-        return delay
+        return float(delay)
 
 class RateLimitMiddleware:
 

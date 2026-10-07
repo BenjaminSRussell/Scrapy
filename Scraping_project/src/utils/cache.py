@@ -6,14 +6,16 @@ Phase 8: Performance optimization through multi-level caching.
 
 import hashlib
 import logging
-import pickle
+import json
 from enum import Enum
-from typing import Optional, TypeVar, Callable, Any, Dict
+from typing import Optional, TypeVar, Callable, Any, Dict, cast
 from functools import wraps
 
 logger = logging.getLogger(__name__)
 
 T = TypeVar('T')
+# Signature-preserving decorator type (works for sync and async callables).
+F = TypeVar('F', bound=Callable[..., Any])
 
 
 class CacheStrategy(Enum):
@@ -59,7 +61,10 @@ class SmartCache:
             if value:
                 self.cache_stats["hits"] += 1
                 # Deserialize
-                result = pickle.loads(value) if deserializer is None else deserializer(value)
+                # JSON, not pickle: unpickling Redis data is code execution for
+                # anyone who can write to Redis, and the client uses
+                # decode_responses=True, so pickle bytes never round-tripped.
+                result = json.loads(value) if deserializer is None else deserializer(value)
                 # Populate L1 cache
                 self.local_cache[key] = result
                 return result
@@ -93,7 +98,7 @@ class SmartCache:
 
         # Store in L2 (Redis)
         try:
-            serialized = pickle.dumps(value) if serializer is None else serializer(value)
+            serialized = json.dumps(value) if serializer is None else serializer(value)
             if ttl:
                 self.redis.client.setex(f"cache:{key}", ttl, serialized)
             else:
@@ -159,16 +164,17 @@ def cached(
         async def analyze_url(url: str) -> dict:
             return await expensive_analysis(url)
     """
-    def decorator(func: Callable[..., T]) -> Callable[..., T]:
+    def decorator(func: F) -> F:
         @wraps(func)
-        async def async_wrapper(*args, **kwargs) -> T:
+        async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
             # Generate cache key from function name and arguments
             key_parts = [key_prefix or func.__name__]
             key_parts.extend(str(arg) for arg in args)
             key_parts.extend(f"{k}={v}" for k, v in sorted(kwargs.items()))
-            cache_key = hashlib.md5(":".join(key_parts).encode()).hexdigest()
+            cache_key = hashlib.md5(":".join(key_parts).encode(), usedforsecurity=False).hexdigest()
 
             # Try to get cache instance (assumes global get_cache() exists)
+            cache = None
             try:
                 from src.utils.cache import get_cache
                 cache = get_cache()
@@ -184,7 +190,7 @@ def cached(
             result = await func(*args, **kwargs)
 
             # Cache result (unless null and cache_null=False)
-            if result is not None or cache_null:
+            if cache is not None and (result is not None or cache_null):
                 try:
                     cache.set(cache_key, result, ttl=ttl)
                 except Exception as e:
@@ -193,15 +199,15 @@ def cached(
             return result
 
         @wraps(func)
-        def sync_wrapper(*args, **kwargs) -> T:
+        def sync_wrapper(*args: Any, **kwargs: Any) -> Any:
             # Similar logic for sync functions
             return func(*args, **kwargs)
 
         # Return async wrapper if function is async
         import asyncio
         if asyncio.iscoroutinefunction(func):
-            return async_wrapper
-        return sync_wrapper
+            return cast(F, async_wrapper)
+        return cast(F, sync_wrapper)
 
     return decorator
 

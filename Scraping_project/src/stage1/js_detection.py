@@ -263,7 +263,7 @@ class JSDetector:
 def detect_js_requirement(response: Response) -> bool:
     detector = JSDetector(response)
     result = detector.requires_js_rendering()
-    return result["requires_js"]
+    return bool(result["requires_js"])
 
 def detect_js_with_details(response: Response) -> dict[str, Any]:
     detector = JSDetector(response)

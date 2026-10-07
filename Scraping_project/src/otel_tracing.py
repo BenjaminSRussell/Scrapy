@@ -43,10 +43,10 @@ try:
 
     _OTEL_SDK_AVAILABLE = True
 except ImportError:  # pragma: no cover - lean installs without [otel]
-    _otel_trace = None  # type: ignore[assignment]
-    _OtelResource = None  # type: ignore[assignment]
-    _OtelTracerProvider = None  # type: ignore[assignment]
-    _OtelBatchSpanProcessor = None  # type: ignore[assignment]
+    _otel_trace = None
+    _OtelResource = None
+    _OtelTracerProvider = None
+    _OtelBatchSpanProcessor = None
     _OTEL_SDK_AVAILABLE = False
 
 

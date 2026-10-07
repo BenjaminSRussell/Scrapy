@@ -5,7 +5,7 @@ Centralizes all Redis operations to eliminate duplicate code across the pipeline
 Replaces src/common/redis_manager.py with a simpler, more consistent API.
 """
 
-from typing import Optional, Set, List
+from typing import Any, Optional, Set, List, cast
 import json
 import os
 import redis
@@ -80,7 +80,7 @@ class RedisHelper:
         """
         try:
             key = f"{key_prefix}:urls"
-            return self.client.sismember(key, url)
+            return bool(self.client.sismember(key, url))
         except Exception as e:
             logger.error(f"Failed to check URL in Redis: {e}")
             return False
@@ -120,7 +120,7 @@ class RedisHelper:
             Number of values added
         """
         try:
-            return self.client.sadd(key, *values)
+            return cast(int, self.client.sadd(key, *values))
         except Exception as e:
             logger.error(f"Failed to add to set {key}: {e}")
             return 0
@@ -136,7 +136,7 @@ class RedisHelper:
             Set of members
         """
         try:
-            return self.client.smembers(key)
+            return cast(Set[str], self.client.smembers(key))
         except Exception as e:
             logger.error(f"Failed to get set members from {key}: {e}")
             return set()
@@ -152,7 +152,7 @@ class RedisHelper:
             Number of members in set
         """
         try:
-            return self.client.scard(key)
+            return cast(int, self.client.scard(key))
         except Exception as e:
             logger.error(f"Failed to get set size for {key}: {e}")
             return 0
@@ -169,7 +169,7 @@ class RedisHelper:
             New counter value
         """
         try:
-            return self.client.incrby(key, amount)
+            return cast(int, self.client.incrby(key, amount))
         except Exception as e:
             logger.error(f"Failed to increment counter {key}: {e}")
             return 0
@@ -185,7 +185,7 @@ class RedisHelper:
             Counter value, or 0 if not set
         """
         try:
-            value = self.client.get(key)
+            value = cast(Optional[str], self.client.get(key))
             return int(value) if value else 0
         except Exception as e:
             logger.error(f"Failed to get counter {key}: {e}")
@@ -199,8 +199,8 @@ class RedisHelper:
             Memory usage in bytes
         """
         try:
-            info = self.client.info("memory")
-            return info.get("used_memory", 0)
+            info = cast(dict[str, Any], self.client.info("memory"))
+            return int(info.get("used_memory", 0))
         except Exception as e:
             logger.error(f"Failed to get memory usage: {e}")
             return 0
@@ -213,7 +213,7 @@ class RedisHelper:
             Number of keys
         """
         try:
-            return self.client.dbsize()
+            return cast(int, self.client.dbsize())
         except Exception as e:
             logger.error(f"Failed to get key count: {e}")
             return 0
@@ -260,7 +260,7 @@ class RedisHelper:
             True if Redis responds, False otherwise
         """
         try:
-            return self.client.ping()
+            return bool(self.client.ping())
         except Exception as e:
             logger.error(f"Redis ping failed: {e}")
             return False
@@ -298,7 +298,7 @@ class RedisHelper:
             True if the circuit is open (requests should be skipped)
         """
         try:
-            return self.client.exists(f"circuit:{domain}") > 0
+            return cast(int, self.client.exists(f"circuit:{domain}")) > 0
         except Exception as e:
             logger.error(f"Failed to check circuit for {domain}: {e}")
             return False
@@ -311,7 +311,7 @@ class RedisHelper:
             List of domain names with an open circuit
         """
         try:
-            keys = self.client.keys("circuit:*")
+            keys = cast(List[str], self.client.keys("circuit:*"))
             return [key.split("circuit:", 1)[1] for key in keys]
         except Exception as e:
             logger.error(f"Failed to list open circuits: {e}")

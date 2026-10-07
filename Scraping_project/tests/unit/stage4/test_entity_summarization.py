@@ -365,6 +365,7 @@ class TestStage4EntityWorker:
 @pytest.mark.integration
 class TestIntegration:
 
+    @pytest.mark.slow  # downloads MiniLM + bart-large-cnn (~2 GB)
     def test_real_models_with_sample_data(self):
         pytest.importorskip("sentence_transformers")
         pytest.importorskip("transformers")
@@ -378,26 +379,25 @@ class TestIntegration:
             device=-1,
         )
 
-        with mock.patch("src.stage4.entity_summarization.get_delta_manager") as mock_get_delta:
-            mock_delta = mock.MagicMock()
-            mock_get_delta.return_value = mock_delta
+        # Storage writes go through worker.storage.delta; inject a mock there
+        # (the module has no get_delta_manager attribute to patch).
+        mock_delta = mock.MagicMock()
+        worker.storage.delta = mock_delta
 
-            worker.storage.delta = mock_delta
+        documents = [
+            {
+                "entity_name": "Test Entity",
+                "entity_type": "organization",
+                "content": (
+                    "Test Entity was founded in 2020. "
+                    "It is a research organization. "
+                    "Test Entity has published many papers."
+                ),
+                "source_url": "https://example.com/test",
+                "publication_date": datetime(2020, 1, 1),
+            },
+        ]
 
-            documents = [
-                {
-                    "entity_name": "Test Entity",
-                    "entity_type": "organization",
-                    "content": (
-                        "Test Entity was founded in 2020. "
-                        "It is a research organization. "
-                        "Test Entity has published many papers."
-                    ),
-                    "source_url": "https://example.com/test",
-                    "publication_date": datetime(2020, 1, 1),
-                },
-            ]
+        worker.process_documents(documents)
 
-            worker.process_documents(documents)
-
-            mock_delta.write.assert_called()
+        mock_delta.write.assert_called()

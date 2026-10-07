@@ -6,9 +6,10 @@ import time
 from collections import deque
 from collections.abc import Callable, Iterator
 from datetime import datetime
-from typing import Any
+from typing import Any, cast
 from urllib.parse import urlparse
 
+import redis
 import scrapy
 from scrapy.http import Request, Response
 from scrapy.spidermiddlewares.httperror import HttpError
@@ -65,7 +66,8 @@ class BaseSpider(scrapy.Spider):
         self.delta = get_delta()
         redis_helper = get_redis()
         # Prefer RedisHelper.client (raw redis) for pipeline/scard usage
-        self.redis_client = redis_helper.client if hasattr(redis_helper, "client") else redis_helper
+        # Tests may inject a raw redis/fakeredis client via get_redis().
+        self.redis_client: redis.Redis = cast(redis.Redis, getattr(redis_helper, "client", redis_helper))
 
         self.url_hashes_key = f"{self.name}:url_hashes"
 
@@ -97,8 +99,8 @@ class BaseSpider(scrapy.Spider):
         self.total_urls_discovered = 0
         self.total_file_size = 0
 
-        self.url_discovery_window = deque(maxlen=60)
-        self.file_size_window = deque(maxlen=100)
+        self.url_discovery_window: deque[tuple[float, int]] = deque(maxlen=60)
+        self.file_size_window: deque[int] = deque(maxlen=100)
         self.last_metric_update = time.time()
 
         self.js_confidence_threshold = self.config.get("stage1.js_confidence_threshold", 0.5)
@@ -132,13 +134,18 @@ class BaseSpider(scrapy.Spider):
             urls = [record["url"] for record in seed_records]
             logger.info(f"Loaded {len(urls)} seed URLs from Delta Lake (will attempt all)")
 
-            url_count_in_redis = self.redis_client.scard(self.url_hashes_key) if hasattr(self, "url_hashes_key") else 0
-            logger.info(f"Redis currently tracking {url_count_in_redis} URLs (dupefilter will handle during crawl)")
-
-            return urls
         except Exception as e:
             logger.error(f"Could not load seed URLs from Delta Lake: {e}")
             return []
+
+        # Informational only: a Redis outage must not discard the seeds above.
+        try:
+            url_count_in_redis = self.redis_client.scard(self.url_hashes_key) if hasattr(self, "url_hashes_key") else 0
+            logger.info(f"Redis currently tracking {url_count_in_redis} URLs (dupefilter will handle during crawl)")
+        except Exception as e:
+            logger.warning(f"Could not read Redis URL count: {e}")
+
+        return urls
 
     def _load_existing_urls(self):
         pass
@@ -175,8 +182,8 @@ class BaseSpider(scrapy.Spider):
         if max_depth is None:
             return True
 
-        current_depth = request.meta.get("depth", 0)
-        return current_depth < max_depth
+        current_depth = int(request.meta.get("depth", 0))
+        return current_depth < int(max_depth)
 
     def create_request(
         self,

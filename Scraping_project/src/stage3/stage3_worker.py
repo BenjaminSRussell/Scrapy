@@ -4,7 +4,7 @@ import time
 from datetime import datetime
 from typing import Any
 
-from datasketch import MinHash, MinHashLSH  # type: ignore[import-untyped]
+from datasketch import MinHash, MinHashLSH
 
 from src.core.constants import SUMMARY_LIMITS
 from src.utils.delta import get_delta

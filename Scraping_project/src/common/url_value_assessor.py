@@ -3,8 +3,11 @@
 import logging
 import re
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any, Optional
 from urllib.parse import urlparse
+
+if TYPE_CHECKING:
+    from src.common.crawl_data_manager import CrawlDataManager
 
 logger = logging.getLogger(__name__)
 
@@ -106,7 +109,11 @@ class URLValueAssessor:
         ".xlsx": 25,
     }
 
-    def __init__(self, crawl_data_manager=None, use_historical_data: bool = True):
+    def __init__(
+        self,
+        crawl_data_manager: Optional["CrawlDataManager"] = None,
+        use_historical_data: bool = True,
+    ):
         self.high_value_regex = re.compile("|".join(self.HIGH_VALUE_PATTERNS), re.IGNORECASE)
         self.low_value_regex = re.compile("|".join(self.LOW_VALUE_PATTERNS), re.IGNORECASE)
         self.js_regex = re.compile("|".join(self.JS_PATTERNS), re.IGNORECASE)

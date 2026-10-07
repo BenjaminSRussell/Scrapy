@@ -166,7 +166,7 @@ class ConnectionPool(Generic[T]):
         
         while not self._pool.empty():
             try:
-                conn, _ = await self._pool.get_nowait()
+                conn, _ = self._pool.get_nowait()
                 # Call close if connection has close method
                 if hasattr(conn, 'close'):
                     try:

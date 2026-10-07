@@ -28,16 +28,18 @@ try:
 except ImportError:
     DELTA_AVAILABLE = False
     DeltaTable = None  # type: ignore
-    write_deltalake = None  # type: ignore
+    write_deltalake = None
     WriterProperties = None  # type: ignore
-    pa = None  # type: ignore
-    pa_csv = None  # type: ignore
-    pq = None  # type: ignore
+    pa = None
+    pa_csv = None
+    pq = None
 
 logger = logging.getLogger(__name__)
 
-WriteTask: TypeAlias = tuple[str, list[dict[str, Any]], str]
-MaintenanceTask: TypeAlias = tuple[str, ...]
+WriteMode: TypeAlias = Literal["append", "overwrite", "error", "ignore"]
+WriteTask: TypeAlias = tuple[str, list[dict[str, Any]], WriteMode]
+# (task_type, table_name, retention_hours); retention_hours is only used by "vacuum".
+MaintenanceTask: TypeAlias = tuple[str, str, int]
 
 class LakehouseManager:
 
@@ -74,6 +76,13 @@ class LakehouseManager:
 
         self.schema_cache: dict[str, Any] = {}
 
+        # Delta Lake commits are optimistic: two threads in this process
+        # writing the same table race (e.g. both try to create version 0).
+        # Serialize in-process writes per table; cross-process conflicts are
+        # still handled by the commit retry loop in _write_sync_locked.
+        self._table_locks: dict[str, threading.Lock] = {}
+        self._table_locks_guard = threading.Lock()
+
         self.maintenance_queue: queue.Queue[MaintenanceTask | None] = queue.Queue()
 
         self.worker_thread: threading.Thread | None = None
@@ -108,14 +117,12 @@ class LakehouseManager:
                 if task is None:
                     break
 
-                task_type, *args = task
+                task_type, table_name, retention_hours = task
 
                 try:
                     if task_type == "optimize":
-                        table_name = args[0]
                         self._optimize_table(table_name)
                     elif task_type == "vacuum":
-                        table_name, retention_hours = args
                         self._vacuum_table(table_name, retention_hours)
                 except Exception as e:
                     logger.error(f"Maintenance task failed ({task_type}): {e}", exc_info=True)
@@ -150,6 +157,13 @@ class LakehouseManager:
     def _handle_writer_exception(self, e: Exception, table_name: str):
         logger.error(f"Write failed for {table_name}: {e}", exc_info=True)
 
+    def _table_lock(self, table_name: str) -> threading.Lock:
+        with self._table_locks_guard:
+            lock = self._table_locks.get(table_name)
+            if lock is None:
+                lock = self._table_locks[table_name] = threading.Lock()
+            return lock
+
     def _write_sync(
         self,
         table_name: str,
@@ -158,6 +172,15 @@ class LakehouseManager:
     ):
         if not data:
             return
+        with self._table_lock(table_name):
+            self._write_sync_locked(table_name, data, mode)
+
+    def _write_sync_locked(
+        self,
+        table_name: str,
+        data: list[dict[str, Any]],
+        mode: Literal["append", "overwrite", "error", "ignore"],
+    ):
 
         table_path = self.tables.get(table_name)
         if not table_path:
@@ -196,7 +219,7 @@ class LakehouseManager:
 
             import pyarrow as pa
             from deltalake import WriterProperties, write_deltalake
-            from deltalake._internal import CommitFailedError
+            from deltalake.exceptions import CommitFailedError, DeltaError
 
             if table_name not in self.schema_cache:
                 table = pa.Table.from_pylist(data)
@@ -206,7 +229,7 @@ class LakehouseManager:
                 cached_schema = self.schema_cache[table_name]
 
                 cached_field_names = {field.name for field in cached_schema}
-                incoming_field_names = set()
+                incoming_field_names: set[str] = set()
                 for row in data:
                     incoming_field_names.update(row.keys())
 
@@ -252,8 +275,14 @@ class LakehouseManager:
                         partition_by=partition_by,
                     )
                     break
-                except CommitFailedError:
-                    if attempt == max_attempts:
+                except (CommitFailedError, DeltaError) as commit_error:
+                    # CommitFailedError: lost an optimistic-concurrency race.
+                    # "version N already exists": another process committed
+                    # the same version first (e.g. both creating the table).
+                    is_conflict = isinstance(commit_error, CommitFailedError) or (
+                        "already exists" in str(commit_error)
+                    )
+                    if not is_conflict or attempt == max_attempts:
                         raise
                     # Another writer committed a newer version between our
                     # read and this commit attempt (concurrent writers to
@@ -271,7 +300,7 @@ class LakehouseManager:
             self._handle_writer_exception(e, table_name)
 
         if table_name in ["stage1_discovery", "stage2_page_analysis"] and len(data) >= 1000:
-            self.maintenance_queue.put(("optimize", table_name))
+            self.maintenance_queue.put(("optimize", table_name, 0))
 
     def write(
         self,
@@ -304,7 +333,8 @@ class LakehouseManager:
 
         table = DeltaTable(str(table_path), version=version)
         pa_table = table.to_pyarrow_table(filters=filters, columns=columns)
-        return pa_table.to_pylist()
+        rows: list[dict] = pa_table.to_pylist()
+        return rows
 
     def count(self, table_name: str) -> int:
         from deltalake import DeltaTable
@@ -316,7 +346,7 @@ class LakehouseManager:
 
         table = DeltaTable(str(table_path))
         pa_table = table.to_pyarrow_table(columns=[])
-        return pa_table.num_rows
+        return int(pa_table.num_rows)
 
     def _optimize_table(self, table_name: str):
         from deltalake import DeltaTable
@@ -337,7 +367,7 @@ class LakehouseManager:
             }
             z_order_columns = z_order_columns_by_table.get(table_name)
             if z_order_columns:
-                schema_fields = {field.name for field in dt.schema().to_arrow()}
+                schema_fields = {field.name for field in dt.schema().fields}
                 missing = [col for col in z_order_columns if col not in schema_fields]
                 if missing:
                     logger.debug(
@@ -701,6 +731,13 @@ class LakehouseManager:
         self.write(table_name, records, mode="append", async_write=True)
         logger.debug(f"[append_to_table] Appended {len(records)} records to {table_name}")
 
+    def get_table_size(self, table_name: str) -> int:
+        """Total bytes of all files under the table directory (0 if absent)."""
+        table_path = self.get_table_path(table_name)
+        if not table_path.exists():
+            return 0
+        return sum(p.stat().st_size for p in table_path.rglob("*") if p.is_file())
+
     def read_table(self, table_name: str, **kwargs) -> list[dict]:
         return self.read(table_name, **kwargs)
 
@@ -948,6 +985,13 @@ class InMemoryBackend:
         if not records:
             return
         self.write(table_name, records, mode="append")
+
+    def get_table_size(self, table_name: str) -> int:
+        """Total bytes of all files under the table directory (0 if absent)."""
+        table_path = self.get_table_path(table_name)
+        if not table_path.exists():
+            return 0
+        return sum(p.stat().st_size for p in table_path.rglob("*") if p.is_file())
 
     def read_table(self, table_name: str, **kwargs) -> list[dict]:
         return self.read(table_name, **kwargs)

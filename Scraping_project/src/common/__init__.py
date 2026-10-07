@@ -4,7 +4,7 @@ from __future__ import annotations
 
 def _patch_scrapy_response_meta() -> None:
     try:
-        from scrapy.http import Request, Response  # type: ignore
+        from scrapy.http import Request, Response
     except Exception:
         return
 
@@ -19,7 +19,8 @@ def _patch_scrapy_response_meta() -> None:
         fget = original_property.fget
         if fget is None:
             return {}
-        return fget(instance)  # type: ignore[attr-defined]
+        result: dict = fget(instance)
+        return result
 
     def _meta_set(instance: Response, value: dict) -> None:
         if value is None:
@@ -113,4 +114,4 @@ try:
 except ImportError as e:
     # If new modules don't exist yet, don't break existing code
     warnings.warn(f"Could not import from new modules: {e}", ImportWarning)
-    __all__: tuple[str, ...] = ()
+    __all__ = ()

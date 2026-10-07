@@ -83,6 +83,9 @@ def patched_postgres(monkeypatch):
 
 def test_init_requires_password(monkeypatch):
     monkeypatch.setattr(pg_module, "POSTGRES_AVAILABLE", True)
+    # CI exports DB_PASSWORD for the postgres service; the env fallback must
+    # not satisfy the "password required" check in this test.
+    monkeypatch.delenv("DB_PASSWORD", raising=False)
     with pytest.raises(ValueError):
         PostgresManager(password=None)
 
