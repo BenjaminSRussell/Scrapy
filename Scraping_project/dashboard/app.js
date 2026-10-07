@@ -3,6 +3,10 @@
 
 const METRICS_URL = 'http://localhost:9090/metrics';
 const REFRESH_INTERVAL = 5000;
+let refreshPaused = false;
+let refreshTimer = null;
+let metricsWasDown = false;
+let chartsHaveSample = false;
 
 let countdown = 5;
 let charts = {};
@@ -38,8 +42,11 @@ function initializeCharts() {
         maintainAspectRatio: false,
         plugins: {
             legend: {
-                display: true,
+                display: false, // until first real sample (#1076)
                 position: 'top'
+            },
+            tooltip: {
+                enabled: false
             }
         },
         scales: {
@@ -117,8 +124,10 @@ function initializeCharts() {
             maintainAspectRatio: false,
             plugins: {
                 legend: {
+                    display: false,
                     position: 'bottom'
-                }
+                },
+                tooltip: { enabled: false }
             }
         }
     });
@@ -419,7 +428,13 @@ function setMetricText(id, value) {
     }
 }
 
-function updateDashboard(metrics) {
+function updateDashboard(metrics);
+        if (metricsWasDown) {
+            metricsWasDown = false;
+            const ann = document.getElementById('metrics-reconnect-announce') || document.getElementById('refresh-status');
+            if (ann) ann.textContent = 'Metrics connection restored';
+            addActivityLogItem('success', 'Metrics connection restored');
+        } {
     const s1Discovered = metrics['stage1_urls_discovered_total'] || 0;
     const s1Queued = metrics['stage1_urls_queued_total'] || 0;
     const s2Analyzed = metrics['stage2_pages_analyzed_total'] || 0;
@@ -568,6 +583,7 @@ async function fetchMetrics() {
 
         countdown = 5;
     } catch (error) {
+        metricsWasDown = true;
         console.error('Error fetching metrics:', error);
         addActivityLogItem('danger', `Failed to fetch metrics: ${error.message}`);
         setConnectionStatus(hasEverSucceeded ? 'offline' : 'never');
@@ -741,6 +757,69 @@ function resetChartHistory() {
     if (live) live.textContent = 'Chart history reset';
 }
 
+
+function markChartsHaveSample() {
+    if (chartsHaveSample) return;
+    chartsHaveSample = true;
+    Object.values(charts || {}).forEach(ch => {
+        if (!ch?.options?.plugins) return;
+        if (ch.options.plugins.legend) ch.options.plugins.legend.display = true;
+        if (ch.options.plugins.tooltip) ch.options.plugins.tooltip.enabled = true;
+        try { ch.update('none'); } catch (_) {}
+    });
+    document.querySelectorAll('.chart-container.is-empty').forEach(el => el.classList.remove('is-empty'));
+    document.querySelectorAll('.chart-empty-placeholder').forEach(el => el.remove());
+}
+
+function ensureChartPlaceholders() {
+    if (chartsHaveSample) return;
+    document.querySelectorAll('.chart-container').forEach(el => {
+        el.classList.add('is-empty');
+        if (!el.querySelector('.chart-empty-placeholder')) {
+            const ph = document.createElement('div');
+            ph.className = 'chart-empty-placeholder';
+            ph.textContent = 'Waiting for first metrics sample…';
+            el.appendChild(ph);
+        }
+    });
+}
+
+
+function activateTab(tabName, pushUrl = true) {
+    const tabButtons = document.querySelectorAll('.tab-button');
+    const tabContents = document.querySelectorAll('.tab-content');
+    let found = false;
+    tabButtons.forEach(btn => {
+        const on = btn.getAttribute('data-tab') === tabName;
+        btn.classList.toggle('active', on);
+        btn.setAttribute('aria-selected', on ? 'true' : 'false');
+        if (on) found = true;
+    });
+    if (!found) return false;
+    tabContents.forEach(content => {
+        const on = content.id === `tab-${tabName}`;
+        content.classList.toggle('active', on);
+    });
+    requestAnimationFrame(() => {
+        Object.values(charts || {}).forEach(ch => { try { ch.resize(); } catch (_) {} });
+    });
+    if (pushUrl) {
+        const url = new URL(window.location.href);
+        url.searchParams.set('tab', tabName);
+        url.hash = tabName;
+        history.replaceState(null, '', url);
+    }
+    return true;
+}
+
+function tabFromLocation() {
+    const params = new URLSearchParams(window.location.search);
+    const q = params.get('tab');
+    if (q) return q;
+    const h = (window.location.hash || '').replace(/^#/, '');
+    return h || null;
+}
+
 function setupTabs() {
     const resetHist = document.getElementById('reset-chart-history');
     if (resetHist) resetHist.addEventListener('click', resetChartHistory);
@@ -765,23 +844,9 @@ function setupTabs() {
     tabButtons.forEach(button => {
         button.addEventListener('click', () => {
             const tabName = button.getAttribute('data-tab');
-
-            tabButtons.forEach(btn => btn.classList.remove('active'));
-            tabContents.forEach(content => content.classList.remove('active'));
-
-            button.classList.add('active');
-            button.setAttribute('aria-selected', 'true');
-            tabButtons.forEach(btn => { if (btn !== button) btn.setAttribute('aria-selected', 'false'); });
+            activateTab(tabName, true);
             const panel = document.getElementById(`tab-${tabName}`);
-            panel.classList.add('active');
-            panel.setAttribute('tabindex', '-1');
-            panel.focus();
-            // Charts init while hidden tabs have 0 size (#154) — resize after show.
-            requestAnimationFrame(() => {
-                Object.values(charts || {}).forEach(ch => {
-                    try { ch.resize(); } catch (_) {}
-                });
-            });
+            if (panel) { panel.setAttribute('tabindex', '-1'); panel.focus(); }
         });
     });
 }
@@ -800,6 +865,11 @@ function startCountdown() {
 
     let lastAnnounced = null;
     setInterval(() => {
+        if (refreshPaused) {
+            const el = document.getElementById('refresh-countdown');
+            if (el) el.textContent = 'paused';
+            return;
+        }
         countdown--;
         if (countdown <= 0) {
             countdown = 5;
@@ -823,13 +893,32 @@ function initialize() {
     console.log('Initializing Pipeline Control Center...');
 
     setupTabs();
+    const deep = tabFromLocation();
+    if (deep) activateTab(deep, false);
     initializeCharts();
+    ensureChartPlaceholders();
     startCountdown();
+
+    const pauseBtn = document.getElementById('pause-refresh');
+    if (pauseBtn) {
+        pauseBtn.addEventListener('click', () => {
+            refreshPaused = !refreshPaused;
+            pauseBtn.setAttribute('aria-pressed', refreshPaused ? 'true' : 'false');
+            pauseBtn.textContent = refreshPaused ? 'Resume' : 'Pause';
+            pauseBtn.setAttribute('aria-label', refreshPaused ? 'Resume auto-refresh' : 'Pause auto-refresh');
+            const live = document.getElementById('refresh-status');
+            if (live) live.textContent = refreshPaused ? 'Auto-refresh paused' : 'Auto-refresh resumed';
+        });
+    }
+    const manualBtn = document.getElementById('manual-refresh');
+    if (manualBtn) manualBtn.addEventListener('click', () => fetchMetrics());
 
     addActivityLogItem('success', 'Pipeline Control Center initialized');
 
     fetchMetrics();
-    setInterval(fetchMetrics, REFRESH_INTERVAL);
+    refreshTimer = setInterval(() => {
+        if (!refreshPaused) fetchMetrics();
+    }, REFRESH_INTERVAL);
 
     console.log('Dashboard ready!');
 }

@@ -564,6 +564,39 @@
         }
         .overview-spark { height: 28px; width: 100%; margin-top: 0.35rem; }
         .overview-spark-dir { font-size: 0.75rem; color: #94a3b8; }
+        
+        .tab-buttons-wrap {
+            position: relative;
+            margin-bottom: 0.5rem;
+        }
+        .tab-buttons-wrap::after {
+            content: "";
+            pointer-events: none;
+            position: absolute;
+            top: 0; right: 0; bottom: 0;
+            width: 2rem;
+            background: linear-gradient(to right, transparent, var(--bg, #0f172a));
+            opacity: 0;
+        }
+        @media (max-width: 640px) {
+            .tab-buttons {
+                display: flex;
+                flex-wrap: nowrap;
+                overflow-x: auto;
+                -webkit-overflow-scrolling: touch;
+                scrollbar-width: thin;
+                gap: 0.25rem;
+            }
+            .tab-buttons-wrap::after { opacity: 1; }
+            .tab-button { flex: 0 0 auto; white-space: nowrap; }
+        }
+        
+        .chart-empty-placeholder {
+            position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+            color: #94a3b8; font-size: 0.85rem; pointer-events: none;
+        }
+        .chart-container { position: relative; }
+        .chart-container.is-empty canvas { opacity: 0.15; }
         </style>
 </head>
 <body>
@@ -606,13 +639,13 @@
 
     <div class="container" id="main" role="main">
         <div class="tabs">
-            <div class="tab-buttons">
+            <div class="tab-buttons-wrap"><div class="tab-buttons">
                 <button type="button" class="tab-button active" data-tab="overview">📊 Overview</button>
                 <button type="button" class="tab-button" data-tab="pipeline">🔄 Pipeline Stages</button>
                 <button type="button" class="tab-button" data-tab="performance">📈 Performance</button>
                 <button type="button" class="tab-button" data-tab="system">⚙️ System Health</button>
                 <button type="button" class="tab-button" data-tab="activity">📋 Activity Log</button>
-            </div>
+            </div></div>
 
             <!-- Overview Tab -->
             <div class="tab-content active" id="tab-overview">
@@ -1062,12 +1095,15 @@
 
         <div class="refresh-bar">
             <div id="refresh-status" class="visually-hidden" role="status" aria-live="polite" aria-atomic="true"></div>
-                <div class="refresh-info">Updated <span id="last-updated-rel">just now</span> · 
+            <div id="metrics-reconnect-announce" class="visually-hidden" role="status" aria-live="polite" aria-atomic="true"></div>
+            <div class="refresh-info">Updated <span id="last-updated-rel">just now</span> · 
                 Auto-refresh: <span class="refresh-countdown" id="refresh-countdown">5</span> seconds
             </div>
             <div class="refresh-info">
                 Last updated: <span id="last-refresh-time">Never</span>
             </div>
+            <button type="button" id="pause-refresh" class="btn" aria-pressed="false" aria-label="Pause auto-refresh">Pause</button>
+            <button type="button" id="manual-refresh" class="btn" aria-label="Refresh metrics now">Refresh now</button>
         </div>
     </div>
 
