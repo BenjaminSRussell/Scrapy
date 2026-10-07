@@ -48,7 +48,11 @@ class LakehouseManager:
         config = Config.get_instance()
 
         if base_path is None:
-            base_path = config.get("delta_lake.base_path", "./data/delta_lake")
+            # Same contract as DeltaHelper (src/utils/delta.py): DELTA_LAKE_PATH
+            # wins so compose/k8s workers and the metrics exporter share a lake.
+            base_path = os.getenv("DELTA_LAKE_PATH") or config.get(
+                "delta_lake.base_path", "./data/delta_lake"
+            )
         self.base_path = Path(base_path)
         self.base_path.mkdir(parents=True, exist_ok=True)
 
@@ -1010,9 +1014,20 @@ class InMemoryBackend:
 # =====================================================================================
 # =====================================================================================
 def get_lakehouse_manager(mode: str | None = None, **kwargs) -> LakehouseManager | InMemoryBackend:
+    from_env = mode is None
     mode = mode or os.getenv("DELTA_BACKEND", "lakehouse")
 
     if mode == "memory":
+        # #621: an env typo or leftover DELTA_BACKEND=memory used to make a
+        # whole crawl run write nowhere, with only a warning. Selecting the
+        # ephemeral backend from the environment now needs an explicit opt-in;
+        # code that passes mode="memory" deliberately (tests, demos) is unaffected.
+        if from_env and os.getenv("ALLOW_INMEMORY_DELTA") != "1":
+            raise RuntimeError(
+                "DELTA_BACKEND=memory selects an ephemeral lake that loses every write "
+                "when the process exits. Set ALLOW_INMEMORY_DELTA=1 to use it on purpose, "
+                "or DELTA_BACKEND=lakehouse for durable storage."
+            )
         logger.warning(
             "  Using in-memory Lakehouse backend! "
             "All data is ephemeral and will be lost when the process exits. "

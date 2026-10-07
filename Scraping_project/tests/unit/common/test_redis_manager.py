@@ -158,7 +158,10 @@ class TestRedisHelperMaintenance:
         helper._client = redis_clean
 
         helper.mark_url_seen("https://example.com", "x")
-        assert helper.clear_all() is True
+        # #203/#381: refused without explicit confirmation, nothing deleted.
+        assert helper.clear_all() is False
+        assert helper.get_key_count() == 1
+        assert helper.clear_all(confirm=True) is True
         assert helper.get_key_count() == 0
 
     @pytest.mark.unit

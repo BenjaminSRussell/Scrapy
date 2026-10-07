@@ -524,8 +524,13 @@ function updateDashboard(metrics) {
     const metricsOk = Boolean(metrics) && Object.keys(metrics).length > 0;
     setHealthTile('metrics-health', 'Metrics', metricsOk, metricsOk ? 'Collecting' : 'Stale');
 
-    const lastUpdate = new Date(metrics['pipeline_last_update_timestamp'] * 1000);
-    document.getElementById('last-update').textContent = lastUpdate.toLocaleTimeString();
+    document.getElementById('last-update').textContent = formatEpochTime(metrics['pipeline_last_update_timestamp']);
+
+    // #389/#393: these tiles used to be hardcoded (12 tables, 8 scouts). Show
+    // a real value when the exporter reports one, otherwise an explicit dash.
+    setReportedValue('delta-table-count', countLabelValues(metrics, 'delta_lake_records', 'table'));
+    setReportedValue('scout-instances',
+        'pipeline_scout_instances' in metrics ? metrics['pipeline_scout_instances'] : null);
     document.getElementById('last-refresh-time').textContent = new Date().toLocaleTimeString();
     document.getElementById('uptime').textContent = getUptime();
 
@@ -549,6 +554,18 @@ function updateDashboard(metrics) {
     previousMetrics = { ...metrics };
 }
 
+
+function setReportedValue(id, value) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (value === null || value === undefined) {
+        el.textContent = '\u2014';
+        el.title = 'Not reported by the metrics exporter';
+    } else {
+        el.textContent = formatNumber(value);
+        el.removeAttribute('title');
+    }
+}
 
 function setConnectionStatus(kind) {
     // kind: 'online' | 'never' | 'offline'

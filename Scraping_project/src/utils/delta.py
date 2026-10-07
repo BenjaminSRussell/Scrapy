@@ -32,10 +32,15 @@ class DeltaHelper:
 
         Args:
             base_path: Base path for Delta Lake storage. Defaults to the
-                DELTA_LAKE_PATH env var, then ./data/delta_lake.
+                DELTA_LAKE_PATH env var, then config ``delta_lake.base_path``,
+                then ./data/delta_lake (same order as LakehouseManager).
         """
         if base_path is None:
-            base_path = os.getenv("DELTA_LAKE_PATH", "./data/delta_lake")
+            base_path = os.getenv("DELTA_LAKE_PATH")
+        if not base_path:
+            from src.core.config import get_config
+
+            base_path = get_config().get("delta_lake.base_path", "./data/delta_lake")
 
         self.base_path = Path(base_path)
         self.base_path.mkdir(parents=True, exist_ok=True)
