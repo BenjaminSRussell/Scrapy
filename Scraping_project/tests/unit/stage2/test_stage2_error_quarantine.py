@@ -39,13 +39,15 @@ def test_worker_routes_errors_to_quarantine_table(monkeypatch):
     worker.semaphore = asyncio.Semaphore(2)
     worker.delta = _FakeDelta(queue)
     worker.postgres = None
+    worker.max_retries = 3
+    worker._dlq = None
     updated = []
 
     async def fake_analyze(record):
         return _row(record["url"], record["url"].startswith("bad"))
 
-    async def fake_update(urls, table_name="stage2_queue"):
-        updated.extend(urls)
+    async def fake_update(urls, table_name="stage2_queue", status="completed"):
+        updated.extend((u, status) for u in urls)
 
     monkeypatch.setattr(worker, "_analyze_url", fake_analyze)
     monkeypatch.setattr(worker, "_update_queue_status", fake_update)
@@ -57,8 +59,8 @@ def test_worker_routes_errors_to_quarantine_table(monkeypatch):
     assert tables["stage2_page_analysis"] == ["ok1", "ok2"]
     assert tables[TABLE_STAGE2_ERRORS] == ["bad1"]
     assert all(not r["has_error"] for t, rows in worker.delta.writes if t == "stage2_page_analysis" for r in rows)
-    # Failed URLs are still marked processed so they are not retried forever.
-    assert sorted(updated) == ["bad1", "ok1", "ok2"]
+    # Only successes complete; a first failure stays pending for retry (#160).
+    assert sorted(updated) == [("ok1", "completed"), ("ok2", "completed")]
     assert counts["analyzed"] == 3 and counts["errors"] == 1
     if before_q is not None:
         assert s2.STAGE2_ROWS.labels(outcome="quarantined")._value.get() == before_q + 1
