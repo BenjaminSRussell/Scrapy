@@ -247,7 +247,18 @@ LOG_LEVEL=INFO
 # Workers
 WORKERS=4
 CONCURRENCY=10
+
+# Continuous Stage 2/3 workers (override config.yml stage2/stage3 max_workers + batch_size)
+STAGE2_CONCURRENT=100
+STAGE2_BATCH_SIZE=50
+STAGE3_CONCURRENT=50
+STAGE3_BATCH_SIZE=100
 ```
+
+Continuous Stage 2/3 workers resolve concurrency and batch size from
+`STAGE{N}_CONCURRENT` / `STAGE{N}_BATCH_SIZE`, then `config.yml`
+`stage{N}.max_workers` / `stage{N}.batch_size`, and finally built-in defaults
+(see `src.core.config.stage_worker_settings`).
 
 ### Docker Configuration
 

@@ -9,6 +9,7 @@ import pyarrow as pa
 from bs4 import BeautifulSoup
 from deltalake import DeltaTable
 
+from src.core.config import stage_worker_settings
 from src.utils.delta import get_delta
 from src.utils.postgres import get_postgres_manager
 from src.otel_tracing import ensure_crawl_job_id, init_tracing, start_span
@@ -403,9 +404,12 @@ class Stage2Worker:
 async def run_stage2_worker():
     logger.info("Stage 2 Worker starting in continuous mode...")
 
+    max_concurrent, batch_size = stage_worker_settings(2, 50, 100)
+    logger.info("Stage 2 Worker concurrency=%d batch_size=%d", max_concurrent, batch_size)
+
     while True:
         try:
-            worker = Stage2Worker(max_concurrent=50, batch_size=100)
+            worker = Stage2Worker(max_concurrent=max_concurrent, batch_size=batch_size)
             await worker.run()
             logger.info("Waiting 30 seconds before next check...")
             await asyncio.sleep(30)
