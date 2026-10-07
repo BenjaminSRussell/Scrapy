@@ -15,7 +15,7 @@ def _ensure_project_root() -> None:
 
 def _get_delta_manager():
     _ensure_project_root()
-    delta_module = import_module("src.common.delta_lake")
+    delta_module = import_module("src.lakehouse.lakehouse_manager")
     return delta_module.get_delta_manager()
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")

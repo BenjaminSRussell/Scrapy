@@ -11,8 +11,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import pandas as pd
 
-from src.common.constants import DELTA_LAKE
-from src.common.delta_lake import get_delta_manager
+from src.core.constants import DELTA_LAKE
+from src.lakehouse.lakehouse_manager import get_delta_manager
 
 logging.basicConfig(
     level=logging.INFO,
