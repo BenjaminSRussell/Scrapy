@@ -9,7 +9,7 @@ rust-version = "1.90"
 rdkafka = { version = "0.38", features = ["cmake-build", "ssl", "sasl", "zstd"] }
 
 # Delta Lake - Latest version with DataFusion support
-deltalake = { version = "0.28", features = ["datafusion"] }
+deltalake = { version = "0.29", features = ["datafusion"] }
 
 # Arrow - Explicit version matching deltalake
 arrow = "55"
