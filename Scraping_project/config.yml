@@ -205,6 +205,12 @@ delta_lake:
   # Rows with values that don't cast to the table's Arrow schema (#818):
   # strict = quarantine the row to cast_quarantine; coerce = null the bad value.
   cast_mode: strict
+  # Columns each table is Z-ordered by after compaction (#272). A table whose
+  # schema lacks any listed column is skipped with a warning and
+  # delta_optimize_skipped_total{reason="zorder_missing_columns"}; [] disables.
+  z_order_columns:
+    stage1_discovery: [url_hash, discovered_at]
+    stage2_page_analysis: [url_hash, processed_at]
 
   # Table Names
   tables:
