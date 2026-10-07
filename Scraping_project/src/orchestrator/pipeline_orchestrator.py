@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Literal
 
@@ -14,6 +14,29 @@ from src.stage3.stage3_worker import Stage3Worker
 from src.stage4.stage4_worker import Stage4Worker
 
 logger = logging.getLogger(__name__)
+
+RunStatus = Literal["pending", "running", "complete", "partial_failed", "failed"]
+
+try:  # metric/alert hook for partial or failed runs (#521)
+    from prometheus_client import Counter
+
+    PIPELINE_RUNS = Counter(
+        "pipeline_runs_total",
+        "Full pipeline runs by final status (complete/partial_failed/failed).",
+        ["status"],
+    )
+except Exception:  # prometheus_client missing or metric already registered
+    PIPELINE_RUNS = None
+
+
+class PipelineRunError(RuntimeError):
+    """Raised when a full pipeline run does not complete (#521)."""
+
+    def __init__(self, status: str, stage_errors: dict[str, str]):
+        self.status = status
+        self.stage_errors = dict(stage_errors)
+        detail = ", ".join(f"{k}: {v}" for k, v in stage_errors.items()) or "unknown"
+        super().__init__(f"Pipeline run {status}: {detail}")
 
 def _is_count(value: object) -> bool:
     """True for a real int count (not bool, not a test-double return value)."""
@@ -31,6 +54,8 @@ class PipelineStats:
     stage4_large_summaries: int = 0
     start_time: datetime | None = None
     end_time: datetime | None = None
+    status: RunStatus = "pending"
+    stage_errors: dict[str, str] = field(default_factory=dict)
 
     @property
     def total_duration_seconds(self) -> float:
@@ -207,37 +232,77 @@ class PipelineOrchestrator:
         stage1_url_limit: int | None = 100,
         stage2_concurrent: int = 50,
         stage3_concurrent: int = 20,
-    ):
+        allow_partial: bool = False,
+    ) -> PipelineStats:
         """Run the complete 4-stage pipeline.
+
+        Stage 1 and Stage 2 are required: a failure stops the run with status
+        ``failed``. Stage 3 and Stage 4 run concurrently and both are awaited
+        even if one fails. One failure gives ``partial_failed``; both give
+        ``failed``. Unless ``allow_partial`` is set, any status other than
+        ``complete`` raises :class:`PipelineRunError`, so the process exits
+        non-zero instead of reporting an incomplete lake as finished (#521).
 
         Args:
             stage1_url_limit: Max URLs to discover in Stage 1
             stage2_concurrent: Concurrency for Stage 2
             stage3_concurrent: Concurrency for Stage 3
+            allow_partial: Return (not raise) on a ``partial_failed`` run
+
+        Returns:
+            The run's PipelineStats, including ``status`` and ``stage_errors``.
         """
         self.stats.start_time = datetime.now()
+        self.stats.status = "running"
+        self.stats.stage_errors = {}
 
         logger.info(" " * 40)
         logger.info("STARTING FULL PIPELINE EXECUTION")
         logger.info(" " * 40)
 
         try:
-            self.run_stage1(url_limit=stage1_url_limit)
+            try:
+                self.run_stage1(url_limit=stage1_url_limit)
+            except Exception as e:
+                self.stats.stage_errors["stage1"] = repr(e)
+                raise
+            try:
+                await self.run_stage2(max_concurrent=stage2_concurrent)
+            except Exception as e:
+                self.stats.stage_errors["stage2"] = repr(e)
+                raise
+        except Exception:
+            self._finish("failed")
+            raise PipelineRunError("failed", self.stats.stage_errors) from None
 
-            await self.run_stage2(max_concurrent=stage2_concurrent)
+        results = await asyncio.gather(
+            self.run_stage3(max_concurrent=stage3_concurrent),
+            self.run_stage4(),
+            return_exceptions=True,
+        )
+        for name, result in zip(("stage3", "stage4"), results):
+            if isinstance(result, BaseException):
+                self.stats.stage_errors[name] = repr(result)
+                logger.error(f"Pipeline {name} failed: {result!r}")
 
-            await asyncio.gather(
-                self.run_stage3(max_concurrent=stage3_concurrent),
-                self.run_stage4(),
-            )
+        failed = [n for n in ("stage3", "stage4") if n in self.stats.stage_errors]
+        status: RunStatus = (
+            "complete" if not failed else "failed" if len(failed) == 2 else "partial_failed"
+        )
+        self._finish(status)
+        self._print_final_stats()
 
-            self.stats.end_time = datetime.now()
+        if status == "complete" or (status == "partial_failed" and allow_partial):
+            return self.stats
+        raise PipelineRunError(status, self.stats.stage_errors)
 
-            self._print_final_stats()
-
-        except Exception as e:
-            logger.error(f"Pipeline execution failed: {e}")
-            raise
+    def _finish(self, status: RunStatus) -> None:
+        self.stats.end_time = datetime.now()
+        self.stats.status = status
+        if PIPELINE_RUNS is not None:
+            PIPELINE_RUNS.labels(status=status).inc()
+        if status != "complete":
+            logger.error(f"Pipeline run {status}: {self.stats.stage_errors}")
 
     def run_stage_by_name(
         self,
@@ -263,7 +328,7 @@ class PipelineOrchestrator:
 
     def _print_final_stats(self):
         logger.info("\n" + "=" * 80)
-        logger.info("PIPELINE EXECUTION COMPLETE")
+        logger.info(f"PIPELINE EXECUTION FINISHED: {self.stats.status.upper()}")
         logger.info("=" * 80)
         logger.info(f"Duration: {self.stats.total_duration_seconds:.2f} seconds")
         logger.info("")
