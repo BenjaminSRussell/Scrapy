@@ -22,11 +22,11 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Log in to GitHub Container Registry
         if: env.HAS_GHCR_PAT == 'true'
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
@@ -34,7 +34,7 @@ jobs:
 
       - name: Extract metadata for kafka-delta-ingest image
         id: meta-kafka-delta-ingest
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ghcr.io/${{ github.repository }}/kafka-delta-ingest
           tags: |
@@ -43,7 +43,7 @@ jobs:
             type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Build and push kafka-delta-ingest image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: ./Scraping_project
           file: ./Scraping_project/Dockerfile
@@ -67,14 +67,14 @@ jobs:
 
       - name: Upload kafka-delta-ingest SBOM
         if: env.HAS_GHCR_PAT == 'true'
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: sbom-kafka-delta-ingest
           path: sbom-kafka-delta-ingest.spdx.json
 
       - name: Extract metadata for crawler image
         id: meta-crawler
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ghcr.io/${{ github.repository }}/crawler
           tags: |
@@ -83,7 +83,7 @@ jobs:
             type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Build and push crawler image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: ./Scraping_project
           file: ./Scraping_project/Dockerfile
@@ -107,14 +107,14 @@ jobs:
 
       - name: Upload crawler SBOM
         if: env.HAS_GHCR_PAT == 'true'
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: sbom-crawler
           path: sbom-crawler.spdx.json
 
       - name: Extract metadata for metrics image
         id: meta-metrics
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ghcr.io/${{ github.repository }}/metrics
           tags: |
@@ -123,7 +123,7 @@ jobs:
             type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Build and push metrics image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: ./Scraping_project
           file: ./Scraping_project/Dockerfile
@@ -147,7 +147,7 @@ jobs:
 
       - name: Upload metrics SBOM
         if: env.HAS_GHCR_PAT == 'true'
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: sbom-metrics
           path: sbom-metrics.spdx.json
