@@ -37,7 +37,8 @@ docker push your-registry/uconn-scraper:latest
 ### 2. Deploy to Kubernetes
 
 ```bash
-# Create namespace and deploy
+# Minimal quick-start (workers + Redis). The supported full install is the
+# Helm chart: see k8s/README.md.
 kubectl apply -f k8s/deployment.yaml
 
 # Check deployment status

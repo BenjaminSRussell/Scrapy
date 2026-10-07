@@ -2,6 +2,15 @@
 
 This directory contains Kubernetes manifests for deploying the UConn Scraping Pipeline.
 
+**Supported install path: the Helm chart** (`helm/scraping-pipeline`, below).
+`deployment.yaml` is a minimal quick-start: stage1/stage2 workers and Redis, with no Postgres, Kafka, monitoring or network policies.
+It keeps probe parity with the chart (#181):
+- **Liveness:** `python -m src.utils.probe alive <worker>`.
+- **Readiness:** `python -m src.utils.probe ready-redis`.
+- **Shutdown:** a preStop grace sleep.
+
+`src/utils/probe.py` is stdlib-only, because the `python:3.11-slim` image has no `pgrep`.
+
 ## Quick Start
 
 ```bash
