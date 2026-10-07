@@ -773,33 +773,69 @@ class RecencyScoringPipeline:
         return item
 
 class AggregationPipeline:
+    """Group items by ``entity_id`` and persist one summary row per entity (#790).
+
+    Memory is bounded: each entity keeps only its ``max_items_per_entity``
+    most recent items (by ``recency_score``) plus a running total count.
+    On spider close the summaries are written synchronously to the Delta
+    table ``output_topic`` (default ``entity_summaries``).
+    """
+
+    DEFAULT_MAX_ITEMS_PER_ENTITY = 10
 
     def __init__(
         self,
         enabled: bool = True,
         output_topic: str = "entity_summaries",
+        max_items_per_entity: int = DEFAULT_MAX_ITEMS_PER_ENTITY,
+        persist: bool = True,
+        delta: Any = None,
     ):
         """Initialize the aggregation pipeline.
 
         Args:
             enabled: Whether aggregation is enabled
-            output_topic: Kafka topic for entity summaries
+            output_topic: Delta table (and topic name) for entity summaries
+            max_items_per_entity: Most-recent items retained per entity
+            persist: Write summaries to Delta on spider close
+            delta: Optional DeltaHelper-like sink (defaults to get_delta())
         """
         self.enabled = enabled
         self.output_topic = output_topic
+        self.max_items_per_entity = max(1, int(max_items_per_entity))
+        self.persist = persist
+        self._delta = delta
         self.entity_groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
+        self.entity_counts: dict[str, int] = defaultdict(int)
         self.items_aggregated = 0
+        self.summaries_written = 0
 
     @classmethod
     def from_crawler(cls, crawler: Crawler) -> "AggregationPipeline":
         enabled = crawler.settings.getbool("AGGREGATION_ENABLED", True)
         output_topic = crawler.settings.get("AGGREGATION_OUTPUT_TOPIC", "entity_summaries")
+        max_items = crawler.settings.getint(
+            "AGGREGATION_MAX_ITEMS_PER_ENTITY", cls.DEFAULT_MAX_ITEMS_PER_ENTITY
+        )
+        persist = crawler.settings.getbool("AGGREGATION_PERSIST", True)
 
-        pipeline = cls(enabled=enabled, output_topic=output_topic)
+        pipeline = cls(
+            enabled=enabled,
+            output_topic=output_topic,
+            max_items_per_entity=max_items,
+            persist=persist,
+        )
 
         crawler.signals.connect(pipeline.close_spider, signal=signals.spider_closed)
 
         return pipeline
+
+    @staticmethod
+    def _recency(item: dict[str, Any]) -> float:
+        try:
+            return float(item.get("recency_score") or 0.0)
+        except (TypeError, ValueError):
+            return 0.0
 
     def process_item(self, item: Any, spider: Spider) -> Any:
         if not self.enabled:
@@ -812,11 +848,45 @@ class AggregationPipeline:
         entity_id = adapter.get("entity_id")
 
         if entity_id:
-            item_dict = adapter.asdict()
-            self.entity_groups[entity_id].append(item_dict)
+            group = self.entity_groups[entity_id]
+            group.append(adapter.asdict())
+            self.entity_counts[entity_id] += 1
             self.items_aggregated += 1
+            # Bounded memory: keep only the N most recent items per entity.
+            if len(group) > self.max_items_per_entity:
+                group.sort(key=self._recency, reverse=True)
+                del group[self.max_items_per_entity:]
 
         return item
+
+    def _get_delta(self) -> Any:
+        if self._delta is None:
+            from src.utils.delta import get_delta
+
+            self._delta = get_delta()
+        return self._delta
+
+    def build_summary_rows(self, spider_name: str) -> list[dict[str, Any]]:
+        created_at = datetime.now().isoformat()
+        rows: list[dict[str, Any]] = []
+        for entity_id, items in self.entity_groups.items():
+            items.sort(key=self._recency, reverse=True)
+            summary = self._generate_entity_summary(entity_id, items)
+            if not summary:
+                continue
+            urls = [str(i.get("url") or i.get("source_url") or "") for i in items]
+            rows.append(
+                {
+                    "entity_id": str(entity_id),
+                    "summary": summary,
+                    "source_count": int(self.entity_counts.get(entity_id, len(items))),
+                    "top_urls": json.dumps([u for u in urls if u]),
+                    "max_recency_score": float(self._recency(items[0])) if items else 0.0,
+                    "spider": spider_name,
+                    "created_at": created_at,
+                }
+            )
+        return rows
 
     def close_spider(self, spider: Spider) -> None:
         if not self.enabled:
@@ -825,14 +895,23 @@ class AggregationPipeline:
         logger.info(f"Closing AggregationPipeline for spider: {spider.name}")
         logger.info(f"Aggregated {self.items_aggregated} items into {len(self.entity_groups)} entity groups")
 
-        for entity_id, items in self.entity_groups.items():
-            items.sort(key=lambda x: x.get("recency_score", 0.0), reverse=True)
+        rows = self.build_summary_rows(str(getattr(spider, "name", "") or ""))
+        for row in rows:
+            logger.debug(f"Entity {row['entity_id']}: summary from {row['source_count']} items")
 
-            summary = self._generate_entity_summary(entity_id, items)
+        if not rows or not self.persist:
+            return
 
-            if summary:
-                logger.info(f"Entity {entity_id}: Generated summary from {len(items)} items")
-                logger.debug(f"Summary: {summary[:200]}...")
+        try:
+            ok = self._get_delta().write(self.output_topic, rows, mode="append", async_write=False)
+        except Exception as e:  # never fail spider shutdown on persistence
+            logger.error(f"Failed to persist {len(rows)} entity summaries: {e}")
+            return
+        if ok is False:
+            logger.error(f"Failed to persist {len(rows)} entity summaries to {self.output_topic}")
+            return
+        self.summaries_written += len(rows)
+        logger.info(f"Persisted {len(rows)} entity summaries to {self.output_topic}")
 
     def _generate_entity_summary(self, entity_id: str, items: list[dict[str, Any]]) -> str:
 
