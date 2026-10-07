@@ -19,6 +19,10 @@ class _FakeDelta:
         self.writes.append((table, list(rows)))
         return True
 
+    def merge_into(self, table, rows, merge_key, update_columns):  # analysis upsert (#311)
+        self.writes.append((table, list(rows)))
+        return len(rows)
+
 
 def _row(url, has_error):
     return {"url": url, "url_hash": url, "has_error": has_error, "is_low_quality": False, "is_massive_doc": False}

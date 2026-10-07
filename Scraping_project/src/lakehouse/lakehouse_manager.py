@@ -242,6 +242,13 @@ except Exception:
     DELTA_SCHEMA_EVOLUTIONS = None
 
 
+PARTITIONED_TABLES = {"stage1_discovery", "stage2_page_analysis"}
+
+
+def _partition_columns(table_name: str) -> list[str] | None:
+    return ["domain"] if table_name in PARTITIONED_TABLES else None
+
+
 WriteMode: TypeAlias = Literal["append", "overwrite", "error", "ignore"]
 WriteTask: TypeAlias = tuple[str, list[dict[str, Any]], WriteMode]
 # (task_type, table_name, retention_hours); retention_hours is only used by "vacuum".
@@ -525,21 +532,10 @@ class LakehouseManager:
         with self._table_lock(table_name):
             return self._write_sync_locked(table_name, data, mode)
 
-    def _write_sync_locked(
-        self,
-        table_name: str,
-        data: list[dict[str, Any]],
-        mode: Literal["append", "overwrite", "error", "ignore"],
-    ) -> bool:
-
-        table_path = self.tables.get(table_name)
-        if not table_path:
-            table_path = self.base_path / table_name
-            table_path.mkdir(parents=True, exist_ok=True)
-            self.tables[table_name] = table_path
-            logger.info(f"Dynamically created new table path for: {table_name}")
-
-        if table_name in ["stage1_discovery", "stage2_page_analysis"]:
+    @staticmethod
+    def _enrich_records(table_name: str, data: list[dict[str, Any]]) -> None:
+        """Add partition key and ingestion metadata in place (write and merge paths)."""
+        if _partition_columns(table_name):
             # Partition key: public-suffix-aware registrable domain (#251).
             from src.utils.validation import registrable_domain
 
@@ -555,6 +551,22 @@ class LakehouseManager:
                 record["_ingestion_time"] = datetime.now(UTC).isoformat()
             if "_stage" not in record:
                 record["_stage"] = table_name
+
+    def _write_sync_locked(
+        self,
+        table_name: str,
+        data: list[dict[str, Any]],
+        mode: Literal["append", "overwrite", "error", "ignore"],
+    ) -> bool:
+
+        table_path = self.tables.get(table_name)
+        if not table_path:
+            table_path = self.base_path / table_name
+            table_path.mkdir(parents=True, exist_ok=True)
+            self.tables[table_name] = table_path
+            logger.info(f"Dynamically created new table path for: {table_name}")
+
+        self._enrich_records(table_name, data)
 
         try:
             import time
@@ -592,9 +604,7 @@ class LakehouseManager:
                     logger.warning(f"[SCHEMA EVOLUTION] {table_name}: adding columns {added}")
             self.schema_cache[table_name] = table.schema  # informational only
 
-            partition_by = None
-            if table_name in ["stage1_discovery", "stage2_page_analysis"]:
-                partition_by = ["domain"]
+            partition_by = _partition_columns(table_name)
 
             writer_props = WriterProperties(compression="ZSTD")
 
@@ -1114,6 +1124,9 @@ class LakehouseManager:
 
         merge_keys = [merge_key] if isinstance(merge_key, str) else list(merge_key)
         rows = _dedupe_by_key(updates_data, merge_keys)
+        # Same partition key / metadata as write(), so merged and appended rows
+        # look alike (#311: stage2_page_analysis is now upserted by url_hash).
+        self._enrich_records(table_name, rows)
         try:
             table_path = self.get_table_path(table_name)
         except ValueError:  # unregistered table: create it, as write() does
@@ -1125,7 +1138,9 @@ class LakehouseManager:
         for attempt in range(1, MERGE_MAX_ATTEMPTS + 1):
             try:
                 with self._table_lock(table_name):
-                    if not (table_path / "_delta_log").exists() and self._create_from_rows(table_path, rows):
+                    if not (table_path / "_delta_log").exists() and self._create_from_rows(
+                        table_path, rows, _partition_columns(table_name)
+                    ):
                         logger.info(f"[merge_into] {table_name}: created with {len(rows)} rows")
                         return len(rows)
                     return self._merge_rows(table_name, table_path, rows, merge_keys, update_columns)
@@ -1150,13 +1165,17 @@ class LakehouseManager:
         logger.error(f"[merge_into] Failed for {table_name}: {failure}", exc_info=True)
         return -1
 
-    def _create_from_rows(self, table_path: Path, rows: list[dict[str, Any]]) -> bool:
+    def _create_from_rows(
+        self, table_path: Path, rows: list[dict[str, Any]], partition_by: list[str] | None = None
+    ) -> bool:
         """Create the table from ``rows``; False if another writer created it first."""
         try:
             write_deltalake(
                 str(table_path),
-                pa.Table.from_pylist(rows),
+                infer_table(rows),
                 mode="error",
+                partition_by=partition_by,
+                configuration={CHECKPOINT_INTERVAL_PROPERTY: str(self.checkpoint_interval)},
             )
             return True
         except Exception as e:

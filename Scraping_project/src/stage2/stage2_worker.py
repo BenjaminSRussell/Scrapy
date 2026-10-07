@@ -53,7 +53,28 @@ try:  # queue status MERGE failures after retries (#168)
 except Exception:
     STAGE2_QUEUE_UPDATE_FAILURES = None
 
+try:  # analysis upsert failures; their queue rows are left pending (#311)
+    from prometheus_client import Counter as _ACounter
+
+    STAGE2_ANALYSIS_WRITE_FAILURES = _ACounter(
+        "stage2_analysis_write_failures_total",
+        "stage2_page_analysis upserts that failed (queue rows left pending, not acked).",
+    )
+except Exception:
+    STAGE2_ANALYSIS_WRITE_FAILURES = None
+
 DEFAULT_STAGE2_MERGE_RETRIES = 4
+ANALYSIS_TABLE = "stage2_page_analysis"
+
+
+def ensure_url_hash(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Give every analysis row a url_hash (the upsert key, #311) using the seed hasher."""
+    from src.lakehouse.seed_manager import default_url_hasher
+
+    for row in rows:
+        if not row.get("url_hash"):
+            row["url_hash"] = default_url_hasher(str(row.get("url") or ""))
+    return rows
 
 
 def split_stage2_results(results: list[Any]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
@@ -232,14 +253,10 @@ class Stage2Worker:
             # Silver analysis excludes failures; they go to a quarantine table (#331).
             accepted, quarantined = split_stage2_results(valid_results)
 
-            if accepted:
-                self.delta.write(
-                    "stage2_page_analysis",
-                    accepted,
-                    mode="append",
-                    async_write=False,
-                )
-                logger.info(f"[STAGE2] Saved {len(accepted)} analysis results")
+            # #311: upsert by url_hash, so reprocessing a URL whose queue ack was
+            # lost (crash between write and ack) replaces its row instead of
+            # duplicating it; and only ack URLs whose analysis is durable.
+            analysis_ok = await self._write_analysis(accepted) if accepted else True
             if quarantined:
                 self.delta.write(
                     TABLE_STAGE2_ERRORS,
@@ -265,6 +282,11 @@ class Stage2Worker:
             completed_urls, failed_urls, retrying = plan_queue_updates(
                 valid_results, prior_failures, self.max_retries
             )
+            if not analysis_ok:
+                logger.error(
+                    f"[STAGE2] Analysis upsert failed; leaving {len(completed_urls)} URLs pending (not acked)"
+                )
+                completed_urls = []
             if completed_urls:
                 await self._update_queue_status(completed_urls)
             if failed_urls:
@@ -316,6 +338,24 @@ class Stage2Worker:
                 STAGE2_GATHER_EXCEPTIONS.labels(exception=name).inc()
             rows.append(self._error_record(url or "", url_hash or "", 0, message[:500]))
         return rows
+
+    async def _write_analysis(self, accepted: list[dict[str, Any]]) -> bool:
+        """Upsert accepted analysis rows into stage2_page_analysis by url_hash (#311)."""
+        rows = ensure_url_hash(accepted)
+        update_columns = sorted({k for r in rows for k in r} - {"url_hash"})
+        try:
+            affected = await asyncio.to_thread(
+                self.delta.merge_into, ANALYSIS_TABLE, rows, "url_hash", update_columns
+            )
+        except Exception as e:
+            logger.error(f"[STAGE2] Analysis upsert raised: {e}")
+            affected = -1
+        if affected is None or affected < 0:
+            if STAGE2_ANALYSIS_WRITE_FAILURES is not None:
+                STAGE2_ANALYSIS_WRITE_FAILURES.inc()
+            return False
+        logger.info(f"[STAGE2] Upserted {len(rows)} analysis results")
+        return True
 
     async def _update_queue_status(
         self, completed_urls: list[str], table_name: str = "stage2_queue", status: str = "completed"
