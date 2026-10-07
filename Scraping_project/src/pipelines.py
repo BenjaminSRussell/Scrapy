@@ -793,12 +793,22 @@ class AggregationPipeline:
     """Group items by ``entity_id`` and persist one summary row per entity (#790).
 
     Memory is bounded: each entity keeps only its ``max_items_per_entity``
-    most recent items (by ``recency_score``) plus a running total count.
-    On spider close the summaries are written synchronously to the Delta
-    table ``output_topic`` (default ``entity_summaries``).
+    most recent items (by ``recency_score``) plus a running total count, and
+    at most ``max_entities`` entities are held at once (#201). Beyond that the
+    least-recently-updated entities are summarised and spilled to Delta.
+    Every ``flush_every_items`` items all buffered groups are flushed, and on
+    spider close the rest are written synchronously to the Delta table
+    ``output_topic`` (default ``entity_summaries``).
+
+    A flushed entity that keeps receiving items gets another row later, so an
+    entity can have several rows per crawl. Each row covers the items seen
+    since its previous flush (``source_count``); take the latest ``created_at``
+    or sum ``source_count`` downstream.
     """
 
     DEFAULT_MAX_ITEMS_PER_ENTITY = 10
+    DEFAULT_MAX_ENTITIES = 10_000
+    DEFAULT_FLUSH_EVERY_ITEMS = 50_000
 
     def __init__(
         self,
@@ -807,6 +817,8 @@ class AggregationPipeline:
         max_items_per_entity: int = DEFAULT_MAX_ITEMS_PER_ENTITY,
         persist: bool = True,
         delta: Any = None,
+        max_entities: int = DEFAULT_MAX_ENTITIES,
+        flush_every_items: int = DEFAULT_FLUSH_EVERY_ITEMS,
     ):
         """Initialize the aggregation pipeline.
 
@@ -816,16 +828,24 @@ class AggregationPipeline:
             max_items_per_entity: Most-recent items retained per entity
             persist: Write summaries to Delta on spider close
             delta: Optional DeltaHelper-like sink (defaults to get_delta())
+            max_entities: Max entity groups held in memory before LRU spill
+            flush_every_items: Flush all groups every N items (0 disables)
         """
         self.enabled = enabled
         self.output_topic = output_topic
         self.max_items_per_entity = max(1, int(max_items_per_entity))
         self.persist = persist
         self._delta = delta
-        self.entity_groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
-        self.entity_counts: dict[str, int] = defaultdict(int)
+        self.max_entities = max(1, int(max_entities))
+        self.flush_every_items = max(0, int(flush_every_items))
+        # Insertion order doubles as LRU order (touched entities move to the end).
+        self.entity_groups: dict[str, list[dict[str, Any]]] = {}
+        self.entity_counts: dict[str, int] = {}
         self.items_aggregated = 0
+        self.items_since_flush = 0
         self.summaries_written = 0
+        self.flushes = 0
+        self._spider_name = ""
 
     @classmethod
     def from_crawler(cls, crawler: Crawler) -> "AggregationPipeline":
@@ -835,12 +855,18 @@ class AggregationPipeline:
             "AGGREGATION_MAX_ITEMS_PER_ENTITY", cls.DEFAULT_MAX_ITEMS_PER_ENTITY
         )
         persist = crawler.settings.getbool("AGGREGATION_PERSIST", True)
+        max_entities = crawler.settings.getint("AGGREGATION_MAX_ENTITIES", cls.DEFAULT_MAX_ENTITIES)
+        flush_every = crawler.settings.getint(
+            "AGGREGATION_FLUSH_EVERY_ITEMS", cls.DEFAULT_FLUSH_EVERY_ITEMS
+        )
 
         pipeline = cls(
             enabled=enabled,
             output_topic=output_topic,
             max_items_per_entity=max_items,
             persist=persist,
+            max_entities=max_entities,
+            flush_every_items=flush_every,
         )
 
         crawler.signals.connect(pipeline.close_spider, signal=signals.spider_closed)
@@ -865,16 +891,41 @@ class AggregationPipeline:
         entity_id = adapter.get("entity_id")
 
         if entity_id:
-            group = self.entity_groups[entity_id]
+            self._spider_name = str(getattr(spider, "name", "") or "")
+            group = self.entity_groups.pop(entity_id, None) or []
+            self.entity_groups[entity_id] = group  # move to MRU end
+            self.entity_counts[entity_id] = self.entity_counts.pop(entity_id, 0) + 1
             group.append(adapter.asdict())
-            self.entity_counts[entity_id] += 1
             self.items_aggregated += 1
+            self.items_since_flush += 1
             # Bounded memory: keep only the N most recent items per entity.
             if len(group) > self.max_items_per_entity:
                 group.sort(key=self._recency, reverse=True)
                 del group[self.max_items_per_entity:]
 
+            if self.flush_every_items and self.items_since_flush >= self.flush_every_items:
+                self.flush(list(self.entity_groups), reason="periodic")
+            elif len(self.entity_groups) > self.max_entities:
+                # Spill the least-recently-updated ~10% so writes are batched.
+                n = max(1, len(self.entity_groups) - self.max_entities, self.max_entities // 10)
+                self.flush(list(self.entity_groups)[:n], reason="max_entities")
+
         return item
+
+    def flush(self, entity_ids: list[str], reason: str = "manual") -> int:
+        """Summarise ``entity_ids``, persist them, and drop them from memory."""
+        if not entity_ids:
+            return 0
+        rows = self.build_summary_rows(self._spider_name, entity_ids)
+        for eid in entity_ids:
+            self.entity_groups.pop(eid, None)
+            self.entity_counts.pop(eid, None)
+        if reason == "periodic" or not self.entity_groups:
+            self.items_since_flush = 0
+        self.flushes += 1
+        written = self._persist(rows)
+        logger.info(f"AggregationPipeline flushed {len(entity_ids)} entities ({reason}); {written} rows persisted")
+        return written
 
     def _get_delta(self) -> Any:
         if self._delta is None:
@@ -883,10 +934,14 @@ class AggregationPipeline:
             self._delta = get_delta()
         return self._delta
 
-    def build_summary_rows(self, spider_name: str) -> list[dict[str, Any]]:
+    def build_summary_rows(self, spider_name: str, entity_ids: list[str] | None = None) -> list[dict[str, Any]]:
         created_at = datetime.now().isoformat()
         rows: list[dict[str, Any]] = []
-        for entity_id, items in self.entity_groups.items():
+        ids = list(self.entity_groups) if entity_ids is None else entity_ids
+        for entity_id in ids:
+            items = self.entity_groups.get(entity_id)
+            if not items:
+                continue
             items.sort(key=self._recency, reverse=True)
             summary = self._generate_entity_summary(entity_id, items)
             if not summary:
@@ -915,20 +970,23 @@ class AggregationPipeline:
         rows = self.build_summary_rows(str(getattr(spider, "name", "") or ""))
         for row in rows:
             logger.debug(f"Entity {row['entity_id']}: summary from {row['source_count']} items")
+        self._persist(rows)
 
+    def _persist(self, rows: list[dict[str, Any]]) -> int:
+        """Write summary rows synchronously; never raises. Returns rows written."""
         if not rows or not self.persist:
-            return
-
+            return 0
         try:
             ok = self._get_delta().write(self.output_topic, rows, mode="append", async_write=False)
-        except Exception as e:  # never fail spider shutdown on persistence
+        except Exception as e:  # never fail the crawl / shutdown on persistence
             logger.error(f"Failed to persist {len(rows)} entity summaries: {e}")
-            return
+            return 0
         if ok is False:
             logger.error(f"Failed to persist {len(rows)} entity summaries to {self.output_topic}")
-            return
+            return 0
         self.summaries_written += len(rows)
         logger.info(f"Persisted {len(rows)} entity summaries to {self.output_topic}")
+        return len(rows)
 
     def _generate_entity_summary(self, entity_id: str, items: list[dict[str, Any]]) -> str:
 
