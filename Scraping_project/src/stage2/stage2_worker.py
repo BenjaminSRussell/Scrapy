@@ -1,6 +1,8 @@
 import asyncio
 import logging
+import os
 import time
+from collections import Counter as TallyCounter
 from datetime import datetime
 from typing import Any
 
@@ -36,6 +38,50 @@ def split_stage2_results(results: list[Any]) -> tuple[list[dict[str, Any]], list
     quarantined = [r for r in rows if r.get("has_error")]
     return accepted, quarantined
 
+
+DEFAULT_STAGE2_MAX_RETRIES = 3
+
+
+def _is_terminal_error(row: dict[str, Any]) -> bool:
+    """Errors that retrying cannot fix: bad URLs and 4xx other than 408/429."""
+    if row.get("error_message") == "invalid_url":
+        return True
+    code = int(row.get("error_code") or 0)
+    return 400 <= code < 500 and code not in (408, 429)
+
+
+def plan_queue_updates(
+    valid_results: list[dict[str, Any]],
+    prior_failures: dict[str, int],
+    max_retries: int,
+) -> tuple[list[str], list[str], list[dict[str, Any]]]:
+    """Decide queue transitions for a batch (#160).
+
+    Returns (completed_urls, failed_urls, retry_rows). Successful rows complete;
+    error rows stay ``pending`` until they have failed ``max_retries`` times in
+    total (prior runs + this one) or hit a terminal error, then become ``failed``.
+    ``prior_failures`` is updated in place with this batch's failures.
+    """
+    completed: list[str] = []
+    failed: list[str] = []
+    retrying: list[dict[str, Any]] = []
+    for row in valid_results:
+        url = row.get("url")
+        if not url:
+            continue
+        if not row.get("has_error"):
+            completed.append(url)
+            continue
+        attempts = prior_failures.get(url, 0) + 1
+        prior_failures[url] = attempts
+        row["_retry_count"] = attempts
+        if attempts >= max_retries or _is_terminal_error(row):
+            failed.append(url)
+        else:
+            retrying.append(row)
+    return completed, failed, retrying
+
+
 class Stage2Worker:
 
     def __init__(self, max_concurrent: int = 50, batch_size: int = 100):
@@ -51,6 +97,41 @@ class Stage2Worker:
 
         self.perf_start_time = None
         self.perf_urls_processed = 0
+
+        try:
+            self.max_retries = max(1, int(os.getenv("STAGE2_MAX_RETRIES", DEFAULT_STAGE2_MAX_RETRIES)))
+        except ValueError:
+            self.max_retries = DEFAULT_STAGE2_MAX_RETRIES
+        self._dlq: Any = None
+
+    def _load_prior_failures(self) -> dict[str, int]:
+        """Per-URL failure counts from earlier runs, from the stage2_errors quarantine."""
+        try:
+            rows = self.delta.read_table(TABLE_STAGE2_ERRORS)
+            if hasattr(rows, "to_pylist"):
+                rows = rows.to_pylist()
+            return dict(TallyCounter(r.get("url") for r in (rows or []) if r.get("url")))
+        except Exception as e:
+            logger.debug(f"[STAGE2] No prior failure history ({e}); retry counts start at 0")
+            return {}
+
+    def _send_to_dlq(self, rows: list[dict[str, Any]]) -> None:
+        """Escalate permanently failed URLs to the dead-letter queue (stage=stage2)."""
+        try:
+            if self._dlq is None:
+                from src.utils.dead_letter_queue import DeadLetterQueue
+
+                self._dlq = DeadLetterQueue()
+            for row in rows:
+                reason = row.get("error_message") or "stage2 analysis failed"
+                self._dlq.add(
+                    {"url": row.get("url"), "url_hash": row.get("url_hash"), "_retry_count": row.get("_retry_count", 0)},
+                    RuntimeError(f"{reason} (error_code={row.get('error_code', 0)})"),
+                    stage="stage2",
+                    context={"max_retries": self.max_retries},
+                )
+        except Exception as e:
+            logger.error(f"[STAGE2] Failed to write {len(rows)} entries to DLQ: {e}")
 
     async def run(self) -> dict[str, int]:
         """Analyze pending URLs; returns this run's counts (analyzed/quality_docs/massive_docs/errors)."""
@@ -85,6 +166,8 @@ class Stage2Worker:
         if not pending:
             logger.info("[STAGE2] No pending URLs to process")
             return counts
+
+        prior_failures = self._load_prior_failures()
 
         for i in range(0, len(pending), self.batch_size):
             batch = pending[i : i + self.batch_size]
@@ -130,8 +213,18 @@ class Stage2Worker:
                 elif not r.get("is_low_quality", True):
                     counts["quality_docs"] += 1
 
-            if valid_results:
-                await self._update_queue_status([r["url"] for r in valid_results])
+            # Only successes complete; errors retry until capped, then fail + DLQ (#160).
+            completed_urls, failed_urls, retrying = plan_queue_updates(
+                valid_results, prior_failures, self.max_retries
+            )
+            if completed_urls:
+                await self._update_queue_status(completed_urls)
+            if failed_urls:
+                await self._update_queue_status(failed_urls, status="failed")
+                failed_set = set(failed_urls)
+                self._send_to_dlq([r for r in valid_results if r.get("url") in failed_set])
+            if retrying:
+                logger.info(f"[STAGE2] {len(retrying)} failed URLs left pending for retry")
 
             if self.postgres and len(valid_results) > 0:
                 try:
@@ -147,14 +240,17 @@ class Stage2Worker:
         logger.info("[STAGE2] Worker completed all batches")
         return counts
 
-    async def _update_queue_status(self, completed_urls: list[str], table_name: str = "stage2_queue"):
+    async def _update_queue_status(
+        self, completed_urls: list[str], table_name: str = "stage2_queue", status: str = "completed"
+    ):
+        """Set ``status`` (and ``completed_at`` as the finish time) for the given URLs."""
         if not completed_urls:
             return
 
         try:
             update_data = {
                 "url": pa.array(completed_urls, type=pa.string()),
-                "status": pa.array(["completed"] * len(completed_urls), type=pa.string()),
+                "status": pa.array([status] * len(completed_urls), type=pa.string()),
                 "completed_at": pa.array(
                     [datetime.now() for _ in completed_urls],
                     type=pa.timestamp("ms"),
@@ -180,19 +276,19 @@ class Stage2Worker:
                 .execute()
             )
 
-            logger.info(f"[STAGE2] Marked {len(completed_urls)} items as completed in {table_name} via MERGE")
+            logger.info(f"[STAGE2] Marked {len(completed_urls)} items as {status} in {table_name} via MERGE")
 
         except Exception as e:
             logger.error(f"[STAGE2] Failed to update queue status via MERGE: {e}")
             logger.info("[STAGE2] Falling back to overwrite method for this batch")
             try:
                 all_items = self.delta.read(table_name)
-                self._update_queue_status_overwrite(all_items, completed_urls, table_name)
+                self._update_queue_status_overwrite(all_items, completed_urls, table_name, status=status)
             except Exception as fallback_e:
                 logger.error(f"[STAGE2] Fallback overwrite method also failed: {fallback_e}")
 
     def _update_queue_status_overwrite(
-        self, all_queue_items: list, completed_urls: list, table_name: str = "stage2_queue"
+        self, all_queue_items: list, completed_urls: list, table_name: str = "stage2_queue", status: str = "completed"
     ):
         """DEPRECATED: Original method to update queue status by overwriting the table."""
         try:
@@ -200,11 +296,11 @@ class Stage2Worker:
 
             for item in all_queue_items:
                 if item.get("url") in completed_set:
-                    item["status"] = "completed"
+                    item["status"] = status
                     item["completed_at"] = datetime.now().isoformat()
 
             self.delta.write(table_name, all_queue_items, mode="overwrite", async_write=False)
-            logger.info(f"[STAGE2] Marked {len(completed_urls)} items as completed in {table_name} (overwrite)")
+            logger.info(f"[STAGE2] Marked {len(completed_urls)} items as {status} in {table_name} (overwrite)")
 
         except Exception as e:
             logger.error(f"[STAGE2] Failed to update queue status (overwrite): {e}")
