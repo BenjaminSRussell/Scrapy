@@ -16,6 +16,21 @@ let historicalData = {
 let previousMetrics = {};
 let startTime = Date.now();
 let activityLog = [];
+let lastHistoryDayKey = null;
+
+function formatHistoryLabel(d = new Date()) {
+    const dayKey = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+    const time = d.toLocaleTimeString();
+    if (lastHistoryDayKey !== null && lastHistoryDayKey !== dayKey) {
+        // Include short date when day changes (midnight boundary)
+        const date = d.toLocaleDateString(undefined, { month: '2-digit', day: '2-digit' });
+        lastHistoryDayKey = dayKey;
+        return `${date} ${time}`;
+    }
+    lastHistoryDayKey = dayKey;
+    return time;
+}
+
 
 function initializeCharts() {
     const chartConfig = {
@@ -344,6 +359,7 @@ function updatePerformanceCharts() {
         charts.throughput.update('none');
     }
     syncAllChartTables();
+    updateOverviewSparklines();
 }
 
 function calculateRates(metrics) {
@@ -650,6 +666,45 @@ function syncChartDataTable(chart, tableId) {
     }
 }
 
+
+function sparkPath(values, w = 100, h = 28) {
+    if (!values || values.length < 2) return '';
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    const span = max - min || 1;
+    return values.map((v, i) => {
+        const x = (i / (values.length - 1)) * w;
+        const y = h - ((v - min) / span) * (h - 4) - 2;
+        return `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`;
+    }).join(' ');
+}
+
+function updateOverviewSparklines() {
+    const series = [
+        ['overview-s1-discovered', historicalData.urls],
+        ['overview-s2-analyzed', historicalData.pages],
+        ['overview-s3-summaries', historicalData.summaries],
+        ['overview-s4-summaries', historicalData.summaries],
+    ];
+    for (const [id, values] of series) {
+        const svg = document.getElementById(`spark-${id}`);
+        const dir = document.getElementById(`spark-dir-${id}`);
+        if (!svg) continue;
+        if (!values || values.length < 2) {
+            svg.innerHTML = '';
+            if (dir) dir.textContent = 'Trend: waiting for samples';
+            continue;
+        }
+        const d = sparkPath(values);
+        const first = values[0];
+        const last = values[values.length - 1];
+        const delta = last - first;
+        const arrow = delta > 0 ? '▲ rising' : delta < 0 ? '▼ falling' : '● flat';
+        svg.innerHTML = `<path d="${d}" fill="none" stroke="currentColor" stroke-width="1.5" />`;
+        if (dir) dir.textContent = `Trend: ${arrow} (${delta >= 0 ? '+' : ''}${delta})`;
+    }
+}
+
 function syncAllChartTables() {
     const map = [
         ['throughput', 'table-throughput'],
@@ -665,7 +720,31 @@ function syncAllChartTables() {
 }
 
 
+
+function resetChartHistory() {
+    historicalData.timestamps.length = 0;
+    historicalData.urls.length = 0;
+    historicalData.pages.length = 0;
+    historicalData.summaries.length = 0;
+    lastHistoryDayKey = null;
+    Object.values(charts || {}).forEach(ch => {
+        if (!ch?.data) return;
+        ch.data.labels = [];
+        (ch.data.datasets || []).forEach(ds => { ds.data = []; });
+        try { ch.update('none'); } catch (_) {}
+    });
+    syncAllChartTables?.();
+    document.querySelectorAll('[id^="spark-dir-"]').forEach(el => {
+        el.textContent = 'Trend: waiting for samples';
+    });
+    const live = document.getElementById('refresh-status');
+    if (live) live.textContent = 'Chart history reset';
+}
+
 function setupTabs() {
+    const resetHist = document.getElementById('reset-chart-history');
+    if (resetHist) resetHist.addEventListener('click', resetChartHistory);
+
     const clearBtn = document.getElementById('clear-activity');
     if (clearBtn) {
         clearBtn.addEventListener('click', () => {
