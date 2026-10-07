@@ -85,8 +85,11 @@ def test_full_queue_backpressures_within_timeout(tmp_path):
         assert _counter(lm.DELTA_WRITE_QUEUE_FULL, table="t167") == before + 1
 
 
-def test_sync_write_reports_failure(mgr):
-    # Any exception inside the write (here a corrupt cached schema) used to be
-    # logged and swallowed with no signal to the caller.
-    mgr.schema_cache["t225"] = object()
+def test_sync_write_reports_failure(mgr, monkeypatch):
+    # Any exception inside the write (here an unreadable table schema) used to
+    # be logged and swallowed with no signal to the caller.
+    def broken(_path):
+        raise RuntimeError("corrupt _delta_log")
+
+    monkeypatch.setattr(mgr, "_table_schema", broken)
     assert mgr.write("t225", [{"url": "x"}], async_write=False) is False
