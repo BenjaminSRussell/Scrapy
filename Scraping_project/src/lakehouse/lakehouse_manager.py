@@ -50,6 +50,28 @@ try:  # cast failures by table/column (#818)
 except Exception:  # prometheus_client missing or metric already registered
     DELTA_CAST_FAILURES = None
 
+try:  # async write durability (#225) and queue backpressure (#167)
+    from prometheus_client import Counter as _WCounter
+    from prometheus_client import Gauge as _WGauge
+
+    DELTA_WRITE_FAILURES = _WCounter(
+        "delta_write_failures_total",
+        "Failed Delta write attempts, by table and outcome (retry|spilled).",
+        ["table", "outcome"],
+    )
+    DELTA_WRITE_QUEUE_FULL = _WCounter(
+        "delta_write_queue_full_total",
+        "Async writes that hit a full write queue and were spilled instead of blocking.",
+        ["table"],
+    )
+    DELTA_WRITE_QUEUE_DEPTH = _WGauge(
+        "delta_write_queue_depth", "Batches waiting in the async Delta write queue."
+    )
+except Exception:
+    DELTA_WRITE_FAILURES = DELTA_WRITE_QUEUE_FULL = DELTA_WRITE_QUEUE_DEPTH = None
+
+SPILL_DIR_NAME = "_write_spill"
+
 
 def cast_rows_to_schema(
     rows: list[dict[str, Any]], schema: Any, mode: str = "strict"
@@ -142,6 +164,12 @@ class LakehouseManager:
 
         queue_maxsize = config.get("delta_lake.queue_maxsize", 1000)
         self.write_queue: queue.Queue[WriteTask | None] = queue.Queue(maxsize=queue_maxsize)
+        # #167: producers wait at most this long for queue space, then spill.
+        self.queue_put_timeout = float(config.get("delta_lake.queue_put_timeout_seconds", 30))
+        # #225: async writes retry this many times (exponential backoff), then spill.
+        self.write_retries = max(1, int(config.get("delta_lake.write_retries", 3)))
+        self.write_retry_backoff = float(config.get("delta_lake.write_retry_backoff_seconds", 0.5))
+        self.spill_path = self.base_path / SPILL_DIR_NAME
 
         self.schema_cache: dict[str, Any] = {}
 
@@ -214,9 +242,12 @@ class LakehouseManager:
                 table_name, data, mode = task
 
                 try:
-                    self._write_sync(table_name, data, mode)
+                    self._write_with_retry(table_name, data, mode)
                 finally:
+                    # Acked only after the batch is written or durably spilled (#225).
                     self.write_queue.task_done()
+                    if DELTA_WRITE_QUEUE_DEPTH is not None:
+                        DELTA_WRITE_QUEUE_DEPTH.set(self.write_queue.qsize())
 
             except queue.Empty:
                 continue
@@ -225,6 +256,91 @@ class LakehouseManager:
 
     def _handle_writer_exception(self, e: Exception, table_name: str):
         logger.error(f"Write failed for {table_name}: {e}", exc_info=True)
+
+    def _write_with_retry(
+        self,
+        table_name: str,
+        data: list[dict[str, Any]],
+        mode: Literal["append", "overwrite", "error", "ignore"],
+    ) -> bool:
+        """Async-path write: retry with backoff, then spill to disk (#225).
+
+        Returns True if written. A batch is never dropped without a record:
+        once retries are exhausted it is written to ``_write_spill/`` as JSONL
+        (replay with ``replay_spilled_writes()``).
+        """
+        for attempt in range(1, self.write_retries + 1):
+            if self._write_sync(table_name, data, mode):
+                return True
+            if DELTA_WRITE_FAILURES is not None:
+                DELTA_WRITE_FAILURES.labels(table=table_name, outcome="retry").inc()
+            if attempt < self.write_retries:
+                delay = min(self.write_retry_backoff * (2 ** (attempt - 1)), 30.0)
+                logger.warning(
+                    f"Write to {table_name} failed (attempt {attempt}/{self.write_retries}); retrying in {delay:.2f}s"
+                )
+                if self.shutdown_event.wait(delay):
+                    break  # shutting down: spill now rather than sleep
+        self._spill_batch(table_name, data, mode, reason=f"write failed after {self.write_retries} attempts")
+        return False
+
+    def _spill_batch(
+        self,
+        table_name: str,
+        data: list[dict[str, Any]],
+        mode: str,
+        reason: str,
+    ) -> Path | None:
+        """Durably persist a batch that could not be written (fsync'd JSONL)."""
+        import json
+        import uuid
+
+        try:
+            target_dir = self.spill_path / table_name
+            target_dir.mkdir(parents=True, exist_ok=True)
+            stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%f")
+            path = target_dir / f"{stamp}-{uuid.uuid4().hex[:8]}.jsonl"
+            tmp = path.with_suffix(".tmp")
+            with open(tmp, "w", encoding="utf-8") as fh:
+                fh.write(json.dumps({"_spill_meta": {"table": table_name, "mode": mode, "reason": reason}}) + "\n")
+                for row in data:
+                    fh.write(json.dumps(row, default=str) + "\n")
+                fh.flush()
+                os.fsync(fh.fileno())
+            tmp.replace(path)
+        except Exception as e:  # last line of defence: make the loss loud
+            logger.critical(f"DATA LOSS: could not spill {len(data)} rows for {table_name} ({reason}): {e}")
+            return None
+        if DELTA_WRITE_FAILURES is not None:
+            DELTA_WRITE_FAILURES.labels(table=table_name, outcome="spilled").inc()
+        logger.error(f"Spilled {len(data)} rows for {table_name} to {path} ({reason})")
+        return path
+
+    def replay_spilled_writes(self, table_name: str | None = None) -> dict[str, int]:
+        """Re-write spilled batches; files are deleted only after a successful write."""
+        import json
+
+        replayed = {"files": 0, "rows": 0, "failed": 0}
+        if not self.spill_path.is_dir():
+            return replayed
+        dirs = [self.spill_path / table_name] if table_name else sorted(self.spill_path.iterdir())
+        for table_dir in dirs:
+            if not table_dir.is_dir():
+                continue
+            for path in sorted(table_dir.glob("*.jsonl")):
+                lines = path.read_text(encoding="utf-8").splitlines()
+                if not lines:
+                    path.unlink()
+                    continue
+                meta = json.loads(lines[0]).get("_spill_meta", {})
+                rows = [json.loads(line) for line in lines[1:] if line.strip()]
+                if self._write_sync(meta.get("table", table_dir.name), rows, meta.get("mode", "append")):
+                    path.unlink()
+                    replayed["files"] += 1
+                    replayed["rows"] += len(rows)
+                else:
+                    replayed["failed"] += 1
+        return replayed
 
     def _table_lock(self, table_name: str) -> threading.Lock:
         with self._table_locks_guard:
@@ -238,18 +354,19 @@ class LakehouseManager:
         table_name: str,
         data: list[dict[str, Any]],
         mode: Literal["append", "overwrite", "error", "ignore"] = "append",
-    ):
+    ) -> bool:
+        """Write synchronously. Returns False if the write failed (logged, not raised)."""
         if not data:
-            return
+            return True
         with self._table_lock(table_name):
-            self._write_sync_locked(table_name, data, mode)
+            return self._write_sync_locked(table_name, data, mode)
 
     def _write_sync_locked(
         self,
         table_name: str,
         data: list[dict[str, Any]],
         mode: Literal["append", "overwrite", "error", "ignore"],
-    ):
+    ) -> bool:
 
         table_path = self.tables.get(table_name)
         if not table_path:
@@ -323,7 +440,7 @@ class LakehouseManager:
                             f"[CAST] All {len(data)} rows for {table_name} failed to cast; "
                             f"quarantined to {CAST_QUARANTINE_TABLE}"
                         )
-                        return
+                        return True  # handled: every row is recorded in quarantine
                     table = cast_table
                     data = kept
 
@@ -368,9 +485,11 @@ class LakehouseManager:
             logger.info(f" Wrote {len(data)} records to {table_name}")
         except Exception as e:
             self._handle_writer_exception(e, table_name)
+            return False
 
         if table_name in ["stage1_discovery", "stage2_page_analysis"] and len(data) >= 1000:
             self.maintenance_queue.put(("optimize", table_name, 0))
+        return True
 
     def _record_cast_failures(self, table_name: str, failures: list[dict[str, Any]]) -> None:
         """Count, log and quarantine rows/values that failed to cast (#818)."""
@@ -412,12 +531,29 @@ class LakehouseManager:
         mode: Literal["append", "overwrite", "error", "ignore"] = "append",
         async_write: bool = True,
     ):
-        """Write data to a Delta table, optionally via the background queue."""
+        """Write data to a Delta table, optionally via the background queue.
+
+        Returns False when the batch was not written: a failed sync write, or an
+        async write that found the queue full for ``queue_put_timeout`` seconds
+        and was spilled to ``_write_spill/`` instead of blocking forever (#167).
+        """
         if async_write:
-            self.write_queue.put((table_name, data, mode))
+            try:
+                self.write_queue.put((table_name, data, mode), timeout=self.queue_put_timeout)
+            except queue.Full:
+                if DELTA_WRITE_QUEUE_FULL is not None:
+                    DELTA_WRITE_QUEUE_FULL.labels(table=table_name).inc()
+                logger.error(
+                    f"Delta write queue full for {self.queue_put_timeout}s "
+                    f"({self.write_queue.maxsize} batches); spilling {len(data)} rows for {table_name}"
+                )
+                self._spill_batch(table_name, data, mode, reason="write queue full")
+                return False
+            if DELTA_WRITE_QUEUE_DEPTH is not None:
+                DELTA_WRITE_QUEUE_DEPTH.set(self.write_queue.qsize())
             logger.debug(f"Queued {len(data)} records for {table_name}")
-        else:
-            self._write_sync(table_name, data, mode)
+            return True
+        return self._write_sync(table_name, data, mode)
 
     def read(
         self,

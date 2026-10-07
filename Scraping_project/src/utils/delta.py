@@ -123,8 +123,10 @@ class DeltaHelper:
             delta.write("stage2_page_analysis", rows, mode="append", async_write=False)
         """
         try:
-            self.manager.write(table_name, data, mode=mode, async_write=async_write)
-            return True
+            # False = not written: failed sync write, or async write spilled
+            # because the queue stayed full (#167/#225). None (older backends) = ok.
+            result = self.manager.write(table_name, data, mode=mode, async_write=async_write)
+            return result is not False
         except Exception as e:
             logger.error(f"Failed to write to {table_name}: {e}")
             return False
