@@ -1,5 +1,8 @@
-# Kubernetes deployment configuration
-# Phase 10: Production Kubernetes deployment
+# Minimal Kubernetes manifest (stage1/stage2 workers + Redis).
+#
+# SUPPORTED INSTALL PATH: the Helm chart in k8s/helm/scraping-pipeline (see
+# k8s/README.md). This file is a small quick-start kept at probe parity with
+# the chart (#181); it has no Postgres, Kafka, monitoring or network policies.
 
 apiVersion: v1
 kind: Namespace
@@ -32,6 +35,7 @@ spec:
       labels:
         app: stage1-worker
     spec:
+      terminationGracePeriodSeconds: 60
       containers:
       - name: worker
         image: uconn-scraper:latest
@@ -39,6 +43,27 @@ spec:
         envFrom:
         - configMapRef:
             name: scraper-config
+        # Probes/preStop mirror the Helm chart (#181). The Helm chart is the
+        # supported install path; see k8s/README.md.
+        livenessProbe:
+          exec:
+            command: ["python", "-m", "src.utils.probe", "alive", "src.workers.stage1_worker"]
+          initialDelaySeconds: 20
+          periodSeconds: 15
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          exec:
+            command: ["python", "-m", "src.utils.probe", "ready-redis"]
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        lifecycle:
+          preStop:
+            exec:
+              # Give in-flight batches time to finish after SIGTERM is queued.
+              command: ["sleep", "10"]
         resources:
           requests:
             memory: "1Gi"
@@ -69,6 +94,7 @@ spec:
       labels:
         app: stage2-worker
     spec:
+      terminationGracePeriodSeconds: 60
       containers:
       - name: worker
         image: uconn-scraper:latest
@@ -79,6 +105,27 @@ spec:
         env:
         - name: CONCURRENCY
           value: "10"
+        # Probes/preStop mirror the Helm chart (#181). The Helm chart is the
+        # supported install path; see k8s/README.md.
+        livenessProbe:
+          exec:
+            command: ["python", "-m", "src.utils.probe", "alive", "src.workers.stage2_worker"]
+          initialDelaySeconds: 20
+          periodSeconds: 15
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          exec:
+            command: ["python", "-m", "src.utils.probe", "ready-redis"]
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        lifecycle:
+          preStop:
+            exec:
+              # Give in-flight batches time to finish after SIGTERM is queued.
+              command: ["sleep", "10"]
         resources:
           requests:
             memory: "1Gi"
@@ -121,6 +168,18 @@ spec:
         - allkeys-lru
         ports:
         - containerPort: 6379
+        livenessProbe:
+          exec:
+            command: ["redis-cli", "ping"]
+          initialDelaySeconds: 10
+          periodSeconds: 15
+          timeoutSeconds: 5
+        readinessProbe:
+          exec:
+            command: ["redis-cli", "ping"]
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 3
         resources:
           requests:
             memory: "2Gi"

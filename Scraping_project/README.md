@@ -98,8 +98,12 @@ docker-compose up -d --scale stage2-worker=3
 ```
 
 #### Option 2: Kubernetes Deployment
+
+The supported path is the Helm chart; see [k8s/README.md](k8s/README.md):
+`helm install scraping-pipeline k8s/helm/scraping-pipeline -n scraping-pipeline`.
+`k8s/deployment.yaml` is a minimal quick-start (stage1/stage2 workers and Redis only) with the same health probes:
 ```bash
-# Deploy to Kubernetes
+# Minimal quick-start (not the full stack)
 kubectl apply -f k8s/deployment.yaml
 
 # Check status
@@ -270,7 +274,7 @@ Edit `docker-compose.yml` to customize:
 
 ### Kubernetes Configuration
 
-Edit `k8s/deployment.yaml` for:
+Configure the Helm chart via `k8s/helm/scraping-pipeline/values.yaml` (supported). Alternatively, edit `k8s/deployment.yaml` (minimal quick-start) for:
 - Auto-scaling policies
 - Resource requests/limits
 - Persistent volume sizes

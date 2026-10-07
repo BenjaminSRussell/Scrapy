@@ -50,9 +50,12 @@ spec:
         livenessProbe:
           exec:
             command:
-            - /bin/sh
-            - -c
-            - pgrep -f run_multiple_scouts.py
+            # stdlib-only probe: the slim image lacks procps (#181)
+            - python
+            - -m
+            - src.utils.probe
+            - alive
+            - run_multiple_scouts.py
           initialDelaySeconds: 20
           periodSeconds: 10
           timeoutSeconds: 5

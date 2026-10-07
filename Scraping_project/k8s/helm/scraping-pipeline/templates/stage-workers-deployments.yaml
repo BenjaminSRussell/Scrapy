@@ -41,9 +41,12 @@ spec:
         livenessProbe:
           exec:
             command:
-            - /bin/sh
-            - -c
-            - pgrep -f stage2_worker.py
+            # stdlib-only probe: the slim image lacks procps (#181)
+            - python
+            - -m
+            - src.utils.probe
+            - alive
+            - stage2_worker.py
           initialDelaySeconds: 20
           periodSeconds: 10
           timeoutSeconds: 5
@@ -119,9 +122,12 @@ spec:
         livenessProbe:
           exec:
             command:
-            - /bin/sh
-            - -c
-            - pgrep -f stage3_worker.py
+            # stdlib-only probe: the slim image lacks procps (#181)
+            - python
+            - -m
+            - src.utils.probe
+            - alive
+            - stage3_worker.py
           initialDelaySeconds: 20
           periodSeconds: 10
           timeoutSeconds: 5
