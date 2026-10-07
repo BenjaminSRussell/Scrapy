@@ -48,7 +48,11 @@ class LakehouseManager:
         config = Config.get_instance()
 
         if base_path is None:
-            base_path = config.get("delta_lake.base_path", "./data/delta_lake")
+            # Same contract as DeltaHelper (src/utils/delta.py): DELTA_LAKE_PATH
+            # wins so compose/k8s workers and the metrics exporter share a lake.
+            base_path = os.getenv("DELTA_LAKE_PATH") or config.get(
+                "delta_lake.base_path", "./data/delta_lake"
+            )
         self.base_path = Path(base_path)
         self.base_path.mkdir(parents=True, exist_ok=True)
 

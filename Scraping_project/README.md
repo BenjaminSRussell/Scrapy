@@ -118,7 +118,7 @@ python -m src.workers.stage1_worker
 python -m src.workers.stage2_worker
 
 # Run with custom config
-REDIS_HOST=localhost DELTA_LAKE_PATH=/data python -m src.workers.stage2_worker
+REDIS_HOST=localhost DELTA_LAKE_PATH=/data/delta python -m src.workers.stage2_worker
 ```
 
 ## Architecture

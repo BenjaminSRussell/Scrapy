@@ -68,7 +68,7 @@ kubectl autoscale deployment stage2-worker \
 
 - `REDIS_HOST` - Redis server hostname
 - `REDIS_PORT` - Redis server port (default: 6379)
-- `DELTA_LAKE_PATH` - Path to Delta Lake storage
+- `DELTA_LAKE_PATH` - Path to Delta Lake storage. Read by both `get_delta()` (DeltaHelper) and `LakehouseManager` (including the metrics exporter); it takes precedence over config.yml `delta_lake.base_path`. Compose/k8s use `/data/delta`, which compose mounts from host `./data/delta`. Local runs without the env var use `./data/delta_lake`.
 - `LOG_LEVEL` - Logging level (DEBUG, INFO, WARNING, ERROR)
 - `WORKERS` - Number of concurrent workers
 - `CONCURRENCY` - Concurrency per worker
