@@ -62,8 +62,9 @@ _scrapy_config: dict[str, Any] = derive_scrapy_config()
 
 BOT_NAME = _scrapy_config.get("bot_name", "uconn_scraper")
 
-SPIDER_MODULES = _scrapy_config.get("spider_modules", ["src.stage1", "src.stage3"])
-NEWSPIDER_MODULE = _scrapy_config.get("newspider_module", "src.stage3")
+# src.stage3 holds the Stage3 worker, not spiders (#628).
+SPIDER_MODULES = _scrapy_config.get("spider_modules", ["src.stage1"])
+NEWSPIDER_MODULE = _scrapy_config.get("newspider_module", "src.stage1")
 
 ITEM_PIPELINES = _scrapy_config.get(
     "item_pipelines",
