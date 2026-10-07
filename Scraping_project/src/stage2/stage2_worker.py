@@ -3,6 +3,7 @@ import logging
 import os
 import time
 from collections import Counter as TallyCounter
+from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Any
 
@@ -103,6 +104,8 @@ class Stage2Worker:
         except ValueError:
             self.max_retries = DEFAULT_STAGE2_MAX_RETRIES
         self._dlq: Any = None
+        # One pooled HTTP session per run (#200); created in _run_traced.
+        self._session: aiohttp.ClientSession | None = None
 
     def _load_prior_failures(self) -> dict[str, int]:
         """Per-URL failure counts from earlier runs, from the stage2_errors quarantine."""
@@ -138,7 +141,28 @@ class Stage2Worker:
         init_tracing(service_name="stage2-worker")
         crawl_job_id = ensure_crawl_job_id()
         with start_span("stage2.run", stage="stage2", crawl_job_id=crawl_job_id):
-            return await self._run_traced()
+            async with self._http_session():
+                return await self._run_traced()
+
+    def _new_session(self) -> aiohttp.ClientSession:
+        """Pooled session: connector limit matches worker concurrency (#200)."""
+        connector = aiohttp.TCPConnector(
+            limit=self.max_concurrent,
+            limit_per_host=max(1, min(self.max_concurrent, 10)),
+            ttl_dns_cache=300,
+        )
+        return aiohttp.ClientSession(connector=connector, timeout=aiohttp.ClientTimeout(total=30))
+
+    @asynccontextmanager
+    async def _http_session(self):
+        """Share one ClientSession across every batch of a run; always closed."""
+        session = self._new_session()
+        self._session = session
+        try:
+            yield session
+        finally:
+            self._session = None
+            await session.close()
 
     async def _run_traced(self) -> dict[str, int]:
         counts = {"analyzed": 0, "quality_docs": 0, "massive_docs": 0, "errors": 0}
@@ -320,8 +344,11 @@ class Stage2Worker:
 
         async with self.semaphore:
             try:
-                timeout = aiohttp.ClientTimeout(total=30)
-                async with aiohttp.ClientSession(timeout=timeout) as session:
+                session = self._session
+                owns_session = session is None  # direct callers outside run()
+                if session is None:
+                    session = self._new_session()
+                try:
                     async with session.get(url, allow_redirects=True) as response:
                         if response.status >= 400:
                             return self._error_record(url, url_hash, response.status, "http_error")
@@ -335,6 +362,9 @@ class Stage2Worker:
                             return self._route_pdf_to_stage4(url, url_hash)
                         else:
                             return self._minimal_record(url, url_hash, content_type)
+                finally:
+                    if owns_session:
+                        await session.close()
 
             except TimeoutError as e:
                 self._log_error_to_postgres(url, "TimeoutError", str(e))
