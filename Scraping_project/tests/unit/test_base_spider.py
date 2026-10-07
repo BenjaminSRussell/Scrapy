@@ -111,7 +111,7 @@ class TestBaseSpiderLinkTriage:
 
         results = list(spider._process_discovered_urls(test_html_response, discovered_urls, depth=0))
 
-        offsite_items = [r for r in results if isinstance(r, dict) and "external_url" in r]
+        offsite_items = [r for r in results if hasattr(r, "get") and r.get("external_url")]
         static_items = [r for r in results if isinstance(r, dict) and "skip_reason" in r]
         html_requests = [r for r in results if hasattr(r, "url")]
 

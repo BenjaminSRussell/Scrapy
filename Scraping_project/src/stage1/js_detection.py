@@ -250,7 +250,7 @@ class JSDetector:
 
         for root_id in root_ids:
             if f'id="{root_id}"' in self.html or f"id='{root_id}'" in self.html:
-                return f"
+                return f"#{root_id}"
 
         root_classes = ["app", "application", "spa-root", "root"]
 

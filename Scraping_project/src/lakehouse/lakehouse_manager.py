@@ -192,8 +192,11 @@ class LakehouseManager:
                 record["_stage"] = table_name
 
         try:
+            import time
+
             import pyarrow as pa
             from deltalake import WriterProperties, write_deltalake
+            from deltalake._internal import CommitFailedError
 
             if table_name not in self.schema_cache:
                 table = pa.Table.from_pylist(data)
@@ -237,14 +240,31 @@ class LakehouseManager:
 
             writer_props = WriterProperties(compression="ZSTD")
 
-            write_deltalake(
-                str(table_path),
-                table,
-                mode=mode,
-                schema_mode="merge" if mode == "append" else "overwrite",
-                writer_properties=writer_props,
-                partition_by=partition_by,
-            )
+            max_attempts = 5
+            for attempt in range(1, max_attempts + 1):
+                try:
+                    write_deltalake(
+                        str(table_path),
+                        table,
+                        mode=mode,
+                        schema_mode="merge" if mode == "append" else "overwrite",
+                        writer_properties=writer_props,
+                        partition_by=partition_by,
+                    )
+                    break
+                except CommitFailedError:
+                    if attempt == max_attempts:
+                        raise
+                    # Another writer committed a newer version between our
+                    # read and this commit attempt (concurrent writers to
+                    # the same table race on Delta Lake's optimistic
+                    # concurrency control) - back off and retry against the
+                    # now-current table state.
+                    logger.warning(
+                        f"Commit conflict writing {table_name} "
+                        f"(attempt {attempt}/{max_attempts}), retrying"
+                    )
+                    time.sleep(0.05 * attempt)
 
             logger.info(f" Wrote {len(data)} records to {table_name}")
         except Exception as e:
@@ -267,27 +287,29 @@ class LakehouseManager:
         else:
             self._write_sync(table_name, data, mode)
 
-    def read(self, table_name: str, filters: Any = None, columns: list[str] | None = None) -> list[dict]:
+    def read(
+        self,
+        table_name: str,
+        filters: Any = None,
+        columns: list[str] | None = None,
+        version: int | None = None,
+    ) -> list[dict]:
         from deltalake import DeltaTable
 
-        table_path = self.tables.get(table_name)
-        if not table_path:
-            raise ValueError(f"Unknown table: {table_name}")
+        table_path = self.get_table_path(table_name)
 
         if not (table_path / "_delta_log").exists():
             logger.warning(f"No data found in {table_name}")
             return []
 
-        table = DeltaTable(str(table_path))
+        table = DeltaTable(str(table_path), version=version)
         pa_table = table.to_pyarrow_table(filters=filters, columns=columns)
         return pa_table.to_pylist()
 
     def count(self, table_name: str) -> int:
         from deltalake import DeltaTable
 
-        table_path = self.tables.get(table_name)
-        if not table_path:
-            raise ValueError(f"Unknown table: {table_name}")
+        table_path = self.get_table_path(table_name)
 
         if not (table_path / "_delta_log").exists():
             return 0
@@ -309,11 +331,22 @@ class LakehouseManager:
             logger.info(f"Optimizing {table_name} with compaction...")
             dt.optimize.compact()
 
-            logger.info(f"Z-ordering {table_name} by url_hash and discovered_at...")
-            if table_name == "stage1_discovery":
-                dt.optimize.z_order(["url_hash", "discovered_at"])
-            elif table_name == "stage2_page_analysis":
-                dt.optimize.z_order(["url_hash", "processed_at"])
+            z_order_columns_by_table = {
+                "stage1_discovery": ["url_hash", "discovered_at"],
+                "stage2_page_analysis": ["url_hash", "processed_at"],
+            }
+            z_order_columns = z_order_columns_by_table.get(table_name)
+            if z_order_columns:
+                schema_fields = {field.name for field in dt.schema().to_arrow()}
+                missing = [col for col in z_order_columns if col not in schema_fields]
+                if missing:
+                    logger.debug(
+                        f"Skipping Z-order for {table_name}: columns {missing} not in "
+                        f"current schema (writer didn't include them for this batch)"
+                    )
+                else:
+                    logger.info(f"Z-ordering {table_name} by {', '.join(z_order_columns)}...")
+                    dt.optimize.z_order(z_order_columns)
 
             logger.info(f" Optimized {table_name}")
 
@@ -477,9 +510,7 @@ class LakehouseManager:
         import pyarrow.parquet as pq
         from deltalake import DeltaTable
 
-        table_path = self.tables.get(table_name)
-        if not table_path:
-            raise ValueError(f"Unknown table: {table_name}")
+        table_path = self.get_table_path(table_name)
 
         out_path = Path(output_path)
         out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -536,15 +567,13 @@ class LakehouseManager:
     def get_table_schema(self, table_name: str):
         from deltalake import DeltaTable
 
-        table_path = self.tables.get(table_name)
-        if not table_path:
-            raise ValueError(f"Unknown table: {table_name}")
+        table_path = self.get_table_path(table_name)
 
         if not (table_path / "_delta_log").exists():
             raise ValueError(f"No data found in {table_name}")
 
         table = DeltaTable(str(table_path))
-        return table.schema().to_pyarrow()
+        return table.schema().to_arrow()
 
     def table_exists(self, table_name: str) -> bool:
         table_path = self.tables.get(table_name)
@@ -653,9 +682,7 @@ class LakehouseManager:
     def get_table_history(self, table_name: str) -> list[dict]:
         from deltalake import DeltaTable
 
-        table_path = self.tables.get(table_name)
-        if not table_path:
-            raise ValueError(f"Unknown table: {table_name}")
+        table_path = self.get_table_path(table_name)
 
         if not (table_path / "_delta_log").exists():
             return []
@@ -679,6 +706,16 @@ class LakehouseManager:
 
     def get_table_path(self, table_name: str) -> Path:
         table_path = self.tables.get(table_name)
+        if not table_path:
+            # Not registered on this instance yet - a separate
+            # LakehouseManager/DeltaHelper instance pointed at the same
+            # base_path may have already written this table to disk.
+            # self.tables is per-instance in-memory state, not derived
+            # from the filesystem, so auto-discover before giving up.
+            candidate_path = self.base_path / table_name
+            if (candidate_path / "_delta_log").exists():
+                self.tables[table_name] = candidate_path
+                table_path = candidate_path
         if not table_path:
             raise ValueError(f"Unknown table: {table_name}")
         return table_path

@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pandas as pd
 
-from src.common.delta_lake import DeltaLakeManager
+from src.lakehouse.lakehouse_manager import DeltaLakeManager
 
 class TestDeltaLakeManager(unittest.TestCase):
     def setUp(self):
@@ -18,7 +18,7 @@ class TestDeltaLakeManager(unittest.TestCase):
         shutil.rmtree(self.tmpdir)
 
     @patch("deltalake.DeltaTable")
-    @patch("src.common.delta_lake.pa")
+    @patch("src.lakehouse.lakehouse_manager.pa")
     def test_export_empty_table(self, mock_pa, mock_delta_table):
         table_name = "stage1_discovery"
 
@@ -35,7 +35,7 @@ class TestDeltaLakeManager(unittest.TestCase):
         self.assertEqual(result["columns"], 0)
         mock_delta_table.assert_not_called()
 
-    @patch("src.common.delta_lake.pa_csv")
+    @patch("src.lakehouse.lakehouse_manager.pa_csv")
     @patch("deltalake.DeltaTable")
     def test_export_non_empty_table(self, mock_delta_table, mock_pa_csv):
         table_name = "stage1_discovery"

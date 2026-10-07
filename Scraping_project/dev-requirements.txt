@@ -385,6 +385,8 @@ pytest-asyncio==1.2.0
     # via -r Scraping_project/dev-requirements.in
 pytest-cov==7.0.0
     # via -r Scraping_project/dev-requirements.in
+pytest-env==1.7.1
+    # via -r Scraping_project/dev-requirements.in
 pytest-html==4.1.1
     # via -r Scraping_project/dev-requirements.in
 pytest-metadata==3.1.1
@@ -392,6 +394,10 @@ pytest-metadata==3.1.1
 pytest-mock==3.15.1
     # via -r Scraping_project/dev-requirements.in
 pytest-timeout==2.4.0
+    # via -r Scraping_project/dev-requirements.in
+pytest-twisted==1.14.3
+    # via -r Scraping_project/dev-requirements.in
+pytest-xdist==3.8.0
     # via -r Scraping_project/dev-requirements.in
 python-bidi==0.6.6
     # via easyocr

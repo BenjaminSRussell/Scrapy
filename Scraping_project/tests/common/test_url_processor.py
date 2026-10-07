@@ -2,7 +2,7 @@
 
 import pytest
 
-from src.common.url_processor import should_follow_url
+from src.stage1.processors.url_processor import should_follow_url
 
 class TestShouldFollowUrl:
 
@@ -108,10 +108,10 @@ class TestShouldFollowUrl:
         assert not should_follow_url("https://example.com/video.mp4?quality=hd")
 
     def test_fragment_identifiers_ignored(self):
-        assert should_follow_url("https://example.com/page.html
-        assert should_follow_url("https://example.com/doc.pdf
+        assert should_follow_url("https://example.com/page.html#section")
+        assert should_follow_url("https://example.com/doc.pdf#page=5")
 
-        assert not should_follow_url("https://example.com/image.jpg
+        assert not should_follow_url("https://example.com/image.jpg#zoom")
 
     def test_extension_in_path_but_not_at_end(self):
         assert should_follow_url("https://example.com/image.jpg/metadata")

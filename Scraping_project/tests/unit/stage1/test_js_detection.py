@@ -52,4 +52,4 @@ def test_spa_root_selector_prioritises_known_ids():
     response = build_response(html)
     detector = JSDetector(response)
 
-    assert detector.get_spa_root_selector() == "
+    assert detector.get_spa_root_selector() == "#app"

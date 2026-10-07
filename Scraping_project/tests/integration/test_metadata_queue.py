@@ -6,7 +6,7 @@ from scrapy import Spider
 from scrapy.http import HtmlResponse, Request
 
 from src.pipelines import MetadataExtractionPipeline
-from src.common.delta_lake import get_delta_manager
+from src.lakehouse.lakehouse_manager import get_delta_manager
 
 @pytest.fixture
 def delta_manager():

@@ -180,7 +180,7 @@ kafka:
     scraped_items: scraped-items  # Topic for scraped data from Stage 1
     dead_letter: scraped-items-dlq  # Dead letter queue for invalid messages
   producer:
-    compression_type: snappy
+    compression.type: snappy
     acks: "1"  # 0=no ack, 1=leader ack, all=all replicas ack
     retries: 3
   consumer:

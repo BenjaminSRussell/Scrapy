@@ -1,7 +1,7 @@
 import pytest
 from scrapy.http import Request
 
-from src.stage1.deep_dive_spider import DeepDiveSpider
+from src.stage1.experimental.deep_dive_spider import DeepDiveSpider
 from src.stage1.scout_spider import ScoutSpider
 
 @pytest.mark.component
@@ -20,10 +20,15 @@ class TestScoutSpiderComponents:
 
         assert len(spider.start_urls) > 0
 
-    @pytest.mark.skip(reason="MockRedis fixture needs improvement - execute() returns fixed 10 False values")
-    def test_scout_spider_parse_html(self, test_html_response):
+    def test_scout_spider_parse_html(self, test_html_response, redis_clean):
         spider = ScoutSpider()
-        spider.redis_client = MockRedis()
+        # ScoutSpider defaults to allowed_domains=["uconn.edu"]; match it to
+        # test_html_response's example.com URLs so parse() has in-domain
+        # links to discover.
+        spider.allowed_domains = ["example.com"]
+        spider.url_processor.allowed_domains = spider.allowed_domains
+        spider.url_processor.extractor.allowed_domains = spider.allowed_domains
+        spider.redis_client = redis_clean
 
         results = list(spider.parse(test_html_response))
 
@@ -57,21 +62,22 @@ class TestDeepDiveSpiderComponents:
 @pytest.mark.component
 class TestJSSpiderComponents:
 
-    @pytest.mark.skip(reason="Requires scrapy-playwright installation")
     def test_js_spider_initialization(self):
-        from src.stage1.js_spider import JSSpider
+        # scrapy_playwright is only referenced by dotted-path string in
+        # DOWNLOAD_HANDLERS (resolved lazily by Scrapy on first real
+        # request), so constructing the spider never needs it installed.
+        from src.stage1.experimental.js_spider import JavaScriptSpider
 
-        spider = JSSpider()
+        spider = JavaScriptSpider()
 
-        assert spider.name == "js_spider"
+        assert spider.name == "javascript"
         assert "DOWNLOAD_HANDLERS" in spider.custom_settings
         assert "scrapy_playwright" in str(spider.custom_settings["DOWNLOAD_HANDLERS"])
 
-    @pytest.mark.skip(reason="Requires scrapy-playwright installation")
     def test_js_spider_resource_blocking_configured(self):
-        from src.stage1.js_spider import JSSpider
+        from src.stage1.experimental.js_spider import JavaScriptSpider
 
-        spider = JSSpider()
+        spider = JavaScriptSpider()
 
         assert hasattr(spider, "BLOCKED_RESOURCE_TYPES")
         assert "image" in spider.BLOCKED_RESOURCE_TYPES
@@ -86,7 +92,7 @@ class TestDeltaLakeIntegration:
             {"url": "https://example.com/2", "depth": 1},
         ]
 
-        delta_sandbox.write("test_table", test_data, mode="overwrite")
+        delta_sandbox.write("test_table", test_data, mode="overwrite", async_write=False)
 
         read_data = delta_sandbox.read("test_table")
 
@@ -97,8 +103,8 @@ class TestDeltaLakeIntegration:
         initial_data = [{"url": "https://example.com/1", "depth": 0}]
         additional_data = [{"url": "https://example.com/2", "depth": 1}]
 
-        delta_sandbox.write("test_table", initial_data, mode="overwrite")
-        delta_sandbox.write("test_table", additional_data, mode="append")
+        delta_sandbox.write("test_table", initial_data, mode="overwrite", async_write=False)
+        delta_sandbox.write("test_table", additional_data, mode="append", async_write=False)
 
         read_data = delta_sandbox.read("test_table")
         assert len(read_data) == 2
@@ -118,27 +124,3 @@ class TestRedisQueueIntegration:
 
         is_duplicate = redis_clean.sismember(spider.url_hashes_key, url_hash)
         assert is_duplicate
-
-# ============================================================================
-# ============================================================================
-
-class MockRedis:
-
-    def __init__(self):
-        self.data = set()
-
-    def pipeline(self):
-        return self
-
-    def sismember(self, key, value):
-        return self
-
-    def sadd(self, key, value):
-        self.data.add(value)
-        return self
-
-    def execute(self):
-        return [False] * 10
-
-    def scard(self, key):
-        return len(self.data)

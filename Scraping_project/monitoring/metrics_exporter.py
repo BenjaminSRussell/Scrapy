@@ -9,9 +9,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.common.config import Config
-from src.common.delta_lake import DeltaLakeManager
-from src.common.redis_manager import get_redis_manager
+from src.core.config import Config
+from src.lakehouse.lakehouse_manager import DeltaLakeManager
+from src.utils.redis import get_redis
+from src.stage1.processors.js_priority_queue import JSPriorityQueue
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -90,13 +91,14 @@ class MetricsExporter:
 
         # Initialize managers
         config = Config.get_instance()
-        redis_config = config.redis_config
-        self.redis = get_redis_manager(
+        redis_config = config.get_section("redis")
+        self.redis = get_redis(
             host=os.environ.get("REDIS_HOST", redis_config.get("host", "localhost")),
             port=int(os.environ.get("REDIS_PORT", redis_config.get("port", 6379))),
             db=redis_config.get("db", 0),
             password=redis_config.get("password"),
         )
+        self.js_priority_queue = JSPriorityQueue(self.redis.client)
 
         self.delta = DeltaLakeManager.get_instance()
 
@@ -208,15 +210,11 @@ class MetricsExporter:
     def _update_queue_metrics(self):
         """Update Redis queue depth metrics via UDP."""
         try:
-            queue_stats = self.redis.get_all_queue_stats()
             seen: set[str] = set()
 
-            for queue_name, length in queue_stats.items():
-                self.statsd.gauge("redis.queue.length", length, {"queue": queue_name})
-                seen.add(queue_name)
-
-            # Priority queue
-            pq_size = self.redis.get_queue_size()
+            # JS spider priority queue (the only Redis-backed queue left;
+            # everything else moved to Delta Lake tables)
+            pq_size = self.js_priority_queue.size()
             self.statsd.gauge("redis.queue.length", pq_size, {"queue": "priority_queue"})
             seen.add("priority_queue")
 

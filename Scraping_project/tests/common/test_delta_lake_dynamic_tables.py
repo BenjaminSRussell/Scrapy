@@ -1,6 +1,6 @@
 import pandas as pd
 
-from src.common.delta_lake import DeltaLakeManager
+from src.lakehouse.lakehouse_manager import DeltaLakeManager
 
 def test_can_write_to_new_table_dynamically(delta_sandbox: DeltaLakeManager):
     df = pd.DataFrame([{"k": 1, "v": "a"}])
