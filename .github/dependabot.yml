@@ -1,19 +1,37 @@
 version: 2
+# One grouped PR per ecosystem per week, with at most 3 open per ecosystem, so
+# dependency bumps don't flood the Actions queue (each PR runs 3 workflows).
 updates:
   # Python manifests live under Scraping_project/, not the repo root (#480).
   - package-ecosystem: "pip"
     directory: "/Scraping_project"
     schedule:
       interval: "weekly"
+    open-pull-requests-limit: 3
+    groups:
+      pip-dependencies:
+        patterns: ["*"]
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
+    open-pull-requests-limit: 3
+    groups:
+      github-actions:
+        patterns: ["*"]
   - package-ecosystem: "docker"
     directory: "/Scraping_project"
     schedule:
       interval: "weekly"
+    open-pull-requests-limit: 3
+    groups:
+      docker-images:
+        patterns: ["*"]
   - package-ecosystem: "cargo"
     directory: "/Scraping_project/kafka-delta-ingest"
     schedule:
       interval: "weekly"
+    open-pull-requests-limit: 3
+    groups:
+      cargo-dependencies:
+        patterns: ["*"]
