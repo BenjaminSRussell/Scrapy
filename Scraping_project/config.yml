@@ -189,8 +189,10 @@ kafka:
   consumer:
     group_id: scraping-pipeline
     auto_offset_reset: earliest  # earliest or latest
-    enable_auto_commit: true
-    auto_commit_interval_ms: 5000
+    # Commit offsets only after the downstream write is durable (at-least-once).
+    # kafka-delta-ingest always commits manually after its Delta commit (#282).
+    enable_auto_commit: false
+    auto_commit_interval_ms: 5000  # unused while enable_auto_commit is false
 
 # ============================================
 # Delta Lake Settings
