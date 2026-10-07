@@ -29,5 +29,27 @@
         if (bytes >= 1024) return (bytes / 1024).toFixed(2) + ' KB';
         return bytes + ' B';
     }
-    return { parseMetrics, formatNumber, formatBytes };
+    // #364: a missing or zero epoch rendered "Invalid Date" (or 1970). Show a
+    // dash instead so "never updated" reads as that, not as a bug.
+    function formatEpochTime(seconds) {
+        const n = Number(seconds);
+        if (!Number.isFinite(n) || n <= 0) return '\u2014';
+        const d = new Date(n * 1000);
+        return isNaN(d.getTime()) ? '\u2014' : d.toLocaleTimeString();
+    }
+    // #389: count distinct values of `label` across series whose name contains
+    // `nameFragment` (e.g. tables reporting delta_lake_records). null when no
+    // such series exists, so the caller can say "not reported" instead of
+    // inventing a number.
+    function countLabelValues(metrics, nameFragment, label) {
+        const seen = new Set();
+        const re = new RegExp(label + '="([^"]*)"');
+        for (const key of Object.keys(metrics || {})) {
+            if (!key.includes(nameFragment)) continue;
+            const m = key.match(re);
+            if (m) seen.add(m[1]);
+        }
+        return seen.size > 0 ? seen.size : null;
+    }
+    return { parseMetrics, formatNumber, formatBytes, formatEpochTime, countLabelValues };
 });
