@@ -2,8 +2,10 @@ import json
 import logging
 import os
 import re
+import time
 from collections import defaultdict
 from datetime import datetime
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -163,13 +165,48 @@ class MetadataPipeline:
 
         return item
 
+try:  # Kafka produce durability (#175, #249)
+    from prometheus_client import Counter as _KCounter
+
+    KAFKA_PRODUCE_FAILURES = _KCounter(
+        "kafka_produce_failures_total",
+        "Kafka messages that could not be delivered, by reason (produce_error|delivery_failed|undelivered_on_close).",
+        ["reason"],
+    )
+    KAFKA_SPILLED = _KCounter(
+        "kafka_spilled_messages_total",
+        "Undeliverable Kafka messages written to the local spill file instead of being dropped.",
+        ["reason"],
+    )
+except Exception:  # prometheus_client missing or metric already registered
+    KAFKA_PRODUCE_FAILURES = KAFKA_SPILLED = None
+
+
 class KafkaPipeline:
+    """Publish items to Kafka without silently losing them (#175, #249).
+
+    * ``produce`` errors (local queue full, transient client errors) are retried
+      ``KAFKA_PRODUCE_RETRIES`` times with backoff.
+    * A message that still cannot be produced, fails delivery asynchronously, or
+      is still undelivered after the close-time flush is appended (fsync'd JSONL)
+      to ``KAFKA_SPILL_DIR`` for replay, and counted in
+      ``kafka_produce_failures_total`` / ``kafka_spilled_messages_total``.
+      Items are only dropped (DropItem) if even the spill write fails.
+    * Shutdown: ``close_spider`` flushes for ``KAFKA_CLOSE_FLUSH_TIMEOUT``
+      seconds (default 30). Pod ``terminationGracePeriodSeconds`` must exceed
+      that flush plus the rest of spider shutdown (Helm default 120s), or
+      SIGKILL lands mid-flush and even the spill cannot run.
+    """
 
     def __init__(
         self,
         bootstrap_servers: str,
         topic: str,
         producer_config: dict[str, Any] | None = None,
+        spill_dir: str | Path = "data/kafka_spill",
+        produce_retries: int = 3,
+        retry_backoff: float = 0.2,
+        close_flush_timeout: float = 30.0,
     ):
         """Initialize the Kafka pipeline.
 
@@ -177,6 +214,10 @@ class KafkaPipeline:
             bootstrap_servers: Comma-separated list of Kafka broker addresses
             topic: Target Kafka topic name
             producer_config: Optional additional producer configuration
+            spill_dir: Where undeliverable messages are written (JSONL)
+            produce_retries: Attempts per message before spilling
+            retry_backoff: Base backoff seconds between produce attempts
+            close_flush_timeout: Seconds to flush on spider close
         """
         self.bootstrap_servers = bootstrap_servers
         self.topic = topic
@@ -184,6 +225,15 @@ class KafkaPipeline:
         self.producer: KafkaProducer | None = None
         self.messages_sent = 0
         self.messages_failed = 0
+        self.messages_spilled = 0
+        self.spill_dir = Path(spill_dir)
+        self.produce_retries = max(1, int(produce_retries))
+        self.retry_backoff = float(retry_backoff)
+        self.close_flush_timeout = float(close_flush_timeout)
+        # Messages handed to librdkafka but not yet acknowledged, so anything
+        # still pending after the close flush can be spilled (#249).
+        self._inflight: dict[int, bytes] = {}
+        self._next_id = 0
 
     @classmethod
     def from_crawler(cls, crawler: Crawler) -> "KafkaPipeline":
@@ -205,6 +255,10 @@ class KafkaPipeline:
             bootstrap_servers=bootstrap_servers,
             topic=topic,
             producer_config=producer_config,
+            spill_dir=crawler.settings.get("KAFKA_SPILL_DIR", "data/kafka_spill"),
+            produce_retries=crawler.settings.getint("KAFKA_PRODUCE_RETRIES", 3),
+            retry_backoff=crawler.settings.getfloat("KAFKA_PRODUCE_RETRY_BACKOFF", 0.2),
+            close_flush_timeout=crawler.settings.getfloat("KAFKA_CLOSE_FLUSH_TIMEOUT", 30.0),
         )
 
         crawler.signals.connect(pipeline.open_spider, signal=signals.spider_opened)
@@ -255,13 +309,62 @@ class KafkaPipeline:
 
         if self.producer:
             try:
-                remaining = self.producer.flush(timeout=30.0)
-                if remaining > 0:
-                    logger.warning(f"{remaining} messages were not delivered before timeout")
-
-                logger.info(f"Kafka pipeline stats - Sent: {self.messages_sent}, Failed: {self.messages_failed}")
+                remaining = self.producer.flush(timeout=self.close_flush_timeout)
             except Exception as e:
                 logger.error(f"Error flushing Kafka producer: {e}")
+                remaining = len(self._inflight)
+            if remaining > 0 or self._inflight:
+                # Undelivered after the flush: spill rather than lose them (#249).
+                pending = list(self._inflight.values())
+                self._inflight.clear()
+                logger.error(
+                    f"{remaining} Kafka messages undelivered after {self.close_flush_timeout}s flush; "
+                    f"spilling {len(pending)} to {self.spill_dir}"
+                )
+                if KAFKA_PRODUCE_FAILURES is not None:
+                    KAFKA_PRODUCE_FAILURES.labels(reason="undelivered_on_close").inc(max(remaining, len(pending)))
+                for value in pending:
+                    self._spill(value, "undelivered_on_close")
+            logger.info(
+                f"Kafka pipeline stats - Sent: {self.messages_sent}, Failed: {self.messages_failed}, "
+                f"Spilled: {self.messages_spilled}"
+            )
+
+    def _spill(self, value: bytes, reason: str, error: str = "") -> bool:
+        """Append one undeliverable message to the spill file (fsync'd)."""
+        try:
+            self.spill_dir.mkdir(parents=True, exist_ok=True)
+            path = self.spill_dir / f"{self.topic}.jsonl"
+            record = {
+                "topic": self.topic,
+                "reason": reason,
+                "error": error,
+                "spilled_at": datetime.now().isoformat(),
+                "value": value.decode("utf-8", errors="replace"),
+            }
+            with open(path, "a", encoding="utf-8") as fh:
+                fh.write(json.dumps(record, ensure_ascii=False) + "\n")
+                fh.flush()
+                os.fsync(fh.fileno())
+        except Exception as e:
+            logger.critical(f"DATA LOSS: could not spill Kafka message ({reason}): {e}")
+            return False
+        self.messages_spilled += 1
+        if KAFKA_SPILLED is not None:
+            KAFKA_SPILLED.labels(reason=reason).inc()
+        return True
+
+    def _delivery_callback(self, msg_id: int):
+        def _cb(err: Any, msg: Any) -> None:
+            value = self._inflight.pop(msg_id, None)
+            self.delivery_report(err, msg)
+            if err is not None:
+                if KAFKA_PRODUCE_FAILURES is not None:
+                    KAFKA_PRODUCE_FAILURES.labels(reason="delivery_failed").inc()
+                payload = value if value is not None else (msg.value() if msg is not None else None)
+                if payload is not None:
+                    self._spill(payload, "delivery_failed", str(err))
+        return _cb
 
     def delivery_report(self, err: Any, msg: Any) -> None:
         if err is not None:
@@ -277,25 +380,44 @@ class KafkaPipeline:
             return item  # queue handoff, persisted by QueueItemPipeline (#608)
         try:
             item_dict = ItemAdapter(item).asdict()
-
-            message_value = json.dumps(item_dict, ensure_ascii=False, default=str)
-
-            if self.producer is None:
-                raise RuntimeError("Kafka producer is not initialized")
-
-            self.producer.produce(
-                topic=self.topic,
-                value=message_value.encode("utf-8"),
-                callback=self.delivery_report,
-            )
-
-            self.producer.poll(0)
-
+            value = json.dumps(item_dict, ensure_ascii=False, default=str).encode("utf-8")
         except Exception as e:
-            logger.error(f"Error processing item for Kafka: {e}")
-            raise DropItem(f"Failed to publish item to Kafka: {e}") from e
+            logger.error(f"Error serialising item for Kafka: {e}")
+            raise DropItem(f"Failed to serialise item for Kafka: {e}") from e
 
-        return item
+        if self.producer is None:
+            raise DropItem("Kafka producer is not initialized")
+
+        last_error: Exception | None = None
+        for attempt in range(1, self.produce_retries + 1):
+            msg_id = self._next_id
+            self._next_id += 1
+            try:
+                self._inflight[msg_id] = value
+                self.producer.produce(
+                    topic=self.topic,
+                    value=value,
+                    callback=self._delivery_callback(msg_id),
+                )
+                self.producer.poll(0)
+                return item
+            except Exception as e:  # BufferError (queue full), KafkaException, ...
+                self._inflight.pop(msg_id, None)
+                last_error = e
+                if attempt < self.produce_retries:
+                    logger.warning(f"Kafka produce failed (attempt {attempt}/{self.produce_retries}): {e}")
+                    try:
+                        # Serve delivery callbacks, which frees local queue space.
+                        self.producer.poll(self.retry_backoff * attempt)
+                    except Exception:
+                        time.sleep(self.retry_backoff * attempt)
+
+        if KAFKA_PRODUCE_FAILURES is not None:
+            KAFKA_PRODUCE_FAILURES.labels(reason="produce_error").inc()
+        logger.error(f"Kafka produce failed after {self.produce_retries} attempts: {last_error}; spilling")
+        if self._spill(value, "produce_error", str(last_error)):
+            return item  # durably captured: keep the item flowing (#175)
+        raise DropItem(f"Failed to publish item to Kafka and to spill it: {last_error}")
 
 class QueueItemPipeline:
 

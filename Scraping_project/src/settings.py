@@ -190,6 +190,14 @@ KAFKA_TOPIC = os.getenv(
 )
 
 KAFKA_PRODUCER_CONFIG = _scrapy_config.get("kafka_producer_config", {})
+# Undeliverable messages (produce errors after retries, async delivery
+# failures, anything left after the close flush) are appended to
+# KAFKA_SPILL_DIR/<topic>.jsonl instead of being dropped (#175, #249).
+KAFKA_SPILL_DIR = os.getenv("KAFKA_SPILL_DIR", _scrapy_config.get("kafka_spill_dir", "data/kafka_spill"))
+KAFKA_PRODUCE_RETRIES = int(_scrapy_config.get("kafka_produce_retries", 3))
+KAFKA_PRODUCE_RETRY_BACKOFF = float(_scrapy_config.get("kafka_produce_retry_backoff", 0.2))
+# Must stay well under the pod's terminationGracePeriodSeconds (see k8s/README.md).
+KAFKA_CLOSE_FLUSH_TIMEOUT = float(_scrapy_config.get("kafka_close_flush_timeout", 30.0))
 
 # ============================================================================
 # ============================================================================
