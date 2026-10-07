@@ -197,6 +197,9 @@ delta_lake:
   checkpoint_interval: 100  # Checkpoint every N writes
   force_shutdown_timeout: 15  # Seconds before forced shutdown
   queue_maxsize: 1000  # Maximum queue size to prevent memory overload
+  # Rows with values that don't cast to the table's Arrow schema (#818):
+  # strict = quarantine the row to cast_quarantine; coerce = null the bad value.
+  cast_mode: strict
 
   # Table Names
   tables:

@@ -36,6 +36,67 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+CAST_QUARANTINE_TABLE = "cast_quarantine"
+CastMode: TypeAlias = Literal["strict", "coerce"]
+
+try:  # cast failures by table/column (#818)
+    from prometheus_client import Counter as _Counter
+
+    DELTA_CAST_FAILURES = _Counter(
+        "delta_cast_failures_total",
+        "Values that failed to cast to the cached Arrow schema, by table and column.",
+        ["table", "column"],
+    )
+except Exception:  # prometheus_client missing or metric already registered
+    DELTA_CAST_FAILURES = None
+
+
+def cast_rows_to_schema(
+    rows: list[dict[str, Any]], schema: Any, mode: str = "strict"
+) -> tuple[Any, list[dict[str, Any]], list[dict[str, Any]]]:
+    """Build an Arrow table for ``rows`` under ``schema`` without poisoning the batch (#818).
+
+    Fast path: one vectorized cast per column. If any column fails, each row is
+    cast individually. ``strict`` drops rows with any bad value; ``coerce``
+    nulls bad values in nullable columns and keeps the row (non-nullable
+    failures are still dropped).
+
+    Returns ``(table_or_None, kept_rows, failures)``. Each failure carries the
+    row index, column, value, error and the row itself.
+    """
+    columns = {f.name: [row.get(f.name) for row in rows] for f in schema}
+    try:
+        arrays = [pa.array(columns[f.name], type=f.type) for f in schema]
+        return pa.Table.from_arrays(arrays, schema=schema), rows, []
+    except (pa.ArrowInvalid, pa.ArrowTypeError, TypeError, ValueError, OverflowError):
+        pass
+
+    kept: list[dict[str, Any]] = []
+    failures: list[dict[str, Any]] = []
+    for idx, row in enumerate(rows):
+        fixed = dict(row)
+        drop = False
+        for f in schema:
+            value = row.get(f.name)
+            try:
+                pa.array([value], type=f.type)
+            except (pa.ArrowInvalid, pa.ArrowTypeError, TypeError, ValueError, OverflowError) as e:
+                failures.append(
+                    {"row_index": idx, "column": f.name, "value": value, "error": str(e), "row": row}
+                )
+                if mode == "coerce" and f.nullable:
+                    fixed[f.name] = None
+                else:
+                    drop = True
+        if not drop:
+            kept.append(fixed)
+
+    if not kept:
+        return None, [], failures
+    arrays = [pa.array([r.get(f.name) for r in kept], type=f.type) for f in schema]
+    return pa.Table.from_arrays(arrays, schema=schema), kept, failures
+
+
 WriteMode: TypeAlias = Literal["append", "overwrite", "error", "ignore"]
 WriteTask: TypeAlias = tuple[str, list[dict[str, Any]], WriteMode]
 # (task_type, table_name, retention_hours); retention_hours is only used by "vacuum".
@@ -55,6 +116,9 @@ class LakehouseManager:
             )
         self.base_path = Path(base_path)
         self.base_path.mkdir(parents=True, exist_ok=True)
+        # #818: "strict" quarantines rows with uncastable values; "coerce"
+        # nulls the bad value (nullable columns) and keeps the row.
+        self.cast_mode = str(config.get("delta_lake.cast_mode", "strict")).lower()
 
         self.tables = {
             "seed_urls": self.base_path / "seed_urls",
@@ -249,18 +313,19 @@ class LakehouseManager:
                     logger.info(f"[SCHEMA REFRESH] Updated schema for {table_name}: {table.schema}")
                 else:
 
-                    columns_data = {}
-                    for field in cached_schema:
-                        col_name = field.name
-                        columns_data[col_name] = [row.get(col_name) for row in data]
-
-                    arrays = []
-                    for field in cached_schema:
-                        col_name = field.name
-                        col_data = columns_data[col_name]
-                        arrays.append(pa.array(col_data, type=field.type))
-
-                    table = pa.Table.from_arrays(arrays, schema=cached_schema)
+                    cast_table, kept, failures = cast_rows_to_schema(
+                        data, cached_schema, getattr(self, "cast_mode", "strict")
+                    )
+                    if failures:
+                        self._record_cast_failures(table_name, failures)
+                    if cast_table is None:
+                        logger.error(
+                            f"[CAST] All {len(data)} rows for {table_name} failed to cast; "
+                            f"quarantined to {CAST_QUARANTINE_TABLE}"
+                        )
+                        return
+                    table = cast_table
+                    data = kept
 
             partition_by = None
             if table_name in ["stage1_discovery", "stage2_page_analysis"]:
@@ -306,6 +371,39 @@ class LakehouseManager:
 
         if table_name in ["stage1_discovery", "stage2_page_analysis"] and len(data) >= 1000:
             self.maintenance_queue.put(("optimize", table_name, 0))
+
+    def _record_cast_failures(self, table_name: str, failures: list[dict[str, Any]]) -> None:
+        """Count, log and quarantine rows/values that failed to cast (#818)."""
+        import json as _json
+
+        for failure in failures:
+            if DELTA_CAST_FAILURES is not None:
+                DELTA_CAST_FAILURES.labels(table=table_name, column=failure["column"]).inc()
+        urls = sorted({str(f["row"].get("url", "")) for f in failures if f["row"].get("url")})[:5]
+        logger.warning(
+            f"[CAST] {len(failures)} value(s) failed to cast for {table_name} "
+            f"(mode={getattr(self, 'cast_mode', 'strict')}); e.g. URLs: {urls}"
+        )
+        if table_name == CAST_QUARANTINE_TABLE:
+            return  # never recurse
+        now = datetime.now(UTC).isoformat()
+        rows = [
+            {
+                "source_table": table_name,
+                "column": str(f["column"]),
+                "value": repr(f["value"])[:500],
+                "error": str(f["error"])[:500],
+                "url": str(f["row"].get("url") or ""),
+                "row_json": _json.dumps(f["row"], default=str)[:10000],
+                "cast_mode": str(getattr(self, "cast_mode", "strict")),
+                "quarantined_at": now,
+            }
+            for f in failures
+        ]
+        try:
+            self._write_sync(CAST_QUARANTINE_TABLE, rows, "append")
+        except Exception as e:
+            logger.error(f"[CAST] Failed to write {len(rows)} quarantine rows: {e}")
 
     def write(
         self,
