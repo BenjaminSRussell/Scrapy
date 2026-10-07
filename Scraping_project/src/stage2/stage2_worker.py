@@ -42,6 +42,19 @@ try:  # exceptions escaping _analyze_url inside gather (#214)
 except Exception:
     STAGE2_GATHER_EXCEPTIONS = None
 
+try:  # queue status MERGE failures after retries (#168)
+    from prometheus_client import Counter as _QCounter
+
+    STAGE2_QUEUE_UPDATE_FAILURES = _QCounter(
+        "stage2_queue_update_failures_total",
+        "stage2_queue status MERGEs that failed after all retries (rows left pending).",
+        ["status"],
+    )
+except Exception:
+    STAGE2_QUEUE_UPDATE_FAILURES = None
+
+DEFAULT_STAGE2_MERGE_RETRIES = 4
+
 
 def split_stage2_results(results: list[Any]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Split a batch into (accepted analysis rows, quarantined error rows) (#331)."""
@@ -306,68 +319,71 @@ class Stage2Worker:
 
     async def _update_queue_status(
         self, completed_urls: list[str], table_name: str = "stage2_queue", status: str = "completed"
-    ):
-        """Set ``status`` (and ``completed_at`` as the finish time) for the given URLs."""
+    ) -> bool:
+        """Set ``status`` (and ``completed_at`` as the finish time) for the given URLs.
+
+        Uses a row-level Delta MERGE, retried with backoff because concurrent
+        workers' commits conflict (#168). There is deliberately no full-table
+        overwrite fallback: rewriting the whole queue from a stale read wiped
+        other workers' updates. If every attempt fails, the rows simply stay
+        ``pending`` (they are re-analysed next run) and
+        ``stage2_queue_update_failures_total`` is incremented.
+        """
         if not completed_urls:
-            return
+            return True
 
         try:
-            update_data = {
-                "url": pa.array(completed_urls, type=pa.string()),
-                "status": pa.array([status] * len(completed_urls), type=pa.string()),
-                "completed_at": pa.array(
-                    [datetime.now() for _ in completed_urls],
-                    type=pa.timestamp("ms"),
-                ),
-            }
-            updates_table = pa.Table.from_pydict(update_data)
-
-            target_table = DeltaTable(self.delta.get_table_path(table_name))
-
-            (
-                target_table.merge(
-                    source=updates_table,
-                    predicate="target.url = source.url",
-                    source_alias="source",
-                    target_alias="target",
-                )
-                .when_matched_update(
-                    updates={
-                        "status": "source.status",
-                        "completed_at": "source.completed_at",
-                    }
-                )
-                .execute()
-            )
-
-            logger.info(f"[STAGE2] Marked {len(completed_urls)} items as {status} in {table_name} via MERGE")
-
-        except Exception as e:
-            logger.error(f"[STAGE2] Failed to update queue status via MERGE: {e}")
-            logger.info("[STAGE2] Falling back to overwrite method for this batch")
+            attempts = max(1, int(os.getenv("STAGE2_MERGE_RETRIES", DEFAULT_STAGE2_MERGE_RETRIES)))
+        except ValueError:
+            attempts = DEFAULT_STAGE2_MERGE_RETRIES
+        last_error: Exception | None = None
+        for attempt in range(1, attempts + 1):
             try:
-                all_items = self.delta.read(table_name)
-                self._update_queue_status_overwrite(all_items, completed_urls, table_name, status=status)
-            except Exception as fallback_e:
-                logger.error(f"[STAGE2] Fallback overwrite method also failed: {fallback_e}")
+                await asyncio.to_thread(self._merge_queue_status, completed_urls, table_name, status)
+                logger.info(f"[STAGE2] Marked {len(completed_urls)} items as {status} in {table_name} via MERGE")
+                return True
+            except Exception as e:  # commit conflicts under concurrency are retryable
+                last_error = e
+                if attempt < attempts:
+                    delay = 0.1 * (2 ** (attempt - 1))
+                    logger.warning(
+                        f"[STAGE2] Queue MERGE attempt {attempt}/{attempts} failed ({e}); retrying in {delay:.1f}s"
+                    )
+                    await asyncio.sleep(delay)
 
-    def _update_queue_status_overwrite(
-        self, all_queue_items: list, completed_urls: list, table_name: str = "stage2_queue", status: str = "completed"
-    ):
-        """DEPRECATED: Original method to update queue status by overwriting the table."""
-        try:
-            completed_set = set(completed_urls)
+        if STAGE2_QUEUE_UPDATE_FAILURES is not None:
+            STAGE2_QUEUE_UPDATE_FAILURES.labels(status=status).inc()
+        logger.error(
+            f"[STAGE2] Failed to mark {len(completed_urls)} items as {status} in {table_name} after "
+            f"{attempts} MERGE attempts: {last_error}. Rows stay pending and will be retried next run."
+        )
+        return False
 
-            for item in all_queue_items:
-                if item.get("url") in completed_set:
-                    item["status"] = status
-                    item["completed_at"] = datetime.now().isoformat()
-
-            self.delta.write(table_name, all_queue_items, mode="overwrite", async_write=False)
-            logger.info(f"[STAGE2] Marked {len(completed_urls)} items as {status} in {table_name} (overwrite)")
-
-        except Exception as e:
-            logger.error(f"[STAGE2] Failed to update queue status (overwrite): {e}")
+    def _merge_queue_status(self, urls: list[str], table_name: str, status: str) -> None:
+        """One MERGE attempt against the current table version (re-read every call)."""
+        updates_table = pa.Table.from_pydict(
+            {
+                "url": pa.array(urls, type=pa.string()),
+                "status": pa.array([status] * len(urls), type=pa.string()),
+                "completed_at": pa.array([datetime.now() for _ in urls], type=pa.timestamp("ms")),
+            }
+        )
+        target_table = DeltaTable(self.delta.get_table_path(table_name))
+        (
+            target_table.merge(
+                source=updates_table,
+                predicate="target.url = source.url",
+                source_alias="source",
+                target_alias="target",
+            )
+            .when_matched_update(
+                updates={
+                    "status": "source.status",
+                    "completed_at": "source.completed_at",
+                }
+            )
+            .execute()
+        )
 
     async def _analyze_url(self, record: dict[str, Any]) -> dict[str, Any]:
         url_value = record.get("url")
