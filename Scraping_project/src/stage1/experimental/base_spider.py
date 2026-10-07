@@ -134,13 +134,18 @@ class BaseSpider(scrapy.Spider):
             urls = [record["url"] for record in seed_records]
             logger.info(f"Loaded {len(urls)} seed URLs from Delta Lake (will attempt all)")
 
-            url_count_in_redis = self.redis_client.scard(self.url_hashes_key) if hasattr(self, "url_hashes_key") else 0
-            logger.info(f"Redis currently tracking {url_count_in_redis} URLs (dupefilter will handle during crawl)")
-
-            return urls
         except Exception as e:
             logger.error(f"Could not load seed URLs from Delta Lake: {e}")
             return []
+
+        # Informational only: a Redis outage must not discard the seeds above.
+        try:
+            url_count_in_redis = self.redis_client.scard(self.url_hashes_key) if hasattr(self, "url_hashes_key") else 0
+            logger.info(f"Redis currently tracking {url_count_in_redis} URLs (dupefilter will handle during crawl)")
+        except Exception as e:
+            logger.warning(f"Could not read Redis URL count: {e}")
+
+        return urls
 
     def _load_existing_urls(self):
         pass

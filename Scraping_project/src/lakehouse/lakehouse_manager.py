@@ -76,6 +76,13 @@ class LakehouseManager:
 
         self.schema_cache: dict[str, Any] = {}
 
+        # Delta Lake commits are optimistic: two threads in this process
+        # writing the same table race (e.g. both try to create version 0).
+        # Serialize in-process writes per table; cross-process conflicts are
+        # still handled by the commit retry loop in _write_sync_locked.
+        self._table_locks: dict[str, threading.Lock] = {}
+        self._table_locks_guard = threading.Lock()
+
         self.maintenance_queue: queue.Queue[MaintenanceTask | None] = queue.Queue()
 
         self.worker_thread: threading.Thread | None = None
@@ -150,6 +157,13 @@ class LakehouseManager:
     def _handle_writer_exception(self, e: Exception, table_name: str):
         logger.error(f"Write failed for {table_name}: {e}", exc_info=True)
 
+    def _table_lock(self, table_name: str) -> threading.Lock:
+        with self._table_locks_guard:
+            lock = self._table_locks.get(table_name)
+            if lock is None:
+                lock = self._table_locks[table_name] = threading.Lock()
+            return lock
+
     def _write_sync(
         self,
         table_name: str,
@@ -158,6 +172,15 @@ class LakehouseManager:
     ):
         if not data:
             return
+        with self._table_lock(table_name):
+            self._write_sync_locked(table_name, data, mode)
+
+    def _write_sync_locked(
+        self,
+        table_name: str,
+        data: list[dict[str, Any]],
+        mode: Literal["append", "overwrite", "error", "ignore"],
+    ):
 
         table_path = self.tables.get(table_name)
         if not table_path:
@@ -196,7 +219,7 @@ class LakehouseManager:
 
             import pyarrow as pa
             from deltalake import WriterProperties, write_deltalake
-            from deltalake._internal import CommitFailedError
+            from deltalake.exceptions import CommitFailedError, DeltaError
 
             if table_name not in self.schema_cache:
                 table = pa.Table.from_pylist(data)
@@ -252,8 +275,14 @@ class LakehouseManager:
                         partition_by=partition_by,
                     )
                     break
-                except CommitFailedError:
-                    if attempt == max_attempts:
+                except (CommitFailedError, DeltaError) as commit_error:
+                    # CommitFailedError: lost an optimistic-concurrency race.
+                    # "version N already exists": another process committed
+                    # the same version first (e.g. both creating the table).
+                    is_conflict = isinstance(commit_error, CommitFailedError) or (
+                        "already exists" in str(commit_error)
+                    )
+                    if not is_conflict or attempt == max_attempts:
                         raise
                     # Another writer committed a newer version between our
                     # read and this commit attempt (concurrent writers to

@@ -15,10 +15,21 @@ class TestScoutSpiderComponents:
         assert hasattr(spider, "delta")
         assert hasattr(spider, "skip_counters")
 
-    def test_scout_spider_loads_seeds(self, delta_with_seed_urls, redis_clean):
+    def test_scout_spider_loads_seeds(self, delta_with_seed_urls, redis_clean, monkeypatch):
+        # Point the spider at the sandbox lakehouse holding the seed_urls
+        # fixture (get_delta() otherwise returns the global ./data instance),
+        # and keep sitemap discovery off the network.
+        monkeypatch.setattr("src.stage1.experimental.base_spider.get_delta", lambda: delta_with_seed_urls)
+        monkeypatch.setattr("src.stage1.scout_spider.discover_sitemaps_sync", lambda *a, **k: [])
+        monkeypatch.setattr("src.stage1.experimental.base_spider.get_redis", lambda: redis_clean)
+
         spider = ScoutSpider()
 
-        assert len(spider.start_urls) > 0
+        assert sorted(spider.start_urls) == [
+            "https://uconn.edu/",
+            "https://uconn.edu/admissions",
+            "https://uconn.edu/research",
+        ]
 
     def test_scout_spider_parse_html(self, test_html_response, redis_clean):
         spider = ScoutSpider()
