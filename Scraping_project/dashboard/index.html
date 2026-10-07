@@ -30,6 +30,33 @@
             --gray-900: #111827;
         }
 
+        .skip-to-main {
+            position: absolute;
+            left: -9999px;
+            top: 0;
+            z-index: 10000;
+            padding: 0.75rem 1rem;
+            background: #111827;
+            color: #fff;
+            text-decoration: none;
+            border-radius: 0 0 4px 0;
+        }
+        .skip-to-main:focus {
+            left: 0;
+        }
+        .metric-value.flash, .stage-metric-value.flash {
+            animation: metricFlash 1.2s ease;
+        }
+        @keyframes metricFlash {
+            0% { background: #fde68a; }
+            100% { background: transparent; }
+        }
+        html {
+            scroll-padding-bottom: 80px;
+        }
+        .container {
+            padding-bottom: 88px;
+        }
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
             background-color: var(--gray-100);
@@ -531,6 +558,8 @@
             then open this page with JS enabled. Metrics may also be available at <code>:9090/metrics</code>.
         </div>
     </noscript>
+    <a class="skip-to-main" href="#main">Skip to main content</a>
+
     <div class="topbar">
         <div class="topbar-content">
             <div class="topbar-title">
@@ -554,7 +583,7 @@
         </div>
     </div>
 
-    <div class="container" id="dashboard-main" role="main">
+    <div class="container" id="main" role="main">
         <div class="tabs">
             <div class="tab-buttons">
                 <button type="button" class="tab-button active" data-tab="overview">📊 Overview</button>
@@ -634,7 +663,7 @@
                             <span class="card-title">Pipeline Throughput</span>
                         </div>
                         <div class="chart-container">
-                            <canvas id="throughput-chart"></canvas>
+                            <figure class="chart-figure"><figcaption class="visually-hidden">Pipeline throughput over time</figcaption><canvas id="throughput-chart" role="img" aria-label="Pipeline throughput over time"></canvas></figure>
                         </div>
                     </div>
 
@@ -742,7 +771,7 @@
                             <span class="card-title">Stage Progression</span>
                         </div>
                         <div class="chart-container">
-                            <canvas id="stage-progression-chart"></canvas>
+                            <figure class="chart-figure"><figcaption class="visually-hidden">Stage progression over time</figcaption><canvas id="stage-progression-chart" role="img" aria-label="Stage progression over time"></canvas></figure>
                         </div>
                     </div>
 
@@ -751,7 +780,7 @@
                             <span class="card-title">Document Routing</span>
                         </div>
                         <div class="chart-container">
-                            <canvas id="routing-chart"></canvas>
+                            <figure class="chart-figure"><figcaption class="visually-hidden">Traffic routing breakdown</figcaption><canvas id="routing-chart" role="img" aria-label="Traffic routing breakdown"></canvas></figure>
                         </div>
                     </div>
                 </div>
@@ -765,7 +794,7 @@
                             <span class="card-title">URLs Discovered Over Time</span>
                         </div>
                         <div class="chart-container">
-                            <canvas id="urls-chart"></canvas>
+                            <figure class="chart-figure"><figcaption class="visually-hidden">URLs discovered over time</figcaption><canvas id="urls-chart" role="img" aria-label="URLs discovered over time"></canvas></figure>
                         </div>
                     </div>
 
@@ -774,7 +803,7 @@
                             <span class="card-title">Pages Analyzed Over Time</span>
                         </div>
                         <div class="chart-container">
-                            <canvas id="pages-chart"></canvas>
+                            <figure class="chart-figure"><figcaption class="visually-hidden">Pages analyzed over time</figcaption><canvas id="pages-chart" role="img" aria-label="Pages analyzed over time"></canvas></figure>
                         </div>
                     </div>
 
@@ -783,7 +812,7 @@
                             <span class="card-title">Summaries Created Over Time</span>
                         </div>
                         <div class="chart-container">
-                            <canvas id="summaries-chart"></canvas>
+                            <figure class="chart-figure"><figcaption class="visually-hidden">Summaries produced over time</figcaption><canvas id="summaries-chart" role="img" aria-label="Summaries produced over time"></canvas></figure>
                         </div>
                     </div>
 

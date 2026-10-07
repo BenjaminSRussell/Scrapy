@@ -379,6 +379,20 @@ function setHealthTile(id, label, healthy, detailText) {
     }
 }
 
+
+function setMetricText(id, value) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const next = String(value);
+    if (el.textContent !== next) {
+        el.textContent = next;
+        el.classList.remove('flash');
+        // reflow so animation restarts
+        void el.offsetWidth;
+        el.classList.add('flash');
+    }
+}
+
 function updateDashboard(metrics) {
     const s1Discovered = metrics['stage1_urls_discovered_total'] || 0;
     const s1Queued = metrics['stage1_urls_queued_total'] || 0;
@@ -394,66 +408,66 @@ function updateDashboard(metrics) {
     const rates = calculateRates(metrics);
 
     document.getElementById('topbar-status').textContent = metrics['pipeline_running'] === 1 ? '🟢 ONLINE' : '🔴 OFFLINE';
-    document.getElementById('topbar-urls').textContent = formatNumber(s1Discovered);
-    document.getElementById('topbar-summaries').textContent = formatNumber(s3Summaries);
+    setMetricText('topbar-urls', formatNumber(s1Discovered));
+    setMetricText('topbar-summaries', formatNumber(s3Summaries));
 
     ['overview', 'pipeline'].forEach(prefix => {
         const elem = document.getElementById(`${prefix}-s1-discovered`);
-        if (elem) elem.textContent = formatNumber(s1Discovered);
+        if (elem) { const __n = formatNumber(s1Discovered); if (elem.textContent !== String(__n)) { elem.textContent = __n; elem.classList.remove('flash'); void elem.offsetWidth; elem.classList.add('flash'); } else { elem.textContent = __n; } }
     });
     ['overview', 'pipeline'].forEach(prefix => {
         const elem = document.getElementById(`${prefix}-s1-queued`);
-        if (elem) elem.textContent = formatNumber(s1Queued);
+        if (elem) { const __n = formatNumber(s1Queued); if (elem.textContent !== String(__n)) { elem.textContent = __n; elem.classList.remove('flash'); void elem.offsetWidth; elem.classList.add('flash'); } else { elem.textContent = __n; } }
     });
     ['overview', 'pipeline'].forEach(prefix => {
         const elem = document.getElementById(`${prefix}-s2-analyzed`);
-        if (elem) elem.textContent = formatNumber(s2Analyzed);
+        if (elem) { const __n = formatNumber(s2Analyzed); if (elem.textContent !== String(__n)) { elem.textContent = __n; elem.classList.remove('flash'); void elem.offsetWidth; elem.classList.add('flash'); } else { elem.textContent = __n; } }
     });
     ['overview', 'pipeline'].forEach(prefix => {
         const elem = document.getElementById(`${prefix}-s2-quality`);
-        if (elem) elem.textContent = formatNumber(s2Quality);
+        if (elem) { const __n = formatNumber(s2Quality); if (elem.textContent !== String(__n)) { elem.textContent = __n; elem.classList.remove('flash'); void elem.offsetWidth; elem.classList.add('flash'); } else { elem.textContent = __n; } }
     });
 
     const s2MassiveElem = document.getElementById('pipeline-s2-massive');
-    if (s2MassiveElem) s2MassiveElem.textContent = formatNumber(s2Massive);
+    if (s2MassiveElem) { const __n = formatNumber(s2Massive); if (s2MassiveElem.textContent !== String(__n)) { s2MassiveElem.textContent = __n; s2MassiveElem.classList.remove('flash'); void s2MassiveElem.offsetWidth; s2MassiveElem.classList.add('flash'); } else { s2MassiveElem.textContent = __n; } }
 
     const s2WordsElem = document.getElementById('pipeline-s2-words');
-    if (s2WordsElem) s2WordsElem.textContent = formatNumber(s2Words);
+    if (s2WordsElem) { const __n = formatNumber(s2Words); if (s2WordsElem.textContent !== String(__n)) { s2WordsElem.textContent = __n; s2WordsElem.classList.remove('flash'); void s2WordsElem.offsetWidth; s2WordsElem.classList.add('flash'); } else { s2WordsElem.textContent = __n; } }
 
     ['overview', 'pipeline'].forEach(prefix => {
         const elem = document.getElementById(`${prefix}-s3-summaries`);
-        if (elem) elem.textContent = formatNumber(s3Summaries);
+        if (elem) { const __n = formatNumber(s3Summaries); if (elem.textContent !== String(__n)) { elem.textContent = __n; elem.classList.remove('flash'); void elem.offsetWidth; elem.classList.add('flash'); } else { elem.textContent = __n; } }
     });
     ['overview', 'pipeline'].forEach(prefix => {
         const elem = document.getElementById(`${prefix}-s3-dedup`);
-        if (elem) elem.textContent = formatNumber(s3Dedup);
+        if (elem) { const __n = formatNumber(s3Dedup); if (elem.textContent !== String(__n)) { elem.textContent = __n; elem.classList.remove('flash'); void elem.offsetWidth; elem.classList.add('flash'); } else { elem.textContent = __n; } }
     });
     ['overview', 'pipeline'].forEach(prefix => {
         const elem = document.getElementById(`${prefix}-s4-summaries`);
-        if (elem) elem.textContent = formatNumber(s4Summaries);
+        if (elem) { const __n = formatNumber(s4Summaries); if (elem.textContent !== String(__n)) { elem.textContent = __n; elem.classList.remove('flash'); void elem.offsetWidth; elem.classList.add('flash'); } else { elem.textContent = __n; } }
     });
 
     const compressionRatio = s4Compression > 0 ? (1 / s4Compression).toFixed(0) + 'x' : '0x';
     ['overview', 'pipeline'].forEach(prefix => {
         const elem = document.getElementById(`${prefix}-s4-compression`);
-        if (elem) elem.textContent = compressionRatio;
+        if (elem) { const __n = compressionRatio; if (elem.textContent !== String(__n)) { elem.textContent = __n; elem.classList.remove('flash'); void elem.offsetWidth; elem.classList.add('flash'); } else { elem.textContent = __n; } }
     });
 
     const s3RateElem = document.getElementById('pipeline-s3-rate');
-    if (s3RateElem) s3RateElem.textContent = rates.summaries.toFixed(1) + '/s';
+    if (s3RateElem) { const __n = rates.summaries.toFixed(1) + '/s'; if (s3RateElem.textContent !== String(__n)) { s3RateElem.textContent = __n; s3RateElem.classList.remove('flash'); void s3RateElem.offsetWidth; s3RateElem.classList.add('flash'); } else { s3RateElem.textContent = __n; } }
 
     const s4RateElem = document.getElementById('pipeline-s4-rate');
-    if (s4RateElem) s4RateElem.textContent = rates.largeDocs.toFixed(1) + '/s';
+    if (s4RateElem) { const __n = rates.largeDocs.toFixed(1) + '/s'; if (s4RateElem.textContent !== String(__n)) { s4RateElem.textContent = __n; s4RateElem.classList.remove('flash'); void s4RateElem.offsetWidth; s4RateElem.classList.add('flash'); } else { s4RateElem.textContent = __n; } }
 
-    document.getElementById('perf-s1-rate').textContent = rates.urls.toFixed(1) + ' URLs/min';
-    document.getElementById('perf-s2-rate').textContent = rates.pages.toFixed(2) + ' pages/sec';
-    document.getElementById('perf-s3-rate').textContent = rates.summaries.toFixed(2) + ' summaries/sec';
-    document.getElementById('perf-s4-rate').textContent = rates.largeDocs.toFixed(2) + ' docs/sec';
+    setMetricText('perf-s1-rate', rates.urls.toFixed(1) + ' URLs/min');
+    setMetricText('perf-s2-rate', rates.pages.toFixed(2) + ' pages/sec');
+    setMetricText('perf-s3-rate', rates.summaries.toFixed(2) + ' summaries/sec');
+    setMetricText('perf-s4-rate', rates.largeDocs.toFixed(2) + ' docs/sec');
 
     const redisKeys = metrics['pipeline_redis_keys'] || 0;
     const redisMemory = metrics['pipeline_redis_memory_bytes'] || 0;
-    document.getElementById('redis-keys').textContent = formatNumber(redisKeys);
-    document.getElementById('redis-memory').textContent = formatBytes(redisMemory);
+    setMetricText('redis-keys', formatNumber(redisKeys));
+    setMetricText('redis-memory', formatBytes(redisMemory));
 
     // System Health tiles (#1096)
     const redisReported = ('pipeline_redis_keys' in metrics) || ('pipeline_redis_memory_bytes' in metrics);
@@ -504,13 +518,13 @@ function setConnectionStatus(kind) {
         sys.classList.remove('online', 'offline', 'never');
         sys.classList.add(kind === 'online' ? 'online' : kind === 'never' ? 'never' : 'offline');
         const span = sys.querySelector('span:last-child');
-        if (span) span.textContent = labels[kind] || kind;
+        if (span) { const __n = labels[kind] || kind; if (span.textContent !== String(__n)) { span.textContent = __n; span.classList.remove('flash'); void span.offsetWidth; span.classList.add('flash'); } else { span.textContent = __n; } }
     }
-    if (top) top.textContent = topLabels[kind] || kind;
+    if (top) { const __n = topLabels[kind] || kind; if (top.textContent !== String(__n)) { top.textContent = __n; top.classList.remove('flash'); void top.offsetWidth; top.classList.add('flash'); } else { top.textContent = __n; } }
 }
 
 async function fetchMetrics() {
-    const main = document.getElementById('dashboard-main') || document.querySelector('.container');
+    const main = document.getElementById('main') || document.querySelector('.container');
     if (main) main.setAttribute('aria-busy', 'true');
     try {
         const response = await fetch(METRICS_URL);
