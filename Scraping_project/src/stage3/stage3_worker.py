@@ -45,20 +45,22 @@ class Stage3Worker:
             hashes.update(r["url_hash"] for r in rows if r.get("url_hash"))
         return hashes
 
-    async def run(self):
+    async def run(self) -> int:
+        """Summarize pending quality docs; returns summaries written this run."""
         init_tracing(service_name="stage3-worker")
         crawl_job_id = ensure_crawl_job_id()
         with start_span("stage3.run", stage="stage3", crawl_job_id=crawl_job_id):
-            await self._run_traced()
+            return await self._run_traced()
 
-    async def _run_traced(self):
+    async def _run_traced(self) -> int:
+        written = 0
         logger.info(f"Stage 3 Worker starting with {self.max_concurrent} concurrent workers")
 
         all_docs = self.delta.read("stage2_page_analysis")
 
         if not all_docs:
             logger.warning("No documents found in stage2_page_analysis")
-            return
+            return written
 
         quality_docs = [
             doc
@@ -73,7 +75,7 @@ class Stage3Worker:
 
         if not quality_docs:
             logger.info("No quality documents to process")
-            return
+            return written
 
         processed_hashes = self._processed_hashes()
 
@@ -81,7 +83,7 @@ class Stage3Worker:
 
         if not pending:
             logger.info("All quality documents already processed")
-            return
+            return written
 
         logger.info(f"Processing {len(pending)} pending documents")
 
@@ -103,6 +105,7 @@ class Stage3Worker:
 
             if valid_results:
                 self.delta.write(TABLE_STAGE3_SUMMARIES, valid_results, mode="append", async_write=False)
+                written += len(valid_results)
                 logger.info(f"Saved {len(valid_results)} summaries")
 
                 if self.postgres:
@@ -117,6 +120,7 @@ class Stage3Worker:
                         logger.debug(f"Failed to log performance to PostgreSQL: {e}")
 
         logger.info("Stage 3 Worker completed all batches")
+        return written
 
     async def _deduplicate_documents(self, documents: list[dict[str, Any]]) -> list[dict[str, Any]]:
         logger.info(f"Running similarity detection on {len(documents)} documents")

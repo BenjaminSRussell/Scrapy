@@ -32,13 +32,15 @@ class Stage2Worker:
         self.perf_start_time = None
         self.perf_urls_processed = 0
 
-    async def run(self):
+    async def run(self) -> dict[str, int]:
+        """Analyze pending URLs; returns this run's counts (analyzed/quality_docs/massive_docs/errors)."""
         init_tracing(service_name="stage2-worker")
         crawl_job_id = ensure_crawl_job_id()
         with start_span("stage2.run", stage="stage2", crawl_job_id=crawl_job_id):
-            await self._run_traced()
+            return await self._run_traced()
 
-    async def _run_traced(self):
+    async def _run_traced(self) -> dict[str, int]:
+        counts = {"analyzed": 0, "quality_docs": 0, "massive_docs": 0, "errors": 0}
         logger.info(f"[STAGE2] Worker starting with {self.max_concurrent} concurrent workers")
 
         try:
@@ -50,11 +52,11 @@ class Stage2Worker:
                 all_queue_items = queue_data or []
         except Exception as e:
             logger.warning(f"[STAGE2] No URLs found in stage2_queue: {e}")
-            return
+            return counts
 
         if not all_queue_items:
             logger.warning("[STAGE2] No URLs found in stage2_queue")
-            return
+            return counts
 
         pending = [item for item in all_queue_items if item.get("status") == "pending"]
 
@@ -62,7 +64,7 @@ class Stage2Worker:
 
         if not pending:
             logger.info("[STAGE2] No pending URLs to process")
-            return
+            return counts
 
         for i in range(0, len(pending), self.batch_size):
             batch = pending[i : i + self.batch_size]
@@ -85,6 +87,14 @@ class Stage2Worker:
                     async_write=False,
                 )
                 logger.info(f"[STAGE2] Saved {len(valid_results)} analysis results")
+                for r in valid_results:
+                    counts["analyzed"] += 1
+                    if r.get("has_error"):
+                        counts["errors"] += 1
+                    elif r.get("is_massive_doc"):
+                        counts["massive_docs"] += 1
+                    elif not r.get("is_low_quality", True):
+                        counts["quality_docs"] += 1
 
             if valid_results:
                 await self._update_queue_status([r["url"] for r in valid_results])
@@ -101,6 +111,7 @@ class Stage2Worker:
                     logger.debug(f"Failed to log performance to PostgreSQL: {e}")
 
         logger.info("[STAGE2] Worker completed all batches")
+        return counts
 
     async def _update_queue_status(self, completed_urls: list[str], table_name: str = "stage2_queue"):
         if not completed_urls:

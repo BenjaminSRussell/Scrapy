@@ -15,24 +15,26 @@ class Stage4Worker:
         self.delta = get_delta()
         self.processor = LargeDocProcessor(model_name=model_name)
 
-    async def run(self):
+    async def run(self) -> int:
+        """Process pending large docs; returns summaries written this run."""
         init_tracing(service_name="stage4-worker")
         crawl_job_id = ensure_crawl_job_id()
         with start_span("stage4.run", stage="stage4", crawl_job_id=crawl_job_id):
-            await self._run_traced()
+            return await self._run_traced()
 
-    async def _run_traced(self):
+    async def _run_traced(self) -> int:
+        written = 0
         logger.info("[STAGE4] Worker starting for large document processing")
 
         try:
             all_docs = self.delta.read("stage2_page_analysis")
         except Exception as e:
             logger.warning(f"[STAGE4] No documents found in stage2_page_analysis: {e}")
-            return
+            return written
 
         if not all_docs:
             logger.warning("[STAGE4] No documents found in stage2_page_analysis")
-            return
+            return written
 
         large_docs = [
             doc
@@ -45,7 +47,7 @@ class Stage4Worker:
 
         if not large_docs:
             logger.info("[STAGE4] No large documents to process")
-            return
+            return written
 
         try:
             processed = self.delta.read("stage4_large_doc_summaries")
@@ -57,7 +59,7 @@ class Stage4Worker:
 
         if not pending:
             logger.info("[STAGE4] All large documents already processed")
-            return
+            return written
 
         logger.info(f"[STAGE4] Processing {len(pending)} pending large documents")
 
@@ -74,12 +76,14 @@ class Stage4Worker:
 
         if results:
             try:
-                self.delta.write("stage4_large_doc_summaries", results, mode="append")
+                self.delta.write("stage4_large_doc_summaries", results, mode="append", async_write=False)
+                written = len(results)
                 logger.info(f"[STAGE4]  Saved {len(results)} large document summaries")
             except Exception as e:
                 logger.error(f"[STAGE4] Failed to save results: {e}")
 
         logger.info("[STAGE4] Worker completed")
+        return written
 
     async def _process_large_document(self, doc: dict[str, Any]) -> dict[str, Any] | None:
         try:

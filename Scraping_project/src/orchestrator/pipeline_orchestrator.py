@@ -15,6 +15,11 @@ from src.stage4.stage4_worker import Stage4Worker
 
 logger = logging.getLogger(__name__)
 
+def _is_count(value: object) -> bool:
+    """True for a real int count (not bool, not a test-double return value)."""
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
 @dataclass
 class PipelineStats:
     stage1_urls_discovered: int = 0
@@ -100,7 +105,18 @@ class PipelineOrchestrator:
         logger.info("=" * 80)
 
         worker = Stage2Worker(max_concurrent=max_concurrent, batch_size=batch_size)
-        await worker.run()
+        run_counts = await worker.run()
+
+        if isinstance(run_counts, dict) and isinstance(run_counts.get("analyzed"), int):
+            # Per-run counts from the worker (#327): not cumulative table totals.
+            analyzed_count = run_counts["analyzed"]
+            self.stats.stage2_pages_analyzed = analyzed_count
+            self.stats.stage2_quality_docs = int(run_counts.get("quality_docs", 0))
+            self.stats.stage2_massive_docs = int(run_counts.get("massive_docs", 0))
+            logger.info(f" Stage 2 complete: {analyzed_count} pages analyzed this run")
+            logger.info(f"   - Quality docs: {self.stats.stage2_quality_docs}")
+            logger.info(f"   - Massive docs: {self.stats.stage2_massive_docs}")
+            return analyzed_count
 
         try:
             analysis = self.delta.read("stage2_page_analysis")
@@ -141,7 +157,12 @@ class PipelineOrchestrator:
         logger.info("=" * 80)
 
         worker = Stage3Worker(max_concurrent=max_concurrent, batch_size=batch_size)
-        await worker.run()
+        written = await worker.run()
+
+        if _is_count(written):
+            logger.info(f" Stage 3 complete: {written} summaries created this run")
+            self.stats.stage3_summaries_created = written
+            return written
 
         # Canonical Stage 3 table plus the pre-#612 legacy name, so a lake
         # written under the old name still reports its summaries.
@@ -162,7 +183,12 @@ class PipelineOrchestrator:
         logger.info("=" * 80)
 
         worker = Stage4Worker()
-        await worker.run()
+        written = await worker.run()
+
+        if _is_count(written):
+            logger.info(f" Stage 4 complete: {written} large doc summaries created this run")
+            self.stats.stage4_large_summaries = written
+            return written
 
         try:
             large_summaries = self.delta.read("stage4_large_doc_summaries")
