@@ -36,6 +36,15 @@ from src.items import OffsiteCandidateItem
 
 logger = logging.getLogger(__name__)
 
+def is_queue_routing_item(item: Any) -> bool:
+    """True for Scout's plain-dict queue handoffs (``target_stage``/``target_spider``).
+
+    These are persisted by QueueItemPipeline (#608) and are not content records,
+    so content pipelines (schema validation, Kafka) must pass them through.
+    """
+    return isinstance(item, dict) and bool(item.get("target_stage") or item.get("target_spider"))
+
+
 class DataValidationPipeline:
 
     def __init__(self, required_fields: list[str] | None = None):
@@ -263,6 +272,8 @@ class KafkaPipeline:
                 logger.info(f"Message delivered to {msg.topic()} [{msg.partition()}] at offset {msg.offset()}")
 
     def process_item(self, item: Any, spider: Spider) -> Any:
+        if is_queue_routing_item(item):
+            return item  # queue handoff, persisted by QueueItemPipeline (#608)
         try:
             item_dict = ItemAdapter(item).asdict()
 
@@ -312,21 +323,26 @@ class QueueItemPipeline:
         target_spider = item.get("target_spider")
         target_stage = item.get("target_stage")
 
+        # Copy: later pipelines (Metadata, Recency) mutate the item in place and
+        # must not add columns to the queued row before the batch flushes.
         if target_spider == "javascript":
-            self.js_queue_batch.append(item)
+            self.js_queue_batch.append(dict(item))
             self.items_processed += 1
 
             if len(self.js_queue_batch) >= self.BATCH_SIZE:
                 self._save_js_queue_batch()
 
         elif target_stage == "stage2":
-            self.stage2_queue_batch.append(item)
+            self.stage2_queue_batch.append(dict(item))
             self.items_processed += 1
 
             if len(self.stage2_queue_batch) >= self.BATCH_SIZE:
                 self._save_stage2_queue_batch()
         else:
-            logger.warning(f"QueueItemPipeline: Received a dict item with no routing metadata: {item}")
+            # Content records (dicts without routing metadata) are not queue
+            # handoffs; pass them through untouched now that this pipeline is
+            # registered for every crawl (#608).
+            return item
 
         if self.items_processed % 500 == 0:
             logger.info(
@@ -626,7 +642,7 @@ class SchemaValidationPipeline:
         if not self.enabled:
             return item
 
-        if isinstance(item, OffsiteCandidateItem):
+        if isinstance(item, OffsiteCandidateItem) or is_queue_routing_item(item):
             return item
 
         adapter = ItemAdapter(item)
