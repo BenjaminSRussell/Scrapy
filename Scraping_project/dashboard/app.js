@@ -235,6 +235,19 @@ function getUptime() {
     return `${secs}s`;
 }
 
+
+function safeLinkify(escapedText) {
+    // Input must already be HTML-escaped. Only promote http(s) URLs.
+    return String(escapedText).replace(
+        /https?:\/\/[^\s<]+/gi,
+        (url) => {
+            if (/^javascript:/i.test(url)) return url;
+            const href = url.replace(/"/g, '&quot;');
+            return `<a href="${href}" target="_blank" rel="noopener noreferrer">${url}</a>`;
+        }
+    );
+}
+
 function escapeHtml(s) {
     return String(s ?? '')
         .replace(/&/g, '&amp;')
@@ -266,6 +279,18 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 });
 
+
+function renderActivityList(container, { maxItems = 50 } = {}) {
+    if (!container) return;
+    const items = activityLog.slice(0, maxItems);
+    container.innerHTML = items.map(item => `
+        <li class="activity-item ${escapeHtml(item.type)}">
+            <div class="activity-timestamp">${escapeHtml(item.timestamp)}</div>
+            <div class="activity-message">${safeLinkify(escapeHtml(item.message))}</div>
+        </li>
+    `).join('');
+}
+
 function updateActivityLog() {
 
     const logContainers = [
@@ -275,14 +300,9 @@ function updateActivityLog() {
 
     logContainers.forEach(container => {
         if (!container) return;
-
         if (activityPinned && container.id === "activity-log") return;
-        container.innerHTML = activityLog.map(item => `
-            <li class="activity-item ${escapeHtml(item.type)}">
-                <div class="activity-timestamp">${escapeHtml(item.timestamp)}</div>
-                <div class="activity-message">${escapeHtml(item.message)}</div>
-            </li>
-        `).join('');
+        const maxItems = container.id === 'overview-activity' ? 8 : 50;
+        renderActivityList(container, { maxItems });
     });
 }
 
@@ -429,6 +449,7 @@ function setMetricText(id, value) {
 }
 
 function updateDashboard(metrics);
+        checkMilestones(metrics);
         if (metricsWasDown) {
             metricsWasDown = false;
             const ann = document.getElementById('metrics-reconnect-announce') || document.getElementById('refresh-status');
@@ -889,9 +910,33 @@ function startCountdown() {
     }, 1000);
 }
 
+
+function applyEnvBadge() {
+    const env = (window.__CC_FEATURES__ && window.__CC_FEATURES__.env) || window.__CC_ENV__ || 'local';
+    const el = document.getElementById('env-badge');
+    if (!el) return;
+    el.textContent = env;
+    el.className = 'env-badge env-' + String(env).toLowerCase().replace(/[^a-z]/g, '');
+    if (/prod/i.test(env)) el.classList.add('env-prod');
+}
+
+function applyFeatureFlags() {
+    const f = window.__CC_FEATURES__ || {};
+    // Hide jobs tab unless flag on (#1047)
+    document.querySelectorAll('[data-tab="jobs"], #tab-jobs').forEach(el => {
+        el.hidden = !f.jobs;
+        if (!f.jobs) el.style.display = 'none';
+    });
+    if (f.dark === false) {
+        document.documentElement.dataset.theme = 'light';
+    }
+    applyEnvBadge();
+}
+
 function initialize() {
     console.log('Initializing Pipeline Control Center...');
 
+    applyFeatureFlags();
     setupTabs();
     const deep = tabFromLocation();
     if (deep) activateTab(deep, false);
@@ -919,6 +964,15 @@ function initialize() {
     refreshTimer = setInterval(() => {
         if (!refreshPaused) fetchMetrics();
     }, REFRESH_INTERVAL);
+
+    const chartHeightMql = window.matchMedia('(max-width: 640px)');
+    const onChartBreak = () => {
+        requestAnimationFrame(() => {
+            Object.values(charts || {}).forEach(ch => { try { ch.resize(); } catch (_) {} });
+        });
+    };
+    if (chartHeightMql.addEventListener) chartHeightMql.addEventListener('change', onChartBreak);
+    else if (chartHeightMql.addListener) chartHeightMql.addListener(onChartBreak);
 
     console.log('Dashboard ready!');
 }

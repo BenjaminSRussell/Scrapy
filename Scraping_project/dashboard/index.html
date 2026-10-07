@@ -597,6 +597,21 @@
         }
         .chart-container { position: relative; }
         .chart-container.is-empty canvas { opacity: 0.15; }
+        
+        :root {
+            --chart-h-sm: 160px;
+            --chart-h-md: 240px;
+            --chart-h-lg: 300px;
+            --chart-height: var(--chart-h-lg);
+        }
+        @media (max-width: 640px) { :root { --chart-height: var(--chart-h-sm); } }
+        @media (min-width: 641px) and (max-width: 1024px) { :root { --chart-height: var(--chart-h-md); } }
+        .chart-container { height: var(--chart-height); min-height: var(--chart-height); }
+        .env-badge { font-size: 0.7rem; padding: 0.15rem 0.5rem; border-radius: 999px; margin-left: 0.5rem; vertical-align: middle; }
+        .env-badge.env-local { background: #334155; color: #e2e8f0; }
+        .env-badge.env-staging { background: #ca8a04; color: #111; }
+        .env-badge.env-prod { background: #b91c1c; color: #fff; font-weight: 700; }
+        .milestone-badge { display: inline-block; margin-left: 0.35rem; padding: 0.1rem 0.4rem; border-radius: 0.25rem; background: #14532d; color: #bbf7d0; font-size: 0.75rem; }
         </style>
 </head>
 <body>
@@ -616,6 +631,7 @@
                 <h1>
                     <span class="title-full">🕷️ Pipeline Control Center</span>
                     <span class="title-short">Control Center</span>
+                    <span id="env-badge" class="env-badge env-local" title="Runtime environment">local</span>
                 </h1>
                 <p class="title-full">UConn Web Scraping Pipeline - Real-time Operations Dashboard</p>
                 <p class="title-short visually-hidden">Pipeline Control Center</p>
@@ -1107,6 +1123,14 @@
         </div>
     </div>
 
+    <script>
+        window.__CC_FEATURES__ = window.__CC_FEATURES__ || {
+            jobs: false,
+            dark: true,
+            sw: false,
+            env: (window.__CC_ENV__ || 'local')
+        };
+        </script>
     <script src="app.js"></script>
 </body>
 </html>
