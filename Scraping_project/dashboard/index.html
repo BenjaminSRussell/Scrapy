@@ -389,6 +389,11 @@
             color: #065f46;
         }
 
+        .status-indicator.never {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
         .status-indicator.offline {
             background: #fee2e2;
             color: #991b1b;
@@ -518,6 +523,14 @@
     </style>
 </head>
 <body>
+    <noscript>
+        <div role="alert" style="margin:0;padding:1rem 1.5rem;background:#fef3c7;color:#92400e;border-bottom:2px solid #f59e0b;font-family:system-ui,sans-serif;">
+            <strong>JavaScript required.</strong>
+            The Pipeline Control Center is a client-side dashboard and cannot run with JavaScript disabled.
+            Start the local server with <code>python Scraping_project/dashboard/serve.py</code> (see README),
+            then open this page with JS enabled. Metrics may also be available at <code>:9090/metrics</code>.
+        </div>
+    </noscript>
     <div class="topbar">
         <div class="topbar-content">
             <div class="topbar-title">
@@ -541,7 +554,7 @@
         </div>
     </div>
 
-    <div class="container">
+    <div class="container" id="dashboard-main" role="main">
         <div class="tabs">
             <div class="tab-buttons">
                 <button type="button" class="tab-button active" data-tab="overview">📊 Overview</button>
