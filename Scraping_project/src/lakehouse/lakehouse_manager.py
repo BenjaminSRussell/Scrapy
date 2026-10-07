@@ -102,6 +102,42 @@ WriteTask: TypeAlias = tuple[str, list[dict[str, Any]], WriteMode]
 # (task_type, table_name, retention_hours); retention_hours is only used by "vacuum".
 MaintenanceTask: TypeAlias = tuple[str, str, int]
 
+# Z-order columns per table (#272); override with delta_lake.z_order_columns.
+DEFAULT_Z_ORDER_COLUMNS: dict[str, list[str]] = {
+    "stage1_discovery": ["url_hash", "discovered_at"],
+    "stage2_page_analysis": ["url_hash", "processed_at"],
+}
+
+try:
+    from prometheus_client import Counter as _OptCounter
+
+    DELTA_OPTIMIZE_SKIPPED = _OptCounter(
+        "delta_optimize_skipped_total",
+        "Optimize steps skipped or failed, by table and reason (zorder_missing_columns|zorder_failed|compact_failed).",
+        ["table", "reason"],
+    )
+except Exception:  # prometheus_client missing or metric already registered
+    DELTA_OPTIMIZE_SKIPPED = None
+
+
+def _z_order_config(raw: Any) -> dict[str, list[str]]:
+    """Validate the configured mapping; fall back to defaults on bad input."""
+    if raw is None:
+        return {k: list(v) for k, v in DEFAULT_Z_ORDER_COLUMNS.items()}
+    if not isinstance(raw, dict):
+        logger.warning(f"delta_lake.z_order_columns must be a mapping, got {type(raw).__name__}; using defaults")
+        return {k: list(v) for k, v in DEFAULT_Z_ORDER_COLUMNS.items()}
+    out: dict[str, list[str]] = {}
+    for table, cols in raw.items():
+        if isinstance(cols, (list, tuple)) and all(isinstance(c, str) and c for c in cols):
+            out[str(table)] = list(cols)
+        elif cols in (None, [], ()):
+            out[str(table)] = []  # explicit opt-out for this table
+        else:
+            logger.warning(f"Ignoring invalid z_order_columns for {table}: {cols!r}")
+    return out
+
+
 class LakehouseManager:
 
     def __init__(self, base_path: str | None = None, start_workers: bool = True):
@@ -119,6 +155,7 @@ class LakehouseManager:
         # #818: "strict" quarantines rows with uncastable values; "coerce"
         # nulls the bad value (nullable columns) and keeps the row.
         self.cast_mode = str(config.get("delta_lake.cast_mode", "strict")).lower()
+        self.z_order_columns = _z_order_config(config.get("delta_lake.z_order_columns", None))
 
         self.tables = {
             "seed_urls": self.base_path / "seed_urls",
@@ -462,29 +499,40 @@ class LakehouseManager:
             dt = DeltaTable(str(table_path))
 
             logger.info(f"Optimizing {table_name} with compaction...")
-            dt.optimize.compact()
+            try:
+                dt.optimize.compact()
+            except Exception as e:
+                self._optimize_skipped(table_name, "compact_failed", f"compaction failed: {e}")
 
-            z_order_columns_by_table = {
-                "stage1_discovery": ["url_hash", "discovered_at"],
-                "stage2_page_analysis": ["url_hash", "processed_at"],
-            }
-            z_order_columns = z_order_columns_by_table.get(table_name)
+            z_order_columns = self.z_order_columns.get(table_name)
             if z_order_columns:
+                # Validate against the table schema before calling z_order (#272).
                 schema_fields = {field.name for field in dt.schema().fields}
                 missing = [col for col in z_order_columns if col not in schema_fields]
                 if missing:
-                    logger.debug(
-                        f"Skipping Z-order for {table_name}: columns {missing} not in "
-                        f"current schema (writer didn't include them for this batch)"
+                    self._optimize_skipped(
+                        table_name,
+                        "zorder_missing_columns",
+                        f"Z-order skipped: columns {missing} not in table schema "
+                        f"(set delta_lake.z_order_columns.{table_name} to columns the writers always produce)",
                     )
                 else:
                     logger.info(f"Z-ordering {table_name} by {', '.join(z_order_columns)}...")
-                    dt.optimize.z_order(z_order_columns)
+                    try:
+                        dt.optimize.z_order(z_order_columns)
+                    except Exception as e:
+                        self._optimize_skipped(table_name, "zorder_failed", f"Z-order failed: {e}")
 
             logger.info(f" Optimized {table_name}")
 
         except Exception as e:
             logger.warning(f"Optimization failed for {table_name}: {e}")
+
+    def _optimize_skipped(self, table_name: str, reason: str, message: str) -> None:
+        """Make a skipped/failed optimize step loud: warning + metric (#272)."""
+        logger.warning(f"[OPTIMIZE] {table_name}: {message}")
+        if DELTA_OPTIMIZE_SKIPPED is not None:
+            DELTA_OPTIMIZE_SKIPPED.labels(table=table_name, reason=reason).inc()
 
     def _vacuum_table(
         self,
