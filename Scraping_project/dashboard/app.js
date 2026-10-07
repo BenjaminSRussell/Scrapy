@@ -222,7 +222,19 @@ function addActivityLogItem(type, message) {
     updateActivityLog();
 }
 
+let activityPinned = false;
+document.addEventListener('DOMContentLoaded', () => {
+    ['activity-log', 'overview-activity'].forEach(id => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.addEventListener('scroll', () => {
+            activityPinned = el.scrollTop + el.clientHeight < el.scrollHeight - 8;
+        });
+    });
+});
+
 function updateActivityLog() {
+
     const logContainers = [
         document.getElementById('overview-activity'),
         document.getElementById('activity-log')
@@ -231,11 +243,12 @@ function updateActivityLog() {
     logContainers.forEach(container => {
         if (!container) return;
 
+        if (activityPinned && container.id === "activity-log") return;
         container.innerHTML = activityLog.map(item => `
-            <div class="activity-item ${item.type}">
+            <li class="activity-item ${item.type}">
                 <div class="activity-timestamp">${item.timestamp}</div>
                 <div class="activity-message">${item.message}</div>
-            </div>
+            </li>
         `).join('');
     });
 }
@@ -495,6 +508,15 @@ async function fetchMetrics() {
 }
 
 function setupTabs() {
+    const clearBtn = document.getElementById('clear-activity');
+    if (clearBtn) {
+        clearBtn.addEventListener('click', () => {
+            const log = document.getElementById('activity-log');
+            if (log) log.innerHTML = '';
+            if (typeof activityLog !== 'undefined') activityLog.length = 0;
+        });
+    }
+
     const tabButtons = document.querySelectorAll('.tab-button');
     const tabContents = document.querySelectorAll('.tab-content');
 
@@ -506,12 +528,27 @@ function setupTabs() {
             tabContents.forEach(content => content.classList.remove('active'));
 
             button.classList.add('active');
-            document.getElementById(`tab-${tabName}`).classList.add('active');
+            button.setAttribute('aria-selected', 'true');
+            tabButtons.forEach(btn => { if (btn !== button) btn.setAttribute('aria-selected', 'false'); });
+            const panel = document.getElementById(`tab-${tabName}`);
+            panel.classList.add('active');
+            panel.setAttribute('tabindex', '-1');
+            panel.focus();
         });
     });
 }
 
+function formatRelative(ts) {
+    if (!ts) return 'never';
+    const sec = Math.max(0, Math.floor((Date.now() - ts) / 1000));
+    if (sec < 60) return sec + 's ago';
+    if (sec < 3600) return Math.floor(sec / 60) + 'm ago';
+    return Math.floor(sec / 3600) + 'h ago';
+}
+let lastMetricsAt = null;
+
 function startCountdown() {
+
     let lastAnnounced = null;
     setInterval(() => {
         countdown--;
@@ -520,6 +557,8 @@ function startCountdown() {
         }
         const el = document.getElementById('refresh-countdown');
         if (el) el.textContent = countdown;
+        const rel = document.getElementById('last-updated-rel');
+        if (rel) rel.textContent = formatRelative(lastMetricsAt);
         // Throttle aria announcements to each full cycle reset (#1093)
         const live = document.getElementById('refresh-status');
         if (live && countdown === 5 && lastAnnounced !== 'refreshed') {
