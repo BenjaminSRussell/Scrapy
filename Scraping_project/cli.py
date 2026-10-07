@@ -446,6 +446,30 @@ def cmd_validate(args):
     logger.info("=" * 60)
 
 
+
+def cmd_data_gc(args):
+    """TTL GC for crawl artifacts (logs/cache/temp). Dry-run by default."""
+    from src.common.crawl_artifact_gc import apply_gc, format_report, plan_gc
+
+    base = Path(__file__).parent
+    report = plan_gc(base_dir=base, ttl_days=args.ttl_days, roots=args.roots)
+    if args.apply:
+        if args.dry_run:
+            logger.error("Pass --apply without --dry-run to delete (or omit --dry-run).")
+            # still allow --apply alone
+        report = apply_gc(report)
+    else:
+        report.dry_run = True
+    print(format_report(report, verbose=args.verbose))
+    logger.info(
+        "[monitoring] crawl_artifact_gc mode=%s files=%d bytes=%d deleted_files=%d",
+        "apply" if args.apply else "dry-run",
+        report.total_files,
+        report.total_bytes,
+        report.deleted_files,
+    )
+
+
 # ============================================================================
 # MAIN CLI
 # ============================================================================
@@ -512,6 +536,31 @@ def main():
     # Validate command
     validate_parser = subparsers.add_parser("validate", help="Validate Delta Lake tables")
     validate_parser.set_defaults(func=cmd_validate)
+
+    # data gc — TTL retention for on-disk crawl artifacts (#1102)
+    data_parser = subparsers.add_parser("data", help="Data / artifact operations")
+    data_sub = data_parser.add_subparsers(dest="data_command")
+    gc_parser = data_sub.add_parser("gc", help="TTL delete for logs/cache/temp artifacts")
+    gc_parser.add_argument("--ttl-days", type=float, default=14.0, help="Delete files older than N days")
+    gc_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        default=True,
+        help="Report only (default). Ignored when --apply is set.",
+    )
+    gc_parser.add_argument(
+        "--apply",
+        action="store_true",
+        help="Actually delete expired files (required to mutate disk)",
+    )
+    gc_parser.add_argument("--verbose", action="store_true", help="List candidate paths")
+    gc_parser.add_argument(
+        "--roots",
+        nargs="*",
+        default=None,
+        help="Override artifact roots relative to Scraping_project/",
+    )
+    gc_parser.set_defaults(func=cmd_data_gc)
 
     # Parse and execute
     args = parser.parse_args()

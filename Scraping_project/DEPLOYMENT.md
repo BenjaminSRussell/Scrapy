@@ -235,3 +235,20 @@ python -m src.utils.maintenance compact
 # Remove old logs
 find /app/logs -name "*.log" -mtime +30 -delete
 ```
+
+## Crawl artifact retention (`data gc`)
+
+Long Kafka→Delta runs fill `data/logs`, `data/cache`, `data/temp`, and `logs`.
+Use the CLI (also exposed as `scrapy-ops` when packaged):
+
+```bash
+# Dry-run: print candidate counts/bytes, delete nothing
+python -m cli data gc --ttl-days 14 --verbose
+
+# Apply: delete only files older than the TTL
+python -m cli data gc --ttl-days 14 --apply
+```
+
+`--apply` is required to delete. Default roots: `data/logs`, `data/cache`,
+`data/temp`, `logs`, `data/raw/tmp`.
+
