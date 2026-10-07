@@ -490,6 +490,18 @@
                 padding: 1rem;
             }
         }
+    
+        .visually-hidden {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            white-space: nowrap;
+            border: 0;
+        }
     </style>
 </head>
 <body>
@@ -783,34 +795,35 @@
                             <span>Online</span>
                         </span>
                     </div>
+                    <div id="health-announce" class="visually-hidden" role="status" aria-live="polite" aria-atomic="true"></div>
                     <div class="system-health">
                         <div class="health-item healthy" id="redis-health">
-                            <div class="health-icon">🗄️</div>
+                            <div class="health-icon" aria-hidden="true">🗄️</div>
                             <div class="health-label">Redis</div>
                             <div class="health-value">Healthy</div>
                         </div>
                         <div class="health-item healthy" id="metrics-health">
-                            <div class="health-icon">📊</div>
+                            <div class="health-icon" aria-hidden="true">📊</div>
                             <div class="health-label">Metrics</div>
                             <div class="health-value">Collecting</div>
                         </div>
                         <div class="health-item healthy" id="stage1-health">
-                            <div class="health-icon">🔍</div>
+                            <div class="health-icon" aria-hidden="true">🔍</div>
                             <div class="health-label">Stage 1</div>
                             <div class="health-value">Running</div>
                         </div>
                         <div class="health-item healthy" id="stage2-health">
-                            <div class="health-icon">📄</div>
+                            <div class="health-icon" aria-hidden="true">📄</div>
                             <div class="health-label">Stage 2</div>
                             <div class="health-value">Running</div>
                         </div>
                         <div class="health-item healthy" id="stage3-health">
-                            <div class="health-icon">📝</div>
+                            <div class="health-icon" aria-hidden="true">📝</div>
                             <div class="health-label">Stage 3</div>
                             <div class="health-value">Running</div>
                         </div>
                         <div class="health-item healthy" id="stage4-health">
-                            <div class="health-icon">📚</div>
+                            <div class="health-icon" aria-hidden="true">📚</div>
                             <div class="health-label">Stage 4</div>
                             <div class="health-value">Standby</div>
                         </div>
