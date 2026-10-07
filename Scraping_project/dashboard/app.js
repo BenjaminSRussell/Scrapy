@@ -344,6 +344,28 @@ function calculateRates(metrics) {
     return rates;
 }
 
+
+/** Announce System Health tile transitions once per change (#1096). */
+const _healthLastState = Object.create(null);
+
+function setHealthTile(id, label, healthy, detailText) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const state = healthy ? 'healthy' : 'unhealthy';
+    const value = detailText || (healthy ? 'Healthy' : 'Unhealthy');
+    const prev = _healthLastState[id];
+    el.classList.toggle('healthy', healthy);
+    el.classList.toggle('unhealthy', !healthy);
+    const valueEl = el.querySelector('.health-value');
+    if (valueEl) valueEl.textContent = value;
+    if (prev === state + '|' + value) return;
+    _healthLastState[id] = state + '|' + value;
+    const live = document.getElementById('health-announce');
+    if (live) {
+        live.textContent = `${label}: ${value}`;
+    }
+}
+
 function updateDashboard(metrics) {
     const s1Discovered = metrics['stage1_urls_discovered_total'] || 0;
     const s1Queued = metrics['stage1_urls_queued_total'] || 0;
@@ -420,6 +442,12 @@ function updateDashboard(metrics) {
     document.getElementById('redis-keys').textContent = formatNumber(redisKeys);
     document.getElementById('redis-memory').textContent = formatBytes(redisMemory);
 
+    // System Health tiles (#1096)
+    const redisReported = ('pipeline_redis_keys' in metrics) || ('pipeline_redis_memory_bytes' in metrics);
+    setHealthTile('redis-health', 'Redis', redisReported, redisReported ? 'Healthy' : 'Unreachable');
+    const metricsOk = Boolean(metrics) && Object.keys(metrics).length > 0;
+    setHealthTile('metrics-health', 'Metrics', metricsOk, metricsOk ? 'Collecting' : 'Stale');
+
     const lastUpdate = new Date(metrics['pipeline_last_update_timestamp'] * 1000);
     document.getElementById('last-update').textContent = lastUpdate.toLocaleTimeString();
     document.getElementById('last-refresh-time').textContent = new Date().toLocaleTimeString();
@@ -459,6 +487,10 @@ async function fetchMetrics() {
     } catch (error) {
         console.error('Error fetching metrics:', error);
         addActivityLogItem('danger', `Failed to fetch metrics: ${error.message}`);
+        if (typeof setHealthTile === 'function') {
+            setHealthTile('metrics-health', 'Metrics', false, 'Fetch failed');
+            setHealthTile('redis-health', 'Redis', false, 'Unknown');
+        }
     }
 }
 
