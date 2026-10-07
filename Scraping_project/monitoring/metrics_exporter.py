@@ -3,7 +3,9 @@ import logging
 import os
 import socket
 import sys
+import threading
 import time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -140,6 +142,10 @@ class MetricsExporter:
         self.previous_counts: dict[str, int] = {}
         self.previous_error_counts: dict[str, dict[str, int]] = {}
         self.last_update_time = time.time()
+        # Progress tracking for the /healthz probe (#208).
+        self.started_ts = time.time()
+        self.updates_total = 0
+        self.last_update_ts = 0.0
         # Persist summaries in the shared exports folder
         exports_root = Path(exports_dir) if exports_dir is not None else Path("/app/exports")
         exports_root.mkdir(parents=True, exist_ok=True)
@@ -151,44 +157,67 @@ class MetricsExporter:
 
         logger.info(f"UDP metrics exporter initialized (StatsD: {statsd_host}:{statsd_port}, interval: {update_interval}s)")
 
-    def start(self):
-        """Start metrics update loop (UDP - no server needed)."""
+    def start(self, health_port: int = 0):
+        """Start metrics update loop (UDP - no server needed).
+
+        No longer waits for crawl data (#208): zero baselines are emitted in
+        __init__, and the first real update runs immediately, so a fresh
+        cluster has metrics within one interval. ``health_port`` > 0 also
+        serves /healthz and /metrics over HTTP for k8s probes.
+        """
         logger.info("Starting UDP metrics exporter (fire-and-forget mode)")
-
-        # Wait for scraping to start before collecting metrics
-        self._wait_for_scraping_to_start()
-
-        # Run update loop
+        if health_port:
+            self.start_health_server(health_port)
         self._update_loop()
 
-    def _wait_for_scraping_to_start(self):
-        """Wait until scraping activity is detected before starting metrics collection."""
-        logger.info("Waiting for scraping to start...")
+    # -- health endpoint (#208) --------------------------------------------
 
-        while True:
-            try:
-                # Check if there are any seed URLs or discovered URLs
-                seed_records = self.delta.read("seed_urls")
-                if seed_records and len(seed_records) > 0:
-                    logger.info(f"Scraping activity detected! Found {len(seed_records)} seed URLs")
-                    logger.info("Starting metrics collection...")
-                    return
-            except Exception as e:
-                logger.debug(f"No scraping activity yet (seed_urls table not found or empty): {e}")
+    def is_healthy(self) -> bool:
+        """Healthy until the update loop stops making progress (10 intervals)."""
+        reference = self.last_update_ts or self.started_ts
+        return (time.time() - reference) < max(30.0, 10 * float(self.update_interval))
 
-            try:
-                # Also check if any stage1_discovery records exist
-                discovery_records = self.delta.read("stage1_discovery")
-                if discovery_records and len(discovery_records) > 0:
-                    logger.info(f"Scraping activity detected! Found {len(discovery_records)} discovered URLs")
-                    logger.info("Starting metrics collection...")
-                    return
-            except Exception as e:
-                logger.debug(f"No discovery activity yet: {e}")
+    def health_text(self) -> str:
+        return (
+            "# HELP metrics_exporter_up Exporter process is serving.\n"
+            "# TYPE metrics_exporter_up gauge\n"
+            "metrics_exporter_up 1\n"
+            "# HELP metrics_exporter_updates_total Completed metric update cycles.\n"
+            "# TYPE metrics_exporter_updates_total counter\n"
+            f"metrics_exporter_updates_total {self.updates_total}\n"
+            "# HELP metrics_exporter_last_update_timestamp_seconds Unix time of the last update cycle.\n"
+            "# TYPE metrics_exporter_last_update_timestamp_seconds gauge\n"
+            f"metrics_exporter_last_update_timestamp_seconds {self.last_update_ts}\n"
+        )
 
-            # Check every 10 seconds
-            logger.info("No scraping activity detected yet. Waiting...")
-            time.sleep(10)
+    def start_health_server(self, port: int, host: str = "0.0.0.0") -> ThreadingHTTPServer:
+        exporter = self
+
+        class _Handler(BaseHTTPRequestHandler):
+            def do_GET(self):  # noqa: N802 (http.server API)
+                path = self.path.split("?", 1)[0]
+                if path == "/metrics":
+                    status, body, ctype = 200, exporter.health_text(), "text/plain; version=0.0.4"
+                elif path in ("/healthz", "/readyz"):
+                    ok = exporter.is_healthy()
+                    status, body, ctype = (200 if ok else 503), ("ok\n" if ok else "stale\n"), "text/plain"
+                else:
+                    status, body, ctype = 404, "not found\n", "text/plain"
+                data = body.encode("utf-8")
+                self.send_response(status)
+                self.send_header("Content-Type", ctype)
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+
+            def log_message(self, format, *args):  # keep probe noise out of logs
+                return
+
+        server = ThreadingHTTPServer((host, port), _Handler)
+        threading.Thread(target=server.serve_forever, daemon=True, name="exporter-health").start()
+        self._health_server = server
+        logger.info(f"Exporter health endpoint on :{server.server_address[1]} (/metrics, /healthz)")
+        return server
 
     def _update_loop(self):
         """Continuously update metrics."""
@@ -200,6 +229,8 @@ class MetricsExporter:
                 self._update_error_metrics()
                 self._update_throughput_metrics()
 
+                self.updates_total += 1
+                self.last_update_ts = time.time()
                 logger.debug("Metrics updated successfully")
 
             except Exception as e:
@@ -427,6 +458,13 @@ def main():
         help="Update interval in seconds (default: 5)",
     )
 
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=int(os.environ.get("METRICS_EXPORTER_PORT", "0")),
+        help="HTTP port for /metrics and /healthz probes (0 = disabled; Helm sets 9100)",
+    )
+
     args = parser.parse_args()
 
     exporter = MetricsExporter(
@@ -434,7 +472,7 @@ def main():
         statsd_port=args.statsd_port,
         update_interval=args.interval,
     )
-    exporter.start()
+    exporter.start(health_port=args.port)
 
 
 if __name__ == "__main__":
