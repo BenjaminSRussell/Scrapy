@@ -3,7 +3,7 @@ Global Delta Lake utilities.
 
 Centralizes all Delta Lake operations to eliminate duplicate code across the pipeline.
 This module merges functionality from:
-- src/common/delta_lake.py
+- src/common/delta_lake.py (removed; use src.lakehouse.lakehouse_manager)
 - src/common/storage_manager.py
 
 Phase 6 Enhancement: Added type-safe operations with Pydantic validation
