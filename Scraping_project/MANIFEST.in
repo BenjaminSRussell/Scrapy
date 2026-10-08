@@ -1,0 +1,4 @@
+# PEP 561: ship the py.typed marker so type checkers treat the installed `src`
+# package (and its subpackages) as typed (#784). setuptools' include-package-data
+# (on by default for pyproject.toml builds) copies matching package files into the wheel.
+include src/py.typed
