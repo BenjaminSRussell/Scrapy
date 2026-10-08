@@ -409,17 +409,20 @@ groups:
           action: "Restart Redis: docker-compose restart redis"
 
       # Warning: High Redis memory usage
+      # #161: maxmemory-policy is volatile-lru, so TTL-less seen sets and queues
+      # are never evicted; at maxmemory Redis rejects writes instead. Warn at 80%
+      # so there is time to act before enqueues and seen-marks start failing.
       - alert: RedisHighMemory
-        expr: redis_memory_used_bytes / redis_memory_max_bytes > 0.9
+        expr: redis_memory_used_bytes / (redis_memory_max_bytes > 0) > 0.8
         for: 5m
         labels:
           severity: warning
           component: redis
         annotations:
           summary: "Redis memory usage high"
-          description: "Redis is using {{ $value | humanizePercentage }} of max memory."
-          impact: "Medium - Risk of evictions or OOM"
-          action: "Review queue sizes and consider scaling Redis"
+          description: "Redis is using {{ $value | humanizePercentage }} of maxmemory."
+          impact: "Medium - At 100% Redis rejects writes (enqueue, seen-marks); durable keys are never evicted"
+          action: "Raise maxmemory or drain queues; never switch to an allkeys-* policy"
 
       # Soft-ban / captcha responses (#582): pages are quarantined, never
       # analysed; a sustained rate means a site is blocking the crawler.
