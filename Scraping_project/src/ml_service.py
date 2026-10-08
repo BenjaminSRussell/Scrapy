@@ -72,7 +72,11 @@ class ReadinessState:
             return {"phase": self.phase, "detail": self.detail, "ready": self.phase == "ready"}
 
 
-def start_health_server(state: ReadinessState, port: int, host: str = "0.0.0.0") -> ThreadingHTTPServer:
+def start_health_server(
+    state: ReadinessState,
+    port: int,
+    host: str = "0.0.0.0",  # nosec B104 - kubelet probes reach the pod IP, not loopback
+) -> ThreadingHTTPServer:
     """Serve ``/healthz`` and ``/readyz`` from a daemon thread (#485)."""
 
     class Handler(BaseHTTPRequestHandler):
