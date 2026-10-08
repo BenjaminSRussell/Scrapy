@@ -12,6 +12,51 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+MAX_URL_LENGTH = 2048
+
+# Stable rejection codes returned by url_rejection_reason() (#265). Callers log
+# and count these; do not rename them.
+URL_NOT_A_STRING = "not_a_string"
+URL_EMPTY = "empty"
+URL_TOO_LONG = "too_long"
+URL_UNPARSABLE = "unparsable"
+URL_BAD_SCHEME = "bad_scheme"
+URL_NO_HOST = "no_host"
+URL_WHITESPACE = "whitespace"
+URL_REJECTION_CODES = frozenset({
+    URL_NOT_A_STRING, URL_EMPTY, URL_TOO_LONG, URL_UNPARSABLE, URL_BAD_SCHEME, URL_NO_HOST, URL_WHITESPACE,
+})
+
+
+def url_rejection_reason(url: object) -> Optional[str]:
+    """Why ``url`` is not a crawlable http(s) URL, as a stable code, or None if it is.
+
+    Codes (see ``URL_REJECTION_CODES``): ``not_a_string``, ``empty``,
+    ``too_long`` (>= 2048 chars), ``whitespace`` (spaces/control chars inside),
+    ``unparsable``, ``bad_scheme`` (not http/https), ``no_host``.
+    """
+    if not isinstance(url, str):
+        return URL_NOT_A_STRING
+    if not url.strip():
+        return URL_EMPTY
+    if len(url) >= MAX_URL_LENGTH:
+        return URL_TOO_LONG
+    if any(ch.isspace() or ord(ch) < 0x20 or ord(ch) == 0x7F for ch in url):
+        return URL_WHITESPACE
+    try:
+        result = urlparse(url)
+        result.port  # raises ValueError for a non-numeric / out-of-range port
+        host = result.hostname
+    except ValueError as e:
+        logger.debug(f"URL validation failed for {url!r}: {e}")
+        return URL_UNPARSABLE
+    if result.scheme not in ("http", "https"):
+        return URL_BAD_SCHEME
+    if not host:  # "http://", "http://:80", "http://user@"
+        return URL_NO_HOST
+    return None
+
+
 def is_valid_url(url: str) -> bool:
     """
     Validate URL format.
@@ -20,25 +65,13 @@ def is_valid_url(url: str) -> bool:
         url: URL string to validate
 
     Returns:
-        True if URL is valid, False otherwise
+        True if URL is valid, False otherwise (``url_rejection_reason`` says why)
 
     Example:
         if is_valid_url("https://uconn.edu"):
             process_url(url)
     """
-    if not url or not isinstance(url, str):
-        return False
-
-    try:
-        result = urlparse(url)
-        return all([
-            result.scheme in ['http', 'https'],
-            result.netloc,
-            len(url) < 2048  # Max reasonable URL length
-        ])
-    except Exception as e:
-        logger.debug(f"URL validation failed for {url}: {e}")
-        return False
+    return url_rejection_reason(url) is None
 
 
 def is_uconn_domain(url: str) -> bool:

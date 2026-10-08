@@ -230,8 +230,9 @@ class FactAggregator:
 
 class ChronologicalSorter:
 
-    def __init__(self, date_format: str = "%Y-%m-%d"):
+    def __init__(self, date_format: str = "%Y-%m-%d", enable_date_prefixes: bool = True):
         self.date_format = date_format
+        self.enable_date_prefixes = enable_date_prefixes
 
     def sort_facts(self, facts: list[dict[str, Any]], descending: bool = False) -> list[dict[str, Any]]:
         sorted_facts = sorted(facts, key=lambda f: f.get("publication_date") or datetime.min, reverse=descending)
@@ -246,7 +247,9 @@ class ChronologicalSorter:
             pub_date = fact.get("publication_date")
             fact_text = fact.get("fact_text", "")
 
-            if pub_date:
+            if not self.enable_date_prefixes:
+                formatted_lines.append(fact_text)
+            elif pub_date:
                 date_str = pub_date.strftime(self.date_format)
                 formatted_lines.append(f"({date_str}): {fact_text}")
             else:
@@ -264,6 +267,7 @@ class AbstractiveSummarizer:
         max_length: int = 300,
         min_length: int = 100,
         device: int = -1,
+        enable_citations: bool = True,
     ):
         """Initialize the abstractive summarizer.
 
@@ -277,6 +281,7 @@ class AbstractiveSummarizer:
         self.max_length = max_length
         self.min_length = min_length
         self.device = device
+        self.enable_citations = enable_citations
 
         # Lazily-loaded optional dependency (transformers pipeline).
         self._summarizer: Any = None
@@ -344,7 +349,10 @@ class AbstractiveSummarizer:
 
         citations = self._create_citations(facts)
 
-        summary_with_citations = self._embed_citations(summary_text, citations)
+        if self.enable_citations:
+            summary_with_citations = self._embed_citations(summary_text, citations)
+        else:
+            summary_with_citations = summary_text
 
         return {
             "summary_text": summary_with_citations,
@@ -384,14 +392,14 @@ class AbstractiveSummarizer:
 
 class EntitySummaryStorage:
 
-    def __init__(self, delta_manager=None):
+    def __init__(self, delta_manager=None, table_name: str = "entity_summaries"):
         if delta_manager is None:
             from src.utils.delta import get_delta
 
             delta_manager = get_delta()
 
         self.delta = delta_manager
-        self.table_name = "entity_summaries"
+        self.table_name = table_name
 
         self.schema = {
             "entity_name": "string",
@@ -484,6 +492,16 @@ class Stage4EntityWorker:
         summarization_model: str = "facebook/bart-large-cnn",
         similarity_threshold: float = 0.85,
         device: int = -1,
+        *,
+        min_fact_length: int = 20,
+        max_fact_length: int = 500,
+        summary_max_length: int = 300,
+        summary_min_length: int = 100,
+        date_format: str = "%Y-%m-%d",
+        enable_date_prefixes: bool = True,
+        enable_citations: bool = True,
+        table_name: str = "entity_summaries",
+        delta_manager=None,
     ):
         """Initialize the Stage 4 worker.
 
@@ -492,22 +510,58 @@ class Stage4EntityWorker:
             summarization_model: Abstractive summarization model
             similarity_threshold: Threshold for semantic deduplication
             device: Device for model inference (-1 for CPU)
+
+        Prefer ``Stage4EntityWorker.from_config()``, which reads the validated
+        ``entity_summarization`` config (#483).
         """
         self.fact_aggregator = FactAggregator(
             embedding_model_name=embedding_model,
             similarity_threshold=similarity_threshold,
+            min_fact_length=min_fact_length,
+            max_fact_length=max_fact_length,
         )
 
-        self.chronological_sorter = ChronologicalSorter()
+        self.chronological_sorter = ChronologicalSorter(
+            date_format=date_format, enable_date_prefixes=enable_date_prefixes
+        )
 
         self.summarizer = AbstractiveSummarizer(
             model_name=summarization_model,
+            max_length=summary_max_length,
+            min_length=summary_min_length,
             device=device,
+            enable_citations=enable_citations,
         )
 
-        self.storage = EntitySummaryStorage()
+        self.storage = EntitySummaryStorage(delta_manager=delta_manager, table_name=table_name)
+        self.config: Any = None  # EntitySummarizationConfig when built via from_config()
 
         logger.info(" Stage4EntityWorker initialized")
+
+    @classmethod
+    def from_config(cls, cfg: Any = None, *, path: Any = None, delta_manager=None) -> "Stage4EntityWorker":
+        """Worker built from ``EntitySummarizationConfig`` (default: ``load_entity_config(path)``)."""
+        from src.stage4.entity_config import load_entity_config
+
+        if cfg is None:
+            cfg = load_entity_config(path)
+        worker = cls(
+            embedding_model=cfg.embedding_model,
+            summarization_model=cfg.summarization_model,
+            similarity_threshold=cfg.similarity_threshold,
+            device=cfg.device,
+            min_fact_length=cfg.min_fact_length,
+            max_fact_length=cfg.max_fact_length,
+            summary_max_length=cfg.summary_max_length,
+            summary_min_length=cfg.summary_min_length,
+            date_format=cfg.date_format,
+            enable_date_prefixes=cfg.enable_date_prefixes,
+            enable_citations=cfg.enable_citations,
+            table_name=cfg.delta_table_name,
+            delta_manager=delta_manager,
+        )
+        worker.config = cfg
+        return worker
 
     def process_documents(self, documents: list[dict[str, Any]]):
         logger.info(f"Processing {len(documents)} documents...")
@@ -586,6 +640,6 @@ if __name__ == "__main__":
         },
     ]
 
-    worker = Stage4EntityWorker()
+    worker = Stage4EntityWorker.from_config()  # $STAGE4_ENTITY_CONFIG or config.yml (#483)
 
     worker.process_documents(sample_documents)

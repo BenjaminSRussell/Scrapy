@@ -41,6 +41,10 @@ def calculate_decay_score(
         >>> score = calculate_decay_score(year_ago, reference_date=now, decay_constant=0.01)
         >>> assert 0.02 < score < 0.03
     """
+    if decay_constant < 0 or math.isnan(decay_constant):
+        # A negative k turns decay into growth; every score would clamp to 1.0.
+        raise ValueError(f"decay_constant must be >= 0 (got {decay_constant})")
+
     if isinstance(publication_date, str):
         if publication_date.endswith("Z"):
             publication_date = publication_date[:-1] + "+00:00"
@@ -102,7 +106,7 @@ def calculate_weighted_average(
         )
 
     for score in recency_scores:
-        if not 0.0 <= score <= 1.0:
+        if not 0.0 <= score <= 1.0:  # also rejects NaN
             raise ValueError(f"recency_score {score} must be in range [0.0, 1.0]")
 
     weighted_sum = sum(v * w for v, w in zip(values, recency_scores, strict=False))
@@ -161,7 +165,7 @@ def calculate_temporal_relevance_rank(
     return sorted(items, key=lambda x: x[score_field], reverse=True)
 
 def get_decay_half_life(decay_constant: float) -> float:
-    if decay_constant <= 0:
+    if not decay_constant > 0:  # also rejects NaN
         raise ValueError(f"decay_constant must be positive (got {decay_constant})")
 
     return math.log(2) / decay_constant
