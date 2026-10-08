@@ -85,6 +85,10 @@ test-ci: ## Run the default PR selection exactly as CI does
 	@echo "$(BLUE)Running CI default test selection...$(NC)"
 	python -m pytest tests/ -m "not slow and not kafka and not performance" -o addopts= --strict-markers
 
+test-smoke: ## Fast offline smoke gate (imports, one spider parse, one pipeline, settings; #286)
+	@echo "$(BLUE)Running smoke tests...$(NC)"
+	python -m pytest tests/ -m smoke -o addopts= -q
+
 profile: ## Profile one CLI run: make profile CMD="pipeline --skip-stage1" (writes data/exports/profiles/, #465)
 	python cli.py --profile $(CMD)
 

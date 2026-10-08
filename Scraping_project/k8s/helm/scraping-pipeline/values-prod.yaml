@@ -1,0 +1,43 @@
+# Production overrides (#176, #233, #451). Use together with values.yaml:
+#
+#   helm upgrade --install scraping-pipeline . -f values.yaml -f values-prod.yaml \
+#     --set ingress.hosts[0].host=grafana.example.edu \
+#     --set ingress.tls[0].hosts[0]=grafana.example.edu
+#
+# profile: production makes templates/validate.yaml fail the render when:
+#   - Kafka replication factor < 2, or min.insync.replicas >= replication factor
+#     would block writes on a single broker loss (needs RF >= minISR + 1);
+#   - Grafana is a LoadBalancer without grafana.service.allowPublicLoadBalancer;
+#   - the ingress is enabled without TLS.
+profile: production
+
+kafka:
+  replicas: 3
+  config:
+    defaultReplicationFactor: 3
+    minInsyncReplicas: 2
+
+grafana:
+  service:
+    type: ClusterIP
+
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+    nginx.ingress.kubernetes.io/use-regex: "true"
+  hosts:
+    - host: grafana.example.edu
+      paths:
+        - path: /grafana(/|$)(.*)
+          pathType: Prefix
+          service: grafana
+          port: 3000
+  tls:
+    - secretName: grafana-tls
+      hosts:
+        - grafana.example.edu

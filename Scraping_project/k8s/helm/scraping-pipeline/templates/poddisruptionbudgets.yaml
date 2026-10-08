@@ -2,10 +2,13 @@
 {{- $root := . }}
 {{- $pdb := .Values.podDisruptionBudget }}
 {{- /*
-  #514. Stateful stores: minAvailable only when there's a replica to spare. Postgres,
-  Redis and Kafka run `replicas: 1` (hard-coded in their StatefulSets), and there
+  #514. Stateful stores: minAvailable only when there's a replica to spare. Postgres
+  and Redis run `replicas: 1` (hard-coded in their StatefulSets), and there
   minAvailable: 1 would forbid every eviction and hang node drains forever, so a
   single replica gets maxUnavailable: 1 (drain proceeds, one pod at a time).
+  Kafka's broker count is kafka.replicas (#176); it is declared 1 here on purpose so
+  it always gets maxUnavailable: 1: one broker at a time keeps min.insync.replicas
+  satisfied when RF = minISR + 1, whatever the broker count.
   Keep `replicas` below in sync with the StatefulSets (a unit test checks this).
 */}}
 {{- $stores := list

@@ -158,6 +158,33 @@ except Exception:
     STAGE2_HTTP_FETCHES = None
     STAGE2_HTTP_RETRIES = None
 
+try:
+    from prometheus_client import Counter as _OCounter
+
+    STAGE2_OVERSIZED: Any = _OCounter(
+        "stage2_oversized_skipped_total",
+        "Stage 2 fetches skipped as too large (#248): html body over stage2.max_body_bytes, "
+        "pdf over STAGE4_PDF_MAX_BYTES",
+        ["kind"],
+    )
+except (ImportError, ValueError):
+    STAGE2_OVERSIZED = None
+
+DEFAULT_STAGE2_MAX_BODY_BYTES = 20 * 1024 * 1024
+DEFAULT_STAGE4_PDF_MAX_BYTES = 50 * 1024 * 1024  # matches src/stage4/pdf_sandbox.py
+
+
+def _decode_body(body: bytes, charset: str | None) -> str:
+    """Bytes -> text: declared charset, else UTF-8, else cp1252 (never raises)."""
+    for encoding in (charset, "utf-8"):
+        if not encoding:
+            continue
+        try:
+            return body.decode(encoding)
+        except (LookupError, UnicodeDecodeError):
+            continue
+    return body.decode("cp1252", errors="replace")
+
 DEFAULT_STAGE2_MERGE_RETRIES = 4
 ANALYSIS_TABLE = "stage2_page_analysis"
 
@@ -800,18 +827,89 @@ class Stage2Worker:
                     raise TransientHTTPError(response.status, _parse_retry_after(response.headers.get("Retry-After")))
                 return self._error_record(url, url_hash, response.status, "http_error")
 
-            content_type = response.headers.get("Content-Type", "").lower()
+            # #205: Stage 2 routes with the same content policy as Stage 1
+            # (src/stage1/content_policy.py), so the stages can't disagree:
+            #   application/pdf, or a PDF body under any/no header -> stage4_large_docs
+            #   text/html, application/xhtml+xml, or a header-less HTML body -> HTML analysis
+            #   anything else (JSON, images, Office, mislabeled binary) -> minimal record
+            from src.stage1.content_policy import HTML_MEDIA_TYPES, classify, media_type
 
-            if "text/html" in content_type:
-                html = await response.text()
-                sig = self._detector().detect(response.status, html, response.headers)
-                if sig:  # challenge page served as 200: never analysed as content
-                    return self._soft_ban_record(url, url_hash, response.status, sig, domain)
-                return await self._analyze_html(url, url_hash, html, is_heavy)
-            elif "application/pdf" in content_type:
+            mt = media_type(response.headers.get("Content-Type"))
+            declared = response.content_length  # None when chunked / not sent
+            if mt == "application/pdf":
+                # #248: a PDF Stage 4 would quarantine as too_large is never queued.
+                if declared is not None and 0 < self._stage4_pdf_max_bytes() < declared:
+                    return self._oversized_record(url, url_hash, "pdf", declared, self._stage4_pdf_max_bytes())
+                return self._route_pdf_to_stage4(url, url_hash)  # Stage 4 fetches the bytes
+            if mt and mt not in HTML_MEDIA_TYPES:
+                return self._minimal_record(url, url_hash, mt)  # body never downloaded
+
+            limit = self._max_body_bytes()
+            if declared is not None and 0 < limit < declared:
+                return self._oversized_record(url, url_hash, "html", declared, limit)
+            payload = await self._read_bounded(response, limit)
+            if payload is None:  # no/false Content-Length, payload ran past the cap
+                return self._oversized_record(url, url_hash, "html", None, limit)
+            if payload.lstrip(b"\xef\xbb\xbf \t\r\n").startswith(b"%PDF-"):
+                logger.info(f"[STAGE2] PDF payload served as {mt or 'no Content-Type'}: {url[:80]} -> Stage 4")
                 return self._route_pdf_to_stage4(url, url_hash)
-            else:
-                return self._minimal_record(url, url_hash, content_type)
+            decision = classify(mt, payload)
+            if not decision.parse_html:
+                logger.debug(f"[STAGE2] Not analysing {url[:80]}: {decision.reason}")
+                return self._minimal_record(url, url_hash, mt or decision.reason)
+
+            html = _decode_body(payload, response.charset)
+            sig = self._detector().detect(response.status, html, response.headers)
+            if sig:  # challenge page served as 200: never analysed as content
+                return self._soft_ban_record(url, url_hash, response.status, sig, domain)
+            return await self._analyze_html(url, url_hash, html, is_heavy)
+
+    def _max_body_bytes(self) -> int:
+        """Stage 2 fetch body cap (#248): ``stage2.max_body_bytes`` / STAGE2_MAX_BODY_BYTES; 0 = off."""
+        cached = getattr(self, "max_body_bytes", None)
+        if cached is None:
+            default = DEFAULT_STAGE2_MAX_BODY_BYTES
+            try:
+                configured = get_config().get("stage2.max_body_bytes")
+                if configured is not None:
+                    default = int(configured)
+            except Exception:
+                pass
+            cached = self.max_body_bytes = _env_number("STAGE2_MAX_BODY_BYTES", default, 0, int)
+        return int(cached)
+
+    def _stage4_pdf_max_bytes(self) -> int:
+        """Same cap Stage 4's PDF sandbox enforces (STAGE4_PDF_MAX_BYTES, #445)."""
+        cached = getattr(self, "stage4_pdf_max_bytes", None)
+        if cached is None:
+            cached = self.stage4_pdf_max_bytes = _env_number(
+                "STAGE4_PDF_MAX_BYTES", DEFAULT_STAGE4_PDF_MAX_BYTES, 0, int
+            )
+        return int(cached)
+
+    @staticmethod
+    async def _read_bounded(response: Any, limit: int) -> bytes | None:
+        """Read the body, or None as soon as it exceeds ``limit`` bytes (0 = unbounded)."""
+        if limit <= 0:
+            return bytes(await response.read())
+        chunks: list[bytes] = []
+        size = 0
+        async for chunk in response.content.iter_chunked(64 * 1024):
+            size += len(chunk)
+            if size > limit:
+                return None
+            chunks.append(chunk)
+        return b"".join(chunks)
+
+    def _oversized_record(
+        self, url: str, url_hash: str, kind: str, size: int | None, limit: int
+    ) -> dict[str, Any]:
+        """Recorded and skipped, never retried (#248); counted for the reject-rate alert."""
+        if STAGE2_OVERSIZED is not None:
+            STAGE2_OVERSIZED.labels(kind=kind).inc()
+        shown = f"{size} bytes" if size is not None else "body"
+        logger.warning(f"[STAGE2] Skipping oversized {kind} ({shown} > {limit}): {url[:80]}")
+        return self._minimal_record(url, url_hash, f"oversized:{kind}")
 
     def _retry_delay(self, attempt: int, retry_after: float | None = None) -> float:
         """Exponential backoff with jitter, capped; a numeric Retry-After raises it (also capped)."""

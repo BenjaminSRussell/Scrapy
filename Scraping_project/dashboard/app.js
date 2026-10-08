@@ -1,7 +1,7 @@
 // Pipeline Control Center - Main Application
 // Real-time monitoring dashboard for UConn scraping pipeline
 
-// #141: resolved from window.CC_METRICS_URL, ?metrics=, or <this host>:9090 (format-utils.js).
+// #141/#400: window.CC_METRICS_URL, ?metrics=, else same-origin /api/metrics (format-utils.js).
 const METRICS_URL = resolveMetricsUrl(
     typeof location !== 'undefined' ? location : null,
     (typeof window !== 'undefined' && window.CC_METRICS_URL) || null
@@ -692,6 +692,45 @@ function setConnectionStatus(kind, pipelineRunning) {
     if (top) { const __n = state.top; if (top.textContent !== String(__n)) { top.textContent = __n; top.classList.remove('flash'); void top.offsetWidth; top.classList.add('flash'); } else { top.textContent = __n; } }
 }
 
+// #401: Redis queue depths from serve.py. Only when served over http(s) (the
+// API lives on this origin); a file:// page has no server to ask.
+const QUEUES_URL = '/api/queues';
+async function fetchQueueDepths() {
+    if (typeof window === 'undefined' || !/^https?:$/.test(window.location.protocol)) return;
+    const status = document.getElementById('queue-depths-status');
+    const tbody = document.getElementById('queue-depths');
+    if (!status || !tbody) return;
+    let payload = null;
+    try {
+        const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+        const timer = ctrl ? setTimeout(() => ctrl.abort(), METRICS_TIMEOUT_MS) : null;
+        try {
+            const resp = await fetch(QUEUES_URL, { cache: 'no-store', signal: ctrl ? ctrl.signal : undefined });
+            payload = await resp.json().catch(() => ({ ok: false, error: `HTTP ${resp.status}` }));
+        } finally {
+            if (timer) clearTimeout(timer);
+        }
+    } catch (error) {
+        payload = { ok: false, error: (error && error.name === 'AbortError') ? 'timed out' : 'request failed' };
+    }
+    const { error, rows } = queueDepthRows(payload);
+    tbody.replaceChildren();
+    if (error) {
+        status.textContent = error;
+        return;
+    }
+    status.textContent = rows.length ? `Updated ${new Date().toLocaleTimeString()}` : 'No queue keys configured (CC_QUEUE_KEYS).';
+    for (const row of rows) {
+        const tr = document.createElement('tr');
+        for (const value of [row.key, row.type, row.depth === null ? '—' : formatNumber(row.depth)]) {
+            const td = document.createElement('td');
+            td.textContent = String(value);
+            tr.appendChild(td);
+        }
+        tbody.appendChild(tr);
+    }
+}
+
 async function fetchMetrics() {
     const main = document.getElementById('main') || document.querySelector('.container');
     if (main) main.setAttribute('aria-busy', 'true');
@@ -1096,7 +1135,7 @@ function startCountdown() {
 // One aria announcement per completed successful fetch (#1093).
 async function fetchAndAnnounce() {
     const before = lastMetricsAt;
-    await fetchMetrics();
+    await Promise.all([fetchMetrics(), fetchQueueDepths()]);
     const live = document.getElementById('refresh-status');
     if (live && lastMetricsAt !== before) live.textContent = 'Metrics refreshed';
     renderCountdown();

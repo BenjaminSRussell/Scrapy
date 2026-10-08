@@ -187,10 +187,18 @@ port(s); default-deny previously blocked every scrape.
 
 ### Grafana Dashboards
 
-Access Grafana:
+Grafana's Service defaults to **ClusterIP** (#233). Do **not** flip it to
+`LoadBalancer` without SSO or an IP allowlist: that puts the admin UI on a public
+address. Reach it with:
+
 ```bash
 kubectl port-forward svc/scraping-pipeline-grafana 3000:3000 -n scraping-pipeline
+# or via the TLS ingress below (values-prod.yaml)
 ```
+
+`profile: production` (or `-f values-prod.yaml`) **fails to render** when Grafana is a
+LoadBalancer without `grafana.service.allowPublicLoadBalancer=true`, or when the
+ingress is enabled without `ingress.tls` (#451). See the Security section.
 
 ### Logs
 
@@ -243,6 +251,17 @@ kubectl delete namespace scraping-pipeline
 - **[values.yaml](helm/scraping-pipeline/values.yaml)**: Configuration options
 - **[Chart.yaml](helm/scraping-pipeline/Chart.yaml)**: Chart metadata
 
+## Security
+
+- **Grafana:** ClusterIP by default; prefer the TLS ingress in `values-prod.yaml`
+  (cert-manager annotation + `ingress.tls`). Never leave a LoadBalancer on without
+  SSO / an IP allowlist (#233 / #451).
+- **Kafka durability:** the chart ships RF=1 for a single local broker. Production
+  must use `values-prod.yaml` (3 brokers, RF=3, minISR=2). Producers already use
+  `acks=all` (#174); with RF=1 that only waits for the leader (#176).
+- **Secrets:** never put credentials in values committed to git; use
+  `existingSecret` (Grafana) and Kubernetes Secrets. See the root `SECURITY.md`.
+
 ## Support
 
 For issues or questions:
@@ -266,6 +285,27 @@ redis:
 ```
 
 ### Production
+
+Use the production overlay (TLS for Grafana, Kafka RF=3 / minISR=2, ClusterIP Grafana):
+
+```bash
+helm upgrade --install scraping-pipeline ./k8s/helm/scraping-pipeline \
+  -f ./k8s/helm/scraping-pipeline/values.yaml \
+  -f ./k8s/helm/scraping-pipeline/values-prod.yaml \
+  --set ingress.hosts[0].host=grafana.example.edu \
+  --set ingress.tls[0].hosts[0]=grafana.example.edu \
+  -n scraping-pipeline
+```
+
+`values-prod.yaml` also sets `profile: production`, which turns the exposure and
+durability checks into hard render failures (#176 / #233 / #451):
+
+| Guardrail | Development default | Production requirement |
+|---|---|---|
+| Grafana Service | ClusterIP | ClusterIP (or LoadBalancer only with `allowPublicLoadBalancer`) |
+| Ingress TLS | empty (plain HTTP ok locally) | non-empty `ingress.tls` + cert-manager annotation example |
+| Kafka RF / ISR | 1 / 1 | RF ≥ 2 (3 recommended), `minInsyncReplicas` = RF − 1, `kafka.replicas` ≥ RF |
+
 ```yaml
 # HA, persistence, proper resources
 redis:
