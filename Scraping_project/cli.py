@@ -38,12 +38,11 @@ from pathlib import Path
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent))
 
-# Setup logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
+# Setup logging: same human format by default; LOG_FORMAT=json for Loki (#238), with
+# stage/worker_id/crawl_job_id correlation fields on every line (#466).
+from src.utils.logging_config import configure_logging  # noqa: E402
+
+configure_logging("cli")
 logger = logging.getLogger(__name__)
 
 
@@ -463,6 +462,55 @@ def cmd_data_gc(args):
 
 
 
+def cmd_ml(args):
+    """ML ops (#422): export low-confidence ZSC records for human labeling."""
+    if args.ml_command != "review-export":
+        raise SystemExit("unknown ml command")
+    import os
+    import uuid
+
+    from confluent_kafka import Consumer
+
+    from src.ml_service import export_low_confidence
+
+    topic = args.topic or os.getenv("ZSC_LOW_CONF_TOPIC", "low_confidence_review")
+    consumer = Consumer(
+        {
+            "bootstrap.servers": os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092"),
+            # Throwaway group + no commits: an export never moves anyone's offsets.
+            "group.id": f"zsc-review-export-{uuid.uuid4().hex[:8]}",
+            "auto.offset.reset": "earliest",
+            "enable.auto.commit": False,
+        }
+    )
+    consumer.subscribe([topic])
+    try:
+        n = export_low_confidence(consumer, Path(args.output), max_records=args.limit, idle_timeout=args.idle_timeout)
+    finally:
+        consumer.close()
+    print(f"wrote {n} low-confidence record(s) from {topic} to {args.output}")
+
+
+def cmd_queue_gc(args):
+    """Delete expired completed/failed rows from the stage queue tables (#754)."""
+    from src.lakehouse.lakehouse_manager import LakehouseManager
+
+    manager = LakehouseManager(start_workers=False)
+    hours = args.retention_hours if args.retention_hours is not None else manager.queue_retention_hours
+    if not hours or hours <= 0:
+        logger.error("Queue retention is disabled (delta_lake.queue_retention_hours <= 0).")
+        return 1
+    results = manager.gc_all_queues(
+        hours, archive=not args.no_archive, dry_run=args.dry_run, vacuum=not args.dry_run
+    )
+    verb = "would delete" if args.dry_run else "deleted"
+    for res in results:
+        n = res["matched"] if args.dry_run else res["deleted"]
+        extra = f" (skipped: {res['skipped']})" if res["skipped"] else ""
+        print(f"{res['table']}: {verb} {n} rows older than {hours}h{extra}")
+    return 0
+
+
 def cmd_seeds(args):
     """List/add/disable seed URLs with append-only audit log."""
     from src.common.seed_ops import SeedRegistry
@@ -612,6 +660,21 @@ def main():
     )
     gc_parser.set_defaults(func=cmd_data_gc)
 
+    queue_gc_parser = subparsers.add_parser(
+        "queue-gc", help="Delete expired completed/failed rows from stage queue tables"
+    )
+    queue_gc_parser.add_argument(
+        "--retention-hours",
+        type=float,
+        default=None,
+        help="Override delta_lake.queue_retention_hours",
+    )
+    queue_gc_parser.add_argument("--dry-run", action="store_true", help="Only count rows")
+    queue_gc_parser.add_argument(
+        "--no-archive", action="store_true", help="Do not copy rows to <table>_history first"
+    )
+    queue_gc_parser.set_defaults(func=cmd_queue_gc)
+
     # seeds — operator seed registry + audit (#1100)
     ks_parser = subparsers.add_parser("killswitch", help="Global crawl kill switch and budgets (#456)")
     ks_sub = ks_parser.add_subparsers(dest="killswitch_command", required=True)
@@ -644,6 +707,15 @@ def main():
     seeds_audit.add_argument("--limit", type=int, default=50)
     seeds_audit.set_defaults(func=cmd_seeds)
 
+    ml_parser = subparsers.add_parser("ml", help="ML service operations")
+    ml_sub = ml_parser.add_subparsers(dest="ml_command", required=True)
+    ml_export = ml_sub.add_parser("review-export", help="Dump low-confidence ZSC records to JSONL (#422)")
+    ml_export.add_argument("--output", default="exports/low_confidence_review.jsonl")
+    ml_export.add_argument("--limit", type=int, default=1000, help="Max records to export")
+    ml_export.add_argument("--topic", default=None, help="Default: $ZSC_LOW_CONF_TOPIC or low_confidence_review")
+    ml_export.add_argument("--idle-timeout", type=float, default=5.0, help="Stop after N seconds without messages")
+    ml_parser.set_defaults(func=cmd_ml)
+
     # Parse and execute
     args = parser.parse_args()
 
@@ -651,9 +723,18 @@ def main():
         parser.print_help()
         sys.exit(1)
 
+    if not hasattr(args, "func"):
+        # A command group without its subcommand (e.g. `cli.py data`): show that group's
+        # usage and exit 2 like any other argparse usage error, not a logged traceback (#297).
+        subparsers.choices[args.command].print_help(sys.stderr)
+        sys.exit(2)
+
     try:
         args.func(args)
         sys.exit(0)
+    except KeyboardInterrupt:
+        logger.warning("Interrupted")
+        sys.exit(130)
     except Exception as e:
         logger.error(f"Error: {e}", exc_info=True)
         sys.exit(1)

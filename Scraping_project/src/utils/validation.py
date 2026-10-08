@@ -12,6 +12,51 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+MAX_URL_LENGTH = 2048
+
+# Stable rejection codes returned by url_rejection_reason() (#265). Callers log
+# and count these; do not rename them.
+URL_NOT_A_STRING = "not_a_string"
+URL_EMPTY = "empty"
+URL_TOO_LONG = "too_long"
+URL_UNPARSABLE = "unparsable"
+URL_BAD_SCHEME = "bad_scheme"
+URL_NO_HOST = "no_host"
+URL_WHITESPACE = "whitespace"
+URL_REJECTION_CODES = frozenset({
+    URL_NOT_A_STRING, URL_EMPTY, URL_TOO_LONG, URL_UNPARSABLE, URL_BAD_SCHEME, URL_NO_HOST, URL_WHITESPACE,
+})
+
+
+def url_rejection_reason(url: object) -> Optional[str]:
+    """Why ``url`` is not a crawlable http(s) URL, as a stable code, or None if it is.
+
+    Codes (see ``URL_REJECTION_CODES``): ``not_a_string``, ``empty``,
+    ``too_long`` (>= 2048 chars), ``whitespace`` (spaces/control chars inside),
+    ``unparsable``, ``bad_scheme`` (not http/https), ``no_host``.
+    """
+    if not isinstance(url, str):
+        return URL_NOT_A_STRING
+    if not url.strip():
+        return URL_EMPTY
+    if len(url) >= MAX_URL_LENGTH:
+        return URL_TOO_LONG
+    if any(ch.isspace() or ord(ch) < 0x20 or ord(ch) == 0x7F for ch in url):
+        return URL_WHITESPACE
+    try:
+        result = urlparse(url)
+        result.port  # raises ValueError for a non-numeric / out-of-range port
+        host = result.hostname
+    except ValueError as e:
+        logger.debug(f"URL validation failed for {url!r}: {e}")
+        return URL_UNPARSABLE
+    if result.scheme not in ("http", "https"):
+        return URL_BAD_SCHEME
+    if not host:  # "http://", "http://:80", "http://user@"
+        return URL_NO_HOST
+    return None
+
+
 def is_valid_url(url: str) -> bool:
     """
     Validate URL format.
@@ -20,25 +65,13 @@ def is_valid_url(url: str) -> bool:
         url: URL string to validate
 
     Returns:
-        True if URL is valid, False otherwise
+        True if URL is valid, False otherwise (``url_rejection_reason`` says why)
 
     Example:
         if is_valid_url("https://uconn.edu"):
             process_url(url)
     """
-    if not url or not isinstance(url, str):
-        return False
-
-    try:
-        result = urlparse(url)
-        return all([
-            result.scheme in ['http', 'https'],
-            result.netloc,
-            len(url) < 2048  # Max reasonable URL length
-        ])
-    except Exception as e:
-        logger.debug(f"URL validation failed for {url}: {e}")
-        return False
+    return url_rejection_reason(url) is None
 
 
 def is_uconn_domain(url: str) -> bool:
@@ -59,10 +92,12 @@ def is_uconn_domain(url: str) -> bool:
         return False
 
     try:
-        parsed = urlparse(url)
-        return 'uconn.edu' in parsed.netloc.lower()
-    except Exception:
+        # Exact host or a subdomain (#757): the old substring test accepted
+        # notuconn.edu and uconn.edu.attacker.example.
+        host = (urlparse(url).hostname or "").rstrip(".").lower()
+    except ValueError:
         return False
+    return host == "uconn.edu" or host.endswith(".uconn.edu")
 
 
 def sanitize_text(text: str, max_length: Optional[int] = None) -> str:
@@ -89,9 +124,9 @@ def sanitize_text(text: str, max_length: Optional[int] = None) -> str:
     # Remove excessive whitespace
     text = re.sub(r'\s+', ' ', text).strip()
 
-    # Truncate if needed
-    if max_length and len(text) > max_length:
-        text = text[:max_length]
+    # Truncate if needed (max_length=0 means empty, not "no limit"; #757)
+    if max_length is not None and len(text) > max(0, max_length):
+        text = text[:max(0, max_length)].rstrip()
 
     return text
 
@@ -135,8 +170,8 @@ def is_safe_filename(filename: str) -> bool:
     if not filename or not isinstance(filename, str):
         return False
 
-    # Check for path traversal attempts
-    if '..' in filename or '/' in filename or '\\' in filename:
+    # Check for path traversal attempts ("." is the directory itself; #757)
+    if filename == '.' or '..' in filename or '/' in filename or '\\' in filename:
         return False
 
     # Check for reasonable length
@@ -151,53 +186,18 @@ def is_safe_filename(filename: str) -> bool:
 
 
 def normalize_url(url: str) -> str:
-    """
-    Normalize URL for consistent comparison.
+    """Canonical URL for comparison and storage (#728).
 
-    - Converts to lowercase
-    - Removes trailing slash
-    - Removes fragment (#)
-    - Removes common tracking parameters
-
-    Args:
-        url: URL to normalize
-
-    Returns:
-        Normalized URL
+    Delegates to ``src.utils.url_canon.canonicalize_url`` so validation, Redis,
+    spiders and the lake agree; non-http(s) input is returned unchanged.
 
     Example:
-        normalized = normalize_url("https://UConn.EDU/Page/?utm_source=email#section")
+        normalize_url("https://UConn.EDU/Page/?utm_source=email#section")
         # Returns: "https://uconn.edu/page"
     """
-    if not is_valid_url(url):
-        return url
+    from src.utils.url_canon import canonical_or_raw
 
-    try:
-        parsed = urlparse(url.lower())
-
-        # Remove fragment
-        normalized = parsed._replace(fragment='')
-
-        # Remove trailing slash from path
-        path = normalized.path.rstrip('/')
-
-        # Remove common tracking parameters
-        query_params = []
-        if normalized.query:
-            for param in normalized.query.split('&'):
-                key = param.split('=')[0]
-                # Skip common tracking parameters
-                if not key.startswith(('utm_', 'ref', 'source', 'campaign')):
-                    query_params.append(param)
-
-        query = '&'.join(query_params) if query_params else ''
-
-        normalized = normalized._replace(path=path, query=query)
-
-        return normalized.geturl()
-    except Exception as e:
-        logger.debug(f"URL normalization failed for {url}: {e}")
-        return url
+    return canonical_or_raw(url)
 
 
 _TLD_EXTRACT = None

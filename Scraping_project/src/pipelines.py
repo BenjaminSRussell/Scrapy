@@ -695,6 +695,22 @@ class _TimedFlushMixin:
             loop.stop()
 
 
+def _canonical_queue_row(item: dict) -> dict:
+    """Copy of a queue handoff with canonical ``url`` and matching ``url_hash`` (#728).
+
+    The lake row, Redis seen-set member and ``url_hash`` all derive from the
+    same canonical string, so ``/page/`` and ``/page?utm_source=x`` can't land
+    as separate rows.
+    """
+    from src.utils.url_canon import canonical_or_raw, url_hash
+
+    row = dict(item)
+    if isinstance(row.get("url"), str) and row["url"]:
+        row["url"] = canonical_or_raw(row["url"])
+        row["url_hash"] = url_hash(row["url"])
+    return row
+
+
 class QueueItemPipeline(_TimedFlushMixin):
     """Batch queue hand-offs into ``js_spider_queue`` / ``stage2_queue``.
 
@@ -747,10 +763,10 @@ class QueueItemPipeline(_TimedFlushMixin):
         # Copy: later pipelines (Metadata, Recency) mutate the item in place and
         # must not add columns to the queued row before the batch flushes.
         if target_spider == "javascript":
-            self.js_queue_batch.add(dict(item))
+            self.js_queue_batch.add(_canonical_queue_row(item))
             self.items_processed += 1
         elif target_stage == "stage2":
-            self.stage2_queue_batch.add(dict(item))
+            self.stage2_queue_batch.add(_canonical_queue_row(item))
             self.items_processed += 1
         else:
             # Content records (dicts without routing metadata) are not queue
@@ -817,6 +833,11 @@ class OffsiteCandidatePipeline(_TimedFlushMixin):
     def process_item(self, item: Any, spider: Spider) -> Any:
         if not isinstance(item, OffsiteCandidateItem):
             return item
+
+        missing = item.missing_required()
+        if missing:
+            # A row without its source/target/timestamp cannot be reviewed (#247).
+            raise DropItem(f"OffsiteCandidateItem missing required field(s): {', '.join(missing)}")
 
         adapter = ItemAdapter(item)
         before = self.batch.rows_written

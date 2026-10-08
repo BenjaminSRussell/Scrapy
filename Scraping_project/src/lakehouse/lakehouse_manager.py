@@ -8,7 +8,7 @@ import threading
 import time
 from collections import deque
 from contextlib import contextmanager
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Literal, TypeAlias
 
@@ -114,6 +114,29 @@ try:  # Delta log checkpoints (#274)
     )
 except Exception:
     DELTA_CHECKPOINTS = None
+
+try:  # stage queue row GC (#754)
+    from prometheus_client import Counter as _QCounter
+    from prometheus_client import Gauge as _QGauge
+
+    DELTA_QUEUE_ROWS = _QGauge(
+        "delta_queue_rows",
+        "Rows in stage queue Delta tables by status (refreshed by each queue GC pass).",
+        ["table", "status"],
+    )
+    DELTA_QUEUE_ROWS_GC = _QCounter(
+        "delta_queue_rows_gc_total",
+        "Terminal (completed/failed) queue rows removed by retention GC.",
+        ["table"],
+    )
+except Exception:
+    DELTA_QUEUE_ROWS = DELTA_QUEUE_ROWS_GC = None
+
+# #754: queue tables whose terminal rows are garbage-collected after a TTL.
+QUEUE_TABLES: tuple[str, ...] = ("stage2_queue", "js_spider_queue", "stage4_large_docs")
+TERMINAL_QUEUE_STATUSES: tuple[str, ...] = ("completed", "failed")
+QUEUE_STATUSES: tuple[str, ...] = ("pending", "processing", "completed", "failed")
+QUEUE_HISTORY_SUFFIX = "_history"
 
 SPILL_DIR_NAME = "_write_spill"
 CHECKPOINT_INTERVAL_PROPERTY = "delta.checkpointInterval"
@@ -317,6 +340,44 @@ def metadata_row_count(table: Any) -> int | None:
     if counts.null_count:
         return None
     return int(sum(counts.to_pylist()))  # one entry per data file
+
+
+class MissingColumnsError(ValueError):
+    """A read named columns the table (at that version) doesn't have (#301).
+
+    Subclasses ValueError, as pyarrow's ArrowInvalid does, so existing ``except ValueError``
+    callers keep working. The message names the table, the version and the missing columns
+    instead of dumping the whole Arrow schema.
+    """
+
+    def __init__(self, table_name: str, missing: list[str], available: list[str], version: int | None):
+        at = f" at version {version}" if version is not None else ""
+        super().__init__(f"{table_name}{at} has no column(s) {missing}; available: {available}")
+        self.table_name = table_name
+        self.missing = missing
+        self.available = available
+        self.version = version
+
+
+def _filter_columns(filters: Any) -> set[str] | None:
+    """Column names referenced by DNF filters ``[(col, op, val)]`` / ``[[(...)], [(...)]]``.
+
+    Returns None for anything else (e.g. a pyarrow expression): those aren't validated here.
+    """
+    if not filters:
+        return set()
+    if not isinstance(filters, (list, tuple)):
+        return None
+    first = filters[0]
+    nested = isinstance(first, (list, tuple)) and bool(first) and isinstance(first[0], (list, tuple))
+    groups = filters if nested else [filters]
+    names: set[str] = set()
+    for group in groups:
+        for clause in group:
+            if not (isinstance(clause, (list, tuple)) and len(clause) == 3 and isinstance(clause[0], str)):
+                return None
+            names.add(clause[0])
+    return names
 
 
 PARTITIONED_TABLES = {"stage1_discovery", "stage2_page_analysis"}
@@ -644,6 +705,13 @@ class LakehouseManager:
         # table property delta.checkpointInterval. Keep it in sync with config.
         self.checkpoint_interval = max(1, int(config.get("delta_lake.checkpoint_interval", 100)))
         self._checkpoint_interval_synced: set[str] = set()
+        # #754: TTL GC of terminal queue rows, run by the idle maintenance worker.
+        self.queue_retention_hours = float(config.get("delta_lake.queue_retention_hours", 168) or 0)
+        self.queue_gc_interval_s = 60.0 * float(
+            config.get("delta_lake.queue_gc_interval_minutes", 60) or 0
+        )
+        self.queue_gc_archive = bool(config.get("delta_lake.queue_gc_archive", True))
+        self._last_queue_gc = time.monotonic()
 
         self.schema_cache: dict[str, Any] = {}
 
@@ -666,9 +734,15 @@ class LakehouseManager:
             self._start_worker()
             self._start_maintenance_worker()
 
-            if threading.current_thread() is threading.main_thread():
-                signal.signal(signal.SIGINT, self._shutdown_handler)
-                signal.signal(signal.SIGTERM, self._shutdown_handler)
+            # Shared process drain (#183): a signal no longer sys.exit()s from
+            # inside whatever a stage worker is doing. With a worker drain loop
+            # running, the loop finishes its batch and this manager's queue is
+            # flushed at exit; without one (scripts), the signal flushes and
+            # exits 0 immediately, as before (#166).
+            from src.utils.graceful_shutdown import get_shutdown, install_signal_handlers
+
+            get_shutdown().add_cleanup(self._drain_on_exit, name="lakehouse write queue")
+            if install_signal_handlers():
                 logger.info("Signal handlers registered for graceful shutdown")
 
     def _start_worker(self):
@@ -701,9 +775,23 @@ class LakehouseManager:
                     self.maintenance_queue.task_done()
 
             except queue.Empty:
+                self._maybe_gc_queues()
                 continue
             except Exception as e:
                 logger.error(f"Maintenance worker error: {e}", exc_info=True)
+
+    def _maybe_gc_queues(self) -> None:
+        """Run gc_all_queues() every queue_gc_interval_minutes while idle (#754)."""
+        if self.queue_gc_interval_s <= 0 or self.queue_retention_hours <= 0:
+            return
+        now = time.monotonic()
+        if now - self._last_queue_gc < self.queue_gc_interval_s:
+            return
+        self._last_queue_gc = now
+        try:
+            self.gc_all_queues(self.queue_retention_hours, archive=self.queue_gc_archive)
+        except Exception as e:
+            logger.error(f"Queue GC failed: {e}", exc_info=True)
 
     def _process_queue(self):
         # Drain until the shutdown sentinel (#166): batches queued before
@@ -1273,6 +1361,13 @@ class LakehouseManager:
             return []
 
         table = DeltaTable(str(table_path), version=version)
+        referenced = _filter_columns(filters)
+        wanted = set(columns or ()) | (referenced or set())
+        if wanted:
+            available = [f.name for f in table.schema().fields]
+            missing = sorted(wanted - set(available))
+            if missing:
+                raise MissingColumnsError(table_name, missing, available, version)
         pa_table = table.to_pyarrow_table(filters=filters, columns=columns)
         rows: list[dict] = pa_table.to_pylist()
         return rows
@@ -1413,6 +1508,180 @@ class LakehouseManager:
         for table_name in self.tables.keys():
             self._vacuum_table(table_name, retention_hours)
 
+    # ------------------------------------------------------------------
+    # Queue row GC (#754)
+    # ------------------------------------------------------------------
+    def gc_queue_table(
+        self,
+        table_name: str,
+        retention_hours: float,
+        *,
+        archive: bool = True,
+        dry_run: bool = False,
+        now: datetime | None = None,
+    ) -> dict[str, Any]:
+        """Delete completed/failed rows whose ``completed_at`` is older than the TTL.
+
+        Rows still pending or processing, and terminal rows without a
+        ``completed_at``, are never touched. With ``archive`` the expired rows
+        are appended to ``<table>_history`` before the DELETE commits, so a
+        crash between the two leaves duplicates in history, never lost rows.
+        ``completed_at`` may be a timestamp (stage2_queue) or an ISO-8601
+        string (js_spider_queue, stage4_large_docs); the predicate is built
+        for whichever type the table has. ``now`` is naive local time, which
+        is how the workers stamp ``completed_at``.
+        """
+        result: dict[str, Any] = {
+            "table": table_name,
+            "matched": 0,
+            "archived": 0,
+            "deleted": 0,
+            "skipped": None,
+        }
+        if retention_hours is None or float(retention_hours) <= 0:
+            raise ValueError("retention_hours must be > 0")
+        if DeltaTable is None or pa is None:
+            result["skipped"] = "deltalake/pyarrow not installed"
+            return result
+        table_path = self.tables.get(table_name, self.base_path / table_name)
+        if not (Path(table_path) / "_delta_log").exists():
+            result["skipped"] = "table does not exist"
+            return result
+
+        import pyarrow.compute as pc
+        from deltalake.exceptions import CommitFailedError
+
+        cutoff = (now or datetime.now()) - timedelta(hours=float(retention_hours))
+        statuses = ", ".join(f"'{s}'" for s in TERMINAL_QUEUE_STATUSES)
+
+        with self._table_lock(table_name):
+            dt = DeltaTable(str(table_path))
+            schema = pa.schema(dt.schema().to_arrow())
+            if "status" not in schema.names or "completed_at" not in schema.names:
+                result["skipped"] = "no status/completed_at column"
+                return result
+            ctype = schema.field("completed_at").type
+            if pa.types.is_timestamp(ctype) and ctype.tz is None:
+                literal = cutoff.strftime("%Y-%m-%d %H:%M:%S")
+                age_sql = f"completed_at < CAST('{literal}' AS TIMESTAMP)"
+                cutoff_scalar = pa.scalar(cutoff, type=ctype)
+            elif pa.types.is_string(ctype) or pa.types.is_large_string(ctype):
+                # ISO-8601 strings sort chronologically.
+                literal = cutoff.strftime("%Y-%m-%dT%H:%M:%S")
+                age_sql = f"completed_at < '{literal}'"
+                cutoff_scalar = pa.scalar(literal, type=ctype)
+            else:
+                result["skipped"] = f"unsupported completed_at type {ctype}"
+                return result
+            predicate = (
+                f"status IN ({statuses}) AND completed_at IS NOT NULL AND {age_sql}"
+            )
+
+            data = dt.to_pyarrow_table()
+            mask = pc.and_(
+                pc.fill_null(
+                    pc.is_in(data["status"], value_set=pa.array(TERMINAL_QUEUE_STATUSES)), False
+                ),
+                pc.fill_null(pc.less(data["completed_at"], cutoff_scalar), False),
+            )
+            expired = data.filter(mask)
+            result["matched"] = expired.num_rows
+            if dry_run or expired.num_rows == 0:
+                return result
+
+            if archive:
+                write_deltalake(
+                    str(self.base_path / f"{table_name}{QUEUE_HISTORY_SUFFIX}"),
+                    expired,
+                    mode="append",
+                    schema_mode="merge",
+                )
+                result["archived"] = expired.num_rows
+
+            # Expired rows are terminal, so a concurrent writer can only add or
+            # update other rows; re-running the same DELETE after a conflict is safe.
+            for attempt in range(1, MERGE_MAX_ATTEMPTS + 1):
+                try:
+                    metrics = DeltaTable(str(table_path)).delete(predicate)
+                    break
+                except CommitFailedError as e:
+                    if attempt == MERGE_MAX_ATTEMPTS:
+                        raise
+                    logger.warning(
+                        f"Queue GC on {table_name} lost a commit race "
+                        f"(attempt {attempt}/{MERGE_MAX_ATTEMPTS}): {e}"
+                    )
+                    time.sleep(0.05 * attempt)
+            result["deleted"] = int((metrics or {}).get("num_deleted_rows", 0) or 0)
+
+        if DELTA_QUEUE_ROWS_GC is not None and result["deleted"]:
+            DELTA_QUEUE_ROWS_GC.labels(table=table_name).inc(result["deleted"])
+        logger.info(
+            f"[monitoring] queue_gc table={table_name} deleted={result['deleted']} "
+            f"archived={result['archived']} retention_hours={retention_hours}"
+        )
+        return result
+
+    def queue_row_counts(self, tables: tuple[str, ...] = QUEUE_TABLES) -> dict[str, dict[str, int]]:
+        """Row counts by status for each queue table; also refreshes the gauge (#754)."""
+        counts: dict[str, dict[str, int]] = {}
+        if DeltaTable is None:
+            return counts
+        for table_name in tables:
+            table_path = self.tables.get(table_name, self.base_path / table_name)
+            if not (Path(table_path) / "_delta_log").exists():
+                continue
+            try:
+                column = DeltaTable(str(table_path)).to_pyarrow_table(columns=["status"])["status"]
+            except Exception as e:
+                logger.warning(f"Could not count rows in {table_name}: {e}")
+                continue
+            by_status = {s: 0 for s in QUEUE_STATUSES}
+            for value in column.to_pylist():
+                key = str(value) if value is not None else "null"
+                by_status[key] = by_status.get(key, 0) + 1
+            counts[table_name] = by_status
+            if DELTA_QUEUE_ROWS is not None:
+                for status, n in by_status.items():
+                    DELTA_QUEUE_ROWS.labels(table=table_name, status=status).set(n)
+        return counts
+
+    def gc_all_queues(
+        self,
+        retention_hours: float | None = None,
+        *,
+        archive: bool | None = None,
+        dry_run: bool = False,
+        vacuum: bool = True,
+        tables: tuple[str, ...] = QUEUE_TABLES,
+    ) -> list[dict[str, Any]]:
+        """GC every queue table, then refresh the row-count gauge (#754).
+
+        A failure on one table is logged and reported, not raised, so the
+        other tables are still collected. Tables that lost rows are vacuumed
+        (retention_hours rules apply) so the deleted files are eventually freed.
+        """
+        hours = self.queue_retention_hours if retention_hours is None else retention_hours
+        keep_history = self.queue_gc_archive if archive is None else archive
+        results = []
+        for table_name in tables:
+            try:
+                res = self.gc_queue_table(
+                    table_name, hours, archive=keep_history, dry_run=dry_run
+                )
+            except Exception as e:
+                logger.error(f"Queue GC failed for {table_name}: {e}", exc_info=True)
+                res = {"table": table_name, "matched": 0, "archived": 0, "deleted": 0,
+                       "skipped": f"error: {e}"}
+            if vacuum and res["deleted"]:
+                try:
+                    self._vacuum_table(table_name, 168)
+                except Exception as e:
+                    logger.warning(f"Vacuum after queue GC failed for {table_name}: {e}")
+            results.append(res)
+        self.queue_row_counts(tables)
+        return results
+
     def _sync_checkpoint_interval(self, table_name: str, table_path: Path) -> None:
         """Set delta.checkpointInterval on tables created before it was configured (#274).
 
@@ -1537,7 +1806,14 @@ class LakehouseManager:
             DELTA_MANAGER_SHUTDOWN_DURATION_SECONDS.observe(duration)
         logger.info(f" LakehouseManager shutdown complete in {duration:.2f} seconds")
 
+    def _drain_on_exit(self) -> None:
+        try:
+            self.shutdown(timeout=15)
+        except Exception as e:
+            logger.error(f"Error during shutdown: {e}", exc_info=True)
+
     def _shutdown_handler(self, signum, frame):
+        """Legacy direct handler (kept for callers that install it themselves)."""
         signal_name = signal.Signals(signum).name
         logger.info(f"🛑 {signal_name} received, initiating graceful shutdown...")
 

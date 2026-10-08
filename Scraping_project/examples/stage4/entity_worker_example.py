@@ -1,8 +1,9 @@
 import logging
 from datetime import datetime
 
-from src.utils.delta import get_delta
+from src.stage4.entity_config import load_entity_config
 from src.stage4.entity_summarization import Stage4EntityWorker
+from src.utils.delta import get_delta
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 
@@ -12,8 +13,9 @@ class EntityWorkerRunner:
 
     def __init__(
         self,
-        input_table: str = "stage3_analytics",
-        batch_size: int = 100,
+        input_table: str | None = None,
+        batch_size: int | None = None,
+        config_path: str | None = None,
     ):
         """Initialize the runner.
 
@@ -21,17 +23,14 @@ class EntityWorkerRunner:
             input_table: Delta Lake table to read from
             batch_size: Number of documents to process in each batch
         """
-        self.input_table = input_table
-        self.batch_size = batch_size
+        # #483: same loader as the worker ($STAGE4_ENTITY_CONFIG, config.yml, defaults).
+        cfg = load_entity_config(config_path)
+        self.input_table = input_table or cfg.delta_input_table
+        self.batch_size = batch_size or cfg.batch_size
 
         self.delta = get_delta()
 
-        self.worker = Stage4EntityWorker(
-            embedding_model="sentence-transformers/all-MiniLM-L6-v2",
-            summarization_model="facebook/bart-large-cnn",
-            similarity_threshold=0.85,
-            device=-1,
-        )
+        self.worker = Stage4EntityWorker.from_config(cfg, delta_manager=self.delta)
 
     def extract_entity_from_record(self, record: dict) -> tuple[str, str]:
         entity_id = record.get("entity_id")
@@ -104,8 +103,8 @@ class KafkaEntityWorker:
 
     def __init__(
         self,
-        kafka_topic: str = "final_categorized",
-        consumer_group: str = "entity-worker-group",
+        kafka_topic: str | None = None,
+        consumer_group: str | None = None,
         bootstrap_servers: str = "localhost:9092",
     ):
         """Initialize Kafka consumer.
@@ -115,14 +114,15 @@ class KafkaEntityWorker:
             consumer_group: Consumer group ID
             bootstrap_servers: Kafka bootstrap servers
         """
-        self.kafka_topic = kafka_topic
-        self.consumer_group = consumer_group
+        cfg = load_entity_config()  # #483
+        self.kafka_topic = kafka_topic or cfg.kafka_input_topic
+        self.consumer_group = consumer_group or cfg.kafka_consumer_group
         self.bootstrap_servers = bootstrap_servers
 
-        self.worker = Stage4EntityWorker()
+        self.worker = Stage4EntityWorker.from_config(cfg)
 
         self.document_batch = []
-        self.batch_size = 50
+        self.batch_size = cfg.batch_size
 
     def start_consuming(self):
         try:

@@ -17,7 +17,7 @@ from deltalake import DeltaTable
 from src.core.config import get_config, stage2_quality_thresholds, stage_worker_settings
 from src.core.constants import TABLE_STAGE2_ERRORS
 from src.utils.delta import get_delta
-from src.utils.ssrf import SSRFBlocked, count_blocked, ssrf_block_reason
+from src.utils.ssrf import SSRFBlocked, count_blocked, safe_resolver, ssrf_block_reason, ssrf_error_from
 from src.utils.soft_ban import DomainBackoff, SoftBanDetector, count_deferred, count_soft_ban, domain_of
 from src.utils.postgres import get_postgres_manager
 from src.utils.retry import CircuitBreaker
@@ -371,6 +371,7 @@ class Stage2Worker:
             limit=self.max_concurrent,
             limit_per_host=self._per_host_limit(),
             ttl_dns_cache=300,
+            resolver=safe_resolver("stage2"),  # #450: refuse non-public DNS answers at connect time
         )
         return aiohttp.ClientSession(connector=connector, timeout=aiohttp.ClientTimeout(total=30))
 
@@ -502,6 +503,9 @@ class Stage2Worker:
                     processing_time_seconds=batch_time,
                     worker_count=self.max_concurrent,
                 )
+
+            if _drain_requested("stage2", min(i + self.batch_size, len(pending)), len(pending)):
+                break
 
         logger.info("[STAGE2] Worker completed all batches")
         return counts
@@ -750,6 +754,10 @@ class Stage2Worker:
                 code, message, reason = 0, "timeout", "timeout"
                 exc_type, exc_text = "TimeoutError", str(e)
             except (aiohttp.ClientConnectionError, aiohttp.ClientPayloadError) as e:
+                dns_blocked = ssrf_error_from(e)
+                if dns_blocked is not None:  # #450: resolver refused a non-public address
+                    logger.warning(f"[STAGE2] SSRF guard blocked {url[:80]} ({dns_blocked.reason})")
+                    return self._error_record(url, url_hash, 0, f"ssrf_blocked:{dns_blocked.reason}")
                 code, message, reason = 0, f"ClientError: {type(e).__name__}", "connection"
                 exc_type, exc_text = message, str(e)
             else:
@@ -1067,24 +1075,32 @@ class Stage2Worker:
             http_status_code=http_status,
         )
 
-async def run_stage2_worker():
+def _drain_requested(stage: str, done: int, total: int) -> bool:
+    """SIGTERM/SIGINT seen: stop after the batch just flushed (#185, #325)."""
+    from src.utils.graceful_shutdown import shutdown_requested
+
+    if not shutdown_requested():
+        return False
+    logger.info(f"[{stage.upper()}] Shutdown requested: stopping after {done}/{total}; the rest stays pending")
+    return True
+
+
+async def run_stage2_worker(shutdown=None):
+    from src.utils.graceful_shutdown import run_drain_loop
+
     logger.info("Stage 2 Worker starting in continuous mode...")
 
     max_concurrent, batch_size = stage_worker_settings(2, 50, 100)
     logger.info("Stage 2 Worker concurrency=%d batch_size=%d", max_concurrent, batch_size)
 
-    while True:
-        try:
-            worker = Stage2Worker(max_concurrent=max_concurrent, batch_size=batch_size)
-            await worker.run()
-            logger.info("Waiting 30 seconds before next check...")
-            await asyncio.sleep(30)
-        except KeyboardInterrupt:
-            logger.info("Stage 2 Worker shutting down...")
-            break
-        except Exception as e:
-            logger.error(f"Error in Stage 2 Worker loop: {e}")
-            await asyncio.sleep(10)
+    async def run_once():
+        await Stage2Worker(max_concurrent=max_concurrent, batch_size=batch_size).run()
+
+    # SIGTERM: no new batches; the batch in flight is written and acked; exit 0.
+    await run_drain_loop("stage2", run_once, idle_seconds=30, error_seconds=10, shutdown=shutdown)
 
 if __name__ == "__main__":
+    from src.utils.worker_metrics import start_worker_metrics_server
+
+    start_worker_metrics_server("stage2")  # #789
     asyncio.run(run_stage2_worker())

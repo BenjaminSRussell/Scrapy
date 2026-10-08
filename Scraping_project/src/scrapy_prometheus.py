@@ -1,4 +1,5 @@
 import logging
+import re
 import threading
 import time
 from typing import Any, Optional
@@ -204,6 +205,18 @@ else:
     CRAWLER_SUMMARY_SKIPPED = None
     HIDDEN_URLS_FOUND = HIDDEN_URLS_ROUTED = None
 
+_LABEL_CHARS = re.compile(r"[^a-z0-9_]+")
+
+
+def bounded_label(value: Any, max_len: int = 40) -> str:
+    """Low-cardinality label value (#270): the part before any ':' (so
+    ``non_html:<media type>`` or ``error:<url>`` collapse to their reason),
+    lower-cased, [a-z0-9_] only, capped at ``max_len``."""
+    text = str(value or "").split(":", 1)[0].strip().lower()
+    text = _LABEL_CHARS.sub("_", text).strip("_")[:max_len]
+    return text or "unknown"
+
+
 class PrometheusExtension:
 
     def __init__(self, port: int, host: str):
@@ -281,7 +294,7 @@ class PrometheusExtension:
         ITEMS_SCRAPED.labels(spider=spider.name).inc()
 
         if isinstance(item, dict) and item.get("skip_reason"):
-            skip_reason = item["skip_reason"]
+            skip_reason = bounded_label(item["skip_reason"])
             URLS_SKIPPED.labels(spider=spider.name, skip_reason=skip_reason).inc()
 
             self.runs.tally(spider, skip_reason)

@@ -1,8 +1,8 @@
-import hashlib
 import logging
 import re
+from src.utils.url_canon import TRACKING_PARAMS, canonicalize_url, url_hash
 from typing import Any
-from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
+from urllib.parse import parse_qs, urlencode, urlparse
 
 from scrapy.http import Response
 
@@ -13,22 +13,8 @@ logger = logging.getLogger(__name__)
 
 class URLProcessor:
 
-    TRACKING_PARAMS = {
-        "utm_source",
-        "utm_medium",
-        "utm_campaign",
-        "utm_term",
-        "utm_content",
-        "fbclid",
-        "gclid",
-        "msclkid",
-        "ref",
-        "source",
-        "campaign",
-        "_ga",
-        "_gid",
-        "_gl",
-    }
+    # Shared with every other URL touchpoint (#728).
+    TRACKING_PARAMS = set(TRACKING_PARAMS)
 
     IGNORED_EXTENSIONS = {
         ".jpg",
@@ -170,48 +156,8 @@ class URLProcessor:
     # ============================================================================
 
     def normalize_url(self, url: str) -> str | None:
-        try:
-            parsed = urlparse(url)
-
-            if parsed.scheme not in ("http", "https"):
-                return None
-
-            if not parsed.netloc:
-                return None
-
-            scheme = parsed.scheme.lower()
-            netloc = parsed.netloc.lower()
-
-            if netloc.endswith(":80") and scheme == "http":
-                netloc = netloc[:-3]
-            elif netloc.endswith(":443") and scheme == "https":
-                netloc = netloc[:-4]
-
-            path = (parsed.path or "/").lower()
-
-            if len(path) > 1 and path.endswith("/"):
-                path = path.rstrip("/")
-
-            params = ""
-            if parsed.query:
-                params = self._normalize_query_params(parsed.query)
-
-            normalized = urlunparse(
-                (
-                    scheme,
-                    netloc,
-                    path,
-                    "",
-                    params,
-                    "",
-                )
-            )
-
-            return normalized
-
-        except Exception as e:
-            logger.debug(f"Failed to normalize URL {url}: {e}")
-            return None
+        """Canonical URL (#728): one implementation shared with Redis, SeedManager and Stage 2."""
+        return canonicalize_url(url)
 
     def _normalize_query_params(self, query: str) -> str:
         try:
@@ -264,8 +210,7 @@ class URLProcessor:
     # ============================================================================
 
     def hash_url(self, url: str) -> str:
-        normalized = self.normalize_url(url) or url
-        return hashlib.sha256(normalized.encode()).hexdigest()[:16]
+        return url_hash(url)
 
     def deduplicate_urls(self, urls: list[str]) -> list[str]:
         seen_hashes = set()

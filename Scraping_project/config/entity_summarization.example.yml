@@ -1,8 +1,11 @@
 # Entity Summarization Configuration Example
-# Copy this block into Scraping_project/config.yml, the single config source
-# loaded by src.core.config.get_config() (src/settings.py derives Scrapy
-# settings from it). There is no config/development.yml or config/{ENV}.yml
-# layer; ENV only selects behaviour inside the code (#467).
+# Loaded by src/stage4/entity_config.py:load_entity_config() (#483), first match wins:
+#   1. an explicit path (Stage4EntityWorker.from_config(path=...))
+#   2. STAGE4_ENTITY_CONFIG=/path/to/this/file.yml
+#   3. the entity_summarization: block of Scraping_project/config.yml
+#   4. built-in defaults
+# Unknown keys, wrong types, out-of-range values and invalid YAML fail fast with
+# the file and key named. Run it as-is: STAGE4_ENTITY_CONFIG=config/entity_summarization.example.yml
 
 # Stage 4: Entity-Centric Summarization Pipeline
 entity_summarization:

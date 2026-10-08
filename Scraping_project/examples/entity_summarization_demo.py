@@ -12,6 +12,7 @@ Usage:
 """
 
 import logging
+import os
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -188,13 +189,11 @@ def demo_full_pipeline():
     print("FULL PIPELINE DEMO: END-TO-END ENTITY SUMMARIZATION")
     print("=" * 80 + "\n")
 
-    # Initialize worker
-    worker = Stage4EntityWorker(
-        embedding_model="sentence-transformers/all-MiniLM-L6-v2",
-        summarization_model="facebook/bart-large-cnn",
-        similarity_threshold=0.85,
-        device=-1,
-    )
+    # Initialize worker from the shipped example config (#483); set
+    # STAGE4_ENTITY_CONFIG to use another file.
+    from src.stage4.entity_config import EXAMPLE_PATH, ENV_VAR
+
+    worker = Stage4EntityWorker.from_config(path=os.getenv(ENV_VAR) or EXAMPLE_PATH)
 
     # Sample documents for multiple entities
     documents = [

@@ -1,7 +1,7 @@
 """Enhanced JavaScript spider with priority queue and aggressive async processing."""
 
-import hashlib
 import logging
+import os
 from collections.abc import AsyncGenerator, Iterator
 from datetime import datetime
 from typing import Any
@@ -11,13 +11,14 @@ import scrapy
 from scrapy.http import Response
 
 from src.core.config import get_config
-import os
-
 from src.stage1.experimental.playwright_guard import PageLedger
+from src.utils.url_canon import url_hash
 from src.stage1.processors.js_priority_queue import JSPriorityQueue
 from src.stage1.processors.url_processor import URLProcessor
 from src.stage1.middlewares.spider_config import get_spider_settings
 from src.utils.delta import get_delta
+from src.stage1.experimental.playwright_blocking import DEFAULT_BLOCKED_TYPES
+from src.stage1.experimental.playwright_blocking import get_policy as get_blocking_policy
 from src.lakehouse import SeedManager
 
 logger = logging.getLogger(__name__)
@@ -34,6 +35,8 @@ class JavaScriptSpider(scrapy.Spider):
             "https": "scrapy_playwright.handler.ScrapyPlaywrightDownloadHandler",
         },
         "PLAYWRIGHT_BROWSER_TYPE": "chromium",
+        # #390: configurable blocking, applied from the first subresource (not only after load).
+        "PLAYWRIGHT_ABORT_REQUEST": "src.stage1.experimental.playwright_blocking.should_abort_request",
         "PLAYWRIGHT_LAUNCH_OPTIONS": {
             "headless": True,
             "timeout": 30000,
@@ -53,7 +56,8 @@ class JavaScriptSpider(scrapy.Spider):
         "AUTOTHROTTLE_TARGET_CONCURRENCY": 15.0,
     }
 
-    BLOCKED_RESOURCE_TYPES = ["image", "stylesheet", "font", "media"]
+    # Default only; the live list is stage1.js_blocked_resource_types (+ per-domain overrides, #390).
+    BLOCKED_RESOURCE_TYPES = list(DEFAULT_BLOCKED_TYPES)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -225,12 +229,14 @@ class JavaScriptSpider(scrapy.Spider):
         self.completed_urls.append(url)
 
     async def _setup_resource_blocking(self, page):
+        policy = get_blocking_policy()
 
         async def handle_route(route):
-            if route.request.resource_type in self.BLOCKED_RESOURCE_TYPES:
+            if policy.should_block(route.request.resource_type, page.url):
                 await route.abort()
             else:
-                await route.continue_()
+                # fallback, not continue_: let scrapy-playwright's own route handler run too.
+                await route.fallback()
 
         await page.route("**/*", handle_route)
 
@@ -300,7 +306,8 @@ class JavaScriptSpider(scrapy.Spider):
         return processor.normalize_url(url) or url
 
     def _hash_url(self, url: str) -> str:
-        return hashlib.sha256(url.encode("utf-8")).hexdigest()
+        # Same canonical sha256[:16] as scout/Stage 2 (#728); was a full raw-URL digest.
+        return url_hash(url)
 
     def _add_urls_to_seeds(self, urls: list[str], source_url: str) -> None:
         if not urls:
