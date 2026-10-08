@@ -13,7 +13,7 @@ import pyarrow as pa
 from bs4 import BeautifulSoup
 from deltalake import DeltaTable
 
-from src.core.config import stage2_quality_thresholds, stage_worker_settings
+from src.core.config import get_config, stage2_quality_thresholds, stage_worker_settings
 from src.core.constants import TABLE_STAGE2_ERRORS
 from src.utils.delta import get_delta
 from src.utils.soft_ban import DomainBackoff, SoftBanDetector, count_deferred, count_soft_ban, domain_of
@@ -66,6 +66,46 @@ try:  # analysis upsert failures; their queue rows are left pending (#311)
     )
 except Exception:
     STAGE2_ANALYSIS_WRITE_FAILURES = None
+
+try:  # per-host concurrency cap (#195)
+    from prometheus_client import Counter as _HCounter
+
+    STAGE2_HOST_THROTTLED = _HCounter(
+        "stage2_host_throttled_total",
+        "Stage 2 fetches that waited for a per-host concurrency slot (#195).",
+    )
+except Exception:
+    STAGE2_HOST_THROTTLED = None
+
+DEFAULT_STAGE2_PER_HOST_CONCURRENCY = 4
+
+
+def stage2_per_host_concurrency(max_concurrent: int, config: Any = None) -> int:
+    """Per-host in-flight cap for Stage 2 (#195), clamped to [1, max_concurrent].
+
+    Precedence: env ``STAGE2_PER_HOST_CONCURRENCY`` > config
+    ``stage2.per_host_concurrency`` > ``stages.stage2.per_host_concurrency`` > 4.
+    """
+    candidates: list[Any] = [os.getenv("STAGE2_PER_HOST_CONCURRENCY")]
+    try:
+        cfg = config if config is not None else get_config()
+        candidates += [cfg.get("stage2.per_host_concurrency"), cfg.get("stages.stage2.per_host_concurrency")]
+    except Exception:
+        pass
+    value = DEFAULT_STAGE2_PER_HOST_CONCURRENCY
+    for raw in candidates:
+        if raw in (None, ""):
+            continue
+        try:
+            parsed = int(raw)
+        except (TypeError, ValueError):
+            logger.warning(f"[STAGE2] Ignoring invalid per-host concurrency {raw!r}")
+            continue
+        if parsed >= 1:
+            value = parsed
+            break
+    return max(1, min(value, max(1, int(max_concurrent))))
+
 
 try:  # in-request HTTP retries and per-host circuit breaker (#158)
     from prometheus_client import Counter as _HCounter
@@ -227,6 +267,13 @@ class Stage2Worker:
         self.breaker_failures = _env_number("STAGE2_BREAKER_FAILURES", DEFAULT_STAGE2_BREAKER_FAILURES, 1, int)
         self.breaker_recovery = _env_number("STAGE2_BREAKER_RECOVERY", DEFAULT_STAGE2_BREAKER_RECOVERY, 0, int)
         self._host_breakers: dict[str, CircuitBreaker] = {}
+        # Per-host concurrency cap (#195): a batch dominated by one host can't
+        # stampede it or hog the global slots other hosts are waiting for.
+        self.per_host_concurrency = stage2_per_host_concurrency(max_concurrent)
+        self._host_slots: dict[str, asyncio.Semaphore] = {}
+        logger.info(
+            f"[STAGE2] Concurrency: global={max_concurrent}, per_host={self.per_host_concurrency}"
+        )
 
     def _load_prior_failures(self) -> dict[str, int]:
         """Per-URL failure counts from earlier runs, from the stage2_errors quarantine."""
@@ -265,11 +312,29 @@ class Stage2Worker:
             async with self._http_session():
                 return await self._run_traced()
 
+    def _per_host_limit(self) -> int:
+        limit = getattr(self, "per_host_concurrency", None)
+        if limit is None:  # instances built without __init__ (tests)
+            limit = stage2_per_host_concurrency(self.max_concurrent)
+            self.per_host_concurrency = limit
+        return int(limit)
+
+    def _host_slot(self, domain: str) -> asyncio.Semaphore:
+        """The per-host semaphore for ``domain`` (created on first use)."""
+        slots: dict[str, asyncio.Semaphore] | None = getattr(self, "_host_slots", None)
+        if slots is None:
+            slots = self._host_slots = {}
+        slot: asyncio.Semaphore | None = slots.get(domain)
+        if slot is None:
+            slot = slots[domain] = asyncio.Semaphore(self._per_host_limit())
+        return slot
+
     def _new_session(self) -> aiohttp.ClientSession:
-        """Pooled session: connector limit matches worker concurrency (#200)."""
+        """Pooled session: connector limit matches worker concurrency (#200),
+        and connections per host match the per-host cap (#195)."""
         connector = aiohttp.TCPConnector(
             limit=self.max_concurrent,
-            limit_per_host=max(1, min(self.max_concurrent, 10)),
+            limit_per_host=self._per_host_limit(),
             ttl_dns_cache=300,
         )
         return aiohttp.ClientSession(connector=connector, timeout=aiohttp.ClientTimeout(total=30))
@@ -279,6 +344,7 @@ class Stage2Worker:
         """Share one ClientSession across every batch of a run; always closed."""
         session = self._new_session()
         self._session = session
+        self._host_slots = {}  # semaphores bind to the running loop; fresh per run
         try:
             yield session
         finally:
@@ -519,8 +585,13 @@ class Stage2Worker:
         url_hash = url_hash_value if isinstance(url_hash_value, str) else ""
         is_heavy = bool(record.get("is_heavy", False))
 
-        async with self.semaphore:
-            domain = domain_of(url)
+        domain = domain_of(url)
+        host_slot = self._host_slot(domain)
+        if host_slot.locked() and STAGE2_HOST_THROTTLED is not None:
+            STAGE2_HOST_THROTTLED.inc()
+        # Per-host slot first, so URLs queued behind a busy host don't hold
+        # global slots that other hosts could use (#195).
+        async with host_slot, self.semaphore:
             backoff = self._backoff()
             if backoff.blocked(domain):
                 count_deferred("stage2")
