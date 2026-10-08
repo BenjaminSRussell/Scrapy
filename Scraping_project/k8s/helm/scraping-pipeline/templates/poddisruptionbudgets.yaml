@@ -1,34 +1,65 @@
 {{- if .Values.podDisruptionBudget.enabled }}
-{{- if .Values.postgresql.enabled }}
+{{- $root := . }}
+{{- $pdb := .Values.podDisruptionBudget }}
+{{- /*
+  #514. Stateful stores: minAvailable only when there's a replica to spare. Postgres,
+  Redis and Kafka run `replicas: 1` (hard-coded in their StatefulSets), and there
+  minAvailable: 1 would forbid every eviction and hang node drains forever, so a
+  single replica gets maxUnavailable: 1 (drain proceeds, one pod at a time).
+  Keep `replicas` below in sync with the StatefulSets (a unit test checks this).
+*/}}
+{{- $stores := list
+      (dict "enabled" .Values.postgresql.enabled "name" "postgresql" "component" "postgres" "replicas" 1)
+      (dict "enabled" .Values.redis.enabled "name" "redis" "component" "redis" "replicas" 1)
+      (dict "enabled" .Values.kafka.enabled "name" "kafka" "component" "kafka" "replicas" 1) }}
+{{- range $s := $stores }}
+{{- if $s.enabled }}
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
-  name: {{ include "scraping-pipeline.fullname" . }}-postgresql-pdb
+  name: {{ include "scraping-pipeline.fullname" $root }}-{{ $s.name }}-pdb
   labels:
-    {{- include "scraping-pipeline.labels" . | nindent 4 }}
-    app.kubernetes.io/component: postgres
+    {{- include "scraping-pipeline.labels" $root | nindent 4 }}
+    app.kubernetes.io/component: {{ $s.component }}
 spec:
-  minAvailable: 1
+  {{- if gt (int $s.replicas) 1 }}
+  minAvailable: {{ $pdb.minAvailable | default 1 }}
+  {{- else }}
+  maxUnavailable: 1
+  {{- end }}
   selector:
     matchLabels:
-      {{- include "scraping-pipeline.selectorLabels" . | nindent 6 }}
-      app.kubernetes.io/component: postgres
+      {{- include "scraping-pipeline.selectorLabels" $root | nindent 6 }}
+      app.kubernetes.io/component: {{ $s.component }}
 {{- end }}
-{{- if .Values.kafka.enabled }}
+{{- end }}
+{{- /*
+  Scraper and stage workers (#514): maxUnavailable, so even a single replica can
+  be drained (its preStop hook drains transient queues first), one pod at a time,
+  and a node drain never takes a whole stage down at once when replicas > 1.
+*/}}
+{{- $workers := list
+      (dict "values" .Values.scrapyApp "component" "scrapy")
+      (dict "values" .Values.stage2Worker "component" "stage2")
+      (dict "values" .Values.stage3Worker "component" "stage3")
+      (dict "values" .Values.stage4Worker "component" "stage4") }}
+{{- range $w := $workers }}
+{{- if $w.values.enabled }}
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
-  name: {{ include "scraping-pipeline.fullname" . }}-kafka-pdb
+  name: {{ include "scraping-pipeline.fullname" $root }}-{{ $w.component }}-pdb
   labels:
-    {{- include "scraping-pipeline.labels" . | nindent 4 }}
-    app.kubernetes.io/component: kafka
+    {{- include "scraping-pipeline.labels" $root | nindent 4 }}
+    app.kubernetes.io/component: {{ $w.component }}
 spec:
-  minAvailable: 1
+  maxUnavailable: {{ $pdb.workers.maxUnavailable | default 1 }}
   selector:
     matchLabels:
-      {{- include "scraping-pipeline.selectorLabels" . | nindent 6 }}
-      app.kubernetes.io/component: kafka
+      {{- include "scraping-pipeline.selectorLabels" $root | nindent 6 }}
+      app.kubernetes.io/component: {{ $w.component }}
+{{- end }}
 {{- end }}
 {{- end }}

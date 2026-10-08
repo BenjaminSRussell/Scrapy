@@ -11,10 +11,9 @@ def main() -> None:
     # Deferred: PipelineOrchestrator pulls Stage 4 / optional deps at import time.
     from src.orchestrator.pipeline_orchestrator import PipelineOrchestrator
 
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    )
+    from src.utils.logging_config import configure_logging
+
+    configure_logging("stage1")  # #466: correlation fields + LOG_FORMAT=json (#238)
     logger.info("Starting Stage 1 worker (scout via PipelineOrchestrator)")
     PipelineOrchestrator().run_stage1()
 

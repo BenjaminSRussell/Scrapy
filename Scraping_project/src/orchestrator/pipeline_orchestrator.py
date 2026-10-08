@@ -97,7 +97,8 @@ class PipelineOrchestrator:
 
         settings = get_project_settings()
 
-        settings.set('EXTENSIONS', {})
+        # Only the memory soft-stop (#539): drain before the OOM killer even here.
+        settings.set('EXTENSIONS', {"src.memory_soft_stop.MemorySoftStop": 530})
 
         if url_limit:
             settings.set('CLOSESPIDER_ITEMCOUNT', url_limit)

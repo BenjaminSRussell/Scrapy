@@ -1,0 +1,7 @@
+# A group naming our crawler's product token overrides the permissive catch-all.
+User-agent: *
+Allow: /
+
+User-agent: UConn-Discovery-Crawler
+Disallow: /
+Crawl-delay: 30

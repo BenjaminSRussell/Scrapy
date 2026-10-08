@@ -20,7 +20,6 @@ Schema Assumptions:
 All writes are idempotent via merge_into using url_hash as merge key.
 """
 
-import hashlib
 import logging
 import warnings
 from collections.abc import Callable, Iterable
@@ -28,14 +27,15 @@ from typing import Any
 from urllib.parse import urlparse
 
 from src.lakehouse.lakehouse_manager import LakehouseManager
+from src.utils.url_canon import canonical_or_raw, url_hash
 from src.core.timeutil import utc_now_iso
 
 logger = logging.getLogger(__name__)
 
 
 def default_url_hasher(url: str) -> str:
-    """Default URL hasher using SHA256 (first 16 chars)."""
-    return hashlib.sha256(url.encode("utf-8")).hexdigest()[:16]
+    """SHA256[:16] of the canonical URL (#728), same as every other stage."""
+    return url_hash(url)
 
 
 DEFAULT_DOMAIN_URLS_TABLE = "uconn_urls"  # legacy table name, kept for existing lakes
@@ -194,7 +194,8 @@ class SeedManager:
                 "seed_inserted": int,      # URLs merged into seed_urls
                 "domain_inserted": int,    # URLs merged into the domain side table
                 "uconn_inserted": int,     # legacy alias of domain_inserted
-                "stage2_enqueued": int     # URLs enqueued to stage2_queue
+                "stage2_enqueued": int,    # URLs enqueued to stage2_queue
+                "rejected": int            # invalid URLs skipped (see url_rejection_reason)
             }
 
         Examples:
@@ -217,19 +218,38 @@ class SeedManager:
                 write_domain_urls = write_uconn_urls
         write_domain = self.write_domain_urls if write_domain_urls is None else bool(write_domain_urls)
 
-        url_list = list(set(urls))  # Deduplicate
-        if not url_list:
-            return {"seed_inserted": 0, "domain_inserted": 0, "uconn_inserted": 0, "stage2_enqueued": 0}
+        # Reject non-crawlable seeds (ftp:, javascript:, blanks, host-less, >2 KB)
+        # with a stable reason code, canonicalize (#728), then dedupe by
+        # url_hash, not just by string: two spellings with one hash would be two
+        # source rows for one MERGE key (#255).
+        from src.utils.validation import url_rejection_reason
+
+        rejected: dict[str, int] = {}
+        by_hash: dict[str, str] = {}
+        for raw in urls:
+            candidate = raw.strip() if isinstance(raw, str) else raw
+            reason = url_rejection_reason(candidate)
+            if reason is not None:
+                rejected[reason] = rejected.get(reason, 0) + 1
+                continue
+            canonical = canonical_or_raw(candidate)
+            by_hash.setdefault(self.url_hasher(canonical), canonical)
+        n_rejected = sum(rejected.values())
+        if n_rejected:
+            logger.warning(f"[SeedManager] Rejected {n_rejected} invalid seed URL(s) from {source_spider}: {rejected}")
+        if not by_hash:
+            return {"seed_inserted": 0, "domain_inserted": 0, "uconn_inserted": 0, "stage2_enqueued": 0,
+                    "rejected": n_rejected}
 
         now = utc_now_iso()
 
         # Prepare base records
         rows = []
-        for url in url_list:
+        for h, url in by_hash.items():
             rows.append(
                 {
                     "url": url,
-                    "url_hash": self.url_hasher(url),
+                    "url_hash": h,
                     "discovered_at": now,
                     "source_url": source_url,
                     "source_spider": source_spider,
@@ -302,6 +322,7 @@ class SeedManager:
             "domain_inserted": ins_uconn,
             "uconn_inserted": ins_uconn,
             "stage2_enqueued": enq,
+            "rejected": n_rejected,
         }
 
     def bulk_seed_from_list(
@@ -326,6 +347,7 @@ class SeedManager:
             "domain_inserted": 0,
             "uconn_inserted": 0,
             "stage2_enqueued": 0,
+            "rejected": 0,
         }
 
         for i in range(0, len(urls), batch_size):
@@ -337,7 +359,7 @@ class SeedManager:
                 enqueue_stage2=False,  # Bulk imports typically don't enqueue for Stage 2
             )
             for key in total_results:
-                total_results[key] += result[key]
+                total_results[key] += result.get(key, 0)
 
         logger.info(f"[SeedManager] Bulk seeded {len(urls)} URLs: {total_results}")
         return total_results

@@ -6,14 +6,25 @@
 # Kafka, and pipeline stages
 # ==================================================================
 
-set -e
+# Diagnostic variant of the #822 standard (scripts/SHELL_STANDARD.md): no -e, so one
+# failing probe is reported and the remaining checks still run.
+set -uo pipefail
 
 # Service names come from the active Compose file (#326): checks for services
 # the file does not define (Kafka/exporters live in the full-stack compose,
 # see #145) are reported as skipped instead of as failures.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR/.."
-. "$SCRIPT_DIR/compose_lib.sh"
+cd "$SCRIPT_DIR/.." || exit 1
+. "$SCRIPT_DIR/compose_lib.sh" || exit 1
+
+# pipefail-safe helpers (#822). `cmd | grep -q` can fail when grep exits early and
+# cmd gets SIGPIPE, and `grep | wc -l || echo 0` prints "0" twice when nothing matches.
+count_matches() { grep -ci -- "$1" || true; }   # stdin -> number of matching lines
+svc_has() {                                      # svc_has SERVICE WORD (uses $PS_OUT)
+    local rows
+    rows="$(grep -F -- "$1" <<<"$PS_OUT" || true)"
+    [[ "$rows" == *"$2"* ]]
+}
 
 echo "=========================================="
 echo "  Stack Diagnostic Tool"
@@ -59,9 +70,10 @@ if [ "$ENV_TYPE" = "docker" ]; then
     APP_SERVICE="$(compose_first scraper scrapy-app || true)"
     read -r -a SERVICES <<< "$(compose_filter redis postgres zookeeper kafka prometheus prometheus-a grafana)"
 
+    PS_OUT="$(compose ps 2>/dev/null || true)"
     for service in "${SERVICES[@]}"; do
-        if compose ps | grep "$service" | grep -q "Up"; then
-            if compose ps | grep "$service" | grep -q "healthy"; then
+        if svc_has "$service" "Up"; then
+            if svc_has "$service" "healthy"; then
                 print_ok "${service}: Running and Healthy"
             else
                 print_warning "${service}: Running but not healthy"
@@ -98,7 +110,8 @@ if [ "$ENV_TYPE" = "docker" ]; then
     test_endpoint() {
         local url=$1
         local name=$2
-        local code=$(curl -s -o /dev/null -w "%{http_code}" "$url" 2>/dev/null || echo "000")
+        local code
+        code=$(curl -s -o /dev/null -w "%{http_code}" "$url" 2>/dev/null || echo "000")
 
         if [ "$code" = "200" ] || [ "$code" = "302" ]; then
             print_ok "${name}: Accessible (HTTP ${code})"
@@ -123,18 +136,19 @@ if [ "$ENV_TYPE" = "docker" ]; then
     print_section "Grafana Configuration"
 
     # Check Grafana datasources
-    if compose ps | grep grafana | grep -q "Up"; then
+    PS_OUT="$(compose ps 2>/dev/null || true)"
+    if svc_has grafana "Up"; then
         print_info "Checking Grafana datasources..."
 
         DATASOURCES=$(curl -s -u admin:admin http://localhost:3000/api/datasources 2>/dev/null || echo "[]")
 
-        if echo "$DATASOURCES" | grep -q "prometheus"; then
+        if grep -q "prometheus" <<<"$DATASOURCES"; then
             print_ok "Prometheus datasource configured"
         else
             print_warning "Prometheus datasource not found"
         fi
 
-        if echo "$DATASOURCES" | grep -q "postgres"; then
+        if grep -q "postgres" <<<"$DATASOURCES"; then
             print_ok "PostgreSQL datasource configured"
         else
             print_warning "PostgreSQL datasource not found"
@@ -145,12 +159,13 @@ if [ "$ENV_TYPE" = "docker" ]; then
 
     read -r -a STAGE_SERVICES <<< "$(compose_filter ${APP_SERVICE} stage1-worker stage2-worker stage3-worker stage4-worker)"
 
+    PS_OUT="$(compose ps 2>/dev/null || true)"
     for stage in "${STAGE_SERVICES[@]}"; do
-        if compose ps | grep "$stage" | grep -q "Up"; then
+        if svc_has "$stage" "Up"; then
             print_ok "${stage}: Running"
 
             # Check logs for errors
-            ERROR_COUNT=$(compose logs --tail=50 "$stage" 2>/dev/null | grep -i "error\|exception\|failed" | wc -l || echo "0")
+            ERROR_COUNT=$(compose logs --tail=50 "$stage" 2>/dev/null | count_matches "error\|exception\|failed")
             if [ "$ERROR_COUNT" -gt 0 ]; then
                 print_warning "${stage}: Found ${ERROR_COUNT} errors in recent logs"
             fi
@@ -163,7 +178,7 @@ if [ "$ENV_TYPE" = "docker" ]; then
 
     if ! compose_has kafka; then
         print_info "Kafka is not part of this Compose file (full stack: see #145); skipping"
-    elif compose ps | grep kafka | grep -q "Up"; then
+    elif svc_has kafka "Up"; then
         print_ok "Kafka broker is running"
 
         # Test Kafka connectivity
@@ -182,11 +197,11 @@ if [ "$ENV_TYPE" = "docker" ]; then
 
     print_section "Volume Status"
 
-    VOLUMES=$(compose config --volumes 2>/dev/null | while read -r v; do docker volume ls --format "{{.Name}}" | grep -E "_${v}\$" ; done || echo "")
+    VOLUMES=$(compose config --volumes 2>/dev/null | while read -r v; do docker volume ls --format "{{.Name}}" | grep -E "_${v}\$" ; done || true)
 
     if [ -n "$VOLUMES" ]; then
         print_info "Found volumes:"
-        echo "$VOLUMES" | while read vol; do
+        echo "$VOLUMES" | while read -r vol; do
             echo "  • $vol"
         done
     else
@@ -209,7 +224,7 @@ elif [ "$ENV_TYPE" = "kubernetes" ]; then
     print_section "Kubernetes Resources"
 
     print_info "Checking for 'coco' prefix resources..."
-    COCO_RESOURCES=$(kubectl get all -n "$NAMESPACE" 2>/dev/null | grep "coco-scraping-pipeline" | wc -l || echo "0")
+    COCO_RESOURCES=$(kubectl get all -n "$NAMESPACE" 2>/dev/null | count_matches "coco-scraping-pipeline")
 
     if [ "$COCO_RESOURCES" -gt 0 ]; then
         print_warning "Found ${COCO_RESOURCES} resources with 'coco-scraping-pipeline-*' naming"
@@ -227,7 +242,8 @@ elif [ "$ENV_TYPE" = "kubernetes" ]; then
     if command -v helm &> /dev/null; then
         helm list -n "$NAMESPACE"
 
-        if helm list -n "$NAMESPACE" | grep -q "coco"; then
+        RELEASES="$(helm list -n "$NAMESPACE" 2>/dev/null || true)"
+        if grep -q "coco" <<<"$RELEASES"; then
             print_warning "Found 'coco' Helm release - should be removed"
         fi
     else
@@ -239,8 +255,9 @@ elif [ "$ENV_TYPE" = "kubernetes" ]; then
     kubectl get pods -n "$NAMESPACE" -o wide 2>/dev/null || print_error "Could not get pods"
 
     print_info "Checking pod health..."
-    TOTAL_PODS=$(kubectl get pods -n "$NAMESPACE" --no-headers 2>/dev/null | wc -l || echo "0")
-    RUNNING_PODS=$(kubectl get pods -n "$NAMESPACE" --no-headers 2>/dev/null | grep "Running" | wc -l || echo "0")
+    PODS_OUT="$(kubectl get pods -n "$NAMESPACE" --no-headers 2>/dev/null || true)"
+    TOTAL_PODS=$(count_matches "." <<<"$PODS_OUT")
+    RUNNING_PODS=$(count_matches "Running" <<<"$PODS_OUT")
 
     print_info "Pods: ${RUNNING_PODS}/${TOTAL_PODS} running"
 
@@ -267,8 +284,8 @@ elif [ "$ENV_TYPE" = "kubernetes" ]; then
     print_section "Recent Pod Errors"
 
     print_info "Checking pod logs for errors..."
-    kubectl get pods -n "$NAMESPACE" --no-headers 2>/dev/null | awk '{print $1}' | while read pod; do
-        ERROR_COUNT=$(kubectl logs "$pod" -n "$NAMESPACE" --tail=50 2>/dev/null | grep -i "error\|exception\|failed" | wc -l || echo "0")
+    kubectl get pods -n "$NAMESPACE" --no-headers 2>/dev/null | awk '{print $1}' | while read -r pod; do
+        ERROR_COUNT=$(kubectl logs "$pod" -n "$NAMESPACE" --tail=50 2>/dev/null | count_matches "error\|exception\|failed")
         if [ "$ERROR_COUNT" -gt 5 ]; then
             print_warning "${pod}: ${ERROR_COUNT} errors in recent logs"
         fi

@@ -1,7 +1,7 @@
 {{- if .Values.networkPolicy.enabled }}
 {{- $fullname := include "scraping-pipeline.fullname" . }}
 {{- $metricsStart := int .Values.scrapyApp.service.ports.metricsStart }}
-{{- $metricsEnd := add (int .Values.scrapyApp.service.ports.metricsEnd) 1 }}
+{{- $metricsEnd := int (add (int .Values.scrapyApp.service.ports.metricsEnd) 1) }}  {{- /* int64 -> int for untilStep (#789) */}}
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -53,6 +53,7 @@ spec:
       - scrapy
       - stage2
       - stage3
+      - stage4  # #504
       - delta-ingestor
       - metrics-exporter
       - grafana
@@ -163,7 +164,68 @@ spec:
     ports:
     - protocol: TCP
       port: {{ .Values.exporters.statsd.service.metricsPort }}
+{{- if .Values.workerMetrics.enabled }}
+  - to:  # #789: Stage 2/3/4 worker metrics endpoints
+    - podSelector:
+        matchExpressions:
+        - key: app.kubernetes.io/component
+          operator: In
+          values: [stage2, stage3, stage4]  # stage4: #504
+    ports:
+    - protocol: TCP
+      port: {{ .Values.workerMetrics.port }}
+{{- end }}
 ---
+# #789: default-deny also blocks *ingress* on every scrape target, so the
+# egress rules above alone left all targets unreachable. Admit Prometheus on
+# each target's metrics port(s) only.
+{{- $targets := list
+      (dict "component" "metrics-exporter" "ports" (list (int .Values.metricsExporter.service.port)))
+      (dict "component" "redis-exporter" "ports" (list (int .Values.exporters.redis.service.port)))
+      (dict "component" "postgres-exporter" "ports" (list (int .Values.exporters.postgres.service.port)))
+      (dict "component" "kafka-jmx-exporter" "ports" (list (int .Values.exporters.kafkaJmx.service.port)))
+      (dict "component" "statsd-exporter" "ports" (list (int .Values.exporters.statsd.service.metricsPort))) }}
+{{- $scrapyPorts := list }}
+{{- range $port := untilStep $metricsStart $metricsEnd 1 }}
+{{- $scrapyPorts = append $scrapyPorts $port }}
+{{- end }}
+{{- $targets = append $targets (dict "component" "scrapy" "ports" $scrapyPorts) }}
+{{- if .Values.workerMetrics.enabled }}
+{{- if .Values.stage2Worker.enabled }}
+{{- $targets = append $targets (dict "component" "stage2" "ports" (list (int .Values.workerMetrics.port))) }}
+{{- end }}
+{{- if .Values.stage3Worker.enabled }}
+{{- $targets = append $targets (dict "component" "stage3" "ports" (list (int .Values.workerMetrics.port))) }}
+{{- end }}
+{{- if .Values.stage4Worker.enabled }}  {{- /* #504 */}}
+{{- $targets = append $targets (dict "component" "stage4" "ports" (list (int .Values.workerMetrics.port))) }}
+{{- end }}
+{{- end }}
+{{- range $t := $targets }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $fullname }}-{{ $t.component }}-metrics-ingress
+  labels:
+    {{- include "scraping-pipeline.labels" $ | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: {{ $t.component }}
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/component: prometheus
+    ports:
+{{- range $port := $t.ports }}
+    - protocol: TCP
+      port: {{ $port }}
+{{- end }}
+---
+{{- end }}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -186,6 +248,7 @@ spec:
           - scrapy
           - stage2
           - stage3
+          - stage4  # #504
           - metrics-exporter
           - redis-exporter
     ports:
@@ -214,6 +277,7 @@ spec:
           - scrapy
           - stage2
           - stage3
+          - stage4  # #504
           - metrics-exporter
           - grafana
     ports:
@@ -244,6 +308,7 @@ spec:
           - scrapy
           - stage2
           - stage3
+          - stage4  # #504
           - kafka-topics
     ports:
     - protocol: TCP

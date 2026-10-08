@@ -345,21 +345,30 @@ class LargeDocProcessor:
 
             summaries = []
             processed_count = 0
+            succeeded: list[dict[str, Any]] = []
+            failed: list[dict[str, Any]] = []
 
             for doc in pending_docs:
                 try:
                     summary = self._process_document(doc)
-                    if summary:
-                        summaries.append(summary)
-                        processed_count += 1
                 except Exception as e:
                     logger.error(f"Failed to process doc {doc.get('url')}: {e}")
+                    summary = None
+                if summary:
+                    summaries.append(summary)
+                    succeeded.append(doc)
+                    processed_count += 1
+                else:
+                    failed.append(doc)
 
             if summaries:
                 self.delta.write("stage4_summaries", summaries, mode="append", async_write=False)
                 logger.info(f"Saved {len(summaries)} summaries")
 
-            self._update_queue_status(all_docs, pending_docs)
+            # Only documents that produced a summary are "completed"; the rest
+            # are "failed" (they used to be marked completed too, so a fetch or
+            # model error lost the document with no trace) (#224).
+            self._update_queue_status(all_docs, succeeded, failed)
 
             logger.info(f"Completed processing {processed_count} large documents")
 
@@ -436,11 +445,13 @@ class LargeDocProcessor:
             return None
 
         try:
-            max_input = 1024
-            if len(text) > max_input:
-                text = text[:max_input]
+            # Hand the model the whole chunk and let its tokenizer truncate at
+            # the model's token limit. The old 1024-*character* cut threw away
+            # ~80% of every 5000-char chunk before summarization (#224).
+            if len(text) > self.CHUNK_SIZE:
+                text = text[: self.CHUNK_SIZE]
 
-            result = self.summarizer(text, max_length=150, min_length=30, do_sample=False)
+            result = self.summarizer(text, max_length=150, min_length=30, do_sample=False, truncation=True)
 
             return str(result[0]["summary_text"])
 
@@ -453,19 +464,25 @@ class LargeDocProcessor:
         self,
         all_docs: list[dict[str, Any]],
         processed_docs: list[dict[str, Any]],
+        failed_docs: list[dict[str, Any]] | None = None,
     ) -> None:
-        """Update queue with completed status."""
+        """Mark ``processed_docs`` completed and ``failed_docs`` failed; leave the rest."""
         processed_urls = {d.get("url") for d in processed_docs}
+        failed_urls = {d.get("url") for d in failed_docs or []} - processed_urls
+        now = datetime.now().isoformat()
 
         updated_queue = []
         for doc in all_docs:
             if doc.get("url") in processed_urls:
                 doc["status"] = "completed"
-                doc["completed_at"] = datetime.now().isoformat()
+                doc["completed_at"] = now
+            elif doc.get("url") in failed_urls:
+                doc["status"] = "failed"
+                doc["completed_at"] = now  # same column: when processing ended (no new schema field)
             updated_queue.append(doc)
 
         self.delta.write("stage4_large_docs", updated_queue, mode="overwrite", async_write=False)
-        logger.info(f"Updated queue status for {len(processed_urls)} documents")
+        logger.info(f"Updated queue status: {len(processed_urls)} completed, {len(failed_urls)} failed")
 
 def process_large_documents():
     processor = LargeDocProcessor()

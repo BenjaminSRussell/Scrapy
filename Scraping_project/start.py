@@ -1,6 +1,12 @@
 #!/usr/bin/env python3
 """
 Unified entry-point for starting the scraping pipeline locally or on Kubernetes.
+
+``--dry-run`` (#733) validates the configuration and prints the commands a real
+run would execute. It runs no external command (docker, helm, kubectl), never
+prompts, and opens no Redis or other service connection. It exits 1 and lists
+every problem a real run would hit (missing tools, unreadable Compose file,
+missing chart or values files, malformed --set).
 """
 
 from __future__ import annotations
@@ -47,10 +53,12 @@ LOCAL_SERVICE_LABELS: dict[str, str] = {
 LOCAL_READINESS_CANDIDATES = ("postgres", "redis")
 # Service used for one-off `run` commands (Delta reset).
 LOCAL_APP_CANDIDATES = ("scraper", "scrapy-app")
-# The Helm chart deploys Stage 1-3 only; there is no Stage 4 workload (#492).
+# Stage 4 (PDF/OCR) is in the chart but off by default (#504): it needs the
+# PDF/OCR image. --stage stage4 deploys it alone; --stage pipeline needs
+# --set stage4Worker.enabled=true to include it.
 K8S_STAGE4_NOTE = (
-    "The Helm chart has no Stage 4 (PDF/OCR) workload; run Stage 4 with Compose "
-    "(stage4-worker) or deploy it separately."
+    "Stage 4 (PDF/OCR, stage4Worker) is off by default in the chart: use --stage stage4, "
+    "or add --set stage4Worker.enabled=true to --stage pipeline."
 )
 
 DEFAULT_HELM_CHART = "k8s/helm/scraping-pipeline"
@@ -58,12 +66,15 @@ DEFAULT_HELM_VALUES = os.path.join(DEFAULT_HELM_CHART, "values.yaml")
 PIPELINE_RELEASE = "scraping-pipeline"
 PIPELINE_NAMESPACE = "scraping"
 K8S_STAGE_DEFAULTS = {
+    # Every stage sets all four workload toggles explicitly, so a stage release
+    # never depends on chart defaults (#504).
     "stage1": {
         "release_suffix": "stage1",
         "namespace_suffix": "stage1",
         "set_overrides": (
             "stage2Worker.enabled=false",
             "stage3Worker.enabled=false",
+            "stage4Worker.enabled=false",
         ),
     },
     "stage2": {
@@ -72,6 +83,7 @@ K8S_STAGE_DEFAULTS = {
         "set_overrides": (
             "scrapyApp.enabled=false",
             "stage3Worker.enabled=false",
+            "stage4Worker.enabled=false",
         ),
     },
     "stage3": {
@@ -80,9 +92,21 @@ K8S_STAGE_DEFAULTS = {
         "set_overrides": (
             "scrapyApp.enabled=false",
             "stage2Worker.enabled=false",
+            "stage4Worker.enabled=false",
+        ),
+    },
+    "stage4": {
+        "release_suffix": "stage4",
+        "namespace_suffix": "stage4",
+        "set_overrides": (
+            "scrapyApp.enabled=false",
+            "stage2Worker.enabled=false",
+            "stage3Worker.enabled=false",
+            "stage4Worker.enabled=true",
         ),
     },
 }
+K8S_ALL_STAGES = ("stage1", "stage2", "stage3", "stage4")
 
 
 def compose_services(compose_file: Path | str = COMPOSE_FILE) -> list[str]:
@@ -115,7 +139,7 @@ def local_log_hints(services: Iterable[str]) -> list[str]:
     return hints
 
 
-def parse_args() -> argparse.Namespace:
+def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Start the scraping pipeline for local development or Kubernetes.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
@@ -139,7 +163,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--stage",
-        choices=("pipeline", "stage1", "stage2", "stage3", "all-stages"),
+        choices=("pipeline", "stage1", "stage2", "stage3", "stage4", "all-stages"),
         default="pipeline",
         help=(
             "Kubernetes only (--env k8s): which portion of the pipeline to deploy. "
@@ -190,11 +214,58 @@ def parse_args() -> argparse.Namespace:
         metavar="KEY=VALUE",
         help="Additional Helm --set overrides (may be supplied multiple times).",
     )
-    return parser.parse_args()
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help=(
+            "Validate configuration and print the planned commands without running anything: "
+            "no docker/helm/kubectl, no prompts, no Redis connection. Exits 1 on problems (#733)."
+        ),
+    )
+    return parser.parse_args(argv)
+
+
+DRY_RUN_PREFIX = "[dry-run] would run:"
+_dry_run = False
+
+
+def set_dry_run(enabled: bool) -> None:
+    global _dry_run
+    _dry_run = bool(enabled)
+
+
+def is_dry_run() -> bool:
+    return _dry_run
+
+
+def missing_tools(env: str) -> list[str]:
+    return [tool for tool in REQUIRED_TOOLS[env] if shutil.which(tool) is None]
+
+
+def preflight_problems(args: argparse.Namespace) -> list[str]:
+    """Everything that would make a real run fail before it starts, without side effects."""
+    problems: list[str] = []
+    missing = missing_tools(args.env)
+    if missing:
+        problems.append(f"missing required tooling for '{args.env}': {', '.join(missing)}")
+    if args.env == "local":
+        if not compose_services():
+            problems.append(f"Compose file {COMPOSE_FILE} is unreadable or defines no services")
+        return problems
+    if not os.path.isdir(args.chart):
+        problems.append(f"Helm chart not found at: {args.chart}")
+    for values_file in [args.values, *args.extra_values]:
+        if values_file and not os.path.exists(values_file):
+            problems.append(f"Helm values file not found: {values_file}")
+    for item in args.set_overrides or []:
+        key, sep, _ = (item or "").partition("=")
+        if not sep or not key.strip():
+            problems.append(f"--set expects KEY=VALUE, got {item!r}")
+    return problems
 
 
 def ensure_tools_available(env: str) -> None:
-    missing = [tool for tool in REQUIRED_TOOLS[env] if shutil.which(tool) is None]
+    missing = missing_tools(env)
     if not missing:
         return
 
@@ -211,6 +282,9 @@ def ensure_tools_available(env: str) -> None:
 
 def run_command(command: Iterable[str], *, capture_output: bool = False) -> subprocess.CompletedProcess:
     cmd_list = list(command)
+    if _dry_run:
+        print(f"{DRY_RUN_PREFIX} {' '.join(cmd_list)}")
+        return subprocess.CompletedProcess(cmd_list, 0, "" if capture_output else None, "")
     try:
         return subprocess.run(
             cmd_list,
@@ -228,6 +302,9 @@ def run_command(command: Iterable[str], *, capture_output: bool = False) -> subp
 
 
 def wait_for_exec(service: str, timeout: int) -> None:
+    if _dry_run:
+        print(f"{DRY_RUN_PREFIX} docker-compose exec -T {service} true  (poll up to {timeout}s)")
+        return
     deadline = time.time() + timeout
     last_error = ""
     while time.time() < deadline:
@@ -301,6 +378,8 @@ def start_local(args: argparse.Namespace) -> None:
     else:
         print("Skipping Delta Lake reset. Use '--reset-delta' to wipe and reseed.")
 
+    if _dry_run:
+        return
     print("\n" + "=" * 70)
     print("Local Environment Started Successfully!")
     print("=" * 70)
@@ -332,6 +411,9 @@ def prompt_prerequisites() -> None:
         """
     ).strip()
     print(checklist)
+    if _dry_run:
+        print("[dry-run] would ask for 'yes' to confirm the checklist; not prompting.")
+        return
     confirmation = input("Type 'yes' to confirm that all prerequisites are satisfied: ").strip().lower()
     if confirmation != "yes":
         print("Aborting Kubernetes deployment. Please complete the prerequisites and try again.")
@@ -352,10 +434,11 @@ def deploy_helm_release(
     values_files: Sequence[str],
     set_args: Sequence[str],
 ) -> None:
-    if not os.path.isdir(chart):
-        print(f"Helm chart not found at: {chart}", file=sys.stderr)
-        sys.exit(1)
-    ensure_files_exist(values_files)
+    if not _dry_run:
+        if not os.path.isdir(chart):
+            print(f"Helm chart not found at: {chart}", file=sys.stderr)
+            sys.exit(1)
+        ensure_files_exist(values_files)
     command: list[str] = [
         "helm",
         "upgrade",
@@ -376,6 +459,9 @@ def deploy_helm_release(
 
 def wait_for_pods_ready(namespace: str, timeout: int = 300) -> None:
     """Wait for all pods in namespace to be ready."""
+    if _dry_run:
+        print(f"{DRY_RUN_PREFIX} kubectl get pods --namespace {namespace}  (poll up to {timeout}s)")
+        return
     print(f"Waiting for pods in namespace '{namespace}' to be ready (timeout={timeout}s)...")
     deadline = time.time() + timeout
     while time.time() < deadline:
@@ -404,6 +490,9 @@ def wait_for_pods_ready(namespace: str, timeout: int = 300) -> None:
 
 def verify_hpa_status(namespace: str) -> None:
     """Verify HPA status and display metrics."""
+    if _dry_run:
+        print(f"{DRY_RUN_PREFIX} kubectl get hpa --namespace {namespace}")
+        return
     print(f"\nChecking HorizontalPodAutoscalers in namespace '{namespace}'...")
     result = subprocess.run(
         ("kubectl", "get", "hpa", "--namespace", namespace),
@@ -436,9 +525,12 @@ def start_k8s(args: argparse.Namespace) -> None:
         namespace = args.namespace or PIPELINE_NAMESPACE
         print(f"Deploying the full pipeline as Helm release '{release}' in namespace '{namespace}'...")
         deploy_helm_release(args.chart, release, namespace, values_files, additional_sets)
-        print("\nDeployment complete! Waiting for pods to be ready...")
+        if not _dry_run:
+            print("\nDeployment complete! Waiting for pods to be ready...")
         wait_for_pods_ready(namespace, timeout=300)
         verify_hpa_status(namespace)
+        if _dry_run:
+            return
         print(f"\n{'=' * 70}")
         print("Kubernetes Deployment Summary")
         print(f"{'=' * 70}")
@@ -469,7 +561,7 @@ def start_k8s(args: argparse.Namespace) -> None:
         print(f"{'=' * 70}\n")
         return
 
-    stages = ["stage1", "stage2", "stage3"] if args.stage == "all-stages" else [args.stage]
+    stages = list(K8S_ALL_STAGES) if args.stage == "all-stages" else [args.stage]
     for stage in stages:
         defaults = K8S_STAGE_DEFAULTS[stage]
         release = (
@@ -488,6 +580,8 @@ def start_k8s(args: argparse.Namespace) -> None:
         deploy_helm_release(args.chart, release, namespace, values_files, set_args)
         wait_for_pods_ready(namespace, timeout=180)
         verify_hpa_status(namespace)
+        if _dry_run:
+            continue
         print(f"\n{'=' * 70}")
         print(f"Stage '{stage}' Deployment Complete")
         print(f"{'=' * 70}")
@@ -500,19 +594,43 @@ def start_k8s(args: argparse.Namespace) -> None:
         print(f"{'=' * 70}\n")
 
 
-def main() -> None:
-    args = parse_args()
+def main(argv: Sequence[str] | None = None) -> int:
+    args = parse_args(argv)
+    if args.dry_run:
+        return dry_run(args)
     ensure_tools_available(args.env)
 
     if args.env == "local":
         start_local(args)
     else:
         start_k8s(args)
+    return 0
+
+
+def dry_run(args: argparse.Namespace) -> int:
+    """Validate and print the plan (#733). Returns the exit code; never executes anything."""
+    print(f"[dry-run] start.py --env {args.env}: validating configuration; nothing will be executed.")
+    problems = preflight_problems(args)
+    set_dry_run(True)
+    try:
+        if args.env == "local":
+            start_local(args)
+        else:
+            start_k8s(args)
+    finally:
+        set_dry_run(False)
+    if problems:
+        print("\n[dry-run] configuration problems (a real run would fail):", file=sys.stderr)
+        for problem in problems:
+            print(f"  - {problem}", file=sys.stderr)
+        return 1
+    print("\n[dry-run] configuration OK; the commands above are what a real run would execute.")
+    return 0
 
 
 if __name__ == "__main__":
     try:
-        main()
+        sys.exit(main())
     except KeyboardInterrupt:
         print("\nOperation cancelled by user.", file=sys.stderr)
         sys.exit(1)
