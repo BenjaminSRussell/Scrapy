@@ -160,6 +160,24 @@ Stage 3 (Summarization) → Stage 4 (Advanced) → Final Output
 - Final enrichment
 - **Output**: Enriched final data
 
+**Large-document worker input (#611).** `Stage4Worker` reads its work from the
+`stage4_large_docs` queue that Stage 2 fills (`_route_to_stage4` for >50k-word
+pages, `_route_pdf_to_stage4` for PDFs with `is_pdf=true`). A URL is pending
+until one of its rows leaves `pending` or it already has a row in
+`stage4_large_doc_summaries`. After each run, rows are updated with a row-level
+Delta MERGE on `url`:
+
+| `status` | meaning |
+|---|---|
+| `completed` | summary written to `stage4_large_doc_summaries` |
+| `skipped:no_text` | fetch/extraction returned no text (e.g. image-only PDF) |
+| `skipped:no_summary` | text extracted but the summarizer produced nothing |
+| `pending` | not yet processed, or a transient fetch/summary-write failure (retried next run) |
+
+Fallback: `is_massive_doc` rows in `stage2_page_analysis` that never reached
+the queue are still summarized (PDF detected by `.pdf` URL suffix) and deduped
+via the summaries table. The queue stays the source of truth.
+
 ### Type Safety (Phase 6)
 
 All data is validated using Pydantic models:
