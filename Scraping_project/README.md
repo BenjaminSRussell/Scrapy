@@ -403,6 +403,22 @@ Configure the Helm chart via `k8s/helm/scraping-pipeline/values.yaml` (supported
 - Persistent volume sizes
 - Service configuration
 
+### Redis memory policy: durable keys vs TTL keys (#161)
+
+Redis holds durable crawl state, and losing it is not a cache miss:
+
+| Keys | TTL | If lost |
+|---|---|---|
+| `seen:urls` and other `seen:*` sets (dedup/claims) | none | every URL looks new, so the crawl starts over |
+| Stage queues and the priority queue | none | queued work disappears |
+| `depth_spider:last_crawl:*` and other cache-like keys | yes (`ex=`) | recomputed |
+
+Compose, `k8s/deployment.yaml` and Helm (`redis.config.maxmemoryPolicy`) run `--maxmemory-policy volatile-lru`, so only keys with a TTL can be evicted. When Redis reaches `maxmemory` with nothing evictable left, it rejects writes (`OOM command not allowed`) instead of silently dropping a seen set. The seen store then fails closed (see `RedisSeenStoreFailingClosed`).
+
+- **Never use an `allkeys-*` policy.** `RedisHelper` logs an ERROR at connect time if the server runs one.
+- **New cache-like keys must set a TTL.** Durable keys must not.
+- **Memory SLO.** Stay under 80% of `maxmemory`. The `RedisHighMemory` alert fires above that for 5 minutes. Raise `maxmemory` or drain the queues before writes start failing.
+
 ### TLS certificate verification (#584)
 
 Every outbound HTTPS request verifies the server certificate. aiohttp, httpx and requests verify by default. The Scrapy downloader uses `BrowserLikeContextFactory` (set in `src/settings.py` from `src/core/tls_policy.py`) instead of Scrapy's default factory, which accepts any certificate. `tests/unit/test_tls_policy.py` fails CI if code adds `verify=False`, `ssl=False`, `CERT_NONE` or similar bypasses. It also proves end to end that a self-signed server is rejected.
