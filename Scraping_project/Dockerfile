@@ -87,8 +87,10 @@ CMD ["python", "metrics_exporter.py", "--port", "9100"]
 # rust:1 (latest stable) rather than the crate's rust-version floor (1.90): the
 # locked dependency tree may need a newer compiler than the declared MSRV.
 FROM rust:1-slim-bookworm as kafka-delta-ingest-build
+# zstd-sys runs bindgen at build time, which needs libclang (CI failed without it).
 RUN apt-get update && apt-get install -y --no-install-recommends \
     cmake make g++ pkg-config perl libssl-dev libsasl2-dev zlib1g-dev libzstd-dev \
+    clang libclang-dev \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /build
 COPY kafka-delta-ingest/Cargo.toml kafka-delta-ingest/Cargo.lock ./
