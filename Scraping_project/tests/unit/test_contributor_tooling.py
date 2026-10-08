@@ -94,3 +94,47 @@ def test_contributing_documents_tooling():
     text = (REPO / "CONTRIBUTING.md").read_text()
     for needle in ("scripts/smoke_local.sh", "nox", "playwright install chromium", ".devcontainer", "launch.json"):
         assert needle in text
+
+
+# --- #357 / #360: one formatter path, one config file per tool -----------------
+
+
+def test_precommit_uses_ruff_only_for_format_and_imports():
+    cfg = yaml.safe_load((PROJECT / ".pre-commit-config.yaml").read_text())
+    hook_ids = {h["id"] for repo in cfg["repos"] for h in repo["hooks"]}
+    assert {"ruff", "ruff-format"} <= hook_ids
+    assert not hook_ids & {"black", "isort", "flake8"}
+
+
+def test_ruff_owns_import_sorting():
+    import tomllib
+
+    ruff = tomllib.loads((PROJECT / "ruff.toml").read_text())
+    assert "I" in ruff["lint"]["select"]
+
+
+def test_makefile_lint_matches_hooks():
+    text = (PROJECT / "Makefile").read_text()
+    lint = text.split("\nlint:", 1)[1].split("\n\n", 1)[0]
+    assert "ruff check" in lint and "ruff format --check" in lint
+    assert "black" not in lint and "isort" not in lint
+
+
+def test_tool_config_not_duplicated_in_pyproject():
+    import tomllib
+
+    tool = tomllib.loads((PROJECT / "pyproject.toml").read_text()).get("tool", {})
+    assert not {"black", "ruff", "mypy", "isort"} & set(tool)
+
+
+def test_python_version_aligned_across_tools():
+    import configparser
+    import tomllib
+
+    ruff = tomllib.loads((PROJECT / "ruff.toml").read_text())
+    mypy = configparser.ConfigParser()
+    mypy.read(PROJECT / "mypy.ini")
+    oldest_ci = min(_ci_pythons(), key=lambda v: tuple(map(int, v.split("."))))
+    assert ruff["target-version"] == "py" + oldest_ci.replace(".", "")
+    assert mypy["mypy"]["python_version"] == oldest_ci
+    assert (PROJECT / "docs/tooling.md").exists()
