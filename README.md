@@ -787,6 +787,14 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 ---
 
+## 🔒 Security
+
+- Report vulnerabilities **privately**; see [SECURITY.md](SECURITY.md). Don't open a public issue.
+- Keep secrets in `Scraping_project/.env` (git-ignored). The [`.env.example`](Scraping_project/.env.example) template lists every variable.
+- The Compose defaults (`postgres`, `admin`, Redis without AUTH) are for local development only. If one of them ever leaked or was used on a shared host, follow [rotating a leaked or default password](SECURITY.md#rotating-a-leaked-or-default-password).
+
+---
+
 ## 🙏 Acknowledgments
 
 Built with these amazing tools:

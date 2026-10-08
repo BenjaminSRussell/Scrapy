@@ -254,3 +254,40 @@ def test_diagnose_count_helper_prints_single_zero(bin_dir):
     )
     r = _run([BASH, "-c", prog], _env(bin_dir))
     assert r.stdout.split() == ["0", "2", "0"]
+
+
+# --- access_grafana.sh: local Compose vs Kubernetes (#382) ------------------------------
+
+
+def test_access_grafana_uses_local_compose_when_no_k8s_pod(bin_dir):
+    _stub(bin_dir, "kubectl", 'echo "No resources found"')
+    _stub(bin_dir, "docker", 'if [ "$1 $2" = "compose version" ]; then echo v2; exit 0; fi\n'
+                             'if [ "$2" = "ps" ]; then echo redis; echo grafana; fi')
+    r = _run([BASH, str(ROOT / "access_grafana.sh")], _env(bin_dir))
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "Docker Compose" in r.stdout and "http://localhost:3000" in r.stdout
+    assert "GRAFANA_ADMIN_PASSWORD" in r.stdout
+    assert "port-forward" not in r.stdout
+
+
+def test_access_grafana_local_flag_never_calls_kubectl(bin_dir):
+    _stub(bin_dir, "kubectl", 'echo "kubectl-was-called" >&2; exit 9')
+    _stub(bin_dir, "docker", 'if [ "$1 $2" = "compose version" ]; then exit 0; fi\n'
+                             'if [ "$2" = "ps" ]; then echo grafana; fi')
+    r = _run([BASH, str(ROOT / "access_grafana.sh"), "--local"], _env(bin_dir))
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "kubectl-was-called" not in r.stderr
+
+
+def test_access_grafana_explains_both_paths_when_nothing_runs(bin_dir):
+    _stub(bin_dir, "kubectl", 'echo "No resources found"')
+    _stub(bin_dir, "docker", 'if [ "$1 $2" = "compose version" ]; then exit 0; fi\nexit 0')
+    r = _run([BASH, str(ROOT / "access_grafana.sh")], _env(bin_dir))
+    assert r.returncode == 1
+    assert "not running" in r.stdout
+    assert "docker compose up -d grafana" in r.stdout and "--k8s" in r.stdout
+
+
+def test_access_grafana_rejects_unknown_flag(bin_dir):
+    r = _run([BASH, str(ROOT / "access_grafana.sh"), "--nope"], _env(bin_dir))
+    assert r.returncode == 2

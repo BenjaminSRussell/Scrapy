@@ -16,7 +16,9 @@ SERVICES = list(yaml.safe_load((ROOT / "docker-compose.yml").read_text(encoding=
 
 
 @pytest.fixture()
-def start():
+def start(monkeypatch):
+    # Pin the Compose CLI so assertions don't depend on what the runner has installed (#342).
+    monkeypatch.setenv("COMPOSE_CMD", "docker-compose")
     spec = importlib.util.spec_from_file_location("_ops_start", ROOT / "start.py")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
