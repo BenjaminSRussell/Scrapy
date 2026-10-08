@@ -52,6 +52,20 @@ CSP_REPORT_ONLY = (
     "object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
 )
 
+# #906 CSP note: report-only for now. index.html still has inline <style>/<script>
+# and loads Chart.js from jsDelivr, so an enforcing policy would break the page.
+# Violations appear in the browser console. Activity rows are DOM-built
+# (textContent), so they need no inline-script allowance. connect-src allows
+# http(s) because METRICS_URL is usually <host>:9090 (another origin).
+CSP_REPORT_ONLY = (
+    "default-src 'self'; "
+    "script-src 'self' https://cdn.jsdelivr.net; "
+    "style-src 'self' https://cdn.jsdelivr.net; "
+    "connect-src 'self' http: https:; "
+    "img-src 'self' data:; "
+    "object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+)
+
 class DashboardHandler(http.server.SimpleHTTPRequestHandler):
     """Custom request handler for dashboard files."""
 
