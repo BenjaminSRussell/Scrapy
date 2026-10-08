@@ -7,6 +7,44 @@
 
 mappings:
   # ============================================
+  # kafka-delta-ingest: the names the binary actually emits (#535)
+  # ============================================
+  # src/main.rs builds its StatsdClient with prefix "kafka_delta_ingest", so the
+  # wire names are "kafka_delta_ingest.<metric>", not "ingestor.*". These must
+  # come before the catch-alls below. tests/unit/test_ingest_write_failure_alert.py
+  # checks that every name the alerts use is emitted by main.rs and mapped here.
+  - match: "kafka_delta_ingest.errors.write_failed"
+    name: "kafka_delta_ingest_write_failures_total"
+    labels:
+      job: "kafka-delta-ingest"
+
+  - match: "kafka_delta_ingest.batches.written"
+    name: "kafka_delta_ingest_batches_written_total"
+    labels:
+      job: "kafka-delta-ingest"
+
+  - match: "kafka_delta_ingest.records.written"
+    name: "kafka_delta_ingest_records_written_total"
+    labels:
+      job: "kafka-delta-ingest"
+
+  - match: "kafka_delta_ingest.offsets.committed"
+    name: "kafka_delta_ingest_offsets_committed_total"
+    labels:
+      job: "kafka-delta-ingest"
+
+  - match: "kafka_delta_ingest.messages.received"
+    name: "kafka_delta_ingest_messages_received_total"
+    labels:
+      job: "kafka-delta-ingest"
+
+  - match: "kafka_delta_ingest.errors.*"
+    name: "kafka_delta_ingest_errors_total"
+    labels:
+      job: "kafka-delta-ingest"
+      reason: "$1"
+
+  # ============================================
   # Kafka Delta Ingest Metrics
   # ============================================
 
