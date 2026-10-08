@@ -16,6 +16,7 @@ from src.stage1.processors.url_processor import should_follow_url
 from src.lakehouse import SeedManager
 from src.stage1.base_spider import BaseSpider
 from src.stage1.sitemap_parser import discover_sitemaps_sync
+from src.stage1.js_queue import js_spider_enabled
 from src.stage1.section_noise import SectionNoiseTracker, section_of
 
 try:
@@ -72,6 +73,8 @@ class ScoutSpider(BaseSpider):
         self.expand_seeds = _stage1_flag(config, "expand_seeds", True)
         self.parse_sitemaps = _stage1_flag(config, "parse_sitemaps", True)
         self.aggressive_collection = _stage1_flag(config, "aggressive_collection", True)
+        # #645: with the JS path off nothing drains js_spider_queue, so don't fill it.
+        self.enable_js_spider = js_spider_enabled(config)
 
         self.seed_manager = SeedManager(self.delta)
 
@@ -158,10 +161,10 @@ class ScoutSpider(BaseSpider):
                         continue
                     followed += 1
 
-                    yield self._queue_for_javascript_spider(url, response.url)
+                    if self.enable_js_spider:
+                        yield self._queue_for_javascript_spider(url, response.url)
+                        self.scout_stats["html_queued_js"] += 1
                     yield self._queue_for_stage2(url, response.url, content_hint)
-
-                    self.scout_stats["html_queued_js"] += 1
                     self.scout_stats["pages_queued_stage2"] += 1
 
                     yield scrapy.Request(

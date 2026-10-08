@@ -78,6 +78,7 @@ class JavaScriptSpider(scrapy.Spider):
         self.rendered_count = 0
         self.page_ledger = PageLedger()
         self.completed_urls = []
+        self.failed_urls: dict[str, str] = {}
         self.priority_stats = {
             "critical": 0,
             "high": 0,
@@ -318,7 +319,8 @@ class JavaScriptSpider(scrapy.Spider):
                 urls=urls,
                 source_url=source_url,
                 source_spider=self.name,
-                enqueue_stage2=False,
+                # Hop contract (#645): JS-only links continue to Stage 2.
+                enqueue_stage2=True,
             )
 
             logger.info(
@@ -330,8 +332,15 @@ class JavaScriptSpider(scrapy.Spider):
 
     async def handle_error(self, failure):
         logger.error(f"[JAVASCRIPT] Rendering failed: {failure.getErrorMessage()} for {failure.request.url[:80]}")
+        # #645: a failed render must leave "pending", or the queue only ever grows.
+        self._failed_urls()[failure.request.url] = str(failure.getErrorMessage())[:500]
         # #452: a failed request may still carry an open page.
         await self._ledger().release_from_failure(failure)
+
+    def _failed_urls(self) -> dict[str, str]:
+        if not hasattr(self, "failed_urls"):  # spiders built without __init__ (tests)
+            self.failed_urls = {}
+        return self.failed_urls
 
     def closed(self, reason):
         logger.info(f"[JAVASCRIPT] Spider closing: {reason}")
@@ -340,16 +349,23 @@ class JavaScriptSpider(scrapy.Spider):
         if leaked:
             logger.warning(f"[JAVASCRIPT] {leaked} Playwright pages still open at close (leak)")
 
-        if self.completed_urls:
+        failed_urls = self._failed_urls()
+        if self.completed_urls or failed_urls:
             try:
                 all_queue_data = self.delta.read("js_spider_queue")
 
                 completed_set = set(self.completed_urls)
+                now = datetime.now().isoformat()
 
                 for record in all_queue_data:
-                    if record.get("url") in completed_set:
+                    url = record.get("url")
+                    if url in completed_set:
                         record["status"] = "completed"
-                        record["completed_at"] = datetime.now().isoformat()
+                        record["completed_at"] = now
+                    elif url in failed_urls and record.get("status") in (None, "pending"):
+                        record["status"] = "failed"
+                        record["failed_at"] = now
+                        record["error"] = failed_urls[url]
 
                 self.delta.write(
                     "js_spider_queue",
@@ -357,7 +373,10 @@ class JavaScriptSpider(scrapy.Spider):
                     mode="overwrite",
                     async_write=False,
                 )
-                logger.info(f"[JAVASCRIPT] Marked {len(self.completed_urls)} items as completed in queue")
+                logger.info(
+                    f"[JAVASCRIPT] Marked {len(self.completed_urls)} completed, "
+                    f"{len(failed_urls)} failed in queue"
+                )
 
             except Exception as e:
                 logger.error(f"[JAVASCRIPT] Failed to update queue status: {e}")

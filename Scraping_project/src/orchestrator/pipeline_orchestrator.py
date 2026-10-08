@@ -1,7 +1,11 @@
 import asyncio
 import logging
+import os
+import subprocess
+import sys
 from dataclasses import dataclass, field
 from datetime import datetime
+from pathlib import Path
 from typing import Literal
 
 from scrapy.crawler import CrawlerProcess
@@ -9,6 +13,8 @@ from scrapy.utils.project import get_project_settings
 
 from src.core.constants import LEGACY_TABLE_STAGE3_SUMMARIES, TABLE_STAGE3_SUMMARIES
 from src.utils.delta import get_delta
+from src.orchestrator.hop_reconciliation import BARRIER_MODES, alert_kind, count_hops, reconcile
+from src.stage1.js_queue import count_pending, js_spider_enabled
 from src.stage2.stage2_worker import Stage2Worker
 from src.stage3.stage3_worker import Stage3Worker
 from src.stage4.stage4_worker import Stage4Worker
@@ -32,6 +38,17 @@ try:  # metric/alert hook for partial or failed runs (#521)
 except Exception:  # prometheus_client missing or metric already registered
     PIPELINE_RUNS = None
 
+try:  # stage2_queue hop reconciliation alerts (#646)
+    from prometheus_client import Counter as _Counter
+
+    PIPELINE_HOP_ALERTS = _Counter(
+        "pipeline_hop_alerts_total",
+        "Hop reconciliation alerts by kind (hop_lost/stage2_pending/late_append).",
+        ["alert"],
+    )
+except Exception:
+    PIPELINE_HOP_ALERTS = None
+
 
 class PipelineRunError(RuntimeError):
     """Raised when a full pipeline run does not complete (#521)."""
@@ -51,6 +68,10 @@ def _is_count(value: object) -> bool:
 class PipelineStats:
     stage1_urls_discovered: int = 0
     stage1_urls_queued: int = 0
+    stage1_js_pending: int = 0
+    stage1_js_drain_error: str | None = None
+    stage2_watermark: str | None = None
+    hop_funnel: dict | None = None
     stage2_pages_analyzed: int = 0
     stage2_quality_docs: int = 0
     stage2_massive_docs: int = 0
@@ -69,6 +90,21 @@ class PipelineStats:
             return (self.end_time - self.start_time).total_seconds()
         return 0.0
 
+# Scrapy project root (holds scrapy.cfg); the JS drain runs ``scrapy crawl`` there.
+_PROJECT_ROOT = Path(__file__).resolve().parents[2]
+_JS_DRAIN_TIMEOUT_S = 3600
+
+
+def _set_js_queue_pending_metric(count: int) -> None:
+    """Best-effort update of the ``pipeline_js_queue_pending`` gauge (#645)."""
+    try:
+        from src.scrapy_prometheus import set_pipeline_js_queue_pending
+
+        set_pipeline_js_queue_pending(count)
+    except Exception as e:  # metrics are optional
+        logger.debug("Could not update pipeline_js_queue_pending: %s", e)
+
+
 class PipelineOrchestrator:
 
     def __init__(self, config: dict | None = None):
@@ -76,6 +112,68 @@ class PipelineOrchestrator:
         self.delta = get_delta()
         self.stats = PipelineStats()
         self._current_stage: str | None = None
+
+    def count_js_queue_pending(self) -> int:
+        """Pending rows in Delta ``js_spider_queue`` (missing status = pending)."""
+        try:
+            return count_pending(self.delta.read("js_spider_queue"))
+        except Exception as e:
+            logger.warning("Could not read js_spider_queue: %s", e)
+            return 0
+
+    def _js_drain_timeout(self) -> float:
+        raw = os.environ.get("JS_DRAIN_TIMEOUT_SECONDS") or self.config.get("js_drain_timeout_seconds")
+        try:
+            return float(raw) if raw else float(_JS_DRAIN_TIMEOUT_S)
+        except (TypeError, ValueError):
+            return float(_JS_DRAIN_TIMEOUT_S)
+
+    def run_js_queue(self, enabled: bool | None = None) -> int:
+        """Stage 1b (#645): drain ``js_spider_queue`` with the ``javascript`` spider.
+
+        The spider runs in a child ``scrapy crawl`` process: Stage 1 has already
+        started (and stopped) this process's Twisted reactor, which cannot be
+        restarted. Returns the pending count left afterwards (0 when the JS
+        path is off or there was nothing to drain).
+        """
+        logger.info("=" * 80)
+        logger.info("STAGE 1b: JS SPIDER QUEUE DRAIN")
+        logger.info("=" * 80)
+
+        if enabled is None:
+            enabled = self.config.get("enable_js_spider")
+        pending = self.count_js_queue_pending()
+        self.stats.stage1_js_pending = pending
+        _set_js_queue_pending_metric(pending)
+
+        if not js_spider_enabled(enabled=enabled):
+            logger.info("JS spider path disabled (stage1.enable_js_spider / ENABLE_JS_SPIDER); skipping drain")
+            if pending:
+                logger.warning(
+                    "js_spider_queue has %s pending item(s) but the JS path is off; they will not be drained",
+                    pending,
+                )
+            return 0
+        if not pending:
+            logger.info("js_spider_queue has no pending items; nothing to drain")
+            return 0
+
+        logger.info("Draining js_spider_queue: %s pending item(s)", pending)
+        cmd = [sys.executable, "-m", "scrapy", "crawl", "javascript"]
+        try:
+            proc = subprocess.run(cmd, cwd=str(_PROJECT_ROOT), timeout=self._js_drain_timeout(), check=False)
+            if proc.returncode != 0:
+                self.stats.stage1_js_drain_error = f"javascript spider exited {proc.returncode}"
+                logger.warning("JS queue drain: %s", self.stats.stage1_js_drain_error)
+        except subprocess.TimeoutExpired:
+            self.stats.stage1_js_drain_error = "javascript spider timed out"
+            logger.warning("JS queue drain timed out after %.0fs", self._js_drain_timeout())
+
+        remaining = self.count_js_queue_pending()
+        self.stats.stage1_js_pending = remaining
+        _set_js_queue_pending_metric(remaining)
+        logger.info(" JS queue drain complete: %s pending remaining (was %s)", remaining, pending)
+        return remaining
 
     def run_stage1(
         self,
@@ -307,7 +405,16 @@ class PipelineOrchestrator:
             except Exception as e:
                 self.stats.stage_errors["stage1"] = repr(e)
                 raise
+            # Stage 1b (#645): render what Scout queued for the JS spider. A drain
+            # problem is logged and recorded, not fatal: Stage 2 still has its queue.
+            self._current_stage = "stage1b"
+            try:
+                self.run_js_queue()
+            except Exception as e:
+                self.stats.stage1_js_drain_error = repr(e)
+                logger.error(f"JS queue drain failed (continuing with Stage 2): {e!r}")
             self._current_stage = "stage2"
+            queue_before = self._stage2_queue_rows()
             try:
                 await self.run_stage2(max_concurrent=stage2_concurrent)
             except Exception as e:
@@ -317,12 +424,34 @@ class PipelineOrchestrator:
             self._finish("failed")
             raise PipelineRunError("failed", self.stats.stage_errors) from None
 
-        self._current_stage = "stage3+stage4"
-        results = await asyncio.gather(
-            self.run_stage3(max_concurrent=stage3_concurrent),
-            self.run_stage4(),
-            return_exceptions=True,
-        )
+        # Stage 2 -> 3/4 barrier + hop reconciliation (#646).
+        recon = self._stage2_barrier(queue_before)
+        if recon is not None and recon.stage2_watermark is None:
+            pending = recon.hops.still_pending + recon.hops.late_appends
+            self.stats.stage_errors["stage2_barrier"] = (
+                f"strict barrier: {pending} stage2_queue row(s) still pending; Stage 3/4 not started"
+            )
+            self._current_stage = None
+            self._finish("failed")
+            self._print_final_stats()
+            raise PipelineRunError("failed", self.stats.stage_errors)
+
+        results: list[object]
+        if self._setting("stage3_4_parallel", "STAGE3_4_PARALLEL", "true").lower() in ("1", "true", "yes", "on"):
+            self._current_stage = "stage3+stage4"
+            results = list(await asyncio.gather(
+                self.run_stage3(max_concurrent=stage3_concurrent),
+                self.run_stage4(),
+                return_exceptions=True,
+            ))
+        else:  # sequential: Stage 4 starts after Stage 3, whatever Stage 3's outcome
+            results = []
+            for name, start in (("stage3", lambda: self.run_stage3(max_concurrent=stage3_concurrent)), ("stage4", self.run_stage4)):
+                self._current_stage = name
+                try:
+                    results.append(await start())
+                except Exception as e:
+                    results.append(e)
         for name, result in zip(("stage3", "stage4"), results):
             if isinstance(result, BaseException):
                 self.stats.stage_errors[name] = repr(result)
@@ -333,12 +462,70 @@ class PipelineOrchestrator:
         status: RunStatus = (
             "complete" if not failed else "failed" if len(failed) == 2 else "partial_failed"
         )
+        if recon is not None and not recon.within_tolerance:
+            # Silent loss is not success (#646): at best partial, never complete.
+            self.stats.stage_errors["reconciliation"] = "; ".join(
+                a for a in recon.alerts if alert_kind(a) == "hop_lost"
+            )
+            if status == "complete":
+                status = "partial_failed"
         self._finish(status)
         self._print_final_stats()
 
         if status == "complete" or (status == "partial_failed" and allow_partial):
             return self.stats
         raise PipelineRunError(status, self.stats.stage_errors)
+
+    def _setting(self, key: str, env: str, default: str) -> str:
+        value = os.environ.get(env)
+        if value is None or not value.strip():
+            value = self.config.get(key, default)
+        return str(value).strip()
+
+    def _stage2_queue_rows(self) -> list[dict] | None:
+        """Snapshot of ``stage2_queue`` for hop accounting; None when unreadable."""
+        if self._setting("stage2_barrier", "STAGE2_BARRIER", "flag").lower() == "off":
+            return None
+        try:
+            rows = self.delta.read("stage2_queue")
+        except Exception as e:
+            logger.warning(f"[HOPS] Could not read stage2_queue: {e}")
+            return None
+        return rows if isinstance(rows, list) else None
+
+    def _stage2_barrier(self, before: list[dict] | None):
+        """Count the Stage 2 funnel and apply the barrier (#646).
+
+        Modes (``stage2_barrier`` / ``$STAGE2_BARRIER``): ``flag`` (default) alerts
+        on rows still pending and starts Stage 3/4; ``strict`` refuses to start
+        them while any ``stage2_queue`` row is pending; ``off`` skips accounting.
+        Returns None when there is nothing to reconcile.
+        """
+        mode = self._setting("stage2_barrier", "STAGE2_BARRIER", "flag").lower()
+        if mode not in BARRIER_MODES:
+            logger.warning(f"[HOPS] Unknown stage2_barrier {mode!r}; using 'flag'")
+            mode = "flag"
+        if mode == "off" or before is None:
+            return None
+        after = self._stage2_queue_rows()
+        if after is None:
+            return None
+        try:
+            tolerance = max(0, int(self._setting("hop_tolerance", "HOP_TOLERANCE", "0")))
+        except ValueError:
+            tolerance = 0
+        hops = count_hops(before, after, discovered=self.stats.stage1_urls_queued)
+        recon = reconcile(hops, tolerance=tolerance, barrier=mode)
+        for alert in recon.alerts:
+            logger.warning(f"[HOPS] {alert}")
+            if PIPELINE_HOP_ALERTS is not None:
+                PIPELINE_HOP_ALERTS.labels(alert=alert_kind(alert)).inc()
+        if not (mode == "strict" and (hops.still_pending or hops.late_appends)):
+            recon.stage2_watermark = datetime.now().isoformat()
+        logger.info(f"[HOPS] Stage 2 funnel: {hops.to_dict()} watermark={recon.stage2_watermark}")
+        self.stats.stage2_watermark = recon.stage2_watermark
+        self.stats.hop_funnel = recon.panel()
+        return recon
 
     def _finish(self, status: RunStatus) -> None:
         self.stats.end_time = datetime.now()

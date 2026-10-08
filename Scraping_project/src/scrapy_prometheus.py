@@ -190,6 +190,11 @@ if PROMETHEUS_AVAILABLE:
     )
     # --- End Delta Lake Manager Metrics ---
 
+    PIPELINE_JS_QUEUE_PENDING = Gauge(
+        "pipeline_js_queue_pending",
+        "Pending rows in Delta js_spider_queue awaiting the javascript spider (#645)",
+    )
+
 else:
     DELTA_MANAGER_CONTEXT_ENTER_TOTAL = None
     DELTA_MANAGER_CONTEXT_EXIT_TOTAL = None
@@ -204,6 +209,13 @@ else:
     CRAWLER_CONTENT_SUMMARY = None
     CRAWLER_SUMMARY_SKIPPED = None
     HIDDEN_URLS_FOUND = HIDDEN_URLS_ROUTED = None
+    PIPELINE_JS_QUEUE_PENDING = None
+
+
+def set_pipeline_js_queue_pending(count: int) -> None:
+    """Set ``pipeline_js_queue_pending`` (no-op without prometheus_client) (#645)."""
+    if PIPELINE_JS_QUEUE_PENDING is not None:
+        PIPELINE_JS_QUEUE_PENDING.set(int(count))
 
 _LABEL_CHARS = re.compile(r"[^a-z0-9_]+")
 

@@ -84,6 +84,10 @@ stage1:
 
   # JS Detection
   js_confidence_threshold: 0.5  # REDUCED - render more pages (was 0.7)
+  # Scout -> js_spider_queue -> javascript spider -> Stage 2 (#645). Off: Scout
+  # does not fill js_spider_queue and the pipeline skips the drain.
+  # Env ENABLE_JS_SPIDER=0/1 overrides. Runbook: docs/runbooks/js_spider_queue.md
+  enable_js_spider: true
 
   # Batch sizes
   batch_size: 50  # URLs to batch before writing to Delta Lake
