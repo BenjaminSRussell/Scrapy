@@ -4,6 +4,7 @@ import logging
 from typing import Any
 
 from src.core.config import Config
+from src.stage1.middlewares.fetch_policy_middleware import as_bool
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +61,8 @@ def get_spider_settings(spider_name: str) -> dict:
         "CONCURRENT_REQUESTS_PER_DOMAIN": spider_config.get("concurrent_requests_per_domain", 8),
         "DOWNLOAD_DELAY": spider_config.get("download_delay", 0.25),
         "DOWNLOAD_TIMEOUT": spider_config.get("download_timeout", 30),
-        "COOKIES_ENABLED": spider_config.get("cookies_enabled", True),
+        # #395: cookieless unless the spider's config opts in (was True).
+        "COOKIES_ENABLED": as_bool(spider_config.get("cookies_enabled"), default=False),
         "HTTPCACHE_ENABLED": False,
         "RETRY_ENABLED": True,
         "RETRY_TIMES": spider_config.get("retry_times", 3),
@@ -93,6 +95,8 @@ def get_spider_settings(spider_name: str) -> dict:
             "src.stage1.middlewares.soft_ban_middleware.SoftBanMiddleware": 540,
             # Before RetryMiddleware (550) on the response path: wait Retry-After.
             "src.stage1.middlewares.retry_after_middleware.RetryAfterMiddleware": 560,
+            # #395/#396: large-doc timeout + cookie scope; before DownloadTimeout (350).
+            "src.stage1.middlewares.fetch_policy_middleware.FetchPolicyMiddleware": 340,
         },
         "RETRY_AFTER_MAX_DELAY": float(spider_config.get("retry_after_max_delay", 120)),
         # #194: 429/503 without Retry-After double the host's delay (>= 1s) up to
