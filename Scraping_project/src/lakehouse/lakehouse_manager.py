@@ -241,6 +241,17 @@ try:  # schema evolution visibility (#226)
 except Exception:
     DELTA_SCHEMA_EVOLUTIONS = None
 
+try:  # optimize/vacuum vs concurrent writers (#702)
+    from prometheus_client import Counter as _MCCounter
+
+    DELTA_MAINTENANCE_CONFLICTS = _MCCounter(
+        "delta_maintenance_conflicts_total",
+        "Delta maintenance commits (compact/z_order/vacuum) that lost a concurrent-commit race and were retried.",
+        ["table", "operation"],
+    )
+except Exception:
+    DELTA_MAINTENANCE_CONFLICTS = None
+
 
 def metadata_row_count(table: Any) -> int | None:
     """Exact row count from the Delta log's per-file ``num_records`` stats (#372).
@@ -305,6 +316,19 @@ def _z_order_config(raw: Any) -> dict[str, list[str]]:
         else:
             logger.warning(f"Ignoring invalid z_order_columns for {table}: {cols!r}")
     return out
+
+
+MAINTENANCE_MAX_ATTEMPTS = 4
+MAINTENANCE_RETRY_BACKOFF = 0.2  # seconds, doubled per attempt
+
+
+def _maintenance_failure_reason(step: str, error: Exception) -> str:
+    """``<step>_conflict`` when retries ran out on commit conflicts, else ``<step>_failed``."""
+    try:
+        from deltalake.exceptions import CommitFailedError
+    except Exception:  # pragma: no cover
+        return f"{step}_failed"
+    return f"{step}_conflict" if isinstance(error, CommitFailedError) else f"{step}_failed"
 
 
 EXPORT_FORMATS = ("csv", "json", "parquet")
@@ -836,14 +860,13 @@ class LakehouseManager:
             return
 
         try:
-            dt = DeltaTable(str(table_path))
-
             logger.info(f"Optimizing {table_name} with compaction...")
             try:
-                dt.optimize.compact()
+                self._maintenance_commit(table_name, "compact", lambda dt: dt.optimize.compact())
             except Exception as e:
-                self._optimize_skipped(table_name, "compact_failed", f"compaction failed: {e}")
+                self._optimize_skipped(table_name, _maintenance_failure_reason("compact", e), f"compaction failed: {e}")
 
+            dt = DeltaTable(str(table_path))
             z_order_columns = self.z_order_columns.get(table_name)
             if z_order_columns:
                 # Validate against the table schema before calling z_order (#272).
@@ -859,14 +882,50 @@ class LakehouseManager:
                 else:
                     logger.info(f"Z-ordering {table_name} by {', '.join(z_order_columns)}...")
                     try:
-                        dt.optimize.z_order(z_order_columns)
+                        self._maintenance_commit(
+                            table_name, "z_order", lambda fresh: fresh.optimize.z_order(z_order_columns)
+                        )
                     except Exception as e:
-                        self._optimize_skipped(table_name, "zorder_failed", f"Z-order failed: {e}")
+                        self._optimize_skipped(table_name, _maintenance_failure_reason("zorder", e), f"Z-order failed: {e}")
 
             logger.info(f" Optimized {table_name}")
 
         except Exception as e:
             logger.warning(f"Optimization failed for {table_name}: {e}")
+
+    def _maintenance_commit(self, table_name: str, operation: str, action: Any) -> None:
+        """Run a maintenance commit (compact / z_order / vacuum) safely (#702).
+
+        * In-process: holds the same per-table lock as ``_write_sync``, so
+          maintenance and this process's writers never interleave on a table.
+        * Across processes/replicas: a ``CommitFailedError`` (another writer
+          committed first) is retried on a FRESH snapshot with backoff, up to
+          ``MAINTENANCE_MAX_ATTEMPTS``; each conflict is counted in
+          ``delta_maintenance_conflicts_total``. The lock is released between
+          attempts so writers are not starved. The last error is re-raised.
+        """
+        import time
+
+        from deltalake import DeltaTable
+        from deltalake.exceptions import CommitFailedError
+
+        table_path = self.tables.get(table_name) or self.get_table_path(table_name)
+        for attempt in range(1, MAINTENANCE_MAX_ATTEMPTS + 1):
+            try:
+                with self._table_lock(table_name):
+                    action(DeltaTable(str(table_path)))
+                return
+            except CommitFailedError as e:
+                if DELTA_MAINTENANCE_CONFLICTS is not None:
+                    DELTA_MAINTENANCE_CONFLICTS.labels(table=table_name, operation=operation).inc()
+                if attempt == MAINTENANCE_MAX_ATTEMPTS:
+                    raise
+                delay = MAINTENANCE_RETRY_BACKOFF * (2 ** (attempt - 1))
+                logger.warning(
+                    f"[MAINTENANCE] {operation} on {table_name} hit a concurrent commit "
+                    f"(attempt {attempt}/{MAINTENANCE_MAX_ATTEMPTS}): {e}; retrying in {delay:.2f}s"
+                )
+                time.sleep(delay)
 
     def _optimize_skipped(self, table_name: str, reason: str, message: str) -> None:
         """Make a skipped/failed optimize step loud: warning + metric (#272)."""
@@ -887,21 +946,22 @@ class LakehouseManager:
             retention_hours: Retention period in hours (default: 168 = 7 days)
             enforce_retention_duration: If False, allows retention < 168 hours (DANGEROUS!)
         """
-        from deltalake import DeltaTable
-
         table_path = self.tables.get(table_name)
         if not table_path or not (table_path / "_delta_log").exists():
             return
 
         try:
-            dt = DeltaTable(str(table_path))
             logger.info(
                 f"Vacuuming {table_name} (retention: {retention_hours}h, enforce={enforce_retention_duration})..."
             )
-            dt.vacuum(
-                retention_hours=retention_hours,
-                enforce_retention_duration=enforce_retention_duration,
-                dry_run=False,
+            self._maintenance_commit(
+                table_name,
+                "vacuum",
+                lambda dt: dt.vacuum(
+                    retention_hours=retention_hours,
+                    enforce_retention_duration=enforce_retention_duration,
+                    dry_run=False,
+                ),
             )
             logger.info(f" Vacuumed {table_name}")
         except Exception as e:
