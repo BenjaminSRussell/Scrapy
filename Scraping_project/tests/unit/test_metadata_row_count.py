@@ -54,6 +54,9 @@ def test_metadata_row_count_none_when_a_file_lacks_stats(tmp_path):
     write_deltalake(path, pa.table({"a": [1, 2]}))
 
     class Stub:
+        def file_uris(self):
+            return ["x", "y"]
+
         def get_add_actions(self, flatten=True):
             return pa.record_batch({"path": ["x", "y"], "num_records": pa.array([2, None], pa.int64())})
 

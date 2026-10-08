@@ -270,6 +270,10 @@ def metadata_row_count(table: Any) -> int | None:
     Returns None when any live file lacks stats (caller falls back to parquet
     footers). Assumes no deletion vectors, which delta-rs does not write.
     """
+    # delta-rs panics in get_add_actions() when a table has no live files (e.g.
+    # after a full DELETE) and the panic poisons the table handle, so ask first.
+    if not table.file_uris():
+        return 0
     actions = pa.table(table.get_add_actions(flatten=True))
     if actions.num_rows == 0:
         return 0
@@ -327,6 +331,24 @@ def _z_order_config(raw: Any) -> dict[str, list[str]]:
         else:
             logger.warning(f"Ignoring invalid z_order_columns for {table}: {cols!r}")
     return out
+
+
+TRASH_DIR = "_trash"
+AUDIT_DIR = "_audit"
+
+
+def table_file_stats(table: Any) -> tuple[int, int]:
+    """(live data files, distinct partitions) from the Delta log's add actions (#600)."""
+    if not table.file_uris():  # see metadata_row_count: empty tables panic in delta-rs
+        return 0, 0
+    actions = pa.table(table.get_add_actions(flatten=True))
+    if actions.num_rows == 0:
+        return 0, 0
+    part_cols = [c for c in actions.column_names if c.startswith("partition.")]
+    if not part_cols:
+        return actions.num_rows, 0
+    keys = set(zip(*(actions.column(c).to_pylist() for c in part_cols)))
+    return actions.num_rows, len(keys)
 
 
 MAINTENANCE_MAX_ATTEMPTS = 4
@@ -1136,24 +1158,30 @@ class LakehouseManager:
             sys.exit(0)
 
     def list_tables(self) -> list[dict[str, Any]]:
+        """Per-table summary. File and partition counts come from the Delta log's
+        live add actions, so Hive-style partition subdirectories are counted and
+        tombstoned (overwritten) files are not (#600)."""
         tables_info = []
 
         for table_name, table_path in self.tables.items():
-            parquet_files = list(table_path.glob("*.parquet"))
-
-            info = {
+            info: dict[str, Any] = {
                 "name": table_name,
                 "path": str(table_path),
                 "exists": (table_path / "_delta_log").exists(),
-                "parquet_files": len(parquet_files),
+                "parquet_files": 0,
+                "partitions": 0,
                 "row_count": 0,
             }
 
             if info["exists"]:
                 try:
+                    info["parquet_files"], info["partitions"] = table_file_stats(DeltaTable(str(table_path)))
                     info["row_count"] = self.count(table_name)
                 except Exception as e:
                     info["error"] = str(e)
+            elif table_path.exists():
+                # No log: report stray parquet anywhere under the path.
+                info["parquet_files"] = sum(1 for _ in table_path.rglob("*.parquet"))
 
             tables_info.append(info)
 
@@ -1316,13 +1344,113 @@ class LakehouseManager:
             return False
         return (table_path / "_delta_log").exists()
 
-    def delete_table(self, table_name: str):
-        table_path = self.tables.get(table_name)
-        if table_path and table_path.exists():
-            import shutil
+    def delete_table(
+        self,
+        table_name: str,
+        *,
+        allow_destructive: bool = False,
+        hard: bool = False,
+        reason: str = "",
+    ) -> Path | None:
+        """Remove a table, guarded (#614).
 
+        Denied unless ``allow_destructive=True``. By default the table directory
+        (data plus the whole ``_delta_log``, so all time travel) is moved to
+        ``<base>/_trash/<table>-<UTC stamp>/`` and can be brought back with
+        ``restore_table``. ``hard=True`` deletes irreversibly and additionally
+        requires ``DELTA_ALLOW_HARD_DELETE=1`` in the environment, so production
+        (which never sets it) can't lose a table to one mistaken call. Every
+        delete is logged and appended to ``<base>/_audit/table_deletes.jsonl``.
+        To empty a table but keep its history, use ``truncate_table``.
+
+        Returns the trash path for a soft delete, else None.
+        """
+        if not allow_destructive:
+            raise PermissionError(
+                f"delete_table({table_name!r}) refused: pass allow_destructive=True "
+                "(or use truncate_table to empty it while keeping history)"
+            )
+        if hard and os.getenv("DELTA_ALLOW_HARD_DELETE") != "1":
+            raise PermissionError(
+                f"hard delete of {table_name!r} refused: set DELTA_ALLOW_HARD_DELETE=1 "
+                "(irreversible: destroys all Delta history)"
+            )
+        table_path = self.tables.get(table_name)
+        if not table_path or not table_path.exists():
+            return None
+
+        import shutil
+
+        trash: Path | None = None
+        if hard:
             shutil.rmtree(table_path)
-            logger.info(f"Deleted table: {table_name}")
+        else:
+            stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
+            trash = self.base_path / TRASH_DIR / f"{table_name}-{stamp}"
+            trash.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(table_path), str(trash))
+        self._audit_table_delete(table_name, table_path, "hard" if hard else "soft", trash, reason)
+        logger.warning(
+            f"[TABLE DELETE] {table_name}: {'hard-deleted' if hard else f'moved to {trash}'}"
+            + (f" ({reason})" if reason else "")
+        )
+        return trash
+
+    def restore_table(self, table_name: str, trash_path: str | Path | None = None) -> Path:
+        """Move a soft-deleted table back from ``_trash`` (latest copy by default)."""
+        import shutil
+
+        table_path = self.get_table_path(table_name)
+        if (table_path / "_delta_log").exists():
+            raise FileExistsError(f"{table_name} already exists at {table_path}; not overwriting")
+        if trash_path is None:
+            candidates = sorted((self.base_path / TRASH_DIR).glob(f"{table_name}-*"))
+            if not candidates:
+                raise FileNotFoundError(f"no trashed copy of {table_name}")
+            trash_path = candidates[-1]
+        if table_path.exists():
+            table_path.rmdir()  # only an empty placeholder can be here (no _delta_log)
+        shutil.move(str(trash_path), str(table_path))
+        self._audit_table_delete(table_name, table_path, "restore", Path(trash_path), "")
+        logger.warning(f"[TABLE RESTORE] {table_name} restored from {trash_path}")
+        return table_path
+
+    def truncate_table(self, table_name: str) -> bool:
+        """Delete every row with a Delta DELETE commit. Schema and time travel are
+        kept (earlier versions stay readable until vacuumed)."""
+        table_path = self.get_table_path(table_name)
+        if not (table_path / "_delta_log").exists():
+            return True
+        with self._table_lock(table_name):
+            DeltaTable(str(table_path)).delete()
+        logger.info(f"Truncated table: {table_name} (Delta DELETE; history kept)")
+        return True
+
+    def _audit_table_delete(
+        self, table_name: str, table_path: Path, action: str, trash: Path | None, reason: str
+    ) -> None:
+        import getpass
+        import json
+
+        record = {
+            "at": datetime.now(UTC).isoformat(),
+            "table": table_name,
+            "path": str(table_path),
+            "action": action,
+            "trash": str(trash) if trash else None,
+            "reason": reason,
+            "user": getpass.getuser(),
+            "pid": os.getpid(),
+        }
+        try:
+            audit = self.base_path / AUDIT_DIR / "table_deletes.jsonl"
+            audit.parent.mkdir(parents=True, exist_ok=True)
+            with open(audit, "a", encoding="utf-8") as fh:
+                fh.write(json.dumps(record) + "\n")
+                fh.flush()
+                os.fsync(fh.fileno())
+        except Exception as e:  # the log line above/below still records it
+            logger.error(f"[TABLE DELETE] audit write failed for {table_name}: {e}")
 
     def merge_into(
         self,
@@ -1607,7 +1735,14 @@ class InMemoryBackend:
     def table_exists(self, name: str) -> bool:
         return name in self.tables
 
-    def delete_table(self, name: str):
+    def truncate_table(self, name: str) -> bool:
+        if name in self.tables:
+            self.tables[name] = []
+        return True
+
+    def delete_table(self, name: str, *, allow_destructive: bool = False, **kwargs):
+        if not allow_destructive:
+            raise PermissionError(f"delete_table({name!r}) refused: pass allow_destructive=True")
         if name in self.tables:
             del self.tables[name]
 
