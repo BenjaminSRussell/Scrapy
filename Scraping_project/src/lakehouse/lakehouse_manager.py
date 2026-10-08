@@ -241,6 +241,17 @@ try:  # schema evolution visibility (#226)
 except Exception:
     DELTA_SCHEMA_EVOLUTIONS = None
 
+try:  # explicit destructive schema replacement (#509)
+    from prometheus_client import Counter as _SOCounter
+
+    DELTA_SCHEMA_OVERWRITES = _SOCounter(
+        "delta_schema_overwrites_total",
+        "Writes that replaced a Delta table's schema (explicit schema_overwrite=True), by table.",
+        ["table"],
+    )
+except Exception:
+    DELTA_SCHEMA_OVERWRITES = None
+
 try:  # optimize/vacuum vs concurrent writers (#702)
     from prometheus_client import Counter as _MCCounter
 
@@ -617,12 +628,13 @@ class LakehouseManager:
         table_name: str,
         data: list[dict[str, Any]],
         mode: Literal["append", "overwrite", "error", "ignore"] = "append",
+        schema_overwrite: bool = False,
     ) -> bool:
         """Write synchronously. Returns False if the write failed (logged, not raised)."""
         if not data:
             return True
         with self._table_lock(table_name):
-            return self._write_sync_locked(table_name, data, mode)
+            return self._write_sync_locked(table_name, data, mode, schema_overwrite=schema_overwrite)
 
     @staticmethod
     def _enrich_records(table_name: str, data: list[dict[str, Any]]) -> None:
@@ -649,6 +661,7 @@ class LakehouseManager:
         table_name: str,
         data: list[dict[str, Any]],
         mode: Literal["append", "overwrite", "error", "ignore"],
+        schema_overwrite: bool = False,
     ) -> bool:
 
         table_path = self.tables.get(table_name)
@@ -673,7 +686,14 @@ class LakehouseManager:
             # columns keep their types (rows are cast, failures quarantined),
             # new columns are appended via schema_mode="merge", and required
             # (non-nullable) columns are never null-filled.
-            table_schema = self._table_schema(table_path) if mode == "append" else None
+            # #509: overwrite replaces ROWS, not the schema. It goes through the
+            # same cast/evolve path as append and commits with schema_mode="merge",
+            # so columns evolved by other writers survive (null in the new rows).
+            # Replacing the schema itself requires schema_overwrite=True.
+            if schema_overwrite and mode != "overwrite":
+                raise ValueError("schema_overwrite=True requires mode='overwrite'")
+            keep_schema = mode in ("append", "overwrite") and not schema_overwrite
+            table_schema = self._table_schema(table_path) if keep_schema else None
             if table_schema is None:
                 table = infer_table(data)
             else:
@@ -707,7 +727,7 @@ class LakehouseManager:
                         str(table_path),
                         table,
                         mode=mode,
-                        schema_mode="merge" if mode == "append" else "overwrite",
+                        schema_mode="overwrite" if schema_overwrite else "merge",
                         writer_properties=writer_props,
                         partition_by=partition_by,
                         # Applied when this write creates the table (#274).
@@ -790,13 +810,26 @@ class LakehouseManager:
         data: list[dict[str, Any]],
         mode: Literal["append", "overwrite", "error", "ignore"] = "append",
         async_write: bool = True,
+        schema_overwrite: bool = False,
     ):
         """Write data to a Delta table, optionally via the background queue.
 
         Returns False when the batch was not written: a failed sync write, or an
         async write that found the queue full for ``queue_put_timeout`` seconds
         and was spilled to ``_write_spill/`` instead of blocking forever (#167).
+
+        ``mode="overwrite"`` replaces the rows but keeps the table schema
+        (additive evolution only, #509). Pass ``schema_overwrite=True`` to
+        deliberately replace the schema as well. That destructive write is
+        always synchronous, logged, and counted.
         """
+        if schema_overwrite:
+            if mode != "overwrite":
+                raise ValueError("schema_overwrite=True requires mode='overwrite'")
+            logger.warning(f"[SCHEMA OVERWRITE] {table_name}: replacing table schema (explicit schema_overwrite=True)")
+            if DELTA_SCHEMA_OVERWRITES is not None:
+                DELTA_SCHEMA_OVERWRITES.labels(table=table_name).inc()
+            return self._write_sync(table_name, data, mode, schema_overwrite=True)
         if async_write:
             try:
                 self.write_queue.put((table_name, data, mode), timeout=self.queue_put_timeout)
