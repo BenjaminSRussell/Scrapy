@@ -333,6 +333,33 @@ delta_lake:
     stage3_summaries: stage3_summaries
     stage4_large_docs: stage4_large_docs
     stage4_summaries: stage4_summaries
+    metadata_queue: metadata_queue  # MetadataExtractionPipeline output (#433)
+  # Writes to a table not listed above, in `partitions`, or here are "undeclared"
+  # (#433): warn = log once + delta_undeclared_table_writes_total; reject = refuse
+  # the write. Env DELTA_UNDECLARED_TABLES overrides.
+  undeclared_tables: warn
+  extra_tables: [stage1_offsite_candidates, stage2_errors, stage3_analytics, stage3_summaries,
+                 stage4_large_doc_summaries, seed_urls, uconn_urls, entity_summaries]
+
+  # Partition columns per table, applied when a table is CREATED (#261/#236/#268).
+  # An existing table keeps the layout in its _delta_log (delta-rs cannot
+  # repartition in place); drift is logged and exported as
+  # delta_partition_config_drift{table}. Derived columns:
+  #   domain - registrable domain of `url`
+  #   date   - YYYY-MM-DD of the first of date_partition_source_fields
+  #            (same column as kafka-delta-ingest's `date` partition)
+  # Queue tables are upserted by key and change status in place, so they stay
+  # unpartitioned. See docs/DELTA_PARTITIONING.md.
+  partitions:
+    stage1_discovery: [domain]
+    stage2_page_analysis: [domain]
+    stage1_errors: [date]
+    stage2_errors: [date]
+    stage3_summaries: [date]
+    stage4_summaries: [date]
+    stage4_large_doc_summaries: [date]
+    metadata_queue: [date]
+  date_partition_source_fields: [scraped_at_utc, discovered_at, processed_at, created_at, _ingestion_time]
 
 # ============================================
 # Message Queue Configuration

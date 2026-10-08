@@ -1,6 +1,7 @@
 import logging
 import os
 import queue
+import re
 import signal
 import sys
 import threading
@@ -64,6 +65,24 @@ try:  # undomainable rows quarantined instead of partitioned as "unknown" (#458)
     )
 except Exception:  # prometheus_client missing or metric already registered
     DELTA_UNKNOWN_DOMAIN = None
+
+try:  # partition drift (#261) and undeclared tables (#433)
+    from prometheus_client import Counter as _PCounter
+    from prometheus_client import Gauge as _PGauge
+
+    DELTA_PARTITION_DRIFT = _PGauge(
+        "delta_partition_config_drift",
+        "1 when a table's partition columns differ from delta_lake.partitions (existing layout is kept).",
+        ["table"],
+    )
+    DELTA_UNDECLARED_WRITES = _PCounter(
+        "delta_undeclared_table_writes_total",
+        "Writes/merges addressed to a table not declared in config (warned or rejected).",
+        ["table", "action"],
+    )
+except Exception:  # prometheus_client missing or metric already registered
+    DELTA_PARTITION_DRIFT = None
+    DELTA_UNDECLARED_WRITES = None
 
 try:  # async write durability (#225) and queue backpressure (#167)
     from prometheus_client import Counter as _WCounter
@@ -363,9 +382,107 @@ def _filter_columns(filters: Any) -> set[str] | None:
 
 PARTITIONED_TABLES = {"stage1_discovery", "stage2_page_analysis"}
 
+# #261/#236/#268: partition keys per table come from config.yml
+# (delta_lake.partitions). Two derived keys are filled in on write:
+#   domain - registrable domain of the row's url (#251/#458)
+#   date   - YYYY-MM-DD of the row's event time; same column name and format
+#            as kafka-delta-ingest's `date` partition (#268)
+# Partitioning is fixed when a table is created: an existing table keeps the
+# columns recorded in its _delta_log (see _effective_partitions), so editing
+# config never breaks writes to an existing lake. docs/DELTA_PARTITIONING.md
+DEFAULT_PARTITIONS: dict[str, list[str]] = {name: ["domain"] for name in sorted(PARTITIONED_TABLES)}
+DATE_PARTITION_COLUMN = "date"
+DEFAULT_DATE_SOURCE_FIELDS = ("scraped_at_utc", "discovered_at", "processed_at", "created_at", "_ingestion_time")
+_ISO_DAY = re.compile(r"^(\d{4}-\d{2}-\d{2})")
+UNDECLARED_TABLE_MODES = ("warn", "reject")
+
+_partition_settings_cache: tuple[dict[str, list[str]], tuple[str, ...]] | None = None
+
+
+def partition_settings(config: Any = None) -> tuple[dict[str, list[str]], tuple[str, ...]]:
+    """``(partitions per table, date source fields)`` from ``delta_lake.*`` config.
+
+    ``delta_lake.partitions`` replaces DEFAULT_PARTITIONS when present; a table
+    mapped to ``[]`` (or absent) is unpartitioned. Raises ValueError on a
+    malformed mapping so a typo fails at startup, not on the first write.
+    """
+    global _partition_settings_cache
+    if config is None and _partition_settings_cache is not None:
+        return _partition_settings_cache
+    cfg = config if config is not None else Config.get_instance()
+    raw = cfg.get("delta_lake.partitions", None)
+    partitions: dict[str, list[str]] = {k: list(v) for k, v in DEFAULT_PARTITIONS.items()}
+    if raw is not None:
+        if not isinstance(raw, dict):
+            raise ValueError("delta_lake.partitions must map table name -> list of column names")
+        partitions = {}
+        for table, cols in raw.items():
+            if cols is None or cols == []:
+                continue
+            if isinstance(cols, str):
+                cols = [cols]
+            if not isinstance(cols, list) or not all(isinstance(c, str) and c.strip() for c in cols):
+                raise ValueError(f"delta_lake.partitions.{table} must be a list of column names, got {cols!r}")
+            if len(set(cols)) != len(cols):
+                raise ValueError(f"delta_lake.partitions.{table} repeats a column: {cols!r}")
+            partitions[str(table)] = [c.strip() for c in cols]
+    sources = cfg.get("delta_lake.date_partition_source_fields", None) or DEFAULT_DATE_SOURCE_FIELDS
+    if isinstance(sources, str):
+        sources = [sources]
+    result = (partitions, tuple(str(f) for f in sources))
+    if config is None:
+        _partition_settings_cache = result
+    return result
+
+
+def reset_partition_settings() -> None:
+    """Forget cached partition config (tests / config reload)."""
+    global _partition_settings_cache
+    _partition_settings_cache = None
+
 
 def _partition_columns(table_name: str) -> list[str] | None:
-    return ["domain"] if table_name in PARTITIONED_TABLES else None
+    """Configured partition columns for a NEW ``table_name`` (None = unpartitioned)."""
+    cols = partition_settings()[0].get(table_name)
+    return list(cols) if cols else None
+
+
+def _iso_day(value: Any) -> str | None:
+    """``YYYY-MM-DD`` for a datetime/date/epoch/ISO string, else None."""
+    from datetime import date  # local: keeps the module's datetime import line untouched
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, datetime):
+        return (value.astimezone(UTC) if value.tzinfo else value).date().isoformat()
+    if isinstance(value, date):
+        return value.isoformat()
+    if isinstance(value, int | float):
+        seconds = value / 1000 if value > 1e11 else value  # epoch millis
+        try:
+            return datetime.fromtimestamp(seconds, UTC).date().isoformat()
+        except (OverflowError, OSError, ValueError):
+            return None
+    match = _ISO_DAY.match(str(value).strip())
+    if not match:
+        return None
+    try:
+        return date.fromisoformat(match.group(1)).isoformat()
+    except ValueError:
+        return None
+
+
+def partition_date(record: dict[str, Any], source_fields: tuple[str, ...] = DEFAULT_DATE_SOURCE_FIELDS) -> str:
+    """The ``date`` partition value: day of the first usable event-time field (#268).
+
+    Like kafka-delta-ingest this is the ``YYYY-MM-DD`` prefix of the timestamp
+    (``scraped_at_utc`` first); falls back to today (UTC) so a row is never
+    written with a null/garbage partition.
+    """
+    for field in source_fields:
+        day = _iso_day(record.get(field))
+        if day is not None:
+            return day
+    return datetime.now(UTC).date().isoformat()
 
 
 def partition_domain(url: Any) -> str | None:
@@ -549,10 +666,32 @@ class LakehouseManager:
             "stage4_large_docs": self.base_path / "stage4_large_docs",
             "stage4_large_doc_summaries": self.base_path / "stage4_large_doc_summaries",
             "stage4_summaries": self.base_path / "stage4_summaries",
+            # #433: MetadataExtractionPipeline output; declared so it gets
+            # vacuum/retention and a partition policy instead of being a shadow table.
+            "metadata_queue": self.base_path / "metadata_queue",
         }
 
         for table_path in self.tables.values():
             table_path.mkdir(parents=True, exist_ok=True)
+
+        # #261: fail fast on a malformed delta_lake.partitions mapping.
+        partitions, _ = partition_settings()
+        # #433: tables a write may address without being "undeclared".
+        configured_tables = config.get("delta_lake.tables", None) or {}
+        self.declared_tables: set[str] = (
+            set(self.tables)
+            | set(partitions)
+            | {CAST_QUARANTINE_TABLE, DOMAIN_QUARANTINE_TABLE}
+            | {str(k) for k in configured_tables}
+            | {str(v) for v in configured_tables.values() if isinstance(v, str)}
+            | {str(t) for t in (config.get("delta_lake.extra_tables", None) or [])}
+        )
+        mode = str(
+            os.getenv("DELTA_UNDECLARED_TABLES") or config.get("delta_lake.undeclared_tables", "warn")
+        ).lower()
+        if mode not in UNDECLARED_TABLE_MODES:
+            raise ValueError(f"delta_lake.undeclared_tables must be one of {UNDECLARED_TABLE_MODES}, got {mode!r}")
+        self.undeclared_tables_mode = mode
 
         queue_maxsize = config.get("delta_lake.queue_maxsize", 1000)
         self.write_queue: queue.Queue[WriteTask | None] = queue.Queue(maxsize=queue_maxsize)
@@ -818,15 +957,22 @@ class LakehouseManager:
             return self._write_sync_locked(table_name, data, mode, schema_overwrite=schema_overwrite)
 
     @staticmethod
-    def _enrich_records(table_name: str, data: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        """Add partition key and ingestion metadata in place (write and merge paths).
+    def _enrich_records(
+        table_name: str, data: list[dict[str, Any]], partitions: list[str] | None | Literal["config"] = "config"
+    ) -> list[dict[str, Any]]:
+        """Add partition keys and ingestion metadata in place (write and merge paths).
 
-        For domain-partitioned tables, rows whose URL has no usable host are
-        removed from ``data`` and returned, to be quarantined (#458) rather
-        than written to a skewed domain="unknown" partition.
+        ``partitions`` are the table's effective partition columns (default:
+        the configured ones). For domain-partitioned tables, rows whose URL has
+        no usable host are removed from ``data`` and returned, to be
+        quarantined (#458) rather than written to a skewed domain="unknown"
+        partition. For date-partitioned tables ``date`` is derived (#268).
         """
+        if partitions == "config":
+            partitions = _partition_columns(table_name)
+        partitions = partitions or []
         undomainable: list[dict[str, Any]] = []
-        if _partition_columns(table_name):
+        if "domain" in partitions:
             # Partition key: public-suffix-aware registrable domain (#251).
             kept: list[dict[str, Any]] = []
             for record in data:
@@ -843,12 +989,86 @@ class LakehouseManager:
                 kept.append(record)
             data[:] = kept
 
+        date_sources = partition_settings()[1] if DATE_PARTITION_COLUMN in partitions else ()
         for record in data:
             if "_ingestion_time" not in record:
                 record["_ingestion_time"] = datetime.now(UTC).isoformat()
             if "_stage" not in record:
                 record["_stage"] = table_name
+            if date_sources:
+                day = _iso_day(record.get(DATE_PARTITION_COLUMN))
+                record[DATE_PARTITION_COLUMN] = day or partition_date(record, date_sources)
         return undomainable
+
+    def _effective_partitions(self, table_name: str, table_path: Path) -> list[str] | None:
+        """Partition columns a write must use: the existing table's, else the configured ones.
+
+        delta-rs rejects a write whose partition_by differs from the table's
+        ("Specified table partitioning does not match"), and cannot
+        repartition in place, so a config change must never be applied to an
+        existing table (#261). Drift is logged once and exported as
+        ``delta_partition_config_drift{table}``; see docs/DELTA_PARTITIONING.md.
+        """
+        configured = _partition_columns(table_name)
+        if not (table_path / "_delta_log").exists():
+            return configured
+        cache: dict[str, list[str] | None] = self.__dict__.setdefault("_partition_cache", {})
+        if table_name in cache:
+            return cache[table_name]
+        try:
+            existing = list(DeltaTable(str(table_path)).metadata().partition_columns) or None
+        except Exception as e:  # unreadable log: let the write surface the real error
+            logger.debug(f"[PARTITION] could not read partition columns of {table_name}: {e}")
+            return configured
+        drift = existing != configured
+        if drift:
+            logger.warning(
+                f"[PARTITION] {table_name} is partitioned by {existing or []} but delta_lake.partitions "
+                f"says {configured or []}; keeping the existing layout (see docs/DELTA_PARTITIONING.md)"
+            )
+        if DELTA_PARTITION_DRIFT is not None:
+            DELTA_PARTITION_DRIFT.labels(table=table_name).set(1 if drift else 0)
+        cache[table_name] = existing
+        return existing
+
+    def partition_report(self) -> dict[str, dict[str, Any]]:
+        """Per table: configured vs existing partition columns (#236 migration aid)."""
+        report: dict[str, dict[str, Any]] = {}
+        names = set(self.tables) | set(partition_settings()[0])
+        for name in sorted(names):
+            path = self.tables.get(name) or self.base_path / name
+            exists = (path / "_delta_log").exists()
+            configured = _partition_columns(name) or []
+            existing = (self._effective_partitions(name, path) or []) if exists else None
+            report[name] = {
+                "configured": configured,
+                "existing": existing,
+                "drift": exists and existing != configured,
+            }
+        return report
+
+    def _undeclared_table_allowed(self, table_name: str) -> bool:
+        """#433: warn about (or, in reject mode, refuse) writes to undeclared tables."""
+        declared = getattr(self, "declared_tables", None)
+        if declared is None or table_name in declared:
+            return True
+        reject = getattr(self, "undeclared_tables_mode", "warn") == "reject"
+        if DELTA_UNDECLARED_WRITES is not None:
+            DELTA_UNDECLARED_WRITES.labels(table=table_name, action="rejected" if reject else "warned").inc()
+        warned: set[str] = self.__dict__.setdefault("_undeclared_warned", set())
+        if reject:
+            logger.error(
+                f"[TABLES] write to undeclared table {table_name!r} rejected "
+                "(declare it in delta_lake.tables or delta_lake.extra_tables)"
+            )
+            return False
+        if table_name not in warned:
+            warned.add(table_name)
+            logger.warning(
+                f"[TABLES] {table_name!r} is not declared in delta_lake.tables/extra_tables; "
+                "it has no retention or partition policy (#433)"
+            )
+        return True
 
     def _quarantine_undomainable(self, table_name: str, rows: list[dict[str, Any]]) -> bool:
         """Count, log and park rows with no usable host in DOMAIN_QUARANTINE_TABLE (#458).
@@ -895,9 +1115,9 @@ class LakehouseManager:
         partition is deleted. The append happens before the delete, so a crash
         in between can duplicate rows but never loses them.
         """
-        if table_name not in PARTITIONED_TABLES:
-            raise ValueError(f"{table_name} is not domain-partitioned")
         table_path = self.get_table_path(table_name)
+        if "domain" not in (self._effective_partitions(table_name, table_path) or []):
+            raise ValueError(f"{table_name} is not domain-partitioned")
         if not (table_path / "_delta_log").exists():
             return {"rows": 0, "repairable": 0, "quarantine": 0}
         dt = DeltaTable(str(table_path))
@@ -927,6 +1147,8 @@ class LakehouseManager:
         schema_overwrite: bool = False,
     ) -> bool:
 
+        if not self._undeclared_table_allowed(table_name):
+            return False
         table_path = self.tables.get(table_name)
         if not table_path:
             table_path = self.base_path / table_name
@@ -938,7 +1160,8 @@ class LakehouseManager:
             self.tables[table_name] = table_path
             logger.info(f"Dynamically created new table path for: {table_name}")
 
-        undomainable = self._enrich_records(table_name, data)
+        partition_by = self._effective_partitions(table_name, table_path)
+        undomainable = self._enrich_records(table_name, data, partition_by)
         if undomainable:
             self._quarantine_undomainable(table_name, undomainable)
             if not data:
@@ -986,8 +1209,6 @@ class LakehouseManager:
                         DELTA_SCHEMA_EVOLUTIONS.labels(table=table_name).inc(len(added))
                     logger.warning(f"[SCHEMA EVOLUTION] {table_name}: adding columns {added}")
             self.schema_cache[table_name] = table.schema  # informational only
-
-            partition_by = _partition_columns(table_name)
 
             writer_props = WriterProperties(compression="ZSTD")
 
@@ -1945,26 +2166,29 @@ class LakehouseManager:
 
         merge_keys = [merge_key] if isinstance(merge_key, str) else list(merge_key)
         rows = _dedupe_by_key(updates_data, merge_keys)
-        # Same partition key / metadata as write(), so merged and appended rows
-        # look alike (#311: stage2_page_analysis is now upserted by url_hash).
-        undomainable = self._enrich_records(table_name, rows)
-        if undomainable:
-            self._quarantine_undomainable(table_name, undomainable)
-            if not rows:
-                return 0
+        if not self._undeclared_table_allowed(table_name):
+            return -1
         try:
             table_path = self.get_table_path(table_name)
         except ValueError:  # unregistered table: create it, as write() does
             table_path = self.base_path / table_name
             table_path.mkdir(parents=True, exist_ok=True)
             self.tables[table_name] = table_path
+        partitions = self._effective_partitions(table_name, table_path)
+        # Same partition keys / metadata as write(), so merged and appended rows
+        # look alike (#311: stage2_page_analysis is now upserted by url_hash).
+        undomainable = self._enrich_records(table_name, rows, partitions)
+        if undomainable:
+            self._quarantine_undomainable(table_name, undomainable)
+            if not rows:
+                return 0
 
         failure: Exception | None = None
         for attempt in range(1, MERGE_MAX_ATTEMPTS + 1):
             try:
                 with self._table_lock(table_name):
                     if not (table_path / "_delta_log").exists() and self._create_from_rows(
-                        table_path, rows, _partition_columns(table_name)
+                        table_path, rows, partitions
                     ):
                         logger.info(f"[merge_into] {table_name}: created with {len(rows)} rows")
                         return len(rows)
