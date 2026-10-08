@@ -612,7 +612,57 @@
         .env-badge.env-staging { background: #ca8a04; color: #111; }
         .env-badge.env-prod { background: #b91c1c; color: #fff; font-weight: 700; }
         .milestone-badge { display: inline-block; margin-left: 0.35rem; padding: 0.1rem 0.4rem; border-radius: 0.25rem; background: #14532d; color: #bbf7d0; font-size: 0.75rem; }
-        </style>
+    
+        /* #982: Windows High Contrast / forced-colors. Shadows and author
+           colours are dropped in this mode, so structure and state must come
+           from borders and system colours (which forced colours keep). */
+        @media (forced-colors: active) {
+            .card,
+            .health-item,
+            .topbar {
+                border: 1px solid CanvasText;
+            }
+            .stage-card {
+                border: 2px solid CanvasText;
+            }
+            .stage-card.active {
+                border: 4px double Highlight;
+            }
+            /* inactive tabs: no underline (a transparent border would be forced visible) */
+            .tab-button {
+                border-bottom: 3px solid Canvas;
+            }
+            .tab-button.active {
+                forced-color-adjust: none;
+                background: Highlight;
+                color: HighlightText;
+                border-bottom-color: HighlightText;
+            }
+            .tab-button:focus-visible,
+            .btn:focus-visible,
+            .skip-to-main:focus {
+                outline: 3px solid Highlight;
+                outline-offset: 2px;
+            }
+            .card-badge,
+            .status-indicator {
+                border: 1px solid CanvasText;
+            }
+            .status-dot {
+                forced-color-adjust: none;
+                background: CanvasText;
+            }
+            .health-item.unhealthy {
+                border: 3px dashed CanvasText;  /* state without colour */
+            }
+            /* Chart.js paints fixed colours on canvas; keep its light backdrop
+               so axis text and series stay legible under a dark system theme. */
+            .chart-container canvas {
+                forced-color-adjust: none;
+                background: #ffffff;
+            }
+        }
+    </style>
 </head>
 <body>
     <noscript>

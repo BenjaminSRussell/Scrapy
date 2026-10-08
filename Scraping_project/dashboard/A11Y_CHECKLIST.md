@@ -12,3 +12,4 @@ Use for every dashboard PR:
 - [ ] No information conveyed by color alone
 - [ ] Respects `prefers-reduced-motion`
 - [ ] Works at 360px width without horizontal page scroll
+- [x] Forced-colors / Windows High Contrast: cards, tabs, active stage and status stay distinguishable via borders and system colours (`@media (forced-colors: active)`, #982)
