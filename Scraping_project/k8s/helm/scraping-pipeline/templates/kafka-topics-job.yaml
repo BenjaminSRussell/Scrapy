@@ -1,0 +1,40 @@
+{{- if and .Values.kafka.enabled .Values.kafka.topicsJob.enabled }}
+# Creates the topics config.yml declares (kafka.topics + kafka.topic_settings)
+# that do not exist yet, e.g. validation_failures (#410). Existing topics are
+# left alone. Retries until the broker is reachable.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "scraping-pipeline.fullname" . }}-kafka-topics
+  labels:
+    {{- include "scraping-pipeline.labels" . | nindent 4 }}
+    app.kubernetes.io/component: kafka-topics
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "0"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: {{ .Values.kafka.topicsJob.backoffLimit }}
+  template:
+    metadata:
+      labels:
+        {{- include "scraping-pipeline.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: kafka-topics
+    spec:
+      restartPolicy: OnFailure
+      containers:
+      - name: kafka-topics
+        image: "{{ .Values.scrapyApp.image.repository }}:{{ .Values.scrapyApp.image.tag }}"
+        imagePullPolicy: {{ .Values.scrapyApp.image.pullPolicy }}
+        command: ["python", "-m", "src.utils.kafka_topics"]
+        envFrom:
+        - configMapRef:
+            name: {{ include "scraping-pipeline.fullname" . }}-app-env
+        resources:
+          requests:
+            cpu: 50m
+            memory: 128Mi
+          limits:
+            cpu: 250m
+            memory: 256Mi
+{{- end }}
