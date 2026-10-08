@@ -118,6 +118,9 @@ class Stage3Worker:
                     worker_count=self.max_concurrent,
                 )
 
+            if _drain_requested(min(i + self.batch_size, len(pending)), len(pending)):
+                break
+
         logger.info("Stage 3 Worker completed all batches")
         return written
 
@@ -220,24 +223,28 @@ class Stage3Worker:
 
         return facts if facts else [s.strip() for s in sentences[:3] if s.strip()]
 
-async def run_stage3_worker():
+def _drain_requested(done: int, total: int) -> bool:
+    """SIGTERM/SIGINT seen: stop after the batch just written (#325)."""
+    from src.utils.graceful_shutdown import shutdown_requested
+
+    if not shutdown_requested():
+        return False
+    logger.info(f"[STAGE3] Shutdown requested: stopping after {done}/{total}; the rest is picked up next run")
+    return True
+
+
+async def run_stage3_worker(shutdown=None):
+    from src.utils.graceful_shutdown import run_drain_loop
+
     logger.info("Stage 3 Worker starting in continuous mode...")
 
     max_concurrent, batch_size = stage_worker_settings(3, 20, 50)
     logger.info("Stage 3 Worker concurrency=%d batch_size=%d", max_concurrent, batch_size)
 
-    while True:
-        try:
-            worker = Stage3Worker(max_concurrent=max_concurrent, batch_size=batch_size)
-            await worker.run()
-            logger.info("Waiting 30 seconds before next check...")
-            await asyncio.sleep(30)
-        except KeyboardInterrupt:
-            logger.info("Stage 3 Worker shutting down...")
-            break
-        except Exception as e:
-            logger.error(f"Error in Stage 3 Worker loop: {e}")
-            await asyncio.sleep(10)
+    async def run_once():
+        await Stage3Worker(max_concurrent=max_concurrent, batch_size=batch_size).run()
+
+    await run_drain_loop("stage3", run_once, idle_seconds=30, error_seconds=10, shutdown=shutdown)
 
 if __name__ == "__main__":
     asyncio.run(run_stage3_worker())

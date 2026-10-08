@@ -164,6 +164,8 @@ class Stage4Worker:
         skipped: dict[str, str] = {}
         quarantined: dict[str, str] = {}
         for i, (doc, from_queue) in enumerate(work):
+            if _drain_requested(i, len(work)):
+                break  # #325: results so far are still saved and acked below
             url = doc.get("url", "")
             logger.info(f"[STAGE4] Processing {i+1}/{len(work)}: {url[:80]}")
             try:
@@ -286,23 +288,25 @@ class Stage4Worker:
             "processed_at": datetime.now().isoformat(),
         }, None
 
-async def run_stage4_worker():
+def _drain_requested(done: int, total: int) -> bool:
+    """SIGTERM/SIGINT seen: stop before the next document (#325)."""
+    from src.utils.graceful_shutdown import shutdown_requested
+
+    if not shutdown_requested():
+        return False
+    logger.info(f"[STAGE4] Shutdown requested: stopping after {done}/{total}; the rest stays pending")
+    return True
+
+
+async def run_stage4_worker(shutdown=None):
+    from src.utils.graceful_shutdown import run_drain_loop
+
     logger.info("[STAGE4] Worker starting in continuous mode...")
 
-    while True:
-        try:
-            worker = Stage4Worker()
-            await worker.run()
+    async def run_once():
+        await Stage4Worker().run()
 
-            logger.info("[STAGE4] Waiting 60 seconds before next check...")
-            await asyncio.sleep(60)
-
-        except KeyboardInterrupt:
-            logger.info("[STAGE4] Worker shutting down...")
-            break
-        except Exception as e:
-            logger.error(f"[STAGE4] Error in worker loop: {e}")
-            await asyncio.sleep(30)
+    await run_drain_loop("stage4", run_once, idle_seconds=60, error_seconds=30, shutdown=shutdown)
 
 if __name__ == "__main__":
     logging.basicConfig(

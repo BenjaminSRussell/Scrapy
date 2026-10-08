@@ -494,6 +494,9 @@ class Stage2Worker:
                     worker_count=self.max_concurrent,
                 )
 
+            if _drain_requested("stage2", min(i + self.batch_size, len(pending)), len(pending)):
+                break
+
         logger.info("[STAGE2] Worker completed all batches")
         return counts
 
@@ -1005,24 +1008,29 @@ class Stage2Worker:
             http_status_code=http_status,
         )
 
-async def run_stage2_worker():
+def _drain_requested(stage: str, done: int, total: int) -> bool:
+    """SIGTERM/SIGINT seen: stop after the batch just flushed (#185, #325)."""
+    from src.utils.graceful_shutdown import shutdown_requested
+
+    if not shutdown_requested():
+        return False
+    logger.info(f"[{stage.upper()}] Shutdown requested: stopping after {done}/{total}; the rest stays pending")
+    return True
+
+
+async def run_stage2_worker(shutdown=None):
+    from src.utils.graceful_shutdown import run_drain_loop
+
     logger.info("Stage 2 Worker starting in continuous mode...")
 
     max_concurrent, batch_size = stage_worker_settings(2, 50, 100)
     logger.info("Stage 2 Worker concurrency=%d batch_size=%d", max_concurrent, batch_size)
 
-    while True:
-        try:
-            worker = Stage2Worker(max_concurrent=max_concurrent, batch_size=batch_size)
-            await worker.run()
-            logger.info("Waiting 30 seconds before next check...")
-            await asyncio.sleep(30)
-        except KeyboardInterrupt:
-            logger.info("Stage 2 Worker shutting down...")
-            break
-        except Exception as e:
-            logger.error(f"Error in Stage 2 Worker loop: {e}")
-            await asyncio.sleep(10)
+    async def run_once():
+        await Stage2Worker(max_concurrent=max_concurrent, batch_size=batch_size).run()
+
+    # SIGTERM: no new batches; the batch in flight is written and acked; exit 0.
+    await run_drain_loop("stage2", run_once, idle_seconds=30, error_seconds=10, shutdown=shutdown)
 
 if __name__ == "__main__":
     asyncio.run(run_stage2_worker())
