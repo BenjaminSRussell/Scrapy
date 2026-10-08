@@ -401,7 +401,9 @@ class KafkaPipeline:
         (data/dlq by default, the same place Stage 2 dead-letters to).
         Disable with ``KAFKA_DLQ_ENABLED=0``.
         """
-        if os.getenv("KAFKA_DLQ_ENABLED", "1").strip().lower() in ("0", "false", "no", "off"):
+        from src.utils.feature_flags import get_bool
+
+        if not get_bool("KAFKA_DLQ_ENABLED", True):  # #304
             return
         try:
             dlq = getattr(self, "_dlq", None)

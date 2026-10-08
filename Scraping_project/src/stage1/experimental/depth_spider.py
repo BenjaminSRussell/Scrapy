@@ -13,10 +13,11 @@ from src.utils.redis import get_redis
 from src.stage1.processors.url_processor import should_follow_url
 from src.lakehouse import SeedManager
 from src.stage1.base_spider import BaseSpider
+from src.stage1.experimental.gate import ExperimentalSpiderMixin
 
 logger = logging.getLogger(__name__)
 
-class DepthSpider(BaseSpider):
+class DepthSpider(ExperimentalSpiderMixin, BaseSpider):
 
     name = "depth"
 
