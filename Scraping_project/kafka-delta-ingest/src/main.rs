@@ -715,7 +715,9 @@ fn redis_url_from_env(get: impl Fn(&str) -> Option<String>) -> String {
 fn percent_encode_userinfo(s: &str) -> String {
     s.bytes()
         .map(|b| match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => (b as char).to_string(),
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {
+                (b as char).to_string()
+            }
             _ => format!("%{b:02X}"),
         })
         .collect()
@@ -847,7 +849,10 @@ mod tests {
 
     #[test]
     fn redis_url_used_when_host_unset_or_blank() {
-        let url = redis_url_from_env(env_of(&[("REDIS_HOST", "  "), ("REDIS_URL", "redis://r:1/2")]));
+        let url = redis_url_from_env(env_of(&[
+            ("REDIS_HOST", "  "),
+            ("REDIS_URL", "redis://r:1/2"),
+        ]));
         assert_eq!(url, "redis://r:1/2");
     }
 }
