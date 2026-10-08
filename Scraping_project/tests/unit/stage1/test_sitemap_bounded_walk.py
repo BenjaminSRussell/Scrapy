@@ -190,6 +190,6 @@ def test_discover_sitemaps_sync_end_to_end_respects_the_cap(monkeypatch):
     monkeypatch.setattr(sp.httpx, "AsyncClient",
                         lambda **kw: real(transport=httpx.MockTransport(site.handler), **kw))
     monkeypatch.setattr(sp, "sitemap_limits", lambda config=None: {**sp.DEFAULT_SITEMAP_LIMITS, "max_urls": 50})
-    urls = discover_sitemaps_sync(BASE, timeout=5)
+    urls = discover_sitemaps_sync(BASE, timeout=5, watermarks=None)
     assert len(urls) == 50
     assert set(urls) >= {f"{BASE}/a{i}" for i in range(40)}
