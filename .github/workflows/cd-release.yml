@@ -15,6 +15,7 @@ on:
       - 'Scraping_project/docker/**'
       - 'Scraping_project/kafka-delta-ingest/**'
       - 'Scraping_project/requirements.txt'
+      - 'Scraping_project/.trivyignore'
       - '.github/workflows/cd-release.yml'
   workflow_dispatch:
 
@@ -95,6 +96,23 @@ jobs:
 
       - name: Smoke test ${{ matrix.image }} image
         run: docker run --rm "$LOCAL_TAG" ${{ matrix.smoke }}
+
+      # #499: CRITICAL vulnerabilities with an available fix fail the build (PRs
+      # and releases), before anything is pushed. Unfixed CVEs cannot be acted on
+      # here and are reported by the table but do not fail. Suppressions live in
+      # Scraping_project/.trivyignore (reviewed list, see SECURITY section of
+      # Scraping_project/trivy-reports/README.md). Pinned to a commit SHA, not a
+      # mutable tag (trivy-action tags were force-pushed in the 2026 incident).
+      - name: Trivy scan ${{ matrix.image }} image (fail on fixable CRITICAL)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
+        with:
+          image-ref: ${{ env.LOCAL_TAG }}
+          format: table
+          severity: CRITICAL
+          ignore-unfixed: true
+          vuln-type: os,library
+          exit-code: '1'
+          trivyignores: Scraping_project/.trivyignore
 
       - name: Push ${{ matrix.image }} image
         if: env.PUSH == 'true'
