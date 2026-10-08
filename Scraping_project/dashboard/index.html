@@ -6,7 +6,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Pipeline Control Center - UConn Scraping</title>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.js" integrity="sha384-FcQlsUOd0TJjROrBxhJdUhXTUgNJQxTMcxZe6nHbaEfFL1zjQ+bq/uRoBQxb0KMo" crossorigin="anonymous"></script>
     <style>
         * {
             margin: 0;
@@ -737,7 +737,7 @@
             <strong>JavaScript required.</strong>
             The Pipeline Control Center is a client-side dashboard and cannot run with JavaScript disabled.
             Start the local server with <code>python Scraping_project/dashboard/serve.py</code> (see README),
-            then open this page with JS enabled. Metrics may also be available at <code>:9090/metrics</code>.
+            then open this page with JS enabled. Raw metrics are proxied at <code>/api/metrics</code>.
         </div>
     </noscript>
     <a class="skip-to-main" href="#main">Skip to main content</a>
@@ -1156,6 +1156,18 @@
                     </div>
                 </div>
 
+                <!-- #401: live depths from /api/queues (serve.py reads Redis server-side). -->
+                <div class="card" style="margin-bottom: 2rem;" id="queue-depths-card">
+                    <div class="card-header">
+                        <span class="card-title" id="queue-depths-title">Redis Queue Depths</span>
+                    </div>
+                    <p class="metric-label" id="queue-depths-status" role="status" aria-live="polite">Waiting for first sample&hellip;</p>
+                    <table class="data-fallback-table" aria-labelledby="queue-depths-title">
+                        <thead><tr><th scope="col">Key</th><th scope="col">Type</th><th scope="col">Depth</th></tr></thead>
+                        <tbody id="queue-depths"></tbody>
+                    </table>
+                </div>
+
                 <div class="grid grid-3">
                     <div class="card">
                         <div class="card-header">
@@ -1241,14 +1253,7 @@
         </div>
     </div>
 
-    <script>
-        window.__CC_FEATURES__ = window.__CC_FEATURES__ || {
-            jobs: false,
-            dark: true,
-            sw: false,
-            env: (window.__CC_ENV__ || 'local')
-        };
-        </script>
+    <script src="features.js"></script>
     <script src="format-utils.js"></script>
     <script src="version.js"></script>
     <script src="app.js"></script>
