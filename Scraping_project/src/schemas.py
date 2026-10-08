@@ -3,6 +3,9 @@ from enum import Enum
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from src.core.ingest_contract import REQUIRED_INGEST_FIELDS
+
+
 class CategoryType(str, Enum):
 
     TUITION_FEES = "tuition_fees"
@@ -22,17 +25,31 @@ class MediaType(str, Enum):
     AUDIO = "audio"
     VIDEO = "video"
 
+# Bronze contract (#227, #302). The fields every record must have to be
+# ingested. Single source of truth: src/core/ingest_contract.py
+# REQUIRED_INGEST_FIELDS, which mirrors the Rust constant of the same name in
+# kafka-delta-ingest/src/main.rs (tests/unit/test_bronze_schema_contract.py and
+# test_ingest_field_contract.py fail if they diverge). Everything else is
+# bronze-optional: a page without an extractable title or publication date is
+# still crawl data. Silver/analytics consumers that need publication_date must
+# filter or backfill it there.
+BRONZE_REQUIRED_FIELDS: tuple[str, ...] = REQUIRED_INGEST_FIELDS
+
+
 class BaseRecordSchema(BaseModel):
+    """Bronze record. Required fields == BRONZE_REQUIRED_FIELDS."""
 
     url: str = Field(..., min_length=1, description="Source webpage URL")
-    source_url: str = Field(..., min_length=1, description="Original webpage URL")
+    source_url: str | None = Field(None, min_length=1, description="Original webpage URL (defaults to url)")
     media_url: str | None = Field(None, description="PDF/Audio/Video file link")
     media_type: MediaType = Field(default=MediaType.TEXT, description="Type of media")
 
-    title: str = Field(..., min_length=1, max_length=500, description="Page/document title")
+    title: str | None = Field(None, min_length=1, max_length=500, description="Page/document title")
     content: str | None = Field(None, description="Extracted text content")
 
-    publication_date: datetime = Field(..., description="ISO 8601 compliant publication date")
+    # Optional on bronze (#302): many pages have no extractable date. Ordering
+    # falls back to scraped_at_utc (the Delta `date` partition is derived from it).
+    publication_date: datetime | None = Field(None, description="ISO 8601 compliant publication date")
 
     tuition_cost: float | None = Field(None, ge=0.0, description="Annual tuition cost in USD")
     housing_cost: float | None = Field(None, ge=0.0, description="Annual housing cost in USD")
@@ -46,8 +63,8 @@ class BaseRecordSchema(BaseModel):
 
     validation_status: bool = Field(default=False, description="Confirms successful validation")
 
-    scraped_at_utc: datetime | None = Field(None, description="Scraping timestamp UTC")
-    spider_name: str | None = Field(None, description="Spider name")
+    scraped_at_utc: datetime = Field(..., description="Scraping timestamp UTC")
+    spider_name: str = Field(..., min_length=1, description="Spider name")
     pipeline_version: str | None = Field(None, description="Pipeline version")
 
     recency_score: float | None = Field(None, ge=0.0, le=1.0, description="Temporal relevance score [0.0, 1.0]")
@@ -81,6 +98,8 @@ class BaseRecordSchema(BaseModel):
     @field_validator("publication_date", mode="before")
     @classmethod
     def parse_publication_date(cls, v):
+        if v is None or v == "":
+            return None
         if isinstance(v, datetime):
             return v
         if isinstance(v, str):
@@ -92,8 +111,6 @@ class BaseRecordSchema(BaseModel):
     @field_validator("scraped_at_utc", mode="before")
     @classmethod
     def parse_scraped_at(cls, v):
-        if v is None:
-            return None
         if isinstance(v, datetime):
             return v
         if isinstance(v, str):
@@ -101,6 +118,12 @@ class BaseRecordSchema(BaseModel):
                 v = v[:-1] + "+00:00"
             return datetime.fromisoformat(v)
         raise ValueError(f"Invalid scraped_at_utc format: {v}")
+
+    @model_validator(mode="after")
+    def default_source_url(self):
+        if self.source_url is None:
+            self.source_url = self.url
+        return self
 
     @model_validator(mode="after")
     def validate_costs(self):
