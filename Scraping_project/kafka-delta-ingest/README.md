@@ -128,11 +128,13 @@ kafka-delta-ingest ingest scraped-items /app/data/delta_lake/scraped_items \
 | `--allowed-latency` | Max seconds before forcing batch write | 300 |
 | `--max-messages-per-batch` | Max messages per batch | 1000 |
 | `--max-write-attempts` | Delta write attempts per batch (backoff 1s, 2s, 4s … max 30s) before exiting without committing | 5 |
+| `--dlq-topic` | Dead-letter topic for rejected messages (#544) | scraped-items-dlq |
 
 ### Delivery semantics: at-least-once (#282)
 
 - **Manual offset commits.** Auto-commit is **off**. The ingestor records the next offset per partition for every consumed message (including invalid messages it deliberately drops). It commits those offsets synchronously **only after** the batch has been committed to Delta (`flush_and_commit`).
 - **Failed writes are retried with backoff.** After `--max-write-attempts` failures the process exits non-zero **without committing**. On restart (or rebalance) the uncommitted messages are consumed again, so a failed lake write can never skip messages.
+- **Rejected messages go to the dead-letter topic, never dropped (#544).** Each rejection (`empty_payload`, `parse_failed`, `schema_validation_failed`, `missing_required_field`) is produced byte-for-byte to `--dlq-topic` with acks=all and idempotence, keeping its key. Headers: `dlq.reason`, `dlq.error` (≤4000 bytes), `dlq.source.topic`, `dlq.source.partition`, `dlq.source.offset`, `dlq.rejected_at_ms`, `dlq.producer`. If the DLQ produce still fails after `--max-write-attempts` tries, the process exits **without committing**, the same as a failed Delta write. Replay after a schema fix by re-producing DLQ payloads to `dlq.source.topic`. StatsD: `messages.dead_lettered`, `errors.<reason>`, `errors.dlq_produce_failed`.
 - **Offset commit failure after a successful Delta write** is logged (`errors.offset_commit_failed`) and retried with the next batch.
 - **Duplicates, not loss.** A crash between the Delta commit and the offset commit re-delivers that batch. Downstream readers should dedupe on `url` + `scraped_at_utc` if they need exactly-once views.
 
