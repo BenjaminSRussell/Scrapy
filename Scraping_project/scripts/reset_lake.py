@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+"""Wipe the Delta lake and re-seed seed_urls from data/raw/uconn_urls.csv.
+
+Destructive: guarded by src/utils/destructive_guard.py (#522, #573, #576).
+"""
 
 import argparse
 import hashlib
@@ -13,6 +17,14 @@ import pandas as pd
 
 from src.core.constants import DELTA_LAKE
 from src.lakehouse.lakehouse_manager import get_delta_manager
+from src.utils.destructive_guard import (
+    add_backup_argument,
+    add_guard_arguments,
+    authorize,
+    guard_flags,
+    guarded_lake_wipe,
+    lake_targets,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -81,17 +93,22 @@ def seed_lake():
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Reset Delta Lake and re-seed from CSV",
+        description="Reset Delta Lake and re-seed from CSV (dry-run unless --confirm; see scripts/README.md)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python scripts/reset_lake.py
-  python scripts/reset_lake.py --force
-  python scripts/reset_lake.py --seed-only
+  python scripts/reset_lake.py                       # dry-run: list tables + row estimates, exit 2
+  python scripts/reset_lake.py --confirm             # typed confirmation, then wipe + re-seed
+  python scripts/reset_lake.py --confirm --backup-dir /backups
+  ALLOW_LAKE_RESET=1 python scripts/reset_lake.py --confirm --yes   # automation
+  python scripts/reset_lake.py --seed-only --confirm # overwrite seed_urls only
+ENV=production additionally needs --i-know-what-im-doing, ALLOW_LAKE_RESET=1 and typing 'production'.
         """,
     )
 
-    parser.add_argument("--force", action="store_true", help="Skip confirmation prompt")
+    parser.add_argument("--force", action="store_true", help="Deprecated: same as --confirm --yes")
+    add_guard_arguments(parser)
+    add_backup_argument(parser)
 
     parser.add_argument(
         "--seed-only",
@@ -105,20 +122,14 @@ Examples:
     logger.info("Delta Lake Reset Script")
     logger.info("=" * 70)
 
-    if not args.force:
-        if args.seed_only:
-            logger.warning("⚠️  This will OVERWRITE the seed_urls table")
-        else:
-            logger.warning("⚠️  This will DELETE ALL Delta Lake tables and re-seed!")
-
-        confirmation = input("\nType 'yes' to continue: ")
-        if confirmation.lower() != "yes":
-            logger.info("❌ Operation cancelled")
-            sys.exit(0)
-
     try:
-        if not args.seed_only:
-            flush_lake()
+        if args.seed_only:
+            targets = [t for t in lake_targets(DELTA_LAKE) if Path(t["table"]).name == "seed_urls"]
+            decision = authorize("overwrite the seed_urls table", targets=targets, **guard_flags(args))
+        else:
+            decision = guarded_lake_wipe(DELTA_LAKE, args, action="wipe the Delta lake and re-seed")
+        if not decision.proceed:
+            sys.exit(decision.exit_code)
 
         seed_lake()
 
