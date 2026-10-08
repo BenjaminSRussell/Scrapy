@@ -53,6 +53,7 @@ spec:
       - scrapy
       - stage2
       - stage3
+      - stage4  # #504
       - delta-ingestor
       - metrics-exporter
       - grafana
@@ -186,6 +187,7 @@ spec:
           - scrapy
           - stage2
           - stage3
+          - stage4  # #504
           - metrics-exporter
           - redis-exporter
     ports:
@@ -214,6 +216,7 @@ spec:
           - scrapy
           - stage2
           - stage3
+          - stage4  # #504
           - metrics-exporter
           - grafana
     ports:
@@ -244,6 +247,7 @@ spec:
           - scrapy
           - stage2
           - stage3
+          - stage4  # #504
           - kafka-topics
     ports:
     - protocol: TCP

@@ -53,10 +53,12 @@ LOCAL_SERVICE_LABELS: dict[str, str] = {
 LOCAL_READINESS_CANDIDATES = ("postgres", "redis")
 # Service used for one-off `run` commands (Delta reset).
 LOCAL_APP_CANDIDATES = ("scraper", "scrapy-app")
-# The Helm chart deploys Stage 1-3 only; there is no Stage 4 workload (#492).
+# Stage 4 (PDF/OCR) is in the chart but off by default (#504): it needs the
+# PDF/OCR image. --stage stage4 deploys it alone; --stage pipeline needs
+# --set stage4Worker.enabled=true to include it.
 K8S_STAGE4_NOTE = (
-    "The Helm chart has no Stage 4 (PDF/OCR) workload; run Stage 4 with Compose "
-    "(stage4-worker) or deploy it separately."
+    "Stage 4 (PDF/OCR, stage4Worker) is off by default in the chart: use --stage stage4, "
+    "or add --set stage4Worker.enabled=true to --stage pipeline."
 )
 
 DEFAULT_HELM_CHART = "k8s/helm/scraping-pipeline"
@@ -64,12 +66,15 @@ DEFAULT_HELM_VALUES = os.path.join(DEFAULT_HELM_CHART, "values.yaml")
 PIPELINE_RELEASE = "scraping-pipeline"
 PIPELINE_NAMESPACE = "scraping"
 K8S_STAGE_DEFAULTS = {
+    # Every stage sets all four workload toggles explicitly, so a stage release
+    # never depends on chart defaults (#504).
     "stage1": {
         "release_suffix": "stage1",
         "namespace_suffix": "stage1",
         "set_overrides": (
             "stage2Worker.enabled=false",
             "stage3Worker.enabled=false",
+            "stage4Worker.enabled=false",
         ),
     },
     "stage2": {
@@ -78,6 +83,7 @@ K8S_STAGE_DEFAULTS = {
         "set_overrides": (
             "scrapyApp.enabled=false",
             "stage3Worker.enabled=false",
+            "stage4Worker.enabled=false",
         ),
     },
     "stage3": {
@@ -86,9 +92,21 @@ K8S_STAGE_DEFAULTS = {
         "set_overrides": (
             "scrapyApp.enabled=false",
             "stage2Worker.enabled=false",
+            "stage4Worker.enabled=false",
+        ),
+    },
+    "stage4": {
+        "release_suffix": "stage4",
+        "namespace_suffix": "stage4",
+        "set_overrides": (
+            "scrapyApp.enabled=false",
+            "stage2Worker.enabled=false",
+            "stage3Worker.enabled=false",
+            "stage4Worker.enabled=true",
         ),
     },
 }
+K8S_ALL_STAGES = ("stage1", "stage2", "stage3", "stage4")
 
 
 def compose_services(compose_file: Path | str = COMPOSE_FILE) -> list[str]:
@@ -145,7 +163,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--stage",
-        choices=("pipeline", "stage1", "stage2", "stage3", "all-stages"),
+        choices=("pipeline", "stage1", "stage2", "stage3", "stage4", "all-stages"),
         default="pipeline",
         help=(
             "Kubernetes only (--env k8s): which portion of the pipeline to deploy. "
@@ -543,7 +561,7 @@ def start_k8s(args: argparse.Namespace) -> None:
         print(f"{'=' * 70}\n")
         return
 
-    stages = ["stage1", "stage2", "stage3"] if args.stage == "all-stages" else [args.stage]
+    stages = list(K8S_ALL_STAGES) if args.stage == "all-stages" else [args.stage]
     for stage in stages:
         defaults = K8S_STAGE_DEFAULTS[stage]
         release = (

@@ -167,3 +167,89 @@ spec:
         persistentVolumeClaim:
           claimName: {{ include "scraping-pipeline.fullname" . }}-delta-lake
 {{- end }}
+
+{{- if .Values.stage4Worker.enabled }}
+{{- /* Stage 4 large-document / OCR worker (#504); off by default in values.yaml. */}}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "scraping-pipeline.fullname" . }}-stage4
+  labels:
+    {{- include "scraping-pipeline.labels" . | nindent 4 }}
+    app.kubernetes.io/component: stage4
+    app: stage4-worker
+spec:
+  replicas: {{ .Values.stage4Worker.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "scraping-pipeline.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: stage4
+      app: stage4-worker
+  template:
+    metadata:
+      annotations:
+        cluster-autoscaler.kubernetes.io/safe-to-evict: "true"
+      labels:
+        {{- include "scraping-pipeline.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: stage4
+        app: stage4-worker
+    spec:
+      terminationGracePeriodSeconds: {{ .Values.stage4Worker.terminationGracePeriodSeconds }}
+      containers:
+      - name: stage4-worker
+        image: "{{ .Values.stage4Worker.image.repository }}:{{ .Values.stage4Worker.image.tag }}"
+        imagePullPolicy: {{ .Values.stage4Worker.image.pullPolicy }}
+        command: ["python", "-u", "src/stage4/stage4_worker.py"]
+        envFrom:
+        - configMapRef:
+            name: {{ include "scraping-pipeline.fullname" . }}-app-env
+        - secretRef:
+            name: {{ .Values.postgresql.auth.existingSecret }}
+        {{- if .Values.redis.auth.enabled }}
+        - secretRef:  # REDIS_PASSWORD for Redis AUTH (#184)
+            name: {{ .Values.redis.auth.existingSecret }}
+        {{- end }}
+        env:
+        - name: QUEUE_NAME
+          value: {{ .Values.stage4Worker.queueName | quote }}
+        livenessProbe:
+          exec:
+            command:
+            # stdlib-only probe: the slim image lacks procps (#181)
+            - python
+            - -m
+            - src.utils.probe
+            - alive
+            - stage4_worker.py
+          initialDelaySeconds: 20
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - python -c "import os,socket; socket.create_connection((os.environ.get('POSTGRES_HOST','localhost'), int(os.environ.get('POSTGRES_PORT','5432'))), 5)"
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        lifecycle:
+          preStop:
+            exec:
+              command:
+              - /bin/sh
+              - -c
+              - python -c "import sys; sys.path.insert(0, '/app'); from drain_lake import LakeDrainer; LakeDrainer().drain_transient_queues()" || true; sleep 10
+        resources:
+          {{- toYaml .Values.stage4Worker.resources | nindent 10 }}
+        volumeMounts:
+        - name: delta-data
+          mountPath: /app/data
+      volumes:
+      - name: delta-data
+        persistentVolumeClaim:
+          claimName: {{ include "scraping-pipeline.fullname" . }}-delta-lake
+{{- end }}
