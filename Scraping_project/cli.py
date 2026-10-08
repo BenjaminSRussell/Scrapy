@@ -511,6 +511,50 @@ def cmd_queue_gc(args):
     return 0
 
 
+def cmd_lake_vacuum(args):
+    """Preview (default) or apply Delta vacuum with per-table retention tiers (#602, #632)."""
+    from src.lakehouse.lakehouse_manager import LakehouseManager
+
+    manager = LakehouseManager(start_workers=False)
+    tables = [args.table] if args.table else list(manager.tables)
+    total_files = total_bytes = 0
+    for table in tables:
+        hours = args.retention_hours if args.retention_hours is not None else manager.retention_hours_for(table)
+        preview = manager.vacuum_preview(table, hours)
+        total_files += len(preview["files"])
+        total_bytes += preview["bytes"]
+        print(f"{table}: {len(preview['files'])} files, {preview['bytes']} bytes older than {hours}h")
+        if args.verbose:
+            for f in preview["files"]:
+                print(f"    {f}")
+        if args.apply and preview["files"]:
+            manager._vacuum_table(table, hours, enforce_retention_duration=hours >= 168)
+    verb = "Reclaimed" if args.apply else "Would reclaim (preview; pass --apply to delete)"
+    print(f"{verb}: {total_files} files, {total_bytes} bytes")
+
+
+def cmd_offsite(args):
+    """Review offsite candidates: list / accept / reject / promote / gc (#878)."""
+    from src.lakehouse.lakehouse_manager import LakehouseManager
+    from src.lakehouse.offsite_review import OffsiteReview
+
+    review = OffsiteReview(LakehouseManager(start_workers=False))
+    if args.action == "list":
+        for e in review.summary():
+            if args.status and e["status"] != args.status:
+                continue
+            print(f"{e['status']:9} {e['sightings']:4}x  {e['external_url']}  (last seen {e['last_seen']})")
+        print(review.counts())
+    elif args.action in ("accept", "reject"):
+        status = "accepted" if args.action == "accept" else "rejected"
+        print(f"{review.set_status(args.urls, status)} rows marked {status}")
+    elif args.action == "promote":
+        promoted = review.promote_accepted()
+        print(f"Promoted {len(promoted)} URLs to seeds")
+    elif args.action == "gc":
+        print(review.gc(dry_run=args.dry_run))
+
+
 def cmd_seeds(args):
     """List/add/disable seed URLs with append-only audit log."""
     from src.common.seed_ops import SeedRegistry
@@ -674,6 +718,22 @@ def main():
         "--no-archive", action="store_true", help="Do not copy rows to <table>_history first"
     )
     queue_gc_parser.set_defaults(func=cmd_queue_gc)
+
+    vacuum_parser = subparsers.add_parser(
+        "lake-vacuum", help="Preview (default) or apply Delta vacuum with retention tiers"
+    )
+    vacuum_parser.add_argument("--apply", action="store_true", help="Actually delete files")
+    vacuum_parser.add_argument("--table", default=None, help="Only this table")
+    vacuum_parser.add_argument("--retention-hours", type=int, default=None, help="Override the tier")
+    vacuum_parser.add_argument("--verbose", action="store_true", help="List candidate files")
+    vacuum_parser.set_defaults(func=cmd_lake_vacuum)
+
+    offsite_parser = subparsers.add_parser("offsite", help="Review offsite candidates (#878)")
+    offsite_parser.add_argument("action", choices=["list", "accept", "reject", "promote", "gc"])
+    offsite_parser.add_argument("urls", nargs="*", help="URLs for accept/reject")
+    offsite_parser.add_argument("--status", choices=["pending", "accepted", "rejected"], default=None)
+    offsite_parser.add_argument("--dry-run", action="store_true", help="gc: only count")
+    offsite_parser.set_defaults(func=cmd_offsite)
 
     # seeds — operator seed registry + audit (#1100)
     ks_parser = subparsers.add_parser("killswitch", help="Global crawl kill switch and budgets (#456)")

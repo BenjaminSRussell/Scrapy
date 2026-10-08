@@ -313,6 +313,18 @@ delta_lake:
   queue_retention_hours: 168
   queue_gc_interval_minutes: 60  # idle maintenance worker runs GC this often (0 = off)
   queue_gc_archive: true
+  # #632: vacuum retention tiers (hours). Error/quarantine tables keep 30 days of
+  # history for forensics; everything else uses default. Below 168h the delta-rs
+  # retention safety check is disabled for that table, so only lower it on purpose.
+  table_retention_hours:
+    default: 168
+    stage1_errors: 720
+    stage2_errors: 720
+  dlq_retention_days: 30  # file DLQ entries removed by the idle maintenance worker (0 = keep)
+  # #878: offsite candidate sightings: pending ones older than this are dropped,
+  # rejected ones this long after review; accepted rows are kept (audit trail).
+  offsite_pending_retention_days: 30
+  offsite_rejected_retention_days: 7
   # Async writes retry with exponential backoff, then spill durably (#225).
   write_retries: 3
   write_retry_backoff_seconds: 0.5

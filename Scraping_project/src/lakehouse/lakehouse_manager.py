@@ -572,6 +572,11 @@ class LakehouseManager:
             config.get("delta_lake.queue_gc_interval_minutes", 60) or 0
         )
         self.queue_gc_archive = bool(config.get("delta_lake.queue_gc_archive", True))
+        # #632: vacuum retention tiers ({"default": 168, "stage1_errors": 720, ...}).
+        tiers = config.get("delta_lake.table_retention_hours", None) or {}
+        self.table_retention_hours = {"default": 168, **{str(k): int(v) for k, v in dict(tiers).items()}}
+        # #632: file DLQ entries older than this are removed by the idle maintenance worker (0 = keep).
+        self.dlq_retention_days = int(config.get("delta_lake.dlq_retention_days", 30) or 0)
         self._last_queue_gc = time.monotonic()
 
         self.schema_cache: dict[str, Any] = {}
@@ -653,6 +658,28 @@ class LakehouseManager:
             self.gc_all_queues(self.queue_retention_hours, archive=self.queue_gc_archive)
         except Exception as e:
             logger.error(f"Queue GC failed: {e}", exc_info=True)
+        self._cleanup_file_dlq()
+        try:
+            from src.lakehouse.offsite_review import OffsiteReview
+
+            OffsiteReview(self).gc()  # #878: stale pending / old rejected offsite candidates
+        except Exception as e:
+            logger.error(f"Offsite candidate GC failed: {e}", exc_info=True)
+
+    def _cleanup_file_dlq(self) -> int:
+        """Remove file-DLQ entries older than delta_lake.dlq_retention_days (#632)."""
+        if self.dlq_retention_days <= 0:
+            return 0
+        try:
+            from src.utils.dead_letter_queue import DeadLetterQueue
+
+            removed = DeadLetterQueue().cleanup_old(days=self.dlq_retention_days)
+            if removed:
+                logger.info(f"[monitoring] dlq_cleanup removed={removed} days={self.dlq_retention_days}")
+            return removed
+        except Exception as e:
+            logger.error(f"File DLQ cleanup failed: {e}", exc_info=True)
+            return 0
 
     def _process_queue(self):
         # Drain until the shutdown sentinel (#166): batches queued before
@@ -1283,9 +1310,50 @@ class LakehouseManager:
         except Exception as e:
             logger.warning(f"Vacuum failed for {table_name}: {e}")
 
-    def vacuum_all_tables(self, retention_hours: int = 168):
+    def retention_hours_for(self, table_name: str) -> int:
+        """Vacuum retention for one table (#632): per-table tier, else the default."""
+        tiers = self.table_retention_hours
+        return int(tiers.get(table_name, tiers.get("default", 168)))
+
+    def vacuum_preview(self, table_name: str, retention_hours: int | None = None) -> dict[str, Any]:
+        """Files a vacuum would delete, without deleting anything (#602).
+
+        Returns ``{"table", "retention_hours", "files", "bytes"}``; ``bytes``
+        sums the sizes of files that exist on local storage.
+        """
+        hours = self.retention_hours_for(table_name) if retention_hours is None else int(retention_hours)
+        result: dict[str, Any] = {"table": table_name, "retention_hours": hours, "files": [], "bytes": 0}
+        table_path = self.tables.get(table_name) or (self.base_path / table_name)
+        if DeltaTable is None or not (Path(table_path) / "_delta_log").exists():
+            return result
+        files = DeltaTable(str(table_path)).vacuum(
+            retention_hours=hours, enforce_retention_duration=hours >= 168, dry_run=True
+        )
+        total = 0
+        for f in files:
+            p = Path(f) if os.path.isabs(f) else Path(table_path) / f
+            try:
+                total += p.stat().st_size
+            except OSError:
+                pass
+        result["files"] = sorted(files)
+        result["bytes"] = total
+        return result
+
+    def vacuum_all_tables(self, retention_hours: int | None = None, *, dry_run: bool = False):
+        """Vacuum every table with its retention tier (#632); ``dry_run`` only previews (#602).
+
+        An explicit ``retention_hours`` overrides the tiers for all tables.
+        Returns one preview dict per table when ``dry_run``.
+        """
+        previews = []
         for table_name in self.tables.keys():
-            self._vacuum_table(table_name, retention_hours)
+            hours = self.retention_hours_for(table_name) if retention_hours is None else retention_hours
+            if dry_run:
+                previews.append(self.vacuum_preview(table_name, hours))
+            else:
+                self._vacuum_table(table_name, hours, enforce_retention_duration=hours >= 168)
+        return previews if dry_run else None
 
     # ------------------------------------------------------------------
     # Queue row GC (#754)
