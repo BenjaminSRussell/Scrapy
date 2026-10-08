@@ -1,5 +1,6 @@
 """Retention GC for completed/failed stage queue rows (#754)."""
 
+import time
 from datetime import datetime, timedelta
 
 import pyarrow as pa
@@ -137,12 +138,14 @@ def test_maintenance_trigger_respects_interval_and_disable(manager, monkeypatch)
     manager.queue_retention_hours = 168
     manager.queue_gc_interval_s = 3600
 
-    manager._last_queue_gc = 0.0
+    # Back-date relative to now: time.monotonic() counts from boot, so a literal 0.0
+    # is "less than one interval ago" on a CI runner with under an hour of uptime.
+    manager._last_queue_gc = time.monotonic() - manager.queue_gc_interval_s - 1
     manager._maybe_gc_queues()
     manager._maybe_gc_queues()  # within the interval: no second run
     assert len(calls) == 1
 
-    manager._last_queue_gc = 0.0
+    manager._last_queue_gc = time.monotonic() - manager.queue_gc_interval_s - 1
     manager.queue_retention_hours = 0
     manager._maybe_gc_queues()
     assert len(calls) == 1
