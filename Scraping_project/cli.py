@@ -303,27 +303,19 @@ def cmd_setup(args):
 def cmd_reset(args):
     """Reset Delta Lake tables and re-seed from CSV."""
     import hashlib
-    import shutil
 
     import pandas as pd
 
     from src.core.constants import DELTA_LAKE
     from src.lakehouse.lakehouse_manager import get_delta_manager
+    from src.utils.destructive_guard import guarded_lake_wipe
 
     logger.info("🔥 RESETTING DELTA LAKE...")
-    logger.warning("This will DELETE all data in Delta Lake tables!")
-
-    if not args.force:
-        confirmation = input("Are you sure? Type 'yes' to continue: ")
-        if confirmation.lower() != "yes":
-            logger.info("Reset cancelled.")
-            return
-
-    # Delete all Delta Lake tables
-    if DELTA_LAKE.exists():
-        logger.info(f"Deleting Delta Lake directory: {DELTA_LAKE}")
-        shutil.rmtree(DELTA_LAKE)
-        logger.info("✅ Delta Lake wiped")
+    # Dry-run unless --confirm; dual confirmation; production break-glass; audited (#522, #573, #576).
+    decision = guarded_lake_wipe(DELTA_LAKE, args, action="wipe the Delta lake and re-seed")
+    if not decision.proceed:
+        sys.exit(decision.exit_code)
+    logger.info("✅ Delta Lake wiped")
 
     # Recreate Delta Lake manager (will recreate directories)
     logger.info("Recreating Delta Lake structure...")
@@ -579,7 +571,11 @@ def main():
 
     # Reset command
     reset_parser = subparsers.add_parser("reset", help="Reset Delta Lake and re-seed")
-    reset_parser.add_argument("--force", action="store_true", help="Skip confirmation prompt")
+    reset_parser.add_argument("--force", action="store_true", help="Deprecated: same as --confirm --yes")
+    from src.utils.destructive_guard import add_backup_argument, add_guard_arguments
+
+    add_guard_arguments(reset_parser)
+    add_backup_argument(reset_parser)
     reset_parser.set_defaults(func=cmd_reset)
 
     # Clean command
