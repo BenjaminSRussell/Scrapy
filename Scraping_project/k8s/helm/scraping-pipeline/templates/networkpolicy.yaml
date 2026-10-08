@@ -57,6 +57,7 @@ spec:
       - metrics-exporter
       - grafana
       - prometheus
+      - kafka-topics  # post-install hook that creates topics (#410)
   policyTypes:
   - Egress
   egress:
@@ -243,6 +244,7 @@ spec:
           - scrapy
           - stage2
           - stage3
+          - kafka-topics
     ports:
     - protocol: TCP
       port: {{ .Values.kafka.service.internal }}
