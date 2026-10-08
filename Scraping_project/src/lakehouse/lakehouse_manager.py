@@ -753,12 +753,15 @@ class LakehouseManager:
                 record["_stage"] = table_name
         return undomainable
 
-    def _quarantine_undomainable(self, table_name: str, rows: list[dict[str, Any]]) -> None:
-        """Count, log and park rows with no usable host in DOMAIN_QUARANTINE_TABLE (#458)."""
+    def _quarantine_undomainable(self, table_name: str, rows: list[dict[str, Any]]) -> bool:
+        """Count, log and park rows with no usable host in DOMAIN_QUARANTINE_TABLE (#458).
+
+        Returns True when the rows are safely recorded (or there were none).
+        """
         import json as _json
 
         if not rows:
-            return
+            return True
         if DELTA_UNKNOWN_DOMAIN is not None:
             DELTA_UNKNOWN_DOMAIN.labels(table=table_name).inc(len(rows))
         sample = [str(r.get("url")) for r in rows[:5]]
@@ -778,9 +781,13 @@ class LakehouseManager:
             for r in rows
         ]
         try:
-            self._write_sync(DOMAIN_QUARANTINE_TABLE, quarantine, "append")
+            ok = bool(self._write_sync(DOMAIN_QUARANTINE_TABLE, quarantine, "append"))
         except Exception as e:
             logger.error(f"[DOMAIN] Failed to write {len(quarantine)} quarantine rows: {e}")
+            return False
+        if not ok:
+            logger.error(f"[DOMAIN] Failed to write {len(quarantine)} quarantine rows")
+        return ok
 
     def repair_unknown_domains(self, table_name: str, apply: bool = False) -> dict[str, int]:
         """Re-derive the partition key for rows already written as domain="unknown" (#458).
@@ -809,7 +816,8 @@ class LakehouseManager:
         if apply and rows:
             if repaired and not self._write_sync(table_name, repaired, "append"):
                 raise RuntimeError(f"repair append to {table_name} failed; unknown partition left intact")
-            self._quarantine_undomainable(table_name, bad)
+            if not self._quarantine_undomainable(table_name, bad):
+                raise RuntimeError(f"quarantine write for {table_name} failed; unknown partition left intact")
             DeltaTable(str(table_path)).delete("domain = 'unknown'")
             logger.warning(f"[DOMAIN] repaired {table_name}: {report}")
         return report

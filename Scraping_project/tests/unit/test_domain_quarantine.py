@@ -111,6 +111,32 @@ def test_repair_job_rewrites_legacy_unknown_partition(mgr):
     assert mgr.repair_unknown_domains(TABLE) == {"rows": 0, "repairable": 0, "quarantine": 0}
 
 
+def test_repair_keeps_unknown_partition_when_quarantine_write_fails(mgr, monkeypatch):
+    from deltalake import write_deltalake
+    import pyarrow as pa
+
+    mgr._write_sync(TABLE, [{"url": "https://uconn.edu/ok", "url_hash": "ok"}], "append")
+    path = str(mgr.get_table_path(TABLE))
+    schema = mgr._table_schema(Path(path))
+    legacy = [{"url": "not a url", "url_hash": "b", "domain": "unknown"}]
+    cols = {f.name: [r.get(f.name) for r in legacy] for f in schema}
+    write_deltalake(path, pa.table(cols, schema=schema), mode="append", partition_by=["domain"])
+
+    real_write = mgr._write_sync
+
+    def failing_quarantine(table_name, data, mode="append", *a, **k):
+        if table_name == lm.DOMAIN_QUARANTINE_TABLE:
+            return False
+        return real_write(table_name, data, mode, *a, **k)
+
+    monkeypatch.setattr(mgr, "_write_sync", failing_quarantine)
+    with pytest.raises(RuntimeError, match="quarantine write"):
+        mgr.repair_unknown_domains(TABLE, apply=True)
+    # Nothing lost: the legacy partition is still there to retry.
+    assert "domain=unknown" in _partitions(mgr, TABLE)
+    assert mgr.repair_unknown_domains(TABLE) == {"rows": 1, "repairable": 0, "quarantine": 1}
+
+
 def test_repair_rejects_unpartitioned_tables(mgr):
     with pytest.raises(ValueError):
         mgr.repair_unknown_domains("errors_t")
