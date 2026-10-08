@@ -284,7 +284,7 @@ Set `CONFIG_ENV=<name>` and `config/<name>.yml` is deep-merged over `config.yml`
 
 ```bash
 cp config/dev.yml.example config/dev.yml      # or prod.yml.example
-CONFIG_ENV=dev python -m src.orchestrator.main
+CONFIG_ENV=dev python -m src.workers.stage2_worker
 ```
 
 | Case | Result |

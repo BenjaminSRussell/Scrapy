@@ -1,7 +1,7 @@
 # Environment overlay for local development (#788).
 #
 #   cp config/dev.yml.example config/dev.yml
-#   CONFIG_ENV=dev python -m src.orchestrator.main ...
+#   CONFIG_ENV=dev python -m src.workers.stage2_worker
 #
 # Deep-merged over ../config.yml by src.core.config.get_config():
 #   - mappings merge key by key (only list what differs),
