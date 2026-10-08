@@ -159,8 +159,14 @@ EXTENSIONS = _scrapy_config.get(
     {
         "src.scrapy_prometheus.PrometheusExtension": 500,
         "src.otel_tracing.OtelTracingExtension": 510,
+        # #539: drain gracefully before the container's cgroup OOM killer.
+        "src.memory_soft_stop.MemorySoftStop": 520,
     },
 )
+MEMORY_SOFT_STOP_ENABLED = True
+MEMORY_SOFT_STOP_FRACTION = float(os.getenv("MEMORY_SOFT_STOP_FRACTION", "0.85"))
+MEMORY_SOFT_STOP_INTERVAL = 5.0
+MEMORY_SOFT_STOP_LIMIT_MB = int(os.getenv("MEMORY_SOFT_STOP_LIMIT_MB", "0"))
 
 # ============================================================================
 # ============================================================================
