@@ -1,6 +1,8 @@
 """Intelligent URL value assessment for prioritizing crawl targets."""
 
 import logging
+import math
+import posixpath
 import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Optional
@@ -10,6 +12,26 @@ if TYPE_CHECKING:
     from src.common.crawl_data_manager import CrawlDataManager
 
 logger = logging.getLogger(__name__)
+
+# URL hints for JS-heavy apps, matched as whole host labels / path segments so
+# "apply", "happy" or "reapportionment" no longer count as "app" (#267).
+_JS_URL_HINT = re.compile(r"(?:^|[/.\-_#])(?:app|apps|dashboard|portal|console)(?:$|[/.\-_?#])", re.IGNORECASE)
+
+
+def _clamp01(value: Any) -> float:
+    """Coerce a confidence to [0.0, 1.0]; None/NaN/garbage count as 0."""
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+    if math.isnan(v):
+        return 0.0
+    return min(max(v, 0.0), 1.0)
+
+
+def _host_suffix_is(host: str, tld: str) -> bool:
+    """True if the host's last label is ``tld`` (``x.edu``), not a substring (``education.com``)."""
+    return host.rstrip(".").lower().rsplit(".", 1)[-1] == tld
 
 @dataclass
 class URLValue:
@@ -155,11 +177,16 @@ class URLValueAssessor:
         value_score = 50
         reasons = []
         metadata = {}
+        js_confidence = _clamp01(js_confidence)
+        try:
+            depth = max(0, int(depth))
+        except (TypeError, ValueError):
+            depth = 0
 
         doc_boost = self._assess_document_value(url)
         if doc_boost > 0:
             value_score += doc_boost
-            ext = url.lower().split(".")[-1]
+            ext = posixpath.splitext(path)[1].lstrip(".")
             reasons.append(f"document_file_{ext}")
             metadata["is_document"] = True
 
@@ -238,21 +265,23 @@ class URLValueAssessor:
         )
 
     def _extract_domain(self, netloc: str) -> str:
-        domain_parts = netloc.lower().split(".")
-        if len(domain_parts) >= 2:
-            return ".".join(domain_parts[-2:])
-        return netloc.lower()
+        # Public-suffix aware: "news.bbc.co.uk" -> "bbc.co.uk" (was "co.uk"),
+        # and ports/userinfo are dropped. Matches the Delta "domain" column.
+        from src.utils.validation import registrable_domain
+
+        return registrable_domain(netloc.rsplit("@", 1)[-1])
 
     def _assess_document_value(self, url: str) -> int:
-        url_lower = url.lower()
-
-        for ext, boost in self.DOCUMENT_EXTENSIONS.items():
-            if url_lower.endswith(ext):
-                return boost
-
-        return 0
+        # Look at the path only: "report.pdf?download=1" is still a PDF and
+        # "/view?file=x.pdf" is not one.
+        try:
+            path = urlparse(url).path.lower()
+        except ValueError:
+            return 0
+        return self.DOCUMENT_EXTENSIONS.get(posixpath.splitext(path)[1], 0)
 
     def _assess_js_requirement(self, url: str, js_confidence: float) -> int:
+        js_confidence = _clamp01(js_confidence)
         if js_confidence > 0.7:
             return 20
 
@@ -277,13 +306,11 @@ class URLValueAssessor:
             except Exception as e:
                 logger.debug(f"[URL_ASSESSOR] Could not get historical data for {domain}: {e}")
 
-        if ".edu" in domain_lower:
+        host = domain_lower.rsplit("@", 1)[-1].split(":", 1)[0]
+        if _host_suffix_is(host, "edu") or _host_suffix_is(host, "gov"):
             base_score = 10
 
-        elif ".gov" in domain_lower:
-            base_score = 10
-
-        subdomain_count = len(domain_lower.split(".")) - 2
+        subdomain_count = len(host.rstrip(".").split(".")) - 2
         if subdomain_count > 2:
             base_score -= 5
 
@@ -291,6 +318,7 @@ class URLValueAssessor:
 
     def _recommend_spider(self, url: str, js_confidence: float, value_score: int) -> str:
         url_lower = url.lower()
+        js_confidence = _clamp01(js_confidence)
 
         if js_confidence > 0.6:
             return "js"
@@ -387,7 +415,7 @@ class URLValueAssessor:
         Returns:
             Priority score (0-100)
         """
-        base_priority = int(js_confidence * 50)
+        base_priority = int(_clamp01(js_confidence) * 50)
 
         if framework_detected:
             framework_boost = {
@@ -405,8 +433,12 @@ class URLValueAssessor:
         if is_spa:
             base_priority += 50
 
-        url_lower = url.lower()
-        if any(hint in url_lower for hint in ["app", "dashboard", "portal", "console"]):
+        try:
+            parsed_hint = urlparse(url)
+            hint_target = f"{parsed_hint.hostname or ''}{parsed_hint.path}"
+        except ValueError:
+            hint_target = url
+        if _JS_URL_HINT.search(hint_target):
             base_priority += 10
 
         if self.use_historical_data and self.crawl_data_manager:
@@ -421,7 +453,7 @@ class URLValueAssessor:
             except Exception as e:
                 logger.debug(f"[URL_ASSESSOR] Could not use historical JS data: {e}")
 
-        return min(base_priority, 100)
+        return max(0, min(base_priority, 100))
 
 def example_usage():
     assessor = URLValueAssessor()

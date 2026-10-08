@@ -1,6 +1,8 @@
 import logging
+import posixpath
 import re
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 from bs4 import BeautifulSoup
@@ -10,14 +12,24 @@ from src.utils.delta import get_delta
 
 logger = logging.getLogger(__name__)
 
+def _is_pdf_link(href: str) -> bool:
+    """``.pdf`` by path extension, so ``Report.PDF`` and ``a.pdf?dl=1#p2`` count (#221)."""
+    try:
+        path = urlparse(href).path
+    except ValueError:
+        return False
+    return posixpath.splitext(path)[1].lower() == ".pdf"
+
+
 class IntelligentAnalyzer:
 
-    def __init__(self):
-        self.client = httpx.Client(timeout=30, follow_redirects=True)
-        self.delta = get_delta()
+    def __init__(self, client: Any = None, delta: Any = None, thresholds: Any = None):
+        # Injectable for offline tests; defaults are the production client/lake.
+        self.client = client if client is not None else httpx.Client(timeout=30, follow_redirects=True)
+        self.delta = delta if delta is not None else get_delta()
 
         # Same config-driven gates as Stage2Worker (#329).
-        thresholds = stage2_quality_thresholds()
+        thresholds = thresholds or stage2_quality_thresholds()
         self.MIN_WORD_COUNT = thresholds.min_word_count
         self.MIN_TEXT_TO_HTML_RATIO = thresholds.min_text_to_html_ratio
         self.MASSIVE_DOC_THRESHOLD = thresholds.massive_doc_threshold
@@ -73,7 +85,7 @@ class IntelligentAnalyzer:
             keywords = self._extract_keywords(text, is_heavy)
 
         hrefs = [str(a["href"]) for a in soup.find_all("a", href=True)]
-        pdf_links = [href for href in hrefs if href.endswith(".pdf")]
+        pdf_links = [href for href in hrefs if _is_pdf_link(href)]
 
         return {
             "url": url,
@@ -107,7 +119,9 @@ class IntelligentAnalyzer:
             reader = PyPDF2.PdfReader(pdf_file)
 
             for page in reader.pages:
-                text_extracted += page.extract_text() + "\n"
+                # extract_text() can return None for image-only pages; one such
+                # page used to raise TypeError and discard the whole document.
+                text_extracted += (page.extract_text() or "") + "\n"
 
             text_extracted = text_extracted.strip()
         except Exception as e:
@@ -135,7 +149,9 @@ class IntelligentAnalyzer:
         combined_text = (text_extracted + "\n" + ocr_text).strip()
         word_count = len(combined_text.split())
 
-        is_massive_doc = word_count > self.MASSIVE_DOC_THRESHOLD
+        # Same unit as the HTML path: MASSIVE_DOC_THRESHOLD is characters. It was
+        # compared with the word count here, so a PDF needed ~6x more text.
+        is_massive_doc = len(combined_text) > self.MASSIVE_DOC_THRESHOLD
         is_low_quality = word_count < self.MIN_WORD_COUNT
 
         keywords = self._extract_keywords(combined_text, is_heavy) if not is_low_quality else []
@@ -183,6 +199,7 @@ class IntelligentAnalyzer:
         return {
             "url": url,
             "has_error": False,
+            "is_404": False,
             "error_code": 200,
             "word_count": word_count,
             "content_length": len(ocr_text),

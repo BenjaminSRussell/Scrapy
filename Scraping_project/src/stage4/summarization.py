@@ -1,29 +1,91 @@
 import json
 import logging
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 from src.core.constants import DATA_DIR, SUMMARY_LIMITS
 
 logger = logging.getLogger(__name__)
 
-def summarize_with_heavy_model(text: str) -> str:
+def validate_summary_lengths(min_length: Any, max_length: Any) -> tuple[int, int]:
+    """Check generation bounds: ``0 <= min_length <= max_length`` and ``max_length >= 1`` (#232).
+
+    Raises ``ValueError`` naming the bad value. A config with min > max used to
+    reach the model and fail inside generate(), silently degrading to the
+    500-char fallback for every document.
+    """
+    for name, value in (("min_length", min_length), ("max_length", max_length)):
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise ValueError(f"{name} must be an integer, got {value!r}")
+    if max_length < 1:
+        raise ValueError(f"max_length must be >= 1, got {max_length}")
+    if min_length < 0:
+        raise ValueError(f"min_length must be >= 0, got {min_length}")
+    if min_length > max_length:
+        raise ValueError(f"min_length ({min_length}) must be <= max_length ({max_length})")
+    return min_length, max_length
+
+
+def _fallback(text: str) -> str:
+    return text[:500] + "..." if len(text) > 500 else text
+
+
+def _truncate_at_word(text: str, limit: int) -> str:
+    """At most ``limit`` chars, cut at the last whitespace so no word is split."""
+    if len(text) <= limit:
+        return text
+    cut = text[:limit]
+    head = cut.rsplit(None, 1)[0] if any(ch.isspace() for ch in cut) else cut
+    return head or cut
+
+
+def summarize_with_heavy_model(
+    text: str,
+    *,
+    min_length: int | None = None,
+    max_length: int | None = None,
+    summarizer: Callable[..., Any] | None = None,
+) -> str:
+    """Abstractive summary of ``text`` (BART by default).
+
+    * ``min_length``/``max_length`` default to ``SUMMARY_LIMITS`` and are
+      validated (``ValueError`` on an impossible pair).
+    * Empty/whitespace input returns ``""``; non-string input raises ``TypeError``.
+    * Input with no more words than ``min_length`` is returned as-is: the
+      model would have to pad it with invented text to reach ``min_length``.
+    * Input is truncated to ``SUMMARY_LIMITS["chunk_size"]`` chars at a word
+      boundary before it reaches the model.
+    * Model missing or failing: the first 500 chars (+ "...") are returned.
+    """
+    if not isinstance(text, str):
+        raise TypeError(f"text must be str, got {type(text).__name__}")
+    min_length, max_length = validate_summary_lengths(
+        SUMMARY_LIMITS["min_length"] if min_length is None else min_length,
+        SUMMARY_LIMITS["max_length"] if max_length is None else max_length,
+    )
+    text = text.strip()
+    if not text:
+        return ""
+    if len(text.split()) <= min_length:
+        return text
+
     try:
-        from transformers import pipeline
+        if summarizer is None:
+            from transformers import pipeline
 
-        summarizer = pipeline(
-            "summarization",
-            model="facebook/bart-large-cnn",
-            device=-1,
-        )
+            summarizer = pipeline(
+                "summarization",
+                model="facebook/bart-large-cnn",
+                device=-1,
+            )
 
-        max_input = SUMMARY_LIMITS["chunk_size"]
-        if len(text) > max_input:
-            text = text[:max_input]
+        text = _truncate_at_word(text, SUMMARY_LIMITS["chunk_size"])
 
         summary = summarizer(
             text,
-            max_length=SUMMARY_LIMITS["max_length"],
-            min_length=SUMMARY_LIMITS["min_length"],
+            max_length=max_length,
+            min_length=min_length,
             do_sample=False,
         )
 
@@ -31,10 +93,10 @@ def summarize_with_heavy_model(text: str) -> str:
 
     except ImportError:
         logger.warning("Transformers not installed for summarization")
-        return text[:500] + "..." if len(text) > 500 else text
+        return _fallback(text)
     except Exception as e:
         logger.error(f"Summarization failed: {e}")
-        return text[:500] + "..." if len(text) > 500 else text
+        return _fallback(text)
 
 def extract_key_facts(text: str, summary: str, categories: list[str]) -> list[str]:
     sentences = text.split(".")

@@ -562,9 +562,15 @@ class LakehouseManager:
             self._start_worker()
             self._start_maintenance_worker()
 
-            if threading.current_thread() is threading.main_thread():
-                signal.signal(signal.SIGINT, self._shutdown_handler)
-                signal.signal(signal.SIGTERM, self._shutdown_handler)
+            # Shared process drain (#183): a signal no longer sys.exit()s from
+            # inside whatever a stage worker is doing. With a worker drain loop
+            # running, the loop finishes its batch and this manager's queue is
+            # flushed at exit; without one (scripts), the signal flushes and
+            # exits 0 immediately, as before (#166).
+            from src.utils.graceful_shutdown import get_shutdown, install_signal_handlers
+
+            get_shutdown().add_cleanup(self._drain_on_exit, name="lakehouse write queue")
+            if install_signal_handlers():
                 logger.info("Signal handlers registered for graceful shutdown")
 
     def _start_worker(self):
@@ -1602,7 +1608,14 @@ class LakehouseManager:
             DELTA_MANAGER_SHUTDOWN_DURATION_SECONDS.observe(duration)
         logger.info(f" LakehouseManager shutdown complete in {duration:.2f} seconds")
 
+    def _drain_on_exit(self) -> None:
+        try:
+            self.shutdown(timeout=15)
+        except Exception as e:
+            logger.error(f"Error during shutdown: {e}", exc_info=True)
+
     def _shutdown_handler(self, signum, frame):
+        """Legacy direct handler (kept for callers that install it themselves)."""
         signal_name = signal.Signals(signum).name
         logger.info(f"🛑 {signal_name} received, initiating graceful shutdown...")
 
