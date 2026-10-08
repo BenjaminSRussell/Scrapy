@@ -192,8 +192,13 @@ class DeltaHelper:
             True if successful, False otherwise
         """
         try:
-            self.write(table_name, [], mode="overwrite", async_write=False)
-            return True
+            # Writing [] used to be a silent no-op (empty batches short-circuit);
+            # a Delta DELETE empties the table and keeps its history (#614).
+            truncate = getattr(self.manager, "truncate_table", None)
+            if truncate is None:
+                logger.error(f"Failed to clear {table_name}: backend has no truncate_table")
+                return False
+            return bool(truncate(table_name))
         except Exception as e:
             logger.error(f"Failed to clear {table_name}: {e}")
             return False
