@@ -1,0 +1,16 @@
+{{- /*
+Render-time guardrails (#176, #233, #451). Renders no objects.
+- configErrors fail in every profile (the chart could not work).
+- guardrailProblems fail only with profile: production; otherwise NOTES.txt
+  prints them as warnings after install/upgrade.
+*/ -}}
+{{- $errors := include "scraping-pipeline.configErrors" . -}}
+{{- if $errors -}}
+{{- fail (printf "\n%s" $errors) -}}
+{{- end -}}
+{{- if eq (.Values.profile | default "development") "production" -}}
+{{- $problems := include "scraping-pipeline.guardrailProblems" . -}}
+{{- if $problems -}}
+{{- fail (printf "\nprofile=production refuses this configuration:\n%s" $problems) -}}
+{{- end -}}
+{{- end -}}

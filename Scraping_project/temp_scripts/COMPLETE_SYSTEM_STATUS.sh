@@ -66,7 +66,7 @@ echo "-----------------------------------------"
 files_check=(
     "config.yml:Configuration"
     "docker-compose.yml:Docker Compose"
-    "test_pipeline_10k.py:10K Test Suite"
+    "scripts/manual/benchmark_pipeline_10k_sim.py:10K simulation (not a gate)"
     "PRODUCTION_READY.md:Production Guide"
     "DOCKER_DEPLOYMENT_GUIDE.md:Deployment Guide"
     ".env.example:Environment Template"
@@ -135,7 +135,7 @@ df -h . | tail -1 | awk '{print "  Disk: "$3" used / "$2" total ("$5" used)"}'
 echo ""
 echo "7️⃣ RECENT ACTIVITY"
 echo "-----------------------------------------"
-if [ -f "pipeline_test_10k.log" ]; then
+if [ -f "Scraping_project/pipeline_test_10k.log" ]; then
     lines=$(wc -l < pipeline_test_10k.log)
     echo "  📄 Pipeline test log: $lines lines"
     echo "  Last 3 log entries:"

@@ -422,6 +422,21 @@ groups:
           impact: "High - Stage 2 is stalled while looking idle"
           action: "Check Delta storage access and the stage2_queue table (worker logs: 'Could not read stage2_queue')"
 
+      # #248: documents skipped as too large (HTML over stage2.max_body_bytes,
+      # PDFs over STAGE4_PDF_MAX_BYTES). A few are normal; a flood means a
+      # site is serving huge files or the caps are too tight.
+      - alert: Stage2OversizedRejectsHigh
+        expr: sum by (kind) (rate(stage2_oversized_skipped_total[15m])) * 60 > 5
+        for: 15m
+        labels:
+          severity: warning
+          component: stage2
+        annotations:
+          summary: "Stage 2 is skipping many oversized {{ $labels.kind }} documents"
+          description: "{{ $value }} oversized {{ $labels.kind }} fetches/min skipped for 15m."
+          impact: "Low - Large documents are not analysed or summarized"
+          action: "Check which hosts serve them (worker logs: 'Skipping oversized'); raise stage2.max_body_bytes / STAGE4_PDF_MAX_BYTES only if disk allows"
+
   # ============================================
   # Infrastructure Alerts
   # ============================================

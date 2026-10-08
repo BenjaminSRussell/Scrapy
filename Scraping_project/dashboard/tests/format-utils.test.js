@@ -93,11 +93,9 @@ test('every stage rate uses the same unit: pages and URLs agree for equal deltas
     assert.strictEqual(urls, pages);
 });
 
-test('resolveMetricsUrl: no hard-coded localhost (#141)', () => {
-    assert.strictEqual(resolveMetricsUrl({ protocol: 'http:', hostname: '10.0.0.7', search: '' }),
-        'http://10.0.0.7:9090/metrics');
-    assert.strictEqual(resolveMetricsUrl({ protocol: 'https:', hostname: 'cc.example', search: '' }),
-        'https://cc.example:9090/metrics');
+test('resolveMetricsUrl: same-origin proxy when served over http(s) (#141/#400)', () => {
+    assert.strictEqual(resolveMetricsUrl({ protocol: 'http:', hostname: '10.0.0.7', search: '' }), '/api/metrics');
+    assert.strictEqual(resolveMetricsUrl({ protocol: 'https:', hostname: 'cc.example', search: '' }), '/api/metrics');
     assert.strictEqual(resolveMetricsUrl({ protocol: 'file:', hostname: '', search: '' }),
         'http://localhost:9090/metrics');
     assert.strictEqual(resolveMetricsUrl(null), 'http://localhost:9090/metrics');
@@ -108,7 +106,7 @@ test('resolveMetricsUrl precedence: override, then http(s) ?metrics=', () => {
     assert.strictEqual(resolveMetricsUrl(loc), 'http://exporter:9100/metrics');
     assert.strictEqual(resolveMetricsUrl(loc, '/proxy/metrics'), '/proxy/metrics');
     const bad = { protocol: 'http:', hostname: 'h', search: '?metrics=javascript:alert(1)' };
-    assert.strictEqual(resolveMetricsUrl(bad), 'http://h:9090/metrics');
+    assert.strictEqual(resolveMetricsUrl(bad), '/api/metrics');
 });
 
 // #906 / #910
@@ -143,4 +141,17 @@ test('metricsUrlProblem: reports a rejected ?metrics=, silent otherwise', () => 
     assert.match(msg, /only http\(s\)/);
     assert.match(msg, /javascript:alert\(1\)/);
     assert.match(metricsUrlProblem({ search: '?metrics=' }), /Ignored/);
+});
+
+test('queueDepthRows: Redis down is an error, not zeros (#401)', () => {
+    const { queueDepthRows } = require('../format-utils.js');
+    const down = queueDepthRows({ ok: false, error: 'redis unavailable: ConnectionError' });
+    assert.deepStrictEqual(down.rows, []);
+    assert.match(down.error, /redis unavailable/);
+    assert.match(queueDepthRows(null).error, /unavailable/);
+    const up = queueDepthRows({ ok: true, queues: [{ key: 'js_spider:priority_queue', type: 'zset', depth: 7 },
+        { key: 'q2', type: 'none', depth: 0 }, { nope: 1 }] });
+    assert.strictEqual(up.error, null);
+    assert.deepStrictEqual(up.rows, [{ key: 'js_spider:priority_queue', type: 'zset', depth: 7 },
+        { key: 'q2', type: 'none', depth: 0 }]);
 });

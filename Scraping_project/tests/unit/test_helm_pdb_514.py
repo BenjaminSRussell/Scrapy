@@ -46,10 +46,16 @@ def test_store_replicas_in_template_match_statefulset(store):
     component, statefulset = STORES[store]
     declared = re.search(rf'"name" "{store}" "component" "{component}" "replicas" (\d+)', PDB)
     assert declared, f"{store} missing from the PDB stores list"
-    actual = re.search(r"^  replicas: (\S+)$", (TEMPLATES / statefulset).read_text(encoding="utf-8"), re.M)
-    assert actual and actual.group(1) == declared.group(1), (
-        f"{statefulset} replicas changed: update the PDB stores list (#514)"
-    )
+    actual = re.search(r"^  replicas: (\S.*?)\s*$", (TEMPLATES / statefulset).read_text(encoding="utf-8"), re.M)
+    assert actual, f"{statefulset} has no replicas line"
+    if actual.group(1).startswith("{{"):
+        # Values-driven count (Kafka, #176): the PDB must take the maxUnavailable: 1
+        # branch, which is safe for any broker count.
+        assert declared.group(1) == "1", f"{store}: templated replicas must be declared 1 in the PDB list"
+    else:
+        assert actual.group(1) == declared.group(1), (
+            f"{statefulset} replicas changed: update the PDB stores list (#514)"
+        )
 
 
 def test_networkpolicy_metrics_range_is_int():

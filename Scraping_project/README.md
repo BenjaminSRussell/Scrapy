@@ -702,6 +702,17 @@ All tables use PyArrow schemas for validation:
 
 `stage1_discovery` and `stage2_page_analysis` are partitioned by registrable domain. A row whose URL has no usable http(s) host (empty, `mailto:`, garbage) is not written under a catch-all `domain=unknown` partition. It goes to `domain_quarantine` (`source_table`, `url`, `reason`, `row_json`, `quarantined_at`), counted by `delta_unknown_domain_rows_total{table}`, and the `DeltaUndomainableRows` alert fires on a sustained stream (#458). For tables written before this change, `LakehouseManager.repair_unknown_domains(table)` reports what is in the legacy `unknown` partition. Pass `apply=True` to move repairable rows to their real domain and the rest to quarantine.
 
+### Recency scoring contract (silver → gold)
+
+`RecencyScoringPipeline` writes `recency_score` as exponential decay of the item's `publication_date` (`RECENCY_DECAY_CONSTANT`, default 0.01/day):
+
+- **The score is in `[0.0, 1.0]`** when `publication_date` parses. 1.0 means published now.
+- **The score is `null` when the date is missing or unparseable.** That means "freshness unknown", not median relevance. The pipeline no longer invents `0.5` (#675). To opt back into imputation, set `RECENCY_DEFAULT_SCORE` (or `scrapy.recency_default_score` in `config.yml`) to a float. Imputed items are still counted as missing.
+- **Gold:** `entity_summaries.max_recency_score` is the highest *known* score among an entity's items. It is `null` when none of them has a date. Items without a score rank after scored ones.
+- **Metric:** `scrapy_recency_items_total{outcome="scored|missing_date|unparseable_date"}`. Missing-date rate = `sum(rate(scrapy_recency_items_total{outcome!="scored"}[5m])) / sum(rate(scrapy_recency_items_total[5m]))`.
+
+Consumers must handle `null` explicitly, for example by excluding those rows from freshness-weighted averages, rather than coalescing to a number.
+
 ### Schema Evolution Policy
 
 Every append and overwrite reads the table's current schema from its `_delta_log`, not from process memory. So any number of workers or pods writing the same table agree on one schema.
