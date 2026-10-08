@@ -2,6 +2,7 @@
 
 import json
 import logging
+import time
 from datetime import datetime
 from typing import Any, cast
 
@@ -9,15 +10,119 @@ import redis
 
 logger = logging.getLogger(__name__)
 
-class JSPriorityQueue:
+# #377: bounds for long crawls. 0 disables a bound.
+DEFAULT_MAX_SIZE = 100_000
+DEFAULT_TTL_SECONDS = 86_400.0
 
-    def __init__(self, redis_client: redis.Redis, queue_key: str = "js_spider:priority_queue"):
+try:
+    from prometheus_client import Counter, Gauge
+
+    JS_QUEUE_SIZE: Any = Gauge("js_priority_queue_size", "Members in the JS render priority queue.", ["queue"])
+    JS_QUEUE_EVICTIONS: Any = Counter(
+        "js_priority_queue_evictions_total",
+        "JS render candidates dropped from the priority queue, by reason (overflow, ttl).",
+        ["queue", "reason"],
+    )
+except Exception:  # prometheus_client missing or metric already registered
+    JS_QUEUE_SIZE = JS_QUEUE_EVICTIONS = None
+
+
+def _config_value(key: str, default: Any) -> Any:
+    try:
+        from src.core.config import get_config
+
+        value = get_config().get(key, default)
+        return default if value is None else value
+    except Exception:
+        return default
+
+
+def _decode(member: Any) -> str:
+    return member.decode() if isinstance(member, bytes) else str(member)
+
+
+class JSPriorityQueue:
+    """Redis sorted-set queue of JS render candidates (score = -priority).
+
+    Bounded (#377): at most ``max_size`` members, so on overflow the lowest-priority members
+    are evicted first. Members older than ``ttl_seconds`` (by enqueue time, kept in
+    ``<queue>:enqueued_at``) are pruned on every enqueue and dequeue. An evicted URL stays
+    in the ``<queue>:hashes`` claim set, so it isn't re-queued by the same crawl.
+    """
+
+    # Class-level defaults keep ``__new__``-built instances (tests, legacy callers) unbounded.
+    max_size: int = 0
+    ttl_seconds: float = 0.0
+
+    def __init__(
+        self,
+        redis_client: redis.Redis,
+        queue_key: str = "js_spider:priority_queue",
+        max_size: int | None = None,
+        ttl_seconds: float | None = None,
+    ):
         self.redis = redis_client
         self.queue_key = queue_key
         self.hash_key = f"{queue_key}:hashes"
         self.metadata_key = f"{queue_key}:metadata"
+        self.max_size = max(0, int(max_size if max_size is not None else _config_value("stage1.js_queue_max_size", DEFAULT_MAX_SIZE)))
+        self.ttl_seconds = max(
+            0.0,
+            float(ttl_seconds if ttl_seconds is not None else _config_value("stage1.js_queue_ttl_seconds", DEFAULT_TTL_SECONDS)),
+        )
 
-        logger.info(f"[JS_QUEUE] Initialized priority queue: {queue_key}")
+        logger.info(
+            f"[JS_QUEUE] Initialized priority queue: {queue_key} "
+            f"(max_size={self.max_size or 'unbounded'}, ttl_seconds={self.ttl_seconds or 'none'})"
+        )
+
+    @property
+    def enqueued_key(self) -> str:
+        return f"{self.queue_key}:enqueued_at"
+
+    def _drop(self, members: list[Any], reason: str) -> list[str]:
+        """Remove members from the queue, the enqueue-time index and the metadata hash."""
+        if not members:
+            return []
+        pipe = self.redis.pipeline()
+        pipe.zrem(self.queue_key, *members)
+        pipe.zrem(self.enqueued_key, *members)
+        pipe.hdel(self.metadata_key, *members)
+        pipe.execute()
+        if JS_QUEUE_EVICTIONS is not None:
+            JS_QUEUE_EVICTIONS.labels(queue=self.queue_key, reason=reason).inc(len(members))
+        logger.info(f"[JS_QUEUE] Evicted {len(members)} URL(s) from {self.queue_key} ({reason})")
+        return [_decode(m) for m in members]
+
+    def prune_stale(self, now: float | None = None) -> list[str]:
+        """Drop members enqueued more than ``ttl_seconds`` ago. Returns the dropped URLs."""
+        if self.ttl_seconds <= 0:
+            return []
+        cutoff = (time.time() if now is None else now) - self.ttl_seconds
+        stale = cast(list[Any], self.redis.zrangebyscore(self.enqueued_key, "-inf", f"({cutoff}"))
+        return self._drop(stale, "ttl")
+
+    def _evict_overflow(self) -> list[str]:
+        if self.max_size <= 0:
+            return []
+        over = cast(int, self.redis.zcard(self.queue_key)) - self.max_size
+        if over <= 0:
+            return []
+        # Highest score == lowest priority (score is -priority); ZPOPMAX is atomic.
+        popped = cast(list[tuple[Any, float]], self.redis.zpopmax(self.queue_key, over))
+        return self._drop([m for m, _ in popped], "overflow")
+
+    def enforce_bounds(self, now: float | None = None) -> set[str]:
+        """Apply TTL then max-size. Returns every URL evicted by this call."""
+        evicted: set[str] = set()
+        try:
+            evicted.update(self.prune_stale(now))
+            evicted.update(self._evict_overflow())
+        except Exception as e:
+            logger.error(f"[JS_QUEUE] Bound enforcement failed for {self.queue_key}: {e}")
+        if JS_QUEUE_SIZE is not None:
+            JS_QUEUE_SIZE.labels(queue=self.queue_key).set(self.size())
+        return evicted
 
     def enqueue(
         self,
@@ -52,6 +157,7 @@ class JSPriorityQueue:
             priority_score = -priority
 
             self.redis.zadd(self.queue_key, {url: priority_score})
+            self.redis.zadd(self.enqueued_key, {url: time.time()})
 
             if metadata or parent_url or js_confidence:
                 url_metadata = metadata or {}
@@ -69,6 +175,10 @@ class JSPriorityQueue:
                     url,
                     json.dumps(url_metadata),
                 )
+
+            if url in self.enforce_bounds():
+                logger.debug(f"[JS_QUEUE] URL evicted on arrival (queue full of higher priority): {url[:80]}")
+                return False
 
             logger.debug(f"[JS_QUEUE] Enqueued URL (priority={priority}): {url[:80]}")
             return True
@@ -90,10 +200,12 @@ class JSPriorityQueue:
 
             pipeline = self.redis.pipeline()
             enqueued_count = 0
+            now = time.time()
 
             for (url, priority, metadata), added in zip(urls, claimed, strict=False):
                 if int(added or 0) == 1:
                     pipeline.zadd(self.queue_key, {url: -priority})
+                    pipeline.zadd(self.enqueued_key, {url: now})
 
                     if metadata:
                         metadata["queued_at"] = datetime.now().isoformat()
@@ -106,6 +218,10 @@ class JSPriorityQueue:
                     enqueued_count += 1
 
             pipeline.execute()
+            if enqueued_count:
+                evicted = self.enforce_bounds()
+                enqueued_count -= sum(1 for (url, _p, _m), added in zip(urls, claimed, strict=False)
+                                      if int(added or 0) == 1 and url in evicted)
             logger.info(f"[JS_QUEUE] Batch enqueued {enqueued_count}/{len(urls)} URLs")
             return enqueued_count
 
@@ -115,6 +231,7 @@ class JSPriorityQueue:
 
     def dequeue(self, count: int = 1) -> list[dict[str, Any]]:
         try:
+            self.prune_stale()  # never hand out a candidate older than the TTL
             urls = cast(list[Any], self.redis.zrange(self.queue_key, 0, count - 1))
 
             if not urls:
@@ -126,12 +243,13 @@ class JSPriorityQueue:
                 pipeline.zrem(self.queue_key, url)
                 pipeline.hget(self.metadata_key, url)
                 pipeline.hdel(self.metadata_key, url)
+                pipeline.zrem(self.enqueued_key, url)
 
             results = pipeline.execute()
 
             url_dicts = []
             for i, url in enumerate(urls):
-                metadata_json = results[i * 3 + 1]
+                metadata_json = results[i * 4 + 1]
                 metadata = json.loads(metadata_json) if metadata_json else {}
 
                 url_dicts.append(
@@ -181,6 +299,7 @@ class JSPriorityQueue:
             pipeline.delete(self.queue_key)
             pipeline.delete(self.hash_key)
             pipeline.delete(self.metadata_key)
+            pipeline.delete(self.enqueued_key)
             pipeline.execute()
 
             logger.info("[JS_QUEUE] Queue cleared")
@@ -218,6 +337,8 @@ class JSPriorityQueue:
                 "total_size": total_size,
                 "priority_distribution": priority_dist,
                 "queue_key": self.queue_key,
+                "max_size": self.max_size,
+                "ttl_seconds": self.ttl_seconds,
             }
 
         except Exception as e:

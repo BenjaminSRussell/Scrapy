@@ -477,6 +477,27 @@ Configure the Helm chart via `k8s/helm/scraping-pipeline/values.yaml` (supported
 - Persistent volume sizes
 - Service configuration
 
+### SSRF guard (#682)
+
+Every URL is checked by `src/utils/ssrf.py` **before** any request is made or a queue row is written. The checks run at three points:
+
+- **Stage 1 (Scrapy):** `SSRFGuardMiddleware` is the first downloader middleware. It is registered in `src/settings.py` and in `spider_config`, and it raises `IgnoreRequest("ssrf_blocked:<reason>")`. Scrapy redirects re-enter the middleware chain, so every hop is checked.
+- **Queueing:** `QueueItemPipeline` never writes an SSRF-like URL to `stage2_queue` or `js_spider_queue`.
+- **Stage 2 (aiohttp):** redirects are followed by hand, with each hop checked before it connects. A refusal is a terminal `ssrf_blocked:<reason>` error and is not retried.
+
+What gets blocked:
+- non-http(s) schemes and embedded credentials;
+- loopback, private, link-local (including `169.254.169.254` metadata), CGNAT, multicast and unspecified IPs, in every spelling: decimal `2130706433`, hex `0x7f000001`, octal `0177.0.0.1`, short `127.1`, IPv6 `[::1]`, IPv4-mapped `[::ffff:127.0.0.1]`, and zone IDs;
+- `localhost` aliases and `*.localhost` / `*.internal` / `*.local`;
+- single-label names such as `redis` or `kafka` (in-cluster services).
+
+Settings and env:
+- `SSRF_GUARD_ENABLED` (default on).
+- `SSRF_RESOLVE_DNS=1` additionally rejects hostnames whose DNS answers are non-global. It's off by default because it blocks the reactor; `OffsiteMiddleware` already limits crawls to `allowed_domains`.
+- `SSRF_ALLOWED_HOSTS=127.0.0.1,10.0.0.0/8` is an explicit allowlist, for example for local fixture servers.
+
+Metric: `scrapy_ssrf_blocked_total{stage="stage1|stage2|queue", reason}`.
+
 ### Redis memory policy: durable keys vs TTL keys (#161)
 
 Redis holds durable crawl state, and losing it is not a cache miss:
@@ -568,6 +589,13 @@ Available at `http://localhost:9090`:
 - `cache_misses_total`: Cache miss count
 - `retry_attempts_total`: Retry attempts
 - `circuit_breaker_state`: Circuit breaker state (0=closed, 1=open, 2=half-open)
+
+Every queue worker (Stage 2/3/4) serves its own registry on
+`WORKER_METRICS_PORT` (default 9430, `WORKER_METRICS_ENABLED=0` to disable),
+so worker-side counters (soft bans, deferrals, recency outcomes, ...) reach
+Prometheus as `stage{2,3,4}_worker` jobs, one target per replica, with
+`scrapy_worker_up{component}` as the liveness series. Scrape topology for Helm:
+[k8s/README.md](k8s/README.md#what-gets-scraped-789).
 
 ### Grafana Dashboards
 

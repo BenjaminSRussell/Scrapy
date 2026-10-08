@@ -3,12 +3,27 @@ name: CI Kafka Alerts
 on:
   push:
     branches: [ main ]
+    paths:
+      - 'Scraping_project/monitoring/**'
+      - 'Scraping_project/tests/observability/**'
+      - '.github/workflows/ci-kafka-alerts.yml'
   pull_request:
     branches: [ main ]
+    paths:
+      - 'Scraping_project/monitoring/**'
+      - 'Scraping_project/tests/observability/**'
+      - '.github/workflows/ci-kafka-alerts.yml'
+
+# Only the alert/recording rules and their tests feed this job; see main.yml for
+# the concurrency rationale.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   test-kafka-alerts:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     steps:
       - name: Check out code

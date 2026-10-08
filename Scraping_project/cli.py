@@ -463,6 +463,26 @@ def cmd_data_gc(args):
 
 
 
+def cmd_queue_gc(args):
+    """Delete expired completed/failed rows from the stage queue tables (#754)."""
+    from src.lakehouse.lakehouse_manager import LakehouseManager
+
+    manager = LakehouseManager(start_workers=False)
+    hours = args.retention_hours if args.retention_hours is not None else manager.queue_retention_hours
+    if not hours or hours <= 0:
+        logger.error("Queue retention is disabled (delta_lake.queue_retention_hours <= 0).")
+        return 1
+    results = manager.gc_all_queues(
+        hours, archive=not args.no_archive, dry_run=args.dry_run, vacuum=not args.dry_run
+    )
+    verb = "would delete" if args.dry_run else "deleted"
+    for res in results:
+        n = res["matched"] if args.dry_run else res["deleted"]
+        extra = f" (skipped: {res['skipped']})" if res["skipped"] else ""
+        print(f"{res['table']}: {verb} {n} rows older than {hours}h{extra}")
+    return 0
+
+
 def cmd_seeds(args):
     """List/add/disable seed URLs with append-only audit log."""
     from src.common.seed_ops import SeedRegistry
@@ -488,6 +508,32 @@ def cmd_seeds(args):
             print(row)
         return
     raise SystemExit("unknown seeds command")
+
+
+def cmd_killswitch(args):
+    """Global crawl kill switch (#456): stops Stage 1/2 downloads cluster-wide."""
+    import json as _json
+
+    from src.utils.crawl_guard import CrawlGuard
+
+    guard = CrawlGuard.from_config()
+    sw = guard.switch
+    if args.killswitch_command == "on":
+        st = sw.engage(reason=args.reason, actor=args.actor)
+        print(f"KILL SWITCH ENGAGED by {st.actor}: {st.reason} (workers stop within {sw.check_secs:.0f}s)")
+        return
+    if args.killswitch_command == "off":
+        sw.release(actor=args.actor, reason=args.reason or "")
+        print("kill switch released")
+        return
+    if args.killswitch_command == "status":
+        print(_json.dumps(guard.status(), indent=2, default=str))
+        return
+    if args.killswitch_command == "audit":
+        for row in sw.audit(limit=args.limit):
+            print(_json.dumps(row))
+        return
+    raise SystemExit("unknown killswitch command")
 
 
 # ============================================================================
@@ -586,7 +632,35 @@ def main():
     )
     gc_parser.set_defaults(func=cmd_data_gc)
 
+    queue_gc_parser = subparsers.add_parser(
+        "queue-gc", help="Delete expired completed/failed rows from stage queue tables"
+    )
+    queue_gc_parser.add_argument(
+        "--retention-hours",
+        type=float,
+        default=None,
+        help="Override delta_lake.queue_retention_hours",
+    )
+    queue_gc_parser.add_argument("--dry-run", action="store_true", help="Only count rows")
+    queue_gc_parser.add_argument(
+        "--no-archive", action="store_true", help="Do not copy rows to <table>_history first"
+    )
+    queue_gc_parser.set_defaults(func=cmd_queue_gc)
+
     # seeds — operator seed registry + audit (#1100)
+    ks_parser = subparsers.add_parser("killswitch", help="Global crawl kill switch and budgets (#456)")
+    ks_sub = ks_parser.add_subparsers(dest="killswitch_command", required=True)
+    ks_on = ks_sub.add_parser("on", help="Stop all Stage 1/2 downloads cluster-wide")
+    ks_on.add_argument("--reason", required=True)
+    ks_on.add_argument("--actor", required=True)
+    ks_off = ks_sub.add_parser("off", help="Release the kill switch")
+    ks_off.add_argument("--actor", required=True)
+    ks_off.add_argument("--reason", default="")
+    ks_sub.add_parser("status", help="Show switch state and budget usage")
+    ks_audit = ks_sub.add_parser("audit", help="Show recent engage/release events")
+    ks_audit.add_argument("--limit", type=int, default=20)
+    ks_parser.set_defaults(func=cmd_killswitch)
+
     seeds_parser = subparsers.add_parser("seeds", help="List/add/disable seed URLs with audit log")
     seeds_sub = seeds_parser.add_subparsers(dest="seeds_command", required=True)
     seeds_list = seeds_sub.add_parser("list", help="List seeds")

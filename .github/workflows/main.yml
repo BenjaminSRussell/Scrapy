@@ -2,9 +2,19 @@ name: CI/CD Pipeline
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ main ]  # pushes run on main only; feature branches run via pull_request
   pull_request:
     branches: [ main ]
+
+# Actions starvation (Oct 2026): with no concurrency, every push to main and every PR
+# update queued a full run, and main's later jobs re-entered the back of the shared
+# runner queue each time, so main CI fell hours behind. One group per PR (or ref):
+# a new PR push cancels the superseded run; push/tag runs are never cancelled
+# mid-run, and GitHub keeps only the newest pending one, so main always verifies its
+# latest commit (which contains every earlier merge).
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 # Quality gates (issue #149):
 # - ruff / mypy / bandit are blocking (no || true)
@@ -17,6 +27,7 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     strategy:
       matrix:
         python-version: ["3.11", "3.12"]
@@ -120,6 +131,7 @@ jobs:
   entrypoint-smoke:
     # Proves #142 AC: entrypoint modules import and a worker starts against Redis
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     services:
       redis:
         image: redis:7-alpine
@@ -178,6 +190,7 @@ jobs:
     name: Package build smoke
     needs: test
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
     - uses: actions/checkout@v7
 
@@ -198,6 +211,7 @@ jobs:
   deploy:
     needs: [test, entrypoint-smoke, package-smoke]
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     # Deploy only when the target is configured. Without DEPLOY_HOST every
     # push to main failed here (scp to an empty hostname) even with all tests
