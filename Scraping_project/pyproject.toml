@@ -97,15 +97,8 @@ Issues = "https://github.com/BenjaminSRussell/Scrapy/issues"
 where = ["."]
 include = ["src*"]
 
-[tool.black]
-line-length = 120
-target-version = ["py311"]
-
-[tool.ruff]
-line-length = 120
-target-version = "py311"
-
-[tool.mypy]
-python_version = "3.11"
-ignore_missing_imports = true
-no_strict_optional = true
+# Tool config lives in one place per tool (#360, docs/tooling.md):
+#   ruff (lint + isort + format) -> ruff.toml   (ruff ignores [tool.ruff] when ruff.toml exists)
+#   mypy                         -> mypy.ini    (mypy reads mypy.ini before pyproject.toml)
+#   pytest                       -> pytest.ini
+# Black is no longer used (ruff-format replaces it, #357).
