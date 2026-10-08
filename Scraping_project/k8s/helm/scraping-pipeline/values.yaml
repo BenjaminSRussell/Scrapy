@@ -1,5 +1,10 @@
 # Default values for scraping-pipeline
 
+# "development" (default) or "production". The production profile turns the
+# exposure/durability warnings below into render failures (#176/#233/#451); see
+# values-prod.yaml and templates/validate.yaml.
+profile: development
+
 global:
   # Container registry settings
   imageRegistry: ""
@@ -142,6 +147,9 @@ zookeeper:
 
 kafka:
   enabled: true
+  # Brokers in the StatefulSet. >1 derives broker.id from the pod ordinal and
+  # advertises each pod's headless DNS name. Must be >= defaultReplicationFactor.
+  replicas: 1
   # post-install/upgrade Job: `python -m src.utils.kafka_topics` creates the
   # topics config.yml declares (validation_failures etc.) if missing (#410).
   topicsJob:
@@ -176,9 +184,12 @@ kafka:
     brokerId: 1
     numPartitions: 3
     # Producers use acks=all (#174). That only protects against broker loss
-    # when topics are replicated: for multi-broker production set
-    # kafka.replicas>=3, defaultReplicationFactor: 3 and minInsyncReplicas: 2.
-    # The bundled single broker keeps 1/1 (acks=all then equals leader-ack).
+    # when topics are replicated. RF=1 (this dev default) loses topic data with
+    # any broker disk (#176). Production: kafka.replicas: 3,
+    # defaultReplicationFactor: 3, minInsyncReplicas: 2 (values-prod.yaml).
+    # Internal topics (__consumer_offsets, transactions) use the same RF/ISR,
+    # and pipeline topics are created with the broker default RF
+    # (kafka_topics.py replication_factor=-1), so everything matches.
     defaultReplicationFactor: 1
     minInsyncReplicas: 1
     logRetentionHours: 168
@@ -255,8 +266,13 @@ grafana:
     pullPolicy: IfNotPresent
 
   service:
-    type: LoadBalancer  # Expose externally
+    # ClusterIP by default (#233): reach Grafana with `kubectl port-forward`
+    # or through the TLS ingress below. A LoadBalancer puts the admin UI on a
+    # public address; the production profile refuses it unless
+    # allowPublicLoadBalancer is true (only behind SSO / an IP allowlist).
+    type: ClusterIP
     port: 3000
+    allowPublicLoadBalancer: false
 
   persistence:
     enabled: true
@@ -617,6 +633,15 @@ ingress:
           pathType: Prefix
           service: grafana
           port: 3000
+  # Empty TLS = plain HTTP (Grafana credentials in clear text). Fine for a
+  # local cluster; the production profile fails to render without it (#451).
+  # Example with cert-manager (also in values-prod.yaml):
+  #   annotations:
+  #     cert-manager.io/cluster-issuer: letsencrypt-prod
+  #     nginx.ingress.kubernetes.io/ssl-redirect: "true"
+  #   tls:
+  #     - secretName: grafana-tls
+  #       hosts: [grafana.example.edu]
   tls: []
 
 # ============================================

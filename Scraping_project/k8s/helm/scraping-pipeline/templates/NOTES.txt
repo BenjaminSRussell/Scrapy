@@ -1,0 +1,15 @@
+Scraping pipeline {{ .Chart.Version }} installed as "{{ .Release.Name }}" in namespace {{ .Release.Namespace }} (profile: {{ .Values.profile | default "development" }}).
+
+Grafana:
+{{- if .Values.ingress.enabled }}
+  {{ if .Values.ingress.tls }}https{{ else }}http{{ end }}://{{ (index .Values.ingress.hosts 0).host }}/grafana/
+{{- end }}
+  kubectl port-forward svc/{{ include "scraping-pipeline.fullname" . }}-grafana 3000:{{ .Values.grafana.service.port }} -n {{ .Release.Namespace }}
+{{- $problems := include "scraping-pipeline.guardrailProblems" . }}
+{{- if $problems }}
+
+WARNING: not production-safe (fine for local clusters; profile=production would refuse it):
+{{- range (splitList "\n" $problems) }}
+  - {{ . }}
+{{- end }}
+{{- end }}
