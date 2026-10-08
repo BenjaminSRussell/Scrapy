@@ -59,10 +59,12 @@ def is_uconn_domain(url: str) -> bool:
         return False
 
     try:
-        parsed = urlparse(url)
-        return 'uconn.edu' in parsed.netloc.lower()
-    except Exception:
+        # Exact host or a subdomain (#757): the old substring test accepted
+        # notuconn.edu and uconn.edu.attacker.example.
+        host = (urlparse(url).hostname or "").rstrip(".").lower()
+    except ValueError:
         return False
+    return host == "uconn.edu" or host.endswith(".uconn.edu")
 
 
 def sanitize_text(text: str, max_length: Optional[int] = None) -> str:
@@ -89,9 +91,9 @@ def sanitize_text(text: str, max_length: Optional[int] = None) -> str:
     # Remove excessive whitespace
     text = re.sub(r'\s+', ' ', text).strip()
 
-    # Truncate if needed
-    if max_length and len(text) > max_length:
-        text = text[:max_length]
+    # Truncate if needed (max_length=0 means empty, not "no limit"; #757)
+    if max_length is not None and len(text) > max(0, max_length):
+        text = text[:max(0, max_length)].rstrip()
 
     return text
 
@@ -135,8 +137,8 @@ def is_safe_filename(filename: str) -> bool:
     if not filename or not isinstance(filename, str):
         return False
 
-    # Check for path traversal attempts
-    if '..' in filename or '/' in filename or '\\' in filename:
+    # Check for path traversal attempts ("." is the directory itself; #757)
+    if filename == '.' or '..' in filename or '/' in filename or '\\' in filename:
         return False
 
     # Check for reasonable length
