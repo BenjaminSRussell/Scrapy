@@ -37,7 +37,7 @@ data:
         access: proxy
         url: {{ $fullname }}-postgresql:{{ .Values.postgresql.service.port }}
         database: {{ .Values.postgresql.auth.database }}
-        user: {{ .Values.postgresql.auth.username }}
+        user: {{ .Values.postgresql.auth.appUsername | default .Values.postgresql.auth.username }}
         secureJsonData:
           password: $__env{DB_PASSWORD}
         jsonData:
