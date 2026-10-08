@@ -15,14 +15,18 @@ from src.stage4.stage4_worker import Stage4Worker
 
 logger = logging.getLogger(__name__)
 
-RunStatus = Literal["pending", "running", "complete", "partial_failed", "failed"]
+RunStatus = Literal["pending", "running", "complete", "partial_failed", "failed", "aborted"]
+
+# Interrupts that end a run without a stage "failing": Ctrl-C, sys.exit / SIGTERM
+# handlers, and task cancellation. They are recorded as status "aborted" (#684).
+_ABORTS = (KeyboardInterrupt, SystemExit, asyncio.CancelledError)
 
 try:  # metric/alert hook for partial or failed runs (#521)
     from prometheus_client import Counter
 
     PIPELINE_RUNS = Counter(
         "pipeline_runs_total",
-        "Full pipeline runs by final status (complete/partial_failed/failed).",
+        "Full pipeline runs by final status (complete/partial_failed/failed/aborted).",
         ["status"],
     )
 except Exception:  # prometheus_client missing or metric already registered
@@ -56,6 +60,8 @@ class PipelineStats:
     end_time: datetime | None = None
     status: RunStatus = "pending"
     stage_errors: dict[str, str] = field(default_factory=dict)
+    # Stage that was running when the run was aborted (#684); None otherwise.
+    aborted_stage: str | None = None
 
     @property
     def total_duration_seconds(self) -> float:
@@ -69,6 +75,7 @@ class PipelineOrchestrator:
         self.config = config or {}
         self.delta = get_delta()
         self.stats = PipelineStats()
+        self._current_stage: str | None = None
 
     def run_stage1(
         self,
@@ -249,23 +256,57 @@ class PipelineOrchestrator:
             stage3_concurrent: Concurrency for Stage 3
             allow_partial: Return (not raise) on a ``partial_failed`` run
 
+        Abort policy (#684): ``KeyboardInterrupt``, ``SystemExit`` and task
+        cancellation end the run with status ``aborted`` (``aborted_stage`` names
+        the stage, ``end_time`` is set, ``pipeline_runs_total{status="aborted"}``
+        is incremented) and are re-raised. Concurrent Stage 3/4 work is cancelled
+        with the run. Work in flight is not marked done: Stage 2 only acks queue
+        rows after a durable upsert, so they stay ``pending`` and the next run
+        picks them up. An interrupt after the outcome is final (all stages done)
+        keeps that outcome. Every run starts from fresh ``PipelineStats``, so
+        nothing from an aborted run leaks into the next one.
+
         Returns:
             The run's PipelineStats, including ``status`` and ``stage_errors``.
         """
-        self.stats.start_time = datetime.now()
-        self.stats.status = "running"
-        self.stats.stage_errors = {}
+        # Fresh stats per run: counts from an earlier (possibly aborted) run must
+        # not be reported as this run's (#684).
+        self.stats = PipelineStats(start_time=datetime.now(), status="running")
+        self._current_stage = None
+        try:
+            return await self._run_full_pipeline(
+                stage1_url_limit, stage2_concurrent, stage3_concurrent, allow_partial
+            )
+        except _ABORTS as e:
+            if self.stats.status != "running":
+                raise  # outcome already final (e.g. interrupted while printing stats): keep it
+            stage = self._current_stage or "startup"
+            self.stats.aborted_stage = stage
+            self.stats.stage_errors.setdefault(stage, f"aborted: {type(e).__name__}")
+            self._finish("aborted")
+            raise
+        finally:
+            self._current_stage = None
 
+    async def _run_full_pipeline(
+        self,
+        stage1_url_limit: int | None,
+        stage2_concurrent: int,
+        stage3_concurrent: int,
+        allow_partial: bool,
+    ) -> PipelineStats:
         logger.info(" " * 40)
         logger.info("STARTING FULL PIPELINE EXECUTION")
         logger.info(" " * 40)
 
         try:
+            self._current_stage = "stage1"
             try:
                 self.run_stage1(url_limit=stage1_url_limit)
             except Exception as e:
                 self.stats.stage_errors["stage1"] = repr(e)
                 raise
+            self._current_stage = "stage2"
             try:
                 await self.run_stage2(max_concurrent=stage2_concurrent)
             except Exception as e:
@@ -275,6 +316,7 @@ class PipelineOrchestrator:
             self._finish("failed")
             raise PipelineRunError("failed", self.stats.stage_errors) from None
 
+        self._current_stage = "stage3+stage4"
         results = await asyncio.gather(
             self.run_stage3(max_concurrent=stage3_concurrent),
             self.run_stage4(),
@@ -285,6 +327,7 @@ class PipelineOrchestrator:
                 self.stats.stage_errors[name] = repr(result)
                 logger.error(f"Pipeline {name} failed: {result!r}")
 
+        self._current_stage = None
         failed = [n for n in ("stage3", "stage4") if n in self.stats.stage_errors]
         status: RunStatus = (
             "complete" if not failed else "failed" if len(failed) == 2 else "partial_failed"
