@@ -141,7 +141,8 @@ class RetryAfterMiddleware:
         slot.delay = max(slot.delay, enforced)
 
     def _spider_name(self, spider: Any) -> str:
-        return getattr(spider, "name", None) or getattr(getattr(self.crawler, "spider", None), "name", "unknown")
+        name = getattr(spider, "name", None) or getattr(getattr(self.crawler, "spider", None), "name", None)
+        return str(name or "unknown")
 
     def process_response(self, request: Any, response: Any, spider: Any = None) -> Any:
         if response.status not in RETRY_AFTER_STATUSES:

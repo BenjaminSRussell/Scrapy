@@ -137,7 +137,6 @@ CLOSESPIDER_TIMEOUT = _scrapy_config.get("closespider_timeout", 600)
 # CONCURRENT_REQUESTS_PER_DOMAIN. See README "Rate limits and per-domain
 # concurrency".
 from src.stage1.middlewares.spider_config import (  # noqa: E402
-    MIN_AUTOTHROTTLE_MAX_DELAY,
     polite_autothrottle_max_delay,
     polite_target_concurrency,
 )
