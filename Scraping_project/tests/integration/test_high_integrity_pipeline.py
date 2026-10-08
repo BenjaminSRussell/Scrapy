@@ -11,6 +11,10 @@ from src.pipelines import (
 )
 from src.schemas import BaseRecordSchema, CategoryType, ValidationFailureRecord
 
+# Bronze-required fields (#227) that MetadataPipeline / SchemaValidationPipeline
+# stamp on real items; direct schema constructions must supply them.
+STAMP = {"scraped_at_utc": "2024-01-20T10:30:00Z", "spider_name": "test_spider"}
+
 class TestSchemaValidation:
 
     def test_valid_institutional_cost_record(self):
@@ -32,7 +36,7 @@ class TestSchemaValidation:
             "validation_status": True,
         }
 
-        record = BaseRecordSchema(**record_data)
+        record = BaseRecordSchema(**record_data, **STAMP)
 
         assert record.url == "https://uconn.edu/tuition"
         assert record.tuition_cost == 18000.0
@@ -51,7 +55,7 @@ class TestSchemaValidation:
             "housing_cost": 12500.0,
         }
 
-        record = BaseRecordSchema(**record_data)
+        record = BaseRecordSchema(**record_data, **STAMP)
 
         assert record.tuition_cost == 25000.0
         assert record.housing_cost == 12500.0
@@ -66,7 +70,7 @@ class TestSchemaValidation:
         }
 
         with pytest.raises(Exception):
-            BaseRecordSchema(**record_data)
+            BaseRecordSchema(**record_data, **STAMP)
 
     def test_automatic_total_cost_calculation(self):
         record_data = {
@@ -79,12 +83,13 @@ class TestSchemaValidation:
             "fees_cost": 2000.0,
         }
 
-        record = BaseRecordSchema(**record_data)
+        record = BaseRecordSchema(**record_data, **STAMP)
 
         assert record.total_cost == 20000.0
 
     def test_publication_date_parsing(self):
         record1 = BaseRecordSchema(
+            **STAMP,
             url="https://example.com",
             source_url="https://example.com",
             title="Test",
@@ -93,6 +98,7 @@ class TestSchemaValidation:
         assert isinstance(record1.publication_date, datetime)
 
         record2 = BaseRecordSchema(
+            **STAMP,
             url="https://example.com",
             source_url="https://example.com",
             title="Test",
@@ -102,6 +108,7 @@ class TestSchemaValidation:
 
         now = datetime.now(UTC)
         record3 = BaseRecordSchema(
+            **STAMP,
             url="https://example.com",
             source_url="https://example.com",
             title="Test",
