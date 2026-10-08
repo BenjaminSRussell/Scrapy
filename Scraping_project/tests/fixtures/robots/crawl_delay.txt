@@ -1,0 +1,8 @@
+# Crawl-delay per group; the catch-all asks for 5s, a named bot gets 600s.
+User-agent: SlowBot
+Crawl-delay: 600
+Disallow:
+
+User-agent: *
+Crawl-delay: 5
+Disallow: /cgi-bin/

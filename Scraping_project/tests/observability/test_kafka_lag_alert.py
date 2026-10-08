@@ -1,48 +1,33 @@
-import os
-import unittest
+"""Kafka consumer-lag SLO alert (pytest; was unittest, #299)."""
 
+from pathlib import Path
+
+import pytest
 import yaml
 
-class TestKafkaLagAlert(unittest.TestCase):
-    def setUp(self):
-        self.rules_path = os.path.join(os.path.dirname(__file__), "../../monitoring/alerting_rules.yml")
-        with open(self.rules_path) as f:
-            self.rules = yaml.safe_load(f)
+RULES = Path(__file__).resolve().parents[2] / "monitoring" / "alerting_rules.yml"
 
-    def test_slo_alert_exists(self):
-        kafka_group = next(
-            (g for g in self.rules["groups"] if g["name"] == "kafka_infrastructure"),
-            None,
-        )
-        self.assertIsNotNone(kafka_group, "Group 'kafka_infrastructure' not found")
 
-        slo_alert = next(
-            (r for r in kafka_group["rules"] if r["alert"] == "KafkaConsumerLagSLO"),
-            None,
-        )
-        self.assertIsNotNone(slo_alert, "Alert 'KafkaConsumerLagSLO' not found")
+@pytest.fixture(scope="module")
+def slo_alert():
+    rules = yaml.safe_load(RULES.read_text())
+    group = next((g for g in rules["groups"] if g["name"] == "kafka_infrastructure"), None)
+    assert group is not None, "Group 'kafka_infrastructure' not found"
+    alert = next((r for r in group["rules"] if r.get("alert") == "KafkaConsumerLagSLO"), None)
+    assert alert is not None, "Alert 'KafkaConsumerLagSLO' not found"
+    return alert
 
-    def test_slo_alert_expression_uses_exporter_metric(self):
-        kafka_group = next(
-            (g for g in self.rules["groups"] if g["name"] == "kafka_infrastructure"),
-            None,
-        )
-        slo_alert = next(
-            (r for r in kafka_group["rules"] if r["alert"] == "KafkaConsumerLagSLO"),
-            None,
-        )
-        self.assertIsNotNone(slo_alert, "Cannot test expression of missing alert 'KafkaConsumerLagSLO'")
 
-        self.assertIn(
-            "kafka_consumergroup_lag_max",
-            slo_alert["expr"],
-            "SLO alert should be based on the 'kafka_consumergroup_lag_max' recording rule.",
-        )
+def test_slo_alert_uses_recording_rule(slo_alert):
+    assert "kafka_consumergroup_lag_max" in slo_alert["expr"]
 
-        self.assertTrue(
-            any(char.isdigit() for char in slo_alert["expr"]),
-            "SLO alert expression should have a numeric threshold.",
-        )
 
-if __name__ == "__main__":
-    unittest.main()
+def test_slo_alert_has_numeric_threshold_and_hold(slo_alert):
+    assert any(ch.isdigit() for ch in slo_alert["expr"])
+    assert slo_alert.get("for"), "SLO alert must not fire on a single scrape"
+    assert slo_alert["labels"]["severity"] == "critical"
+
+
+def test_slo_alert_description_names_the_group(slo_alert):
+    # The alert text relies on the recording rule producing a meaningful `group` label.
+    assert "$labels.group" in slo_alert["annotations"]["description"]

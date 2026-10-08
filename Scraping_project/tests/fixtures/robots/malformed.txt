@@ -1,0 +1,6 @@
+﻿# BOM, CRLF line endings, junk lines and an unknown directive.
+this line is junk
+User-agent: *
+Noindex: /whatever/
+Disallow: /admin/
+

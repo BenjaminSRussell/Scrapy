@@ -783,9 +783,18 @@ def main():
         parser.print_help()
         sys.exit(1)
 
+    if not hasattr(args, "func"):
+        # A command group without its subcommand (e.g. `cli.py data`): show that group's
+        # usage and exit 2 like any other argparse usage error, not a logged traceback (#297).
+        subparsers.choices[args.command].print_help(sys.stderr)
+        sys.exit(2)
+
     try:
         args.func(args)
         sys.exit(0)
+    except KeyboardInterrupt:
+        logger.warning("Interrupted")
+        sys.exit(130)
     except Exception as e:
         logger.error(f"Error: {e}", exc_info=True)
         sys.exit(1)

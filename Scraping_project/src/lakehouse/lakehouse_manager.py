@@ -323,6 +323,44 @@ def metadata_row_count(table: Any) -> int | None:
     return int(sum(counts.to_pylist()))  # one entry per data file
 
 
+class MissingColumnsError(ValueError):
+    """A read named columns the table (at that version) doesn't have (#301).
+
+    Subclasses ValueError, as pyarrow's ArrowInvalid does, so existing ``except ValueError``
+    callers keep working. The message names the table, the version and the missing columns
+    instead of dumping the whole Arrow schema.
+    """
+
+    def __init__(self, table_name: str, missing: list[str], available: list[str], version: int | None):
+        at = f" at version {version}" if version is not None else ""
+        super().__init__(f"{table_name}{at} has no column(s) {missing}; available: {available}")
+        self.table_name = table_name
+        self.missing = missing
+        self.available = available
+        self.version = version
+
+
+def _filter_columns(filters: Any) -> set[str] | None:
+    """Column names referenced by DNF filters ``[(col, op, val)]`` / ``[[(...)], [(...)]]``.
+
+    Returns None for anything else (e.g. a pyarrow expression): those aren't validated here.
+    """
+    if not filters:
+        return set()
+    if not isinstance(filters, (list, tuple)):
+        return None
+    first = filters[0]
+    nested = isinstance(first, (list, tuple)) and bool(first) and isinstance(first[0], (list, tuple))
+    groups = filters if nested else [filters]
+    names: set[str] = set()
+    for group in groups:
+        for clause in group:
+            if not (isinstance(clause, (list, tuple)) and len(clause) == 3 and isinstance(clause[0], str)):
+                return None
+            names.add(clause[0])
+    return names
+
+
 PARTITIONED_TABLES = {"stage1_discovery", "stage2_page_analysis"}
 
 
@@ -1129,6 +1167,13 @@ class LakehouseManager:
             return []
 
         table = DeltaTable(str(table_path), version=version)
+        referenced = _filter_columns(filters)
+        wanted = set(columns or ()) | (referenced or set())
+        if wanted:
+            available = [f.name for f in table.schema().fields]
+            missing = sorted(wanted - set(available))
+            if missing:
+                raise MissingColumnsError(table_name, missing, available, version)
         pa_table = table.to_pyarrow_table(filters=filters, columns=columns)
         rows: list[dict] = pa_table.to_pylist()
         return rows
