@@ -95,6 +95,24 @@ REQUEST_FINGERPRINTER_CLASS = _scrapy_config.get(
 
 USER_AGENT = _scrapy_config.get("user_agent", "UConn-Discovery-Crawler/1.0")
 
+# robots.txt (#186, #188): obey Disallow and Crawl-delay by default. Scrapy's own
+# RobotsTxtMiddleware is swapped for PoliteRobotsTxtMiddleware (adds metrics and
+# Crawl-delay, capped at ROBOTS_MAX_CRAWL_DELAY). Opt out only for sites you own:
+# ROBOTSTXT_OBEY=false or scrapy.robotstxt_obey: false.
+ROBOTSTXT_OBEY = str(os.getenv("ROBOTSTXT_OBEY", _scrapy_config.get("robotstxt_obey", True))).strip().lower() not in {
+    "0", "false", "no", "off"
+}
+ROBOTS_MAX_CRAWL_DELAY = float(os.getenv("ROBOTS_MAX_CRAWL_DELAY", _scrapy_config.get("robots_max_crawl_delay", 60)))
+DOWNLOADER_MIDDLEWARES = _scrapy_config.get(
+    "downloader_middlewares",
+    {
+        "scrapy.downloadermiddlewares.robotstxt.RobotsTxtMiddleware": None,
+        "src.stage1.middlewares.robots_middleware.PoliteRobotsTxtMiddleware": 100,
+        "src.stage1.middlewares.retry_after_middleware.RetryAfterMiddleware": 560,  # #188
+    },
+)
+RETRY_AFTER_MAX_DELAY = float(os.getenv("RETRY_AFTER_MAX_DELAY", _scrapy_config.get("retry_after_max_delay", 120)))
+
 CONCURRENT_REQUESTS = _scrapy_config.get("concurrent_requests", 64)
 CONCURRENT_REQUESTS_PER_DOMAIN = _scrapy_config.get("concurrent_requests_per_domain", 32)
 CONCURRENT_REQUESTS_PER_IP = _scrapy_config.get("concurrent_requests_per_ip", 32)
@@ -116,18 +134,42 @@ LOG_LEVEL = os.getenv("LOG_LEVEL", _scrapy_config.get("log_level", "INFO"))
 # ============================================================================
 CLOSESPIDER_TIMEOUT = _scrapy_config.get("closespider_timeout", 600)
 
+# Politeness (#194): AutoThrottle must be able to slow a host down far enough
+# under a 429 storm. AUTOTHROTTLE_MAX_DELAY is floored at 30s and the target
+# concurrency is per remote host (Scrapy semantics), so it can never exceed
+# CONCURRENT_REQUESTS_PER_DOMAIN. See README "Rate limits and per-domain
+# concurrency".
+from src.stage1.middlewares.spider_config import (  # noqa: E402
+    polite_autothrottle_max_delay,
+    polite_target_concurrency,
+)
+
 AUTOTHROTTLE_ENABLED = _scrapy_config.get("autothrottle_enabled", True)
 AUTOTHROTTLE_START_DELAY = _scrapy_config.get("autothrottle_start_delay", 0.1)
-AUTOTHROTTLE_MAX_DELAY = _scrapy_config.get("autothrottle_max_delay", 1.0)
-AUTOTHROTTLE_TARGET_CONCURRENCY = float(CONCURRENT_REQUESTS)
+AUTOTHROTTLE_MAX_DELAY = polite_autothrottle_max_delay(_scrapy_config.get("autothrottle_max_delay", 60.0))
+AUTOTHROTTLE_TARGET_CONCURRENCY = polite_target_concurrency(
+    _scrapy_config.get("autothrottle_target_concurrency", 4.0), CONCURRENT_REQUESTS_PER_DOMAIN
+)
 AUTOTHROTTLE_DEBUG = _scrapy_config.get("autothrottle_debug", False)
+# 429/503 without Retry-After: exponential per-host backoff (RetryAfterMiddleware).
+RATE_LIMIT_BACKOFF_MIN = float(_scrapy_config.get("rate_limit_backoff_min", 1.0))
+RATE_LIMIT_BACKOFF_MAX = float(_scrapy_config.get("rate_limit_backoff_max", AUTOTHROTTLE_MAX_DELAY))
+RATE_LIMIT_COOLDOWN_FACTOR = float(_scrapy_config.get("rate_limit_cooldown_factor", 4.0))
 
 HTTPCACHE_ENABLED = _scrapy_config.get("httpcache_enabled", True)
 HTTPCACHE_EXPIRATION_SECS = _scrapy_config.get("httpcache_expiration_secs", 3600)
 HTTPCACHE_DIR = PROJECT_ROOT / "data" / "cache" / "scrapy"
+# Filesystem storage (one directory per entry) so HttpCacheQuota can prune the
+# oldest responses. A DBM cache is a single file that can't shrink while open (#496).
 HTTPCACHE_STORAGE = _scrapy_config.get(
-    "httpcache_storage", "scrapy.extensions.httpcache.DbmCacheStorage"
+    "httpcache_storage", "scrapy.extensions.httpcache.FilesystemCacheStorage"
 )
+# Disk quota (#496): prune oldest entries down to TARGET_RATIO * MAX_BYTES once
+# usage exceeds MAX_BYTES. Checked at spider open, every PRUNE_INTERVAL_SECS, and
+# at close. 0 disables pruning; size is still exported as scrapy_httpcache_bytes.
+HTTPCACHE_MAX_BYTES = int(_scrapy_config.get("httpcache_max_bytes", 2 * 1024**3))
+HTTPCACHE_PRUNE_INTERVAL_SECS = float(_scrapy_config.get("httpcache_prune_interval_secs", 300))
+HTTPCACHE_PRUNE_TARGET_RATIO = float(_scrapy_config.get("httpcache_prune_target_ratio", 0.8))
 
 TWISTED_REACTOR = _scrapy_config.get(
     "twisted_reactor", "twisted.internet.asyncioreactor.AsyncioSelectorReactor"
@@ -162,6 +204,8 @@ EXTENSIONS = _scrapy_config.get(
     {
         "src.scrapy_prometheus.PrometheusExtension": 500,
         "src.otel_tracing.OtelTracingExtension": 510,
+        # No-op (NotConfigured) unless HTTPCACHE_ENABLED (#496).
+        "src.stage1.extensions.httpcache_quota.HttpCacheQuota": 520,
     },
 )
 

@@ -103,17 +103,20 @@ def test_ignore_rules_keep_devcontainer_and_drop_personal_envrc():  # #694 #783
     assert _git_ignored("Scraping_project/.envrc")
 
 
-def test_devcontainer_definition_is_consistent():  # #694
+def test_devcontainer_definition_is_consistent():  # #694 (definition from #321)
     raw = _read(REPO / ".devcontainer" / "devcontainer.json")
     spec = json.loads(re.sub(r"^\s*//.*$", "", raw, flags=re.M))
-    compose = yaml.safe_load(_read(REPO / ".devcontainer" / spec["dockerComposeFile"]))
-    assert spec["service"] in compose["services"] and "redis" in compose["services"]
     pin = _read(REPO / ".python-version").strip()
-    assert f"python:1-{pin}" in compose["services"][spec["service"]]["image"]
-    assert spec["containerEnv"]["REDIS_HOST"] == "redis"
+    assert f"python:1-{pin}" in spec["image"], "devcontainer Python must match .python-version"
     assert spec["workspaceFolder"].endswith("/Scraping_project")
     assert "requirements.txt -r dev-requirements.txt -r ci-tools.txt" in spec["postCreateCommand"]
     assert "|| true" not in spec["postCreateCommand"], "install failures must not be masked"
+    # Redis comes from the project's Compose service via docker-in-docker.
+    assert any("docker-in-docker" in f for f in spec["features"])
+    compose = yaml.safe_load(_read(ROOT / "docker-compose.yml"))
+    assert any(p.endswith(":6379") for p in compose["services"]["redis"]["ports"])
+    assert "docker compose up -d redis" in _read(REPO / "CONTRIBUTING.md")
+    assert not (REPO / ".devcontainer" / "docker-compose.yml").exists(), "one definition only"
 
 
 def test_py_typed_marker_shipped():  # #784

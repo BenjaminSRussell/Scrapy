@@ -9,11 +9,12 @@ import pytest
 from src.lakehouse.lakehouse_manager import DeltaLakeManager
 
 @pytest.fixture
-def delta_manager(tmp_path):
-    if "deltalake" in sys.modules:
-        del sys.modules["deltalake"]
-    if "pyarrow" in sys.modules:
-        del sys.modules["pyarrow"]
+def delta_manager(tmp_path, monkeypatch):
+    # monkeypatch.delitem restores the original module objects afterwards (#683):
+    # a bare `del sys.modules[...]` left later tests holding a different
+    # `deltalake` module than the one code under test imports.
+    monkeypatch.delitem(sys.modules, "deltalake", raising=False)
+    monkeypatch.delitem(sys.modules, "pyarrow", raising=False)
 
     manager = DeltaLakeManager(base_path=str(tmp_path), start_workers=False)
     yield manager
