@@ -70,6 +70,10 @@ class ScoutSpider(BaseSpider):
 
     def parse(self, response: Response) -> Iterator:
         decision = classify_response(response)  # #662: no binary into HTML parsing
+        if not decision.parse_html and decision.reason == "empty_body":
+            # Empty bodies keep the #199 accounting (skip_counters + urls_skipped_total).
+            self._skip_response(response, "empty_body")
+            return
         if not decision.parse_html:
             count_skipped("scout", decision.reason)
             logger.debug(f"[SCOUT] Not parsing ({decision.reason}) {response.url[:80]}")
