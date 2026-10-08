@@ -3,7 +3,7 @@
 Default is off / no-op when ``OTEL_EXPORTER_OTLP_ENDPOINT`` is unset, or when
 the optional ``[otel]`` extra is not installed, so local lean runs keep
 working. When the endpoint is set and packages are present, spans export via
-OTLP to the collector in ``docker-compose.production.yml`` (gRPC ``4317`` /
+OTLP to the collector in ``docker-compose.observability.yml`` (gRPC ``4317`` /
 HTTP ``4318``).
 
 Install optional deps::

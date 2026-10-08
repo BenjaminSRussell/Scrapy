@@ -128,7 +128,9 @@ stage2:
   batch_size: 50
   poll_interval_seconds: 3
 
-  # Quality Thresholds
+  # Quality Thresholds (read by Stage2Worker and IntelligentAnalyzer, #329;
+  # env STAGE2_MIN_WORD_COUNT / STAGE2_MIN_TEXT_TO_HTML_RATIO /
+  # STAGE2_MASSIVE_DOC_THRESHOLD override). Effective values are logged at start.
   min_word_count: 50
   min_text_to_html_ratio: 0.1
   massive_doc_threshold: 50000  # Characters to trigger Stage 4
