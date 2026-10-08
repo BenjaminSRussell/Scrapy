@@ -1685,8 +1685,14 @@ class LakehouseManager:
 
     @classmethod
     def get_instance(cls, base_path: str | None = None, start_workers: bool = True) -> "LakehouseManager":
+        """Process-wide manager; ``get_delta()`` delegates here too (#359)."""
         if cls._instance is None:
             cls._instance = cls(base_path=base_path, start_workers=start_workers)
+        elif base_path is not None and Path(base_path).resolve() != Path(cls._instance.base_path).resolve():
+            logger.warning(
+                f"LakehouseManager.get_instance(base_path={base_path!r}) ignored: the singleton "
+                f"already uses {cls._instance.base_path}"
+            )
         return cls._instance
 
     @classmethod
