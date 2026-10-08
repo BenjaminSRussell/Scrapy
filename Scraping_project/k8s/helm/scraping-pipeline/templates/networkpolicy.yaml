@@ -1,7 +1,8 @@
 {{- if .Values.networkPolicy.enabled }}
 {{- $fullname := include "scraping-pipeline.fullname" . }}
 {{- $metricsStart := int .Values.scrapyApp.service.ports.metricsStart }}
-{{- $metricsEnd := add (int .Values.scrapyApp.service.ports.metricsEnd) 1 }}
+{{- /* untilStep needs int; sprig add returns int64, which broke every render (#504) */}}
+{{- $metricsEnd := int (add (int .Values.scrapyApp.service.ports.metricsEnd) 1) }}
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy

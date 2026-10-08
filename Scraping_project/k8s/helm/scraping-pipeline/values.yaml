@@ -625,4 +625,10 @@ networkPolicy:
 # ============================================
 podDisruptionBudget:
   enabled: true
+  # Stateful stores with more than one replica. Single-replica stores (postgres,
+  # redis and kafka today) get maxUnavailable: 1 instead, so node drains can proceed (#514).
   minAvailable: 1
+  # Scraper and stage workers (#514): at most this many pods of a workload are evicted
+  # at once. Allows draining a single replica (preStop drains its queue first).
+  workers:
+    maxUnavailable: 1
