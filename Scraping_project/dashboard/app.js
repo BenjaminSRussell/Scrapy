@@ -203,18 +203,6 @@ function getUptime() {
 }
 
 
-function safeLinkify(escapedText) {
-    // Input must already be HTML-escaped. Only promote http(s) URLs.
-    return String(escapedText).replace(
-        /https?:\/\/[^\s<]+/gi,
-        (url) => {
-            if (/^javascript:/i.test(url)) return url;
-            const href = url.replace(/"/g, '&quot;');
-            return `<a href="${href}" target="_blank" rel="noopener noreferrer">${url}</a>`;
-        }
-    );
-}
-
 function escapeHtml(s) {
     return String(s ?? '')
         .replace(/&/g, '&amp;')
@@ -247,15 +235,41 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 
+// #906: rows are built with DOM APIs only (textContent / setAttribute), never
+// innerHTML, so API- or metrics-derived text can't become markup.
+function renderActivityMessage(el, message) {
+    for (const seg of splitLinks(message)) {
+        if (seg.href) {
+            const a = document.createElement('a');
+            a.href = seg.href;
+            a.target = '_blank';
+            a.rel = 'noopener noreferrer';
+            a.textContent = seg.text;
+            el.appendChild(a);
+        } else {
+            el.appendChild(document.createTextNode(seg.text));
+        }
+    }
+}
+
 function renderActivityList(container, { maxItems = 50 } = {}) {
     if (!container) return;
-    const items = activityLog.slice(0, maxItems);
-    container.innerHTML = items.map(item => `
-        <li class="activity-item ${escapeHtml(item.type)}">
-            <div class="activity-timestamp">${escapeHtml(item.timestamp)}</div>
-            <div class="activity-message">${safeLinkify(escapeHtml(item.message))}</div>
-        </li>
-    `).join('');
+    const frag = document.createDocumentFragment();
+    for (const item of activityLog.slice(0, maxItems)) {
+        const li = document.createElement('li');
+        li.className = 'activity-item';
+        const type = String(item.type || '');
+        if (/^[a-z-]+$/.test(type)) li.classList.add(type);
+        const ts = document.createElement('div');
+        ts.className = 'activity-timestamp';
+        ts.textContent = String(item.timestamp ?? '');
+        const msg = document.createElement('div');
+        msg.className = 'activity-message';
+        renderActivityMessage(msg, item.message);
+        li.append(ts, msg);
+        frag.appendChild(li);
+    }
+    container.replaceChildren(frag);
 }
 
 function updateActivityLog() {
@@ -983,6 +997,13 @@ function initialize() {
     };
     if (chartHeightMql.addEventListener) chartHeightMql.addEventListener('change', onChartBreak);
     else if (chartHeightMql.addListener) chartHeightMql.addListener(onChartBreak);
+
+    // #910: a rejected ?metrics= override is a config error, not a silent fallback.
+    const metricsProblem = metricsUrlProblem(typeof location !== 'undefined' ? location : null);
+    if (metricsProblem) {
+        console.error(`[config] ${metricsProblem}`);
+        addActivityLogItem('danger', metricsProblem);
+    }
 
     console.log('Dashboard ready!');
 }

@@ -4,7 +4,8 @@ Static dashboard served by `serve.py` (port 8080). Metrics are fetched from the
 Prometheus-format endpoint on port 9090 **of the host the page was loaded from**
 (`http://<host>:9090/metrics`), so it also works from another machine or container.
 Override it with `?metrics=http://exporter:9090/metrics` (http/https only) or by setting
-`window.CC_METRICS_URL` before `app.js` loads (#141).
+`window.CC_METRICS_URL` before `app.js` loads (#141). A `?metrics=` value that is not
+http(s) is ignored, and the dashboard says so in the activity log and console (#910).
 
 All throughput figures are per minute, computed from the real time between samples (#141).
 Labelled series such as `errors_total{stage="stage1"}` are kept under their full key and
@@ -24,10 +25,16 @@ node --test Scraping_project/dashboard/tests/   # helper unit tests
 ## Threat model notes (#1046)
 
 **Activity log XSS.** Activity messages may contain text derived from metrics,
-URLs, or error strings. Every message is HTML-escaped (`escapeHtml`) before
-insertion; only `http(s)://` URLs are then linkified (`safeLinkify`) with
-`rel="noopener noreferrer"`. `javascript:` and other schemes are never linked.
+URLs, or error strings. Rows are built with DOM APIs only (`textContent`,
+`setAttribute`), never `innerHTML` (#906): a `<script>` in a message renders as
+text. Only `http(s)://` URLs become links (`splitLinks`), with
+`rel="noopener noreferrer"`; `javascript:` and other schemes are never linked.
 Do not introduce `innerHTML` writes of unescaped data.
+
+**CSP.** `serve.py` sends `Content-Security-Policy-Report-Only` (violations show
+in the browser console, nothing is blocked). It is report-only because
+`index.html` still has inline `<style>`/`<script>` and Chart.js comes from
+jsDelivr. Move those to files before switching to an enforcing policy.
 
 **Metrics origin.** The dashboard trusts whatever `METRICS_URL` returns (including a
 `?metrics=` override, so only open dashboard links you trust).

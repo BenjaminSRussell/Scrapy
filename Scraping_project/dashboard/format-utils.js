@@ -56,6 +56,37 @@
         const host = (loc && loc.hostname) || 'localhost';
         return `${protocol}//${host}:9090/metrics`;
     }
+    // #910: an explicit ?metrics= that we refuse must be reported, not silently
+    // replaced by the default (the operator would watch the wrong exporter).
+    function metricsUrlProblem(loc) {
+        const search = (loc && loc.search) || '';
+        const raw = new URLSearchParams(search).get('metrics');
+        if (raw === null) return null;
+        if (/^https?:\/\/[^\s]+$/i.test(raw)) return null;
+        const shown = raw.length > 80 ? raw.slice(0, 80) + '\u2026' : raw;
+        return `Ignored ?metrics=${JSON.stringify(shown)}: only http(s):// URLs are allowed; using the default exporter URL.`;
+    }
+    // #906: split text into plain and http(s)-link segments so callers can build
+    // DOM nodes (textContent / href) instead of HTML strings. Trailing
+    // punctuation is kept out of the link. Other schemes are never links.
+    function splitLinks(text) {
+        const s = String(text ?? '');
+        const out = [];
+        const re = /https?:\/\/[^\s<>"']+/gi;
+        let last = 0;
+        let m;
+        while ((m = re.exec(s)) !== null) {
+            let url = m[0];
+            const trail = url.match(/[.,;:!?)\]]+$/);
+            if (trail) url = url.slice(0, -trail[0].length);
+            if (m.index > last) out.push({ text: s.slice(last, m.index) });
+            out.push({ text: url, href: url });
+            last = m.index + url.length;
+            re.lastIndex = last;
+        }
+        if (last < s.length) out.push({ text: s.slice(last) });
+        return out;
+    }
     function formatNumber(num) {
         num = Number(num) || 0;
         if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
@@ -151,5 +182,5 @@
             },
         };
     }
-    return { parseMetrics, ratePerMinute, resolveMetricsUrl, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler };
+    return { parseMetrics, ratePerMinute, resolveMetricsUrl, metricsUrlProblem, splitLinks, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler };
 });
