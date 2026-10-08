@@ -161,9 +161,12 @@ def test_guard_registered_first_in_project_and_spider_settings():
 
     path = "src.stage1.middlewares.ssrf_middleware.SSRFGuardMiddleware"
     for mws in (project.DOWNLOADER_MIDDLEWARES, get_spider_settings("scout")["DOWNLOADER_MIDDLEWARES"]):
-        assert mws[path] == min(mws.values())
+        assert mws[path] == min(v for v in mws.values() if v is not None)
     resolved = Settings({"DOWNLOADER_MIDDLEWARES": project.DOWNLOADER_MIDDLEWARES})
     assert path in resolved.getdict("DOWNLOADER_MIDDLEWARES")
+    # Main's robots swap must survive alongside the guard (one assignment, not two).
+    assert "src.stage1.middlewares.robots_middleware.PoliteRobotsTxtMiddleware" in project.DOWNLOADER_MIDDLEWARES
+    assert project.DOWNLOADER_MIDDLEWARES["scrapy.downloadermiddlewares.robotstxt.RobotsTxtMiddleware"] is None
 
 
 # --- Queueing ---------------------------------------------------------------
