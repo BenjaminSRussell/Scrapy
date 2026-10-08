@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 class HiddenURLExtractor:
 
     JS_URL_PATTERNS = [
-        r'["\']/(api|v\d+)/[^"\']+["\']',
+        r'["\'](/(?:api|v\d+)/[^"\']+)["\']',
         r'fetch\s*\(\s*["\']([^"\']+)["\']',
         r'\.get\s*\(\s*["\']([^"\']+)["\']',
         r'\.post\s*\(\s*["\']([^"\']+)["\']',
@@ -172,9 +172,11 @@ class HiddenURLExtractor:
             combined_script = "\n".join(scripts)
 
             api_patterns = [
-                r'["\']/(api|v\d+)/[a-z_\-/]+["\']',
-                r'["\']/(graphql|gql)["\']',
-                r'["\']/(rest|restapi)/[a-z_\-/]+["\']',
+                # Capture the whole path; the old groups captured only "api"/"v1"
+                # so every endpoint collapsed to /api or /v1 (#481).
+                r'["\'](/(?:api|v\d+)/[a-z0-9_\-/]+)["\']',
+                r'["\'](/(?:graphql|gql))["\']',
+                r'["\'](/(?:rest|restapi)/[a-z0-9_\-/]+)["\']',
             ]
 
             for pattern in api_patterns:

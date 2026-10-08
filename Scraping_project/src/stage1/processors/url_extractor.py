@@ -49,14 +49,23 @@ DISCOVERY_HEURISTICS: tuple[str, ...] = (
     "event_handlers",  # onclick/onload/... attributes
     "raw_regex",       # regex over the whole body (noisiest; see #25)
 )
+# Off unless asked for: ``stage1.extract_hidden_urls: true`` or
+# ``discovery_heuristics: {hidden_urls: true}`` (#481).
+OPT_IN_HEURISTICS: tuple[str, ...] = (
+    "hidden_urls",     # HiddenURLExtractor: meta refresh, /api/... literals, JS routes
+)
+ALL_HEURISTICS: tuple[str, ...] = DISCOVERY_HEURISTICS + OPT_IN_HEURISTICS
+_FALSY = (False, "false", "off", "no", 0, "0")
 
 
 def resolve_heuristics(setting: Any = None, config: Any = None) -> frozenset[str]:
     """Enabled heuristics from an explicit setting or ``stage1.discovery_heuristics``.
 
-    Accepts a mapping ``{name: bool}`` (unlisted names stay enabled) or an
-    iterable of enabled names. ``None`` means "read config"; no config means all.
+    Accepts a mapping ``{name: bool}`` (unlisted default heuristics stay
+    enabled, opt-in ones stay off) or an iterable of enabled names. ``None``
+    means "read config"; no config means every default heuristic.
     """
+    hidden_flag = False
     if setting is None:
         if config is None:
             try:
@@ -73,20 +82,35 @@ def resolve_heuristics(setting: Any = None, config: Any = None) -> frozenset[str
                     setting = None
                 if setting is not None:
                     break
+            for key in ("stage1.extract_hidden_urls", "stages.stage1.extract_hidden_urls"):
+                try:
+                    value = config.get(key)
+                except Exception:
+                    value = None
+                if value is not None:
+                    hidden_flag = value not in _FALSY and str(value).strip().lower() not in ("false", "off", "no", "0")
+                    break
+    extra = {"hidden_urls"} if hidden_flag else set()
     if setting is None:
-        return frozenset(DISCOVERY_HEURISTICS)
+        return frozenset(set(DISCOVERY_HEURISTICS) | extra)
     if isinstance(setting, Mapping):
-        unknown = sorted(set(map(str, setting)) - set(DISCOVERY_HEURISTICS))
-        enabled = {h for h in DISCOVERY_HEURISTICS if setting.get(h, True) not in (False, "false", "off", 0, "0")}
+        unknown = sorted(set(map(str, setting)) - set(ALL_HEURISTICS))
+        enabled = {h for h in DISCOVERY_HEURISTICS if setting.get(h, True) not in _FALSY}
+        for h in OPT_IN_HEURISTICS:
+            if h in setting:
+                if setting[h] not in _FALSY:
+                    enabled.add(h)
+            elif h in extra:
+                enabled.add(h)
     elif isinstance(setting, Iterable) and not isinstance(setting, (str, bytes)):
         names = {str(h) for h in setting}
-        unknown = sorted(names - set(DISCOVERY_HEURISTICS))
-        enabled = names & set(DISCOVERY_HEURISTICS)
+        unknown = sorted(names - set(ALL_HEURISTICS))
+        enabled = (names & set(ALL_HEURISTICS)) | extra
     else:
         logger.warning(f"[URLExtractor] Ignoring discovery_heuristics={setting!r}; expected a mapping or list")
-        return frozenset(DISCOVERY_HEURISTICS)
+        return frozenset(set(DISCOVERY_HEURISTICS) | extra)
     if unknown:
-        logger.warning(f"[URLExtractor] Unknown discovery heuristics ignored: {unknown}; known: {list(DISCOVERY_HEURISTICS)}")
+        logger.warning(f"[URLExtractor] Unknown discovery heuristics ignored: {unknown}; known: {list(ALL_HEURISTICS)}")
     return frozenset(enabled)
 
 _PAYLOAD_PREVIEW = 80
@@ -133,7 +157,7 @@ class URLExtractor:
         self.discovered_urls = set()
         self.heuristic_counts = {}
 
-        for name in DISCOVERY_HEURISTICS:
+        for name in ALL_HEURISTICS:
             if name not in self.heuristics:
                 continue
             before = len(self.discovered_urls)
@@ -147,6 +171,25 @@ class URLExtractor:
 
     def extract_sitemap_urls(self, response: Response) -> set[str]:
         return set()
+
+    # HiddenURLExtractor categories worth crawling. "sitemaps" is left out: it
+    # guesses /sitemap.xml variants for every page; sitemap_parser owns that.
+    HIDDEN_URL_CATEGORIES: tuple[str, ...] = (
+        "data_attributes",
+        "json_ld",
+        "javascript",
+        "iframes",
+        "meta_refresh",
+        "api_endpoints",
+    )
+
+    def _extract_from_hidden_urls(self, response: Response):
+        from src.stage1.processors.hidden_url_extractor import HiddenURLExtractor
+
+        found = HiddenURLExtractor(base_url=self.base_url).extract_all_hidden_urls(response)
+        for category in self.HIDDEN_URL_CATEGORIES:
+            for url in found.get(category, ()):
+                self._add_url(url)
 
     def _extract_from_standard_tags(self, response: Response):
         for href in response.css("a::attr(href)").getall():
