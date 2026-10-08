@@ -9,6 +9,9 @@ const METRICS_URL = resolveMetricsUrl(
 const REFRESH_INTERVAL = 5000;
 let refreshPaused = false;
 let metricsWasDown = false;
+let consecutiveFetchFailures = 0;
+// Static <title> captured once; connection state is prefixed onto it (#945).
+const BASE_TITLE = (typeof document !== 'undefined' && document.title) || 'Pipeline Control Center';
 let chartsHaveSample = false;
 
 let refreshScheduler = null;
@@ -520,7 +523,7 @@ function updateDashboard(metrics) {
 
     const rates = calculateRates(metrics);
 
-    document.getElementById('topbar-status').textContent = metrics['pipeline_running'] === 1 ? '🟢 ONLINE' : '🔴 OFFLINE';
+    // topbar status is owned by setConnectionStatus (#945)
     setMetricText('topbar-urls', formatNumber(s1Discovered));
     setMetricText('topbar-summaries', formatNumber(s3Summaries));
 
@@ -634,8 +637,9 @@ function setReportedValue(id, value) {
     }
 }
 
-function setConnectionStatus(kind) {
+function setConnectionStatus(kind, pipelineRunning) {
     // kind: 'online' | 'never' | 'offline'
+    const state = connectionState(kind, pipelineRunning, consecutiveFetchFailures);
     const sys = document.getElementById('system-status');
     const top = document.getElementById('topbar-status');
     const labels = {
@@ -643,18 +647,15 @@ function setConnectionStatus(kind) {
         never: 'Not connected',
         offline: 'Disconnected',
     };
-    const topLabels = {
-        online: '● Online',
-        never: '○ Not connected',
-        offline: '● Disconnected',
-    };
     if (sys) {
         sys.classList.remove('online', 'offline', 'never');
         sys.classList.add(kind === 'online' ? 'online' : kind === 'never' ? 'never' : 'offline');
         const span = sys.querySelector('span:last-child');
         if (span) { const __n = labels[kind] || kind; if (span.textContent !== String(__n)) { span.textContent = __n; span.classList.remove('flash'); void span.offsetWidth; span.classList.add('flash'); } else { span.textContent = __n; } }
     }
-    if (top) { const __n = topLabels[kind] || kind; if (top.textContent !== String(__n)) { top.textContent = __n; top.classList.remove('flash'); void top.offsetWidth; top.classList.add('flash'); } else { top.textContent = __n; } }
+    const title = documentTitle(state, BASE_TITLE);
+    if (document.title !== title) document.title = title;
+    if (top) { const __n = state.top; if (top.textContent !== String(__n)) { top.textContent = __n; top.classList.remove('flash'); void top.offsetWidth; top.classList.add('flash'); } else { top.textContent = __n; } }
 }
 
 async function fetchMetrics() {
@@ -671,11 +672,13 @@ async function fetchMetrics() {
         updateDashboard(metrics);
         hasEverSucceeded = true;
         lastMetricsAt = Date.now();
-        setConnectionStatus('online');
+        consecutiveFetchFailures = 0;
+        setConnectionStatus('online', metrics['pipeline_running']);
     } catch (error) {
         metricsWasDown = true;
         console.error('Error fetching metrics:', error);
         addActivityLogItem('danger', `Failed to fetch metrics: ${error.message}`);
+        consecutiveFetchFailures += 1;
         setConnectionStatus(hasEverSucceeded ? 'offline' : 'never');
         document.querySelectorAll('.card-badge.badge-info, .card-badge.badge-success').forEach(b => {
             b.textContent = 'Unknown';

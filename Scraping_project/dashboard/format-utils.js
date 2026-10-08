@@ -171,5 +171,27 @@
             },
         };
     }
-    return { parseMetrics, ratePerMinute, resolveMetricsUrl, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler, stageActivity, doughnutLegendLayout };
+    // #945: one source of truth for the tab title and the topbar status.
+    // kind is the metrics-fetch outcome ('online' | 'never' | 'offline');
+    // pipelineRunning is the optional `pipeline_running` gauge (0 => stopped).
+    function connectionState(kind, pipelineRunning, failures) {
+        if (kind === 'online') {
+            if (pipelineRunning === 0) {
+                return { key: 'stopped', title: 'OFFLINE', glyph: '\u25CB', top: '\u25D0 Pipeline offline' };
+            }
+            return { key: 'online', title: 'ONLINE', glyph: '\u25CF', top: '\u25CF Online' };
+        }
+        const n = Math.max(0, Math.floor(Number(failures) || 0));
+        const suffix = n > 1 ? ' (' + n + ' failed)' : '';
+        if (kind === 'never') {
+            return { key: 'never', title: 'ERROR' + suffix, glyph: '\u26A0', top: '\u25CB Not connected' };
+        }
+        return { key: 'offline', title: 'ERROR' + suffix, glyph: '\u26A0', top: '\u25CF Disconnected' };
+    }
+    function documentTitle(state, baseTitle) {
+        const base = String(baseTitle || '').trim();
+        const head = state.glyph + ' ' + state.title;
+        return base ? head + ' \u00B7 ' + base : head;
+    }
+    return { parseMetrics, ratePerMinute, resolveMetricsUrl, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler, stageActivity, doughnutLegendLayout, connectionState, documentTitle };
 });
