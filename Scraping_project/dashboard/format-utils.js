@@ -235,7 +235,7 @@
     // #962: what (if anything) to say to screen readers for a new activity
     // item. Identical consecutive messages (e.g. "Failed to fetch metrics"
     // every poll during an outage) are spoken once per repeatMs.
-    const ACTIVITY_SPOKEN_TYPE = { success: 'Success', warning: 'Warning', danger: 'Error', info: 'Info' };
+    const ACTIVITY_SPOKEN_TYPE = { success: 'Success', warning: 'Warning', danger: 'Error', info: 'Info', timeout: 'Timeout' };
     function createActivityAnnouncer(opts) {
         const o = opts || {};
         const now = o.now || (() => Date.now());
@@ -326,5 +326,19 @@
         if (stored && valid.has(stored)) return stored;
         return null;
     }
-    return { parseMetrics, ratePerMinute, resolveMetricsUrl, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler, stageActivity, doughnutLegendLayout, connectionState, documentTitle, createActivityAnnouncer, metricsUrlProblem, splitLinks, createMetricsFetcher, REFRESH_INTERVAL_CHOICES, parseRefreshInterval, shortcutAction, pickInitialTab };
+    // #767: a timed-out metrics request is its own activity type, not a generic error.
+    function metricsFailureActivity(error, timeoutMs) {
+        if (error && error.timedOut) {
+            const secs = Math.round((Number(timeoutMs) || 0) / 100) / 10;
+            return { type: 'timeout', message: `Metrics request timed out after ${secs}s and was aborted` };
+        }
+        return { type: 'danger', message: `Failed to fetch metrics: ${error && error.message ? error.message : String(error)}` };
+    }
+    // #503: on-screen hint text for the digit shortcuts.
+    function shortcutHintText(tabCount) {
+        const n = Math.min(Math.max(0, Number(tabCount) || 0), 9);
+        if (n === 0) return 'Shortcut: R refresh';
+        return `Shortcuts: ${n === 1 ? '1' : '1\u2013' + n} switch tabs \u00b7 R refresh`;
+    }
+    return { metricsFailureActivity, shortcutHintText, parseMetrics, ratePerMinute, resolveMetricsUrl, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler, stageActivity, doughnutLegendLayout, connectionState, documentTitle, createActivityAnnouncer, metricsUrlProblem, splitLinks, createMetricsFetcher, REFRESH_INTERVAL_CHOICES, parseRefreshInterval, shortcutAction, pickInitialTab };
 });

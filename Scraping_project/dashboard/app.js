@@ -711,7 +711,8 @@ async function fetchMetrics() {
         if (error && error.superseded) return; // a newer request owns the result (#1031)
         metricsWasDown = true;
         console.error('Error fetching metrics:', error);
-        addActivityLogItem('danger', `Failed to fetch metrics: ${error.message}`);
+        const failure = metricsFailureActivity(error, METRICS_TIMEOUT_MS);
+        addActivityLogItem(failure.type, failure.message);
         consecutiveFetchFailures += 1;
         setConnectionStatus(hasEverSucceeded ? 'offline' : 'never');
         document.querySelectorAll('.card-badge.badge-info, .card-badge.badge-success').forEach(b => {
@@ -974,6 +975,8 @@ function setupShortcuts() {
     });
     const manualBtn = document.getElementById('manual-refresh');
     if (manualBtn) manualBtn.setAttribute('aria-keyshortcuts', 'R');
+    const hint = document.getElementById('shortcut-hint');
+    if (hint) hint.textContent = shortcutHintText(visibleTabNames().length);  // #503
     document.addEventListener('keydown', (event) => {
         const action = shortcutAction(event, visibleTabNames());
         if (!action) return;

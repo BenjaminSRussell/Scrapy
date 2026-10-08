@@ -392,6 +392,22 @@
             background: #fffbeb;
         }
 
+        .activity-item.timeout {
+            border-left-color: var(--warning);
+            background: #fff7ed;
+            border-left-style: dashed;
+        }
+
+        .shortcut-hint {
+            margin: 0.25rem 0 0.75rem;
+            font-size: 0.8rem;
+            color: var(--gray-600, #4b5563);
+        }
+
+        @media (pointer: coarse) {
+            .shortcut-hint { display: none; }
+        }
+
         .activity-item.danger {
             border-left-color: var(--danger);
             background: #fef2f2;
@@ -763,6 +779,7 @@
                 <button type="button" class="tab-button" data-tab="system">⚙️ System Health</button>
                 <button type="button" class="tab-button" data-tab="activity">📋 Activity Log</button>
             </div></div>
+            <p class="shortcut-hint" id="shortcut-hint">Shortcuts: 1–5 switch tabs · R refresh</p>
 
             <!-- Overview Tab -->
             <div class="tab-content active" id="tab-overview">

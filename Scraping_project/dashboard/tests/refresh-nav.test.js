@@ -167,3 +167,26 @@ test('app wires timeout fetcher, visibility pause, shortcuts and remembered tab'
     assert.match(app, /pickInitialTab\(tabFromLocation\(\), storeGet\(STORE_TAB_KEY\)/);
     assert.match(app, /if \(error && error\.superseded\) return;/);
 });
+
+test('a timed-out metrics request is logged as its own activity type (#767)', () => {
+    const { metricsFailureActivity } = require('../format-utils.js');
+    const timeout = metricsFailureActivity(Object.assign(new Error('aborted'), { timedOut: true }), 4000);
+    assert.deepStrictEqual(timeout, { type: 'timeout', message: 'Metrics request timed out after 4s and was aborted' });
+    assert.deepStrictEqual(metricsFailureActivity(new Error('HTTP 502'), 4000),
+        { type: 'danger', message: 'Failed to fetch metrics: HTTP 502' });
+    assert.strictEqual(metricsFailureActivity('boom', 4000).type, 'danger');
+    assert.match(app, /metricsFailureActivity\(error, METRICS_TIMEOUT_MS\)/);
+    assert.match(html, /\.activity-item\.timeout\s*{/);
+    const { createActivityAnnouncer } = require('../format-utils.js');
+    assert.strictEqual(createActivityAnnouncer().text('timeout', 'x'), 'Timeout: x');
+});
+
+test('digit shortcuts have a small on-screen hint that tracks the visible tabs (#503)', () => {
+    const { shortcutHintText } = require('../format-utils.js');
+    assert.strictEqual(shortcutHintText(5), 'Shortcuts: 1\u20135 switch tabs \u00b7 R refresh');
+    assert.strictEqual(shortcutHintText(1), 'Shortcuts: 1 switch tabs \u00b7 R refresh');
+    assert.strictEqual(shortcutHintText(12), 'Shortcuts: 1\u20139 switch tabs \u00b7 R refresh');
+    assert.strictEqual(shortcutHintText(0), 'Shortcut: R refresh');
+    assert.match(html, /<p class="shortcut-hint" id="shortcut-hint">/);
+    assert.match(app, /hint\.textContent = shortcutHintText\(visibleTabNames\(\)\.length\)/);
+});
