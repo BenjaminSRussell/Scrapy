@@ -178,6 +178,31 @@ Fallback: `is_massive_doc` rows in `stage2_page_analysis` that never reached
 the queue are still summarized (PDF detected by `.pdf` URL suffix) and deduped
 via the summaries table. The queue stays the source of truth.
 
+**PDF budgets (#445).** PDF text extraction runs in a child process
+(`src/stage4/pdf_extract_child.py`), so a pathological PDF can only kill the
+child, never the Stage 4 worker:
+
+| Env | Default | Effect |
+|---|---|---|
+| `STAGE4_PDF_MAX_BYTES` | 50 MiB | larger PDFs are rejected before extraction (`quarantined:too_large`) |
+| `STAGE4_PDF_MAX_RSS_MB` | 1024 | child address-space cap (RLIMIT_AS); exceeding it, or a SIGKILL/SIGABRT/SIGSEGV, gives `quarantined:oom` |
+| `STAGE4_PDF_TIMEOUT_S` | 120 | child killed after this many seconds (`quarantined:timeout`) |
+| `STAGE4_PDF_MAX_PAGES` | 2000 | pages extracted per PDF |
+
+An unreadable PDF becomes `quarantined:parse_error`. Quarantined rows are
+settled: they're not retried (by tenacity or the next run), so a bad PDF
+can't requeue forever. If no PDF library is installed in the image, the error
+is transient and rows stay `pending`.
+
+Metrics: `stage4_ocr_oom_total`, `stage4_ocr_timeout_total`,
+`stage4_pdf_quarantined_total{reason}`. Keep the pod memory limit above
+`STAGE4_PDF_MAX_RSS_MB` plus the summarizer model's footprint, so the child
+budget trips before the cgroup OOM killer.
+
+The extractor uses `pypdf` if installed, else `PyPDF2` (the pinned
+dependency). Before this change, the code imported only `pypdf`, so every PDF
+silently extracted to empty text.
+
 ### Type Safety (Phase 6)
 
 All data is validated using Pydantic models:
