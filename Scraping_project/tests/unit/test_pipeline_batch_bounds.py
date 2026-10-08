@@ -283,11 +283,12 @@ def _killed_rows(tmp_path, interval, kill_after):
         return []
     from deltalake import DeltaTable
 
-    return sorted(DeltaTable(str(table)).to_pyarrow_table(columns=["url_hash"]).column("url_hash").to_pylist())
+    # Rows are identified by url: QueueItemPipeline re-derives url_hash from the canonical url (#728).
+    return sorted(DeltaTable(str(table)).to_pyarrow_table(columns=["url"]).column("url").to_pylist())
 
 
 def test_kill_9_after_timer_flush_keeps_rows(tmp_path):
-    assert _killed_rows(tmp_path, interval=0.3, kill_after=4.0) == [f"k{i}" for i in range(5)]
+    assert _killed_rows(tmp_path, interval=0.3, kill_after=4.0) == [f"https://uconn.edu/k{i}" for i in range(5)]
 
 
 def test_kill_9_without_timer_loses_the_batch(tmp_path):

@@ -6,6 +6,8 @@ from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 from typing import Any
 
+from src.utils.ssrf import guarded_get
+
 try:
     import requests
 
@@ -273,7 +275,8 @@ class AsyncASRProcessor:
         temp_file.close()
 
         try:
-            response = requests.get(media_url, timeout=60, stream=True)
+            # SSRF guard (#450): URL and every redirect hop, DNS answers included.
+            response = guarded_get(media_url, session=requests, timeout=60, stream=True)
             try:
                 response.raise_for_status()
 

@@ -74,6 +74,7 @@ Detailed deployment steps: [../DEPLOYMENT.md](../DEPLOYMENT.md#kubernetes-deploy
 - **Scrapy App**: Web crawling (scalable)
 - **Stage 2 Worker**: Page analysis (scalable)
 - **Stage 3 Worker**: Summarization (scalable)
+- **Stage 4 Worker**: Large documents / PDF + OCR (`stage4Worker`, **off by default**; see below)
 - **Kafka Delta Ingestor**: Streaming to Delta Lake (scalable)
 - **Metrics Exporter**: Custom metrics (1 replica)
 - **Exporters**: Redis, PostgreSQL, Kafka JMX, StatsD
@@ -132,6 +133,26 @@ scrapyApp:
       cpu: 16000m
       memory: 32Gi
 ```
+
+### Deploying stages separately (`start.py --stage`)
+
+`python start.py --env k8s --stage <stage>` deploys one stage as its own release and
+namespace. Every stage sets all four workload toggles explicitly, so a stage release
+never depends on chart defaults (#504):
+
+| `--stage` | scrapyApp | stage2Worker | stage3Worker | stage4Worker |
+|---|---|---|---|---|
+| `stage1` | on | off | off | off |
+| `stage2` | off | on | off | off |
+| `stage3` | off | off | on | off |
+| `stage4` | off | off | off | on |
+| `all-stages` | one release per row above (stage1 → stage4) | | | |
+| `pipeline` (default) | chart defaults: Stage 4 off | | | |
+
+Stage 4 needs an image with the PDF/OCR toolchain (`stage4Worker.image`), so it's off
+in `values.yaml`. Include it in a full-pipeline release with
+`--set stage4Worker.enabled=true`. Preview any of these without touching the cluster:
+`python start.py --env k8s --stage stage4 --dry-run`.
 
 ## Monitoring
 
