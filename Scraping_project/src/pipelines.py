@@ -1215,32 +1215,66 @@ class SchemaValidationPipeline:
         except Exception as e:
             logger.error(f"Failed to publish validation failure: {e}")
 
+try:  # recency scoring outcomes (#675): missing-date rate = missing / all
+    from prometheus_client import Counter as _RCounter
+
+    RECENCY_ITEMS = _RCounter(
+        "scrapy_recency_items_total",
+        "Items seen by RecencyScoringPipeline by outcome (scored|missing_date|unparseable_date).",
+        ["outcome"],
+    )
+except Exception:  # prometheus_client missing or metric already registered
+    RECENCY_ITEMS = None
+
+
 class RecencyScoringPipeline:
+    """Write ``recency_score`` in [0, 1] from ``publication_date``.
+
+    Scoring contract (silver -> gold, #675): when ``publication_date`` is
+    missing or unparseable, ``recency_score`` is ``None`` (freshness unknown)
+    rather than an invented 0.5. Consumers must treat ``None`` as unknown, not
+    as median relevance. Outcomes are counted in ``scrapy_recency_items_total``.
+    """
+
+    OUTCOMES = ("scored", "missing_date", "unparseable_date")
 
     def __init__(
         self,
         decay_constant: float = 0.01,
-        default_score: float = 0.5,
+        default_score: float | None = None,
     ):
         """Initialize the recency scoring pipeline.
 
         Args:
             decay_constant: Decay rate parameter (k). Higher = faster decay.
-            default_score: Score for items missing publication_date
+            default_score: Score for items without a usable publication_date.
+                ``None`` (default) leaves the score null; a float opts into
+                legacy imputation.
         """
         self.decay_constant = decay_constant
         self.default_score = default_score
         self.items_scored = 0
+        self.outcomes = dict.fromkeys(self.OUTCOMES, 0)
 
     @classmethod
     def from_crawler(cls, crawler: Crawler) -> "RecencyScoringPipeline":
         decay_constant = crawler.settings.getfloat("RECENCY_DECAY_CONSTANT", 0.01)
-        default_score = crawler.settings.getfloat("RECENCY_DEFAULT_SCORE", 0.5)
+        raw_default = crawler.settings.get("RECENCY_DEFAULT_SCORE")
+        default_score = None if raw_default in (None, "", "none", "None", "null") else float(raw_default)
 
         return cls(
             decay_constant=decay_constant,
             default_score=default_score,
         )
+
+    def _record(self, outcome: str) -> None:
+        self.outcomes[outcome] += 1
+        if RECENCY_ITEMS is not None:
+            RECENCY_ITEMS.labels(outcome=outcome).inc()
+
+    def missing_date_rate(self) -> float:
+        total = sum(self.outcomes.values())
+        return (self.outcomes["missing_date"] + self.outcomes["unparseable_date"]) / total if total else 0.0
 
     def process_item(self, item: Any, spider: Spider) -> Any:
         if isinstance(item, OffsiteCandidateItem):
@@ -1259,16 +1293,22 @@ class RecencyScoringPipeline:
                     decay_constant=self.decay_constant,
                 )
                 adapter["recency_score"] = score
+                self._record("scored")
             except Exception as e:
                 logger.warning(f"Failed to calculate recency score for {adapter.get('url')}: {e}")
                 adapter["recency_score"] = self.default_score
+                self._record("unparseable_date")
         else:
             adapter["recency_score"] = self.default_score
+            self._record("missing_date")
 
         self.items_scored += 1
 
         if self.items_scored % 1000 == 0:
-            logger.info(f"RecencyScoring: Scored {self.items_scored} items")
+            logger.info(
+                f"RecencyScoring: {self.items_scored} items, "
+                f"missing/unparseable date rate {self.missing_date_rate():.1%}"
+            )
 
         return item
 
@@ -1417,6 +1457,12 @@ class AggregationPipeline:
             self._delta = get_delta()
         return self._delta
 
+    @staticmethod
+    def _max_known_recency(items: list[dict[str, Any]]) -> float | None:
+        """Highest real recency score; None when no item has one (#675)."""
+        known = [float(i["recency_score"]) for i in items if i.get("recency_score") is not None]
+        return max(known) if known else None
+
     def build_summary_rows(self, spider_name: str, entity_ids: list[str] | None = None) -> list[dict[str, Any]]:
         created_at = datetime.now().isoformat()
         rows: list[dict[str, Any]] = []
@@ -1436,7 +1482,7 @@ class AggregationPipeline:
                     "summary": summary,
                     "source_count": int(self.entity_counts.get(entity_id, len(items))),
                     "top_urls": json.dumps([u for u in urls if u]),
-                    "max_recency_score": float(self._recency(items[0])) if items else 0.0,
+                    "max_recency_score": self._max_known_recency(items),
                     "spider": spider_name,
                     "created_at": created_at,
                 }
@@ -1475,10 +1521,11 @@ class AggregationPipeline:
 
         context_parts = []
         for item in items[:10]:
-            recency = item.get("recency_score", 0.0)
+            recency = item.get("recency_score")
             title = item.get("title", "")
-            content = item.get("content", "")[:200]
-            context_parts.append(f"[Recency: {recency:.2f}] {title}: {content}")
+            content = (item.get("content") or "")[:200]
+            recency_label = f"{float(recency):.2f}" if recency is not None else "unknown"
+            context_parts.append(f"[Recency: {recency_label}] {title}: {content}")
 
         context = "\n".join(context_parts)
 
