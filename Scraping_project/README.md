@@ -280,6 +280,12 @@ Configure the Helm chart via `k8s/helm/scraping-pipeline/values.yaml` (supported
 - Persistent volume sizes
 - Service configuration
 
+### TLS certificate verification (#584)
+
+Every outbound HTTPS request verifies the server certificate. aiohttp, httpx and requests verify by default. The Scrapy downloader uses `BrowserLikeContextFactory` (set in `src/settings.py` from `src/core/tls_policy.py`) instead of Scrapy's default factory, which accepts any certificate. `tests/unit/test_tls_policy.py` fails CI if code adds `verify=False`, `ssl=False`, `CERT_NONE` or similar bypasses. It also proves end to end that a self-signed server is rejected.
+
+**Exception process.** For a site with a broken chain, fix trust (install the issuing CA on the host or image) rather than disabling checks. As a temporary last resort, set `SCRAPY_TLS_INSECURE=1` for that run. It is logged at ERROR on startup and exported as `scrapy_tls_verification_disabled 1`, so it shows up in monitoring.
+
 ## Testing
 
 ### Run All Tests
