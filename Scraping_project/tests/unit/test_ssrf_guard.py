@@ -160,8 +160,11 @@ def test_guard_registered_first_in_project_and_spider_settings():
     from src.stage1.middlewares.spider_config import get_spider_settings
 
     path = "src.stage1.middlewares.ssrf_middleware.SSRFGuardMiddleware"
+    # Only the #456 crawl guard (kill switch/budgets: drops, never fetches) may run earlier.
+    earlier_ok = {"src.stage1.middlewares.crawl_guard_middleware.CrawlGuardMiddleware"}
     for mws in (project.DOWNLOADER_MIDDLEWARES, get_spider_settings("scout")["DOWNLOADER_MIDDLEWARES"]):
-        assert mws[path] == min(v for v in mws.values() if v is not None)
+        others = [v for k, v in mws.items() if v is not None and k != path and k not in earlier_ok]
+        assert mws[path] < min(others)
     resolved = Settings({"DOWNLOADER_MIDDLEWARES": project.DOWNLOADER_MIDDLEWARES})
     assert path in resolved.getdict("DOWNLOADER_MIDDLEWARES")
     # Main's robots swap must survive alongside the guard (one assignment, not two).
