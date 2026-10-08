@@ -191,6 +191,8 @@ yarn-error.log*
 # data - *.json above would otherwise silently exclude them (this is
 # exactly how monitoring/dashboards/unified_dashboard.json went missing).
 !Scraping_project/monitoring/dashboards/*.json
+# The Helm chart's copies of them (Helm can only read files inside the chart, #157).
+!Scraping_project/k8s/helm/scraping-pipeline/files/monitoring/dashboards/*.json
 
 # ====================================
 # Jupyter Notebook

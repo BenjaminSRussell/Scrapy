@@ -1,22 +1,14 @@
 apiVersion: 1
 
 datasources:
-  # Primary Prometheus (Replica A)
+  # Prometheus (the `prometheus` service in docker-compose.yml). A fixed uid
+  # lets provisioned dashboards default to it (#157).
   - name: Prometheus
+    uid: prometheus
     type: prometheus
     access: proxy
-    url: http://prometheus-a:9090
+    url: http://prometheus:9090
     isDefault: true
-    editable: true
-    jsonData:
-      timeInterval: 5s
-      queryTimeout: 60s
-
-  # Prometheus Replica B (Backup/HA)
-  - name: Prometheus-B
-    type: prometheus
-    access: proxy
-    url: http://prometheus-b:9090
     editable: true
     jsonData:
       timeInterval: 5s
@@ -39,10 +31,10 @@ datasources:
     type: postgres
     access: proxy
     url: postgres:5432
-    database: pipeline_metrics
+    database: scraping_pipeline  # POSTGRES_DB in docker-compose.yml
     user: postgres
     secureJsonData:
-      password: postgres
+      password: $__env{POSTGRES_PASSWORD}
     jsonData:
       sslmode: disable
       postgresVersion: 1600
