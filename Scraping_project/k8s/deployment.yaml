@@ -172,7 +172,7 @@ spec:
         - --maxmemory
         - "2gb"
         - --maxmemory-policy
-        - allkeys-lru
+        - volatile-lru  # never evict TTL-less seen sets/queues (#161)
         ports:
         - containerPort: 6379
         livenessProbe:

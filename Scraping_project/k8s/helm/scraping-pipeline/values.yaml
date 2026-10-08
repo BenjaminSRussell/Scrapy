@@ -51,7 +51,10 @@ redis:
 
   config:
     maxmemory: "2gb"
-    maxmemoryPolicy: "allkeys-lru"
+    # volatile-lru (#161): only keys with a TTL can be evicted. seen:* sets and
+    # queues have none, so a full Redis rejects writes (RedisHighMemory warns at
+    # 80%) rather than silently dropping dedup state. Never use allkeys-*.
+    maxmemoryPolicy: "volatile-lru"
     appendonly: "yes"
 
 # ============================================

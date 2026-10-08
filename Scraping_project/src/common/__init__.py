@@ -61,57 +61,57 @@ _patch_scrapy_response_meta()
 
 import warnings  # noqa: E402
 
-# Re-export from new locations for backward compatibility
-try:
-    from src.utils.delta import get_delta, DeltaHelper
-    from src.utils.redis import get_redis, RedisHelper
-    from src.utils.validation import is_valid_url, is_uconn_domain
-    from src.core.config import get_config, Config
-    from src.core.constants import *  # noqa: F403 - intentional re-export
-    from src.core.exceptions import *  # noqa: F403 - intentional re-export
+# Re-export from new locations for backward compatibility. Every name in
+# __all__ is a real object (tests/unit/test_common_shim.py). A broken import
+# here raises instead of being downgraded to an ImportWarning, which Python
+# hides by default and which left callers with an empty module (#368).
+from src.utils.delta import get_delta, DeltaHelper  # noqa: E402 - after the Scrapy patch
+from src.utils.redis import get_redis, RedisHelper  # noqa: E402
+from src.utils.validation import is_valid_url, is_uconn_domain  # noqa: E402
+from src.core.config import get_config, Config  # noqa: E402
+from src.core.constants import *  # noqa: F403,E402 - intentional re-export
+from src.core.exceptions import *  # noqa: F403,E402 - intentional re-export
 
-    # Legacy names for backward compatibility
-    def get_delta_manager():
-        """DEPRECATED: Use get_delta() instead.
 
-        Previously defined as ``get_delta`` calling itself (infinite
-        recursion) while ``__all__`` exported an undefined
-        ``get_delta_manager``.
-        """
+# Legacy names for backward compatibility
+def get_delta_manager():
+    """DEPRECATED: Use get_delta() instead.
+
+    Previously defined as ``get_delta`` calling itself (infinite
+    recursion) while ``__all__`` exported an undefined
+    ``get_delta_manager``.
+    """
+    warnings.warn(
+        "get_delta_manager() is deprecated. Use get_delta() instead.",
+        DeprecationWarning,
+        stacklevel=2
+    )
+    return get_delta()
+
+
+class RedisManager:
+    """DEPRECATED: Use get_redis() instead."""
+    def __init__(self, *args, **kwargs):
         warnings.warn(
-            "get_delta_manager() is deprecated. Use get_delta() instead.",
+            "RedisManager is deprecated. Use get_redis() instead.",
             DeprecationWarning,
             stacklevel=2
         )
-        return get_delta()
+        self._helper = get_redis()
 
-    class RedisManager:
-        """DEPRECATED: Use get_redis() instead."""
-        def __init__(self, *args, **kwargs):
-            warnings.warn(
-                "RedisManager is deprecated. Use get_redis() instead.",
-                DeprecationWarning,
-                stacklevel=2
-            )
-            self._helper = get_redis()
+    def __getattr__(self, name):
+        return getattr(self._helper, name)
 
-        def __getattr__(self, name):
-            return getattr(self._helper, name)
 
-    __all__: tuple[str, ...] = (
-        "get_delta",
-        "get_delta_manager",
-        "DeltaHelper",
-        "get_redis",
-        "RedisManager",
-        "RedisHelper",
-        "get_config",
-        "Config",
-        "is_valid_url",
-        "is_uconn_domain",
-    )
-
-except ImportError as e:
-    # If new modules don't exist yet, don't break existing code
-    warnings.warn(f"Could not import from new modules: {e}", ImportWarning)
-    __all__ = ()
+__all__: tuple[str, ...] = (
+    "get_delta",
+    "get_delta_manager",
+    "DeltaHelper",
+    "get_redis",
+    "RedisManager",
+    "RedisHelper",
+    "get_config",
+    "Config",
+    "is_valid_url",
+    "is_uconn_domain",
+)
