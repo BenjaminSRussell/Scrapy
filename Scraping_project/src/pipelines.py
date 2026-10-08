@@ -182,6 +182,22 @@ try:  # Kafka produce durability (#175, #249)
 except Exception:  # prometheus_client missing or metric already registered
     KAFKA_PRODUCE_FAILURES = KAFKA_SPILLED = None
 
+try:  # Bronze schema outcomes (#302, #227)
+    from prometheus_client import Counter as _SCounter
+
+    SCHEMA_DROPS = _SCounter(
+        "scrapy_schema_validation_drops_total",
+        "Items dropped by SchemaValidationPipeline, by the first failing field.",
+        ["spider", "field"],
+    )
+    MISSING_PUBLICATION_DATE = _SCounter(
+        "scrapy_items_missing_publication_date_total",
+        "Bronze items accepted without a publication_date (ordering falls back to scraped_at_utc).",
+        ["spider"],
+    )
+except Exception:  # prometheus_client missing or metric already registered
+    SCHEMA_DROPS = MISSING_PUBLICATION_DATE = None
+
 
 class KafkaPipeline:
     """Publish items to Kafka without silently losing them (#175, #249).
@@ -777,8 +793,11 @@ class SchemaValidationPipeline:
             from src.schemas import BaseRecordSchema
 
             item_dict = self._coerce_currency_fields(item_dict)
+            item_dict = self._stamp_bronze_fields(item_dict, spider)
 
             validated_record = BaseRecordSchema(**item_dict)
+            if validated_record.publication_date is None and MISSING_PUBLICATION_DATE is not None:
+                MISSING_PUBLICATION_DATE.labels(spider=validated_record.spider_name).inc()
 
             validated_record.validation_status = True
 
@@ -797,10 +816,29 @@ class SchemaValidationPipeline:
 
         except ValidationError as e:
             self.items_dropped += 1
+            if SCHEMA_DROPS is not None:
+                errs = e.errors()
+                field = ".".join(str(p) for p in errs[0]["loc"]) if errs and errs[0].get("loc") else "model"
+                SCHEMA_DROPS.labels(spider=getattr(spider, "name", "unknown"), field=field).inc()
 
             self._publish_validation_failure(item_dict, e, spider)
 
             raise DropItem(f"Schema validation failed for {item_dict.get('url', 'unknown')}: {e}") from e
+
+    @staticmethod
+    def _stamp_bronze_fields(item_dict: dict[str, Any], spider: Spider) -> dict[str, Any]:
+        """Fill the bronze-required provenance fields (#227) before validation.
+
+        MetadataPipeline (later in ITEM_PIPELINES) stamps the same fields, so
+        validating here without them dropped every item that lacked them.
+        """
+        if not item_dict.get("scraped_at_utc"):
+            item_dict["scraped_at_utc"] = utc_now_iso()
+        if not item_dict.get("spider_name"):
+            name = getattr(spider, "name", None)
+            if isinstance(name, str) and name:
+                item_dict["spider_name"] = name
+        return item_dict
 
     def _coerce_currency_fields(self, item_dict: dict[str, Any]) -> dict[str, Any]:
         currency_fields = ["tuition_cost", "housing_cost", "fees_cost", "total_cost"]
