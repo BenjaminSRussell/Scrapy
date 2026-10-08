@@ -128,6 +128,8 @@ stage1:
 stage2:
   # Worker Configuration
   max_workers: 100
+  # Max in-flight fetches per host (#195); env STAGE2_PER_HOST_CONCURRENCY overrides.
+  per_host_concurrency: 4
   batch_size: 50
   poll_interval_seconds: 3
 
