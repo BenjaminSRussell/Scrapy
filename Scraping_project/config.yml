@@ -183,6 +183,22 @@ kafka:
   topics:
     scraped_items: scraped-items  # Topic for scraped data from Stage 1
     dead_letter: scraped-items-dlq  # Dead letter queue for invalid messages
+    # SchemaValidationPipeline publishes one ValidationFailureRecord (JSON) per
+    # item that fails the schema; settings.VALIDATION_FAILURES_TOPIC reads this
+    # key (#410). Triage: README "Validation failures".
+    validation_failures: validation_failures
+  # Per-topic settings applied when `python -m src.utils.kafka_topics` (and the
+  # Helm kafka-topics hook) creates a missing topic. Existing topics are never
+  # altered. Omitted partitions/replication_factor use the broker defaults.
+  topic_settings:
+    scraped_items:
+      retention_ms: 604800000      # 7 days; kafka-delta-ingest keeps up within minutes
+    dead_letter:
+      partitions: 1
+      retention_ms: 2592000000     # 30 days to inspect and replay
+    validation_failures:
+      partitions: 1                # low volume; one partition keeps triage ordered
+      retention_ms: 1209600000     # 14 days
   producer:
     compression.type: snappy
     # all = every in-sync replica acks (no loss on leader failover); 1 = leader
