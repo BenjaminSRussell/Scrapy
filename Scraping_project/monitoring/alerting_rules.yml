@@ -380,6 +380,34 @@ groups:
           impact: "Medium - Risk of evictions or OOM"
           action: "Review queue sizes and consider scaling Redis"
 
+      # Redis pool saturated (#533). The seen/claim paths fail closed on
+      # exhaustion (admission pauses, no duplicate crawl), so this means
+      # throughput is being throttled by REDIS_MAX_CONNECTIONS or a slow Redis.
+      - alert: RedisPoolExhausted
+        expr: sum by (op) (rate(redis_pool_exhausted_total[5m])) > 0
+        for: 5m
+        labels:
+          severity: warning
+          component: redis
+        annotations:
+          summary: "Redis connection pool exhausted during {{ $labels.op }}"
+          description: "Workers are waiting longer than REDIS_POOL_TIMEOUT for a pooled Redis connection ({{ $value }}/s). Seen/claim operations are failing closed, so URL admission is paused rather than duplicated."
+          impact: "Medium - Crawl admission throttled; no duplicate crawling"
+          action: "Check Redis latency (slowlog) and maxclients; resize REDIS_MAX_CONNECTIONS per the README 'Redis connection pool sizing' model"
+
+      # Seen-URL store failing closed for any reason (#163, #533).
+      - alert: RedisSeenStoreFailingClosed
+        expr: sum by (op) (rate(redis_seen_check_errors_total[5m])) > 0.5
+        for: 10m
+        labels:
+          severity: warning
+          component: redis
+        annotations:
+          summary: "Redis seen-URL store errors ({{ $labels.op }}) for 10m"
+          description: "{{ $value }}/s seen-store operations are failing. Admission pauses instead of re-crawling, so the crawl is stalling."
+          impact: "High - Discovery stalled while the seen store is unavailable"
+          action: "Check RedisDown and RedisPoolExhausted; do not set REDIS_SEEN_FAIL_MODE=open in production"
+
       # Critical: PostgreSQL is down
       - alert: PostgresDown
         expr: up{job="postgres"} == 0
