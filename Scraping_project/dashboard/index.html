@@ -28,6 +28,8 @@
             --gray-700: #374151;
             --gray-800: #1f2937;
             --gray-900: #111827;
+            /* #340: muted text on white / gray-100 cards: 7.2:1 (was #94a3b8, 2.6:1). */
+            --muted-text: #475569;
         }
 
         .skip-to-main {
@@ -87,9 +89,10 @@
             margin-bottom: 0.25rem;
         }
 
+        /* #340: solid white (no opacity) keeps >= 4.5:1 on both gradient ends
+           (#2563eb 5.2:1, #7c3aed 5.7:1). */
         .topbar-title p {
             font-size: 0.875rem;
-            opacity: 0.9;
         }
 
         .topbar-stats {
@@ -103,7 +106,6 @@
 
         .topbar-stat-label {
             font-size: 0.75rem;
-            opacity: 0.8;
             text-transform: uppercase;
             letter-spacing: 0.05em;
         }
@@ -564,8 +566,24 @@
                 display: none;
             }
 
+            /* #155: keep Status / URLs / Summaries visible as a compact row
+               under the title instead of hiding them. */
+            .topbar-content {
+                flex-wrap: wrap;
+                gap: 0.5rem 1rem;
+            }
             .topbar-stats {
-                display: none;
+                gap: 1rem;
+                flex-wrap: wrap;
+            }
+            .topbar-stat {
+                display: flex;
+                align-items: baseline;
+                gap: 0.35rem;
+            }
+            .topbar-stat-value {
+                font-size: 1rem;
+                margin-top: 0;
             }
         }
 
@@ -605,7 +623,7 @@
         }
     
         .chart-data-table { margin-top: 0.5rem; font-size: 0.85rem; }
-        .chart-data-table summary { cursor: pointer; color: var(--text-muted, #94a3b8); }
+        .chart-data-table summary { cursor: pointer; color: var(--muted-text); }
         .table-scroll { overflow-x: auto; max-width: 100%; }
         .data-fallback-table { width: 100%; border-collapse: collapse; margin-top: 0.5rem; }
         .data-fallback-table th, .data-fallback-table td { border: 1px solid #334155; padding: 0.25rem 0.5rem; text-align: left; }
@@ -619,7 +637,7 @@
             .title-short { display: inline; }
         }
         .overview-spark { height: 28px; width: 100%; margin-top: 0.35rem; }
-        .overview-spark-dir { font-size: 0.75rem; color: #94a3b8; }
+        .overview-spark-dir { font-size: 0.75rem; color: var(--muted-text); }
         
         .tab-buttons-wrap {
             position: relative;
@@ -649,7 +667,7 @@
         
         .chart-empty-placeholder {
             position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
-            color: #94a3b8; font-size: 0.85rem; pointer-events: none;
+            color: var(--muted-text); font-size: 0.85rem; pointer-events: none;
         }
         .chart-container { position: relative; }
         .chart-container.is-empty canvas { opacity: 0.15; }
@@ -658,7 +676,7 @@
         .chart-container.is-unavailable .chart-empty-placeholder { display: none; }
         .chart-unavailable-note {
             position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
-            color: #94a3b8; font-size: 0.85rem; border: 1px dashed currentColor; border-radius: 8px;
+            color: var(--muted-text); font-size: 0.85rem; border: 1px dashed currentColor; border-radius: 8px;
         }
         .charts-unavailable-banner {
             margin: 0 0 1rem; padding: 0.75rem 1rem; border-radius: 8px;
@@ -729,6 +747,95 @@
                 background: #ffffff;
             }
         }
+
+        /* #343: visible keyboard focus everywhere (mouse clicks do not show it).
+           Tabs draw the ring inside the button: .tabs clips overflow. */
+        .tab-button:focus-visible {
+            outline: 3px solid var(--primary-dark);
+            outline-offset: -3px;
+        }
+        .btn:focus-visible,
+        select:focus-visible,
+        a:focus-visible,
+        summary:focus-visible,
+        .legend-toggles button:focus-visible,
+        [role="tabpanel"]:focus-visible {
+            outline: 3px solid var(--primary-dark);
+            outline-offset: 2px;
+        }
+        .topbar :focus-visible {
+            outline-color: #fff;
+        }
+        [role="tabpanel"] { scroll-margin-top: 7rem; }
+
+        /* #341 / #155: no hover lift, pulse, flash or shimmer for reduced motion. */
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after {
+                animation-duration: 0.01ms !important;
+                animation-iteration-count: 1 !important;
+                transition-duration: 0.01ms !important;
+                scroll-behavior: auto !important;
+            }
+            .card:hover,
+            .card:focus-within {
+                transform: none !important;
+            }
+            .status-dot,
+            .metric-value.flash,
+            .stage-metric-value.flash,
+            .is-loading {
+                animation: none !important;
+            }
+        }
+
+        /* #352: first-load placeholders, distinct from real zeros. */
+        .is-loading {
+            color: transparent !important;
+            border-radius: 0.25rem;
+            background: linear-gradient(90deg, var(--gray-200) 25%, var(--gray-100) 50%, var(--gray-200) 75%);
+            background-size: 200% 100%;
+            animation: skeletonShimmer 1.4s ease-in-out infinite;
+            min-width: 3ch;
+            display: inline-block;
+        }
+        .topbar .is-loading {
+            background: rgba(255, 255, 255, 0.35);
+        }
+        @keyframes skeletonShimmer {
+            0% { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+        }
+
+        /* #351: stale-data badge. */
+        .stale-badge {
+            display: inline-block;
+            padding: 0.15rem 0.5rem;
+            border-radius: 999px;
+            background: #fef3c7;
+            color: #92400e;
+            border: 1px solid #b45309;
+            font-size: 0.75rem;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+        .stale-badge[hidden] { display: none; }
+
+        /* #362: fetch error banner with Retry. */
+        .fetch-error-banner {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem 1rem;
+            align-items: center;
+            justify-content: space-between;
+            margin: 0 0 1rem;
+            padding: 0.75rem 1rem;
+            border-radius: 0.5rem;
+            background: #fee2e2;
+            color: #7f1d1d;
+            border: 1px solid #b91c1c;
+        }
+        .fetch-error-banner[hidden] { display: none; }
+        .btn[aria-busy="true"] { cursor: progress; }
     </style>
 </head>
 <body>
@@ -742,7 +849,7 @@
     </noscript>
     <a class="skip-to-main" href="#main">Skip to main content</a>
 
-    <div class="topbar">
+    <header class="topbar">
         <div class="topbar-content">
             <div class="topbar-title" title="Pipeline Control Center">
                 <h1>
@@ -756,7 +863,8 @@
             <div class="topbar-stats">
                 <div class="topbar-stat">
                     <div class="topbar-stat-label">Status</div>
-                    <div class="topbar-stat-value" id="topbar-status">●●●</div>
+                    <div class="topbar-stat-value" id="topbar-status">Loading…</div>
+                    <span id="topbar-stale" class="stale-badge" hidden>Stale data</span>
                 </div>
                 <div class="topbar-stat">
                     <div class="topbar-stat-label">Total URLs</div>
@@ -768,25 +876,29 @@
                 </div>
             </div>
         </div>
-    </div>
+    </header>
 
-    <div class="container" id="main" role="main">
+    <main class="container" id="main">
+        <div id="fetch-error-banner" class="fetch-error-banner" role="alert" hidden>
+            <span id="fetch-error-text">Could not load metrics.</span>
+            <button type="button" id="retry-fetch" class="btn" aria-label="Retry loading metrics now">Retry</button>
+        </div>
         <div class="tabs">
-            <div class="tab-buttons-wrap"><div class="tab-buttons">
-                <button type="button" class="tab-button active" data-tab="overview">📊 Overview</button>
-                <button type="button" class="tab-button" data-tab="pipeline">🔄 Pipeline Stages</button>
-                <button type="button" class="tab-button" data-tab="performance">📈 Performance</button>
-                <button type="button" class="tab-button" data-tab="system">⚙️ System Health</button>
-                <button type="button" class="tab-button" data-tab="activity">📋 Activity Log</button>
-            </div></div>
+            <nav class="tab-buttons-wrap" aria-label="Dashboard sections"><div class="tab-buttons" role="tablist" aria-label="Dashboard sections">
+                <button type="button" class="tab-button active" data-tab="overview" role="tab" id="tabbtn-overview" aria-controls="tab-overview" aria-selected="true" tabindex="0"><span aria-hidden="true">📊</span> Overview</button>
+                <button type="button" class="tab-button" data-tab="pipeline" role="tab" id="tabbtn-pipeline" aria-controls="tab-pipeline" aria-selected="false" tabindex="-1"><span aria-hidden="true">🔄</span> Pipeline Stages</button>
+                <button type="button" class="tab-button" data-tab="performance" role="tab" id="tabbtn-performance" aria-controls="tab-performance" aria-selected="false" tabindex="-1"><span aria-hidden="true">📈</span> Performance</button>
+                <button type="button" class="tab-button" data-tab="system" role="tab" id="tabbtn-system" aria-controls="tab-system" aria-selected="false" tabindex="-1"><span aria-hidden="true">⚙️</span> System Health</button>
+                <button type="button" class="tab-button" data-tab="activity" role="tab" id="tabbtn-activity" aria-controls="tab-activity" aria-selected="false" tabindex="-1"><span aria-hidden="true">📋</span> Activity Log</button>
+            </div></nav>
             <p class="shortcut-hint" id="shortcut-hint">Shortcuts: 1–5 switch tabs · R refresh</p>
 
             <!-- Overview Tab -->
-            <div class="tab-content active" id="tab-overview">
+            <div class="tab-content active" id="tab-overview" role="tabpanel" aria-labelledby="tabbtn-overview" tabindex="0">
                 <div class="grid grid-4">
                     <div class="card">
                         <div class="card-header">
-                            <span class="card-title">Stage 1: Discovery</span>
+                            <h2 class="card-title">Stage 1: Discovery</h2>
                             <span class="card-badge badge-info">Pending</span>
                         </div>
                         <div class="metric-row">
@@ -805,7 +917,7 @@
 
                     <div class="card">
                         <div class="card-header">
-                            <span class="card-title">Stage 2: Analysis</span>
+                            <h2 class="card-title">Stage 2: Analysis</h2>
                             <span class="card-badge badge-info">Pending</span>
                         </div>
                         <div class="metric-row">
@@ -824,7 +936,7 @@
 
                     <div class="card">
                         <div class="card-header">
-                            <span class="card-title">Stage 3: Summarization</span>
+                            <h2 class="card-title">Stage 3: Summarization</h2>
                             <span class="card-badge badge-success">Running</span>
                         </div>
                         <div class="metric-row">
@@ -843,7 +955,7 @@
 
                     <div class="card">
                         <div class="card-header">
-                            <span class="card-title">Stage 4: Large Docs</span>
+                            <h2 class="card-title">Stage 4: Large Docs</h2>
                             <span class="card-badge badge-info">Standby</span>
                         </div>
                         <div class="metric-row">
@@ -864,7 +976,7 @@
                 <div class="grid grid-2" style="margin-top: 1.5rem;">
                     <div class="card">
                         <div class="card-header">
-                            <span class="card-title">Pipeline Throughput</span>
+                            <h2 class="card-title">Pipeline Throughput</h2>
                         </div>
                         <div class="chart-container">
                             <figure class="chart-figure"><figcaption class="visually-hidden">Pipeline throughput over time</figcaption><canvas id="throughput-chart" role="img" aria-label="Pipeline throughput over time"></canvas></figure>
@@ -884,7 +996,7 @@
 
                     <div class="card">
                         <div class="card-header">
-                            <span class="card-title">Recent Activity</span>
+                            <h2 class="card-title">Recent Activity</h2>
                         </div>
                         <!-- Rendered by app.js on init; no static seed (#978). -->
                         <div class="activity-feed" id="overview-activity" aria-live="off"></div>
@@ -893,7 +1005,7 @@
             </div>
 
             <!-- Pipeline Tab -->
-            <div class="tab-content" id="tab-pipeline">
+            <div class="tab-contentNone" id="tab-pipeline" role="tabpanel" aria-labelledby="tabbtn-pipeline" tabindex="0">
                 <div class="stage-pipeline">
                     <div class="stage-card">
                         <div class="stage-number">1</div>
@@ -979,7 +1091,7 @@
                 <div class="grid grid-2" style="margin-top: 2rem;">
                     <div class="card">
                         <div class="card-header">
-                            <span class="card-title">Stage Progression</span>
+                            <h2 class="card-title">Stage Progression</h2>
                         </div>
                         <div class="chart-container">
                             <figure class="chart-figure"><figcaption class="visually-hidden">Stage progression over time</figcaption><canvas id="stage-progression-chart" role="img" aria-label="Stage progression over time"></canvas></figure>
@@ -999,7 +1111,7 @@
 
                     <div class="card">
                         <div class="card-header">
-                            <span class="card-title">Document Routing</span>
+                            <h2 class="card-title">Document Routing</h2>
                         </div>
                         <div class="chart-container">
                             <figure class="chart-figure"><figcaption class="visually-hidden">Traffic routing breakdown</figcaption><canvas id="routing-chart" role="img" aria-label="Traffic routing breakdown"></canvas></figure>
@@ -1020,7 +1132,7 @@
             </div>
 
             <!-- Performance Tab -->
-            <div class="tab-content" id="tab-performance">
+            <div class="tab-contentNone" id="tab-performance" role="tabpanel" aria-labelledby="tabbtn-performance" tabindex="0">
                 <div class="card" style="margin-bottom:1rem;padding:0.75rem 1rem;display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap">
                     <span>Performance chart history</span>
                     <button type="button" id="reset-chart-history" class="btn" aria-label="Reset chart history buffers">Reset chart history</button>
@@ -1029,7 +1141,7 @@
                 <div class="grid grid-2">
                     <div class="card">
                         <div class="card-header">
-                            <span class="card-title">URLs Discovered Over Time</span>
+                            <h2 class="card-title">URLs Discovered Over Time</h2>
                         </div>
                         <div class="chart-container">
                             <figure class="chart-figure"><figcaption class="visually-hidden">URLs discovered over time</figcaption><canvas id="urls-chart" role="img" aria-label="URLs discovered over time"></canvas></figure>
@@ -1049,7 +1161,7 @@
 
                     <div class="card">
                         <div class="card-header">
-                            <span class="card-title">Pages Analyzed Over Time</span>
+                            <h2 class="card-title">Pages Analyzed Over Time</h2>
                         </div>
                         <div class="chart-container">
                             <figure class="chart-figure"><figcaption class="visually-hidden">Pages analyzed over time</figcaption><canvas id="pages-chart" role="img" aria-label="Pages analyzed over time"></canvas></figure>
@@ -1069,7 +1181,7 @@
 
                     <div class="card">
                         <div class="card-header">
-                            <span class="card-title">Summaries Created Over Time</span>
+                            <h2 class="card-title">Summaries Created Over Time</h2>
                         </div>
                         <div class="chart-container">
                             <figure class="chart-figure"><figcaption class="visually-hidden">Summaries produced over time</figcaption><canvas id="summaries-chart" role="img" aria-label="Summaries produced over time"></canvas></figure>
@@ -1089,7 +1201,7 @@
 
                     <div class="card">
                         <div class="card-header">
-                            <span class="card-title">Processing Rates</span>
+                            <h2 class="card-title">Processing Rates</h2>
                         </div>
                         <div class="metric-row">
                             <span class="metric-label">Stage 1: URL Discovery</span>
@@ -1112,10 +1224,10 @@
             </div>
 
             <!-- System Health Tab -->
-            <div class="tab-content" id="tab-system">
+            <div class="tab-contentNone" id="tab-system" role="tabpanel" aria-labelledby="tabbtn-system" tabindex="0">
                 <div class="card" style="margin-bottom: 2rem;">
                     <div class="card-header">
-                        <span class="card-title">System Status</span>
+                        <h2 class="card-title">System Status</h2>
                         <span class="status-indicator online" id="system-status">
                             <span class="status-dot"></span>
                             <span>Online</span>
@@ -1159,7 +1271,7 @@
                 <!-- #401: live depths from /api/queues (serve.py reads Redis server-side). -->
                 <div class="card" style="margin-bottom: 2rem;" id="queue-depths-card">
                     <div class="card-header">
-                        <span class="card-title" id="queue-depths-title">Redis Queue Depths</span>
+                        <h2 class="card-title" id="queue-depths-title">Redis Queue Depths</h2>
                     </div>
                     <p class="metric-label" id="queue-depths-status" role="status" aria-live="polite">Waiting for first sample&hellip;</p>
                     <table class="data-fallback-table" aria-labelledby="queue-depths-title">
@@ -1171,7 +1283,7 @@
                 <div class="grid grid-3">
                     <div class="card">
                         <div class="card-header">
-                            <span class="card-title">Redis Metrics</span>
+                            <h2 class="card-title">Redis Metrics</h2>
                         </div>
                         <div class="metric-row">
                             <span class="metric-label">Keys</span>
@@ -1185,7 +1297,7 @@
 
                     <div class="card">
                         <div class="card-header">
-                            <span class="card-title">Delta Lake</span>
+                            <h2 class="card-title">Delta Lake</h2>
                         </div>
                         <div class="metric-row">
                             <span class="metric-label">Tables</span>
@@ -1199,7 +1311,7 @@
 
                     <div class="card">
                         <div class="card-header">
-                            <span class="card-title">Last Update</span>
+                            <h2 class="card-title">Last Update</h2>
                         </div>
                         <div class="metric-row">
                             <span class="metric-label">Timestamp</span>
@@ -1214,10 +1326,10 @@
             </div>
 
             <!-- Activity Log Tab -->
-            <div class="tab-content" id="tab-activity">
+            <div class="tab-contentNone" id="tab-activity" role="tabpanel" aria-labelledby="tabbtn-activity" tabindex="0">
                 <div class="card">
                     <div class="card-header" style="flex-wrap:wrap;gap:0.5rem">
-                        <span class="card-title">Pipeline Activity Log</span>
+                        <h2 class="card-title">Pipeline Activity Log</h2>
                         <span class="card-badge badge-info">Live</span>
                         <div style="margin-left:auto;display:flex;gap:0.5rem;flex-wrap:wrap">
                             <button type="button" id="export-activity-json" class="btn" aria-label="Export activity log as JSON">Export JSON</button>
@@ -1234,7 +1346,8 @@
         <div class="refresh-bar">
             <div id="refresh-status" class="visually-hidden" role="status" aria-live="polite" aria-atomic="true"></div>
             <div id="activity-announce" class="visually-hidden" role="log" aria-live="polite" aria-relevant="additions" aria-atomic="false" aria-label="New activity"></div>
-            <div class="refresh-info">Updated <span id="last-updated-rel">just now</span> · 
+            <div class="refresh-info">Updated <span id="last-updated-rel">never</span>
+                <span id="stale-badge" class="stale-badge" hidden title="No successful metrics fetch for several refresh intervals">Stale</span> · 
                 Auto-refresh: <span class="refresh-countdown" id="refresh-countdown">5</span> seconds
             </div>
             <div class="refresh-info">
@@ -1251,7 +1364,7 @@
             <span class="refresh-info" id="cc-version" title="Control Center build">v—</span>
             <button type="button" id="manual-refresh" class="btn" aria-label="Refresh metrics now">Refresh now</button>
         </div>
-    </div>
+    </main>
 
     <script src="features.js"></script>
     <script src="format-utils.js"></script>
