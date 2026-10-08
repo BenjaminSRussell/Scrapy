@@ -4,7 +4,8 @@
 	security-full docker-build docker-up docker-down docker-down-clean docker-logs docker-ps \
 	docker-shell docker-test pre-commit pre-commit-update ci ci-docker clean clean-all dev \
 	serve stop restart shell notebook db-migrate db-reset logs metrics prometheus docs \
-	docs-coverage benchmark quick-test quick-check quick-commit show-config tree size
+	docs-coverage benchmark quick-test quick-check quick-commit show-config tree size \
+	profile models
 
 # Default target
 .DEFAULT_GOAL := help
@@ -87,6 +88,12 @@ test-ci: ## Run the default PR selection exactly as CI does
 test-smoke: ## Fast offline smoke gate (imports, one spider parse, one pipeline, settings; #286)
 	@echo "$(BLUE)Running smoke tests...$(NC)"
 	python -m pytest tests/ -m smoke -o addopts= -q
+
+profile: ## Profile one CLI run: make profile CMD="pipeline --skip-stage1" (writes data/exports/profiles/, #465)
+	python cli.py --profile $(CMD)
+
+models: ## Download pinned ML models and verify checksums (models.lock.json, #486)
+	python cli.py setup
 
 test-perf: ## Run load/performance tests (excluded from PR CI, #287)
 	@echo "$(BLUE)Running performance tests...$(NC)"

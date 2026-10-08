@@ -187,3 +187,75 @@ def log_slow_queries(threshold_ms: float = 1000):
                 return await func(*args, **kwargs)
         return wrapper
     return decorator
+
+
+# ---------------------------------------------------------------------------
+# One-run cProfile capture (#465): `python cli.py --profile <command> ...`
+# ---------------------------------------------------------------------------
+
+DEFAULT_PROFILE_DIR = "data/exports/profiles"
+
+
+def run_profiled(
+    fn: Callable[[], Any],
+    label: str,
+    out_dir: str = DEFAULT_PROFILE_DIR,
+    top: int = 30,
+) -> Dict[str, Any]:
+    """Run ``fn`` under cProfile and write ``profile_<label>_<ts>.pstats`` + ``.json``.
+
+    The JSON holds wall time and the ``top`` functions by cumulative time; the
+    .pstats opens in ``python -m pstats`` or snakeviz. Artifacts are written
+    even if ``fn`` raises (the exception is re-raised; SystemExit included).
+    Nothing is imported or hooked unless this is called, so profiling off = zero overhead.
+    """
+    import cProfile
+    import json
+    import pstats
+    import re
+    from datetime import datetime, timezone
+    from pathlib import Path
+
+    safe = re.sub(r"[^A-Za-z0-9_.-]+", "_", label) or "run"
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    out = Path(out_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    base = out / f"profile_{safe}_{stamp}"
+    prof = cProfile.Profile()
+    start = time.perf_counter()
+    outcome = "ok"
+    result: Dict[str, Any] = {}
+    try:
+        prof.enable()
+        try:
+            fn()
+        finally:
+            prof.disable()
+    except BaseException as exc:
+        outcome = f"{type(exc).__name__}: {exc}"
+        raise
+    finally:
+        wall = time.perf_counter() - start
+        prof.dump_stats(str(base) + ".pstats")
+        stats = pstats.Stats(prof)
+        rows = []
+        for (filename, line, func), (cc, nc, tt, ct, _callers) in stats.stats.items():  # type: ignore[attr-defined]
+            rows.append({
+                "function": f"{Path(filename).name}:{line}({func})",
+                "calls": nc,
+                "primitive_calls": cc,
+                "tottime_s": round(tt, 6),
+                "cumtime_s": round(ct, 6),
+            })
+        rows.sort(key=lambda r: r["cumtime_s"], reverse=True)
+        result = {
+            "label": label,
+            "started_utc": stamp,
+            "wall_time_s": round(wall, 6),
+            "outcome": outcome,
+            "pstats": str(base) + ".pstats",
+            "top_cumulative": rows[:top],
+        }
+        Path(str(base) + ".json").write_text(json.dumps(result, indent=2))
+        logger.info(f"Profile written: {base}.json / .pstats (wall {wall:.2f}s)")
+    return result

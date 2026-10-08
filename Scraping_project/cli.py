@@ -321,10 +321,20 @@ def cmd_health(args):
 
 
 def cmd_setup(args):
-    """Download and validate models."""
-    logger.info("Downloading transformer models...")
-    # Model download logic here
-    logger.info("✅ Setup complete")
+    """Download pinned models and verify them against models.lock.json (#486). Fails closed."""
+    from src.utils.model_integrity import DEFAULT_LOCK, ModelIntegrityError, setup_models
+
+    lock = Path(args.lock) if getattr(args, "lock", None) else DEFAULT_LOCK
+    mode = "Verifying cached" if args.verify_only else "Downloading + verifying"
+    logger.info(f"{mode} models pinned in {lock}")
+    try:
+        results = setup_models(lock, download=not args.verify_only, only=args.model or None)
+    except ModelIntegrityError as exc:
+        print(str(exc), file=sys.stderr)
+        sys.exit(1)
+    for r in results:
+        logger.info(f"verified {r.repo_id}@{r.revision[:10]} ({r.path})")
+    logger.info(f"Setup complete: {len(results)} model(s) verified")
 
 
 def cmd_reset(args):
@@ -604,6 +614,12 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
+    parser.add_argument(
+        "--profile", nargs="?", const="data/exports/profiles", default=None, metavar="DIR",
+        help="Profile this run with cProfile; writes profile_<command>_<ts>.json/.pstats to DIR "
+        "(default data/exports/profiles). Off by default (#465).",
+    )
+
     subparsers = parser.add_subparsers(dest="command", help="Commands")
 
     # Scrapy command
@@ -652,7 +668,12 @@ def main():
     health_parser.set_defaults(func=cmd_health)
 
     # Setup command
-    setup_parser = subparsers.add_parser("setup", help="Setup models")
+    setup_parser = subparsers.add_parser(
+        "setup", help="Download pinned ML models and verify checksums (models.lock.json); fails closed"
+    )
+    setup_parser.add_argument("--verify-only", action="store_true", help="Verify the local HF cache; no download")
+    setup_parser.add_argument("--model", action="append", help="Limit to a lock entry name or repo id (repeatable)")
+    setup_parser.add_argument("--lock", help="Alternate lock file (default: models.lock.json)")
     setup_parser.set_defaults(func=cmd_setup)
 
     # Reset command
@@ -768,7 +789,12 @@ def main():
         sys.exit(2)
 
     try:
-        args.func(args)
+        if args.profile:
+            from src.utils.profiler import run_profiled
+
+            run_profiled(lambda: args.func(args), label=args.command, out_dir=args.profile)
+        else:
+            args.func(args)
         sys.exit(0)
     except KeyboardInterrupt:
         logger.warning("Interrupted")

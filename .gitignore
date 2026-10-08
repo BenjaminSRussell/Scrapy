@@ -198,6 +198,8 @@ yarn-error.log*
 !.vscode/launch.json
 !.vscode/tasks.json
 !.devcontainer/devcontainer.json
+# Pinned ML model revisions + checksums (#486); verified by `cli.py setup`.
+!Scraping_project/models.lock.json
 
 # ====================================
 # Jupyter Notebook
