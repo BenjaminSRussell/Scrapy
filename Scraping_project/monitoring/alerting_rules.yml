@@ -390,6 +390,39 @@ groups:
           action: "Inspect domain_quarantine (url, row_json) to find the spider or extractor producing them"
 
   # ============================================
+  # Stage 2 queue state (#220)
+  # ============================================
+  - name: stage2_queue
+    interval: 1m
+    rules:
+      # Idle vs stuck: an empty stage2_queue is normal when nothing is being
+      # crawled, but not while Stage 1 is still scraping items.
+      - alert: Stage2StarvedWhileStage1Active
+        expr: min_over_time(stage2_queue_empty[1h]) == 1 and on() sum(rate(scrapy_items_scraped_total[30m])) > 0
+        for: 15m
+        labels:
+          severity: warning
+          component: stage2
+        annotations:
+          summary: "Stage 2 has found no pending work for 1h while Stage 1 is still scraping"
+          description: "stage2_queue_empty has been 1 for every Stage 2 run in the last hour, but Stage 1 is scraping {{ $value }} items/s. Stage 1 output is not reaching stage2_queue."
+          impact: "Medium - Discovered pages are not analysed"
+          action: "Check the Stage 1 -> stage2_queue handoff (pipelines.py, Delta writes/spills) and stage2_queue row statuses"
+
+      # The queue table could not be read at all; runs exit as if idle.
+      - alert: Stage2QueueUnreadable
+        expr: increase(stage2_queue_read_failures_total[30m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+          component: stage2
+        annotations:
+          summary: "Stage 2 cannot read stage2_queue"
+          description: "{{ $value }} Stage 2 runs in 30m failed to read stage2_queue and exited without work."
+          impact: "High - Stage 2 is stalled while looking idle"
+          action: "Check Delta storage access and the stage2_queue table (worker logs: 'Could not read stage2_queue')"
+
+  # ============================================
   # Infrastructure Alerts
   # ============================================
   - name: infrastructure
