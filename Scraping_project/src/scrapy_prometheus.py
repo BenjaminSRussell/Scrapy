@@ -1,6 +1,7 @@
 import logging
+import threading
 import time
-from typing import Any
+from typing import Any, Optional
 
 try:
     from prometheus_client import Counter, Gauge, Histogram, start_http_server
@@ -18,8 +19,45 @@ from scrapy.http import Request, Response
 
 logger = logging.getLogger(__name__)
 
-CRAWL_START_TIMES: dict[str, float] = {}
-SKIPPED_URL_TALLIES: dict[str, dict[str, int]] = {}
+
+
+class CrawlRunState:
+    """Per-run crawl state, safe across threads and concurrent runs (#28).
+
+    This used to be two module-level dicts keyed by ``spider.name``. Two
+    concurrent runs of the same spider in one process (CrawlerProcess,
+    orchestrator, tests) overwrote each other's start time, and the first
+    ``spider_closed`` deleted the second run's skip tallies. The
+    read-modify-write tally updates also had no lock. State is now keyed by
+    the spider *instance* and every access holds one lock.
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._start: dict[int, float] = {}
+        self._skipped: dict[int, dict[str, int]] = {}
+
+    def open(self, spider: Any, now: Optional[float] = None) -> None:
+        with self._lock:
+            self._start[id(spider)] = time.time() if now is None else now
+            self._skipped[id(spider)] = {}
+
+    def close(self, spider: Any) -> tuple[Optional[float], dict[str, int]]:
+        """Forget this run. Returns (start_time or None, final tallies)."""
+        with self._lock:
+            return self._start.pop(id(spider), None), self._skipped.pop(id(spider), {})
+
+    def tally(self, spider: Any, reason: str) -> tuple[int, dict[str, int]]:
+        """Count one skipped URL. Returns (run total, snapshot of tallies)."""
+        with self._lock:
+            counts = self._skipped.setdefault(id(spider), {})
+            counts[reason] = counts.get(reason, 0) + 1
+            return sum(counts.values()), dict(counts)
+
+    def active_runs(self) -> int:
+        with self._lock:
+            return len(self._start)
+
 
 if PROMETHEUS_AVAILABLE:
     ITEMS_SCRAPED = Counter("scrapy_items_scraped_total", "Total number of items scraped", ["spider"])
@@ -151,6 +189,7 @@ class PrometheusExtension:
         self.port = port
         self.host = host
         self.server_started = False
+        self.runs = CrawlRunState()
 
     @classmethod
     def from_crawler(cls, crawler: Crawler) -> "PrometheusExtension":
@@ -194,27 +233,24 @@ class PrometheusExtension:
     def spider_opened(self, spider: Spider):
         self.start_server()
 
-        CRAWL_START_TIMES[spider.name] = time.time()
-
-        SKIPPED_URL_TALLIES[spider.name] = {}
+        self.runs.open(spider)
 
         SPIDER_OPENED.labels(spider=spider.name).set(1)
         logger.info(f"Spider opened: {spider.name} at {time.strftime('%Y-%m-%d %H:%M:%S')}")
 
     def spider_closed(self, spider: Spider, reason: str):
-        if spider.name in CRAWL_START_TIMES:
-            duration = time.time() - CRAWL_START_TIMES[spider.name]
+        started, tallies = self.runs.close(spider)
+        if started is not None:
+            duration = time.time() - started
             CRAWL_DURATION.labels(spider=spider.name).set(duration)
             logger.info(f"Spider {spider.name} crawl duration: {duration:.2f} seconds")
-            del CRAWL_START_TIMES[spider.name]
 
-        if spider.name in SKIPPED_URL_TALLIES and SKIPPED_URL_TALLIES[spider.name]:
-            total_skipped = sum(SKIPPED_URL_TALLIES[spider.name].values())
+        if tallies:
+            total_skipped = sum(tallies.values())
             tally_str = ", ".join(
-                [f"{reason}: {count}" for reason, count in sorted(SKIPPED_URL_TALLIES[spider.name].items())]
+                [f"{why}: {count}" for why, count in sorted(tallies.items())]
             )
             logger.info(f" FINAL SKIPPED URLs SUMMARY - Total: {total_skipped} | {tally_str}")
-            del SKIPPED_URL_TALLIES[spider.name]
 
         SPIDER_OPENED.labels(spider=spider.name).set(0)
         SPIDER_CLOSED.labels(spider=spider.name, reason=reason).inc()
@@ -227,9 +263,7 @@ class PrometheusExtension:
             skip_reason = item["skip_reason"]
             URLS_SKIPPED.labels(spider=spider.name, skip_reason=skip_reason).inc()
 
-            if spider.name not in SKIPPED_URL_TALLIES:
-                SKIPPED_URL_TALLIES[spider.name] = {}
-            SKIPPED_URL_TALLIES[spider.name][skip_reason] = SKIPPED_URL_TALLIES[spider.name].get(skip_reason, 0) + 1
+            self.runs.tally(spider, skip_reason)
 
     def item_dropped(self, item: Any, spider: Spider, exception: Exception):
         exception_type = type(exception).__name__ if exception else "Unknown"
@@ -263,14 +297,10 @@ class PrometheusExtension:
         REQUESTS_DROPPED.labels(spider=spider.name, reason=drop_reason).inc()
         URLS_SKIPPED.labels(spider=spider.name, skip_reason=drop_reason).inc()
 
-        if spider.name not in SKIPPED_URL_TALLIES:
-            SKIPPED_URL_TALLIES[spider.name] = {}
-        SKIPPED_URL_TALLIES[spider.name][drop_reason] = SKIPPED_URL_TALLIES[spider.name].get(drop_reason, 0) + 1
-
-        total_skipped = sum(SKIPPED_URL_TALLIES[spider.name].values())
+        total_skipped, tallies = self.runs.tally(spider, drop_reason)
         if total_skipped % 100 == 0:
             tally_str = ", ".join(
-                [f"{reason}: {count}" for reason, count in sorted(SKIPPED_URL_TALLIES[spider.name].items())]
+                [f"{why}: {count}" for why, count in sorted(tallies.items())]
             )
             logger.info(f" SKIPPED URLs - Total: {total_skipped} | {tally_str}")
 
