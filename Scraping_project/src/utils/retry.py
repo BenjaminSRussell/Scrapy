@@ -7,9 +7,10 @@ Phase 7: Resilience utilities for handling transient failures.
 import asyncio
 import logging
 import random
+import time
 from datetime import datetime
 from functools import wraps
-from typing import Any, Awaitable, TypeVar, Callable, Optional, Type, Tuple, cast
+from typing import Any, TypeVar, Callable, Optional, Type, Tuple, cast
 
 from src.core.exceptions import (
     PipelineException,
@@ -21,6 +22,8 @@ from src.core.exceptions import (
 logger = logging.getLogger(__name__)
 
 T = TypeVar('T')
+# Signature-preserving decorator type (sync and async callables).
+F = TypeVar('F', bound=Callable[..., Any])
 
 
 class CircuitBreaker:
@@ -132,95 +135,112 @@ def with_retry(
         retry_on: Tuple of exception types to retry
         circuit_breaker: Optional circuit breaker instance
 
+    Works on both ``async def`` and plain functions (sync callers block in
+    ``time.sleep`` between attempts; don't decorate sync code that runs on an
+    event loop thread).
+
     Example:
         @with_retry(max_attempts=3, retry_on=(NetworkError, TimeoutError))
         async def fetch_url(url: str) -> str:
             return await http_client.get(url)
+
+        @with_retry(max_attempts=5, base_delay=0.5, retry_on=(OSError,))
+        def read_manifest(path: str) -> bytes:
+            return Path(path).read_bytes()
     """
-    def decorator(func: Callable[..., Awaitable[T]]) -> Callable[..., Awaitable[T]]:
+    def _check_breaker(name: str) -> None:
+        if circuit_breaker and not circuit_breaker.can_execute():
+            raise CircuitBreakerOpen(f"Circuit breaker is {circuit_breaker.state} for {name}")
+
+    def _on_success(name: str, attempt: int) -> None:
+        if circuit_breaker:
+            circuit_breaker.record_success()
+        if attempt > 0:
+            logger.info(f"Successfully executed {name} after {attempt + 1} attempts")
+
+    def _on_failure(name: str, attempt: int, e: Exception) -> Optional[float]:
+        """Shared failure handling. Returns the delay before the next attempt, None if out of attempts.
+
+        Re-raises non-retryable PipelineExceptions.
+        """
+        if circuit_breaker:
+            circuit_breaker.record_failure()
+
+        # Don't retry if error is marked as non-retryable
+        if isinstance(e, PipelineException) and not e.retryable:
+            logger.info(f"Non-retryable error in {name}: {e.category.value}")
+            raise e
+
+        # Check for rate limit with retry-after header
+        retry_after = e.context.get("retry_after") if isinstance(e, RateLimitError) else None
+        if retry_after is not None:
+            delay = min(float(retry_after), max_delay)
+        else:  # also RateLimitError(retry_after=None), which used to crash min(None, ...)
+            # Calculate delay with exponential backoff
+            delay = min(base_delay * (exponential_base ** attempt), max_delay)
+
+        # Add jitter to prevent thundering herd
+        if jitter:
+            delay = delay * (0.5 + random.random())
+
+        # Don't sleep on last attempt
+        if attempt < max_attempts - 1:
+            logger.warning(
+                f"Attempt {attempt + 1}/{max_attempts} failed for {name}: "
+                f"{type(e).__name__}: {str(e)}, retrying in {delay:.2f}s"
+            )
+            return float(delay)
+        logger.error(f"All {max_attempts} attempts failed for {name}: {e}")
+        return None
+
+    def _exhausted(last_exception: Optional[BaseException]) -> MaxRetriesExceeded:
+        return MaxRetriesExceeded(
+            f"Failed after {max_attempts} attempts: {last_exception}",
+            attempts=max_attempts,
+            original_exception=last_exception,
+        )
+
+    def decorator(func: F) -> F:
+        name = getattr(func, "__name__", repr(func))
+
         @wraps(func)
-        async def async_wrapper(*args: Any, **kwargs: Any) -> T:
-            last_exception = None
-
+        async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
+            last_exception: Optional[BaseException] = None
             for attempt in range(max_attempts):
-                # Check circuit breaker
-                if circuit_breaker and not circuit_breaker.can_execute():
-                    raise CircuitBreakerOpen(
-                        f"Circuit breaker is {circuit_breaker.state} for {func.__name__}"
-                    )
-
+                _check_breaker(name)
                 try:
                     result = await func(*args, **kwargs)
-
-                    # Success - record if using circuit breaker
-                    if circuit_breaker:
-                        circuit_breaker.record_success()
-
-                    if attempt > 0:
-                        logger.info(f"Successfully executed {func.__name__} after {attempt + 1} attempts")
-
-                    return result
-
                 except retry_on as e:
                     last_exception = e
-
-                    # Record failure in circuit breaker
-                    if circuit_breaker:
-                        circuit_breaker.record_failure()
-
-                    # Don't retry if error is marked as non-retryable
-                    if isinstance(e, PipelineException) and not e.retryable:
-                        logger.info(
-                            f"Non-retryable error in {func.__name__}: {e.category.value}"
-                        )
-                        raise
-
-                    # Check for rate limit with retry-after header
-                    if isinstance(e, RateLimitError):
-                        retry_after = e.context.get("retry_after", base_delay)
-                        delay = min(retry_after, max_delay)
-                    else:
-                        # Calculate delay with exponential backoff
-                        delay = min(
-                            base_delay * (exponential_base ** attempt),
-                            max_delay
-                        )
-
-                    # Add jitter to prevent thundering herd
-                    if jitter:
-                        delay = delay * (0.5 + random.random())
-
-                    # Don't sleep on last attempt
-                    if attempt < max_attempts - 1:
-                        logger.warning(
-                            f"Attempt {attempt + 1}/{max_attempts} failed for {func.__name__}: "
-                            f"{type(e).__name__}: {str(e)}, retrying in {delay:.2f}s"
-                        )
+                    delay = _on_failure(name, attempt, e)
+                    if delay is not None:
                         await asyncio.sleep(delay)
-                    else:
-                        logger.error(
-                            f"All {max_attempts} attempts failed for {func.__name__}: {e}"
-                        )
-
-            # All attempts exhausted
-            raise MaxRetriesExceeded(
-                f"Failed after {max_attempts} attempts: {last_exception}",
-                attempts=max_attempts,
-                original_exception=last_exception
-            )
+                    continue
+                _on_success(name, attempt)
+                return result
+            raise _exhausted(last_exception)
 
         @wraps(func)
         def sync_wrapper(*args: Any, **kwargs: Any) -> Any:
-            """Synchronous wrapper (runs async in new event loop)."""
-            # For sync functions, we'd need different logic
-            # For now, we'll require async functions
-            raise NotImplementedError("Sync retry not implemented - use async functions")
+            """Same backoff/circuit-breaker policy as async_wrapper, blocking with time.sleep (#212)."""
+            last_exception: Optional[BaseException] = None
+            for attempt in range(max_attempts):
+                _check_breaker(name)
+                try:
+                    result = func(*args, **kwargs)
+                except retry_on as e:
+                    last_exception = e
+                    delay = _on_failure(name, attempt, e)
+                    if delay is not None:
+                        time.sleep(delay)
+                    continue
+                _on_success(name, attempt)
+                return result
+            raise _exhausted(last_exception)
 
-        # Return async wrapper if function is async
         if asyncio.iscoroutinefunction(func):
-            return async_wrapper
-        # Calling a non-async function raises NotImplementedError immediately.
-        return cast(Callable[..., Awaitable[T]], sync_wrapper)
+            return cast(F, async_wrapper)
+        return cast(F, sync_wrapper)
 
     return decorator
 

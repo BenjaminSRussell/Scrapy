@@ -81,36 +81,44 @@ groups:
   - name: kafka_performance
     interval: 30s
     rules:
+      # Inputs are what kafka-delta-ingest really emits (StatsD prefix
+      # kafka_delta_ingest, mapped in statsd_mapping.yml). The kafka_messages_*,
+      # kafka_consumer_lag, delta_batch_write_seconds and delta_batch_size
+      # series these rules used to read were never produced (#178).
+
       # Messages consumed rate
       - record: kafka:messages_consumed:rate5m
-        expr: rate(kafka_messages_consumed_total[5m])
+        expr: sum(rate(kafka_delta_ingest_messages_received_total[5m]))
 
-      # Messages processed rate
+      # Messages processed (written to Delta) rate
       - record: kafka:messages_processed:rate5m
-        expr: rate(kafka_messages_processed_total[5m])
+        expr: sum(rate(kafka_delta_ingest_records_written_total[5m]))
 
-      # Messages failed rate
+      # Messages failed rate (per-message parse/validation failures)
       - record: kafka:messages_failed:rate5m
-        expr: rate(kafka_messages_failed_total[5m])
+        expr: sum(rate(kafka_delta_ingest_errors_total{reason=~"parse_failed|schema_validation_failed|missing_required_field"}[5m]))
 
       # Processing success rate percentage
       - record: kafka:processing_success_rate:ratio
         expr: |
-          rate(kafka_messages_processed_total[5m])
+          sum(rate(kafka_delta_ingest_records_written_total[5m]))
           /
-          rate(kafka_messages_consumed_total[5m])
+          sum(rate(kafka_delta_ingest_messages_received_total[5m]))
 
-      # Consumer lag (current lag)
+      # Consumer lag (current lag, per partition, from the JMX exporter)
       - record: kafka:consumer_lag:current
-        expr: kafka_consumer_lag
+        expr: kafka_consumer_records_lag
 
-      # Delta Lake batch write latency (p95)
+      # Delta Lake batch write latency (p95), write + commit
       - record: delta:batch_write:p95
-        expr: histogram_quantile(0.95, rate(delta_batch_write_seconds_bucket[5m]))
+        expr: histogram_quantile(0.95, sum by (le) (rate(kafka_delta_ingest_batch_write_seconds_bucket[5m])))
 
-      # Average batch size
+      # Average batch size (records per Delta commit)
       - record: delta:batch_size:avg
-        expr: rate(delta_batch_size_sum[5m]) / rate(delta_batch_size_count[5m])
+        expr: |
+          sum(rate(kafka_delta_ingest_records_written_total[5m]))
+          /
+          sum(rate(kafka_delta_ingest_batches_written_total[5m]))
 
       # --- Consumer Group Lag Aggregation ---
       # The 'group' label is extracted from 'client_id' assuming the convention '{group}-{identifier}'.
@@ -173,15 +181,15 @@ groups:
       # Total error rate across all components
       - record: pipeline:errors:rate5m
         expr: |
-          sum(rate(scrapy_items_dropped_total[5m])) +
-          sum(rate(kafka_messages_failed_total[5m]))
+          (sum(rate(scrapy_items_dropped_total[5m])) or vector(0)) +
+          (sum(rate(kafka_delta_ingest_errors_total{reason=~"parse_failed|schema_validation_failed|missing_required_field"}[5m])) or vector(0))
 
       # End-to-end latency (scrape to Delta Lake write)
       # This is an approximation based on available metrics
       - record: pipeline:latency:p95
         expr: |
           histogram_quantile(0.95, rate(scrapy_response_time_seconds_bucket[5m])) +
-          histogram_quantile(0.95, rate(delta_batch_write_seconds_bucket[5m]))
+          histogram_quantile(0.95, sum by (le) (rate(kafka_delta_ingest_batch_write_seconds_bucket[5m])))
 
       # Pipeline health score (0-1, where 1 is healthy)
       # Based on success rates and active components
@@ -192,6 +200,6 @@ groups:
             (sum(rate(scrapy_items_scraped_total[5m])) + sum(rate(scrapy_items_dropped_total[5m])) + 0.01)
           ) * 0.5 +
           (
-            sum(rate(kafka_messages_processed_total[5m])) /
-            (sum(rate(kafka_messages_consumed_total[5m])) + 0.01)
+            sum(rate(kafka_delta_ingest_records_written_total[5m])) /
+            (sum(rate(kafka_delta_ingest_messages_received_total[5m])) + 0.01)
           ) * 0.5
