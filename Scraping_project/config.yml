@@ -227,6 +227,14 @@ delta_lake:
   # Delta log checkpoint every N commits (sets the delta.checkpointInterval table
   # property); checkpoint()/shutdown also writes one explicitly (#274).
   checkpoint_interval: 100
+  # Delta table retention properties, set on create and synced onto existing
+  # tables (#493). log_retention -> delta.logRetentionDuration (time-travel
+  # window; expired log entries are cleaned when checkpoints are written).
+  # deleted_file_retention -> delta.deletedFileRetentionDuration (minimum age
+  # before vacuum deletes unreferenced files; the default vacuum window).
+  retention:
+    log_retention: interval 30 days
+    deleted_file_retention: interval 7 days
   force_shutdown_timeout: 15  # Seconds before forced shutdown
   queue_maxsize: 1000  # Maximum queue size to prevent memory overload
   # Producers wait this long for queue space, then spill to _write_spill/ (#167).

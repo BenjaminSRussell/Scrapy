@@ -778,7 +778,7 @@ class LakehouseManager:
                         writer_properties=writer_props,
                         partition_by=partition_by,
                         # Applied when this write creates the table (#274).
-                        configuration={CHECKPOINT_INTERVAL_PROPERTY: str(self.checkpoint_interval)},
+                        configuration=self._table_properties(),
                     )
                     break
                 except (CommitFailedError, DeltaError) as commit_error:
@@ -1021,15 +1021,18 @@ class LakehouseManager:
     def _vacuum_table(
         self,
         table_name: str,
-        retention_hours: int = 168,
+        retention_hours: int | None = None,
         enforce_retention_duration: bool = True,
     ):
         """Vacuum Delta table to remove old data files.
 
         Args:
             table_name: Name of table to vacuum
-            retention_hours: Retention period in hours (default: 168 = 7 days)
-            enforce_retention_duration: If False, allows retention < 168 hours (DANGEROUS!)
+            retention_hours: Retention period in hours. None (default) uses the
+                table's delta.deletedFileRetentionDuration, which is set from
+                delta_lake.retention.deleted_file_retention (#493).
+            enforce_retention_duration: If False, allows retention shorter than
+                delta.deletedFileRetentionDuration (DANGEROUS!)
         """
         table_path = self.tables.get(table_name)
         if not table_path or not (table_path / "_delta_log").exists():
@@ -1052,7 +1055,7 @@ class LakehouseManager:
         except Exception as e:
             logger.warning(f"Vacuum failed for {table_name}: {e}")
 
-    def vacuum_all_tables(self, retention_hours: int = 168):
+    def vacuum_all_tables(self, retention_hours: int | None = None):
         for table_name in self.tables.keys():
             self._vacuum_table(table_name, retention_hours)
 
@@ -1062,17 +1065,36 @@ class LakehouseManager:
         Done once per table per process; failures only log, since delta-rs
         still checkpoints at its default interval.
         """
+        # Also syncs the retention properties (#493) on existing tables.
         if table_name in self._checkpoint_interval_synced:
             return
         self._checkpoint_interval_synced.add(table_name)
-        want = str(self.checkpoint_interval)
+        want = self._table_properties()
         try:
             dt = DeltaTable(str(table_path))
-            if dt.metadata().configuration.get(CHECKPOINT_INTERVAL_PROPERTY) != want:
-                dt.alter.set_table_properties({CHECKPOINT_INTERVAL_PROPERTY: want})
-                logger.info(f"Set {CHECKPOINT_INTERVAL_PROPERTY}={want} on {table_name}")
+            have = dt.metadata().configuration
+            stale = {k: v for k, v in want.items() if have.get(k) != v}
+            if stale:
+                dt.alter.set_table_properties(stale)
+                logger.info(f"Set table properties {stale} on {table_name}")
         except Exception as e:
-            logger.warning(f"Could not set {CHECKPOINT_INTERVAL_PROPERTY} on {table_name}: {e}")
+            logger.warning(f"Could not set table properties {sorted(want)} on {table_name}: {e}")
+
+    def _table_properties(self) -> dict[str, str]:
+        """Properties every table is created with and kept in sync to (#274, #493)."""
+        retention = getattr(self, "_retention_props", None)
+        if retention is None:
+            from src.core.config import get_config
+            from src.lakehouse.table_properties import retention_properties
+
+            try:
+                retention = retention_properties(get_config())
+            except ValueError as e:
+                # A typo must not stop writes; fall back to Delta's defaults, loudly.
+                logger.error(f"[DELTA] Ignoring delta_lake.retention: {e}")
+                retention = retention_properties(None)
+            self._retention_props = retention
+        return {CHECKPOINT_INTERVAL_PROPERTY: str(self.checkpoint_interval), **retention}
 
     def create_checkpoints(self) -> dict[str, int]:
         """Write a Delta log checkpoint for every table with commits since the last one (#274).
@@ -1584,7 +1606,7 @@ class LakehouseManager:
                 infer_table(rows),
                 mode="error",
                 partition_by=partition_by,
-                configuration={CHECKPOINT_INTERVAL_PROPERTY: str(self.checkpoint_interval)},
+                configuration=self._table_properties(),
             )
             return True
         except Exception as e:
