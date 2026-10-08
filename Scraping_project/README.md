@@ -401,6 +401,21 @@ Metrics: `stage2_http_fetches_total{outcome=first_try|recovered|exhausted|circui
 and `stage2_http_retries_total{reason}`. Each retry and each recovery is logged
 with its attempt number.
 
+### URL canonicalization
+
+Every URL touchpoint uses `src/utils/url_canon.py` (#728): Redis seen/claim
+set members, `QueueItemPipeline` rows (`stage2_queue`, `js_spider_queue`),
+`SeedManager`, Stage 2 `url_hash`, `URLProcessor` and
+`validation.normalize_url`. Canonical form:
+- lowercase scheme, host and path;
+- no default port and no fragment;
+- trailing slash stripped (except the root);
+- `utm_*` and other tracking parameters removed, remaining params sorted.
+
+`url_hash` = sha256(canonical URL)[:16]. The rules match what Stage 1 already
+hashed with, so existing scout hashes are unchanged; `js_spider` hashes and
+raw-URL SeedManager hashes now converge on the same value.
+
 ### Docker build context
 
 `.dockerignore` comments every exclusion (#625). Runtime data (`data/`,
@@ -568,6 +583,13 @@ Available at `http://localhost:9090`:
 - `cache_misses_total`: Cache miss count
 - `retry_attempts_total`: Retry attempts
 - `circuit_breaker_state`: Circuit breaker state (0=closed, 1=open, 2=half-open)
+
+Every queue worker (Stage 2/3/4) serves its own registry on
+`WORKER_METRICS_PORT` (default 9430, `WORKER_METRICS_ENABLED=0` to disable),
+so worker-side counters (soft bans, deferrals, recency outcomes, ...) reach
+Prometheus as `stage{2,3,4}_worker` jobs, one target per replica, with
+`scrapy_worker_up{component}` as the liveness series. Scrape topology for Helm:
+[k8s/README.md](k8s/README.md#what-gets-scraped-789).
 
 ### Grafana Dashboards
 

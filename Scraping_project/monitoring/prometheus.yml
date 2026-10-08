@@ -63,3 +63,54 @@ scrape_configs:
       - targets: ['postgres-exporter:9187']
         labels:
           service: 'postgres'
+
+  # #789: Stage 2 worker /metrics (src/utils/worker_metrics.py). dns_sd
+  # resolves every replica of the compose service, so each is scraped.
+  - job_name: 'stage2_worker'
+    scrape_interval: 30s
+    scrape_timeout: 10s
+    dns_sd_configs:
+      - names: ['stage2-worker']
+        type: A
+        port: 9430
+    relabel_configs:
+      - target_label: service
+        replacement: 'stage2'
+      - target_label: component
+        replacement: 'worker'
+      - target_label: environment
+        replacement: 'development'
+
+  # #789: Stage 3 worker /metrics (src/utils/worker_metrics.py). dns_sd
+  # resolves every replica of the compose service, so each is scraped.
+  - job_name: 'stage3_worker'
+    scrape_interval: 30s
+    scrape_timeout: 10s
+    dns_sd_configs:
+      - names: ['stage3-worker']
+        type: A
+        port: 9430
+    relabel_configs:
+      - target_label: service
+        replacement: 'stage3'
+      - target_label: component
+        replacement: 'worker'
+      - target_label: environment
+        replacement: 'development'
+
+  # #789: Stage 4 worker /metrics (src/utils/worker_metrics.py). dns_sd
+  # resolves every replica of the compose service, so each is scraped.
+  - job_name: 'stage4_worker'
+    scrape_interval: 30s
+    scrape_timeout: 10s
+    dns_sd_configs:
+      - names: ['stage4-worker']
+        type: A
+        port: 9430
+    relabel_configs:
+      - target_label: service
+        replacement: 'stage4'
+      - target_label: component
+        replacement: 'worker'
+      - target_label: environment
+        replacement: 'development'

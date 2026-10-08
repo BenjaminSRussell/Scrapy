@@ -247,4 +247,7 @@ async def run_stage3_worker(shutdown=None):
     await run_drain_loop("stage3", run_once, idle_seconds=30, error_seconds=10, shutdown=shutdown)
 
 if __name__ == "__main__":
+    from src.utils.worker_metrics import start_worker_metrics_server
+
+    start_worker_metrics_server("stage3")  # #789
     asyncio.run(run_stage3_worker())
