@@ -22,6 +22,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 @pytest.fixture()
 def start(monkeypatch):
+    monkeypatch.setenv("COMPOSE_CMD", "docker-compose")  # deterministic CLI choice (#342)
     monkeypatch.chdir(ROOT)  # start.py resolves the chart/values paths relative to cwd
     spec = importlib.util.spec_from_file_location("_ops_start_733", ROOT / "start.py")
     module = importlib.util.module_from_spec(spec)

@@ -21,8 +21,10 @@ import time
 from collections.abc import Iterable, Sequence
 from pathlib import Path
 
+from compose_cli import MISSING_HINT, compose_available, compose_cmd
+
 REQUIRED_TOOLS = {
-    "local": ("docker", "docker-compose"),
+    "local": ("docker",),  # plus a Compose CLI: see compose_cli.py (#342)
     "k8s": ("kubectl", "helm"),
 }
 
@@ -128,14 +130,15 @@ def first_defined(candidates: Iterable[str], services: Iterable[str]) -> str | N
 
 
 def local_log_hints(services: Iterable[str]) -> list[str]:
-    """`docker-compose logs -f` lines for defined services only, labelled where known."""
+    """`<compose> logs -f` lines for defined services only, labelled where known."""
     defined = list(services)
     ordered = [name for name in LOCAL_SERVICE_LABELS if name in defined]
     ordered += [name for name in defined if name not in LOCAL_SERVICE_LABELS]
-    hints = ["   - All services:        docker-compose logs -f"]
+    dc = " ".join(compose())
+    hints = [f"   - All services:        {dc} logs -f"]
     for name in ordered:
         label = f"{LOCAL_SERVICE_LABELS.get(name, name)}:"
-        hints.append(f"   - {label:<20} docker-compose logs -f {name}")
+        hints.append(f"   - {label:<20} {dc} logs -f {name}")
     return hints
 
 
@@ -238,8 +241,16 @@ def is_dry_run() -> bool:
     return _dry_run
 
 
+def compose() -> tuple[str, ...]:
+    """`docker-compose` or `docker compose` (#342). Dry runs never probe the plugin."""
+    return compose_cmd(probe=not _dry_run)
+
+
 def missing_tools(env: str) -> list[str]:
-    return [tool for tool in REQUIRED_TOOLS[env] if shutil.which(tool) is None]
+    missing = [tool for tool in REQUIRED_TOOLS[env] if shutil.which(tool) is None]
+    if env == "local" and not compose_available(probe=not _dry_run):
+        missing.append(MISSING_HINT)
+    return missing
 
 
 def preflight_problems(args: argparse.Namespace) -> list[str]:
@@ -303,13 +314,13 @@ def run_command(command: Iterable[str], *, capture_output: bool = False) -> subp
 
 def wait_for_exec(service: str, timeout: int) -> None:
     if _dry_run:
-        print(f"{DRY_RUN_PREFIX} docker-compose exec -T {service} true  (poll up to {timeout}s)")
+        print(f"{DRY_RUN_PREFIX} {' '.join(compose())} exec -T {service} true  (poll up to {timeout}s)")
         return
     deadline = time.time() + timeout
     last_error = ""
     while time.time() < deadline:
         result = subprocess.run(
-            ("docker-compose", "exec", "-T", service, "true"),
+            (*compose(), "exec", "-T", service, "true"),
             capture_output=True,
             text=True,
             check=False,
@@ -324,9 +335,9 @@ def wait_for_exec(service: str, timeout: int) -> None:
         file=sys.stderr,
     )
     if last_error:
-        print(f"Last docker-compose exec error:\n{last_error}", file=sys.stderr)
+        print(f"Last {' '.join(compose())} exec error:\n{last_error}", file=sys.stderr)
     try:
-        run_command(("docker-compose", "logs", "--tail", "50", service))
+        run_command((*compose(), "logs", "--tail", "50", service))
     finally:
         sys.exit(1)
 
@@ -336,13 +347,13 @@ def start_local(args: argparse.Namespace) -> None:
     if getattr(args, "stage", "pipeline") != "pipeline":
         print(
             f"Note: --stage {args.stage} only applies to --env k8s; local mode starts every "
-            "Compose service. Use `docker-compose up -d <service>` to start a subset.",
+            f"Compose service. Use `{' '.join(compose())} up -d <service>` to start a subset.",
             file=sys.stderr,
         )
-    print("Starting local environment with docker-compose...")
+    print(f"Starting local environment with {' '.join(compose())}...")
     if services:
         print(f"Compose services: {', '.join(services)}")
-    run_command(("docker-compose", "up", "-d"))
+    run_command((*compose(), "up", "-d"))
 
     ready_service = first_defined(LOCAL_READINESS_CANDIDATES, services) if services else "postgres"
     if ready_service:
@@ -363,7 +374,7 @@ def start_local(args: argparse.Namespace) -> None:
             print("Resetting Delta Lake via ephemeral Scrapy container...")
             run_command(
                 (
-                    "docker-compose",
+                    *compose(),
                     "run",
                     "--rm",
                     "--no-deps",
@@ -393,9 +404,10 @@ def start_local(args: argparse.Namespace) -> None:
     for line in local_log_hints(services):
         print(line)
     print("\n🔧 Other Useful Commands:")
-    print("   - Check service status: docker-compose ps")
-    print("   - Stop all services:    docker-compose down")
-    print("   - Restart a service:    docker-compose restart <service-name>")
+    dc = " ".join(compose())
+    print(f"   - Check service status: {dc} ps")
+    print(f"   - Stop all services:    {dc} down")
+    print(f"   - Restart a service:    {dc} restart <service-name>")
     print("   - View resource usage:  docker stats")
     print("=" * 70 + "\n")
 

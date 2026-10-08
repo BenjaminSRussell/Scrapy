@@ -72,7 +72,8 @@ services:
     environment:
       # Superuser: only init-db.sql (schema/migrations) runs as it (#538).
       - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
+      # From .env; "postgres" is a local-dev default only (#482: rotate if leaked).
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
       - POSTGRES_DB=scraping_pipeline
       # Least-privilege role the workers connect as (created by init-db.sql).
       - APP_DB_USER=scrapy_app
@@ -216,7 +217,7 @@ services:
     image: prometheuscommunity/postgres-exporter:v0.15.0
     restart: unless-stopped
     environment:
-      - DATA_SOURCE_NAME=postgresql://postgres:postgres@postgres:5432/scraping_pipeline?sslmode=disable
+      - DATA_SOURCE_NAME=postgresql://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/scraping_pipeline?sslmode=disable
     depends_on:
       - postgres
     networks:
@@ -254,7 +255,7 @@ services:
       # The Redis datasource in grafana_datasource.yml needs this plugin.
       - GF_PLUGINS_PREINSTALL=redis-datasource
       # Read by the PostgreSQL datasource ($__env{POSTGRES_PASSWORD}).
-      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
     volumes:
       - grafana-data:/var/lib/grafana
       - ./monitoring/alerting:/etc/grafana/provisioning/alerting

@@ -124,6 +124,38 @@ The `.in` files are the source of truth; the `.txt` files are pip-compile lockfi
 Never hand-edit pins without recompiling, and never commit a header with a
 machine-local absolute path.
 
+## Operations CLI (`cli.py`)
+
+`Scraping_project/cli.py` is the main ops tool (#345). Run `python cli.py --help`, or `make cli-help`, for the full list. Each subcommand also accepts `--help`.
+
+| Command | What it does |
+|---|---|
+| `python cli.py health` | Row and file counts for every Delta table |
+| `python cli.py validate` | Validate the Delta tables |
+| `python cli.py seeds list\|add\|disable\|audit` | Manage seed URLs, with an audit log |
+| `python cli.py scrapy --spiders scout` | Run Scrapy spiders |
+| `python cli.py deep_dive` | Run the conservative deep-dive spider |
+| `python cli.py pipeline [--skip-stage1 ...]` | Run stages 1–3 once, in order |
+| `python cli.py export --table T --format csv\|json\|parquet` | Stream Delta tables to files |
+| `python cli.py drain` | Clear the transient Redis queues (`drain_lake.py`); persistent queues such as Stage 4 are kept |
+| `python cli.py queue-gc [--dry-run]` | Delete expired completed or failed rows from the stage queue tables |
+| `python cli.py data gc --ttl-days 14` | TTL cleanup of logs, cache and temp artifacts |
+| `python cli.py reset` | Reset Delta Lake and re-seed (guarded; asks for confirmation) |
+| `python cli.py clean` | Remove temporary files |
+| `python cli.py killswitch on\|off\|status\|audit` | Global crawl kill switch and budgets |
+| `python cli.py ml review-export` | Export low-confidence ZSC records for review |
+| `python cli.py setup` | Model setup placeholder |
+
+Seeds can also be bulk-loaded with `python reseed.py --csv <file>`, which validates them. `scripts/load_seeds.py` is an older one-shot loader for `data/raw/uconn_urls.csv` that is kept for existing automation. It does not canonicalize URLs, so prefer `reseed.py` or `cli.py seeds add`. There is no `cli.py load_seeds`.
+
+### Docker Compose v1 and v2
+
+`start.py`, `shutdown.py`, the ops scripts and the Makefile work with either Compose CLI (#342):
+
+- **`start.py` / `shutdown.py`** use `docker-compose` if it is installed, otherwise the `docker compose` plugin (see `compose_cli.py`). Set `COMPOSE_CMD="docker compose"` to choose explicitly.
+- **Shell scripts** source `scripts/compose_lib.sh`, which prefers the plugin.
+- **The Makefile** defaults to `COMPOSE ?= docker compose`. Override it with `make COMPOSE=docker-compose …`.
+
 ## Unsupported scripts
 
 `temp_scripts/` (repo root) and `Scraping_project/temp_scripts/` hold one-off experiments
