@@ -44,6 +44,25 @@ node --test dashboard/tests/      # dashboard helpers (CI Dashboard workflow)
 `./run_all_tests.sh` wraps the pytest line (pass a path to narrow it). Some tests use
 Redis/Postgres when they are reachable; CI provides both as service containers.
 
+## 4a. Quick local checks
+
+- **Smoke check (#323).** `bash scripts/smoke_local.sh` checks the Python version, core imports and `src.settings`, plus optional Redis and Playwright (these only warn). It then runs a fast offline test subset and exits non-zero on any failure. `--no-tests` skips the pytest step; `SMOKE_TESTS="..."` picks a different subset.
+- **CI matrix locally (#350).** `pip install nox`, then:
+  - `nox` runs `lint` (ruff + mypy + bandit, the same gates as CI) and `tests` on every Python in the matrix that you have installed (3.11, 3.12).
+  - `nox -s tests-3.12 -- tests/unit -x` runs one interpreter with extra pytest args.
+
+  The matrix lives in `noxfile.py` (`PYTHONS`); a unit test keeps it equal to `.github/workflows/main.yml`.
+- **Playwright (optional, #387).** You only need a browser for the JS spider and its tests. Everything else, including the default test set, runs without one:
+
+  ```bash
+  python -m playwright install chromium          # add --with-deps on a fresh Debian/Ubuntu box
+  ```
+
+## 4b. Editor and dev container
+
+- **VS Code (#363).** `.vscode/launch.json` has debug configs for the current file, the current test file, all unit tests and `cli.py`. `.vscode/tasks.json` has tasks for unit tests, the CI default set, the CI lint gates, the smoke check and `start.py`. All of them run from `Scraping_project/` with `PYTHONPATH=.:src`.
+- **Dev container / Codespaces (#321).** `.devcontainer/devcontainer.json` provides Python 3.11 with docker-in-docker (for `python start.py` / Compose), Rust (kafka-delta-ingest) and Node (dashboard tests). It opens in `Scraping_project/`, installs `requirements.txt`, `dev-requirements.txt` and `ci-tools.txt`, then runs the smoke check. Grafana (3000), Prometheus (9090) and the Control Center (8000) are forwarded.
+
 ## 5. Make targets
 
 `make help` lists every target (tests, lint, Docker, docs). The common ones are

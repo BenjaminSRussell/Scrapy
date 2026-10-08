@@ -59,6 +59,23 @@ make test-fast                                              # not slow / not per
 - CI exports `REDIS_HOST/PORT` and `DB_*` for its service containers. Locally, leave
   them unset unless you run those services.
 
+## Parallel runs (pytest-xdist) and filesystem isolation
+
+`pytest-xdist` is pinned in `dev-requirements.txt`. The supported parallel invocation
+is the CI command plus `-n`:
+
+```bash
+python -m pytest tests/ -m "not slow and not kafka and not performance" -o addopts= -n auto
+```
+
+`tests/conftest.py` gives every pytest process (each xdist worker is one) a private
+temp root, and points `DELTA_LAKE_PATH` and `DLQ_PATH` into it unless you set them.
+Code that falls back to the default lake or DLQ therefore never touches
+`Scraping_project/data/`, and workers never share a Delta table. The run **fails** if
+any file appears under `data/delta_lake`, `data/dlq` or `data/kafka_spill` during the
+session. Use `tmp_path` (unique per test) for anything else you write.
+`tests/unit/test_xdist_isolation_683.py` checks that isolation; CI runs the suite serially.
+
 ## Coverage
 
 Coverage is collected through `addopts` (`--cov=src --cov-branch`) when you run plain
