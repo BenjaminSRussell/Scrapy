@@ -3,6 +3,19 @@
 # ==================================================================
 # These rules define alerts for critical conditions in the pipeline
 # Alerts are sent to Alertmanager for routing and notification
+#
+# Every metric an expr reads must have a real producer (#178). The sources:
+#   - Python prometheus_client metrics defined in src/ (scrapy_*, delta_*,
+#     redis_pool_*, scrapy_pg_*, ...), scraped on the scrapy_app job
+#   - recording_rules.yml outputs (e.g. kafka_consumergroup_lag_max)
+#   - statsd-exporter, via k8s/helm/.../files/monitoring/statsd_mapping.yml:
+#     kafka-delta-ingest (kafka_delta_ingest_*) and monitoring/metrics_exporter.py
+#     (redis_queue_length, pipeline_errors_total, circuit_breaker_open_count)
+#   - kafka JMX exporter names from files/monitoring/kafka_jmx_config.yml
+#   - redis_exporter, postgres_exporter, Prometheus' own metrics and `up`
+# tests/unit/monitoring/test_alert_metric_catalog.py fails CI when an expr
+# names a metric none of these produce. The Helm copy of this file must be
+# identical (same test).
 # ==================================================================
 
 groups:
@@ -79,29 +92,43 @@ groups:
 
       # Warning: High consumer lag
       - alert: KafkaHighConsumerLag
-        expr: kafka_consumer_records_lag > 10000
+        expr: max_over_time(kafka_consumergroup_lag_max[5m]) > 10000
         for: 5m
         labels:
           severity: warning
           component: kafka
         annotations:
-          summary: "High Kafka consumer lag detected"
-          description: "Consumer {{ $labels.client_id }} has lag of {{ $value }} messages on topic {{ $labels.topic }}."
+          summary: "High Kafka consumer group lag detected"
+          description: "Consumer group {{ $labels.group }} on topic {{ $labels.topic }} has a max lag of {{ $value }} messages on at least one partition."
           impact: "Medium - Data processing delayed"
           action: "Scale up consumers or investigate processing bottleneck"
 
       # Warning: Very high consumer lag (critical threshold)
       - alert: KafkaVeryHighConsumerLag
-        expr: kafka_consumer_records_lag > 100000
+        expr: max_over_time(kafka_consumergroup_lag_max[5m]) > 100000
         for: 5m
         labels:
           severity: critical
           component: kafka
         annotations:
-          summary: "Very high Kafka consumer lag"
-          description: "Consumer {{ $labels.client_id }} has lag of {{ $value }} messages."
+          summary: "Very high Kafka consumer group lag"
+          description: "Consumer group {{ $labels.group }} on topic {{ $labels.topic }} has a max lag of {{ $value }} messages."
           impact: "High - Significant data processing backlog"
           action: "Immediate action: scale consumers or pause producers"
+
+      # Critical: Consumer Lag SLO Violation
+      - alert: KafkaConsumerLagSLO
+        expr: max_over_time(kafka_consumergroup_lag_max[5m]) > 250000
+        for: 15m
+        labels:
+          severity: critical
+          component: kafka
+          slo: "true"
+        annotations:
+          summary: "Kafka consumer lag has breached the SLO"
+          description: "Consumer group {{ $labels.group }} on topic {{ $labels.topic }} has a max lag of {{ $value }} messages for over 15 minutes, violating the SLO."
+          impact: "Critical - Service Level Objective for data processing timeliness is not being met."
+          action: "Immediately investigate consumer performance, consider scaling up consumers or pausing producers if necessary."
 
   # ============================================
   # Scrapy Application Alerts
@@ -130,109 +157,142 @@ groups:
           severity: warning
           component: scrapy
         annotations:
-          summary: "Scrapy is not scraping items"
-          description: "No items scraped in the past 10 minutes."
-          impact: "Medium - Data freshness impacted"
-          action: "Check spider configuration and target website availability"
+          summary: "Scrapy is not scraping any items"
+          description: "Spider {{ $labels.spider }} has not scraped any items in 10 minutes."
+          impact: "Medium - Data collection stalled"
+          action: "Check spider logs and website availability"
 
-      # Warning: High error rate
+      # Critical: High error rate
       - alert: ScrapyHighErrorRate
         expr: |
-          (
-            sum(rate(scrapy_responses_total{status_code=~"[45].."}[5m]))
-            /
-            sum(rate(scrapy_responses_total[5m]))
-          ) > 0.2
-        for: 5m
-        labels:
-          severity: warning
-          component: scrapy
-        annotations:
-          summary: "Scrapy high HTTP error rate"
-          description: "More than 20% of responses are HTTP errors."
-          impact: "Medium - Crawling efficiency reduced"
-          action: "Inspect failing URLs and adjust crawl policies"
-
-      # Critical: Scrapy high error rate
-      - alert: ScrapyCriticalErrorRate
-        expr: |
-          (
-            sum(rate(scrapy_responses_total{status_code=~"[45].."}[5m]))
-            /
-            sum(rate(scrapy_responses_total[5m]))
-          ) > 0.5
+          sum(rate(scrapy_responses_total{status_code=~"[45].."}[5m])) by (spider)
+          /
+          sum(rate(scrapy_responses_total[5m])) by (spider) > 0.2
         for: 5m
         labels:
           severity: critical
           component: scrapy
         annotations:
-          summary: "Scrapy critical error rate"
-          description: "More than 50% of responses are HTTP errors."
-          impact: "High - Crawling halted or blocked"
-          action: "Investigate block detection, update user-agents, or throttle requests"
+          summary: "High error rate in Scrapy spider"
+          description: "Spider {{ $labels.spider }} has {{ $value | humanizePercentage }} error rate."
+          impact: "High - Most requests are failing"
+          action: "Check for IP blocks, website changes, or network issues"
+
+      # Warning: Elevated error rate
+      - alert: ScrapyElevatedErrorRate
+        expr: |
+          sum(rate(scrapy_responses_total{status_code=~"[45].."}[5m])) by (spider)
+          /
+          sum(rate(scrapy_responses_total[5m])) by (spider) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          component: scrapy
+        annotations:
+          summary: "Elevated error rate in Scrapy spider"
+          description: "Spider {{ $labels.spider }} has {{ $value | humanizePercentage }} error rate."
+          impact: "Medium - Significant number of failed requests"
+          action: "Monitor spider behavior and investigate errors"
+
+      # Warning: High item drop rate
+      - alert: ScrapyHighItemDropRate
+        expr: |
+          rate(scrapy_items_dropped_total[5m])
+          /
+          (rate(scrapy_items_scraped_total[5m]) + rate(scrapy_items_dropped_total[5m])) > 0.3
+        for: 10m
+        labels:
+          severity: warning
+          component: scrapy
+        annotations:
+          summary: "High item drop rate"
+          description: "Spider {{ $labels.spider }} is dropping {{ $value | humanizePercentage }} of items."
+          impact: "Medium - Data quality issues"
+          action: "Check validation pipeline and data quality"
 
       # Warning: Slow response times
       - alert: ScrapySlowResponses
-        expr: histogram_quantile(0.95, rate(scrapy_response_time_seconds_bucket[5m])) > 3
-        for: 5m
+        expr: histogram_quantile(0.95, rate(scrapy_response_time_seconds_bucket[5m])) > 10
+        for: 10m
         labels:
           severity: warning
           component: scrapy
         annotations:
-          summary: "Scrapy response time p95 > 3s"
-          description: "95th percentile response time is above 3 seconds."
-          impact: "Medium - Crawling throughput reduced"
-          action: "Check target site speed and network conditions"
+          summary: "Slow response times detected"
+          description: "Spider {{ $labels.spider }} p95 response time is {{ $value }}s."
+          impact: "Medium - Scraping performance degraded"
+          action: "Check network latency and target website performance"
 
-  # ============================================
-  # Pipeline Throughput & Quality Alerts
-  # ============================================
-  - name: pipeline_throughput
-    interval: 1m
-    rules:
-      # Warning: Pipeline throughput dropped significantly
-      - alert: PipelineThroughputDegraded
-        expr: |
-          (
-            sum(rate(scrapy_items_scraped_total[5m]))
-            /
-            sum(rate(scrapy_items_scraped_total[30m]))
-          ) < 0.5
-        for: 10m
-        labels:
-          severity: warning
-          component: pipeline
-        annotations:
-          summary: "Pipeline throughput dropped by more than 50%"
-          description: "Current throughput is {{ $value | humanizePercentage }} of 30-minute average."
-          impact: "Medium - Data ingestion slowing down"
-          action: "Investigate upstream and downstream components for bottlenecks"
-
-      # Critical: No Delta Lake commits
-      - alert: NoDeltaCommits
-        expr: rate(ingestor_delta_commits_total[15m]) == 0
-        for: 30m
+      # Critical: Too many 403 responses (blocked)
+      - alert: ScrapyBlocked
+        expr: rate(scrapy_responses_total{status_code="403"}[5m]) > 1
+        for: 5m
         labels:
           severity: critical
-          component: delta
+          component: scrapy
         annotations:
-          summary: "No Delta Lake commits in 30 minutes"
-          description: "Data is not being persisted to Delta Lake."
-          impact: "High - Data pipeline blocked"
-          action: "Check kafka-delta-ingestor logs and Kafka connectivity"
+          summary: "Scrapy spider appears to be blocked"
+          description: "Spider {{ $labels.spider }} receiving {{ $value }} 403 responses/sec."
+          impact: "High - IP address may be blocked"
+          action: "Rotate proxies, adjust user-agent, or reduce request rate"
 
-      # Warning: High Delta Lake write latency
-      - alert: DeltaHighWriteLatency
-        expr: histogram_quantile(0.95, rate(delta_batch_write_seconds_bucket[5m])) > 10
+  # ============================================
+  # Kafka Pipeline Alerts
+  # ============================================
+  - name: kafka_pipeline
+    interval: 30s
+    rules:
+      # Critical: Kafka pipeline is down. kafka-delta-ingest serves no HTTP
+      # endpoint (it only sends StatsD), so up{job="kafka_ingestor"} was always 0
+      # in Compose and absent in Helm (#178). Fire instead when the broker is
+      # taking messages but the ingestor has received none for 10 minutes;
+      # `or vector(0)` covers an ingestor that never started.
+      - alert: KafkaPipelineDown
+        expr: |
+          sum(rate(kafka_server_brokertopicmetrics_messagesin_total[10m])) > 0
+          and on()
+          (sum(rate(kafka_delta_ingest_messages_received_total[10m])) or vector(0)) == 0
+        for: 5m
+        labels:
+          severity: critical
+          component: ingestor
+        annotations:
+          summary: "Kafka to Delta Lake pipeline is down"
+          description: "Kafka is receiving messages but kafka-delta-ingest has consumed none for 15 minutes."
+          impact: "Critical - Data not being persisted to Delta Lake"
+          action: "Check ingestor: docker-compose logs kafka-delta-ingestor"
+
+      # Critical: High message failure rate
+      # main.rs counts per-message failures as kafka_delta_ingest.errors.<reason>
+      # (mapped to kafka_delta_ingest_errors_total{reason}); there is no
+      # ingestor_records_failed_total (#178).
+      - alert: KafkaHighMessageFailureRate
+        expr: |
+          sum(rate(kafka_delta_ingest_errors_total{reason=~"parse_failed|schema_validation_failed|missing_required_field"}[5m])) > 10
+        for: 5m
+        labels:
+          severity: critical
+          component: ingestor
+        annotations:
+          summary: "High Kafka message processing failure rate"
+          description: "{{ $value }} messages/sec are failing to process."
+          impact: "High - Data loss occurring"
+          action: "Check ingestor logs for errors and Delta Lake connectivity"
+
+      # Warning: Slow Delta Lake writes
+      # main.rs times write+commit as the StatsD timer batch.write; statsd-exporter
+      # turns it into the kafka_delta_ingest_batch_write_seconds histogram (#178).
+      - alert: SlowDeltaLakeWrites
+        expr: histogram_quantile(0.95, sum by (le) (rate(kafka_delta_ingest_batch_write_seconds_bucket[5m]))) > 5
         for: 10m
         labels:
           severity: warning
-          component: delta
+          component: ingestor
         annotations:
-          summary: "Delta Lake write latency p95 > 10s"
-          description: "95th percentile Delta Lake write latency exceeded threshold."
-          impact: "Medium - Slow data persistence"
-          action: "Investigate storage performance and network throughput"
+          summary: "Slow Delta Lake write performance"
+          description: "P95 batch write latency is {{ $value }}s."
+          impact: "Medium - Ingestion performance degraded"
+          action: "Check Delta Lake storage performance and network"
 
       # Consecutive Delta write failures in the Rust ingest (#535). main.rs
       # retries each batch with backoff (1s..30s), never commits Kafka offsets
@@ -269,7 +329,53 @@ groups:
           action: "Page the on-call: fix Delta storage, or pause producers before retention runs out"
 
   # ============================================
-  # Infrastructure Alerts (Redis/Postgres)
+  # Lakehouse (Python writer) durability (#225, #167)
+  # ============================================
+  - name: delta_lakehouse_writes
+    interval: 30s
+    rules:
+      # Sustained async write failures: batches are being spilled, not written.
+      - alert: DeltaWriteFailuresSustained
+        expr: sum by (table) (increase(delta_write_failures_total{outcome="spilled"}[15m])) > 0
+        for: 15m
+        labels:
+          severity: critical
+          component: delta
+        annotations:
+          summary: "Delta writes for {{ $labels.table }} keep failing and spilling to disk"
+          description: "{{ $value }} batches for {{ $labels.table }} exhausted retries in 15m and were spilled to _write_spill/."
+          impact: "High - Data is durable on local disk but missing from the lake until replayed"
+          action: "Fix the Delta/storage error, then run LakehouseManager.replay_spilled_writes()"
+
+      # Producers hitting a full async queue (backpressure) instead of hanging.
+      - alert: DeltaWriteQueueSaturated
+        expr: sum(increase(delta_write_queue_full_total[10m])) > 0
+        for: 10m
+        labels:
+          severity: warning
+          component: delta
+        annotations:
+          summary: "Delta async write queue is saturated"
+          description: "Writers found the queue full for queue_put_timeout_seconds and spilled {{ $value }} batches in 10m (depth: delta_write_queue_depth)."
+          impact: "Medium - Writer thread cannot keep up; batches spilled to disk"
+          action: "Check writer thread health and storage latency; raise delta_lake.queue_maxsize only if storage is healthy"
+
+      # Sustained async-queue backlog (#166): batches only in process memory are
+      # lost on SIGKILL/OOM, so a queue that never drains is a data-loss window.
+      - alert: DeltaWriteQueueBacklog
+        expr: max(delta_write_queue_depth) > 100
+        for: 10m
+        labels:
+          severity: warning
+          component: delta
+        annotations:
+          summary: "Delta async write queue has had a backlog for 10m"
+          description: "{{ $value }} batches have been waiting in the in-memory write queue. They are durable only after the writer commits them (SIGTERM drains or spills them; SIGKILL/OOM loses them)."
+          impact: "Medium - Batches still in memory are lost on a hard crash"
+          action: "Check Delta storage latency and writer thread health; consider async_write=False for critical tables"
+
+  # ============================================
+  # Infrastructure Alerts
   # ============================================
   - name: infrastructure
     interval: 30s
@@ -358,6 +464,24 @@ groups:
           impact: "High - Metrics storage offline"
           action: "Restart PostgreSQL: docker-compose restart postgres"
 
+      # Postgres metrics sink failing (#586). Stage metrics are dual-exported, so
+      # Prometheus still has them, but Postgres history has gaps and the dropped
+      # records only exist as metrics_sink_fallback WARNING log lines.
+      - alert: PostgresMetricsSinkFailing
+        expr: |
+          sum(rate(scrapy_pg_metrics_writes_total{outcome="failure"}[5m]))
+            / clamp_min(sum(rate(scrapy_pg_metrics_writes_total{outcome=~"success|failure"}[5m])), 1e-9)
+            > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          component: postgres
+        annotations:
+          summary: "Postgres metrics sink is failing ({{ $value | humanizePercentage }} of writes)"
+          description: "More than 10% of performance/error records failed to reach Postgres for 5 minutes. The crawl continues; Prometheus still has the stage series (scrapy_stage_*), and each dropped record is logged as 'metrics_sink_fallback' at WARNING."
+          impact: "Medium - Postgres metric/error history has gaps; Prometheus alerting is unaffected"
+          action: "Check PostgresDown / connection pool; backfill from metrics_sink_fallback log lines if the history matters"
+
       # Warning: High PostgreSQL connection usage
       - alert: PostgresHighConnections
         expr: |
@@ -444,9 +568,11 @@ groups:
           impact: "Low - Some domains are temporarily blocked"
           action: "Normal operation - circuits will auto-recover"
 
-      # Warning: Low Delta Lake write rate
+      # Warning: Low Delta Lake write rate. Each batches.written is one Delta
+      # commit (write_batch commits once per batch); there is no
+      # ingestor_delta_commits_total (#178).
       - alert: LowDeltaLakeWrites
-        expr: rate(ingestor_delta_commits_total[5m]) == 0
+        expr: sum(rate(kafka_delta_ingest_batches_written_total[15m])) == 0
         for: 15m
         labels:
           severity: warning
@@ -456,3 +582,34 @@ groups:
           description: "No data is being written to Delta Lake."
           impact: "Medium - Data persistence stalled"
           action: "Check Kafka consumer and Delta Lake connectivity"
+
+      # Moved from the old monitoring/alerts.yml, which Prometheus never loaded
+      # (rule_files lists only recording_rules.yml and alerting_rules.yml) and
+      # which used names nothing emitted (#178). metrics_exporter.py sends
+      # errors.total{stage,error_type}; statsd_mapping.yml names it
+      # pipeline_errors_total.
+      - alert: PipelineHighErrorRate
+        expr: sum by (stage) (rate(pipeline_errors_total[5m])) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          component: pipeline
+        annotations:
+          summary: "High pipeline error rate in {{ $labels.stage }}"
+          description: "{{ $value }} errors/sec recorded for {{ $labels.stage }} over 5 minutes."
+          impact: "Medium - URLs in this stage are failing"
+          action: "Check the stage worker logs and the error_type label of pipeline_errors_total"
+
+      # metrics_exporter.py sends redis.queue.length{queue}; statsd_mapping.yml
+      # names it redis_queue_length.
+      - alert: QueueBacklog
+        expr: max by (queue) (redis_queue_length) > 10000
+        for: 10m
+        labels:
+          severity: warning
+          component: pipeline
+        annotations:
+          summary: "Large backlog in {{ $labels.queue }}"
+          description: "{{ $labels.queue }} has {{ $value }} items pending for 10 minutes."
+          impact: "Medium - Crawl latency grows while workers fall behind"
+          action: "Scale the consuming stage or check it for stalls"
