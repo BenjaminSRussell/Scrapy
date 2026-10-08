@@ -124,11 +124,21 @@ def _record_decode_failure(source: str, payload: str, error: Exception) -> None:
 
 class URLExtractor:
 
+    # Free-text URL matcher used on script text, comments, event handlers and
+    # the raw body. It used to overgenerate (#25): "jane@uconn.edu" and
+    # "admissions.uconn.edu/apply" matched as bare "uconn.edu..." and were then
+    # urljoin'ed as *relative paths* (https://uconn.edu/dept/uconn.edu/apply);
+    # "uconn.education" matched "uconn.edu"; "//TODO" matched as a host; and
+    # paths were cut at "~" / "," or kept a sentence's trailing ".".
+    _PATH = r"(?:/[\w\-\./?%&=~+,;:@!*]*)?"
     URL_REGEX = re.compile(
-        r"(?<![{\[<$%#])(?:(?:https?|ftp):)?//[\w\-\.]+(?::\d+)?(?:/[\w\-\./?%&=]*)?"
-        r"|(?<![{\[<$%#])(?:www\.)?[\w\-]+\.(?:edu|com|org|net|gov|io|co)(?:/[\w\-\./?%&=]*)?",
+        # scheme-qualified or protocol-relative; host must contain a dot
+        r"(?<![{\[<$%#\w])(?:(?:https?|ftp):)?//[\w\-]+(?:\.[\w\-]+)+(?::\d+)?" + _PATH
+        # bare host: whole dotted name, not part of an email/path/longer word
+        + r"|(?<![{\[<$%#\w@.\-/])(?:[\w\-]+\.)+(?:edu|com|org|net|gov|io|co)(?![\w\-])(?::\d+)?" + _PATH,
         re.IGNORECASE,
     )
+    _TRAILING_PUNCT = ".,;:!?*'\""
 
     ENCODED_URL_PATTERNS: list[Pattern[str]] = [
         re.compile(r'atob\(["\']([^"\']+)["\']\)'),
@@ -218,8 +228,8 @@ class URLExtractor:
 
     def _extract_from_inline_scripts(self, response: Response):
         for script in response.css("script::text").getall():
-            for match in self.URL_REGEX.finditer(script):
-                self._add_url(match.group())
+            for url in self._regex_urls(script):
+                self._add_url(url)
 
             for pattern_str in self.JS_VAR_PATTERNS:
                 for match in re.finditer(pattern_str, script):
@@ -309,22 +319,35 @@ class URLExtractor:
         comment_pattern = re.compile(r"<!--(.*?)-->", re.DOTALL)
         for match in comment_pattern.finditer(response.text):
             comment = match.group(1)
-            for url_match in self.URL_REGEX.finditer(comment):
-                self._add_url(url_match.group())
+            for url in self._regex_urls(comment):
+                self._add_url(url)
 
     def _extract_from_event_handlers(self, response: Response):
         event_attrs = ["onclick", "onload", "onerror", "onmouseover", "onfocus"]
 
         for attr in event_attrs:
             for handler in response.css(f"[{attr}]::attr({attr})").getall():
-                for match in self.URL_REGEX.finditer(handler):
-                    self._add_url(match.group())
+                for url in self._regex_urls(handler):
+                    self._add_url(url)
 
     def _extract_from_raw_regex(self, response: Response):
-        for match in self.URL_REGEX.finditer(response.text):
-            url = match.group()
+        for url in self._regex_urls(response.text):
             if not self._is_likely_template(url):
                 self._add_url(url)
+
+    def _regex_urls(self, text: str):
+        """URL_REGEX matches made fetchable: trailing sentence punctuation and
+        unbalanced ")" dropped, bare hosts given a scheme so urljoin cannot
+        treat them as relative paths (#25)."""
+        for match in self.URL_REGEX.finditer(text):
+            url = match.group()
+            while url and (url[-1] in self._TRAILING_PUNCT or (url[-1] == ")" and url.count("(") < url.count(")"))):
+                url = url[:-1]
+            if not url:
+                continue
+            if not url.startswith("//") and "://" not in url:
+                url = "https://" + url
+            yield url
 
     def _is_likely_template(self, url: str) -> bool:
         template_indicators = [
