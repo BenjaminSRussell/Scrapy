@@ -1,0 +1,140 @@
+# promtool unit tests for the alerts #178 repointed at real metric names.
+# Run: promtool test rules tests/unit/monitoring/alert_rules_promtool_test.yml
+# (test_alert_metric_catalog.py runs this when promtool is on PATH).
+rule_files:
+  - ../../../monitoring/alerting_rules.yml
+  - ../../../monitoring/recording_rules.yml
+
+evaluation_interval: 1m
+
+tests:
+  # Synthetic backlog: metrics_exporter.py's redis.queue.length gauge, as
+  # statsd-exporter exposes it, above 10k for longer than `for: 10m`.
+  - interval: 1m
+    input_series:
+      - series: 'redis_queue_length{queue="priority_queue"}'
+        values: '20000x20'
+      - series: 'redis_queue_length{queue="stage2_queue"}'
+        values: '5x20'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: QueueBacklog
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: QueueBacklog
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              component: pipeline
+              queue: priority_queue
+            exp_annotations:
+              summary: "Large backlog in priority_queue"
+              description: "priority_queue has 20000 items pending for 10 minutes."
+              impact: "Medium - Crawl latency grows while workers fall behind"
+              action: "Scale the consuming stage or check it for stalls"
+
+  # errors.total{stage,error_type} counter -> pipeline_errors_total: 60/min
+  # (1/s) in stage2 fires; stage3 at 1/min does not.
+  - interval: 1m
+    input_series:
+      - series: 'pipeline_errors_total{stage="stage2",error_type="timeout"}'
+        values: '0+60x20'
+      - series: 'pipeline_errors_total{stage="stage3",error_type="timeout"}'
+        values: '0+1x20'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: PipelineHighErrorRate
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              component: pipeline
+              stage: stage2
+            exp_annotations:
+              summary: "High pipeline error rate in stage2"
+              description: "1 errors/sec recorded for stage2 over 5 minutes."
+              impact: "Medium - URLs in this stage are failing"
+              action: "Check the stage worker logs and the error_type label of pipeline_errors_total"
+
+  # kafka_delta_ingest.batch.write timer (seconds histogram): every write in
+  # the 5-10s bucket, so p95 > 5s.
+  - interval: 1m
+    input_series:
+      - series: 'kafka_delta_ingest_batch_write_seconds_bucket{job="kafka-delta-ingest",le="5"}'
+        values: '0x30'
+      - series: 'kafka_delta_ingest_batch_write_seconds_bucket{job="kafka-delta-ingest",le="10"}'
+        values: '0+10x30'
+      - series: 'kafka_delta_ingest_batch_write_seconds_bucket{job="kafka-delta-ingest",le="+Inf"}'
+        values: '0+10x30'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: SlowDeltaLakeWrites
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              component: ingestor
+            exp_annotations:
+              summary: "Slow Delta Lake write performance"
+              description: "P95 batch write latency is 9.75s."
+              impact: "Medium - Ingestion performance degraded"
+              action: "Check Delta Lake storage performance and network"
+
+  # Broker takes messages, ingestor has never reported: pipeline is down.
+  - interval: 1m
+    input_series:
+      - series: 'kafka_server_brokertopicmetrics_messagesin_total{topic="scraped_items"}'
+        values: '0+100x30'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: KafkaPipelineDown
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              component: ingestor
+            exp_annotations:
+              summary: "Kafka to Delta Lake pipeline is down"
+              description: "Kafka is receiving messages but kafka-delta-ingest has consumed none for 15 minutes."
+              impact: "Critical - Data not being persisted to Delta Lake"
+              action: "Check ingestor: docker-compose logs kafka-delta-ingestor"
+
+  # Healthy ingestor consuming: no KafkaPipelineDown, no LowDeltaLakeWrites.
+  - interval: 1m
+    input_series:
+      - series: 'kafka_server_brokertopicmetrics_messagesin_total{topic="scraped_items"}'
+        values: '0+100x40'
+      - series: 'kafka_delta_ingest_messages_received_total{job="kafka-delta-ingest"}'
+        values: '0+100x40'
+      - series: 'kafka_delta_ingest_batches_written_total{job="kafka-delta-ingest"}'
+        values: '0+1x40'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: KafkaPipelineDown
+        exp_alerts: []
+      - eval_time: 30m
+        alertname: LowDeltaLakeWrites
+        exp_alerts: []
+
+  # Per-message failures from main.rs (errors.parse_failed etc.), 15/s.
+  - interval: 1m
+    input_series:
+      - series: 'kafka_delta_ingest_errors_total{job="kafka-delta-ingest",reason="parse_failed"}'
+        values: '0+900x20'
+      - series: 'kafka_delta_ingest_errors_total{job="kafka-delta-ingest",reason="offset_commit_failed"}'
+        values: '0+9000x20'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: KafkaHighMessageFailureRate
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              component: ingestor
+            exp_annotations:
+              summary: "High Kafka message processing failure rate"
+              description: "15 messages/sec are failing to process."
+              impact: "High - Data loss occurring"
+              action: "Check ingestor logs for errors and Delta Lake connectivity"
+    promql_expr_test:
+      - expr: kafka:messages_failed:rate5m
+        eval_time: 15m
+        exp_samples:
+          - labels: 'kafka:messages_failed:rate5m'
+            value: 15
