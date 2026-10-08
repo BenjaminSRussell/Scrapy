@@ -23,6 +23,7 @@ types-defusedxml>=0.7
 types-PyYAML>=6.0.12
 types-requests>=2.32,<2.33  # match requests 2.32.x
 ruff>=0.9.0
+pre-commit>=3.7.0  # `make install-dev` runs `pre-commit install` (#358)
 
 # Security
 pip-audit>=2.7.0
