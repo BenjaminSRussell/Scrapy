@@ -489,15 +489,24 @@
             font-weight: 700;
         }
 
+        /* Sticky to the viewport bottom so the countdown / last-updated /
+           pause controls stay visible while scrolling long tabs such as the
+           Activity log (#975). Opaque background + shadow keep it legible over
+           content; wraps on narrow screens instead of overflowing. */
         .refresh-bar {
             background: white;
             border-radius: 0.5rem;
-            padding: 1rem 1.5rem;
-            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            padding: 0.75rem 1.5rem;
+            box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.12);
             display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem 1rem;
             justify-content: space-between;
             align-items: center;
             margin-top: 2rem;
+            position: sticky;
+            bottom: 0;
+            z-index: 900; /* below the sticky topbar (1000) */
         }
 
         .refresh-info {
@@ -1103,7 +1112,7 @@
                             <span class="metric-value" id="uptime">0s</span>
                         </div>
                     </div>
-                </ul>
+                </div>
             </div>
 
             <!-- Activity Log Tab -->
