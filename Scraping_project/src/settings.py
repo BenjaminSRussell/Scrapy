@@ -95,6 +95,24 @@ REQUEST_FINGERPRINTER_CLASS = _scrapy_config.get(
 
 USER_AGENT = _scrapy_config.get("user_agent", "UConn-Discovery-Crawler/1.0")
 
+# robots.txt (#186, #188): obey Disallow and Crawl-delay by default. Scrapy's own
+# RobotsTxtMiddleware is swapped for PoliteRobotsTxtMiddleware (adds metrics and
+# Crawl-delay, capped at ROBOTS_MAX_CRAWL_DELAY). Opt out only for sites you own:
+# ROBOTSTXT_OBEY=false or scrapy.robotstxt_obey: false.
+ROBOTSTXT_OBEY = str(os.getenv("ROBOTSTXT_OBEY", _scrapy_config.get("robotstxt_obey", True))).strip().lower() not in {
+    "0", "false", "no", "off"
+}
+ROBOTS_MAX_CRAWL_DELAY = float(os.getenv("ROBOTS_MAX_CRAWL_DELAY", _scrapy_config.get("robots_max_crawl_delay", 60)))
+DOWNLOADER_MIDDLEWARES = _scrapy_config.get(
+    "downloader_middlewares",
+    {
+        "scrapy.downloadermiddlewares.robotstxt.RobotsTxtMiddleware": None,
+        "src.stage1.middlewares.robots_middleware.PoliteRobotsTxtMiddleware": 100,
+        "src.stage1.middlewares.retry_after_middleware.RetryAfterMiddleware": 560,  # #188
+    },
+)
+RETRY_AFTER_MAX_DELAY = float(os.getenv("RETRY_AFTER_MAX_DELAY", _scrapy_config.get("retry_after_max_delay", 120)))
+
 CONCURRENT_REQUESTS = _scrapy_config.get("concurrent_requests", 64)
 CONCURRENT_REQUESTS_PER_DOMAIN = _scrapy_config.get("concurrent_requests_per_domain", 32)
 CONCURRENT_REQUESTS_PER_IP = _scrapy_config.get("concurrent_requests_per_ip", 32)
@@ -116,11 +134,27 @@ LOG_LEVEL = os.getenv("LOG_LEVEL", _scrapy_config.get("log_level", "INFO"))
 # ============================================================================
 CLOSESPIDER_TIMEOUT = _scrapy_config.get("closespider_timeout", 600)
 
+# Politeness (#194): AutoThrottle must be able to slow a host down far enough
+# under a 429 storm. AUTOTHROTTLE_MAX_DELAY is floored at 30s and the target
+# concurrency is per remote host (Scrapy semantics), so it can never exceed
+# CONCURRENT_REQUESTS_PER_DOMAIN. See README "Rate limits and per-domain
+# concurrency".
+from src.stage1.middlewares.spider_config import (  # noqa: E402
+    polite_autothrottle_max_delay,
+    polite_target_concurrency,
+)
+
 AUTOTHROTTLE_ENABLED = _scrapy_config.get("autothrottle_enabled", True)
 AUTOTHROTTLE_START_DELAY = _scrapy_config.get("autothrottle_start_delay", 0.1)
-AUTOTHROTTLE_MAX_DELAY = _scrapy_config.get("autothrottle_max_delay", 1.0)
-AUTOTHROTTLE_TARGET_CONCURRENCY = float(CONCURRENT_REQUESTS)
+AUTOTHROTTLE_MAX_DELAY = polite_autothrottle_max_delay(_scrapy_config.get("autothrottle_max_delay", 60.0))
+AUTOTHROTTLE_TARGET_CONCURRENCY = polite_target_concurrency(
+    _scrapy_config.get("autothrottle_target_concurrency", 4.0), CONCURRENT_REQUESTS_PER_DOMAIN
+)
 AUTOTHROTTLE_DEBUG = _scrapy_config.get("autothrottle_debug", False)
+# 429/503 without Retry-After: exponential per-host backoff (RetryAfterMiddleware).
+RATE_LIMIT_BACKOFF_MIN = float(_scrapy_config.get("rate_limit_backoff_min", 1.0))
+RATE_LIMIT_BACKOFF_MAX = float(_scrapy_config.get("rate_limit_backoff_max", AUTOTHROTTLE_MAX_DELAY))
+RATE_LIMIT_COOLDOWN_FACTOR = float(_scrapy_config.get("rate_limit_cooldown_factor", 4.0))
 
 HTTPCACHE_ENABLED = _scrapy_config.get("httpcache_enabled", True)
 HTTPCACHE_EXPIRATION_SECS = _scrapy_config.get("httpcache_expiration_secs", 3600)
@@ -319,7 +353,21 @@ ZSC_DEVICE = _scrapy_config.get("zsc_device", -1)
 # ============================================================================
 ASR_MAX_WORKERS = _scrapy_config.get("asr_max_workers", 4)
 
-ASR_ENABLED = _scrapy_config.get("asr_enabled", False)
+# Off by default (#470): the ASR pipeline is only registered when enabled, so a
+# default crawl never imports speech_recognition. $ASR_ENABLED overrides config.
+_asr_env = os.environ.get("ASR_ENABLED")
+ASR_ENABLED = (
+    _asr_env.strip().lower() in ("1", "true", "yes", "on")
+    if _asr_env is not None
+    else bool(_scrapy_config.get("asr_enabled", False))
+)
+if ASR_ENABLED:
+    # After metadata/recency, before Kafka, so transcripts ship with the record.
+    ITEM_PIPELINES = {**ITEM_PIPELINES, "src.common.async_asr_processor.ASRPipeline": 260}
+
+# Speech-to-text backend: none (default, no egress) | google (uploads audio to
+# Google, explicit opt-in) | whisper (local). $ASR_PROVIDER overrides config (#429).
+ASR_PROVIDER = os.environ.get("ASR_PROVIDER") or _scrapy_config.get("asr_provider", "none")
 
 # Note: The system uses multiple Kafka topics for architectural decoupling.
 # Prefer kafka.topics.* in config.yml (or scrapy.kafka_topic) over ad-hoc defaults.

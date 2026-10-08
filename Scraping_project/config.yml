@@ -38,6 +38,11 @@ stage1:
   aggressive_collection: true  # Capture EVERYTHING - Stage 2 will filter
   expand_seeds: true  # Auto-add discovered URLs back to seed_urls
   parse_sitemaps: true  # Auto-discover and parse sitemaps
+  sitemap:  # Walk limits for nested sitemap indexes (#206)
+    max_depth: 5          # sitemapindex nesting levels to follow
+    max_urls: 50000       # hard cap on URLs collected per site walk
+    max_sitemaps: 500     # hard cap on sitemap documents fetched per walk
+    max_bytes: 52428800   # per-sitemap body cap after decompression (50 MiB)
   enable_depth_mode: true  # Switch to depth spider when idle
   enable_rescraping: true  # Re-scrape existing URLs to find missed links
 
@@ -75,9 +80,11 @@ stage1:
   # Spider-Specific Settings
   spiders:
     scout:
-      # Aggressive spider settings
+      # Aggressive spider settings: high global concurrency spread across
+      # hosts, but each host is capped (#194). Scrapy's "domain" slot is the
+      # hostname, so every uconn.edu subdomain gets its own 16.
       concurrent_requests: 1024
-      concurrent_requests_per_domain: 512
+      concurrent_requests_per_domain: 16
       download_delay: 0.01
       download_timeout: 15
       retry_times: 2
@@ -87,8 +94,8 @@ stage1:
       # Autothrottle
       autothrottle_enabled: true
       autothrottle_start_delay: 0.005
-      autothrottle_max_delay: 1.5
-      autothrottle_target_concurrency: 2048
+      autothrottle_max_delay: 60  # >= 30s floor (#194): room to back off under 429s
+      autothrottle_target_concurrency: 8.0  # per host; must be <= concurrent_requests_per_domain
 
       # Memory limits
       memory_limit_mb: 10240
@@ -111,7 +118,7 @@ stage1:
       # Autothrottle
       autothrottle_enabled: true
       autothrottle_start_delay: 0.25
-      autothrottle_max_delay: 10
+      autothrottle_max_delay: 60  # >= 30s floor (#194)
       autothrottle_target_concurrency: 2.0
 
       # Memory limits
