@@ -254,6 +254,18 @@ Stage workers report batch throughput and per-URL errors through `src/utils/metr
 2. **Postgres, best effort:** the same record goes to `performance_metrics` / `error_logs` for history.
 3. **Postgres failure:** never raised into the crawl and never silently dropped. `scrapy_pg_metrics_writes_total{kind,outcome="failure"}` is incremented, the record is logged at WARNING as `metrics_sink_fallback kind=... payload={json}`, and the `PostgresMetricsSinkFailing` alert fires above a 10% failure rate for 5m. With Postgres disabled (no `DB_PASSWORD`), writes are counted as `outcome="disabled"`.
 
+### Deployment profiles: core vs streaming
+
+`docker/entrypoints/crawler-entrypoint.sh` (#615) chooses its profile from the environment:
+
+| Profile | Where | Kafka | Entrypoint behaviour |
+|---|---|---|---|
+| **core** | `Scraping_project/docker-compose.yml` (Redis + stage workers) | none | `KAFKA_BOOTSTRAP_SERVERS` unset, so the Kafka wait is skipped |
+| **streaming** | Helm chart (`application-configmap` sets `KAFKA_BOOTSTRAP_SERVERS`) | yes | waits for the first broker in the list (`host:port`; a `PLAINTEXT://` scheme is fine) |
+
+- Both waits are bounded: `REDIS_WAIT_TIMEOUT` and `KAFKA_WAIT_TIMEOUT` each default to 120 s. When a dependency is unreachable, the container exits 1 (visible as restarts or CrashLoopBackOff) instead of looping forever.
+- `REQUIRE_KAFKA=1` makes a missing `KAFKA_BOOTSTRAP_SERVERS` a hard error, for streaming deployments that must not silently fall back to core.
+
 ### Environment Variables
 
 ```bash
