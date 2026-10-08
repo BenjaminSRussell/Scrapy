@@ -142,6 +142,11 @@ zookeeper:
 
 kafka:
   enabled: true
+  # post-install/upgrade Job: `python -m src.utils.kafka_topics` creates the
+  # topics config.yml declares (validation_failures etc.) if missing (#410).
+  topicsJob:
+    enabled: true
+    backoffLimit: 10
   image:
     repository: confluentinc/cp-kafka
     tag: "7.9.1"
