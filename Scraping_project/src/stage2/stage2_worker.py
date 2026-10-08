@@ -16,6 +16,7 @@ from src.core.config import stage_worker_settings
 from src.core.constants import TABLE_STAGE2_ERRORS
 from src.utils.delta import get_delta
 from src.utils.postgres import get_postgres_manager
+from src.utils.metrics_sink import record_error, record_performance
 from src.otel_tracing import ensure_crawl_job_id, init_tracing, start_span
 
 logger = logging.getLogger(__name__)
@@ -296,16 +297,15 @@ class Stage2Worker:
             if retrying:
                 logger.info(f"[STAGE2] {len(retrying)} failed URLs left pending for retry")
 
-            if self.postgres and len(valid_results) > 0:
-                try:
-                    self.postgres.log_performance_metric(
-                        stage="stage2",
-                        urls_processed=len(valid_results),
-                        processing_time_seconds=batch_time,
-                        worker_count=self.max_concurrent,
-                    )
-                except Exception as e:
-                    logger.debug(f"Failed to log performance to PostgreSQL: {e}")
+            if len(valid_results) > 0:
+                # #586: dual-export; never raises, never silent on a sink failure.
+                record_performance(
+                    self.postgres,
+                    stage="stage2",
+                    urls_processed=len(valid_results),
+                    processing_time_seconds=batch_time,
+                    worker_count=self.max_concurrent,
+                )
 
         logger.info("[STAGE2] Worker completed all batches")
         return counts
@@ -655,18 +655,15 @@ class Stage2Worker:
         error_message: str,
         http_status: int | None = None,
     ):
-        """Helper to log errors to PostgreSQL."""
-        if self.postgres:
-            try:
-                self.postgres.log_error(
-                    stage="stage2",
-                    url=url,
-                    error_type=error_type,
-                    error_message=error_message,
-                    http_status_code=http_status,
-                )
-            except Exception as e:
-                logger.debug(f"Failed to log error to PostgreSQL: {e}")
+        """Export a per-URL error: Prometheus always, Postgres best effort (#586)."""
+        record_error(
+            self.postgres,
+            stage="stage2",
+            url=url,
+            error_type=error_type,
+            error_message=error_message,
+            http_status_code=http_status,
+        )
 
 async def run_stage2_worker():
     logger.info("Stage 2 Worker starting in continuous mode...")
