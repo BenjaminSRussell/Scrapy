@@ -212,6 +212,9 @@ delta_lake:
   # Rows with values that don't cast to the table's Arrow schema (#818):
   # strict = quarantine the row to cast_quarantine; coerce = null the bad value.
   cast_mode: strict
+  # DELTA_BACKEND=memory only (#484): versions kept per table for time travel.
+  # Each version is a full copy, so memory is ~depth x table size.
+  memory_history_depth: 10
   # Columns each table is Z-ordered by after compaction (#272). A table whose
   # schema lacks any listed column is skipped with a warning and
   # delta_optimize_skipped_total{reason="zorder_missing_columns"}; [] disables.
