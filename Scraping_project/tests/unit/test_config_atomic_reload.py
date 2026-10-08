@@ -86,26 +86,41 @@ def test_concurrent_set_never_exposes_a_half_applied_change(tmp_path):
         while not stop.is_set():
             snap = cfg.snapshot()
             x, y = snap.get("pair.x"), snap.get("pair.y")
-            if (x is None) != (y is None) or (x is not None and x > y):
+            if x != y:  # one set() writes both, so any snapshot must agree
                 bad.append((x, y))
-
-    def writer():
-        for i in range(300):
-            # y is always set after x, so x > y in any snapshot means torn.
-            with cfg._lock:
-                cfg.set("pair.x", i)
-                cfg.set("pair.y", i)
 
     rs = [threading.Thread(target=reader) for _ in range(3)]
     for t in rs:
         t.start()
-    writer()
+    for i in range(300):
+        cfg.set("pair", {"x": i, "y": i})
     stop.set()
     for t in rs:
         t.join()
-    assert cfg.get("pair.x") == cfg.get("pair.y") == 299
-    # x <= y holds in every snapshot because each set() swaps a whole copy.
     assert not bad, bad[:3]
+    assert cfg.get("pair.x") == cfg.get("pair.y") == 299
+
+
+def test_concurrent_set_on_different_keys_loses_no_updates(tmp_path):
+    """set() is copy-on-write; without serialising writers, two threads
+    copying the same base would each drop the other's key."""
+    path = tmp_path / "config.yml"
+    write_atomic(path, "a: {}\n")
+    cfg = Config(path)
+    start_gen = cfg.generation
+
+    def writer(w):
+        for i in range(100):
+            cfg.set(f"w{w}.k{i}", i)
+
+    ts = [threading.Thread(target=writer, args=(w,)) for w in range(4)]
+    for t in ts:
+        t.start()
+    for t in ts:
+        t.join()
+    for w in range(4):
+        assert len(cfg.get_section(f"w{w}")) == 100
+    assert cfg.generation == start_gen + 400
 
 
 def test_half_written_file_keeps_the_previous_snapshot(tmp_path):
