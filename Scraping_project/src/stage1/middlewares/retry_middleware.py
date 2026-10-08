@@ -133,14 +133,22 @@ class IntelligentRetryMiddleware(RetryMiddleware):
             return None
 
     def _compute_backoff(self, retry_count: int) -> float:
-        delay = self.backoff_base**retry_count
+        """``base**retry_count`` plus up to 10% jitter, never above ``backoff_max`` (#722).
 
-        jitter = random.uniform(0, 0.1 * delay)
-        delay += jitter
-
-        delay = min(delay, self.backoff_max)
-
-        return float(delay)
+        The exponent is capped before it is computed (no OverflowError for huge
+        retry counts) and jitter comes from ``self._rng`` (seedable, like
+        ``_calculate_backoff_delay``).
+        """
+        cap = float(self.backoff_max)
+        base = float(self.backoff_base)
+        retry_count = max(0, int(retry_count))
+        try:
+            delay = min(base ** retry_count, cap)
+        except OverflowError:
+            delay = cap
+        rng = getattr(self, "_rng", None) or random
+        delay += rng.uniform(0, 0.1 * delay)
+        return float(min(delay, cap))
 
 class RateLimitMiddleware:
 

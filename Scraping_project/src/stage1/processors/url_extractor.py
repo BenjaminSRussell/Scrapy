@@ -3,6 +3,7 @@ import binascii
 import json
 import logging
 import re
+from collections.abc import Iterable, Mapping
 from re import Pattern
 from typing import Any
 from urllib.parse import unquote, urljoin, urlparse
@@ -23,6 +24,95 @@ try:  # decode/parse failures that used to be swallowed by `except Exception: pa
 except Exception:  # prometheus_client missing or metric already registered
     URL_EXTRACTOR_DECODE_FAILURES = None
 
+try:  # which heuristic found each new URL, so noisy ones can be spotted and turned off (#27)
+    from prometheus_client import Counter as _HCounter
+
+    URL_EXTRACTOR_URLS: Any = _HCounter(
+        "scrapy_url_extractor_urls_total",
+        "URLs first found by each URLExtractor discovery heuristic.",
+        ["heuristic"],
+    )
+except Exception:
+    URL_EXTRACTOR_URLS = None
+
+# Discovery heuristics, in the order they run. Each can be switched off in
+# config.yml under ``stage1.discovery_heuristics`` (#27).
+DISCOVERY_HEURISTICS: tuple[str, ...] = (
+    "standard_tags",   # <a href>, <img src>, <link>, <iframe>, <form action>, media
+    "inline_scripts",  # URLs, JS vars and atob/decodeURIComponent payloads in <script> text
+    "script_tags",     # <script src>
+    "css",             # url(...) in <style>
+    "data_attributes", # data-href/data-url/... attributes
+    "meta_tags",       # og:url, refresh, canonical-like meta
+    "json_ld",         # application/ld+json blocks
+    "comments",        # URLs inside HTML comments
+    "event_handlers",  # onclick/onload/... attributes
+    "raw_regex",       # regex over the whole body (noisiest; see #25)
+)
+# Off unless asked for: ``stage1.extract_hidden_urls: true`` or
+# ``discovery_heuristics: {hidden_urls: true}`` (#481).
+OPT_IN_HEURISTICS: tuple[str, ...] = (
+    "hidden_urls",     # HiddenURLExtractor: meta refresh, /api/... literals, JS routes
+)
+ALL_HEURISTICS: tuple[str, ...] = DISCOVERY_HEURISTICS + OPT_IN_HEURISTICS
+_FALSY = (False, "false", "off", "no", 0, "0")
+
+
+def resolve_heuristics(setting: Any = None, config: Any = None) -> frozenset[str]:
+    """Enabled heuristics from an explicit setting or ``stage1.discovery_heuristics``.
+
+    Accepts a mapping ``{name: bool}`` (unlisted default heuristics stay
+    enabled, opt-in ones stay off) or an iterable of enabled names. ``None``
+    means "read config"; no config means every default heuristic.
+    """
+    hidden_flag = False
+    if setting is None:
+        if config is None:
+            try:
+                from src.core.config import get_config
+
+                config = get_config()
+            except Exception:
+                config = None
+        if config is not None:
+            for key in ("stage1.discovery_heuristics", "stages.stage1.discovery_heuristics"):
+                try:
+                    setting = config.get(key)
+                except Exception:
+                    setting = None
+                if setting is not None:
+                    break
+            for key in ("stage1.extract_hidden_urls", "stages.stage1.extract_hidden_urls"):
+                try:
+                    value = config.get(key)
+                except Exception:
+                    value = None
+                if value is not None:
+                    hidden_flag = value not in _FALSY and str(value).strip().lower() not in ("false", "off", "no", "0")
+                    break
+    extra = {"hidden_urls"} if hidden_flag else set()
+    if setting is None:
+        return frozenset(set(DISCOVERY_HEURISTICS) | extra)
+    if isinstance(setting, Mapping):
+        unknown = sorted(set(map(str, setting)) - set(ALL_HEURISTICS))
+        enabled = {h for h in DISCOVERY_HEURISTICS if setting.get(h, True) not in _FALSY}
+        for h in OPT_IN_HEURISTICS:
+            if h in setting:
+                if setting[h] not in _FALSY:
+                    enabled.add(h)
+            elif h in extra:
+                enabled.add(h)
+    elif isinstance(setting, Iterable) and not isinstance(setting, (str, bytes)):
+        names = {str(h) for h in setting}
+        unknown = sorted(names - set(ALL_HEURISTICS))
+        enabled = (names & set(ALL_HEURISTICS)) | extra
+    else:
+        logger.warning(f"[URLExtractor] Ignoring discovery_heuristics={setting!r}; expected a mapping or list")
+        return frozenset(set(DISCOVERY_HEURISTICS) | extra)
+    if unknown:
+        logger.warning(f"[URLExtractor] Unknown discovery heuristics ignored: {unknown}; known: {list(ALL_HEURISTICS)}")
+    return frozenset(enabled)
+
 _PAYLOAD_PREVIEW = 80
 
 
@@ -34,11 +124,21 @@ def _record_decode_failure(source: str, payload: str, error: Exception) -> None:
 
 class URLExtractor:
 
+    # Free-text URL matcher used on script text, comments, event handlers and
+    # the raw body. It used to overgenerate (#25): "jane@uconn.edu" and
+    # "admissions.uconn.edu/apply" matched as bare "uconn.edu..." and were then
+    # urljoin'ed as *relative paths* (https://uconn.edu/dept/uconn.edu/apply);
+    # "uconn.education" matched "uconn.edu"; "//TODO" matched as a host; and
+    # paths were cut at "~" / "," or kept a sentence's trailing ".".
+    _PATH = r"(?:/[\w\-\./?%&=~+,;:@!*]*)?"
     URL_REGEX = re.compile(
-        r"(?<![{\[<$%#])(?:(?:https?|ftp):)?//[\w\-\.]+(?::\d+)?(?:/[\w\-\./?%&=]*)?"
-        r"|(?<![{\[<$%#])(?:www\.)?[\w\-]+\.(?:edu|com|org|net|gov|io|co)(?:/[\w\-\./?%&=]*)?",
+        # scheme-qualified or protocol-relative; host must contain a dot
+        r"(?<![{\[<$%#\w])(?:(?:https?|ftp):)?//[\w\-]+(?:\.[\w\-]+)+(?::\d+)?" + _PATH
+        # bare host: whole dotted name, not part of an email/path/longer word
+        + r"|(?<![{\[<$%#\w@.\-/])(?:[\w\-]+\.)+(?:edu|com|org|net|gov|io|co)(?![\w\-])(?::\d+)?" + _PATH,
         re.IGNORECASE,
     )
+    _TRAILING_PUNCT = ".,;:!?*'\""
 
     ENCODED_URL_PATTERNS: list[Pattern[str]] = [
         re.compile(r'atob\(["\']([^"\']+)["\']\)'),
@@ -55,38 +155,51 @@ class URLExtractor:
         r'(?:fetch|axios\.get|axios\.post|\.get|\.post)\s*\(\s*["\']([^"\']+)["\']',
     ]
 
-    def __init__(self, base_url: str, allowed_domains: list[str]):
+    def __init__(self, base_url: str, allowed_domains: list[str], heuristics: Any = None):
+        """``heuristics``: mapping or list of enabled heuristics; None reads config (#27)."""
         self.base_url = base_url
         self.allowed_domains = allowed_domains
         self.discovered_urls: set[str] = set()
+        self.heuristics = resolve_heuristics(heuristics)
+        self.heuristic_counts: dict[str, int] = {}
 
     def discover_all_urls(self, response: Response) -> set[str]:
         self.discovered_urls = set()
+        self.heuristic_counts = {}
 
-        self._extract_from_standard_tags(response)
-
-        self._extract_from_inline_scripts(response)
-
-        self._extract_from_script_tags(response)
-
-        self._extract_from_css(response)
-
-        self._extract_from_data_attributes(response)
-
-        self._extract_from_meta_tags(response)
-
-        self._extract_from_json_ld(response)
-
-        self._extract_from_comments(response)
-
-        self._extract_from_event_handlers(response)
-
-        self._extract_from_raw_regex(response)
+        for name in ALL_HEURISTICS:
+            if name not in self.heuristics:
+                continue
+            before = len(self.discovered_urls)
+            getattr(self, f"_extract_from_{name}")(response)
+            found = len(self.discovered_urls) - before
+            self.heuristic_counts[name] = found
+            if found and URL_EXTRACTOR_URLS is not None:
+                URL_EXTRACTOR_URLS.labels(heuristic=name).inc(found)
 
         return self.discovered_urls
 
     def extract_sitemap_urls(self, response: Response) -> set[str]:
         return set()
+
+    # HiddenURLExtractor categories worth crawling. "sitemaps" is left out: it
+    # guesses /sitemap.xml variants for every page; sitemap_parser owns that.
+    HIDDEN_URL_CATEGORIES: tuple[str, ...] = (
+        "data_attributes",
+        "json_ld",
+        "javascript",
+        "iframes",
+        "meta_refresh",
+        "api_endpoints",
+    )
+
+    def _extract_from_hidden_urls(self, response: Response):
+        from src.stage1.processors.hidden_url_extractor import HiddenURLExtractor
+
+        found = HiddenURLExtractor(base_url=self.base_url).extract_all_hidden_urls(response)
+        for category in self.HIDDEN_URL_CATEGORIES:
+            for url in found.get(category, ()):
+                self._add_url(url)
 
     def _extract_from_standard_tags(self, response: Response):
         for href in response.css("a::attr(href)").getall():
@@ -115,8 +228,8 @@ class URLExtractor:
 
     def _extract_from_inline_scripts(self, response: Response):
         for script in response.css("script::text").getall():
-            for match in self.URL_REGEX.finditer(script):
-                self._add_url(match.group())
+            for url in self._regex_urls(script):
+                self._add_url(url)
 
             for pattern_str in self.JS_VAR_PATTERNS:
                 for match in re.finditer(pattern_str, script):
@@ -206,22 +319,35 @@ class URLExtractor:
         comment_pattern = re.compile(r"<!--(.*?)-->", re.DOTALL)
         for match in comment_pattern.finditer(response.text):
             comment = match.group(1)
-            for url_match in self.URL_REGEX.finditer(comment):
-                self._add_url(url_match.group())
+            for url in self._regex_urls(comment):
+                self._add_url(url)
 
     def _extract_from_event_handlers(self, response: Response):
         event_attrs = ["onclick", "onload", "onerror", "onmouseover", "onfocus"]
 
         for attr in event_attrs:
             for handler in response.css(f"[{attr}]::attr({attr})").getall():
-                for match in self.URL_REGEX.finditer(handler):
-                    self._add_url(match.group())
+                for url in self._regex_urls(handler):
+                    self._add_url(url)
 
     def _extract_from_raw_regex(self, response: Response):
-        for match in self.URL_REGEX.finditer(response.text):
-            url = match.group()
+        for url in self._regex_urls(response.text):
             if not self._is_likely_template(url):
                 self._add_url(url)
+
+    def _regex_urls(self, text: str):
+        """URL_REGEX matches made fetchable: trailing sentence punctuation and
+        unbalanced ")" dropped, bare hosts given a scheme so urljoin cannot
+        treat them as relative paths (#25)."""
+        for match in self.URL_REGEX.finditer(text):
+            url = match.group()
+            while url and (url[-1] in self._TRAILING_PUNCT or (url[-1] == ")" and url.count("(") < url.count(")"))):
+                url = url[:-1]
+            if not url:
+                continue
+            if not url.startswith("//") and "://" not in url:
+                url = "https://" + url
+            yield url
 
     def _is_likely_template(self, url: str) -> bool:
         template_indicators = [
