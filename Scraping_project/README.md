@@ -348,6 +348,33 @@ Metrics: `scrapy_soft_ban_total{stage,signature}`,
 `scrapy_soft_ban_domain_backoff_total{stage}`, `scrapy_soft_ban_deferred_total{stage}`.
 Alert: `ScrapySoftBanSpike`. Fixture pages live in `tests/fixtures/soft_ban/`.
 
+### Kafka producer: keys and delivery semantics
+
+- **Keyed by `url_hash`** (#285). `KafkaPipeline` sends each record with key = `url_hash`. If an item has no `url_hash`, the key is derived from `url` with the lake hasher (`seed_manager.default_url_hasher`). Every version of a URL therefore lands on the same partition, in order, and consumers can dedupe or upsert per partition. Set `kafka.message_key_field` / `KAFKA_MESSAGE_KEY_FIELD` to key by another field, or `""` for unkeyed.
+- **Idempotent producer** (#174, #464). The defaults are `acks=all`, `enable.idempotence=true`, and at most 5 in-flight requests, so librdkafka retries never duplicate or reorder messages within a partition. With `KAFKA_REQUIRE_IDEMPOTENCE=true` (`kafka.require_idempotence`), the producer **refuses to start** if any override (env `KAFKA_PRODUCER_ACKS`, `config.yml kafka.producer`, `KAFKA_PRODUCER_CONFIG`) would break that guarantee. The Helm application configmap sets it to `true`. Locally it is off, so `KAFKA_PRODUCER_ACKS=1` still works.
+- **What is exactly-once and what isn't.** The producer is exactly-once and in-order per partition within one producer session. End to end, delivery is **at-least-once**: a restarted producer or a crash between kafka-delta-ingest's Delta commit and its offset commit can replay messages. Lake tables dedupe by `url_hash`.
+
+### Stage 2 HTTP retries and circuit breaker
+
+Stage 2 retries transient fetch failures inside the same run (#158), so a
+single blip doesn't cost a whole queue cycle:
+
+| Failure | Behaviour |
+|---|---|
+| Timeout, connection/payload error, HTTP 408/500/502/503/504 | Retried up to `STAGE2_HTTP_ATTEMPTS` (3) total attempts with exponential backoff and jitter: `STAGE2_HTTP_BACKOFF_BASE` (0.5s) × 2^(attempt−1), capped at `STAGE2_HTTP_BACKOFF_MAX` (8s). A numeric `Retry-After` header raises the delay (still capped). |
+| Soft ban (429, challenge pages) | Not retried in-request; handled by the soft-ban guard above. |
+| Other 4xx (400/401/404/410, …) | Fail fast: one request, terminal error. |
+| Every attempt failed | Error record to `stage2_errors`; the queue row stays `pending` and is retried next run, then sent to the DLQ after `STAGE2_MAX_RETRIES`. |
+
+Each host has its own circuit breaker. After `STAGE2_BREAKER_FAILURES` (5)
+URLs on one host exhaust their attempts, the breaker opens for
+`STAGE2_BREAKER_RECOVERY` (60s). While it is open, that host's URLs are
+deferred (left `pending`, not counted as failures) instead of being fetched.
+
+Metrics: `stage2_http_fetches_total{outcome=first_try|recovered|exhausted|circuit_open}`
+and `stage2_http_retries_total{reason}`. Each retry and each recovery is logged
+with its attempt number.
+
 ### Environment Variables
 
 ```bash
@@ -393,11 +420,48 @@ Configure the Helm chart via `k8s/helm/scraping-pipeline/values.yaml` (supported
 - Persistent volume sizes
 - Service configuration
 
+### Redis memory policy: durable keys vs TTL keys (#161)
+
+Redis holds durable crawl state, and losing it is not a cache miss:
+
+| Keys | TTL | If lost |
+|---|---|---|
+| `seen:urls` and other `seen:*` sets (dedup/claims) | none | every URL looks new, so the crawl starts over |
+| Stage queues and the priority queue | none | queued work disappears |
+| `depth_spider:last_crawl:*` and other cache-like keys | yes (`ex=`) | recomputed |
+
+Compose, `k8s/deployment.yaml` and Helm (`redis.config.maxmemoryPolicy`) run `--maxmemory-policy volatile-lru`, so only keys with a TTL can be evicted. When Redis reaches `maxmemory` with nothing evictable left, it rejects writes (`OOM command not allowed`) instead of silently dropping a seen set. The seen store then fails closed (see `RedisSeenStoreFailingClosed`).
+
+- **Never use an `allkeys-*` policy.** `RedisHelper` logs an ERROR at connect time if the server runs one.
+- **New cache-like keys must set a TTL.** Durable keys must not.
+- **Memory SLO.** Stay under 80% of `maxmemory`. The `RedisHighMemory` alert fires above that for 5 minutes. Raise `maxmemory` or drain the queues before writes start failing.
+
 ### TLS certificate verification (#584)
 
 Every outbound HTTPS request verifies the server certificate. aiohttp, httpx and requests verify by default. The Scrapy downloader uses `BrowserLikeContextFactory` (set in `src/settings.py` from `src/core/tls_policy.py`) instead of Scrapy's default factory, which accepts any certificate. `tests/unit/test_tls_policy.py` fails CI if code adds `verify=False`, `ssl=False`, `CERT_NONE` or similar bypasses. It also proves end to end that a self-signed server is rejected.
 
 **Exception process.** For a site with a broken chain, fix trust (install the issuing CA on the host or image) rather than disabling checks. As a temporary last resort, set `SCRAPY_TLS_INSECURE=1` for that run. It is logged at ERROR on startup and exported as `scrapy_tls_verification_disabled 1`, so it shows up in monitoring.
+
+### Kafka topics and validation failures (#410)
+
+`config.yml` `kafka.topics` lists every topic the pipeline produces to, and `kafka.topic_settings` sets partitions and retention for each one:
+
+| Logical name | Default topic | Producer | Retention |
+|---|---|---|---|
+| `scraped_items` | `scraped-items` | `KafkaPipeline` (Stage 1 items for kafka-delta-ingest) | 7 days |
+| `dead_letter` | `scraped-items-dlq` | Dead-letter queue | 30 days |
+| `validation_failures` | `validation_failures` | `SchemaValidationPipeline` | 14 days |
+
+`python -m src.utils.kafka_topics` creates the missing topics with those settings and never alters topics that already exist. `--dry-run` prints the plan without connecting. It reads `KAFKA_BOOTSTRAP_SERVERS` and the `KAFKA_SASL_*` variables. The Helm chart runs the same command as a post-install/upgrade hook Job (`kafka.topicsJob`). Scrapy's `VALIDATION_FAILURES_TOPIC` setting comes from `kafka.topics.validation_failures`.
+
+**Triage.** Each message on `validation_failures` is one `ValidationFailureRecord` (`src/schemas.py`) in JSON. The fields are `url`, `field_name`, `violation_rule`, `attempted_value`, `error_message`, `spider_name`, `failed_at_utc` and `pipeline_version`. The item itself was dropped. Read the topic with any consumer, for example:
+
+```bash
+kafka-console-consumer --bootstrap-server "$KAFKA_BOOTSTRAP_SERVERS" \
+  --topic validation_failures --from-beginning --group validation-triage
+```
+
+Group the records by `field_name` and `violation_rule` to find the spider or schema rule that is rejecting items. Fix the cause, then recrawl the affected URLs. They are not replayed automatically.
 
 ## Testing
 
@@ -477,6 +541,24 @@ curl http://localhost:9090/-/healthy
 ```bash
 docker-compose up -d
 ```
+
+### Observability (Loki, Jaeger, OpenTelemetry)
+
+`docker-compose.observability.yml` is an overlay on the main file (same network, mounts
+under `./monitoring/`). There is no separate standalone production compose file:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.observability.yml up -d
+```
+
+See [../MONITORING.md](../MONITORING.md) for enabling OTEL traces.
+
+### Release images
+
+`.github/workflows/cd-release.yml` builds three targets from `Dockerfile` on `v*` tags
+(and on pull requests that touch the image recipe, without pushing): `crawler`,
+`metrics` and `kafka-delta-ingest`. Build one locally with
+`docker build --target metrics -t scrapy-metrics .`.
 
 ### Production Deployment
 

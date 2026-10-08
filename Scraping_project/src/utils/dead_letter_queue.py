@@ -4,8 +4,11 @@ Dead Letter Queue (DLQ) for capturing failed items.
 Phase 7: Failed item management for manual review and replay.
 """
 
+import argparse
 import json
 import logging
+import os
+import sys
 import traceback
 import uuid
 from datetime import datetime, timedelta
@@ -13,6 +16,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from src.core.exceptions import PipelineException
+from src.core.timeutil import utc_now_iso
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +35,7 @@ class DeadLetterQueue:
 
     def __init__(self, base_path: Optional[Path] = None):
         if base_path is None:
-            base_path = Path("./data/dlq")
+            base_path = default_dlq_path()
         self.base_path = Path(base_path)
         self.base_path.mkdir(parents=True, exist_ok=True)
 
@@ -313,6 +317,14 @@ class DeadLetterQueue:
         return f"{stage}_{timestamp}_{unique_id}"
 
 
+def default_dlq_path(fallback: Optional[Path] = None) -> Path:
+    """``DLQ_PATH`` env, else ``fallback``, else ./data/dlq (shared by every stage)."""
+    env = os.getenv("DLQ_PATH")
+    if env:
+        return Path(env)
+    return Path(fallback) if fallback is not None else Path("./data/dlq")
+
+
 # Global DLQ instance
 _global_dlq: Optional[DeadLetterQueue] = None
 
@@ -323,3 +335,128 @@ def get_dlq(base_path: Optional[Path] = None) -> DeadLetterQueue:
     if _global_dlq is None:
         _global_dlq = DeadLetterQueue(base_path)
     return _global_dlq
+
+
+# ---------------------------------------------------------------------------
+# Ops CLI (#162): python -m src.utils.dead_letter_queue {list,stats,show,replay,resolve}
+# ---------------------------------------------------------------------------
+
+
+def requeue_stage2(item: Dict[str, Any], delta: Any = None) -> bool:
+    """Put a stage2 DLQ item back on ``stage2_queue`` as ``pending``."""
+    url = item.get("url")
+    if not url:
+        return False
+    url_hash = item.get("url_hash")
+    if not url_hash or url_hash == "unknown":
+        from src.lakehouse.seed_manager import default_url_hasher
+
+        url_hash = default_url_hasher(url)
+    if delta is None:
+        from src.utils.delta import get_delta
+
+        delta = get_delta()
+    row = {
+        "url": url,
+        "url_hash": url_hash,
+        "enqueued_at": utc_now_iso(),
+        "status": "pending",
+    }
+    return int(delta.merge_into("stage2_queue", [row], "url_hash", ["url", "enqueued_at", "status"])) > 0
+
+
+def _print_json(obj: Any) -> None:
+    print(json.dumps(obj, indent=2, default=str))
+
+
+def main(argv: Optional[List[str]] = None, delta: Any = None) -> int:
+    parser = argparse.ArgumentParser(
+        prog="python -m src.utils.dead_letter_queue",
+        description="Inspect and replay dead-lettered pipeline items (#162).",
+    )
+    parser.add_argument("--path", type=Path, default=None, help="DLQ directory (default: $DLQ_PATH or ./data/dlq)")
+    sub = parser.add_subparsers(dest="cmd", required=True)
+    p_list = sub.add_parser("list", help="List open entries, newest first")
+    p_list.add_argument("--stage")
+    p_list.add_argument("--limit", type=int, default=50)
+    p_list.add_argument("--json", action="store_true")
+    sub.add_parser("stats", help="Counts by stage / error type")
+    p_show = sub.add_parser("show", help="Print one entry")
+    p_show.add_argument("entry_id")
+    p_replay = sub.add_parser(
+        "replay",
+        help="stage2: requeue the URL as pending and resolve the entry; other stages: print the item to re-submit",
+    )
+    p_replay.add_argument("entry_ids", nargs="*")
+    p_replay.add_argument("--stage", help="Replay every open entry of this stage")
+    p_replay.add_argument("--dry-run", action="store_true")
+    p_resolve = sub.add_parser("resolve", help="Move entries to resolved/ (or failed/ with --failed)")
+    p_resolve.add_argument("entry_ids", nargs="+")
+    p_resolve.add_argument("--failed", action="store_true")
+    args = parser.parse_args(argv)
+
+    dlq = DeadLetterQueue(args.path)
+
+    if args.cmd == "list":
+        entries = dlq.list_failed(stage=args.stage, limit=args.limit)
+        if args.json:
+            _print_json(entries)
+        else:
+            for e in entries:
+                err = e.get("error", {})
+                print(
+                    f"{e['id']}  {e.get('stage', '?'):<8} retry={e.get('retry_count', 0)}  "
+                    f"{err.get('type', '?')}: {str(err.get('message', ''))[:80]}  {e.get('url', '')}"
+                )
+            print(f"{len(entries)} entr{'y' if len(entries) == 1 else 'ies'}")
+        return 0
+
+    if args.cmd == "stats":
+        _print_json(dlq.get_stats())
+        return 0
+
+    if args.cmd == "show":
+        path = dlq.base_path / f"{args.entry_id}.json"
+        if not path.exists():
+            print(f"not found: {args.entry_id}", file=sys.stderr)
+            return 1
+        _print_json(json.loads(path.read_text()))
+        return 0
+
+    if args.cmd == "resolve":
+        ok = all(dlq.resolve(entry_id, success=not args.failed) for entry_id in args.entry_ids)
+        return 0 if ok else 1
+
+    # replay
+    ids = list(args.entry_ids)
+    if args.stage:
+        ids += [e["id"] for e in dlq.list_failed(stage=args.stage)]
+    if not ids:
+        parser.error("replay needs entry ids or --stage")
+    failures = 0
+    for entry_id in dict.fromkeys(ids):
+        path = dlq.base_path / f"{entry_id}.json"
+        stage = json.loads(path.read_text()).get("stage") if path.exists() else None
+        item = dlq.replay(entry_id)
+        if item is None:
+            failures += 1
+            continue
+        if stage == "stage2":
+            if args.dry_run:
+                print(f"would requeue {item.get('url')} (retry {item['_retry_count']})")
+                continue
+            if requeue_stage2(item, delta):
+                dlq.resolve(entry_id, success=True)
+                print(f"requeued {item.get('url')} (retry {item['_retry_count']}) from {entry_id}")
+            else:
+                failures += 1
+                print(f"requeue failed for {entry_id}", file=sys.stderr)
+        else:
+            # Kafka and other stages: emit the item (JSON line) for re-submission,
+            # e.g. piped into a producer; resolve with `resolve` once delivered.
+            print(json.dumps(item, default=str))
+    return 1 if failures else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

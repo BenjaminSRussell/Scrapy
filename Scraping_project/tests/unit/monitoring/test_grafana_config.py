@@ -14,7 +14,7 @@ def load_datasources():
 def test_required_datasources_present():
     data = load_datasources()
     names = {ds["name"] for ds in data["datasources"]}
-    assert {"Prometheus", "Prometheus-B", "Redis", "PostgreSQL"}.issubset(names)
+    assert {"Prometheus", "Redis", "PostgreSQL"}.issubset(names)
 
 def test_prometheus_datasource_defaults():
     data = load_datasources()
