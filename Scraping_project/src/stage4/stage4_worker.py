@@ -5,6 +5,7 @@ from typing import Any
 
 from src.utils.delta import get_delta
 from src.stage4.large_doc_processor import LargeDocProcessor
+from src.stage4.pdf_sandbox import PdfQuarantined
 from src.otel_tracing import ensure_crawl_job_id, init_tracing, start_span
 
 logger = logging.getLogger(__name__)
@@ -14,6 +15,7 @@ SUMMARY_TABLE = "stage4_large_doc_summaries"
 STATUS_PENDING = "pending"
 STATUS_COMPLETED = "completed"
 SKIP_PREFIX = "skipped:"
+QUARANTINE_PREFIX = "quarantined:"
 
 
 class Stage4Worker:
@@ -93,11 +95,17 @@ class Stage4Worker:
         results: list[dict[str, Any]] = []
         completed: list[str] = []
         skipped: dict[str, str] = {}
+        quarantined: dict[str, str] = {}
         for i, (doc, from_queue) in enumerate(work):
             url = doc.get("url", "")
             logger.info(f"[STAGE4] Processing {i+1}/{len(work)}: {url[:80]}")
             try:
                 result, skip_reason = await self._process_large_document(doc)
+            except PdfQuarantined as e:  # #445: OOM/timeout/oversized PDF never stays pending
+                logger.warning(f"[STAGE4] Quarantined {url}: {e}")
+                if from_queue:
+                    quarantined[url] = e.reason
+                continue
             except Exception as e:  # transient: stays pending, retried next run
                 logger.error(f"[STAGE4] Failed to process {url}: {e}")
                 continue
@@ -117,18 +125,23 @@ class Stage4Worker:
                 logger.error(f"[STAGE4] Failed to save results: {e}")
                 completed = []  # summaries not durable: leave those rows pending
 
-        self._mark_queue(completed, skipped)
+        self._mark_queue(completed, skipped, quarantined)
         logger.info("[STAGE4] Worker completed")
         return written
 
-    def _mark_queue(self, completed: list[str], skipped: dict[str, str]) -> None:
+    def _mark_queue(
+        self, completed: list[str], skipped: dict[str, str], quarantined: dict[str, str] | None = None
+    ) -> None:
         """Row-level MERGE of queue status, like Stage 2's queue (#611).
 
-        ``completed`` or ``skipped:<reason>``. The reason lives in ``status``
+        ``completed``, ``skipped:<reason>`` or ``quarantined:<reason>`` (#445).
+        The reason lives in ``status``
         because MERGE can't add new columns to an existing queue table.
         """
         updates = [{"url": u, "status": STATUS_COMPLETED} for u in dict.fromkeys(completed)]
         updates += [{"url": u, "status": f"{SKIP_PREFIX}{why}"} for u, why in skipped.items()
+                    if u not in set(completed)]
+        updates += [{"url": u, "status": f"{QUARANTINE_PREFIX}{why}"} for u, why in (quarantined or {}).items()
                     if u not in set(completed)]
         if not updates:
             return
@@ -137,7 +150,8 @@ class Stage4Worker:
             logger.error(f"[STAGE4] Could not update status for {len(updates)} queue rows; they stay pending")
         else:
             logger.info(
-                f"[STAGE4] Queue: {len(completed)} completed, {len(updates) - len(completed)} skipped"
+                f"[STAGE4] Queue: {len(completed)} completed, {len(skipped)} skipped, "
+                f"{len(quarantined or {})} quarantined"
             )
 
     async def _process_large_document(
