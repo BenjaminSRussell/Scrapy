@@ -1,7 +1,8 @@
 """#661: lakehouse writes under disk-full (ENOSPC) and permission-denied (EACCES).
 
 Faults are injected by patching ``deltalake.write_deltalake`` (imported lazily at
-call time by ``LakehouseManager._write_sync_locked``), ``os.fsync``, and
+call time by ``LakehouseManager._write_sync_locked``; patched by dotted path so a test
+that re-imports ``deltalake`` earlier in the session can't leave us a stale module), ``os.fsync``, and
 ``Path.mkdir``. The host filesystem is never made full or read-only. Every lake
 lives under ``tmp_path``.
 
@@ -15,11 +16,11 @@ Contract under test (lakehouse_manager.py docstrings, #225):
 from __future__ import annotations
 
 import errno
+import importlib
 import logging
 import os
 from pathlib import Path
 
-import deltalake
 import pytest
 from deltalake import DeltaTable
 
@@ -57,7 +58,7 @@ class _Faulty:
     """Stand-in for write_deltalake: fail the first ``fail_times`` calls with ``exc``."""
 
     def __init__(self, exc: BaseException, fail_times: int = 10**9, partial: bool = False):
-        self.real = deltalake.write_deltalake
+        self.real = importlib.import_module("deltalake").write_deltalake
         self.exc, self.fail_times, self.partial, self.calls = exc, fail_times, partial, 0
 
     def __call__(self, table_uri, data, *args, **kwargs):
@@ -78,7 +79,7 @@ EACCES = PermissionError(errno.EACCES, os.strerror(errno.EACCES))
 
 @pytest.mark.parametrize("exc", [ENOSPC, EACCES], ids=["ENOSPC", "EACCES"])
 def test_failed_create_returns_false_and_leaves_no_table(mgr, monkeypatch, caplog, exc):
-    monkeypatch.setattr(deltalake, "write_deltalake", _Faulty(exc))
+    monkeypatch.setattr("deltalake.write_deltalake", _Faulty(exc))
     with caplog.at_level(logging.ERROR):
         assert mgr._write_sync(TABLE, _rows(3)) is False
     assert _version(mgr) is None and _table_rows(mgr) == []
@@ -89,7 +90,7 @@ def test_failed_create_returns_false_and_leaves_no_table(mgr, monkeypatch, caplo
 def test_failed_append_keeps_existing_rows_and_version(mgr, monkeypatch, exc):
     assert mgr._write_sync(TABLE, _rows(2)) is True
     v0 = _version(mgr)
-    monkeypatch.setattr(deltalake, "write_deltalake", _Faulty(exc))
+    monkeypatch.setattr("deltalake.write_deltalake", _Faulty(exc))
     assert mgr._write_sync(TABLE, _rows(2, start=2)) is False
     assert _version(mgr) == v0
     assert sorted(r["n"] for r in _table_rows(mgr)) == [0, 1]
@@ -99,7 +100,7 @@ def test_failed_append_keeps_existing_rows_and_version(mgr, monkeypatch, exc):
 def test_partial_write_before_commit_is_invisible_and_retry_writes_once(mgr, monkeypatch, exc):
     assert mgr._write_sync(TABLE, _rows(1)) is True
     faulty = _Faulty(exc, fail_times=1, partial=True)
-    monkeypatch.setattr(deltalake, "write_deltalake", faulty)
+    monkeypatch.setattr("deltalake.write_deltalake", faulty)
     assert mgr._write_sync(TABLE, _rows(2, start=1)) is False
     assert list((mgr.base_path / TABLE).glob("*orphan*")), "fault injection should leave an orphan file"
     assert sorted(r["n"] for r in _table_rows(mgr)) == [0], "orphan data file must not be readable"
@@ -110,7 +111,7 @@ def test_partial_write_before_commit_is_invisible_and_retry_writes_once(mgr, mon
 
 def test_async_path_exhausts_retries_then_spills_and_replays_once(mgr, monkeypatch, caplog):
     faulty = _Faulty(ENOSPC)
-    monkeypatch.setattr(deltalake, "write_deltalake", faulty)
+    monkeypatch.setattr("deltalake.write_deltalake", faulty)
     with caplog.at_level(logging.WARNING):
         assert mgr._write_with_retry(TABLE, _rows(3), "append") is False
     assert faulty.calls == mgr.write_retries
@@ -122,7 +123,7 @@ def test_async_path_exhausts_retries_then_spills_and_replays_once(mgr, monkeypat
     assert mgr.replay_spilled_writes(TABLE) == {"files": 0, "rows": 0, "failed": 1}
     assert spilled[0].exists()
 
-    monkeypatch.setattr(deltalake, "write_deltalake", faulty.real)
+    monkeypatch.setattr("deltalake.write_deltalake", faulty.real)
     assert mgr.replay_spilled_writes(TABLE) == {"files": 1, "rows": 3, "failed": 0}
     assert not spilled[0].exists()
     # A second replay (operator re-run) must not duplicate rows.
@@ -131,14 +132,14 @@ def test_async_path_exhausts_retries_then_spills_and_replays_once(mgr, monkeypat
 
 
 def test_async_path_recovers_mid_retry_without_duplicates(mgr, monkeypatch):
-    monkeypatch.setattr(deltalake, "write_deltalake", _Faulty(ENOSPC, fail_times=mgr.write_retries - 1))
+    monkeypatch.setattr("deltalake.write_deltalake", _Faulty(ENOSPC, fail_times=mgr.write_retries - 1))
     assert mgr._write_with_retry(TABLE, _rows(4), "append") is True
     assert sorted(r["n"] for r in _table_rows(mgr)) == [0, 1, 2, 3]
     assert not (mgr.base_path / SPILL_DIR_NAME / TABLE).exists()
 
 
 def test_spill_on_full_disk_is_loud_and_leaves_no_replayable_garbage(mgr, monkeypatch, caplog):
-    monkeypatch.setattr(deltalake, "write_deltalake", _Faulty(ENOSPC))
+    monkeypatch.setattr("deltalake.write_deltalake", _Faulty(ENOSPC))
 
     def no_space(_fd):
         raise OSError(errno.ENOSPC, os.strerror(errno.ENOSPC))
