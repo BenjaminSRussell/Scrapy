@@ -421,25 +421,228 @@ class KafkaPipeline:
             return item  # durably captured: keep the item flowing (#175)
         raise DropItem(f"Failed to publish item to Kafka and to spill it: {last_error}")
 
-class QueueItemPipeline:
+try:  # buffered Delta batch flushes (#424, #425)
+    from prometheus_client import Counter as _BCounter
+
+    PIPELINE_BATCH_FLUSHES = _BCounter(
+        "pipeline_batch_flushes_total",
+        "Pipeline Delta batch flushes by table, trigger (count|bytes|age|timer|close) and outcome (ok|failed).",
+        ["table", "trigger", "outcome"],
+    )
+    PIPELINE_BATCH_ROWS_UNWRITTEN = _BCounter(
+        "pipeline_batch_rows_unwritten_total",
+        "Rows in pipeline Delta batches the lake did not accept (spilled by the manager or failed).",
+        ["table"],
+    )
+except Exception:  # prometheus_client missing or metric already registered
+    PIPELINE_BATCH_FLUSHES = PIPELINE_BATCH_ROWS_UNWRITTEN = None
+
+
+class BufferedDeltaBatch:
+    """In-memory Delta batch with bounded size and age (#424, #425).
+
+    A flush happens when the batch reaches ``max_rows`` rows, ``max_bytes``
+    (approximate JSON size), or ``max_age`` seconds since the oldest unflushed
+    row. Age is checked both on every ``add`` and by ``flush_if_due`` (driven
+    by a reactor timer in the pipelines), so an idle crawl still writes its
+    tail instead of holding it until ``spider_closed``. A hard kill therefore
+    loses at most ``max_age`` seconds of rows.
+
+    The batch is always cleared after a flush attempt: ``DeltaHelper.write``
+    never raises, and ``False`` means the manager spilled the rows to
+    ``_write_spill/`` (#167), so re-sending them would duplicate data and
+    keeping them would grow memory without bound. Those rows are counted in
+    ``pipeline_batch_rows_unwritten_total`` and logged instead of the
+    misleading "Saved N" message.
+    """
+
+    def __init__(
+        self,
+        delta: Any,
+        table: str,
+        max_rows: int = 100,
+        max_bytes: int = 4 * 1024 * 1024,
+        max_age: float = 30.0,
+        clock: Any = time.monotonic,
+    ):
+        self.delta = delta
+        self.table = table
+        self.max_rows = max(1, int(max_rows))
+        self.max_bytes = max(0, int(max_bytes))
+        self.max_age = max(0.0, float(max_age))
+        self.clock = clock
+        self.rows: list[dict[str, Any]] = []
+        self.bytes = 0
+        self.oldest: float | None = None
+        self.rows_written = 0
+        self.rows_unwritten = 0
+        self.peak_rows = 0
+
+    def __len__(self) -> int:
+        return len(self.rows)
+
+    def __bool__(self) -> bool:
+        return bool(self.rows)
+
+    def __iter__(self):
+        return iter(self.rows)
+
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, list):
+            return self.rows == other
+        return NotImplemented
+
+    __hash__ = None
+
+    def clear(self) -> None:
+        """Discard buffered rows without writing them."""
+        self.rows, self.bytes, self.oldest = [], 0, None
+
+    @staticmethod
+    def _size(row: dict[str, Any]) -> int:
+        try:
+            return len(json.dumps(row, default=str))
+        except Exception:
+            return len(repr(row))
+
+    def add(self, row: dict[str, Any]) -> bool:
+        """Buffer one row; flush if a bound is hit. Returns True if it flushed."""
+        if not self.rows:
+            self.oldest = self.clock()
+        self.rows.append(row)
+        self.bytes += self._size(row)
+        self.peak_rows = max(self.peak_rows, len(self.rows))
+        if len(self.rows) >= self.max_rows:
+            return self.flush("count")
+        if self.max_bytes and self.bytes >= self.max_bytes:
+            return self.flush("bytes")
+        if self._aged():
+            return self.flush("age")
+        return False
+
+    def _aged(self) -> bool:
+        return bool(self.rows) and self.max_age > 0 and self.oldest is not None and (
+            self.clock() - self.oldest >= self.max_age
+        )
+
+    def flush_if_due(self) -> bool:
+        """Timer hook: flush when the oldest row is older than ``max_age``."""
+        return self.flush("timer") if self._aged() else False
+
+    def flush(self, trigger: str = "manual") -> bool:
+        if not self.rows:
+            return False
+        batch, self.rows, self.bytes, self.oldest = self.rows, [], 0, None
+        try:
+            ok = self.delta.write(self.table, batch, mode="append") is not False
+        except Exception as e:  # defensive: DeltaHelper normally returns False instead
+            logger.error(f"Failed to save {len(batch)} rows to {self.table}: {e}")
+            ok = False
+        if ok:
+            self.rows_written += len(batch)
+            logger.info(f" Saved {len(batch)} rows to {self.table} ({trigger})")
+        else:
+            self.rows_unwritten += len(batch)
+            logger.error(
+                f"Delta did not accept {len(batch)} rows for {self.table} ({trigger}); "
+                "they were spilled by the lakehouse manager or failed (see lakehouse logs)"
+            )
+            if PIPELINE_BATCH_ROWS_UNWRITTEN is not None:
+                PIPELINE_BATCH_ROWS_UNWRITTEN.labels(table=self.table).inc(len(batch))
+        if PIPELINE_BATCH_FLUSHES is not None:
+            PIPELINE_BATCH_FLUSHES.labels(table=self.table, trigger=trigger, outcome="ok" if ok else "failed").inc()
+        return ok
+
+
+def _batch_settings(crawler: Crawler | None, prefix: str, default_rows: int) -> dict[str, Any]:
+    settings = getattr(crawler, "settings", None)
+    if settings is None:
+        return {"max_rows": default_rows}
+    return {
+        "max_rows": settings.getint(f"{prefix}_BATCH_SIZE", default_rows),
+        "max_bytes": settings.getint(f"{prefix}_BATCH_MAX_BYTES", 4 * 1024 * 1024),
+        "max_age": settings.getfloat(f"{prefix}_FLUSH_INTERVAL", 30.0),
+    }
+
+
+class _TimedFlushMixin:
+    """Start a reactor LoopingCall that flushes aged batches (#425)."""
+
+    _flush_loop: Any = None
+    _delta: Any = None
+
+    @property
+    def delta(self) -> Any:
+        return self._delta
+
+    @delta.setter
+    def delta(self, value: Any) -> None:
+        # Tests and callers swap the Delta helper after construction; keep the
+        # batches writing to the same one.
+        self._delta = value
+        for batch in self.__dict__.get("_batch_list", ()):
+            batch.delta = value
+
+    def _batches(self) -> list[BufferedDeltaBatch]:
+        return list(self.__dict__.get("_batch_list", ()))
+
+    def _flush_due(self) -> None:
+        for batch in self._batches():
+            try:
+                batch.flush_if_due()
+            except Exception as e:  # never kill the timer
+                logger.error(f"Timed flush of {batch.table} failed: {e}")
+
+    def _start_flush_timer(self, spider: Spider | None = None) -> None:
+        interval = min((b.max_age for b in self._batches() if b.max_age > 0), default=0)
+        if not interval or self._flush_loop is not None:
+            return
+        try:
+            from twisted.internet import task
+
+            loop = task.LoopingCall(self._flush_due)
+            loop.start(max(0.05, interval / 2), now=False)
+            self._flush_loop = loop
+        except Exception as e:
+            logger.warning(f"Timed batch flush disabled: {e}")
+
+    def _stop_flush_timer(self) -> None:
+        loop, self._flush_loop = self._flush_loop, None
+        if loop is not None and loop.running:
+            loop.stop()
+
+
+class QueueItemPipeline(_TimedFlushMixin):
+    """Batch queue hand-offs into ``js_spider_queue`` / ``stage2_queue``.
+
+    Batches are bounded by rows, bytes and age and flushed by a reactor timer
+    as well as on ``spider_closed`` (#425): settings ``QUEUE_BATCH_SIZE``,
+    ``QUEUE_BATCH_MAX_BYTES``, ``QUEUE_FLUSH_INTERVAL`` (seconds).
+    """
 
     BATCH_SIZE = 100
 
-    def __init__(self):
+    def __init__(self, batch_settings: dict[str, Any] | None = None):
         from src.utils.delta import get_delta
 
         self.delta = get_delta()
-        self.js_queue_batch = []
-        self.stage2_queue_batch = []
+        opts = batch_settings or {"max_rows": self.BATCH_SIZE}
+        self.js_queue_batch = BufferedDeltaBatch(self.delta, "js_spider_queue", **opts)
+        self.stage2_queue_batch = BufferedDeltaBatch(self.delta, "stage2_queue", **opts)
+        self._batch_list = [self.js_queue_batch, self.stage2_queue_batch]
         self.items_processed = 0
 
     @classmethod
     def from_crawler(cls, crawler: Crawler) -> "QueueItemPipeline":
-        pipeline = cls()
+        pipeline = cls(_batch_settings(crawler, "QUEUE", cls.BATCH_SIZE))
 
+        crawler.signals.connect(pipeline.spider_opened, signal=signals.spider_opened)
         crawler.signals.connect(pipeline.spider_closed, signal=signals.spider_closed)
 
         return pipeline
+
+    def spider_opened(self, spider: Spider) -> None:
+        self._start_flush_timer(spider)
 
     def process_item(self, item: Any, spider: Spider) -> Any:
         if not isinstance(item, dict):
@@ -451,18 +654,11 @@ class QueueItemPipeline:
         # Copy: later pipelines (Metadata, Recency) mutate the item in place and
         # must not add columns to the queued row before the batch flushes.
         if target_spider == "javascript":
-            self.js_queue_batch.append(dict(item))
+            self.js_queue_batch.add(dict(item))
             self.items_processed += 1
-
-            if len(self.js_queue_batch) >= self.BATCH_SIZE:
-                self._save_js_queue_batch()
-
         elif target_stage == "stage2":
-            self.stage2_queue_batch.append(dict(item))
+            self.stage2_queue_batch.add(dict(item))
             self.items_processed += 1
-
-            if len(self.stage2_queue_batch) >= self.BATCH_SIZE:
-                self._save_stage2_queue_batch()
         else:
             # Content records (dicts without routing metadata) are not queue
             # handoffs; pass them through untouched now that this pipeline is
@@ -478,106 +674,95 @@ class QueueItemPipeline:
         return item
 
     def _save_js_queue_batch(self):
-        if not self.js_queue_batch:
-            return
-
-        batch_size = len(self.js_queue_batch)
-
-        try:
-            self.delta.write("js_spider_queue", self.js_queue_batch, mode="append")
-            logger.info(f" Saved {batch_size} items to js_spider_queue")
-            self.js_queue_batch.clear()
-        except Exception as e:
-            logger.error(f"Failed to save JS queue batch: {e}")
+        self.js_queue_batch.flush("manual")
 
     def _save_stage2_queue_batch(self):
-        if not self.stage2_queue_batch:
-            return
-
-        batch_size = len(self.stage2_queue_batch)
-
-        try:
-            self.delta.write("stage2_queue", self.stage2_queue_batch, mode="append")
-            logger.info(f" Saved {batch_size} items to stage2_queue")
-            self.stage2_queue_batch.clear()
-        except Exception as e:
-            logger.error(f"Failed to save Stage 2 queue batch: {e}")
+        self.stage2_queue_batch.flush("manual")
 
     def spider_closed(self, spider: Spider) -> None:
         logger.info(f"[QUEUE] Closing QueueItemPipeline for spider: {spider.name}")
+        self._stop_flush_timer()
 
-        if self.js_queue_batch:
-            self._save_js_queue_batch()
-
-        if self.stage2_queue_batch:
-            self._save_stage2_queue_batch()
+        self.js_queue_batch.flush("close")
+        self.stage2_queue_batch.flush("close")
 
         logger.info(f"[QUEUE] Pipeline stats - Total processed: {self.items_processed}")
 
-class OffsiteCandidatePipeline:
+class OffsiteCandidatePipeline(_TimedFlushMixin):
+    """Batch offsite candidates into ``stage1_offsite_candidates``.
+
+    Memory is bounded (#424): the batch flushes at ``OFFSITE_BATCH_SIZE`` rows,
+    ``OFFSITE_BATCH_MAX_BYTES`` bytes or ``OFFSITE_FLUSH_INTERVAL`` seconds,
+    and is cleared after every attempt, so a noisy page or a failing lake
+    cannot make it grow until close.
+    """
 
     BATCH_SIZE = 100
 
-    def __init__(self):
+    def __init__(self, batch_settings: dict[str, Any] | None = None):
         from src.utils.delta import get_delta
 
         self.delta = get_delta()
-        self.batch = []
+        self.batch = BufferedDeltaBatch(
+            self.delta, "stage1_offsite_candidates", **(batch_settings or {"max_rows": self.BATCH_SIZE})
+        )
+        self._batch_list = [self.batch]
         self.items_processed = 0
 
     @classmethod
     def from_crawler(cls, crawler: Crawler) -> "OffsiteCandidatePipeline":
-        pipeline = cls()
+        pipeline = cls(_batch_settings(crawler, "OFFSITE", cls.BATCH_SIZE))
 
+        crawler.signals.connect(pipeline.spider_opened, signal=signals.spider_opened)
         crawler.signals.connect(pipeline.spider_closed, signal=signals.spider_closed)
 
         return pipeline
+
+    def spider_opened(self, spider: Spider) -> None:
+        self._start_flush_timer(spider)
 
     def process_item(self, item: Any, spider: Spider) -> Any:
         if not isinstance(item, OffsiteCandidateItem):
             return item
 
         adapter = ItemAdapter(item)
-        item_dict = adapter.asdict()
-
-        self.batch.append(item_dict)
+        before = self.batch.rows_written
+        self.batch.add(adapter.asdict())
         self.items_processed += 1
-
-        if len(self.batch) >= self.BATCH_SIZE:
-            self._save_batch()
+        self._count_saved(spider, self.batch.rows_written - before)
 
         if self.items_processed % 500 == 0:
             logger.info(f"Processed {self.items_processed} offsite candidates")
 
         return item
 
-    def _save_batch(self):
-        if not self.batch:
+    @staticmethod
+    def _count_saved(spider: Spider | None, n: int) -> None:
+        if n <= 0:
             return
-
-        batch_size = len(self.batch)
-
         try:
-            self.delta.write("stage1_offsite_candidates", self.batch, mode="append")
-            logger.info(f" Saved {batch_size} offsite candidates to Delta Lake")
+            from src.scrapy_prometheus import OFFSITE_CANDIDATES_SAVED
 
-            try:
-                from src.scrapy_prometheus import OFFSITE_CANDIDATES_SAVED
+            if OFFSITE_CANDIDATES_SAVED:
+                OFFSITE_CANDIDATES_SAVED.labels(spider=getattr(spider, "name", None) or "scout").inc(n)
+        except ImportError:
+            pass
 
-                if OFFSITE_CANDIDATES_SAVED:
-                    OFFSITE_CANDIDATES_SAVED.labels(spider="scout").inc(batch_size)
-            except ImportError:
-                pass
+    def _save_batch(self, spider: Spider | None = None, trigger: str = "manual"):
+        before = self.batch.rows_written
+        self.batch.flush(trigger)
+        self._count_saved(spider, self.batch.rows_written - before)
 
-            self.batch.clear()
-        except Exception as e:
-            logger.error(f"Failed to save offsite candidates batch: {e}")
+    def _flush_due(self) -> None:
+        before = self.batch.rows_written
+        super()._flush_due()
+        self._count_saved(None, self.batch.rows_written - before)
 
     def spider_closed(self, spider: Spider) -> None:
         logger.info(f"Closing OffsiteCandidatePipeline for spider: {spider.name}")
+        self._stop_flush_timer()
 
-        if self.batch:
-            self._save_batch()
+        self._save_batch(spider, "close")
 
         logger.info(f"OffsiteCandidatePipeline stats - Total processed: {self.items_processed}")
 
