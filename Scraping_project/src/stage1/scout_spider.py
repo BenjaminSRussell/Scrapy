@@ -23,6 +23,7 @@ from src.stage1.discovery_handoff import (
     DiscoveryStatus,
     ingest_handoff_via_seed_manager,
 )
+from src.stage1.js_queue import js_spider_enabled
 from src.stage1.section_noise import SectionNoiseTracker, section_of
 
 try:
@@ -92,6 +93,8 @@ class ScoutSpider(BaseSpider):
             or config.get("stage1.discovery.ack_empty", False)
             or config.get("stages.stage1.discovery.ack_empty", False)
         )
+        # #645: with the JS path off nothing drains js_spider_queue, so don't fill it.
+        self.enable_js_spider = js_spider_enabled(config)
 
         self.seed_manager = SeedManager(self.delta)
         self.discovery_dedup = self._init_discovery_dedup(config)
@@ -213,8 +216,9 @@ class ScoutSpider(BaseSpider):
                         continue
                     followed += 1
 
-                    yield self._queue_for_javascript_spider(url, response.url)
-                    self.scout_stats["html_queued_js"] += 1
+                    if self.enable_js_spider:
+                        yield self._queue_for_javascript_spider(url, response.url)
+                        self.scout_stats["html_queued_js"] += 1
                     if url in claimed_urls:
                         yield self._queue_for_stage2(url, response.url, content_hint)
                         self.scout_stats["pages_queued_stage2"] += 1
