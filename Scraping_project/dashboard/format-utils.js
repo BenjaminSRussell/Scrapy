@@ -51,5 +51,16 @@
         }
         return seen.size > 0 ? seen.size : null;
     }
-    return { parseMetrics, formatNumber, formatBytes, formatEpochTime, countLabelValues };
+    // Which pipeline stages are currently doing work (#976). Order matches the
+    // four Pipeline-tab stage cards. A stage is active when its per-interval
+    // rate is a finite number above `threshold`; missing/NaN rates (series not
+    // exported, first sample) count as idle rather than guessing.
+    const STAGE_RATE_KEYS = ['urls', 'pages', 'summaries', 'largeDocs'];
+    function stageActivity(rates, threshold = 0) {
+        return STAGE_RATE_KEYS.map(k => {
+            const v = Number(rates && rates[k]);
+            return Number.isFinite(v) && v > threshold;
+        });
+    }
+    return { parseMetrics, formatNumber, formatBytes, formatEpochTime, countLabelValues, stageActivity };
 });

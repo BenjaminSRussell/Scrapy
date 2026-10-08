@@ -353,6 +353,17 @@ function updatePerformanceCharts() {
     updateOverviewSparklines();
 }
 
+// Highlight the Pipeline-tab stage cards that processed work in the last
+// interval; previously stages 1-2 were hardcoded active forever (#976).
+function applyStageActivity(rates) {
+    const flags = stageActivity(rates);
+    document.querySelectorAll('#tab-pipeline .stage-card').forEach((card, i) => {
+        const on = !!flags[i];
+        card.classList.toggle('active', on);
+        card.dataset.activity = on ? 'active' : 'idle';
+    });
+}
+
 function calculateRates(metrics) {
     const prev = previousMetrics;
     const timeElapsed = 5;
@@ -507,6 +518,8 @@ function updateDashboard(metrics) {
 
     const s4RateElem = document.getElementById('pipeline-s4-rate');
     if (s4RateElem) { const __n = rates.largeDocs.toFixed(1) + '/s'; if (s4RateElem.textContent !== String(__n)) { s4RateElem.textContent = __n; s4RateElem.classList.remove('flash'); void s4RateElem.offsetWidth; s4RateElem.classList.add('flash'); } else { s4RateElem.textContent = __n; } }
+
+    applyStageActivity(rates);
 
     setMetricText('perf-s1-rate', rates.urls.toFixed(1) + ' URLs/min');
     setMetricText('perf-s2-rate', rates.pages.toFixed(2) + ' pages/sec');
