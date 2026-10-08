@@ -348,6 +348,21 @@ groups:
           impact: "Medium - Batches still in memory are lost on a hard crash"
           action: "Check Delta storage latency and writer thread health; consider async_write=False for critical tables"
 
+      # #458: rows whose URL has no usable host are quarantined to
+      # domain_quarantine instead of a skewed domain="unknown" partition. A
+      # steady stream means a spider/extractor is emitting broken URLs.
+      - alert: DeltaUndomainableRows
+        expr: sum by (table) (increase(delta_unknown_domain_rows_total[1h])) > 100
+        for: 15m
+        labels:
+          severity: warning
+          component: delta
+        annotations:
+          summary: "{{ $labels.table }}: {{ $value }} rows with no usable host in the last hour"
+          description: "Rows for domain-partitioned {{ $labels.table }} had URLs without an http(s) host and were quarantined to domain_quarantine."
+          impact: "Low - Rows are kept in quarantine but missing from the table"
+          action: "Inspect domain_quarantine (url, row_json) to find the spider or extractor producing them"
+
   # ============================================
   # Infrastructure Alerts
   # ============================================

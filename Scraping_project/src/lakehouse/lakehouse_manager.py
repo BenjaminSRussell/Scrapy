@@ -38,6 +38,9 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 CAST_QUARANTINE_TABLE = "cast_quarantine"
+# Rows of domain-partitioned tables whose URL has no usable host (#458). They
+# used to be written under domain="unknown", one hot, skewed partition.
+DOMAIN_QUARANTINE_TABLE = "domain_quarantine"
 CastMode: TypeAlias = Literal["strict", "coerce"]
 
 try:  # cast failures by table/column (#818)
@@ -50,6 +53,17 @@ try:  # cast failures by table/column (#818)
     )
 except Exception:  # prometheus_client missing or metric already registered
     DELTA_CAST_FAILURES = None
+
+try:  # undomainable rows quarantined instead of partitioned as "unknown" (#458)
+    from prometheus_client import Counter as _DCounter
+
+    DELTA_UNKNOWN_DOMAIN = _DCounter(
+        "delta_unknown_domain_rows_total",
+        "Rows for domain-partitioned tables quarantined because their URL has no usable host.",
+        ["table"],
+    )
+except Exception:  # prometheus_client missing or metric already registered
+    DELTA_UNKNOWN_DOMAIN = None
 
 try:  # async write durability (#225) and queue backpressure (#167)
     from prometheus_client import Counter as _WCounter
@@ -291,6 +305,29 @@ PARTITIONED_TABLES = {"stage1_discovery", "stage2_page_analysis"}
 
 def _partition_columns(table_name: str) -> list[str] | None:
     return ["domain"] if table_name in PARTITIONED_TABLES else None
+
+
+def partition_domain(url: Any) -> str | None:
+    """Partition key for an http(s) URL, or None when it has no usable host (#458).
+
+    registrable_domain() returns "unknown" for empty/unparsable input and passes
+    other junk through (``"not a url"`` -> ``"not a url"``, ``mailto:x`` ->
+    ``"mailto"``), so non-http(s) or host-less URLs are rejected here first.
+    """
+    from urllib.parse import urlparse
+
+    from src.utils.validation import registrable_domain
+
+    value = str(url or "").strip()
+    try:
+        parsed = urlparse(value)
+        host = parsed.hostname
+    except ValueError:
+        return None
+    if parsed.scheme not in ("http", "https") or not host:
+        return None
+    domain = registrable_domain(value)
+    return None if not domain or domain == "unknown" else domain
 
 
 WriteMode: TypeAlias = Literal["append", "overwrite", "error", "ignore"]
@@ -684,24 +721,98 @@ class LakehouseManager:
             return self._write_sync_locked(table_name, data, mode, schema_overwrite=schema_overwrite)
 
     @staticmethod
-    def _enrich_records(table_name: str, data: list[dict[str, Any]]) -> None:
-        """Add partition key and ingestion metadata in place (write and merge paths)."""
+    def _enrich_records(table_name: str, data: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Add partition key and ingestion metadata in place (write and merge paths).
+
+        For domain-partitioned tables, rows whose URL has no usable host are
+        removed from ``data`` and returned, to be quarantined (#458) rather
+        than written to a skewed domain="unknown" partition.
+        """
+        undomainable: list[dict[str, Any]] = []
         if _partition_columns(table_name):
             # Partition key: public-suffix-aware registrable domain (#251).
-            from src.utils.validation import registrable_domain
-
+            kept: list[dict[str, Any]] = []
             for record in data:
-                if "url" in record and "domain" not in record:
+                if record.get("domain") in (None, "", "unknown"):
+                    record.pop("domain", None)
                     try:
-                        record["domain"] = registrable_domain(str(record["url"] or ""))
+                        domain = partition_domain(record.get("url"))
                     except Exception:
-                        record["domain"] = "unknown"
+                        domain = None
+                    if domain is None:
+                        undomainable.append(record)
+                        continue
+                    record["domain"] = domain
+                kept.append(record)
+            data[:] = kept
 
         for record in data:
             if "_ingestion_time" not in record:
                 record["_ingestion_time"] = datetime.now(UTC).isoformat()
             if "_stage" not in record:
                 record["_stage"] = table_name
+        return undomainable
+
+    def _quarantine_undomainable(self, table_name: str, rows: list[dict[str, Any]]) -> None:
+        """Count, log and park rows with no usable host in DOMAIN_QUARANTINE_TABLE (#458)."""
+        import json as _json
+
+        if not rows:
+            return
+        if DELTA_UNKNOWN_DOMAIN is not None:
+            DELTA_UNKNOWN_DOMAIN.labels(table=table_name).inc(len(rows))
+        sample = [str(r.get("url")) for r in rows[:5]]
+        logger.warning(
+            f"[DOMAIN] {len(rows)} row(s) for {table_name} have no usable host; "
+            f"quarantined to {DOMAIN_QUARANTINE_TABLE}. e.g. URLs: {sample}"
+        )
+        now = datetime.now(UTC).isoformat()
+        quarantine = [
+            {
+                "source_table": table_name,
+                "url": str(r.get("url") or ""),
+                "reason": "no_usable_host",
+                "row_json": _json.dumps(r, default=str)[:10000],
+                "quarantined_at": now,
+            }
+            for r in rows
+        ]
+        try:
+            self._write_sync(DOMAIN_QUARANTINE_TABLE, quarantine, "append")
+        except Exception as e:
+            logger.error(f"[DOMAIN] Failed to write {len(quarantine)} quarantine rows: {e}")
+
+    def repair_unknown_domains(self, table_name: str, apply: bool = False) -> dict[str, int]:
+        """Re-derive the partition key for rows already written as domain="unknown" (#458).
+
+        Dry run by default: returns ``{"rows", "repairable", "quarantine"}``.
+        With ``apply=True`` repairable rows are appended under their real
+        domain, the rest go to DOMAIN_QUARANTINE_TABLE, then the "unknown"
+        partition is deleted. The append happens before the delete, so a crash
+        in between can duplicate rows but never loses them.
+        """
+        if table_name not in PARTITIONED_TABLES:
+            raise ValueError(f"{table_name} is not domain-partitioned")
+        table_path = self.get_table_path(table_name)
+        if not (table_path / "_delta_log").exists():
+            return {"rows": 0, "repairable": 0, "quarantine": 0}
+        dt = DeltaTable(str(table_path))
+        rows = dt.to_pyarrow_table(partitions=[("domain", "=", "unknown")]).to_pylist()
+        repaired, bad = [], []
+        for row in rows:
+            domain = partition_domain(row.get("url"))
+            if domain is None:
+                bad.append(row)
+            else:
+                repaired.append({**row, "domain": domain})
+        report = {"rows": len(rows), "repairable": len(repaired), "quarantine": len(bad)}
+        if apply and rows:
+            if repaired and not self._write_sync(table_name, repaired, "append"):
+                raise RuntimeError(f"repair append to {table_name} failed; unknown partition left intact")
+            self._quarantine_undomainable(table_name, bad)
+            DeltaTable(str(table_path)).delete("domain = 'unknown'")
+            logger.warning(f"[DOMAIN] repaired {table_name}: {report}")
+        return report
 
     def _write_sync_locked(
         self,
@@ -718,7 +829,11 @@ class LakehouseManager:
             self.tables[table_name] = table_path
             logger.info(f"Dynamically created new table path for: {table_name}")
 
-        self._enrich_records(table_name, data)
+        undomainable = self._enrich_records(table_name, data)
+        if undomainable:
+            self._quarantine_undomainable(table_name, undomainable)
+            if not data:
+                return True  # handled: every row is recorded in quarantine
 
         try:
             import time
@@ -1535,7 +1650,11 @@ class LakehouseManager:
         rows = _dedupe_by_key(updates_data, merge_keys)
         # Same partition key / metadata as write(), so merged and appended rows
         # look alike (#311: stage2_page_analysis is now upserted by url_hash).
-        self._enrich_records(table_name, rows)
+        undomainable = self._enrich_records(table_name, rows)
+        if undomainable:
+            self._quarantine_undomainable(table_name, undomainable)
+            if not rows:
+                return 0
         try:
             table_path = self.get_table_path(table_name)
         except ValueError:  # unregistered table: create it, as write() does
