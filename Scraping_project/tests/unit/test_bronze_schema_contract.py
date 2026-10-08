@@ -16,6 +16,7 @@ from pydantic import ValidationError
 
 from src import pipelines
 from src.pipelines import SchemaValidationPipeline
+from src.core.ingest_contract import REQUIRED_INGEST_FIELDS
 from src.schemas import BRONZE_REQUIRED_FIELDS, BaseRecordSchema
 
 MAIN_RS = Path(__file__).resolve().parents[2] / "kafka-delta-ingest" / "src" / "main.rs"
@@ -31,6 +32,7 @@ def _rust_required() -> tuple[str, ...]:
 def test_python_and_rust_require_the_same_fields():
     python_required = {n for n, f in BaseRecordSchema.model_fields.items() if f.is_required()}
     assert python_required == set(BRONZE_REQUIRED_FIELDS) == set(_rust_required())
+    assert BRONZE_REQUIRED_FIELDS is REQUIRED_INGEST_FIELDS  # one list for schema + producer check
 
 
 def test_rust_schema_is_built_from_the_shared_list():

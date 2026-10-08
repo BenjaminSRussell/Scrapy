@@ -3,6 +3,9 @@ from enum import Enum
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from src.core.ingest_contract import REQUIRED_INGEST_FIELDS
+
+
 class CategoryType(str, Enum):
 
     TUITION_FEES = "tuition_fees"
@@ -23,12 +26,14 @@ class MediaType(str, Enum):
     VIDEO = "video"
 
 # Bronze contract (#227, #302). The fields every record must have to be
-# ingested; kafka-delta-ingest enforces the same list as REQUIRED_INGEST_FIELDS
-# in kafka-delta-ingest/src/main.rs (tests/unit/test_bronze_schema_contract.py
-# fails if they diverge). Everything else is bronze-optional: a page without an
-# extractable title or publication date is still crawl data. Silver/analytics
-# consumers that need publication_date must filter or backfill it there.
-BRONZE_REQUIRED_FIELDS: tuple[str, ...] = ("url", "scraped_at_utc", "spider_name")
+# ingested. Single source of truth: src/core/ingest_contract.py
+# REQUIRED_INGEST_FIELDS, which mirrors the Rust constant of the same name in
+# kafka-delta-ingest/src/main.rs (tests/unit/test_bronze_schema_contract.py and
+# test_ingest_field_contract.py fail if they diverge). Everything else is
+# bronze-optional: a page without an extractable title or publication date is
+# still crawl data. Silver/analytics consumers that need publication_date must
+# filter or backfill it there.
+BRONZE_REQUIRED_FIELDS: tuple[str, ...] = REQUIRED_INGEST_FIELDS
 
 
 class BaseRecordSchema(BaseModel):
