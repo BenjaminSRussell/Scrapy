@@ -71,6 +71,8 @@ def test_repo_config_declares_the_cap(monkeypatch):
 
 async def test_busy_host_is_capped_and_other_hosts_are_not_starved(monkeypatch):
     monkeypatch.setenv("STAGE2_PER_HOST_CONCURRENCY", "3")
+    # Fixture servers are on loopback, which the SSRF guard blocks by default (#682).
+    monkeypatch.setenv("SSRF_ALLOWED_HOSTS", "127.0.0.1,127.0.0.2")
     busy, quiet = Host(delay=0.2), Host(delay=0.05)
     runners = [await _serve(busy, "127.0.0.1"), await _serve(quiet, "127.0.0.2")]
     try:

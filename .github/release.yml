@@ -1,0 +1,21 @@
+# Categories for GitHub's "Generate release notes" (docs/RELEASING.md step 7).
+# CHANGELOG.md stays the curated source; these notes list the merged PRs under it.
+changelog:
+  exclude:
+    labels:
+      - duplicate
+      - invalid
+      - wontfix
+  categories:
+    - title: Bug fixes
+      labels: [bug]
+    - title: Features and improvements
+      labels: [enhancement, performance]
+    - title: Observability
+      labels: [observability, dashboard]
+    - title: Documentation
+      labels: [documentation]
+    - title: Dependencies and CI
+      labels: [dependencies, github_actions, area/ci]
+    - title: Other changes
+      labels: ["*"]

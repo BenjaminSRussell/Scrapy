@@ -70,6 +70,13 @@ BOT_NAME = _scrapy_config.get("bot_name", "uconn_scraper")
 SPIDER_MODULES = _scrapy_config.get("spider_modules", ["src.stage1"])
 NEWSPIDER_MODULE = _scrapy_config.get("newspider_module", "src.stage1")
 
+# SSRF guard (#682): refuse loopback/private/link-local/metadata/service-name
+# targets before download, on every redirect hop. Registered in
+# DOWNLOADER_MIDDLEWARES below (and by spider_config for spider custom_settings).
+SSRF_GUARD_ENABLED = os.getenv("SSRF_GUARD_ENABLED", "1") != "0"
+SSRF_RESOLVE_DNS = os.getenv("SSRF_RESOLVE_DNS", "0") == "1"
+SSRF_ALLOWED_HOSTS = os.getenv("SSRF_ALLOWED_HOSTS", "")
+
 ITEM_PIPELINES = _scrapy_config.get(
     "item_pipelines",
     {
@@ -111,6 +118,10 @@ DOWNLOADER_MIDDLEWARES = _scrapy_config.get(
         "src.stage1.middlewares.retry_after_middleware.RetryAfterMiddleware": 560,  # #188
     },
 )
+# #682: the SSRF guard runs first, even when config.yml overrides the dict
+# (set it to None there to opt out explicitly; SSRF_GUARD_ENABLED=0 also works).
+DOWNLOADER_MIDDLEWARES = dict(DOWNLOADER_MIDDLEWARES)
+DOWNLOADER_MIDDLEWARES.setdefault("src.stage1.middlewares.ssrf_middleware.SSRFGuardMiddleware", 50)
 RETRY_AFTER_MAX_DELAY = float(os.getenv("RETRY_AFTER_MAX_DELAY", _scrapy_config.get("retry_after_max_delay", 120)))
 
 CONCURRENT_REQUESTS = _scrapy_config.get("concurrent_requests", 64)

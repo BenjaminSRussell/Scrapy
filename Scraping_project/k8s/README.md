@@ -163,6 +163,28 @@ Access Prometheus:
 kubectl port-forward svc/scraping-pipeline-prometheus-a 9090:9090 -n scraping-pipeline
 ```
 
+#### What gets scraped (#789)
+
+The bundled Prometheus uses its own scrape config (no prometheus-operator, so
+no ServiceMonitor). Pod annotations are set too, for an external
+annotation-based Prometheus.
+
+| Job | Target | Port | Discovery |
+|-----|--------|------|-----------|
+| `scrapy_app` | Scrapy pods | 9410-9419 | Service + `prometheus.io/*` annotations |
+| `stage2_worker`, `stage3_worker` | every worker pod | `workerMetrics.port` (9430) | headless `<release>-stageN-metrics` Service, `dns_sd_configs` (one target per replica) + `prometheus.io/*` annotations |
+| `scraping_pipeline` | metrics-exporter | 9100 | Service |
+| `redis`, `postgres`, `kafka_jmx` | exporters | 9121 / 9187 / 5556 | Service |
+| `statsd` | statsd-exporter (kafka-delta-ingestor pushes StatsD) | 9102 | Service |
+
+Workers start the endpoint from `src/utils/worker_metrics.py`
+(`WORKER_METRICS_ENABLED`, `WORKER_METRICS_PORT`, `WORKER_METRICS_ADDR`); a
+port clash is logged and the worker keeps consuming. Set
+`workerMetrics.enabled=false` to drop the port, annotations, Services and jobs.
+With `networkPolicy.enabled=true`, each target gets a
+`<target>-metrics-ingress` policy admitting only Prometheus on its metrics
+port(s); default-deny previously blocked every scrape.
+
 ### Grafana Dashboards
 
 Access Grafana:

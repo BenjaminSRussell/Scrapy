@@ -129,3 +129,48 @@ def test_docs_cover_stage4_toggle():
     readme = (ROOT / "k8s" / "README.md").read_text(encoding="utf-8")
     assert "--set stage4Worker.enabled=true" in readme
     assert "| `stage4` | off | off | off | on |" in readme
+
+
+# --- #789 worker metrics cover Stage 4 too (needs helm) ------------------------
+
+_HELM = __import__("os").environ.get("HELM_BIN") or __import__("shutil").which("helm")
+
+
+@pytest.mark.skipif(not _HELM, reason="helm not installed (set HELM_BIN to run render checks)")
+@pytest.mark.parametrize("enabled", [True, False])
+def test_stage4_worker_metrics_wiring_follows_the_toggle(enabled):
+    import subprocess
+
+    import yaml
+
+    chart = ROOT / "k8s" / "helm" / "scraping-pipeline"
+    out = subprocess.run(
+        [
+            _HELM,
+            "template",
+            "t",
+            str(chart),
+            "--set",
+            f"stage4Worker.enabled={str(enabled).lower()}",
+            "--set",
+            "networkPolicy.enabled=true",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert out.returncode == 0, out.stderr
+    docs = [d for d in yaml.safe_load_all(out.stdout) if d]
+    names = {(d["kind"], d["metadata"]["name"]) for d in docs}
+    assert (("Service", "t-scraping-pipeline-stage4-metrics") in names) is enabled
+    assert (("NetworkPolicy", "t-scraping-pipeline-stage4-metrics-ingress") in names) is enabled
+    prom = "".join(str(d.get("data", {})) for d in docs if d["kind"] == "ConfigMap")
+    assert ("'stage4_worker'" in prom or "stage4_worker" in prom) is enabled
+    if enabled:
+        dep = next(d for d in docs if d["kind"] == "Deployment" and d["metadata"]["name"].endswith("-stage4"))
+        pod = dep["spec"]["template"]
+        assert pod["metadata"]["annotations"]["prometheus.io/scrape"] == "true"
+        container = pod["spec"]["containers"][0]
+        assert any(p["name"] == "metrics" for p in container["ports"])
+        env = {e["name"]: e.get("value") for e in container["env"]}
+        assert env["WORKER_METRICS_ENABLED"] == "1"

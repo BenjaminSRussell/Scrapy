@@ -88,6 +88,19 @@ stage1:
     - staff
   priority_penalty_keywords: []  # REMOVED - we want everything now
 
+  # Adapt to noisy sections (#26): once a section (host/first-path-segment)
+  # has produced min_pages pages whose follow-able links are at least
+  # low_value_ratio low-confidence (traps: dated archives, calendar/sort/filter
+  # params, session ids, repeating paths; or URLValueAssessor "low"), its
+  # low-confidence links are no longer followed and the rest are capped at
+  # follow_cap per page. Metrics: stage1_noisy_sections,
+  # stage1_noisy_section_skips_total.
+  noisy_sections:
+    enabled: true
+    min_pages: 5
+    low_value_ratio: 0.6
+    follow_cap: 10
+
   # Depth Spider Mode (when regular queues are empty)
   depth_spider:
     enabled: true
@@ -264,6 +277,12 @@ delta_lake:
   queue_maxsize: 1000  # Maximum queue size to prevent memory overload
   # Producers wait this long for queue space, then spill to _write_spill/ (#167).
   queue_put_timeout_seconds: 30
+  # #754: completed/failed rows in stage2_queue, js_spider_queue and
+  # stage4_large_docs are deleted once completed_at is older than this (0 = never),
+  # after being appended to <table>_history when queue_gc_archive is true.
+  queue_retention_hours: 168
+  queue_gc_interval_minutes: 60  # idle maintenance worker runs GC this often (0 = off)
+  queue_gc_archive: true
   # Async writes retry with exponential backoff, then spill durably (#225).
   write_retries: 3
   write_retry_backoff_seconds: 0.5

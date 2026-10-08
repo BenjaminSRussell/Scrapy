@@ -19,6 +19,11 @@ spec:
     metadata:
       annotations:
         cluster-autoscaler.kubernetes.io/safe-to-evict: "true"
+        {{- if .Values.workerMetrics.enabled }}
+        prometheus.io/scrape: "true"  # #789
+        prometheus.io/port: {{ .Values.workerMetrics.port | quote }}
+        prometheus.io/path: {{ .Values.workerMetrics.path | quote }}
+        {{- end }}
       labels:
         {{- include "scraping-pipeline.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: stage2
@@ -30,6 +35,12 @@ spec:
         image: "{{ .Values.stage2Worker.image.repository }}:{{ .Values.stage2Worker.image.tag }}"
         imagePullPolicy: {{ .Values.stage2Worker.image.pullPolicy }}
         command: ["python", "-u", "src/stage2/stage2_worker.py"]
+        {{- if .Values.workerMetrics.enabled }}
+        ports:
+        - name: metrics  # #789
+          containerPort: {{ .Values.workerMetrics.port }}
+          protocol: TCP
+        {{- end }}
         envFrom:
         - configMapRef:
             name: {{ include "scraping-pipeline.fullname" . }}-app-env
@@ -42,6 +53,10 @@ spec:
         env:
         - name: QUEUE_NAME
           value: {{ .Values.stage2Worker.queueName | quote }}
+        - name: WORKER_METRICS_ENABLED
+          value: {{ ternary "1" "0" .Values.workerMetrics.enabled | quote }}
+        - name: WORKER_METRICS_PORT
+          value: {{ .Values.workerMetrics.port | quote }}
         livenessProbe:
           exec:
             command:
@@ -104,6 +119,11 @@ spec:
     metadata:
       annotations:
         cluster-autoscaler.kubernetes.io/safe-to-evict: "true"
+        {{- if .Values.workerMetrics.enabled }}
+        prometheus.io/scrape: "true"  # #789
+        prometheus.io/port: {{ .Values.workerMetrics.port | quote }}
+        prometheus.io/path: {{ .Values.workerMetrics.path | quote }}
+        {{- end }}
       labels:
         {{- include "scraping-pipeline.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: stage3
@@ -115,6 +135,12 @@ spec:
         image: "{{ .Values.stage3Worker.image.repository }}:{{ .Values.stage3Worker.image.tag }}"
         imagePullPolicy: {{ .Values.stage3Worker.image.pullPolicy }}
         command: ["python", "-u", "src/stage3/stage3_worker.py"]
+        {{- if .Values.workerMetrics.enabled }}
+        ports:
+        - name: metrics  # #789
+          containerPort: {{ .Values.workerMetrics.port }}
+          protocol: TCP
+        {{- end }}
         envFrom:
         - configMapRef:
             name: {{ include "scraping-pipeline.fullname" . }}-app-env
@@ -127,6 +153,10 @@ spec:
         env:
         - name: QUEUE_NAME
           value: {{ .Values.stage3Worker.queueName | quote }}
+        - name: WORKER_METRICS_ENABLED
+          value: {{ ternary "1" "0" .Values.workerMetrics.enabled | quote }}
+        - name: WORKER_METRICS_PORT
+          value: {{ .Values.workerMetrics.port | quote }}
         livenessProbe:
           exec:
             command:
@@ -190,6 +220,11 @@ spec:
     metadata:
       annotations:
         cluster-autoscaler.kubernetes.io/safe-to-evict: "true"
+        {{- if .Values.workerMetrics.enabled }}
+        prometheus.io/scrape: "true"  # #789
+        prometheus.io/port: {{ .Values.workerMetrics.port | quote }}
+        prometheus.io/path: {{ .Values.workerMetrics.path | quote }}
+        {{- end }}
       labels:
         {{- include "scraping-pipeline.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: stage4
@@ -201,6 +236,12 @@ spec:
         image: "{{ .Values.stage4Worker.image.repository }}:{{ .Values.stage4Worker.image.tag }}"
         imagePullPolicy: {{ .Values.stage4Worker.image.pullPolicy }}
         command: ["python", "-u", "src/stage4/stage4_worker.py"]
+        {{- if .Values.workerMetrics.enabled }}
+        ports:
+        - name: metrics  # #789
+          containerPort: {{ .Values.workerMetrics.port }}
+          protocol: TCP
+        {{- end }}
         envFrom:
         - configMapRef:
             name: {{ include "scraping-pipeline.fullname" . }}-app-env
@@ -213,6 +254,10 @@ spec:
         env:
         - name: QUEUE_NAME
           value: {{ .Values.stage4Worker.queueName | quote }}
+        - name: WORKER_METRICS_ENABLED
+          value: {{ ternary "1" "0" .Values.workerMetrics.enabled | quote }}
+        - name: WORKER_METRICS_PORT
+          value: {{ .Values.workerMetrics.port | quote }}
         livenessProbe:
           exec:
             command:

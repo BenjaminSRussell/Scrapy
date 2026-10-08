@@ -91,6 +91,10 @@ spec:
       app: stage2-worker
   template:
     metadata:
+      annotations:  # #789: worker /metrics (src/utils/worker_metrics.py)
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9430"
+        prometheus.io/path: "/metrics"
       labels:
         app: stage2-worker
     spec:
@@ -99,6 +103,9 @@ spec:
       - name: worker
         image: uconn-scraper:latest
         command: ["python", "-m", "src.workers.stage2_worker"]
+        ports:
+        - name: metrics
+          containerPort: 9430
         envFrom:
         - configMapRef:
             name: scraper-config
