@@ -30,6 +30,11 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 project_root = Path(__file__).parent.parent.parent / "Scraping_project"
 sys.path.insert(0, str(project_root))
 
+# Load/stress tests never run in the default PR selection
+# (-m "not slow and not kafka and not performance"); run them with
+# `make test-perf` (#287).
+pytestmark = [pytest.mark.performance, pytest.mark.slow]
+
 
 @dataclass
 class LoadTestResults:

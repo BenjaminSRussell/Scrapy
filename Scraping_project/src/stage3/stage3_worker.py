@@ -196,9 +196,10 @@ class Stage3Worker:
                 return None
 
     def _fallback_summary(self, text: str, max_chars: int = 500) -> str:
-        if len(text) <= max_chars:
-            return text
-        return text[:max_chars] + "..."
+        """At most ``max_chars``; ends at a sentence when possible (#740)."""
+        from src.utils.text_truncate import truncate_text
+
+        return truncate_text(text, max_chars)
 
     def _extract_key_facts(self, text: str, keywords: list[str]) -> list[str]:
         sentences = text.split(".")
@@ -239,4 +240,7 @@ async def run_stage3_worker():
             await asyncio.sleep(10)
 
 if __name__ == "__main__":
+    from src.utils.worker_metrics import start_worker_metrics_server
+
+    start_worker_metrics_server("stage3")  # #789
     asyncio.run(run_stage3_worker())

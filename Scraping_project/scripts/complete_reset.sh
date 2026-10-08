@@ -11,8 +11,15 @@
 # services that belong to the full Kafka/exporter stack (see #145) are
 # reported as skipped instead of failing `docker compose up`.
 #
-# Usage: scripts/complete_reset.sh [--yes] [--rebuild|--no-rebuild] [--dry-run]
-#   --dry-run   print the plan (services per step) and exit without touching Docker
+# Usage: scripts/complete_reset.sh --confirm [--yes] [--rebuild|--no-rebuild]
+#        scripts/complete_reset.sh [--dry-run]
+#   (no flags)  print the plan and exit 2 without touching Docker (#573)
+#   --dry-run   print the plan (services per step) and exit 0
+#   --confirm   actually reset; asks you to type 'yes'
+#   --yes       skip the typed confirmation; only with ALLOW_LAKE_RESET=1
+#   ENV=production also needs --i-know-what-im-doing + ALLOW_LAKE_RESET=1 and
+#   typing 'production' (#522, #576). Decisions are appended to
+#   ${DESTRUCTIVE_AUDIT_LOG:-data/logs/destructive_ops.jsonl}.
 # ==================================================================
 set -euo pipefail
 
@@ -26,17 +33,37 @@ print_warning() { echo -e "${YELLOW}[WARNING]${NC} $1"; }
 print_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 print_step() { echo -e "${BLUE}[STEP]${NC} $1"; }
 
-ASSUME_YES=0; DRY_RUN=0; REBUILD_IMAGES=""
+ASSUME_YES=0; DRY_RUN=0; CONFIRM_FLAG=0; BREAK_GLASS=0; REBUILD_IMAGES=""
 for arg in "$@"; do
     case "$arg" in
         --yes|-y) ASSUME_YES=1 ;;
+        --confirm) CONFIRM_FLAG=1 ;;
+        --i-know-what-im-doing) BREAK_GLASS=1 ;;
         --dry-run) DRY_RUN=1 ;;
         --rebuild) REBUILD_IMAGES=yes ;;
         --no-rebuild) REBUILD_IMAGES=no ;;
-        -h|--help) sed -n '2,16p' "$0"; exit 0 ;;
+        -h|--help) sed -n '2,24p' "$0"; exit 0 ;;
         *) print_error "unknown argument: $arg"; exit 2 ;;
     esac
 done
+
+# --- destructive-op guard (same policy as src/utils/destructive_guard.py) ---
+RESET_ENV="$(printf '%s' "${ENV:-${APP_ENV:-development}}" | tr '[:upper:]' '[:lower:]')"
+AUDIT_LOG="${DESTRUCTIVE_AUDIT_LOG:-data/logs/destructive_ops.jsonl}"
+json_str() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'; }
+audit() {  # audit OUTCOME REASON
+    local who="${SUDO_USER:-${USER:-${LOGNAME:-unknown}}}"
+    mkdir -p "$(dirname "$AUDIT_LOG")" 2>/dev/null || true
+    printf '{"ts":"%s","action":"complete_reset (docker compose down -v)","outcome":"%s","actor":"%s","host":"%s","env":"%s","reason":"%s"}\n' \
+        "$(date -u +%Y-%m-%dT%H:%M:%S+00:00)" "$1" "$(json_str "$who")" "$(json_str "$(hostname 2>/dev/null || echo unknown)")" \
+        "$(json_str "$RESET_ENV")" "$(json_str "$2")" >> "$AUDIT_LOG" 2>/dev/null \
+        || print_warning "could not write audit log $AUDIT_LOG"
+}
+refuse() { audit refused "$1"; print_error "REFUSED: $1"; exit 3; }
+if [ "$DRY_RUN" != "1" ] && [ "$CONFIRM_FLAG" != "1" ] && [ "$ASSUME_YES" = "1" ]; then
+    # Legacy `--yes`: still means "go", but only together with ALLOW_LAKE_RESET=1.
+    CONFIRM_FLAG=1
+fi
 
 # Startup order. Names outside the current Compose file are filtered out.
 INFRA=(redis postgres zookeeper kafka)
@@ -54,25 +81,45 @@ monitoring_up="$(compose_filter "${MONITORING[@]}")"
 exporters_up="$(compose_filter "${EXPORTERS[@]}")"
 apps_up="$(compose_filter "${APPS[@]}")"
 
-if [ "$DRY_RUN" = "1" ]; then
+print_plan() {
     echo "infra: ${infra_up}"
     echo "monitoring: ${monitoring_up}"
     echo "exporters: ${exporters_up}"
     echo "apps: ${apps_up}"
+}
+if [ "$DRY_RUN" = "1" ]; then
+    print_plan
     exit 0
+fi
+if [ "$CONFIRM_FLAG" != "1" ]; then
+    print_plan
+    echo "volumes: every volume of this Compose project (docker compose down -v)"
+    audit dry_run "no --confirm"
+    print_warning "DRY RUN: nothing was changed. Re-run with --confirm to delete all project volumes."
+    exit 2
+fi
+if [ "$RESET_ENV" = "production" ] || [ "$RESET_ENV" = "prod" ]; then
+    if [ "$BREAK_GLASS" != "1" ] || [ "${ALLOW_LAKE_RESET:-}" != "1" ]; then
+        refuse "ENV=${RESET_ENV} is production: needs --i-know-what-im-doing and ALLOW_LAKE_RESET=1"
+    fi
+    PHRASE=production
+elif [ "$ASSUME_YES" = "1" ]; then
+    [ "${ALLOW_LAKE_RESET:-}" = "1" ] || refuse "--yes needs ALLOW_LAKE_RESET=1 (or drop --yes and type the confirmation)"
+    PHRASE=""
+else
+    PHRASE=yes
 fi
 
 echo "=========================================="
 echo "  Complete Stack Reset and Rebuild"
 echo "=========================================="
 print_warning "This will DELETE ALL DATA in this Compose project's volumes and rebuild the stack!"
-if [ "$ASSUME_YES" != "1" ]; then
-    read -r -p "Are you sure you want to continue? (yes/no): " CONFIRM
-    if [ "$CONFIRM" != "yes" ]; then
-        print_info "Aborted by user"
-        exit 0
-    fi
+if [ -n "$PHRASE" ]; then
+    [ -t 0 ] || refuse "typed confirmation required but stdin is not a terminal (use --yes with ALLOW_LAKE_RESET=1)"
+    read -r -p "Type '${PHRASE}' to delete all volumes: " CONFIRM
+    [ "$CONFIRM" = "$PHRASE" ] || refuse "typed confirmation did not match"
 fi
+audit authorized "confirmed"
 
 print_step "Step 1: Stopping all services and removing project volumes..."
 compose down -v --remove-orphans || print_warning "Some services may not be running"
@@ -116,9 +163,11 @@ else
 fi
 
 wait_running() {
-    local service=$1 i
-    for i in $(seq 1 30); do
-        if compose ps "$service" 2>/dev/null | grep -qE "healthy|Up|running"; then
+    local service=$1 status
+    for _ in $(seq 1 30); do
+        # Capture first: under pipefail a `compose ps | grep -q` SIGPIPE reads as "not ready".
+        status="$(compose ps "$service" 2>/dev/null || true)"
+        if grep -qE "healthy|Up|running" <<<"$status"; then
             print_info "${service} is ready"
             return 0
         fi
@@ -169,6 +218,7 @@ check_endpoint() {
 if compose_has grafana; then check_endpoint "http://localhost:3000" "Grafana"; fi
 if compose_has prometheus; then check_endpoint "http://localhost:9090/-/ready" "Prometheus"; fi
 
+audit completed "stack reset finished"
 echo ""
 echo "=========================================="
 echo "  Reset Complete!"

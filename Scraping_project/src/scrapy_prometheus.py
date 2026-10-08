@@ -1,4 +1,5 @@
 import logging
+import re
 import threading
 import time
 from typing import Any, Optional
@@ -152,6 +153,25 @@ if PROMETHEUS_AVAILABLE:
         "Sample summary of scraped content for qualitative monitoring",
         ["spider"],
     )
+    CRAWLER_SUMMARY_SKIPPED = Counter(
+        "scrapy_crawler_summary_skipped_total",
+        "GrafanaSummaryPipeline summary exports skipped instead of failing the crawl (#462)",
+        ["spider", "reason"],
+    )
+
+    # Hidden-URL discovery quality, per extractor category (#392). Grafana:
+    #   sum by (category) (rate(scrapy_hidden_urls_found_total[5m]))
+    #   sum by (route) (rate(scrapy_hidden_urls_routed_total[5m]))
+    HIDDEN_URLS_FOUND = Counter(
+        "scrapy_hidden_urls_found_total",
+        "URLs found by HiddenURLExtractor, by category (offsite = outside allowed_domains)",
+        ["spider", "category"],
+    )
+    HIDDEN_URLS_ROUTED = Counter(
+        "scrapy_hidden_urls_routed_total",
+        "What happened to each hidden URL: depth_crawl, js, offsite, low_value or duplicate",
+        ["spider", "route"],
+    )
 
     # --- Delta Lake Manager Metrics ---
     DELTA_MANAGER_CONTEXT_ENTER_TOTAL = Counter(
@@ -182,6 +202,20 @@ else:
     NEW_URLS_FOUND_PER_MINUTE = AVERAGE_FILE_SIZE_BYTES = None
     OFFSITE_LINKS_FOUND = OFFSITE_CANDIDATES_SAVED = None
     CRAWLER_CONTENT_SUMMARY = None
+    CRAWLER_SUMMARY_SKIPPED = None
+    HIDDEN_URLS_FOUND = HIDDEN_URLS_ROUTED = None
+
+_LABEL_CHARS = re.compile(r"[^a-z0-9_]+")
+
+
+def bounded_label(value: Any, max_len: int = 40) -> str:
+    """Low-cardinality label value (#270): the part before any ':' (so
+    ``non_html:<media type>`` or ``error:<url>`` collapse to their reason),
+    lower-cased, [a-z0-9_] only, capped at ``max_len``."""
+    text = str(value or "").split(":", 1)[0].strip().lower()
+    text = _LABEL_CHARS.sub("_", text).strip("_")[:max_len]
+    return text or "unknown"
+
 
 class PrometheusExtension:
 
@@ -260,7 +294,7 @@ class PrometheusExtension:
         ITEMS_SCRAPED.labels(spider=spider.name).inc()
 
         if isinstance(item, dict) and item.get("skip_reason"):
-            skip_reason = item["skip_reason"]
+            skip_reason = bounded_label(item["skip_reason"])
             URLS_SKIPPED.labels(spider=spider.name, skip_reason=skip_reason).inc()
 
             self.runs.tally(spider, skip_reason)

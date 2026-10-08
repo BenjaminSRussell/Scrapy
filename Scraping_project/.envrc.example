@@ -1,0 +1,18 @@
+# direnv example (optional). Copy it and allow it once:
+#   cp .envrc.example .envrc && direnv allow
+# .envrc is git-ignored; never put secrets here. Keep them in .env (also ignored),
+# which is loaded below if it exists.
+
+# Use the project venv created in CONTRIBUTING.md step 1 (python3.11 -m venv .venv).
+if [ -f .venv/bin/activate ]; then
+  source .venv/bin/activate
+else
+  log_status "no .venv yet: python3.11 -m venv .venv && pip install -r requirements.txt -r dev-requirements.txt -r ci-tools.txt"
+fi
+
+# Same import roots as pytest.ini (pythonpath = . src), so `python -m src...`,
+# examples/ and ad-hoc scripts resolve `src.*` imports from any subdirectory.
+export PYTHONPATH="$PWD:$PWD/src${PYTHONPATH:+:$PYTHONPATH}"
+
+# Local overrides such as REDIS_HOST, DELTA_LAKE_PATH or LOG_LEVEL (see .env.example).
+dotenv_if_exists .env

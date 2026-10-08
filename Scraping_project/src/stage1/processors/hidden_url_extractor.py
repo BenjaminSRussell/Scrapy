@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 class HiddenURLExtractor:
 
     JS_URL_PATTERNS = [
-        r'["\']/(api|v\d+)/[^"\']+["\']',
+        r'["\'](/(?:api|v\d+)/[^"\']+)["\']',
         r'fetch\s*\(\s*["\']([^"\']+)["\']',
         r'\.get\s*\(\s*["\']([^"\']+)["\']',
         r'\.post\s*\(\s*["\']([^"\']+)["\']',
@@ -25,9 +25,22 @@ class HiddenURLExtractor:
         r'endpoint:\s*["\']([^"\']+)["\']',
     ]
 
-    def __init__(self, base_url: str):
+    def __init__(self, base_url: str, allowed_domains: list[str] | None = None):
+        """``allowed_domains``: when given, off-domain URLs are moved out of the
+        crawlable categories into ``results["offsite"]`` at extraction time (#388)."""
         self.base_url = base_url
+        self.allowed_domains = [d.strip().lower().lstrip(".") for d in (allowed_domains or []) if d and d.strip()]
         self.compiled_patterns = [re.compile(p, re.IGNORECASE) for p in self.JS_URL_PATTERNS]
+
+    def is_in_scope(self, url: str) -> bool:
+        """Exact-or-subdomain host match against ``allowed_domains`` (no list = everything)."""
+        if not self.allowed_domains:
+            return True
+        try:
+            host = (urlparse(url).hostname or "").rstrip(".").lower()
+        except ValueError:
+            return False
+        return bool(host) and any(host == d or host.endswith("." + d) for d in self.allowed_domains)
 
     def extract_all_hidden_urls(self, response: Response) -> dict[str, list[str]]:
         results = {
@@ -39,6 +52,14 @@ class HiddenURLExtractor:
             "sitemaps": self.extract_sitemap_urls(response),
             "api_endpoints": self.extract_api_endpoints(response),
         }
+
+        if self.allowed_domains:
+            offsite: set[str] = set()
+            for category, urls in results.items():
+                kept = [u for u in urls if self.is_in_scope(u)]
+                offsite.update(u for u in urls if not self.is_in_scope(u))
+                results[category] = kept
+            results["offsite"] = sorted(offsite)
 
         total_found = sum(len(urls) for urls in results.values())
         if total_found > 0:
@@ -172,9 +193,11 @@ class HiddenURLExtractor:
             combined_script = "\n".join(scripts)
 
             api_patterns = [
-                r'["\']/(api|v\d+)/[a-z_\-/]+["\']',
-                r'["\']/(graphql|gql)["\']',
-                r'["\']/(rest|restapi)/[a-z_\-/]+["\']',
+                # Capture the whole path; the old groups captured only "api"/"v1"
+                # so every endpoint collapsed to /api or /v1 (#481).
+                r'["\'](/(?:api|v\d+)/[a-z0-9_\-/]+)["\']',
+                r'["\'](/(?:graphql|gql))["\']',
+                r'["\'](/(?:rest|restapi)/[a-z0-9_\-/]+)["\']',
             ]
 
             for pattern in api_patterns:

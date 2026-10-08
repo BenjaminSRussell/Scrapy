@@ -3,7 +3,7 @@
 # Access Grafana - Quick Port Forward Script
 # ==================================================================
 
-set -e
+set -euo pipefail  # project standard (#822): scripts/SHELL_STANDARD.md
 
 echo "=========================================="
 echo "  Grafana Port Forward"
@@ -11,7 +11,10 @@ echo "=========================================="
 echo ""
 
 # Check if Grafana pod is running
-if ! kubectl get pods -l app=grafana | grep -q "Running"; then
+# Capture first: under pipefail `kubectl ... | grep -q` can fail when grep exits
+# early and kubectl gets SIGPIPE, which would misreport a running pod.
+GRAFANA_PODS="$(kubectl get pods -l app=grafana 2>/dev/null || true)"
+if ! grep -q "Running" <<<"$GRAFANA_PODS"; then
     echo "❌ Grafana pod is not running!"
     echo ""
     echo "Deploy Grafana first with:"

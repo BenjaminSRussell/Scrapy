@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import ast
 import functools
+import json
 import re
 import shutil
 import subprocess
@@ -134,6 +135,19 @@ def test_every_rule_metric_has_a_producer(rule, expr):
     assert not missing, f"{rule} reads metrics nothing produces: {missing}"
 
 
+def _dashboard_exprs() -> list[tuple[str, str]]:
+    """PromQL in the provisioned health dashboard (#157), variables expanded."""
+    doc = json.loads((MON / "dashboards" / "scraping_pipeline_health.json").read_text())
+    return [(f"{p['title']}:{t['refId']}", t["expr"].replace("$spider", ".*").replace("$stage", ".*"))
+            for p in doc["panels"] for t in p.get("targets", [])]
+
+
+@pytest.mark.parametrize("panel,expr", _dashboard_exprs(), ids=lambda v: v if ":" in str(v) else "")
+def test_every_dashboard_metric_has_a_producer(panel, expr):
+    missing = sorted(metric_names(expr) - _catalog())
+    assert not missing, f"dashboard panel {panel} reads metrics nothing produces: {missing}"
+
+
 def test_the_old_phantom_names_are_gone():
     exprs = " ".join(e for _, e in _rule_exprs())
     for phantom in ("ingestor_records_failed_total", "ingestor_batch_write_latency_ms",
@@ -153,7 +167,12 @@ def test_external_exporter_jobs_are_scraped():
 
 
 def test_up_selectors_name_real_jobs():
+    # Rules are shared by the compose config (monitoring/prometheus.yml) and the
+    # Helm one; compose only scrapes what compose runs (#371), so a selector
+    # must name a job in at least one of them.
     jobs = {j["job_name"] for j in yaml.safe_load((MON / "prometheus.yml").read_text())["scrape_configs"]}
+    helm = (ROOT / "k8s" / "helm" / "scraping-pipeline" / "templates" / "prometheus-statefulset.yaml").read_text()
+    jobs |= set(re.findall(r"job_name: '([^']+)'", helm))
     for rule, expr in _rule_exprs():
         for job in re.findall(r'up\{job="([^"]+)"\}', expr):
             assert job in jobs, f"{rule}: up{{job={job!r}}} matches no scrape job"

@@ -85,10 +85,11 @@ def test_not_configured_without_limit_or_when_disabled(tmp_path):
 
 
 def test_registered_for_crawls_and_orchestrator():
+    """530: after HttpCacheQuota (#496) at 520; extension priorities must be unique."""
     settings = (ROOT / "src" / "settings.py").read_text()
     orch = (ROOT / "src" / "orchestrator" / "pipeline_orchestrator.py").read_text()
-    assert '"src.memory_soft_stop.MemorySoftStop": 520' in settings
-    assert '"src.memory_soft_stop.MemorySoftStop": 520' in orch
+    assert '"src.memory_soft_stop.MemorySoftStop": 530' in settings
+    assert '"src.memory_soft_stop.MemorySoftStop": 530' in orch
 
 
 CRAWL = textwrap.dedent('''
@@ -127,7 +128,7 @@ CRAWL = textwrap.dedent('''
     p = CrawlerProcess({
         "LOG_LEVEL": "WARNING",
         "ITEM_PIPELINES": {"__main__.Batching": 100},
-        "EXTENSIONS": {"src.memory_soft_stop.MemorySoftStop": 520},
+        "EXTENSIONS": {"src.memory_soft_stop.MemorySoftStop": 530},
         "MEMORY_SOFT_STOP_CGROUP_ROOT": str(cg),
         "MEMORY_SOFT_STOP_INTERVAL": 0.05,
         "TELNETCONSOLE_ENABLED": False,

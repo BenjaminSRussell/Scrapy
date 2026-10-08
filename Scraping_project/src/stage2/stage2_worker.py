@@ -1,22 +1,26 @@
 import asyncio
 import logging
 import os
+import random
 import time
 from collections import Counter as TallyCounter
 from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Any
+from urllib.parse import urljoin
 
 import aiohttp
 import pyarrow as pa
 from bs4 import BeautifulSoup
 from deltalake import DeltaTable
 
-from src.core.config import stage2_quality_thresholds, stage_worker_settings
+from src.core.config import get_config, stage2_quality_thresholds, stage_worker_settings
 from src.core.constants import TABLE_STAGE2_ERRORS
 from src.utils.delta import get_delta
+from src.utils.ssrf import SSRFBlocked, count_blocked, ssrf_block_reason
 from src.utils.soft_ban import DomainBackoff, SoftBanDetector, count_deferred, count_soft_ban, domain_of
 from src.utils.postgres import get_postgres_manager
+from src.utils.retry import CircuitBreaker
 from src.utils.metrics_sink import record_error, record_performance
 from src.otel_tracing import ensure_crawl_job_id, init_tracing, start_span
 
@@ -55,6 +59,37 @@ try:  # queue status MERGE failures after retries (#168)
 except Exception:
     STAGE2_QUEUE_UPDATE_FAILURES = None
 
+try:  # empty vs unreadable queue, so idle is distinguishable from stuck (#220)
+    from prometheus_client import Counter as _ECounter
+    from prometheus_client import Gauge as _EGauge
+
+    STAGE2_QUEUE_EMPTY: Any = _EGauge(
+        "stage2_queue_empty",
+        "1 when the last Stage 2 run found no pending stage2_queue rows, else 0.",
+    )
+    STAGE2_QUEUE_PENDING: Any = _EGauge(
+        "stage2_queue_pending",
+        "Pending stage2_queue rows seen at the start of the last Stage 2 run.",
+    )
+    STAGE2_QUEUE_READ_FAILURES: Any = _ECounter(
+        "stage2_queue_read_failures_total",
+        "Stage 2 runs that could not read stage2_queue at all (not the same as empty).",
+    )
+except Exception:
+    STAGE2_QUEUE_EMPTY = STAGE2_QUEUE_PENDING = STAGE2_QUEUE_READ_FAILURES = None
+
+
+def _record_queue_state(pending: int | None) -> None:
+    """Export Stage 2 queue state (#220). ``None`` means the queue was unreadable."""
+    if pending is None:
+        if STAGE2_QUEUE_READ_FAILURES is not None:
+            STAGE2_QUEUE_READ_FAILURES.inc()
+        return
+    if STAGE2_QUEUE_PENDING is not None:
+        STAGE2_QUEUE_PENDING.set(pending)
+    if STAGE2_QUEUE_EMPTY is not None:
+        STAGE2_QUEUE_EMPTY.set(1 if pending == 0 else 0)
+
 try:  # analysis upsert failures; their queue rows are left pending (#311)
     from prometheus_client import Counter as _ACounter
 
@@ -64,6 +99,64 @@ try:  # analysis upsert failures; their queue rows are left pending (#311)
     )
 except Exception:
     STAGE2_ANALYSIS_WRITE_FAILURES = None
+
+try:  # per-host concurrency cap (#195)
+    from prometheus_client import Counter as _HCounter
+
+    STAGE2_HOST_THROTTLED = _HCounter(
+        "stage2_host_throttled_total",
+        "Stage 2 fetches that waited for a per-host concurrency slot (#195).",
+    )
+except Exception:
+    STAGE2_HOST_THROTTLED = None
+
+DEFAULT_STAGE2_PER_HOST_CONCURRENCY = 4
+
+
+def stage2_per_host_concurrency(max_concurrent: int, config: Any = None) -> int:
+    """Per-host in-flight cap for Stage 2 (#195), clamped to [1, max_concurrent].
+
+    Precedence: env ``STAGE2_PER_HOST_CONCURRENCY`` > config
+    ``stage2.per_host_concurrency`` > ``stages.stage2.per_host_concurrency`` > 4.
+    """
+    candidates: list[Any] = [os.getenv("STAGE2_PER_HOST_CONCURRENCY")]
+    try:
+        cfg = config if config is not None else get_config()
+        candidates += [cfg.get("stage2.per_host_concurrency"), cfg.get("stages.stage2.per_host_concurrency")]
+    except Exception:
+        pass
+    value = DEFAULT_STAGE2_PER_HOST_CONCURRENCY
+    for raw in candidates:
+        if raw in (None, ""):
+            continue
+        try:
+            parsed = int(raw)
+        except (TypeError, ValueError):
+            logger.warning(f"[STAGE2] Ignoring invalid per-host concurrency {raw!r}")
+            continue
+        if parsed >= 1:
+            value = parsed
+            break
+    return max(1, min(value, max(1, int(max_concurrent))))
+
+
+try:  # in-request HTTP retries and per-host circuit breaker (#158)
+    from prometheus_client import Counter as _HCounter
+
+    STAGE2_HTTP_FETCHES = _HCounter(
+        "stage2_http_fetches_total",
+        "Stage 2 URL fetches by outcome: first_try, recovered (succeeded after a retry), "
+        "exhausted (transient failure on every attempt) or circuit_open (host breaker open; URL deferred).",
+        ["outcome"],
+    )
+    STAGE2_HTTP_RETRIES = _HCounter(
+        "stage2_http_retries_total",
+        "Stage 2 HTTP retry attempts by transient reason (timeout, connection, http_5xx/408).",
+        ["reason"],
+    )
+except Exception:
+    STAGE2_HTTP_FETCHES = None
+    STAGE2_HTTP_RETRIES = None
 
 DEFAULT_STAGE2_MERGE_RETRIES = 4
 ANALYSIS_TABLE = "stage2_page_analysis"
@@ -89,12 +182,48 @@ def split_stage2_results(results: list[Any]) -> tuple[list[dict[str, Any]], list
 
 DEFAULT_STAGE2_MAX_RETRIES = 3
 SOFT_BAN_PREFIX = "soft_ban:"
+# In-request retry policy (#158). 429 is deliberately absent: it is a soft-ban
+# signal (#582) handled by quarantine + DomainBackoff, and retried by the queue.
+TRANSIENT_HTTP_STATUSES = frozenset({408, 500, 502, 503, 504})
+DEFAULT_STAGE2_HTTP_ATTEMPTS = 3
+DEFAULT_STAGE2_HTTP_BACKOFF_BASE = 0.5
+DEFAULT_STAGE2_HTTP_BACKOFF_MAX = 8.0
+DEFAULT_STAGE2_BREAKER_FAILURES = 5
+DEFAULT_STAGE2_BREAKER_RECOVERY = 60
+
+
+def _env_number(name: str, default: float, minimum: float, cast: Any = float) -> Any:
+    try:
+        return max(minimum, cast(os.getenv(name, default)))
+    except (TypeError, ValueError):
+        return cast(default)
+
+
+def _parse_retry_after(value: str | None) -> float | None:
+    """Seconds from a numeric Retry-After header; HTTP-date forms are ignored."""
+    if not value:
+        return None
+    try:
+        return max(0.0, float(value.strip()))
+    except ValueError:
+        return None
+
+
+class TransientHTTPError(Exception):
+    """A retryable HTTP status (TRANSIENT_HTTP_STATUSES) that was not a soft ban."""
+
+    def __init__(self, status: int, retry_after: float | None = None):
+        super().__init__(f"HTTP {status}")
+        self.status = status
+        self.retry_after = retry_after
 
 
 def _is_terminal_error(row: dict[str, Any]) -> bool:
     """Errors that retrying cannot fix: bad URLs and 4xx other than 408/429."""
     if row.get("error_message") == "invalid_url":
         return True
+    if str(row.get("error_message") or "").startswith("ssrf_blocked:"):
+        return True  # policy refusal (#682): retrying cannot make it safe
     if str(row.get("error_message") or "").startswith(SOFT_BAN_PREFIX):
         return False  # soft ban/captcha (#582): retry after backoff, up to max_retries
     code = int(row.get("error_code") or 0)
@@ -166,6 +295,20 @@ class Stage2Worker:
         # Soft-ban/captcha guard (#582).
         self.soft_ban = SoftBanDetector()
         self.domain_backoff = DomainBackoff(stage="stage2")
+        # In-request retries + per-host circuit breaker (#158).
+        self.http_attempts = _env_number("STAGE2_HTTP_ATTEMPTS", DEFAULT_STAGE2_HTTP_ATTEMPTS, 1, int)
+        self.http_backoff_base = _env_number("STAGE2_HTTP_BACKOFF_BASE", DEFAULT_STAGE2_HTTP_BACKOFF_BASE, 0.0)
+        self.http_backoff_max = _env_number("STAGE2_HTTP_BACKOFF_MAX", DEFAULT_STAGE2_HTTP_BACKOFF_MAX, 0.0)
+        self.breaker_failures = _env_number("STAGE2_BREAKER_FAILURES", DEFAULT_STAGE2_BREAKER_FAILURES, 1, int)
+        self.breaker_recovery = _env_number("STAGE2_BREAKER_RECOVERY", DEFAULT_STAGE2_BREAKER_RECOVERY, 0, int)
+        self._host_breakers: dict[str, CircuitBreaker] = {}
+        # Per-host concurrency cap (#195): a batch dominated by one host can't
+        # stampede it or hog the global slots other hosts are waiting for.
+        self.per_host_concurrency = stage2_per_host_concurrency(max_concurrent)
+        self._host_slots: dict[str, asyncio.Semaphore] = {}
+        logger.info(
+            f"[STAGE2] Concurrency: global={max_concurrent}, per_host={self.per_host_concurrency}"
+        )
 
     def _load_prior_failures(self) -> dict[str, int]:
         """Per-URL failure counts from earlier runs, from the stage2_errors quarantine."""
@@ -204,11 +347,29 @@ class Stage2Worker:
             async with self._http_session():
                 return await self._run_traced()
 
+    def _per_host_limit(self) -> int:
+        limit = getattr(self, "per_host_concurrency", None)
+        if limit is None:  # instances built without __init__ (tests)
+            limit = stage2_per_host_concurrency(self.max_concurrent)
+            self.per_host_concurrency = limit
+        return int(limit)
+
+    def _host_slot(self, domain: str) -> asyncio.Semaphore:
+        """The per-host semaphore for ``domain`` (created on first use)."""
+        slots: dict[str, asyncio.Semaphore] | None = getattr(self, "_host_slots", None)
+        if slots is None:
+            slots = self._host_slots = {}
+        slot: asyncio.Semaphore | None = slots.get(domain)
+        if slot is None:
+            slot = slots[domain] = asyncio.Semaphore(self._per_host_limit())
+        return slot
+
     def _new_session(self) -> aiohttp.ClientSession:
-        """Pooled session: connector limit matches worker concurrency (#200)."""
+        """Pooled session: connector limit matches worker concurrency (#200),
+        and connections per host match the per-host cap (#195)."""
         connector = aiohttp.TCPConnector(
             limit=self.max_concurrent,
-            limit_per_host=max(1, min(self.max_concurrent, 10)),
+            limit_per_host=self._per_host_limit(),
             ttl_dns_cache=300,
         )
         return aiohttp.ClientSession(connector=connector, timeout=aiohttp.ClientTimeout(total=30))
@@ -218,6 +379,7 @@ class Stage2Worker:
         """Share one ClientSession across every batch of a run; always closed."""
         session = self._new_session()
         self._session = session
+        self._host_slots = {}  # semaphores bind to the running loop; fresh per run
         try:
             yield session
         finally:
@@ -231,19 +393,28 @@ class Stage2Worker:
         try:
             queue_data = self.delta.read_table("stage2_queue")
             # LakehouseManager / DeltaHelper return list[dict]; tolerate pyarrow Table
+            # DeltaHelper turns read errors into [] and keeps the error (#220).
+            read_error = getattr(self.delta, "last_read_error", None)
+            if isinstance(read_error, Exception):
+                raise read_error
             if hasattr(queue_data, "to_pylist"):
                 all_queue_items = queue_data.to_pylist()
             else:
                 all_queue_items = queue_data or []
         except Exception as e:
-            logger.warning(f"[STAGE2] No URLs found in stage2_queue: {e}")
+            # Unreadable is not "empty": count it so a broken queue does not
+            # look like a healthy idle pipeline (#220).
+            logger.error(f"[STAGE2] Could not read stage2_queue: {e}")
+            _record_queue_state(None)
             return counts
 
         if not all_queue_items:
             logger.warning("[STAGE2] No URLs found in stage2_queue")
+            _record_queue_state(0)
             return counts
 
         pending = [item for item in all_queue_items if item.get("status") == "pending"]
+        _record_queue_state(len(pending))
 
         logger.info(f"[STAGE2] Found {len(pending)} pending URLs to analyze (out of {len(all_queue_items)} total)")
 
@@ -254,6 +425,11 @@ class Stage2Worker:
         prior_failures = self._load_prior_failures()
 
         for i in range(0, len(pending), self.batch_size):
+            stop = self._crawl_guard_reason()
+            if stop:
+                # #456: stop starting new batches; remaining URLs stay pending.
+                logger.critical(f"[STAGE2] Crawl guard engaged ({stop}); leaving {len(pending) - i} URLs pending")
+                break
             batch = pending[i : i + self.batch_size]
             logger.info(f"Processing batch {i // self.batch_size + 1}: {len(batch)} URLs")
 
@@ -445,6 +621,50 @@ class Stage2Worker:
             .execute()
         )
 
+    MAX_REDIRECTS = 10
+    REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
+
+    async def _get_guarded(self, session: Any, url: str) -> Any:
+        """GET following redirects by hand so every hop passes the SSRF guard
+        *before* a connection is made (#682). aiohttp's own
+        ``allow_redirects=True`` would follow a public URL into 169.254.169.254
+        or an in-cluster service unchecked."""
+        current = url
+        for _ in range(self.MAX_REDIRECTS + 1):
+            reason = ssrf_block_reason(current)
+            if reason is not None:
+                raise SSRFBlocked(current, reason)
+            response = await session.get(current, allow_redirects=False)
+            location = response.headers.get("Location")
+            if response.status in self.REDIRECT_STATUSES and location:
+                response.release()
+                current = urljoin(str(response.url), location)
+                continue
+            return response
+        raise SSRFBlocked(current, "too_many_redirects")
+
+    def _crawl_guard(self) -> Any:
+        guard = getattr(self, "_crawl_guard_obj", None)
+        if guard is None:
+            from src.utils.crawl_guard import CrawlGuard
+
+            guard = self._crawl_guard_obj = CrawlGuard.from_config()
+        return guard
+
+    def _crawl_guard_reason(self) -> str | None:
+        try:
+            reason: str | None = self._crawl_guard().block_reason(stage="stage2")
+            return reason
+        except Exception as e:  # guard must never take Stage 2 down
+            logger.warning(f"[STAGE2] crawl guard check failed: {e}")
+            return None
+
+    def _crawl_guard_charge(self) -> None:
+        try:
+            self._crawl_guard().charge(requests=1)
+        except Exception as e:
+            logger.warning(f"[STAGE2] crawl guard charge failed: {e}")
+
     async def _analyze_url(self, record: dict[str, Any]) -> dict[str, Any]:
         url_value = record.get("url")
         url_hash_value = record.get("url_hash")
@@ -458,11 +678,26 @@ class Stage2Worker:
         url_hash = url_hash_value if isinstance(url_hash_value, str) else ""
         is_heavy = bool(record.get("is_heavy", False))
 
-        async with self.semaphore:
-            domain = domain_of(url)
+        domain = domain_of(url)
+        host_slot = self._host_slot(domain)
+        if host_slot.locked() and STAGE2_HOST_THROTTLED is not None:
+            STAGE2_HOST_THROTTLED.inc()
+        # Per-host slot first, so URLs queued behind a busy host don't hold
+        # global slots that other hosts could use (#195).
+        async with host_slot, self.semaphore:
             backoff = self._backoff()
             if backoff.blocked(domain):
                 count_deferred("stage2")
+                return {"url": url, "url_hash": url_hash, "_deferred": True}
+            if self._crawl_guard_reason():
+                # Kill switch / spent budget (#456): not attempted, not a failure.
+                return {"url": url, "url_hash": url_hash, "_deferred": True}
+            self._crawl_guard_charge()
+            breaker = self._breaker(domain)
+            if not breaker.can_execute():
+                # Host keeps failing: leave the row pending instead of burning attempts.
+                count_deferred("stage2")
+                self._count_fetch("circuit_open")
                 return {"url": url, "url_hash": url_hash, "_deferred": True}
             try:
                 session = self._session
@@ -470,36 +705,11 @@ class Stage2Worker:
                 if session is None:
                     session = self._new_session()
                 try:
-                    async with session.get(url, allow_redirects=True) as response:
-                        if response.status >= 400:
-                            body = ""
-                            if response.status in (403, 503):
-                                body = await self._read_error_body(response)
-                            sig = self._detector().detect(response.status, body, response.headers)
-                            if sig:
-                                return self._soft_ban_record(url, url_hash, response.status, sig, domain)
-                            return self._error_record(url, url_hash, response.status, "http_error")
-
-                        content_type = response.headers.get("Content-Type", "").lower()
-
-                        if "text/html" in content_type:
-                            html = await response.text()
-                            sig = self._detector().detect(response.status, html, response.headers)
-                            if sig:  # challenge page served as 200: never analysed as content
-                                return self._soft_ban_record(url, url_hash, response.status, sig, domain)
-                            return await self._analyze_html(url, url_hash, html, is_heavy)
-                        elif "application/pdf" in content_type:
-                            return self._route_pdf_to_stage4(url, url_hash)
-                        else:
-                            return self._minimal_record(url, url_hash, content_type)
+                    return await self._fetch_with_retries(session, url, url_hash, is_heavy, domain, breaker)
                 finally:
                     if owns_session:
                         await session.close()
-
-            except TimeoutError as e:
-                self._log_error_to_postgres(url, "TimeoutError", str(e))
-                return self._error_record(url, url_hash, 0, "timeout")
-            except aiohttp.ClientError as e:
+            except aiohttp.ClientError as e:  # non-transient client errors fail fast
                 error_type = f"ClientError: {type(e).__name__}"
                 self._log_error_to_postgres(url, error_type, str(e))
                 return self._error_record(url, url_hash, 0, error_type)
@@ -507,6 +717,120 @@ class Stage2Worker:
                 logger.error(f"Failed to analyze {url}: {e}")
                 self._log_error_to_postgres(url, type(e).__name__, str(e))
                 return self._error_record(url, url_hash, 0, f"error: {str(e)}")
+
+    async def _fetch_with_retries(
+        self,
+        session: aiohttp.ClientSession,
+        url: str,
+        url_hash: str,
+        is_heavy: bool,
+        domain: str,
+        breaker: CircuitBreaker,
+    ) -> dict[str, Any]:
+        """Fetch + analyse with bounded exponential backoff on transient failures (#158).
+
+        Retried: timeouts, connection/payload errors and TRANSIENT_HTTP_STATUSES.
+        Not retried: soft bans (quarantine + domain backoff), other 4xx, non-network errors.
+        Exhausting every attempt counts one failure on the host's circuit breaker.
+        """
+        attempts = max(1, int(getattr(self, "http_attempts", DEFAULT_STAGE2_HTTP_ATTEMPTS)))
+        code, message = 0, "timeout"
+        for attempt in range(1, attempts + 1):
+            retry_after: float | None = None
+            try:
+                result = await self._fetch_once(session, url, url_hash, is_heavy, domain)
+            except SSRFBlocked as blocked:  # policy, not a transient failure: never retried
+                count_blocked("stage2", blocked.reason)
+                logger.warning(f"[STAGE2] SSRF guard blocked {blocked.url} ({blocked.reason})")
+                return self._error_record(url, url_hash, 0, f"ssrf_blocked:{blocked.reason}")
+            except TransientHTTPError as e:
+                code, message, reason, retry_after = e.status, "http_error", f"http_{e.status}", e.retry_after
+                exc_type, exc_text = "HTTPError", str(e)
+            except TimeoutError as e:
+                code, message, reason = 0, "timeout", "timeout"
+                exc_type, exc_text = "TimeoutError", str(e)
+            except (aiohttp.ClientConnectionError, aiohttp.ClientPayloadError) as e:
+                code, message, reason = 0, f"ClientError: {type(e).__name__}", "connection"
+                exc_type, exc_text = message, str(e)
+            else:
+                breaker.record_success()
+                if attempt > 1:
+                    logger.info(f"[STAGE2] {url[:80]} succeeded on attempt {attempt}/{attempts}")
+                self._count_fetch("recovered" if attempt > 1 else "first_try")
+                return result
+
+            if attempt < attempts:
+                delay = self._retry_delay(attempt, retry_after)
+                logger.info(
+                    f"[STAGE2] Transient {reason} for {url[:80]} (attempt {attempt}/{attempts}); "
+                    f"retrying in {delay:.2f}s"
+                )
+                if STAGE2_HTTP_RETRIES is not None:
+                    STAGE2_HTTP_RETRIES.labels(reason=reason).inc()
+                await asyncio.sleep(delay)
+
+        breaker.record_failure()
+        self._count_fetch("exhausted")
+        logger.warning(f"[STAGE2] {url[:80]} failed after {attempts} attempt(s): {message} (code={code})")
+        self._log_error_to_postgres(url, exc_type, f"{exc_text} after {attempts} attempt(s)")
+        return self._error_record(url, url_hash, code, message)
+
+    async def _fetch_once(
+        self, session: aiohttp.ClientSession, url: str, url_hash: str, is_heavy: bool, domain: str
+    ) -> dict[str, Any]:
+        """One GET. Raises TransientHTTPError / TimeoutError / ClientError for the retry loop."""
+        response = await self._get_guarded(session, url)  # #682: every hop SSRF-checked
+        async with response:
+            if response.status >= 400:
+                body = ""
+                if response.status in (403, 503):
+                    body = await self._read_error_body(response)
+                sig = self._detector().detect(response.status, body, response.headers)
+                if sig:  # soft bans are never retried in-request (#582)
+                    return self._soft_ban_record(url, url_hash, response.status, sig, domain)
+                if response.status in TRANSIENT_HTTP_STATUSES:
+                    raise TransientHTTPError(response.status, _parse_retry_after(response.headers.get("Retry-After")))
+                return self._error_record(url, url_hash, response.status, "http_error")
+
+            content_type = response.headers.get("Content-Type", "").lower()
+
+            if "text/html" in content_type:
+                html = await response.text()
+                sig = self._detector().detect(response.status, html, response.headers)
+                if sig:  # challenge page served as 200: never analysed as content
+                    return self._soft_ban_record(url, url_hash, response.status, sig, domain)
+                return await self._analyze_html(url, url_hash, html, is_heavy)
+            elif "application/pdf" in content_type:
+                return self._route_pdf_to_stage4(url, url_hash)
+            else:
+                return self._minimal_record(url, url_hash, content_type)
+
+    def _retry_delay(self, attempt: int, retry_after: float | None = None) -> float:
+        """Exponential backoff with jitter, capped; a numeric Retry-After raises it (also capped)."""
+        cap = float(getattr(self, "http_backoff_max", DEFAULT_STAGE2_HTTP_BACKOFF_MAX))
+        base = min(cap, float(getattr(self, "http_backoff_base", DEFAULT_STAGE2_HTTP_BACKOFF_BASE)) * (2 ** (attempt - 1)))
+        delay: float = base * (0.5 + random.random() / 2)
+        if retry_after is not None:
+            delay = max(delay, min(float(retry_after), cap))
+        return delay
+
+    def _breaker(self, domain: str) -> CircuitBreaker:
+        breakers: dict[str, CircuitBreaker] | None = getattr(self, "_host_breakers", None)
+        if breakers is None:
+            breakers = self._host_breakers = {}
+        breaker: CircuitBreaker | None = breakers.get(domain)
+        if breaker is None:
+            breaker = breakers[domain] = CircuitBreaker(
+                failure_threshold=int(getattr(self, "breaker_failures", DEFAULT_STAGE2_BREAKER_FAILURES)),
+                recovery_timeout=int(getattr(self, "breaker_recovery", DEFAULT_STAGE2_BREAKER_RECOVERY)),
+                name=f"stage2:{domain}",
+            )
+        return breaker
+
+    @staticmethod
+    def _count_fetch(outcome: str) -> None:
+        if STAGE2_HTTP_FETCHES is not None:
+            STAGE2_HTTP_FETCHES.labels(outcome=outcome).inc()
 
     async def _analyze_html(self, url: str, url_hash: str, html: str, is_heavy: bool) -> dict[str, Any]:
         soup = BeautifulSoup(html, "html.parser")
@@ -596,7 +920,20 @@ class Stage2Worker:
         ratio_score = min(text_ratio * 0.4, 0.4)
         return round(word_score + ratio_score, 3)
 
+    # Full text up to this many chars rides on the stage4_large_docs row, so
+    # Stage 4 summarizes what Stage 2 already extracted instead of re-fetching
+    # the live URL (#320). Longer docs (or 0) leave it empty and Stage 4 fetches.
+    STAGE4_INLINE_TEXT_MAX_CHARS = 2_000_000
+
+    def _stage4_inline_text_limit(self) -> int:
+        raw = os.environ.get("STAGE4_INLINE_TEXT_MAX_CHARS")
+        try:
+            return int(raw) if raw is not None else self.STAGE4_INLINE_TEXT_MAX_CHARS
+        except ValueError:
+            return self.STAGE4_INLINE_TEXT_MAX_CHARS
+
     async def _route_to_stage4(self, url: str, url_hash: str, text: str, word_count: int, content_length: int):
+        limit = self._stage4_inline_text_limit()
         record = {
             "url": url,
             "url_hash": url_hash,
@@ -604,6 +941,8 @@ class Stage2Worker:
             "content_length": content_length,
             "status": "pending",
             "queued_at": datetime.now().isoformat(),
+            "text_content": text if text and 0 < len(text) <= limit else "",
+            "content_type": "html",
         }
 
         try:
@@ -748,4 +1087,7 @@ async def run_stage2_worker():
             await asyncio.sleep(10)
 
 if __name__ == "__main__":
+    from src.utils.worker_metrics import start_worker_metrics_server
+
+    start_worker_metrics_server("stage2")  # #789
     asyncio.run(run_stage2_worker())

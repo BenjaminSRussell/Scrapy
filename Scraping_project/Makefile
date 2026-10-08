@@ -1,6 +1,6 @@
 # Every recipe is phony (none produce a file named after the target) (#796).
 .PHONY: help install install-dev lock update-deps test test-unit test-integration test-fast \
-	test-coverage test-coverage-min test-watch lint lint-fix format typecheck security \
+	test-ci test-perf test-coverage test-coverage-min test-watch lint lint-fix format typecheck security \
 	security-full docker-build docker-up docker-down docker-down-clean docker-logs docker-ps \
 	docker-shell docker-test pre-commit pre-commit-update ci ci-docker clean clean-all dev \
 	serve stop restart shell notebook db-migrate db-reset logs metrics prometheus docs \
@@ -76,9 +76,17 @@ test-integration: ## Run integration tests (requires services)
 	@echo "$(BLUE)Running integration tests...$(NC)"
 	pytest tests/integration -v
 
-test-fast: ## Run fast tests only (excluding slow)
+test-fast: ## Run fast tests only (excluding slow and performance)
 	@echo "$(BLUE)Running fast tests...$(NC)"
-	pytest -v -m "not slow"
+	pytest -v -m "not slow and not performance"
+
+test-ci: ## Run the default PR selection exactly as CI does
+	@echo "$(BLUE)Running CI default test selection...$(NC)"
+	python -m pytest tests/ -m "not slow and not kafka and not performance" -o addopts= --strict-markers
+
+test-perf: ## Run load/performance tests (excluded from PR CI, #287)
+	@echo "$(BLUE)Running performance tests...$(NC)"
+	python -m pytest tests/performance -m performance -o addopts= -v
 
 test-coverage: ## Run tests with coverage report
 	@echo "$(BLUE)Running tests with coverage...$(NC)"
@@ -98,18 +106,17 @@ test-watch: ## Run tests in watch mode (needs `pip install pytest-watch`)
 
 # ruff covers the pyflakes/pycodestyle checks flake8 ran; flake8 had no config
 # and duplicated (and disagreed with) ruff, so it is no longer part of lint (#361).
-lint: ## Run all linters (ruff, black, isort)
+# Same single path as the pre-commit hooks (#357): ruff lint (incl. isort "I") + ruff format.
+lint: ## Run linters (ruff check + ruff format --check), same as pre-commit
 	@echo "$(BLUE)Running linters...$(NC)"
 	ruff check .
-	black --check src tests
-	isort --check-only src tests
+	ruff format --check src tests
 	@echo "$(GREEN)✓ Linting complete$(NC)"
 
-lint-fix: ## Fix linting issues automatically
+lint-fix: ## Fix linting issues automatically (ruff --fix + ruff format)
 	@echo "$(BLUE)Fixing linting issues...$(NC)"
 	ruff check --fix .
-	black src tests
-	isort src tests
+	ruff format src tests
 	@echo "$(GREEN)✓ Auto-fix complete$(NC)"
 
 format: lint-fix ## Format code (alias for lint-fix)

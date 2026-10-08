@@ -24,9 +24,23 @@ T = TypeVar('T', bound=BaseModel)
 
 
 class DeltaHelper:
-    """Centralized Delta Lake operations."""
+    """Centralized Delta Lake operations.
 
-    def __init__(self, base_path: Optional[Union[str, Path]] = None):
+    ``get_delta()`` is the single public write API for lake tables (#359).
+    Its helper is *shared*: it delegates to ``LakehouseManager.get_instance()``,
+    the same manager ``get_lakehouse_manager()`` / ``get_delta_manager()`` /
+    ``lakehouse_session()`` return. One process therefore has one write queue,
+    one writer thread and one schema cache, rather than two managers that
+    disagree. A ``DeltaHelper(path)`` constructed directly (tests, tools on
+    another lake) keeps its own private manager.
+
+    Writes are explicit about durability: ``write(..., async_write=True)``
+    (default) queues the batch on the manager's writer thread and returns once
+    queued; ``async_write=False`` writes synchronously and returns whether
+    the rows are committed. Both return False instead of raising.
+    """
+
+    def __init__(self, base_path: Optional[Union[str, Path]] = None, shared: bool = False):
         """
         Initialize Delta helper.
 
@@ -34,6 +48,8 @@ class DeltaHelper:
             base_path: Base path for Delta Lake storage. Defaults to the
                 DELTA_LAKE_PATH env var, then config ``delta_lake.base_path``,
                 then ./data/delta_lake (same order as LakehouseManager).
+            shared: Delegate to the process-wide ``LakehouseManager``
+                singleton (what ``get_delta()`` does) instead of a private one.
         """
         if base_path is None:
             base_path = os.getenv("DELTA_LAKE_PATH")
@@ -44,13 +60,36 @@ class DeltaHelper:
 
         self.base_path = Path(base_path)
         self.base_path.mkdir(parents=True, exist_ok=True)
+        self.shared = shared
         self._manager: Optional["LakehouseManager"] = None
+        # The singleton this helper last attached to; any other non-None
+        # _manager was set explicitly (tests, tools) and is left alone.
+        self._attached: Optional["LakehouseManager"] = None
 
     @property
     def manager(self) -> "LakehouseManager":
-        """Lazy load lakehouse manager."""
+        """The lakehouse manager this helper writes through (lazy)."""
+        from src.lakehouse.lakehouse_manager import LakehouseManager
+
+        if self.shared:
+            if self._manager is not None and self._manager is not self._attached:
+                return self._manager  # injected explicitly, or a private manager for another lake
+            current = LakehouseManager._instance
+            if current is not None and self._manager is current:
+                return current
+            if current is None or _same_path(current.base_path, self.base_path):
+                # (Re)attach to the singleton, e.g. after lakehouse_session()
+                # reset it, so we never write through a shut-down manager.
+                self._manager = self._attached = LakehouseManager.get_instance(base_path=str(self.base_path))
+                return self._manager
+            if self._manager is None:
+                logger.warning(
+                    f"LakehouseManager singleton is on {current.base_path}, not {self.base_path}; "
+                    "get_delta() uses a separate manager for its lake (#359)"
+                )
+                self._manager = LakehouseManager(str(self.base_path))
+            return self._manager
         if self._manager is None:
-            from src.lakehouse.lakehouse_manager import LakehouseManager
             self._manager = LakehouseManager(str(self.base_path))
         return self._manager
 
@@ -93,10 +132,14 @@ class DeltaHelper:
             List of dictionaries representing rows (empty list on error / missing data)
         """
         try:
-            return self.manager.read_table(table_name, **kwargs)
+            rows = self.manager.read_table(table_name, **kwargs)
         except Exception as e:
             logger.error(f"Failed to read_table from {table_name}: {e}")
+            # Callers that must tell "empty" from "unreadable" check this (#220).
+            self.last_read_error: Exception | None = e
             return []
+        self.last_read_error = None
+        return rows
 
     def write(
         self,
@@ -305,6 +348,13 @@ class DeltaHelper:
         return self.manager.get_table_path(table_name)
 
 
+def _same_path(a: Union[str, Path], b: Union[str, Path]) -> bool:
+    try:
+        return Path(a).resolve() == Path(b).resolve()
+    except OSError:
+        return str(a) == str(b)
+
+
 # Global instance
 _delta_helper: Optional[DeltaHelper] = None
 
@@ -330,7 +380,7 @@ def get_delta(base_path: Optional[Path] = None) -> DeltaHelper:
     """
     global _delta_helper
     if _delta_helper is None:
-        _delta_helper = DeltaHelper(base_path)
+        _delta_helper = DeltaHelper(base_path, shared=True)
     return _delta_helper
 
 

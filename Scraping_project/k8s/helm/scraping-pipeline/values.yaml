@@ -88,6 +88,15 @@ postgresql:
   auth:
     database: scraping_pipeline
     username: postgres
+    # #538: least-privilege role the application connects as. files/init-db.sql
+    # creates it from APP_DB_USER/APP_DB_PASSWORD (SELECT/INSERT on the pipeline
+    # tables only); `username` above stays the superuser for init/migrations.
+    # Empty = app connects as `username` (pre-#538 behaviour). Recommended for new
+    # installs: appUsername=scrapy_app plus secrets.postgres.appPassword (or, with
+    # external secrets, an APP_DB_PASSWORD key in postgres-credentials, whose
+    # DB_PASSWORD must then be the app password). Existing volumes never re-run
+    # init scripts: run files/init-db.sql as the superuser once before enabling.
+    appUsername: ""
     # Password should be set via secret or external secret manager
     existingSecret: "postgres-credentials"
     secretKeys:
@@ -133,6 +142,11 @@ zookeeper:
 
 kafka:
   enabled: true
+  # post-install/upgrade Job: `python -m src.utils.kafka_topics` creates the
+  # topics config.yml declares (validation_failures etc.) if missing (#410).
+  topicsJob:
+    enabled: true
+    backoffLimit: 10
   image:
     repository: confluentinc/cp-kafka
     tag: "7.9.1"
@@ -309,6 +323,14 @@ scrapyApp:
       storageClass: ""
       accessMode: ReadWriteMany
       size: 200Gi
+
+# Queue-worker metrics endpoint (#789). Stage 2/3 workers serve their
+# prometheus_client registry on this port; Prometheus discovers every pod via a
+# headless Service (dns_sd_configs), so replicas are scraped individually.
+workerMetrics:
+  enabled: true
+  port: 9430  # outside the Scrapy 9410-9420 range
+  path: /metrics
 
 stage2Worker:
   enabled: true
@@ -521,6 +543,7 @@ secrets:
   # NEVER deploy with these default values!
   postgres:
     password: ""  # MUST BE SET - see warning above
+    appPassword: ""  # required when postgresql.auth.appUsername is set (#538); must differ from password
 
   grafana:
     adminUser: "admin"

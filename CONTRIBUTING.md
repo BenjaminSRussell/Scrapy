@@ -44,10 +44,72 @@ node --test dashboard/tests/      # dashboard helpers (CI Dashboard workflow)
 `./run_all_tests.sh` wraps the pytest line (pass a path to narrow it). Some tests use
 Redis/Postgres when they are reachable; CI provides both as service containers.
 
+## 4a. Quick local checks
+
+- **Smoke check (#323).** `bash scripts/smoke_local.sh` checks the Python version, core imports and `src.settings`, plus optional Redis and Playwright (these only warn). It then runs a fast offline test subset and exits non-zero on any failure. `--no-tests` skips the pytest step; `SMOKE_TESTS="..."` picks a different subset.
+- **CI matrix locally (#350).** `pip install nox`, then:
+  - `nox` runs `lint` (ruff + mypy + bandit, the same gates as CI) and `tests` on every Python in the matrix that you have installed (3.11, 3.12).
+  - `nox -s tests-3.12 -- tests/unit -x` runs one interpreter with extra pytest args.
+
+  The matrix lives in `noxfile.py` (`PYTHONS`); a unit test keeps it equal to `.github/workflows/main.yml`.
+- **Playwright (optional, #387).** You only need a browser for the JS spider and its tests. Everything else, including the default test set, runs without one:
+
+  ```bash
+  python -m playwright install chromium          # add --with-deps on a fresh Debian/Ubuntu box
+  ```
+
+## 4b. Editor and dev container
+
+- **VS Code (#363).** `.vscode/launch.json` has debug configs for the current file, the current test file, all unit tests and `cli.py`. `.vscode/tasks.json` has tasks for unit tests, the CI default set, the CI lint gates, the smoke check and `start.py`. All of them run from `Scraping_project/` with `PYTHONPATH=.:src`.
+- **Dev container / Codespaces (#321).** `.devcontainer/devcontainer.json` provides Python 3.11 with docker-in-docker (for `python start.py` / Compose), Rust (kafka-delta-ingest) and Node (dashboard tests). It opens in `Scraping_project/`, installs `requirements.txt`, `dev-requirements.txt` and `ci-tools.txt`, then runs the smoke check. Grafana (3000), Prometheus (9090) and the Control Center (8000) are forwarded.
+
 ## 5. Make targets
 
 `make help` lists every target (tests, lint, Docker, docs). The common ones are
 `make test-unit`, `make lint`, `make typecheck` and `make lock`.
+
+## 6. Optional environment helpers
+
+- **Python version:** `.python-version` (repo root) pins **3.11** for pyenv, mise, and
+  asdf. 3.11 is the Dockerfile's interpreter and the primary CI leg. CI also tests
+  **3.12** (`main.yml` matrix `["3.11", "3.12"]`), so code must run on both.
+- **direnv** (optional): `cp .envrc.example .envrc && direnv allow` inside
+  `Scraping_project/`. It activates `.venv`, exports `PYTHONPATH=.:src` (same as
+  `pytest.ini`), and loads `.env` if present. `.envrc` is git-ignored. Keep secrets in
+  `.env`, never in `.envrc.example`.
+- **Redis in the dev container (#694):** the dev container (section 4b) includes
+  docker-in-docker, so `docker compose up -d redis` from `Scraping_project/` starts the
+  project's Redis on `localhost:6379` (the default `REDIS_HOST`). The unit subset does
+  not need it: Redis-backed tests use fakeredis, and the smoke check only warns. Use
+  the full `docker-compose.yml` for Kafka and Postgres.
+
+## Running Scrapy directly
+
+`Scraping_project/scrapy.cfg` sets `[settings] default = src.settings`, and Scrapy only
+finds it when you run from `Scraping_project/` (or below):
+
+```bash
+cd Scraping_project
+scrapy list          # base, deep_dive, depth, javascript, scout
+scrapy crawl scout
+```
+
+Run from the repo root and Scrapy reports *no active project*. `project = uconn_scraper`
+in the `[deploy]` section is only the **scrapyd** project name. It is unrelated to
+`BOT_NAME` (from `config.yml` `bot_name`, default `uconn_scraper`, used in the default
+User-Agent and stats). **Scrapyd deploy is unsupported**: the `url` is commented out
+and nothing in CI or Helm uses it. The supported runners are `start.py`, `cli.py`, and
+the Helm chart.
+
+## Releases, changelog, and decisions
+
+- Add a line to [CHANGELOG.md](CHANGELOG.md) under `## [Unreleased]` for behaviour
+  changes. The versioning policy and tag checklist are in [docs/RELEASING.md](docs/RELEASING.md).
+- Record decisions that are expensive to reverse as ADRs in [docs/adr/](docs/adr/README.md).
+- Report security issues privately, as described in [SECURITY.md](SECURITY.md). Everyone
+  taking part follows the [Code of Conduct](CODE_OF_CONDUCT.md).
+- Example scripts and their extra dependencies are listed in
+  [Scraping_project/examples/README.md](Scraping_project/examples/README.md).
 
 ## Dependencies (pip-tools)
 

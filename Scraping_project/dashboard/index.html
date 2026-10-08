@@ -172,16 +172,19 @@
             gap: 1.5rem;
         }
 
+        /* min(100%, Npx): a track never exceeds the container, so phones
+           narrower than N px get one full-width column instead of horizontal
+           page scroll (#954). */
         .grid-2 {
-            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(min(100%, 400px), 1fr));
         }
 
         .grid-3 {
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
         }
 
         .grid-4 {
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr));
         }
 
         .card {
@@ -363,6 +366,9 @@
             margin-top: 1rem;
         }
 
+        /* Reserve one row so the first JS render does not shift layout (#978). */
+        .activity-feed:empty { min-height: 4.5rem; }
+
         .activity-feed {
             max-height: 400px;
             overflow-y: auto;
@@ -384,6 +390,22 @@
         .activity-item.warning {
             border-left-color: var(--warning);
             background: #fffbeb;
+        }
+
+        .activity-item.timeout {
+            border-left-color: var(--warning);
+            background: #fff7ed;
+            border-left-style: dashed;
+        }
+
+        .shortcut-hint {
+            margin: 0.25rem 0 0.75rem;
+            font-size: 0.8rem;
+            color: var(--gray-600, #4b5563);
+        }
+
+        @media (pointer: coarse) {
+            .shortcut-hint { display: none; }
         }
 
         .activity-item.danger {
@@ -483,20 +505,47 @@
             font-weight: 700;
         }
 
+        /* Sticky to the viewport bottom so the countdown / last-updated /
+           pause controls stay visible while scrolling long tabs such as the
+           Activity log (#975). Opaque background + shadow keep it legible over
+           content; wraps on narrow screens instead of overflowing. */
         .refresh-bar {
             background: white;
             border-radius: 0.5rem;
-            padding: 1rem 1.5rem;
-            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            padding: 0.75rem 1.5rem;
+            box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.12);
             display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem 1rem;
             justify-content: space-between;
             align-items: center;
             margin-top: 2rem;
+            position: sticky;
+            bottom: 0;
+            z-index: 900; /* below the sticky topbar (1000) */
         }
 
         .refresh-info {
             font-size: 0.9rem;
             color: var(--gray-700);
+        }
+
+        /* #953: >=44px touch targets wherever the pointer is coarse (phones/tablets). */
+        @media (pointer: coarse) {
+            .tab-button,
+            .refresh-bar .btn,
+            .refresh-bar select {
+                min-height: 44px;
+                min-width: 44px;
+            }
+        }
+
+        .refresh-interval {
+            font: inherit;
+            padding: 0.15rem 0.35rem;
+            border: 1px solid var(--gray-300, #d1d5db);
+            border-radius: 6px;
+            background: white;
         }
 
         .refresh-countdown {
@@ -507,6 +556,12 @@
         @media (max-width: 1024px) {
             .stage-pipeline {
                 grid-template-columns: repeat(2, 1fr);
+            }
+
+            /* The horizontal connector assumes one row of 4 cards; once cards
+               wrap (2-col / 1-col) it would cut through them (#957). */
+            .stage-pipeline::before {
+                display: none;
             }
 
             .topbar-stats {
@@ -522,6 +577,7 @@
             .tab-button {
                 font-size: 0.75rem;
                 padding: 0.75rem 0.5rem;
+                min-height: 44px; /* #953: WCAG 2.5.5 touch target */
             }
 
             .container {
@@ -597,6 +653,17 @@
         }
         .chart-container { position: relative; }
         .chart-container.is-empty canvas { opacity: 0.15; }
+        /* Chart.js failed to load (#983) */
+        .chart-container.is-unavailable canvas { display: none; }
+        .chart-container.is-unavailable .chart-empty-placeholder { display: none; }
+        .chart-unavailable-note {
+            position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+            color: #94a3b8; font-size: 0.85rem; border: 1px dashed currentColor; border-radius: 8px;
+        }
+        .charts-unavailable-banner {
+            margin: 0 0 1rem; padding: 0.75rem 1rem; border-radius: 8px;
+            background: #fef3c7; color: #92400e; border: 1px solid #f59e0b; font-size: 0.9rem;
+        }
         
         :root {
             --chart-h-sm: 160px;
@@ -612,7 +679,57 @@
         .env-badge.env-staging { background: #ca8a04; color: #111; }
         .env-badge.env-prod { background: #b91c1c; color: #fff; font-weight: 700; }
         .milestone-badge { display: inline-block; margin-left: 0.35rem; padding: 0.1rem 0.4rem; border-radius: 0.25rem; background: #14532d; color: #bbf7d0; font-size: 0.75rem; }
-        </style>
+    
+        /* #982: Windows High Contrast / forced-colors. Shadows and author
+           colours are dropped in this mode, so structure and state must come
+           from borders and system colours (which forced colours keep). */
+        @media (forced-colors: active) {
+            .card,
+            .health-item,
+            .topbar {
+                border: 1px solid CanvasText;
+            }
+            .stage-card {
+                border: 2px solid CanvasText;
+            }
+            .stage-card.active {
+                border: 4px double Highlight;
+            }
+            /* inactive tabs: no underline (a transparent border would be forced visible) */
+            .tab-button {
+                border-bottom: 3px solid Canvas;
+            }
+            .tab-button.active {
+                forced-color-adjust: none;
+                background: Highlight;
+                color: HighlightText;
+                border-bottom-color: HighlightText;
+            }
+            .tab-button:focus-visible,
+            .btn:focus-visible,
+            .skip-to-main:focus {
+                outline: 3px solid Highlight;
+                outline-offset: 2px;
+            }
+            .card-badge,
+            .status-indicator {
+                border: 1px solid CanvasText;
+            }
+            .status-dot {
+                forced-color-adjust: none;
+                background: CanvasText;
+            }
+            .health-item.unhealthy {
+                border: 3px dashed CanvasText;  /* state without colour */
+            }
+            /* Chart.js paints fixed colours on canvas; keep its light backdrop
+               so axis text and series stay legible under a dark system theme. */
+            .chart-container canvas {
+                forced-color-adjust: none;
+                background: #ffffff;
+            }
+        }
+    </style>
 </head>
 <body>
     <noscript>
@@ -662,6 +779,7 @@
                 <button type="button" class="tab-button" data-tab="system">⚙️ System Health</button>
                 <button type="button" class="tab-button" data-tab="activity">📋 Activity Log</button>
             </div></div>
+            <p class="shortcut-hint" id="shortcut-hint">Shortcuts: 1–5 switch tabs · R refresh</p>
 
             <!-- Overview Tab -->
             <div class="tab-content active" id="tab-overview">
@@ -768,12 +886,8 @@
                         <div class="card-header">
                             <span class="card-title">Recent Activity</span>
                         </div>
-                        <div class="activity-feed" id="overview-activity">
-                            <div class="activity-item success">
-                                <div class="activity-timestamp">Just now</div>
-                                <div class="activity-message">Pipeline monitoring started</div>
-                            </div>
-                        </div>
+                        <!-- Rendered by app.js on init; no static seed (#978). -->
+                        <div class="activity-feed" id="overview-activity" aria-live="off"></div>
                     </div>
                 </div>
             </div>
@@ -781,7 +895,7 @@
             <!-- Pipeline Tab -->
             <div class="tab-content" id="tab-pipeline">
                 <div class="stage-pipeline">
-                    <div class="stage-card active">
+                    <div class="stage-card">
                         <div class="stage-number">1</div>
                         <div class="stage-title">URL Discovery</div>
                         <div class="stage-metrics">
@@ -800,7 +914,7 @@
                         </div>
                     </div>
 
-                    <div class="stage-card active">
+                    <div class="stage-card">
                         <div class="stage-number">2</div>
                         <div class="stage-title">Page Analysis</div>
                         <div class="stage-metrics">
@@ -1084,7 +1198,7 @@
                             <span class="metric-value" id="uptime">0s</span>
                         </div>
                     </div>
-                </ul>
+                </div>
             </div>
 
             <!-- Activity Log Tab -->
@@ -1099,25 +1213,28 @@
                             <button type="button" id="clear-activity" class="btn" aria-label="Clear activity log">Clear</button>
                         </div>
                     </div>
-                    <div class="activity-feed" id="activity-log" role="log" aria-live="polite">
-                        <div class="activity-item success">
-                            <div class="activity-timestamp">System initialized</div>
-                            <div class="activity-message">Pipeline Control Center started monitoring</div>
-                        </div>
-                    </div>
+                    <!-- Rendered by app.js on init; no static seed (#978). -->
+                    <div class="activity-feed" id="activity-log" role="log" aria-live="off"></div>
                 </div>
             </div>
         </div>
 
         <div class="refresh-bar">
             <div id="refresh-status" class="visually-hidden" role="status" aria-live="polite" aria-atomic="true"></div>
-            <div id="metrics-reconnect-announce" class="visually-hidden" role="status" aria-live="polite" aria-atomic="true"></div>
+            <div id="activity-announce" class="visually-hidden" role="log" aria-live="polite" aria-relevant="additions" aria-atomic="false" aria-label="New activity"></div>
             <div class="refresh-info">Updated <span id="last-updated-rel">just now</span> · 
                 Auto-refresh: <span class="refresh-countdown" id="refresh-countdown">5</span> seconds
             </div>
             <div class="refresh-info">
                 Last updated: <span id="last-refresh-time">Never</span>
             </div>
+            <label class="refresh-info refresh-interval-label" for="refresh-interval">Every
+                <select id="refresh-interval" class="refresh-interval" aria-label="Auto-refresh interval">
+                    <option value="5000" selected>5s</option>
+                    <option value="10000">10s</option>
+                    <option value="30000">30s</option>
+                </select>
+            </label>
             <button type="button" id="pause-refresh" class="btn" aria-pressed="false" aria-label="Pause auto-refresh">Pause</button>
             <span class="refresh-info" id="cc-version" title="Control Center build">v—</span>
             <button type="button" id="manual-refresh" class="btn" aria-label="Refresh metrics now">Refresh now</button>

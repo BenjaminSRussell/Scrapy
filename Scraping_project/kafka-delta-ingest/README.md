@@ -2,19 +2,31 @@
 
 High-performance Kafka to Delta Lake ingestor written in Rust.
 
-## ✅ Setup Complete
+## Prerequisites
 
-All dependencies have been installed and configured:
-- ✅ Rust 1.90.0 (stable)
-- ✅ CMake 4.1.2
-- ✅ OpenSSL 3.5.3
-- ✅ Cyrus SASL 2.1.28
-- ✅ All Cargo dependencies updated to latest stable versions
+A fresh clone has **nothing installed**. Before the first `cargo build` you need:
+
+| Tool | Minimum | Why |
+|---|---|---|
+| Rust toolchain (via rustup) | 1.90 (`rust-version` in Cargo.toml) | compiler |
+| C/C++ compiler + make | any recent | `rdkafka` builds librdkafka from source (`cmake-build`) |
+| CMake | 3.x+ | same |
+| pkg-config | any | locating OpenSSL / SASL |
+| OpenSSL dev headers | 3.x | `rdkafka` `ssl` feature |
+| Cyrus SASL dev headers | 2.1 | `rdkafka` `sasl` feature |
+
+Platform install commands are under [System Requirements](#-system-requirements).
+
+Tested with (known-good combinations, not something already on your machine):
+- macOS (Apple Silicon): Rust 1.90.0, CMake 4.1.2, OpenSSL 3.5.3, Cyrus SASL 2.1.28 (Homebrew)
+- Debian 13: Rust 1.99.0, CMake 4.4.4, OpenSSL 3.5.7, Cyrus SASL 2.1.28 (`cargo build` + `cargo test` pass)
 
 ## 🚀 Quick Start
 
+After installing the [prerequisites](#prerequisites):
+
 ```bash
-# Build the project
+# Build the project (first build compiles librdkafka and takes several minutes)
 cargo build --release
 
 # Run the ingestor
@@ -28,11 +40,13 @@ cargo run --release -- ingest <TOPIC> <TABLE_PATH> \
 All dependencies are managed through [Cargo.toml](Cargo.toml):
 
 ### Core Dependencies
-- **rdkafka 0.38** - Kafka client with SSL/SASL support
-- **deltalake 0.28** - Delta Lake with S3 and DataFusion
-- **arrow 55** - Apache Arrow for data processing
+- **rdkafka 0.39** - Kafka client (features: `cmake-build`, `ssl`, `sasl`, `zstd`)
+- **deltalake 0.29** - Delta Lake (feature: `datafusion`; local filesystem tables, see [S3](#s3-table-paths))
+- **arrow 56** - Apache Arrow for data processing
 - **tokio 1.47** - Async runtime
-- **aws-sdk-s3 1.107** - AWS S3 integration
+- **redis 1.2** - URL dedup / state
+
+[Cargo.toml](Cargo.toml) is the source of truth; versions above may lag it.
 
 ### Supporting Libraries
 - **serde/serde_json** - JSON serialization
@@ -43,6 +57,16 @@ All dependencies are managed through [Cargo.toml](Cargo.toml):
 - **chrono 0.4** - Time handling
 
 ## 🔧 System Requirements
+
+### Debian / Ubuntu
+```bash
+sudo apt-get update
+sudo apt-get install -y build-essential cmake pkg-config libssl-dev libsasl2-dev
+
+# Install Rust
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+rustup default stable
+```
 
 ### macOS (Apple Silicon)
 ```bash
@@ -65,7 +89,7 @@ Create a `.env` file with required variables:
 # Kafka Configuration
 KAFKA_BOOTSTRAP_SERVERS=localhost:9092
 
-# Delta Lake / S3 Configuration
+# Delta Lake / S3 Configuration (only relevant once S3 support is enabled, see below)
 AWS_ACCESS_KEY_ID=your_key
 AWS_SECRET_ACCESS_KEY=your_secret
 AWS_REGION=us-east-1
@@ -78,11 +102,18 @@ STATSD_PORT=9125
 RUST_LOG=info
 ```
 
+### S3 table paths
+
+The `deltalake` dependency is built **without** its `s3` feature (no `deltalake-aws`
+in Cargo.lock), so this build writes to **local filesystem** table paths only. An
+`s3://bucket/path` table path fails at startup until the `s3` feature is enabled
+and the AWS handlers are registered in `main.rs`.
+
 ## 🏗️ Build Instructions
 
 ### Development Build
 ```bash
-# Set required environment for SASL
+# macOS only: point the build at Homebrew's SASL (not needed on Debian/Ubuntu)
 export LDFLAGS="-L/opt/homebrew/opt/cyrus-sasl/lib"
 export CPPFLAGS="-I/opt/homebrew/opt/cyrus-sasl/include"
 export PKG_CONFIG_PATH="/opt/homebrew/opt/cyrus-sasl/lib/pkgconfig"
@@ -128,11 +159,13 @@ kafka-delta-ingest ingest scraped-items /app/data/delta_lake/scraped_items \
 | `--allowed-latency` | Max seconds before forcing batch write | 300 |
 | `--max-messages-per-batch` | Max messages per batch | 1000 |
 | `--max-write-attempts` | Delta write attempts per batch (backoff 1s, 2s, 4s … max 30s) before exiting without committing | 5 |
+| `--dlq-topic` | Dead-letter topic for rejected messages (#544) | scraped-items-dlq |
 
 ### Delivery semantics: at-least-once (#282)
 
 - **Manual offset commits.** Auto-commit is **off**. The ingestor records the next offset per partition for every consumed message (including invalid messages it deliberately drops). It commits those offsets synchronously **only after** the batch has been committed to Delta (`flush_and_commit`).
 - **Failed writes are retried with backoff.** After `--max-write-attempts` failures the process exits non-zero **without committing**. On restart (or rebalance) the uncommitted messages are consumed again, so a failed lake write can never skip messages.
+- **Rejected messages go to the dead-letter topic, never dropped (#544).** Each rejection (`empty_payload`, `parse_failed`, `schema_validation_failed`, `missing_required_field`) is produced byte-for-byte to `--dlq-topic` with acks=all and idempotence, keeping its key. Headers: `dlq.reason`, `dlq.error` (≤4000 bytes), `dlq.source.topic`, `dlq.source.partition`, `dlq.source.offset`, `dlq.rejected_at_ms`, `dlq.producer`. If the DLQ produce still fails after `--max-write-attempts` tries, the process exits **without committing**, the same as a failed Delta write. Replay after a schema fix by re-producing DLQ payloads to `dlq.source.topic`. StatsD: `messages.dead_lettered`, `errors.<reason>`, `errors.dlq_produce_failed`.
 - **Offset commit failure after a successful Delta write** is logged (`errors.offset_commit_failed`) and retried with the next batch.
 - **Duplicates, not loss.** A crash between the Delta commit and the offset commit re-delivers that batch. Downstream readers should dedupe on `url` + `scraped_at_utc` if they need exactly-once views.
 
@@ -182,11 +215,14 @@ RUST_LOG=warn cargo run     # Warnings only
 
 **Error: `cmake: command not found`**
 ```bash
-brew install cmake
+brew install cmake                  # macOS
+sudo apt-get install -y cmake       # Debian/Ubuntu
 ```
 
 **Error: `sasl/sasl.h: No such file or directory`**
 ```bash
+sudo apt-get install -y libsasl2-dev   # Debian/Ubuntu
+# macOS:
 brew install cyrus-sasl
 export LDFLAGS="-L/opt/homebrew/opt/cyrus-sasl/lib"
 export CPPFLAGS="-I/opt/homebrew/opt/cyrus-sasl/include"
@@ -194,7 +230,8 @@ export CPPFLAGS="-I/opt/homebrew/opt/cyrus-sasl/include"
 
 **Error: `openssl` not found**
 ```bash
-brew install openssl@3
+brew install openssl@3                          # macOS
+sudo apt-get install -y libssl-dev pkg-config   # Debian/Ubuntu
 ```
 
 ### Runtime Issues
@@ -203,6 +240,9 @@ brew install openssl@3
 - Verify Kafka is running: `kafka-topics --list --bootstrap-server localhost:9092`
 - Check network connectivity
 - Verify SSL/SASL configuration if using authentication
+
+**Error: S3 table path fails / unknown scheme `s3`**
+- Expected with the current build; see [S3 table paths](#s3-table-paths).
 
 **Error: S3 access denied**
 - Verify AWS credentials in `.env`

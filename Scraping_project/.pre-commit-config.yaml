@@ -1,3 +1,6 @@
+# One formatter path (#357): ruff = lint + import sorting (rule "I" in ruff.toml)
+# + formatting (ruff-format, Black-compatible). Black and isort are not used;
+# running all three made hooks fight. Config: ruff.toml (see docs/tooling.md).
 repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.5.7
@@ -5,18 +8,6 @@ repos:
       - id: ruff
         args: ["--fix", "--exit-non-zero-on-fix"]
       - id: ruff-format
-
-  - repo: https://github.com/psf/black
-    rev: 24.10.0
-    hooks:
-      - id: black
-        additional_dependencies: ["click<8.1.0"]
-
-  - repo: https://github.com/timothycrosley/isort
-    rev: 5.13.2
-    hooks:
-      - id: isort
-        args: ["--profile=black"]
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.6.0
