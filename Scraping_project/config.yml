@@ -46,6 +46,25 @@ stage1:
   enable_depth_mode: true  # Switch to depth spider when idle
   enable_rescraping: true  # Re-scrape existing URLs to find missed links
 
+  # Also run HiddenURLExtractor (meta refresh, "/api/..." literals, JS routes)
+  # in the scout parse path. Off by default (#481). Metric:
+  # scrapy_url_extractor_urls_total{heuristic="hidden_urls"}.
+  extract_hidden_urls: false
+
+  # URL discovery heuristics (#27). Set any to false to switch it off; unlisted
+  # ones stay on. Per-heuristic yield: scrapy_url_extractor_urls_total{heuristic}.
+  discovery_heuristics:
+    standard_tags: true
+    inline_scripts: true
+    script_tags: true
+    css: true
+    data_attributes: true
+    meta_tags: true
+    json_ld: true
+    comments: true
+    event_handlers: true
+    raw_regex: true  # regex over the whole page body; the noisiest source (#25)
+
   # JS Detection
   js_confidence_threshold: 0.5  # REDUCED - render more pages (was 0.7)
 
@@ -80,9 +99,11 @@ stage1:
   # Spider-Specific Settings
   spiders:
     scout:
-      # Aggressive spider settings
+      # Aggressive spider settings: high global concurrency spread across
+      # hosts, but each host is capped (#194). Scrapy's "domain" slot is the
+      # hostname, so every uconn.edu subdomain gets its own 16.
       concurrent_requests: 1024
-      concurrent_requests_per_domain: 512
+      concurrent_requests_per_domain: 16
       download_delay: 0.01
       download_timeout: 15
       retry_times: 2
@@ -92,8 +113,8 @@ stage1:
       # Autothrottle
       autothrottle_enabled: true
       autothrottle_start_delay: 0.005
-      autothrottle_max_delay: 1.5
-      autothrottle_target_concurrency: 2048
+      autothrottle_max_delay: 60  # >= 30s floor (#194): room to back off under 429s
+      autothrottle_target_concurrency: 8.0  # per host; must be <= concurrent_requests_per_domain
 
       # Memory limits
       memory_limit_mb: 10240
@@ -116,7 +137,7 @@ stage1:
       # Autothrottle
       autothrottle_enabled: true
       autothrottle_start_delay: 0.25
-      autothrottle_max_delay: 10
+      autothrottle_max_delay: 60  # >= 30s floor (#194)
       autothrottle_target_concurrency: 2.0
 
       # Memory limits

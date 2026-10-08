@@ -132,10 +132,14 @@ class DeltaHelper:
             List of dictionaries representing rows (empty list on error / missing data)
         """
         try:
-            return self.manager.read_table(table_name, **kwargs)
+            rows = self.manager.read_table(table_name, **kwargs)
         except Exception as e:
             logger.error(f"Failed to read_table from {table_name}: {e}")
+            # Callers that must tell "empty" from "unreadable" check this (#220).
+            self.last_read_error: Exception | None = e
             return []
+        self.last_read_error = None
+        return rows
 
     def write(
         self,

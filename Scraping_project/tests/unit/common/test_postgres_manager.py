@@ -26,6 +26,10 @@ class CursorStub:
     def fetchall(self):
         return self.fetch_values
 
+    def fetchone(self):
+        # Schema-existence probe (#538): None = tables absent, so DDL runs as before.
+        return None
+
     def close(self):
         return None
 

@@ -57,6 +57,37 @@ try:  # queue status MERGE failures after retries (#168)
 except Exception:
     STAGE2_QUEUE_UPDATE_FAILURES = None
 
+try:  # empty vs unreadable queue, so idle is distinguishable from stuck (#220)
+    from prometheus_client import Counter as _ECounter
+    from prometheus_client import Gauge as _EGauge
+
+    STAGE2_QUEUE_EMPTY: Any = _EGauge(
+        "stage2_queue_empty",
+        "1 when the last Stage 2 run found no pending stage2_queue rows, else 0.",
+    )
+    STAGE2_QUEUE_PENDING: Any = _EGauge(
+        "stage2_queue_pending",
+        "Pending stage2_queue rows seen at the start of the last Stage 2 run.",
+    )
+    STAGE2_QUEUE_READ_FAILURES: Any = _ECounter(
+        "stage2_queue_read_failures_total",
+        "Stage 2 runs that could not read stage2_queue at all (not the same as empty).",
+    )
+except Exception:
+    STAGE2_QUEUE_EMPTY = STAGE2_QUEUE_PENDING = STAGE2_QUEUE_READ_FAILURES = None
+
+
+def _record_queue_state(pending: int | None) -> None:
+    """Export Stage 2 queue state (#220). ``None`` means the queue was unreadable."""
+    if pending is None:
+        if STAGE2_QUEUE_READ_FAILURES is not None:
+            STAGE2_QUEUE_READ_FAILURES.inc()
+        return
+    if STAGE2_QUEUE_PENDING is not None:
+        STAGE2_QUEUE_PENDING.set(pending)
+    if STAGE2_QUEUE_EMPTY is not None:
+        STAGE2_QUEUE_EMPTY.set(1 if pending == 0 else 0)
+
 try:  # analysis upsert failures; their queue rows are left pending (#311)
     from prometheus_client import Counter as _ACounter
 
@@ -358,19 +389,28 @@ class Stage2Worker:
         try:
             queue_data = self.delta.read_table("stage2_queue")
             # LakehouseManager / DeltaHelper return list[dict]; tolerate pyarrow Table
+            # DeltaHelper turns read errors into [] and keeps the error (#220).
+            read_error = getattr(self.delta, "last_read_error", None)
+            if isinstance(read_error, Exception):
+                raise read_error
             if hasattr(queue_data, "to_pylist"):
                 all_queue_items = queue_data.to_pylist()
             else:
                 all_queue_items = queue_data or []
         except Exception as e:
-            logger.warning(f"[STAGE2] No URLs found in stage2_queue: {e}")
+            # Unreadable is not "empty": count it so a broken queue does not
+            # look like a healthy idle pipeline (#220).
+            logger.error(f"[STAGE2] Could not read stage2_queue: {e}")
+            _record_queue_state(None)
             return counts
 
         if not all_queue_items:
             logger.warning("[STAGE2] No URLs found in stage2_queue")
+            _record_queue_state(0)
             return counts
 
         pending = [item for item in all_queue_items if item.get("status") == "pending"]
+        _record_queue_state(len(pending))
 
         logger.info(f"[STAGE2] Found {len(pending)} pending URLs to analyze (out of {len(all_queue_items)} total)")
 
@@ -818,7 +858,20 @@ class Stage2Worker:
         ratio_score = min(text_ratio * 0.4, 0.4)
         return round(word_score + ratio_score, 3)
 
+    # Full text up to this many chars rides on the stage4_large_docs row, so
+    # Stage 4 summarizes what Stage 2 already extracted instead of re-fetching
+    # the live URL (#320). Longer docs (or 0) leave it empty and Stage 4 fetches.
+    STAGE4_INLINE_TEXT_MAX_CHARS = 2_000_000
+
+    def _stage4_inline_text_limit(self) -> int:
+        raw = os.environ.get("STAGE4_INLINE_TEXT_MAX_CHARS")
+        try:
+            return int(raw) if raw is not None else self.STAGE4_INLINE_TEXT_MAX_CHARS
+        except ValueError:
+            return self.STAGE4_INLINE_TEXT_MAX_CHARS
+
     async def _route_to_stage4(self, url: str, url_hash: str, text: str, word_count: int, content_length: int):
+        limit = self._stage4_inline_text_limit()
         record = {
             "url": url,
             "url_hash": url_hash,
@@ -826,6 +879,8 @@ class Stage2Worker:
             "content_length": content_length,
             "status": "pending",
             "queued_at": datetime.now().isoformat(),
+            "text_content": text if text and 0 < len(text) <= limit else "",
+            "content_type": "html",
         }
 
         try:

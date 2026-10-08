@@ -478,8 +478,6 @@ class KafkaPipeline:
                     value=value,
                     callback=self._delivery_callback(msg_id),
                 )
-                self.producer.poll(0)
-                return item
             except Exception as e:  # BufferError (queue full), KafkaException, ...
                 self._inflight.pop(msg_id, None)
                 last_error = e
@@ -490,6 +488,14 @@ class KafkaPipeline:
                         self.producer.poll(self.retry_backoff * attempt)
                     except Exception:
                         time.sleep(self.retry_backoff * attempt)
+                continue
+            # Enqueued: from here the delivery callback or the close-time flush/spill
+            # owns the message. A failing poll must not re-produce it (duplicate, #660).
+            try:
+                self.producer.poll(0)
+            except Exception as e:
+                logger.warning(f"Kafka poll after produce failed: {e}; message stays in flight")
+            return item
 
         if KAFKA_PRODUCE_FAILURES is not None:
             KAFKA_PRODUCE_FAILURES.labels(reason="produce_error").inc()
