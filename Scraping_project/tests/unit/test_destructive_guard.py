@@ -256,7 +256,8 @@ def test_reset_production_refused_without_break_glass(reset, lake, audit_log, mo
 
 
 def test_complete_reset_script_defaults_to_dry_run(audit_log):
-    env = {**os.environ, "LAKE_AUDIT_LOG": str(audit_log), "PYTHON": sys.executable}
+    # COMPOSE_SERVICES stands in for `docker compose config --services` (compose_lib.sh)
+    env = {**os.environ, "LAKE_AUDIT_LOG": str(audit_log), "PYTHON": sys.executable, "COMPOSE_SERVICES": "redis postgres"}
     env.pop("ALLOW_LAKE_RESET", None)
     out = subprocess.run(["bash", "scripts/complete_reset.sh"], cwd=PROJECT, env=env, capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=60)
     assert out.returncode == 0 and "Nothing changed" in out.stdout
@@ -264,7 +265,11 @@ def test_complete_reset_script_defaults_to_dry_run(audit_log):
     assert out.returncode == 3
     outcomes = [r["outcome"] for r in records(audit_log)]
     assert outcomes == ["dry_run", "refused"]
-    assert "volume:delta_data" in records(audit_log)[0]["targets"]
+    assert records(audit_log)[0]["targets"][0].startswith("compose-project-volumes:")
+    # --yes skips the interactive prompt but is not a guard confirmation
+    out = subprocess.run(["bash", "scripts/complete_reset.sh", "--yes"], cwd=PROJECT, env=env, capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=60)
+    assert out.returncode == 0 and "Nothing changed" in out.stdout
+    assert records(audit_log)[-1]["outcome"] == "dry_run"
 
 
 @pytest.mark.skipif(shutil.which("make") is None, reason="make not installed")
