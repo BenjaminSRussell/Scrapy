@@ -637,50 +637,72 @@ validated_data = delta.read_typed("stage2_queue", Stage2Analysis)
 
 ## Project Structure
 
+Paths are relative to `Scraping_project/`; run every command from there (#334).
+`tests/unit/test_readme_layout.py` fails if this tree drifts from the disk (#489).
+
 ```
 Scraping_project/
 ├── src/
-│   ├── core/                    # Core infrastructure
-│   │   ├── models.py            # Pydantic models (Phase 6)
-│   │   ├── schemas.py           # PyArrow schemas (Phase 6)
-│   │   └── exceptions.py        # Exception hierarchy (Phase 7)
-│   ├── utils/                   # Utilities
-│   │   ├── cache.py             # Caching (Phase 8)
-│   │   ├── retry.py             # Retry/circuit breaker (Phase 7)
-│   │   ├── dead_letter_queue.py # DLQ (Phase 7)
-│   │   ├── connection_pool.py   # Connection pooling (Phase 8)
-│   │   ├── profiler.py          # Profiling (Phase 8)
-│   │   └── delta.py             # Delta Lake helpers
-│   ├── workers/                 # Worker processes
-│   │   ├── stage1_worker.py
-│   │   ├── stage2_worker.py
-│   │   ├── stage3_worker.py
-│   │   └── stage4_worker.py
-│   └── stage1/                  # Spiders
-│       ├── scout_spider.py
-│       ├── depth_spider.py
-│       └── js_spider.py
-├── tests/                       # Test suite (Phase 9)
-│   ├── conftest.py              # Pytest configuration
-│   ├── test_cache.py
-│   ├── test_models.py
-│   ├── test_retry.py
+│   ├── core/                    # config.py, models.py, schemas.py, exceptions.py
+│   ├── common/                  # legacy managers (config, crawl data, seeds)
+│   ├── lakehouse/               # lakehouse_manager.py, seed_manager.py
+│   ├── utils/                   # delta.py, redis.py, retry.py, dead_letter_queue.py, cache.py
+│   ├── stage1/                  # discovery
+│   │   ├── scout_spider.py      # scrapy name: scout
+│   │   ├── sitemap_parser.py
+│   │   ├── middlewares/
+│   │   ├── processors/
+│   │   └── experimental/        # depth, javascript, deep_dive, base spiders
+│   │       ├── depth_spider.py
+│   │       ├── js_spider.py
+│   │       ├── deep_dive_spider.py
+│   │       └── base_spider.py
+│   ├── stage2/                  # stage2_worker.py, intelligent_analyzer.py
+│   ├── stage3/                  # stage3_worker.py
+│   ├── stage4/                  # stage4_worker.py, large_doc_processor.py
+│   ├── workers/                 # stage1_worker.py … stage4_worker.py entrypoints
+│   ├── orchestrator/            # pipeline_orchestrator.py
+│   ├── pipelines.py             # Scrapy item pipelines
+│   └── settings.py              # Scrapy settings
+├── tests/                       # unit/, integration/, component/, contract/, performance/
+│   ├── conftest.py
 │   └── README.md
-├── k8s/                         # Kubernetes (Phase 10)
-│   └── deployment.yaml
-├── monitoring/                  # Monitoring (Phase 10)
+├── monitoring/
 │   ├── prometheus.yml
 │   ├── alerting_rules.yml       # alerts (Helm ships an identical copy)
-│   └── recording_rules.yml
-├── .github/workflows/           # CI/CD (Phase 10)
-│   └── ci-cd.yml
-├── docker-compose.yml           # Docker Compose (Phase 10)
-├── Dockerfile                   # Docker build (Phase 10)
-├── mypy.ini                     # Type checking config (Phase 6)
-├── pytest.ini                   # Test configuration (Phase 9)
-├── requirements.txt             # Python dependencies
-└── DEPLOYMENT.md               # Deployment guide (Phase 10)
+│   ├── recording_rules.yml
+│   └── dashboards/              # Grafana dashboards (provisioned by compose/Helm)
+├── k8s/
+│   ├── deployment.yaml
+│   └── helm/                    # scraping-pipeline chart
+├── kafka-delta-ingest/          # Rust Kafka -> Delta ingestor
+├── scripts/
+├── start.py                     # local launcher (python start.py)
+├── cli.py                       # seed/ops CLI (python cli.py --help)
+├── scrapy.cfg
+├── config.yml
+├── docker-compose.yml
+├── Dockerfile
+├── Makefile
+├── mypy.ini
+├── pytest.ini
+├── requirements.txt
+├── dev-requirements.txt
+└── DEPLOYMENT.md
 ```
+
+### Spiders
+
+Spiders are run by their scrapy **name**, not their file name (`scrapy crawl depth`,
+not `scrapy crawl depth_spider`). `scrapy list` (from `Scraping_project/`) prints them:
+
+| scrapy name | Module |
+|---|---|
+| `scout` | `src/stage1/scout_spider.py` |
+| `depth` | `src/stage1/experimental/depth_spider.py` |
+| `javascript` | `src/stage1/experimental/js_spider.py` |
+| `deep_dive` | `src/stage1/experimental/deep_dive_spider.py` |
+| `base` | `src/stage1/experimental/base_spider.py` |
 
 ## Development Evolution
 
