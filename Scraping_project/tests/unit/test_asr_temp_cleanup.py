@@ -90,7 +90,10 @@ def make_processor(tmp_path):
     made = []
 
     def _make(max_download_bytes=asr.DEFAULT_MAX_DOWNLOAD_BYTES, executor=None):
-        proc = asr.AsyncASRProcessor(max_workers=1, temp_dir=str(tmp_path), max_download_bytes=max_download_bytes)
+        # provider="whisper" (local): ASR defaults to "none", which skips the download path under test (#429).
+        proc = asr.AsyncASRProcessor(
+            max_workers=1, temp_dir=str(tmp_path), max_download_bytes=max_download_bytes, provider="whisper"
+        )
         proc.executor.shutdown(wait=False)
         proc.executor = executor or _FakeExecutor(result={"success": True, "transcript": "hi", "duration": 1.0})
         made.append(proc)

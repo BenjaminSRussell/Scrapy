@@ -329,7 +329,21 @@ ZSC_DEVICE = _scrapy_config.get("zsc_device", -1)
 # ============================================================================
 ASR_MAX_WORKERS = _scrapy_config.get("asr_max_workers", 4)
 
-ASR_ENABLED = _scrapy_config.get("asr_enabled", False)
+# Off by default (#470): the ASR pipeline is only registered when enabled, so a
+# default crawl never imports speech_recognition. $ASR_ENABLED overrides config.
+_asr_env = os.environ.get("ASR_ENABLED")
+ASR_ENABLED = (
+    _asr_env.strip().lower() in ("1", "true", "yes", "on")
+    if _asr_env is not None
+    else bool(_scrapy_config.get("asr_enabled", False))
+)
+if ASR_ENABLED:
+    # After metadata/recency, before Kafka, so transcripts ship with the record.
+    ITEM_PIPELINES = {**ITEM_PIPELINES, "src.common.async_asr_processor.ASRPipeline": 260}
+
+# Speech-to-text backend: none (default, no egress) | google (uploads audio to
+# Google, explicit opt-in) | whisper (local). $ASR_PROVIDER overrides config (#429).
+ASR_PROVIDER = os.environ.get("ASR_PROVIDER") or _scrapy_config.get("asr_provider", "none")
 
 # Note: The system uses multiple Kafka topics for architectural decoupling.
 # Prefer kafka.topics.* in config.yml (or scrapy.kafka_topic) over ad-hoc defaults.
