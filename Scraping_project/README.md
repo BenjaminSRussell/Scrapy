@@ -494,6 +494,24 @@ curl http://localhost:9090/-/healthy
 docker-compose up -d
 ```
 
+### Observability (Loki, Jaeger, OpenTelemetry)
+
+`docker-compose.observability.yml` is an overlay on the main file (same network, mounts
+under `./monitoring/`). There is no separate standalone production compose file:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.observability.yml up -d
+```
+
+See [../MONITORING.md](../MONITORING.md) for enabling OTEL traces.
+
+### Release images
+
+`.github/workflows/cd-release.yml` builds three targets from `Dockerfile` on `v*` tags
+(and on pull requests that touch the image recipe, without pushing): `crawler`,
+`metrics` and `kafka-delta-ingest`. Build one locally with
+`docker build --target metrics -t scrapy-metrics .`.
+
 ### Production Deployment
 
 See [DEPLOYMENT.md](DEPLOYMENT.md) for comprehensive deployment guide including:
