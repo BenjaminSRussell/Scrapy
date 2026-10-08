@@ -1,5 +1,5 @@
 # Every recipe is phony (none produce a file named after the target) (#796).
-.PHONY: help install install-dev update-deps test test-unit test-integration test-fast \
+.PHONY: help install install-dev lock update-deps test test-unit test-integration test-fast \
 	test-coverage test-coverage-min test-watch lint lint-fix format typecheck security \
 	security-full docker-build docker-up docker-down docker-down-clean docker-logs docker-ps \
 	docker-shell docker-test pre-commit pre-commit-update ci ci-docker clean clean-all dev \
@@ -40,14 +40,26 @@ install: ## Install production dependencies
 install-dev: install ## Install development dependencies
 	@echo "$(BLUE)Installing development dependencies...$(NC)"
 	pip install -r dev-requirements.txt
-	pre-commit install
+	@# The git hook runs from the repo root, so point it at this directory's config (#358).
+	pre-commit install --config "$$(git rev-parse --show-prefix).pre-commit-config.yaml"
 	@echo "$(GREEN)✓ Development environment ready!$(NC)"
 
-update-deps: ## Update and compile dependencies
+# Lockfiles are compiled from this directory with relative paths so the generated
+# header never embeds a machine-local path (#397). See ../CONTRIBUTING.md.
+PIP_COMPILE = pip-compile --quiet --strip-extras
+
+lock: ## Re-pin lockfiles after editing *.in (keeps existing versions)
+	@echo "$(BLUE)Compiling lockfiles (no upgrades)...$(NC)"
+	pip install --upgrade pip-tools
+	cd "$(CURDIR)" && $(PIP_COMPILE) --output-file=requirements.txt requirements.in
+	cd "$(CURDIR)" && $(PIP_COMPILE) --output-file=dev-requirements.txt dev-requirements.in
+	@echo "$(GREEN)✓ Lockfiles compiled$(NC)"
+
+update-deps: ## Upgrade every pin and recompile lockfiles
 	@echo "$(BLUE)Updating dependencies...$(NC)"
 	pip install --upgrade pip pip-tools
-	pip-compile requirements.in --upgrade
-	pip-compile dev-requirements.in --upgrade
+	cd "$(CURDIR)" && $(PIP_COMPILE) --upgrade --output-file=requirements.txt requirements.in
+	cd "$(CURDIR)" && $(PIP_COMPILE) --upgrade --output-file=dev-requirements.txt dev-requirements.in
 	@echo "$(GREEN)✓ Dependencies updated$(NC)"
 
 ##@ Testing
