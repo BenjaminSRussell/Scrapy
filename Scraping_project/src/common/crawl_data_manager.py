@@ -2,7 +2,7 @@ import logging
 import re
 from collections import defaultdict
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from urllib.parse import urlparse
 
@@ -45,25 +45,37 @@ class CrawlDataManager:
         self.lookback_days = lookback_days
         self._domain_cache: dict[str, DomainInsights] = {}
         self._pattern_cache: dict[str, URLPatternInsights] = {}
+        # Per-entry fill times: one shared timestamp let every new lookup
+        # refresh the age of all older entries, so they never expired (#269).
+        self._cached_at: dict[tuple[str, str], datetime] = {}
         self._cache_timestamp: datetime | None = None
         self._cache_ttl_hours = 6
 
         logger.info(f"[CRAWL_DATA_MANAGER] Initialized with {lookback_days}-day lookback window")
 
-    def _is_cache_stale(self) -> bool:
-        if self._cache_timestamp is None:
+    @staticmethod
+    def _now() -> datetime:
+        return datetime.now(UTC)
+
+    def _is_cache_stale(self, kind: str | None = None, key: str | None = None) -> bool:
+        """Whether a cache entry (or, with no key, the newest fill) is older than the TTL."""
+        stamp = self._cache_timestamp if key is None else self._cached_at.get((kind or "", key))
+        if stamp is None:
             return True
 
-        age = datetime.now() - self._cache_timestamp
+        age = self._now() - stamp
         return age.total_seconds() > (self._cache_ttl_hours * 3600)
 
+    def _remember(self, kind: str, key: str) -> None:
+        self._cache_timestamp = self._cached_at[(kind, key)] = self._now()
+
     def analyze_domain(self, domain: str, force_refresh: bool = False) -> DomainInsights | None:
-        if not force_refresh and domain in self._domain_cache and not self._is_cache_stale():
+        if not force_refresh and domain in self._domain_cache and not self._is_cache_stale("domain", domain):
             logger.debug(f"[CRAWL_DATA_MANAGER] Cache hit for domain: {domain}")
             return self._domain_cache[domain]
 
         try:
-            cutoff_date = datetime.now() - timedelta(days=self.lookback_days)
+            cutoff_date = self._now() - timedelta(days=self.lookback_days)
 
             discovery_data = self._read_table_safe(
                 "stage1_discovery",
@@ -81,7 +93,8 @@ class CrawlDataManager:
                 return None
 
             total_urls = len(domain_data)
-            js_confidences = [row.get("js_confidence", 0.0) for row in domain_data if row.get("js_confidence")]
+            # 0.0 is a real measurement (static page); only missing values are skipped.
+            js_confidences = [float(row["js_confidence"]) for row in domain_data if row.get("js_confidence") is not None]
             depths = [row.get("depth", 0) for row in domain_data if row.get("depth") is not None]
 
             avg_js_confidence = sum(js_confidences) / len(js_confidences) if js_confidences else 0.0
@@ -103,7 +116,9 @@ class CrawlDataManager:
             error_data = self._read_table_safe("stage1_errors", columns=["url", "domain", "error_type"])
             domain_errors = [row for row in error_data if row.get("domain") == domain]
 
-            failed_crawls = len(domain_errors)
+            # Errors can outnumber in-window discoveries (they are not windowed and
+            # a URL can fail several times); never report negative successes.
+            failed_crawls = min(len(domain_errors), total_urls)
             successful_crawls = total_urls - failed_crawls
             success_rate = successful_crawls / total_urls if total_urls > 0 else 0.0
 
@@ -130,7 +145,7 @@ class CrawlDataManager:
             )
 
             self._domain_cache[domain] = insights
-            self._cache_timestamp = datetime.now()
+            self._remember("domain", domain)
 
             logger.info(
                 f"[CRAWL_DATA_MANAGER] Analyzed domain {domain}: "
@@ -213,7 +228,7 @@ class CrawlDataManager:
             return []
 
     def analyze_url_pattern(self, pattern: str) -> URLPatternInsights | None:
-        if pattern in self._pattern_cache and not self._is_cache_stale():
+        if pattern in self._pattern_cache and not self._is_cache_stale("pattern", pattern):
             return self._pattern_cache[pattern]
 
         try:
@@ -221,7 +236,7 @@ class CrawlDataManager:
 
             discovery_data = self._read_table_safe("stage1_discovery", columns=["url"])
 
-            matching_urls = [row.get("url") for row in discovery_data if pattern_regex.search(row.get("url", ""))]
+            matching_urls = {row.get("url") for row in discovery_data if pattern_regex.search(row.get("url") or "")}
 
             if len(matching_urls) < 5:
                 return None
@@ -229,10 +244,12 @@ class CrawlDataManager:
             stage2_data = self._read_table_safe("stage2_page_analysis", columns=["url", "content_length"])
 
             match_count = len(matching_urls)
-            successful_stage2 = sum(1 for row in stage2_data if row.get("url") in matching_urls)
+            # Distinct analysed URLs: re-analysed pages must not push the rate above 1.
+            analysed = [row for row in stage2_data if row.get("url") in matching_urls]
+            successful_stage2 = len({row.get("url") for row in analysed})
             success_rate = successful_stage2 / match_count if match_count > 0 else 0.0
 
-            content_lengths = [row.get("content_length", 0) for row in stage2_data if row.get("url") in matching_urls]
+            content_lengths = [row.get("content_length") or 0 for row in analysed]
             avg_content_length = sum(content_lengths) // len(content_lengths) if content_lengths else 0
 
             avg_value_score = min(100, int(success_rate * 60 + min(avg_content_length / 1000, 40)))
@@ -256,7 +273,7 @@ class CrawlDataManager:
             )
 
             self._pattern_cache[pattern] = insights
-            self._cache_timestamp = datetime.now()
+            self._remember("pattern", pattern)
 
             return insights
 
@@ -285,7 +302,7 @@ class CrawlDataManager:
                 "lookback_days": self.lookback_days,
                 "cache_entries": len(self._domain_cache),
                 "cache_age_hours": (
-                    (datetime.now() - self._cache_timestamp).total_seconds() / 3600 if self._cache_timestamp else None
+                    (self._now() - self._cache_timestamp).total_seconds() / 3600 if self._cache_timestamp else None
                 ),
             }
 
@@ -296,6 +313,7 @@ class CrawlDataManager:
     def clear_cache(self):
         self._domain_cache.clear()
         self._pattern_cache.clear()
+        self._cached_at.clear()
         self._cache_timestamp = None
         logger.info("[CRAWL_DATA_MANAGER] Cache cleared")
 
@@ -313,14 +331,23 @@ class CrawlDataManager:
             logger.debug(f"[CRAWL_DATA_MANAGER] Could not count table {table_name}: {e}")
             return 0
 
-    def _parse_timestamp(self, timestamp_str: str) -> datetime:
+    def _parse_timestamp(self, timestamp_str: Any) -> datetime:
+        """Parse to an aware UTC datetime; naive values are UTC, junk is the epoch.
+
+        Mixing aware ("...+00:00", what utc_now_iso() writes) and naive values
+        used to raise TypeError in the cutoff comparison, which analyze_domain
+        swallowed, so every domain with tz-aware rows had no insights (#269).
+        """
         try:
-            if "+" in timestamp_str or timestamp_str.endswith("Z"):
-                return datetime.fromisoformat(timestamp_str.replace("Z", "+00:00"))
+            if isinstance(timestamp_str, datetime):
+                parsed = timestamp_str
             else:
-                return datetime.fromisoformat(timestamp_str)
-        except Exception:
-            return datetime(1970, 1, 1)
+                parsed = datetime.fromisoformat(str(timestamp_str).replace("Z", "+00:00"))
+        except (TypeError, ValueError):
+            return datetime(1970, 1, 1, tzinfo=UTC)
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=UTC)
+        return parsed.astimezone(UTC)
 
 def example_usage():
     manager = CrawlDataManager(lookback_days=30)
