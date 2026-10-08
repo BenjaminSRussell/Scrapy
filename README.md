@@ -84,9 +84,15 @@ graph LR
 
 ## 🚀 Quick Start
 
+> **Always work from `Scraping_project/`.** `start.py`, `cli.py`, `requirements*.txt`, `pytest.ini`,
+> `docker-compose.yml` and `scrapy.cfg` all live there, so every command in this README assumes you
+> ran `cd Scraping_project` first (#334). From the clone root, `python start.py` fails;
+> `python Scraping_project/start.py` or `cd Scraping_project && python start.py` works.
+
 ### One Command Setup
 
 ```bash
+cd Scraping_project
 python start.py
 ```
 
@@ -171,7 +177,7 @@ graph TB
 ```
 📦 Scraping Pipeline
 ├── 🎛️  src/common/          # Core managers (Config, Storage, URL)
-├── 🕷️  src/stage1/          # Discovery spiders (Scout, DeepDive, JS)
+├── 🕷️  src/stage1/          # scout_spider.py (+ experimental/ depth, javascript, deep_dive, base)
 ├── 📊 src/stage2/          # Page analysis workers
 ├── 🤖 src/stage3/          # Summarization workers
 ├── 📈 monitoring/          # Prometheus + Grafana configs
@@ -222,6 +228,24 @@ graph TB
 </tr>
 </table>
 
+### Spider names and modules
+
+Run spiders by their **scrapy name** (not the file name) from `Scraping_project/` (#489):
+
+| `scrapy crawl …` | Module | Status |
+|---|---|---|
+| `scout` | `src/stage1/scout_spider.py` | default discovery spider |
+| `depth` | `src/stage1/experimental/depth_spider.py` | experimental |
+| `javascript` | `src/stage1/experimental/js_spider.py` | experimental (Playwright) |
+| `deep_dive` | `src/stage1/experimental/deep_dive_spider.py` | experimental |
+| `base` | `src/stage1/experimental/base_spider.py` | experimental base class |
+
+```bash
+cd Scraping_project
+scrapy list            # base, deep_dive, depth, javascript, scout
+scrapy crawl scout     # not `scrapy crawl scout_spider`
+```
+
 ### Usage
 
 ```python
@@ -261,6 +285,7 @@ urls = processor.discover_and_assess(response, min_value_score=40)
 ### Quick Commands
 
 ```bash
+# from Scraping_project/
 # View all services
 docker-compose ps
 
@@ -448,6 +473,7 @@ priority = processor.calculate_priority(
 ### Production Ready
 
 ```bash
+# from Scraping_project/
 # Deploy full pipeline
 python start.py --env k8s --stage pipeline
 
@@ -495,6 +521,7 @@ Compose (`stage4-worker`).
 ### Run Tests
 
 ```bash
+# from Scraping_project/
 # All tests
 pytest
 
@@ -540,6 +567,8 @@ pytest -m "not slow"
 ### Setup
 
 ```bash
+cd Scraping_project
+
 # Create virtual environment
 python -m venv .venv
 source .venv/bin/activate  # or `.venv\Scripts\activate` on Windows
@@ -559,6 +588,7 @@ mypy src/
 ### Pre-commit Hooks
 
 ```bash
+# from Scraping_project/
 # Install hooks
 pre-commit install
 
@@ -569,6 +599,7 @@ pre-commit run --all-files
 ### Common Tasks
 
 ```bash
+# from Scraping_project/
 # Reseed data
 python reseed.py
 
@@ -627,6 +658,7 @@ View the complete ignore rules in [.gitignore](.gitignore).
 ### Quick Diagnostics
 
 ```bash
+# from Scraping_project/
 # System health check
 ./scripts/diagnose_issues.sh
 
@@ -648,11 +680,13 @@ python -c "from src.common.storage_manager import StorageManager; \
 
 Check seed URLs are loaded:
 ```bash
+# from Scraping_project/
 docker-compose exec scrapy-app python cli.py list_seeds
 ```
 
 Reload if needed:
 ```bash
+# from Scraping_project/
 python start.py --reset-delta
 ```
 
@@ -681,6 +715,7 @@ stage1:
 
 Restart services:
 ```bash
+# from Scraping_project/
 python shutdown.py && python start.py
 ```
 
@@ -765,6 +800,7 @@ Built with these amazing tools:
 ### 🚀 Start Crawling Now!
 
 ```bash
+# from Scraping_project/
 python start.py
 ```
 
