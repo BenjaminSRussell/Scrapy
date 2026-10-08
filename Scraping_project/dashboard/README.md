@@ -13,6 +13,18 @@ node --test Scraping_project/dashboard/tests/   # helper unit tests
 - Contributor styleguide: [`styleguide.html`](styleguide.html)
 - Accessibility checklist for PRs: [`A11Y_CHECKLIST.md`](A11Y_CHECKLIST.md)
 
+## Connection state in the tab title (#945)
+
+The browser tab title is prefixed with the live state so a background tab still signals trouble:
+
+| Title prefix | Meaning |
+|---|---|
+| `● ONLINE` | metrics endpoint reachable (and `pipeline_running` is 1 or not reported) |
+| `○ OFFLINE` | endpoint reachable but it reports `pipeline_running 0` |
+| `⚠ ERROR` / `⚠ ERROR (N failed)` | the metrics fetch failed; N counts consecutive failures |
+
+The topbar status is derived from the same state (`connectionState()` in `format-utils.js`).
+
 ## Threat model notes (#1046)
 
 **Activity log XSS.** Activity messages may contain text derived from metrics,
