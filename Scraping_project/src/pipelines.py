@@ -36,7 +36,12 @@ from scrapy.exceptions import DropItem, NotConfigured
 
 from src.items import OffsiteCandidateItem
 from src.core.timeutil import utc_now_iso
-from src.utils.kafka_config import producer_durability_config
+from src.utils.kafka_config import (
+    enforce_idempotent_producer,
+    idempotence_required,
+    message_key,
+    producer_durability_config,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -208,6 +213,8 @@ class KafkaPipeline:
         produce_retries: int = 3,
         retry_backoff: float = 0.2,
         close_flush_timeout: float = 30.0,
+        message_key_field: str | None = "url_hash",
+        require_idempotence: bool | None = None,
     ):
         """Initialize the Kafka pipeline.
 
@@ -219,6 +226,10 @@ class KafkaPipeline:
             produce_retries: Attempts per message before spilling
             retry_backoff: Base backoff seconds between produce attempts
             close_flush_timeout: Seconds to flush on spider close
+            message_key_field: Record field used as the Kafka message key (#285);
+                empty/None sends unkeyed messages
+            require_idempotence: Refuse to start unless the producer is idempotent
+                (#464); None reads KAFKA_REQUIRE_IDEMPOTENCE
         """
         self.bootstrap_servers = bootstrap_servers
         self.topic = topic
@@ -231,6 +242,8 @@ class KafkaPipeline:
         self.produce_retries = max(1, int(produce_retries))
         self.retry_backoff = float(retry_backoff)
         self.close_flush_timeout = float(close_flush_timeout)
+        self.message_key_field = message_key_field or None
+        self.require_idempotence = idempotence_required(require_idempotence)
         # Messages handed to librdkafka but not yet acknowledged, so anything
         # still pending after the close flush can be spilled (#249).
         self._inflight: dict[int, bytes] = {}
@@ -260,6 +273,8 @@ class KafkaPipeline:
             produce_retries=crawler.settings.getint("KAFKA_PRODUCE_RETRIES", 3),
             retry_backoff=crawler.settings.getfloat("KAFKA_PRODUCE_RETRY_BACKOFF", 0.2),
             close_flush_timeout=crawler.settings.getfloat("KAFKA_CLOSE_FLUSH_TIMEOUT", 30.0),
+            message_key_field=crawler.settings.get("KAFKA_MESSAGE_KEY_FIELD", "url_hash"),
+            require_idempotence=crawler.settings.getbool("KAFKA_REQUIRE_IDEMPOTENCE", False),
         )
 
         crawler.signals.connect(pipeline.open_spider, signal=signals.spider_opened)
@@ -298,6 +313,8 @@ class KafkaPipeline:
             config["sasl.password"] = sasl_password
 
         config.update(self.producer_config)
+        if self.require_idempotence:
+            enforce_idempotent_producer(config)  # #464: fail fast, never run non-idempotent
 
         try:
             self.producer = Producer(config)
@@ -333,7 +350,12 @@ class KafkaPipeline:
             )
 
     def _spill(self, value: bytes, reason: str, error: str = "") -> bool:
-        """Append one undeliverable message to the spill file (fsync'd)."""
+        """Append one undeliverable message to the spill file (fsync'd).
+
+        Every undeliverable message is also dead-lettered (stage=kafka, #162)
+        so it shows up in ``python -m src.utils.dead_letter_queue list``.
+        """
+        self._dead_letter(value, reason, error)
         try:
             self.spill_dir.mkdir(parents=True, exist_ok=True)
             path = self.spill_dir / f"{self.topic}.jsonl"
@@ -355,6 +377,41 @@ class KafkaPipeline:
         if KAFKA_SPILLED is not None:
             KAFKA_SPILLED.labels(reason=reason).inc()
         return True
+
+    def _dead_letter(self, value: bytes, reason: str, error: str) -> None:
+        """Record an undeliverable message in the DLQ; never raises (#162).
+
+        DLQ dir: ``$DLQ_PATH``, else a ``dlq`` sibling of the spill dir
+        (data/dlq by default, the same place Stage 2 dead-letters to).
+        Disable with ``KAFKA_DLQ_ENABLED=0``.
+        """
+        if os.getenv("KAFKA_DLQ_ENABLED", "1").strip().lower() in ("0", "false", "no", "off"):
+            return
+        try:
+            dlq = getattr(self, "_dlq", None)
+            if dlq is None:
+                from src.utils.dead_letter_queue import DeadLetterQueue, default_dlq_path
+
+                dlq = DeadLetterQueue(default_dlq_path(fallback=Path(self.spill_dir).parent / "dlq"))
+                self._dlq = dlq
+            try:
+                item = json.loads(value)
+            except (ValueError, UnicodeDecodeError):
+                item = {"raw": value.decode("utf-8", errors="replace")}
+            if not isinstance(item, dict):
+                item = {"value": item}
+            dlq.add(
+                item,
+                RuntimeError(f"Kafka {reason}: {error}" if error else f"Kafka {reason}"),
+                stage="kafka",
+                context={
+                    "topic": self.topic,
+                    "reason": reason,
+                    "spill_file": str(Path(self.spill_dir) / f"{self.topic}.jsonl"),
+                },
+            )
+        except Exception as e:
+            logger.error(f"Could not dead-letter Kafka message ({reason}): {e}")
 
     def _delivery_callback(self, msg_id: int):
         def _cb(err: Any, msg: Any) -> None:
@@ -390,6 +447,9 @@ class KafkaPipeline:
         if self.producer is None:
             raise DropItem("Kafka producer is not initialized")
 
+        # Same URL -> same partition -> ordered, dedupable by consumers (#285).
+        key = message_key(item_dict, self.message_key_field)
+
         last_error: Exception | None = None
         for attempt in range(1, self.produce_retries + 1):
             msg_id = self._next_id
@@ -398,6 +458,7 @@ class KafkaPipeline:
                 self._inflight[msg_id] = value
                 self.producer.produce(
                     topic=self.topic,
+                    key=key,
                     value=value,
                     callback=self._delivery_callback(msg_id),
                 )
