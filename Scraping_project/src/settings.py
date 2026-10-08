@@ -67,6 +67,16 @@ BOT_NAME = _scrapy_config.get("bot_name", "uconn_scraper")
 SPIDER_MODULES = _scrapy_config.get("spider_modules", ["src.stage1"])
 NEWSPIDER_MODULE = _scrapy_config.get("newspider_module", "src.stage1")
 
+# SSRF guard (#682): refuse loopback/private/link-local/metadata/service-name
+# targets before download, on every redirect hop. Spider custom_settings in
+# spider_config register it as well.
+DOWNLOADER_MIDDLEWARES = {
+    "src.stage1.middlewares.ssrf_middleware.SSRFGuardMiddleware": 50,
+}
+SSRF_GUARD_ENABLED = os.getenv("SSRF_GUARD_ENABLED", "1") != "0"
+SSRF_RESOLVE_DNS = os.getenv("SSRF_RESOLVE_DNS", "0") == "1"
+SSRF_ALLOWED_HOSTS = os.getenv("SSRF_ALLOWED_HOSTS", "")
+
 ITEM_PIPELINES = _scrapy_config.get(
     "item_pipelines",
     {

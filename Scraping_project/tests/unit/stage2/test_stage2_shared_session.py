@@ -39,6 +39,7 @@ async def _serve():
 
 
 def test_one_session_for_whole_run_and_closed_after(monkeypatch):
+    monkeypatch.setenv("SSRF_ALLOWED_HOSTS", "127.0.0.1")  # local fixture server (#682)
     created: list[aiohttp.ClientSession] = []
     real = aiohttp.ClientSession
 

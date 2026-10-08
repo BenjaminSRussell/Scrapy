@@ -38,6 +38,8 @@ def get_spider_settings(spider_name: str) -> dict:
         "DOWNLOAD_WARNSIZE": 5242880,
         # #582: drop captcha/challenge responses; back off a domain on a spike.
         "DOWNLOADER_MIDDLEWARES": {
+            # First in line; redirects re-enter the chain so every hop is checked (#682).
+            "src.stage1.middlewares.ssrf_middleware.SSRFGuardMiddleware": 50,
             "src.stage1.middlewares.soft_ban_middleware.SoftBanMiddleware": 540,
         },
         "SOFT_BAN_SLOT_DELAY": spider_config.get("soft_ban_slot_delay", 30.0),

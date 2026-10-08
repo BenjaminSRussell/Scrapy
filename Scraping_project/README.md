@@ -393,6 +393,27 @@ Configure the Helm chart via `k8s/helm/scraping-pipeline/values.yaml` (supported
 - Persistent volume sizes
 - Service configuration
 
+### SSRF guard (#682)
+
+Every URL is checked by `src/utils/ssrf.py` **before** any request is made or a queue row is written. The checks run at three points:
+
+- **Stage 1 (Scrapy):** `SSRFGuardMiddleware` is the first downloader middleware. It is registered in `src/settings.py` and in `spider_config`, and it raises `IgnoreRequest("ssrf_blocked:<reason>")`. Scrapy redirects re-enter the middleware chain, so every hop is checked.
+- **Queueing:** `QueueItemPipeline` never writes an SSRF-like URL to `stage2_queue` or `js_spider_queue`.
+- **Stage 2 (aiohttp):** redirects are followed by hand, with each hop checked before it connects. A refusal is a terminal `ssrf_blocked:<reason>` error and is not retried.
+
+What gets blocked:
+- non-http(s) schemes and embedded credentials;
+- loopback, private, link-local (including `169.254.169.254` metadata), CGNAT, multicast and unspecified IPs, in every spelling: decimal `2130706433`, hex `0x7f000001`, octal `0177.0.0.1`, short `127.1`, IPv6 `[::1]`, IPv4-mapped `[::ffff:127.0.0.1]`, and zone IDs;
+- `localhost` aliases and `*.localhost` / `*.internal` / `*.local`;
+- single-label names such as `redis` or `kafka` (in-cluster services).
+
+Settings and env:
+- `SSRF_GUARD_ENABLED` (default on).
+- `SSRF_RESOLVE_DNS=1` additionally rejects hostnames whose DNS answers are non-global. It's off by default because it blocks the reactor; `OffsiteMiddleware` already limits crawls to `allowed_domains`.
+- `SSRF_ALLOWED_HOSTS=127.0.0.1,10.0.0.0/8` is an explicit allowlist, for example for local fixture servers.
+
+Metric: `scrapy_ssrf_blocked_total{stage="stage1|stage2|queue", reason}`.
+
 ### TLS certificate verification (#584)
 
 Every outbound HTTPS request verifies the server certificate. aiohttp, httpx and requests verify by default. The Scrapy downloader uses `BrowserLikeContextFactory` (set in `src/settings.py` from `src/core/tls_policy.py`) instead of Scrapy's default factory, which accepts any certificate. `tests/unit/test_tls_policy.py` fails CI if code adds `verify=False`, `ssl=False`, `CERT_NONE` or similar bypasses. It also proves end to end that a self-signed server is rejected.
