@@ -416,6 +416,16 @@ set members, `QueueItemPipeline` rows (`stage2_queue`, `js_spider_queue`),
 hashed with, so existing scout hashes are unchanged; `js_spider` hashes and
 raw-URL SeedManager hashes now converge on the same value.
 
+### Docker build context
+
+`.dockerignore` comments every exclusion (#625). Runtime data (`data/`,
+`logs/`), caches, VCS/CI metadata, docs, Kubernetes manifests and Rust
+`target/` stay out of the context. `Dockerfile`, `docker-compose.yml` and
+`monitoring/` stay in. Compose still **bind-mounts**
+`monitoring/prometheus.yml` and `monitoring/alerting/` at runtime, so config
+edits apply without a rebuild; the copy inside the image is the default and
+can be baked in when wanted.
+
 ### Environment Variables
 
 ```bash
