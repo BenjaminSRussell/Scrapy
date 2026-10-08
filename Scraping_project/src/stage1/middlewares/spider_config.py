@@ -90,6 +90,9 @@ def get_spider_settings(spider_name: str) -> dict:
         "ROBOTSTXT_OBEY": bool(spider_config.get("robotstxt_obey", True)),
         "ROBOTS_MAX_CRAWL_DELAY": float(spider_config.get("robots_max_crawl_delay", 60)),
         "DOWNLOADER_MIDDLEWARES": {
+            # #456: global kill switch + request/byte budgets, checked before
+            # every download (early, so a dropped request costs nothing).
+            "src.stage1.middlewares.crawl_guard_middleware.CrawlGuardMiddleware": 25,
             "scrapy.downloadermiddlewares.robotstxt.RobotsTxtMiddleware": None,
             "src.stage1.middlewares.robots_middleware.PoliteRobotsTxtMiddleware": 100,
             "src.stage1.middlewares.soft_ban_middleware.SoftBanMiddleware": 540,
