@@ -1,10 +1,11 @@
 import json
 import logging
 import os
+import time
 from typing import Any
 
 try:
-    from confluent_kafka import Consumer, KafkaError, Producer
+    from confluent_kafka import Consumer, KafkaError, Producer, TopicPartition
 
     KAFKA_AVAILABLE = True
 except ImportError:
@@ -12,6 +13,7 @@ except ImportError:
     Consumer = None
     Producer = None
     KafkaError = None
+    TopicPartition = None
 
 try:
     from transformers import pipeline
@@ -25,6 +27,23 @@ from src.schemas import CategoryType, LowConfidenceRecord
 from src.utils.kafka_config import producer_durability_config
 
 logger = logging.getLogger(__name__)
+
+# Delivery semantics (#252): at-least-once. Offsets are committed manually, and
+# only after the classified record has been acknowledged by the broker (or the
+# input is unprocessable, see MessageOutcome). A crash before the commit
+# replays the message; downstream consumers dedupe by url/url_hash.
+DEFAULT_DELIVERY_TIMEOUT = 30.0
+DEFAULT_MAX_MESSAGE_ATTEMPTS = 3
+DEFAULT_RETRY_BACKOFF = 1.0
+
+
+class MessageOutcome:
+    """What _process_message decided; drives commit vs. replay."""
+
+    DONE = "done"  # published and acknowledged -> commit
+    SKIP = "skip"  # unprocessable (bad JSON, no text) -> commit, never retried
+    RETRY = "retry"  # transient failure (classify/publish/delivery) -> no commit, replay
+
 
 class ZeroShotClassifier:
 
@@ -173,6 +192,14 @@ class ZSCMicroservice:
         self.items_processed = 0
         self.items_high_confidence = 0
         self.items_low_confidence = 0
+        self.items_skipped = 0
+        self.items_given_up = 0
+
+        self.delivery_timeout = float(os.getenv("ZSC_DELIVERY_TIMEOUT", DEFAULT_DELIVERY_TIMEOUT))
+        self.max_message_attempts = max(1, int(os.getenv("ZSC_MAX_MESSAGE_ATTEMPTS", DEFAULT_MAX_MESSAGE_ATTEMPTS)))
+        self.retry_backoff = float(os.getenv("ZSC_RETRY_BACKOFF", DEFAULT_RETRY_BACKOFF))
+        # (topic, partition, offset) -> failed attempts, for poison-message cut-off.
+        self._attempts: dict[tuple[str, int, int], int] = {}
 
     def start(self):
         logger.info("Starting ZSC Microservice")
@@ -181,7 +208,9 @@ class ZSCMicroservice:
             "bootstrap.servers": self.bootstrap_servers,
             "group.id": self.group_id,
             "auto.offset.reset": "earliest",
-            "enable.auto.commit": True,
+            # Manual commit after the sink succeeded (#252); never commit on poll.
+            "enable.auto.commit": False,
+            "enable.auto.offset.store": False,
         }
 
         self._add_security_config(consumer_config)
@@ -217,54 +246,106 @@ class ZSCMicroservice:
                         logger.error(f"Consumer error: {msg.error()}")
                         break
 
-                self._process_message(msg)
+                self._handle(msg)
 
         except KeyboardInterrupt:
             logger.info("Shutdown signal received")
         finally:
             self._shutdown()
 
-    def _process_message(self, msg: Any):
+    def _handle(self, msg: Any) -> str:
+        """Process one message, then commit or rewind according to the outcome (#252)."""
+        outcome = self._process_message(msg)
+        key = (msg.topic(), msg.partition(), msg.offset())
+        if outcome == MessageOutcome.RETRY:
+            attempts = self._attempts.get(key, 0) + 1
+            self._attempts[key] = attempts
+            if attempts < self.max_message_attempts:
+                logger.warning(
+                    f"[ZSC] {key} failed (attempt {attempts}/{self.max_message_attempts}); "
+                    "offset not committed, replaying"
+                )
+                self._rewind(msg)
+                if self.retry_backoff > 0:
+                    time.sleep(self.retry_backoff)
+                return outcome
+            # Poison message: stop blocking the partition, but say so loudly.
+            logger.error(
+                f"[ZSC] Giving up on {key} after {attempts} attempts; committing past it "
+                f"(url={self._peek_url(msg)!r})"
+            )
+            self.items_given_up += 1
+        self._attempts.pop(key, None)
+        self._commit(msg)
+        return outcome
+
+    def _commit(self, msg: Any) -> None:
+        self.consumer.commit(message=msg, asynchronous=False)
+
+    def _rewind(self, msg: Any) -> None:
+        """Seek back so the same offset is polled again (nothing was committed)."""
+        self.consumer.seek(TopicPartition(msg.topic(), msg.partition(), msg.offset()))
+
+    @staticmethod
+    def _peek_url(msg: Any) -> str:
+        try:
+            return str(json.loads(msg.value().decode("utf-8")).get("url", ""))[:200]
+        except Exception:  # unparseable payload: nothing to show
+            return ""
+
+    def _process_message(self, msg: Any) -> str:
         try:
             item_dict = json.loads(msg.value().decode("utf-8"))
+            if not isinstance(item_dict, dict):
+                raise ValueError(f"expected a JSON object, got {type(item_dict).__name__}")
+        except (ValueError, UnicodeDecodeError, AttributeError) as e:
+            logger.error(f"[ZSC] Unparseable message at {msg.topic()}[{msg.partition()}]@{msg.offset()}: {e}")
+            self.items_skipped += 1
+            return MessageOutcome.SKIP
 
-            text = self._extract_text(item_dict)
+        text = self._extract_text(item_dict)
+        if not text:
+            logger.warning(f"No text found in item: {item_dict.get('url')}")
+            self.items_skipped += 1
+            return MessageOutcome.SKIP
 
-            if not text:
-                logger.warning(f"No text found in item: {item_dict.get('url')}")
-                return
-
+        try:
             classification = self.classifier.classify(text)
-
-            item_dict["category_final"] = classification["category"].value
-            item_dict["category_confidence"] = classification["confidence"]
-
-            self.items_processed += 1
-
-            if classification["meets_threshold"]:
-                self._publish_item(self.output_topic, item_dict)
-                self.items_high_confidence += 1
-            else:
-                low_conf_record = LowConfidenceRecord(
-                    url=item_dict.get("url", ""),
-                    title=item_dict.get("title", ""),
-                    content_preview=text[:500],
-                    predicted_category=classification["category"],
-                    confidence_score=classification["confidence"],
-                    threshold=self.classifier.confidence_threshold,
-                )
-                self._publish_low_confidence(low_conf_record)
-                self.items_low_confidence += 1
-
-            if self.items_processed % 100 == 0:
-                logger.info(
-                    f"ZSC Progress: {self.items_processed} processed, "
-                    f"{self.items_high_confidence} high-conf, "
-                    f"{self.items_low_confidence} low-conf"
-                )
-
         except Exception as e:
-            logger.error(f"Error processing message: {e}")
+            logger.error(f"[ZSC] Classification failed for {item_dict.get('url')}: {e}")
+            return MessageOutcome.RETRY
+
+        item_dict["category_final"] = classification["category"].value
+        item_dict["category_confidence"] = classification["confidence"]
+
+        if classification["meets_threshold"]:
+            delivered = self._publish_item(self.output_topic, item_dict)
+        else:
+            low_conf_record = LowConfidenceRecord(
+                url=item_dict.get("url", ""),
+                title=item_dict.get("title", ""),
+                content_preview=text[:500],
+                predicted_category=classification["category"],
+                confidence_score=classification["confidence"],
+                threshold=self.classifier.confidence_threshold,
+            )
+            delivered = self._publish_low_confidence(low_conf_record)
+        if not delivered:
+            return MessageOutcome.RETRY
+
+        self.items_processed += 1
+        if classification["meets_threshold"]:
+            self.items_high_confidence += 1
+        else:
+            self.items_low_confidence += 1
+
+        if self.items_processed % 100 == 0:
+            logger.info(
+                f"ZSC Progress: {self.items_processed} processed, "
+                f"{self.items_high_confidence} high-conf, "
+                f"{self.items_low_confidence} low-conf"
+            )
+        return MessageOutcome.DONE
 
     def _extract_text(self, item_dict: dict[str, Any]) -> str:
         parts = []
@@ -279,27 +360,34 @@ class ZSCMicroservice:
 
         return " ".join(parts)
 
-    def _publish_item(self, topic: str, item_dict: dict[str, Any]):
-        try:
-            message = json.dumps(item_dict, ensure_ascii=False, default=str)
-            self.producer.produce(
-                topic=topic,
-                value=message.encode("utf-8"),
-            )
-            self.producer.poll(0)
-        except Exception as e:
-            logger.error(f"Failed to publish to {topic}: {e}")
+    def _produce_and_confirm(self, topic: str, value: bytes) -> bool:
+        """Produce and wait for the broker ack; True only if delivered (#252)."""
+        result: dict[str, Any] = {}
 
-    def _publish_low_confidence(self, record: LowConfidenceRecord):
+        def on_delivery(err: Any, _msg: Any) -> None:
+            result["err"] = err
+            result["done"] = True
+
         try:
-            message = record.model_dump_json()
-            self.producer.produce(
-                topic=self.low_confidence_topic,
-                value=message.encode("utf-8"),
-            )
-            self.producer.poll(0)
-        except Exception as e:
-            logger.error(f"Failed to publish low-confidence record: {e}")
+            self.producer.produce(topic=topic, value=value, callback=on_delivery)
+            self.producer.flush(timeout=self.delivery_timeout)
+        except Exception as e:  # BufferError, KafkaException
+            logger.error(f"Failed to publish to {topic}: {e}")
+            return False
+        if not result.get("done"):
+            logger.error(f"Delivery to {topic} not confirmed within {self.delivery_timeout}s")
+            return False
+        if result.get("err") is not None:
+            logger.error(f"Delivery to {topic} failed: {result['err']}")
+            return False
+        return True
+
+    def _publish_item(self, topic: str, item_dict: dict[str, Any]) -> bool:
+        message = json.dumps(item_dict, ensure_ascii=False, default=str)
+        return self._produce_and_confirm(topic, message.encode("utf-8"))
+
+    def _publish_low_confidence(self, record: LowConfidenceRecord) -> bool:
+        return self._produce_and_confirm(self.low_confidence_topic, record.model_dump_json().encode("utf-8"))
 
     def _add_security_config(self, config: dict[str, Any]):
         security_protocol = os.getenv("KAFKA_SECURITY_PROTOCOL")
