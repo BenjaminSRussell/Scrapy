@@ -93,6 +93,9 @@ def get_spider_settings(spider_name: str) -> dict:
             # #456: global kill switch + request/byte budgets, checked before
             # every download (early, so a dropped request costs nothing).
             "src.stage1.middlewares.crawl_guard_middleware.CrawlGuardMiddleware": 25,
+            # Right after the crawl guard; redirects re-enter the chain so every hop is checked (#682).
+            # Runs before robots (100) so internal hosts never get a robots.txt fetch.
+            "src.stage1.middlewares.ssrf_middleware.SSRFGuardMiddleware": 50,
             "scrapy.downloadermiddlewares.robotstxt.RobotsTxtMiddleware": None,
             "src.stage1.middlewares.robots_middleware.PoliteRobotsTxtMiddleware": 100,
             "src.stage1.middlewares.soft_ban_middleware.SoftBanMiddleware": 540,
