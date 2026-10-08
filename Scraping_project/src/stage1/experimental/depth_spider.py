@@ -194,12 +194,11 @@ class DepthSpider(BaseSpider):
                 urls=urls,
                 source_url=source_url,
                 source_spider=self.name,
-                write_uconn_urls=True,
                 enqueue_stage2=False,
             )
 
             logger.info(
-                f"[DEPTH] SeedManager results: seeds={result['seed_inserted']}, uconn={result['uconn_inserted']}"
+                f"[DEPTH] SeedManager results: seeds={result['seed_inserted']}, domain={result.get('domain_inserted', result.get('uconn_inserted', 0))}"
             )
 
         except Exception as e:

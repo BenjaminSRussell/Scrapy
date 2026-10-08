@@ -90,4 +90,5 @@ def test_connector_limit_matches_concurrency():
         finally:
             await sess.close()
 
-    assert asyncio.run(scenario()) == (7, 7)
+    # limit = worker concurrency (#200); per host = the per-host cap (#195, default 4)
+    assert asyncio.run(scenario()) == (7, s2.DEFAULT_STAGE2_PER_HOST_CONCURRENCY)
