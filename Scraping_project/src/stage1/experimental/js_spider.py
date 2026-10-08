@@ -1,7 +1,7 @@
 """Enhanced JavaScript spider with priority queue and aggressive async processing."""
 
-import hashlib
 import logging
+import os
 from collections.abc import AsyncGenerator, Iterator
 from datetime import datetime
 from typing import Any
@@ -11,9 +11,8 @@ import scrapy
 from scrapy.http import Response
 
 from src.core.config import get_config
-import os
-
 from src.stage1.experimental.playwright_guard import PageLedger
+from src.utils.url_canon import url_hash
 from src.stage1.processors.js_priority_queue import JSPriorityQueue
 from src.stage1.processors.url_processor import URLProcessor
 from src.stage1.middlewares.spider_config import get_spider_settings
@@ -307,7 +306,8 @@ class JavaScriptSpider(scrapy.Spider):
         return processor.normalize_url(url) or url
 
     def _hash_url(self, url: str) -> str:
-        return hashlib.sha256(url.encode("utf-8")).hexdigest()
+        # Same canonical sha256[:16] as scout/Stage 2 (#728); was a full raw-URL digest.
+        return url_hash(url)
 
     def _add_urls_to_seeds(self, urls: list[str], source_url: str) -> None:
         if not urls:

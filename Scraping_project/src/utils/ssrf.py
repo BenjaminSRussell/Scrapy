@@ -26,7 +26,11 @@ import ipaddress
 import os
 import re
 import socket
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urlsplit
+
+if TYPE_CHECKING:
+    from aiohttp.abc import AbstractResolver
 
 ALLOWED_SCHEMES = frozenset({"http", "https"})
 BLOCKED_HOSTNAMES = frozenset(
@@ -172,3 +176,115 @@ except Exception:  # prometheus_client missing or metric already registered
 def count_blocked(stage: str, reason: str) -> None:
     if SSRF_BLOCKED is not None:
         SSRF_BLOCKED.labels(stage=stage, reason=reason.split(":", 1)[0]).inc()
+
+
+# --- #450: DNS answers and non-aiohttp fetchers --------------------------------
+#
+# ssrf_block_reason() without resolve=True cannot see a public-looking hostname
+# whose DNS answer is internal (attacker-controlled DNS, rebinding). Stage 2
+# plugs ``safe_resolver()`` into its aiohttp connector so the check runs on the
+# addresses actually connected to; the ASR media downloader (requests) uses
+# ``guarded_get``, which checks every hop with resolve=True before connecting.
+
+REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
+
+
+class SSRFResolveBlocked(SSRFBlocked, OSError):
+    """A hostname resolved to a non-public address (raised from the resolver).
+
+    Also an OSError so aiohttp surfaces it as the ``os_error`` of a
+    ClientConnectorError instead of an unrelated crash.
+    """
+
+
+def resolved_block_reason(host: str, addresses: list[str], *, allowed_hosts: str | None = None) -> str | None:
+    """``dns_<reason>`` when any resolved address of ``host`` is non-public, else None."""
+    allow = _allowlist(allowed_hosts)
+    name = host.rstrip(".").lower()
+    if name in allow[0]:
+        return None
+    for address in addresses:
+        ip = parse_ip_host(str(address))
+        if ip is None or _is_allowed(name, ip, allow):
+            continue
+        reason = ip_block_reason(ip)
+        if reason:
+            return f"dns_{reason}"
+    return None
+
+
+def ssrf_error_from(exc: BaseException) -> SSRFBlocked | None:
+    """The SSRFBlocked behind an aiohttp/requests connection error, if any."""
+    seen: set[int] = set()
+    current: BaseException | None = exc
+    while current is not None and id(current) not in seen:
+        if isinstance(current, SSRFBlocked):
+            return current
+        seen.add(id(current))
+        current = getattr(current, "os_error", None) or current.__cause__ or current.__context__
+    return None
+
+
+def safe_resolver(stage: str = "stage2") -> "AbstractResolver":
+    """aiohttp resolver that refuses non-public DNS answers (connect-time check)."""
+    import aiohttp
+    from aiohttp.abc import AbstractResolver
+
+    class SSRFSafeResolver(AbstractResolver):
+        def __init__(self) -> None:
+            self._inner: AbstractResolver | None = None
+
+        async def resolve(self, host: str, port: int = 0, family: socket.AddressFamily = socket.AF_INET) -> list:
+            if self._inner is None:
+                self._inner = aiohttp.DefaultResolver()  # needs the running loop
+            results = await self._inner.resolve(host, port, family)
+            reason = resolved_block_reason(host, [r["host"] for r in results])
+            if reason:
+                count_blocked(stage, reason)
+                raise SSRFResolveBlocked(host, reason)
+            return results
+
+        async def close(self) -> None:
+            if self._inner is not None:
+                await self._inner.close()
+
+    return SSRFSafeResolver()
+
+
+def guarded_get(
+    url: str,
+    *,
+    session: Any = None,
+    timeout: float | tuple[float, float] = 30,
+    max_redirects: int = 5,
+    stage: str = "asr",
+    **kwargs: Any,
+) -> Any:
+    """``requests``-style GET that SSRF-checks (with DNS) the URL and every redirect hop.
+
+    Redirects are followed by hand so a public URL can't bounce the fetch to
+    169.254.169.254 or an in-cluster service. Raises SSRFBlocked.
+    """
+    from urllib.parse import urljoin
+
+    if session is None:
+        import requests
+
+        session = requests
+    current = url
+    for _ in range(max_redirects + 1):
+        reason = ssrf_block_reason(current, resolve=True)
+        if reason is not None:
+            count_blocked(stage, reason)
+            raise SSRFBlocked(current, reason)
+        response = session.get(current, allow_redirects=False, timeout=timeout, **kwargs)
+        location = response.headers.get("Location")
+        if response.status_code in REDIRECT_STATUSES and location:
+            close = getattr(response, "close", None)
+            if callable(close):
+                close()
+            current = urljoin(str(getattr(response, "url", None) or current), location)
+            continue
+        return response
+    count_blocked(stage, "too_many_redirects")
+    raise SSRFBlocked(current, "too_many_redirects")
