@@ -160,8 +160,10 @@ stage3:
 # Stage 4: Large Document Processing
 # ============================================
 stage4:
-  # Chunking Settings
-  chunk_size: 10000
+  # Chunking Settings (characters). Read by LargeDocProcessor since #738; before
+  # that the code hard-coded 5000/500 and this 10000 was ignored, so 5000 keeps
+  # current behaviour. Must satisfy 0 <= chunk_overlap < chunk_size (fails fast).
+  chunk_size: 5000
   chunk_overlap: 500
 
   # Model Settings

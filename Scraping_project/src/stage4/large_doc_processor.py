@@ -29,6 +29,75 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_CHUNK_SIZE = 5000
+DEFAULT_CHUNK_OVERLAP = 500
+
+
+def validate_chunking(chunk_size: Any, overlap: Any) -> tuple[int, int]:
+    """Return (chunk_size, overlap) as ints or raise ValueError (#738).
+
+    Valid: chunk_size >= 1 and 0 <= overlap < chunk_size. An overlap at or above
+    the chunk size made the splitter loop forever (start never advanced).
+    """
+    try:
+        size = int(chunk_size)
+        ov = int(overlap)
+    except (TypeError, ValueError):
+        raise ValueError(
+            f"stage4 chunking: chunk_size={chunk_size!r} / chunk_overlap={overlap!r} must be integers"
+        ) from None
+    if isinstance(chunk_size, bool) or isinstance(overlap, bool) or size != chunk_size or ov != overlap:
+        raise ValueError(
+            f"stage4 chunking: chunk_size={chunk_size!r} / chunk_overlap={overlap!r} must be integers"
+        )
+    if size < 1:
+        raise ValueError(f"stage4 chunking: chunk_size must be >= 1 (got {size})")
+    if not 0 <= ov < size:
+        raise ValueError(
+            f"stage4 chunking: chunk_overlap must satisfy 0 <= overlap < chunk_size "
+            f"(got overlap={ov}, chunk_size={size})"
+        )
+    return size, ov
+
+
+def chunk_spans(text: str, chunk_size: int, overlap: int) -> list[tuple[int, int]]:
+    """Raw ``(start, end)`` windows over ``text`` (#738).
+
+    Each window is at most ``chunk_size`` chars; consecutive windows share
+    ``overlap`` chars. A window ends at the last '.' only when it stays longer
+    than half the chunk size and than twice the overlap. So every step makes
+    forward progress (the old code moved backwards when the snap left a chunk
+    shorter than the overlap, and never terminated), and overlap stays between
+    neighbours (window k+2 never reaches into window k unless 2*overlap >
+    chunk_size). The last window always reaches the end of the text.
+    """
+    chunk_size, overlap = validate_chunking(chunk_size, overlap)
+    n = len(text or "")
+    if n == 0:
+        return []
+    if n <= chunk_size:
+        return [(0, n)]
+    spans: list[tuple[int, int]] = []
+    start = 0
+    while True:
+        end = min(start + chunk_size, n)
+        if end < n:
+            last_period = text.rfind(".", start, end)
+            if last_period != -1 and last_period - start >= max(chunk_size // 2, 2 * overlap):
+                end = last_period + 1
+        spans.append((start, end))
+        if end >= n:
+            return spans
+        start = end - overlap  # end - start > overlap, so this always advances
+
+
+def split_into_chunks(text: str, chunk_size: int, overlap: int) -> list[str]:
+    """Chunks of at most ``chunk_size`` chars from :func:`chunk_spans`, stripped;
+    whitespace-only chunks are dropped (they used to reach the summarizer)."""
+    chunks = (text[a:b].strip() for a, b in chunk_spans(text, chunk_size, overlap))
+    return [c for c in chunks if c]
+
+
 class LargeDocProcessor:
 
     def __init__(self, model_name: str = "facebook/bart-large-cnn"):
@@ -36,8 +105,15 @@ class LargeDocProcessor:
         self.model_name = model_name
         self.summarizer: Any = None
 
-        self.CHUNK_SIZE = 5000
-        self.OVERLAP = 500
+        # #738: config.yml stage4.chunk_size / chunk_overlap were never read.
+        # Invalid values fail fast here instead of hanging the splitter.
+        from src.core.config import get_config
+
+        config = get_config()
+        self.CHUNK_SIZE, self.OVERLAP = validate_chunking(
+            config.get("stage4.chunk_size", DEFAULT_CHUNK_SIZE),
+            config.get("stage4.chunk_overlap", DEFAULT_CHUNK_OVERLAP),
+        )
 
         self.http_client = httpx.Client(
             headers={"User-Agent": "MyScraper/1.0 (Educational Research Bot)"},
@@ -382,26 +458,7 @@ class LargeDocProcessor:
         }
 
     def _split_into_chunks(self, text: str) -> list[str]:
-        if len(text) <= self.CHUNK_SIZE:
-            return [text]
-
-        chunks = []
-        start = 0
-
-        while start < len(text):
-            end = start + self.CHUNK_SIZE
-            chunk = text[start:end]
-
-            if end < len(text):
-                last_period = chunk.rfind(".")
-                if last_period > self.CHUNK_SIZE // 2:
-                    end = start + last_period + 1
-                    chunk = text[start:end]
-
-            chunks.append(chunk.strip())
-            start = end - self.OVERLAP
-
-        return chunks
+        return split_into_chunks(text, self.CHUNK_SIZE, self.OVERLAP)
 
     def _summarize_chunk(self, text: str) -> str | None:
         if not text or len(text) < 100:
