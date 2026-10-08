@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 import pytest
 from prometheus_client import REGISTRY
-from scrapy.http import HtmlResponse, Request
+from scrapy.http import HtmlResponse, Request, TextResponse
 
 from src.stage1.scout_spider import ScoutSpider
 
@@ -62,3 +62,18 @@ def test_real_page_still_queues_links(spider):
         out = list(spider.parse(_resp(body)))
     assert any("uconn.edu/about" in str(getattr(o, "url", o)) for o in out), "normal pages still queue links"
     assert spider.skip_counters.get("empty_body", 0) == 0
+
+
+@pytest.mark.parametrize("ctype,body", [
+    ("text/plain", b"https://uconn.edu/listing.html\n"),
+    ("application/json", b'{"next": "https://uconn.edu/a"}'),
+    ("application/xml", b"<urlset><url><loc>https://uconn.edu/b</loc></url></urlset>"),
+])
+def test_non_html_bodies_are_not_treated_as_blank_shells(ctype, body):
+    resp = TextResponse(url="https://uconn.edu/feed", body=body, headers={"Content-Type": ctype})
+    assert ScoutSpider._empty_body_reason(resp) is None
+
+
+def test_zero_byte_non_html_is_still_empty():
+    resp = TextResponse(url="https://uconn.edu/feed", body=b"  \n", headers={"Content-Type": "text/plain"})
+    assert ScoutSpider._empty_body_reason(resp) == "empty_body"

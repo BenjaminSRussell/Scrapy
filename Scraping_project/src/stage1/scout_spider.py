@@ -6,7 +6,7 @@ from datetime import datetime
 from urllib.parse import urlparse
 
 import scrapy
-from scrapy.http import Response
+from scrapy.http import HtmlResponse, Response
 
 from src.stage1.middlewares.spider_config import get_spider_settings
 from src.utils.delta import get_delta
@@ -166,6 +166,10 @@ class ScoutSpider(BaseSpider):
         """
         if not response.body or not response.body.strip():
             return "empty_body"
+        if not isinstance(response, HtmlResponse):
+            # Only HTML has a meaningful "blank shell"; a non-empty text/XML/JSON
+            # body may carry bare URLs and is left to the extractors.
+            return None
         try:
             has_text = bool(response.xpath("//body//text()[normalize-space()]").get())
             has_refs = bool(response.css("[href], [src]").get())
