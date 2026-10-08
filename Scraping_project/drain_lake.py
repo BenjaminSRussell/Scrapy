@@ -13,32 +13,77 @@ from pathlib import Path
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent))
 
-from src.common.config import Config
-from src.common.redis_manager import get_redis_manager
+import os
+
+from src.core.config import Config
+from src.utils.redis import RedisHelper
+from src.utils.destructive_guard import add_guard_arguments, audit, authorize, guard_flags
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
 
+JS_PRIORITY_QUEUE = "js_spider:priority_queue"
+
+
+class RedisQueues:
+    """Sizes and clears the configured queue keys, whatever Redis type they are.
+
+    Replaces the removed ``src.common.redis_manager`` (#576: the old import made
+    this script, and the Helm preStop drain hook that swallows its error, a no-op).
+    """
+
+    _LENGTH = {"list": "llen", "zset": "zcard", "set": "scard", "stream": "xlen", "hash": "hlen"}
+
+    def __init__(self, client, names):
+        self.client = client
+        self.names = sorted(set(names))
+
+    def get_queue_length(self, name: str) -> int:
+        kind = self.client.type(name)
+        kind = kind.decode() if isinstance(kind, bytes) else str(kind)
+        op = self._LENGTH.get(kind)
+        return int(getattr(self.client, op)(name)) if op else 0
+
+    def get_all_queue_stats(self) -> dict:
+        """Configured queues that currently exist, with their sizes."""
+        stats = {name: self.get_queue_length(name) for name in self.names}
+        return {name: size for name, size in stats.items() if size}
+
+    def clear_queue(self, name: str) -> int:
+        size = self.get_queue_length(name)
+        self.client.delete(name)
+        return size
+
+    def get_queue_size(self) -> int:
+        return self.get_queue_length(JS_PRIORITY_QUEUE)
+
+    def clear_priority_queue(self) -> int:
+        return self.clear_queue(JS_PRIORITY_QUEUE)
+
+
 class LakeDrainer:
     """Manages selective draining of Redis queues."""
 
-    def __init__(self):
-        """Initialize drainer with config."""
+    def __init__(self, client=None):
+        """Initialize drainer from config.yml ``message_queues`` and ``redis`` (REDIS_* env wins)."""
         self.config = Config.get_instance()
+        mq_config = self.config.get_section("message_queues") or {}
+        self.persistent_queues = set(mq_config.get("persistent_queues") or [])
+        self.transient_queues = set(mq_config.get("transient_queues") or [])
+        names = {v for v in mq_config.values() if isinstance(v, str)}
+        names |= self.persistent_queues | self.transient_queues
 
-        redis_config = self.config.redis_config
-        self.redis = get_redis_manager(
-            host=redis_config.get("host", "localhost"),
-            port=redis_config.get("port", 6379),
-            db=redis_config.get("db", 0),
-            password=redis_config.get("password"),
-        )
-
-        # Get queue configuration
-        mq_config = self.config.message_queue_config
-        self.persistent_queues = set(mq_config.get("persistent_queues", []))
-        self.transient_queues = set(mq_config.get("transient_queues", []))
+        if client is None:
+            redis_config = self.config.get_section("redis") or {}
+            port = os.getenv("REDIS_PORT") or redis_config.get("port")
+            client = RedisHelper(
+                host=os.getenv("REDIS_HOST") or redis_config.get("host"),
+                port=int(port) if port else None,
+                db=int(os.getenv("REDIS_DB") or redis_config.get("db") or 0),
+                password=os.getenv("REDIS_PASSWORD") or redis_config.get("password"),
+            ).client
+        self.redis = RedisQueues(client, names)
 
     def list_queues(self):
         """List all queues with their sizes."""
@@ -96,6 +141,23 @@ class LakeDrainer:
             print("-" * 70)
             print(f"  pending URLs                             {pq_size:>10,} items")
             print()
+
+    def drain_targets(self, mode: str, queue: str | None = None, include_persistent: bool = False) -> list[dict]:
+        """Queues (with sizes) a drain in ``mode`` would empty; used for the dry-run plan and audit."""
+        stats = self.redis.get_all_queue_stats() or {}
+        if mode == "transient":
+            names = [n for n in stats if n in self.transient_queues]
+        elif mode == "all":
+            names = [n for n in stats if include_persistent or n not in self.persistent_queues]
+        else:
+            names = [queue] if queue else []
+        targets = [{"queue": n, "rows": int(stats.get(n, self.redis.get_queue_length(n) if mode == "queue" else 0)),
+                    "persistent": n in self.persistent_queues} for n in sorted(names)]
+        if mode == "all":
+            pq = self.redis.get_queue_size()
+            if pq:
+                targets.append({"queue": "priority_queue", "rows": int(pq), "persistent": False})
+        return targets
 
     def drain_transient_queues(self, dry_run: bool = False):
         """Drain all transient queues.
@@ -182,12 +244,13 @@ class LakeDrainer:
         else:
             print(f"\n✅ Total items removed: {total_items:,}")
 
-    def drain_specific_queue(self, queue_name: str, dry_run: bool = False):
+    def drain_specific_queue(self, queue_name: str, dry_run: bool = False, confirmed: bool = False):
         """Drain a specific queue by name.
 
         Args:
             queue_name: Name of queue to drain
             dry_run: If True, only show what would be drained
+            confirmed: The CLI guard already obtained confirmation (skip the extra prompt)
         """
         size = self.redis.get_queue_length(queue_name)
 
@@ -196,7 +259,7 @@ class LakeDrainer:
             return
 
         # Check if persistent
-        if queue_name in self.persistent_queues:
+        if queue_name in self.persistent_queues and not dry_run and not confirmed:
             print(f"\n⚠️  WARNING: '{queue_name}' is a PERSISTENT queue!")
             confirm = input("Are you sure you want to drain it? (type 'YES' to confirm): ")
             if confirm != "YES":
@@ -225,14 +288,17 @@ Examples:
   # Drain transient queues (dry run)
   python drain_lake.py --drain-transient --dry-run
 
-  # Drain transient queues (for real)
-  python drain_lake.py --drain-transient
+  # Drain transient queues (for real: typed confirmation, audited)
+  python drain_lake.py --drain-transient --confirm
+
+  # Without --confirm a drain only prints the plan and exits 2.
+  # ENV=production also needs --i-know-what-im-doing and ALLOW_LAKE_RESET=1.
 
   # Drain specific queue
-  python drain_lake.py --queue stage1_discovered_urls
+  python drain_lake.py --queue stage1_discovered_urls --confirm
 
   # Drain ALL queues including persistent (DANGEROUS!)
-  python drain_lake.py --drain-all --include-persistent
+  python drain_lake.py --drain-all --include-persistent --confirm
         """,
     )
 
@@ -262,29 +328,47 @@ Examples:
         help="Show what would be drained without actually draining",
     )
 
+    add_guard_arguments(parser)
+
     args = parser.parse_args()
 
     # Create drainer
     drainer = LakeDrainer()
 
-    # Execute command
-    if args.list:
+    if args.list or not (args.drain_transient or args.drain_all or args.queue):
         drainer.list_queues()
+        if not args.list:
+            print("\nUse --help to see available commands")
+        return 0
 
-    elif args.drain_transient:
-        drainer.drain_transient_queues(dry_run=args.dry_run)
-
+    if args.drain_transient:
+        mode, action = "transient", "drain transient Redis queues"
     elif args.drain_all:
-        drainer.drain_all_queues(dry_run=args.dry_run, include_persistent=args.include_persistent)
-
-    elif args.queue:
-        drainer.drain_specific_queue(args.queue, dry_run=args.dry_run)
-
+        mode = "all"
+        action = "drain ALL Redis queues" + (" including persistent" if args.include_persistent else "")
     else:
-        # Default action - list queues
-        drainer.list_queues()
-        print("\nUse --help to see available commands")
+        mode, action = "queue", f"drain Redis queue {args.queue}"
+
+    if args.dry_run:  # explicit preview: unguarded, exit 0
+        decision = None
+    else:
+        # Dry-run unless --confirm; dual confirmation; production break-glass; audited (#522, #573, #576).
+        targets = drainer.drain_targets(mode, args.queue, args.include_persistent)
+        decision = authorize(action, targets=targets, **guard_flags(args))
+        if not decision.proceed:
+            return decision.exit_code
+
+    dry = decision is None
+    if mode == "transient":
+        drainer.drain_transient_queues(dry_run=dry)
+    elif mode == "all":
+        drainer.drain_all_queues(dry_run=dry, include_persistent=args.include_persistent)
+    else:
+        drainer.drain_specific_queue(args.queue, dry_run=dry, confirmed=not dry)
+    if decision is not None:
+        audit(action, "completed", targets=decision.targets)
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

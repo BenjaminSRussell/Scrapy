@@ -17,7 +17,10 @@ data:
   DB_HOST: "{{ include "scraping-pipeline.fullname" . }}-postgresql"
   DB_PORT: "{{ .Values.postgresql.service.port }}"
   DB_NAME: {{ .Values.postgresql.auth.database | quote }}
-  DB_USER: {{ .Values.postgresql.auth.username | quote }}
+  DB_USER: {{ .Values.postgresql.auth.appUsername | default .Values.postgresql.auth.username | quote }}
+  {{- with .Values.postgresql.auth.appUsername }}
+  APP_DB_USER: {{ . | quote }}
+  {{- end }}
   # #511: no REDIS_URL. Every service (kafka-delta-ingest too) builds its Redis
   # connection from REDIS_HOST/REDIS_PORT plus REDIS_PASSWORD from the secret.
   KAFKA_BOOTSTRAP_SERVERS: "{{ include "scraping-pipeline.fullname" . }}-kafka:{{ .Values.kafka.service.internal }}"

@@ -29,6 +29,48 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+
+def validate_chunking(chunk_size: int, overlap: int) -> None:
+    """Fail fast on settings that could stall or duplicate chunks (#738).
+
+    ``0 <= overlap`` and ``2 * overlap <= chunk_size``: every chunk then moves
+    the window forward and only *adjacent* chunks share text.
+    """
+    if isinstance(chunk_size, bool) or not isinstance(chunk_size, int) or chunk_size <= 0:
+        raise ValueError(f"chunk_size must be a positive integer, got {chunk_size!r}")
+    if isinstance(overlap, bool) or not isinstance(overlap, int) or overlap < 0:
+        raise ValueError(f"overlap must be a non-negative integer, got {overlap!r}")
+    if 2 * overlap > chunk_size:
+        raise ValueError(f"overlap ({overlap}) must be at most half of chunk_size ({chunk_size})")
+
+
+def chunk_spans(text: str, chunk_size: int, overlap: int) -> list[tuple[int, int]]:
+    """``(start, end)`` offsets of overlapping chunks covering ``text``.
+
+    * every span is at most ``chunk_size`` long and starts after the previous one;
+    * adjacent spans share exactly ``overlap`` characters, non-adjacent spans none;
+    * a non-final span ends after a ``.`` when one lies past the middle of the
+      window (and the cut still leaves room for the overlap);
+    * the last span ends at ``len(text)``; no extra span lies inside the overlap.
+    """
+    validate_chunking(chunk_size, overlap)
+    n = len(text)
+    if n == 0:
+        return []
+    spans: list[tuple[int, int]] = []
+    start = 0
+    while True:
+        end = min(start + chunk_size, n)
+        if end < n:
+            last_period = text.rfind(".", start, end) - start
+            if last_period >= 0 and last_period > chunk_size // 2 and last_period + 1 >= 2 * overlap:
+                end = start + last_period + 1
+        spans.append((start, end))
+        if end >= n:
+            return spans
+        start = end - overlap
+
+
 class LargeDocProcessor:
 
     def __init__(self, model_name: str = "facebook/bart-large-cnn"):
@@ -38,6 +80,7 @@ class LargeDocProcessor:
 
         self.CHUNK_SIZE = 5000
         self.OVERLAP = 500
+        validate_chunking(self.CHUNK_SIZE, self.OVERLAP)
 
         self.http_client = httpx.Client(
             headers={"User-Agent": "MyScraper/1.0 (Educational Research Bot)"},
@@ -382,26 +425,11 @@ class LargeDocProcessor:
         }
 
     def _split_into_chunks(self, text: str) -> list[str]:
+        """Overlapping chunks (see ``chunk_spans``); whitespace-only chunks are dropped (#738)."""
         if len(text) <= self.CHUNK_SIZE:
             return [text]
-
-        chunks = []
-        start = 0
-
-        while start < len(text):
-            end = start + self.CHUNK_SIZE
-            chunk = text[start:end]
-
-            if end < len(text):
-                last_period = chunk.rfind(".")
-                if last_period > self.CHUNK_SIZE // 2:
-                    end = start + last_period + 1
-                    chunk = text[start:end]
-
-            chunks.append(chunk.strip())
-            start = end - self.OVERLAP
-
-        return chunks
+        chunks = [text[a:b].strip() for a, b in chunk_spans(text, self.CHUNK_SIZE, self.OVERLAP)]
+        return [c for c in chunks if c]
 
     def _summarize_chunk(self, text: str) -> str | None:
         if not text or len(text) < 100:
