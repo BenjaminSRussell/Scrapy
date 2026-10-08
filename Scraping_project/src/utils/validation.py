@@ -151,53 +151,18 @@ def is_safe_filename(filename: str) -> bool:
 
 
 def normalize_url(url: str) -> str:
-    """
-    Normalize URL for consistent comparison.
+    """Canonical URL for comparison and storage (#728).
 
-    - Converts to lowercase
-    - Removes trailing slash
-    - Removes fragment (#)
-    - Removes common tracking parameters
-
-    Args:
-        url: URL to normalize
-
-    Returns:
-        Normalized URL
+    Delegates to ``src.utils.url_canon.canonicalize_url`` so validation, Redis,
+    spiders and the lake agree; non-http(s) input is returned unchanged.
 
     Example:
-        normalized = normalize_url("https://UConn.EDU/Page/?utm_source=email#section")
+        normalize_url("https://UConn.EDU/Page/?utm_source=email#section")
         # Returns: "https://uconn.edu/page"
     """
-    if not is_valid_url(url):
-        return url
+    from src.utils.url_canon import canonical_or_raw
 
-    try:
-        parsed = urlparse(url.lower())
-
-        # Remove fragment
-        normalized = parsed._replace(fragment='')
-
-        # Remove trailing slash from path
-        path = normalized.path.rstrip('/')
-
-        # Remove common tracking parameters
-        query_params = []
-        if normalized.query:
-            for param in normalized.query.split('&'):
-                key = param.split('=')[0]
-                # Skip common tracking parameters
-                if not key.startswith(('utm_', 'ref', 'source', 'campaign')):
-                    query_params.append(param)
-
-        query = '&'.join(query_params) if query_params else ''
-
-        normalized = normalized._replace(path=path, query=query)
-
-        return normalized.geturl()
-    except Exception as e:
-        logger.debug(f"URL normalization failed for {url}: {e}")
-        return url
+    return canonical_or_raw(url)
 
 
 _TLD_EXTRACT = None

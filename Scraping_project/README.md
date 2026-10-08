@@ -323,6 +323,21 @@ Metrics: `scrapy_soft_ban_total{stage,signature}`,
 `scrapy_soft_ban_domain_backoff_total{stage}`, `scrapy_soft_ban_deferred_total{stage}`.
 Alert: `ScrapySoftBanSpike`. Fixture pages live in `tests/fixtures/soft_ban/`.
 
+### URL canonicalization
+
+Every URL touchpoint uses `src/utils/url_canon.py` (#728): Redis seen/claim
+set members, `QueueItemPipeline` rows (`stage2_queue`, `js_spider_queue`),
+`SeedManager`, Stage 2 `url_hash`, `URLProcessor` and
+`validation.normalize_url`. Canonical form:
+- lowercase scheme, host and path;
+- no default port and no fragment;
+- trailing slash stripped (except the root);
+- `utm_*` and other tracking parameters removed, remaining params sorted.
+
+`url_hash` = sha256(canonical URL)[:16]. The rules match what Stage 1 already
+hashed with, so existing scout hashes are unchanged; `js_spider` hashes and
+raw-URL SeedManager hashes now converge on the same value.
+
 ### Environment Variables
 
 ```bash

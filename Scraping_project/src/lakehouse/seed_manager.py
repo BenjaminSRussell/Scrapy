@@ -20,8 +20,8 @@ Schema Assumptions:
 All writes are idempotent via merge_into using url_hash as merge key.
 """
 
-import hashlib
 import logging
+from src.utils.url_canon import canonical_or_raw, url_hash
 from collections.abc import Callable, Iterable
 from urllib.parse import urlparse
 
@@ -32,8 +32,8 @@ logger = logging.getLogger(__name__)
 
 
 def default_url_hasher(url: str) -> str:
-    """Default URL hasher using SHA256 (first 16 chars)."""
-    return hashlib.sha256(url.encode("utf-8")).hexdigest()[:16]
+    """SHA256[:16] of the canonical URL (#728), same as every other stage."""
+    return url_hash(url)
 
 
 class SeedManager:
@@ -121,7 +121,7 @@ class SeedManager:
             >>> print(result)
             {'seed_inserted': 2, 'uconn_inserted': 2, 'stage2_enqueued': 2}
         """
-        url_list = list(set(urls))  # Deduplicate
+        url_list = list(dict.fromkeys(canonical_or_raw(u) for u in urls))  # canonicalize + dedupe (#728)
         if not url_list:
             return {"seed_inserted": 0, "uconn_inserted": 0, "stage2_enqueued": 0}
 
