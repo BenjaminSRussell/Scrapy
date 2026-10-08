@@ -52,6 +52,13 @@ stage1:
   # Batch sizes
   batch_size: 50  # URLs to batch before writing to Delta Lake
   js_queue_batch_size: 50  # JS render queue batch size
+  js_queue_max_size: 100000  # #377: cap on JS render candidates; lowest priority evicted first (0 = unbounded)
+  js_queue_ttl_seconds: 86400  # #377: drop candidates queued longer than this (0 = never)
+  # #390: Playwright resource types the JS spider aborts (cheaper renders). Blocking
+  # stylesheets/images can hide content on sites that lazy-load via CSS or render text as
+  # images; override per domain (host + subdomains, most specific wins). Never blocks "document".
+  js_blocked_resource_types: [image, stylesheet, font, media]
+  js_blocked_resource_types_by_domain: {}
 
   # Circuit Breaker Settings
   circuit_breaker_enabled: true
