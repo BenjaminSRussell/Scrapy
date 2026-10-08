@@ -311,12 +311,11 @@ class JavaScriptSpider(scrapy.Spider):
                 urls=urls,
                 source_url=source_url,
                 source_spider=self.name,
-                write_uconn_urls=True,
                 enqueue_stage2=False,
             )
 
             logger.info(
-                f"[JS_SPIDER] SeedManager results: seeds={result['seed_inserted']}, uconn={result['uconn_inserted']}"
+                f"[JS_SPIDER] SeedManager results: seeds={result['seed_inserted']}, domain={result.get('domain_inserted', result.get('uconn_inserted', 0))}"
             )
 
         except Exception as e:
