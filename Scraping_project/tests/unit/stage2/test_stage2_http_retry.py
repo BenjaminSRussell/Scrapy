@@ -50,6 +50,8 @@ async def site():
 
 @pytest.fixture
 def worker(monkeypatch):
+    # The scripted site is on 127.0.0.1 (and localhost), which the SSRF guard blocks by default (#682).
+    monkeypatch.setenv("SSRF_ALLOWED_HOSTS", "127.0.0.1,localhost")
     w = Stage2Worker(max_concurrent=4)
     w.http_attempts = 3
     delays: list[tuple[int, float | None]] = []

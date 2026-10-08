@@ -401,6 +401,21 @@ Metrics: `stage2_http_fetches_total{outcome=first_try|recovered|exhausted|circui
 and `stage2_http_retries_total{reason}`. Each retry and each recovery is logged
 with its attempt number.
 
+### URL canonicalization
+
+Every URL touchpoint uses `src/utils/url_canon.py` (#728): Redis seen/claim
+set members, `QueueItemPipeline` rows (`stage2_queue`, `js_spider_queue`),
+`SeedManager`, Stage 2 `url_hash`, `URLProcessor` and
+`validation.normalize_url`. Canonical form:
+- lowercase scheme, host and path;
+- no default port and no fragment;
+- trailing slash stripped (except the root);
+- `utm_*` and other tracking parameters removed, remaining params sorted.
+
+`url_hash` = sha256(canonical URL)[:16]. The rules match what Stage 1 already
+hashed with, so existing scout hashes are unchanged; `js_spider` hashes and
+raw-URL SeedManager hashes now converge on the same value.
+
 ### Docker build context
 
 `.dockerignore` comments every exclusion (#625). Runtime data (`data/`,
@@ -455,6 +470,27 @@ Configure the Helm chart via `k8s/helm/scraping-pipeline/values.yaml` (supported
 - Resource requests/limits
 - Persistent volume sizes
 - Service configuration
+
+### SSRF guard (#682)
+
+Every URL is checked by `src/utils/ssrf.py` **before** any request is made or a queue row is written. The checks run at three points:
+
+- **Stage 1 (Scrapy):** `SSRFGuardMiddleware` is the first downloader middleware. It is registered in `src/settings.py` and in `spider_config`, and it raises `IgnoreRequest("ssrf_blocked:<reason>")`. Scrapy redirects re-enter the middleware chain, so every hop is checked.
+- **Queueing:** `QueueItemPipeline` never writes an SSRF-like URL to `stage2_queue` or `js_spider_queue`.
+- **Stage 2 (aiohttp):** redirects are followed by hand, with each hop checked before it connects. A refusal is a terminal `ssrf_blocked:<reason>` error and is not retried.
+
+What gets blocked:
+- non-http(s) schemes and embedded credentials;
+- loopback, private, link-local (including `169.254.169.254` metadata), CGNAT, multicast and unspecified IPs, in every spelling: decimal `2130706433`, hex `0x7f000001`, octal `0177.0.0.1`, short `127.1`, IPv6 `[::1]`, IPv4-mapped `[::ffff:127.0.0.1]`, and zone IDs;
+- `localhost` aliases and `*.localhost` / `*.internal` / `*.local`;
+- single-label names such as `redis` or `kafka` (in-cluster services).
+
+Settings and env:
+- `SSRF_GUARD_ENABLED` (default on).
+- `SSRF_RESOLVE_DNS=1` additionally rejects hostnames whose DNS answers are non-global. It's off by default because it blocks the reactor; `OffsiteMiddleware` already limits crawls to `allowed_domains`.
+- `SSRF_ALLOWED_HOSTS=127.0.0.1,10.0.0.0/8` is an explicit allowlist, for example for local fixture servers.
+
+Metric: `scrapy_ssrf_blocked_total{stage="stage1|stage2|queue", reason}`.
 
 ### Redis memory policy: durable keys vs TTL keys (#161)
 
@@ -547,6 +583,13 @@ Available at `http://localhost:9090`:
 - `cache_misses_total`: Cache miss count
 - `retry_attempts_total`: Retry attempts
 - `circuit_breaker_state`: Circuit breaker state (0=closed, 1=open, 2=half-open)
+
+Every queue worker (Stage 2/3/4) serves its own registry on
+`WORKER_METRICS_PORT` (default 9430, `WORKER_METRICS_ENABLED=0` to disable),
+so worker-side counters (soft bans, deferrals, recency outcomes, ...) reach
+Prometheus as `stage{2,3,4}_worker` jobs, one target per replica, with
+`scrapy_worker_up{component}` as the liveness series. Scrape topology for Helm:
+[k8s/README.md](k8s/README.md#what-gets-scraped-789).
 
 ### Grafana Dashboards
 

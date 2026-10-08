@@ -43,6 +43,23 @@ stage1:
     max_urls: 50000       # hard cap on URLs collected per site walk
     max_sitemaps: 500     # hard cap on sitemap documents fetched per walk
     max_bytes: 52428800   # per-sitemap body cap after decompression (50 MiB)
+    # Incremental reads (#394): skip URLs / nested sitemaps whose <lastmod> is
+    # not newer than the Redis watermark (hash sitemap:lastmod:<host>). Every
+    # entry is still re-enqueued once its watermark is older than max_age_days.
+    incremental: true
+    watermark_max_age_days: 30
+  fetch_policy:  # Stage 1 per-request fetch policy (FetchPolicyMiddleware)
+    # #395: cookies stay off by default. Turning them on stores session/CSRF
+    # cookies and lets sites link our requests together; scope them with
+    # cookies_allowed_domains (host + subdomains). Empty list = every host.
+    cookies_enabled: false
+    cookies_allowed_domains: []
+    # #396: HTML keeps the spider's short download_timeout; documents that
+    # Stage 4 summarizes get a longer timeout and a larger size cap.
+    large_doc_download_timeout: 120          # seconds
+    large_doc_maxsize: 104857600             # 100 MiB (spider default cap is 10 MiB)
+    large_doc_extensions: [pdf, doc, docx, ppt, pptx, xls, xlsx, odt, odp, ods, rtf, epub, zip]
+    large_doc_url_patterns: []               # regexes, e.g. '/bitstream/', '/download\?id='
   enable_depth_mode: true  # Switch to depth spider when idle
   enable_rescraping: true  # Re-scrape existing URLs to find missed links
 
@@ -71,6 +88,13 @@ stage1:
   # Batch sizes
   batch_size: 50  # URLs to batch before writing to Delta Lake
   js_queue_batch_size: 50  # JS render queue batch size
+  js_queue_max_size: 100000  # #377: cap on JS render candidates; lowest priority evicted first (0 = unbounded)
+  js_queue_ttl_seconds: 86400  # #377: drop candidates queued longer than this (0 = never)
+  # #390: Playwright resource types the JS spider aborts (cheaper renders). Blocking
+  # stylesheets/images can hide content on sites that lazy-load via CSS or render text as
+  # images; override per domain (host + subdomains, most specific wins). Never blocks "document".
+  js_blocked_resource_types: [image, stylesheet, font, media]
+  js_blocked_resource_types_by_domain: {}
 
   # Circuit Breaker Settings
   circuit_breaker_enabled: true
@@ -283,6 +307,12 @@ delta_lake:
   queue_maxsize: 1000  # Maximum queue size to prevent memory overload
   # Producers wait this long for queue space, then spill to _write_spill/ (#167).
   queue_put_timeout_seconds: 30
+  # #754: completed/failed rows in stage2_queue, js_spider_queue and
+  # stage4_large_docs are deleted once completed_at is older than this (0 = never),
+  # after being appended to <table>_history when queue_gc_archive is true.
+  queue_retention_hours: 168
+  queue_gc_interval_minutes: 60  # idle maintenance worker runs GC this often (0 = off)
+  queue_gc_archive: true
   # Async writes retry with exponential backoff, then spill durably (#225).
   write_retries: 3
   write_retry_backoff_seconds: 0.5

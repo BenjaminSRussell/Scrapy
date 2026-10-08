@@ -163,9 +163,11 @@ else
 fi
 
 wait_running() {
-    local service=$1 i
-    for i in $(seq 1 30); do
-        if compose ps "$service" 2>/dev/null | grep -qE "healthy|Up|running"; then
+    local service=$1 status
+    for _ in $(seq 1 30); do
+        # Capture first: under pipefail a `compose ps | grep -q` SIGPIPE reads as "not ready".
+        status="$(compose ps "$service" 2>/dev/null || true)"
+        if grep -qE "healthy|Up|running" <<<"$status"; then
             print_info "${service} is ready"
             return 0
         fi
