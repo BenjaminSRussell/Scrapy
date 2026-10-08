@@ -1,0 +1,35 @@
+{
+  // One-click Codespaces / VS Code Dev Containers environment (#694).
+  // Python 3.11 (same as the Dockerfile and the primary CI leg) plus a Redis
+  // service; see CONTRIBUTING.md "Dev container".
+  "name": "Scrapy pipeline (Python 3.11 + Redis)",
+  "dockerComposeFile": "docker-compose.yml",
+  "service": "app",
+  "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}/Scraping_project",
+  "shutdownAction": "stopCompose",
+  "features": {
+    "ghcr.io/devcontainers/features/node:1": { "version": "20" }
+  },
+  "containerEnv": {
+    "REDIS_HOST": "redis",
+    "REDIS_PORT": "6379",
+    "PYTHONPATH": "/workspaces/${localWorkspaceFolderBasename}/Scraping_project:/workspaces/${localWorkspaceFolderBasename}/Scraping_project/src"
+  },
+  // Same pins as CI (CONTRIBUTING.md step 2), then the git hook.
+  "postCreateCommand": "python -m pip install --upgrade pip && pip install -r requirements.txt -r dev-requirements.txt -r ci-tools.txt && (pre-commit install --config \"$(git rev-parse --show-prefix).pre-commit-config.yaml\" || echo 'pre-commit hook not installed')",
+  "forwardPorts": [8080, 9410],
+  "portsAttributes": {
+    "8080": { "label": "dashboard (serve.py)" },
+    "9410": { "label": "scraper metrics" }
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": ["ms-python.python", "ms-python.mypy-type-checker", "charliermarsh.ruff"],
+      "settings": {
+        "python.defaultInterpreterPath": "/usr/local/bin/python",
+        "python.testing.pytestEnabled": true,
+        "python.testing.pytestArgs": ["tests/", "-m", "not slow and not kafka and not performance", "-o", "addopts="]
+      }
+    }
+  }
+}

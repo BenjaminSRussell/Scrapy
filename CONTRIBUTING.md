@@ -49,6 +49,50 @@ Redis/Postgres when they are reachable; CI provides both as service containers.
 `make help` lists every target (tests, lint, Docker, docs). The common ones are
 `make test-unit`, `make lint`, `make typecheck` and `make lock`.
 
+## 6. Optional environment helpers
+
+- **Python version:** `.python-version` (repo root) pins **3.11** for pyenv, mise, and
+  asdf. 3.11 is the Dockerfile's interpreter and the primary CI leg. CI also tests
+  **3.12** (`main.yml` matrix `["3.11", "3.12"]`), so code must run on both.
+- **direnv** (optional): `cp .envrc.example .envrc && direnv allow` inside
+  `Scraping_project/`. It activates `.venv`, exports `PYTHONPATH=.:src` (same as
+  `pytest.ini`), and loads `.env` if present. `.envrc` is git-ignored. Keep secrets in
+  `.env`, never in `.envrc.example`.
+- **Dev container / Codespaces:** `.devcontainer/` starts Python 3.11 with a Redis
+  service (`REDIS_HOST=redis`), opens in `Scraping_project/`, and installs the CI pins
+  plus the pre-commit hook. In Codespaces use **Code → Codespaces → Create**. In VS Code
+  use **Dev Containers: Reopen in Container**. Then run the step 4 pytest line. Kafka and
+  Postgres are not included (tests that need them skip). Use `docker-compose.yml` for
+  the full stack.
+
+## Running Scrapy directly
+
+`Scraping_project/scrapy.cfg` sets `[settings] default = src.settings`, and Scrapy only
+finds it when you run from `Scraping_project/` (or below):
+
+```bash
+cd Scraping_project
+scrapy list          # base, deep_dive, depth, javascript, scout
+scrapy crawl scout
+```
+
+Run from the repo root and Scrapy reports *no active project*. `project = uconn_scraper`
+in the `[deploy]` section is only the **scrapyd** project name. It is unrelated to
+`BOT_NAME` (from `config.yml` `bot_name`, default `uconn_scraper`, used in the default
+User-Agent and stats). **Scrapyd deploy is unsupported**: the `url` is commented out
+and nothing in CI or Helm uses it. The supported runners are `start.py`, `cli.py`, and
+the Helm chart.
+
+## Releases, changelog, and decisions
+
+- Add a line to [CHANGELOG.md](CHANGELOG.md) under `## [Unreleased]` for behaviour
+  changes. The versioning policy and tag checklist are in [docs/RELEASING.md](docs/RELEASING.md).
+- Record decisions that are expensive to reverse as ADRs in [docs/adr/](docs/adr/README.md).
+- Report security issues privately, as described in [SECURITY.md](SECURITY.md). Everyone
+  taking part follows the [Code of Conduct](CODE_OF_CONDUCT.md).
+- Example scripts and their extra dependencies are listed in
+  [Scraping_project/examples/README.md](Scraping_project/examples/README.md).
+
 ## Dependencies (pip-tools)
 
 The `.in` files are the source of truth; the `.txt` files are pip-compile lockfiles.

@@ -641,6 +641,7 @@ The root `.gitignore` covers:
 - **Temp files**: `tmp/`, `temp/`, `*.tmp`, `*.bak`
 - **macOS artifacts**: `.DS_Store`, `._*`
 - **Rust/Cargo**: `target/`, `.cargo/`, `*.rs.bk`
+- **direnv**: `.envrc`, `.direnv/` (commit only `Scraping_project/.envrc.example`)
 
 ### What's Tracked (Whitelisted)
 
@@ -648,6 +649,7 @@ Important project files are explicitly whitelisted:
 - `package.json`, `package-lock.json` (Node dependencies)
 - `tsconfig.json` (TypeScript config)
 - `Cargo.toml`, `Cargo.lock` (Rust dependencies)
+- `.devcontainer/devcontainer.json` (dev container; `*.json` is otherwise ignored)
 
 View the complete ignore rules in [.gitignore](.gitignore).
 
@@ -758,6 +760,16 @@ We welcome contributions! Here's how:
 5. **Commit** with clear messages
 6. **Push** to your fork
 7. **Open** a Pull Request
+
+See **[CONTRIBUTING.md](CONTRIBUTING.md)** for setup (venv, dev container, direnv),
+the exact CI commands, and the release process.
+
+| Policy | |
+|---|---|
+| 🔒 [SECURITY.md](SECURITY.md) | report vulnerabilities privately; supported versions |
+| 🤝 [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) | Contributor Covenant 2.1 |
+| 📜 [CHANGELOG.md](CHANGELOG.md) | what changed, by release ([releasing](docs/RELEASING.md)) |
+| 🧭 [docs/adr/](docs/adr/README.md) | architecture decision records |
 
 ### Code Standards
 

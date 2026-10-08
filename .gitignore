@@ -193,6 +193,8 @@ yarn-error.log*
 !Scraping_project/monitoring/dashboards/*.json
 # The Helm chart's copies of them (Helm can only read files inside the chart, #157).
 !Scraping_project/k8s/helm/scraping-pipeline/files/monitoring/dashboards/*.json
+# Dev container definition (#694).
+!.devcontainer/devcontainer.json
 
 # ====================================
 # Jupyter Notebook
@@ -234,3 +236,7 @@ Scraping_project/profiles/
 *.cprofile
 !**/tests/**/fixtures/**/*.warc
 !**/tests/**/fixtures/**/*.warc.gz
+
+# direnv: commit only Scraping_project/.envrc.example (#783)
+.envrc
+.direnv/
