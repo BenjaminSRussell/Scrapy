@@ -1,153 +1,117 @@
 name: CD - Build and Push Images
 
+# Tags (v*) build, smoke-test and push the release images. Pull requests that
+# touch the image recipe build and smoke-test the same targets without pushing,
+# so a broken Dockerfile target fails the PR instead of the release (#449).
 on:
   push:
     tags:
       - 'v*'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'Scraping_project/Dockerfile'
+      - 'Scraping_project/.dockerignore'
+      - 'Scraping_project/docker/**'
+      - 'Scraping_project/kafka-delta-ingest/**'
+      - 'Scraping_project/requirements.txt'
+      - '.github/workflows/cd-release.yml'
+  workflow_dispatch:
 
 jobs:
   build-and-push:
+    name: image (${{ matrix.image }})
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Each image is a target in Scraping_project/Dockerfile.
+          - image: kafka-delta-ingest
+            smoke: --help                      # through the image ENTRYPOINT
+          - image: crawler
+            smoke: python cli.py --help
+          - image: metrics
+            smoke: python metrics_exporter.py --help
     # `secrets` is not available in step-level `if:` (GitHub rejects the
     # whole workflow file, which shows up as a failed run on every push).
-    # Expose "is the PAT configured" through job env instead.
+    # Expose "push this run" through job env instead.
     env:
-      HAS_GHCR_PAT: ${{ secrets.GHCR_PAT != '' }}
+      PUSH: ${{ github.event_name == 'push' && secrets.GHCR_PAT != '' }}
+      LOCAL_TAG: local/${{ matrix.image }}:ci
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
 
+      - name: Free disk space (Rust build)
+        if: matrix.image == 'kafka-delta-ingest'
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
       - name: Log in to GitHub Container Registry
-        if: env.HAS_GHCR_PAT == 'true'
+        if: env.PUSH == 'true'
         uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GHCR_PAT }}
 
-      - name: Extract metadata for kafka-delta-ingest image
-        id: meta-kafka-delta-ingest
+      - name: Extract metadata for ${{ matrix.image }} image
+        id: meta
         uses: docker/metadata-action@v6
         with:
-          images: ghcr.io/${{ github.repository }}/kafka-delta-ingest
+          images: ghcr.io/${{ github.repository }}/${{ matrix.image }}
           tags: |
             type=ref,event=tag
             type=sha
             type=raw,value=latest,enable={{is_default_branch}}
 
-      - name: Build and push kafka-delta-ingest image
+      - name: Build ${{ matrix.image }} image (load locally)
         uses: docker/build-push-action@v7
         with:
           context: ./Scraping_project
           file: ./Scraping_project/Dockerfile
-          target: kafka-delta-ingest
-          push: ${{ env.HAS_GHCR_PAT == 'true' }}
-          tags: ${{ steps.meta-kafka-delta-ingest.outputs.tags }}
-          labels: ${{ steps.meta-kafka-delta-ingest.outputs.labels }}
+          target: ${{ matrix.image }}
+          load: true
+          push: false
+          tags: ${{ env.LOCAL_TAG }}
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}
 
-      - name: Smoke test kafka-delta-ingest image
-        if: env.HAS_GHCR_PAT == 'true'
-        run: |
-          docker run --rm ghcr.io/${{ github.repository }}/kafka-delta-ingest:${{ github.ref_name }} kafka-delta-ingest --help
+      - name: Smoke test ${{ matrix.image }} image
+        run: docker run --rm "$LOCAL_TAG" ${{ matrix.smoke }}
 
-      - name: Generate SBOM for kafka-delta-ingest image
-        if: env.HAS_GHCR_PAT == 'true'
-        uses: anchore/syft-action@v0
-        with:
-          image: ghcr.io/${{ github.repository }}/kafka-delta-ingest:${{ github.ref_name }}
-          format: spdx-json
-          output: sbom-kafka-delta-ingest.spdx.json
-
-      - name: Upload kafka-delta-ingest SBOM
-        if: env.HAS_GHCR_PAT == 'true'
-        uses: actions/upload-artifact@v6
-        with:
-          name: sbom-kafka-delta-ingest
-          path: sbom-kafka-delta-ingest.spdx.json
-
-      - name: Extract metadata for crawler image
-        id: meta-crawler
-        uses: docker/metadata-action@v6
-        with:
-          images: ghcr.io/${{ github.repository }}/crawler
-          tags: |
-            type=ref,event=tag
-            type=sha
-            type=raw,value=latest,enable={{is_default_branch}}
-
-      - name: Build and push crawler image
+      - name: Push ${{ matrix.image }} image
+        if: env.PUSH == 'true'
         uses: docker/build-push-action@v7
         with:
           context: ./Scraping_project
           file: ./Scraping_project/Dockerfile
-          target: crawler
-          push: ${{ env.HAS_GHCR_PAT == 'true' }}
-          tags: ${{ steps.meta-crawler.outputs.tags }}
-          labels: ${{ steps.meta-crawler.outputs.labels }}
+          target: ${{ matrix.image }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.image }}
 
-      - name: Smoke test crawler image
-        if: env.HAS_GHCR_PAT == 'true'
-        run: |
-          docker run --rm ghcr.io/${{ github.repository }}/crawler:${{ github.ref_name }} python cli.py --help
-
-      - name: Generate SBOM for crawler image
-        if: env.HAS_GHCR_PAT == 'true'
+      - name: Generate SBOM for ${{ matrix.image }} image
+        if: env.PUSH == 'true'
         uses: anchore/syft-action@v0
         with:
-          image: ghcr.io/${{ github.repository }}/crawler:${{ github.ref_name }}
+          image: ghcr.io/${{ github.repository }}/${{ matrix.image }}:${{ github.ref_name }}
           format: spdx-json
-          output: sbom-crawler.spdx.json
+          output: sbom-${{ matrix.image }}.spdx.json
 
-      - name: Upload crawler SBOM
-        if: env.HAS_GHCR_PAT == 'true'
+      - name: Upload ${{ matrix.image }} SBOM
+        if: env.PUSH == 'true'
         uses: actions/upload-artifact@v6
         with:
-          name: sbom-crawler
-          path: sbom-crawler.spdx.json
-
-      - name: Extract metadata for metrics image
-        id: meta-metrics
-        uses: docker/metadata-action@v6
-        with:
-          images: ghcr.io/${{ github.repository }}/metrics
-          tags: |
-            type=ref,event=tag
-            type=sha
-            type=raw,value=latest,enable={{is_default_branch}}
-
-      - name: Build and push metrics image
-        uses: docker/build-push-action@v7
-        with:
-          context: ./Scraping_project
-          file: ./Scraping_project/Dockerfile
-          target: metrics
-          push: ${{ env.HAS_GHCR_PAT == 'true' }}
-          tags: ${{ steps.meta-metrics.outputs.tags }}
-          labels: ${{ steps.meta-metrics.outputs.labels }}
-
-      - name: Smoke test metrics image
-        if: env.HAS_GHCR_PAT == 'true'
-        run: |
-          docker run --rm ghcr.io/${{ github.repository }}/metrics:${{ github.ref_name }} python metrics_exporter.py --help
-
-      - name: Generate SBOM for metrics image
-        if: env.HAS_GHCR_PAT == 'true'
-        uses: anchore/syft-action@v0
-        with:
-          image: ghcr.io/${{ github.repository }}/metrics:${{ github.ref_name }}
-          format: spdx-json
-          output: sbom-metrics.spdx.json
-
-      - name: Upload metrics SBOM
-        if: env.HAS_GHCR_PAT == 'true'
-        uses: actions/upload-artifact@v6
-        with:
-          name: sbom-metrics
-          path: sbom-metrics.spdx.json
+          name: sbom-${{ matrix.image }}
+          path: sbom-${{ matrix.image }}.spdx.json

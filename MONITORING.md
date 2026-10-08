@@ -1,9 +1,10 @@
 # Monitoring: Prometheus + Jaeger (OpenTelemetry)
 
-This stack is defined at the repo root:
+The observability stack lives next to the app stack in `Scraping_project/`:
 
-- `docker-compose.production.yml` — Loki, Jaeger, OpenTelemetry Collector
-- `monitoring/otel-collector-config.yml` — OTLP receivers on `4317` (gRPC) / `4318` (HTTP), exports traces to Jaeger
+- `Scraping_project/docker-compose.observability.yml` — Loki, Jaeger, OpenTelemetry Collector (an overlay on `docker-compose.yml`, sharing its `scraper-network`)
+- `Scraping_project/monitoring/otel-collector-config.yml` — OTLP receivers on `4317` (gRPC) / `4318` (HTTP), exports traces to Jaeger
+- `Scraping_project/monitoring/loki-config.yml` — Loki single-node config
 - Scrapy app instrumentation — `Scraping_project/src/otel_tracing.py` (default **off / no-op**)
 
 Prometheus metrics remain available via `src.scrapy_prometheus.PrometheusExtension` (typically `:9410/metrics`). Tracing is additive and does not replace metrics.
@@ -21,12 +22,15 @@ Without this extra (or without `OTEL_EXPORTER_OTLP_ENDPOINT`), tracing soft-impo
 
 ## Enable OTEL traces (short crawl)
 
-1. Start the observability stack (requires Docker network `scraping_network`):
+1. Start the app stack plus the observability overlay (from `Scraping_project/`):
 
    ```bash
-   docker network create scraping_network 2>/dev/null || true
-   docker compose -f docker-compose.production.yml up -d
+   cd Scraping_project
+   docker compose -f docker-compose.yml -f docker-compose.observability.yml up -d
    ```
+
+   Containers on the stack reach the collector at `http://otel-collector:4317`;
+   from the host use `http://localhost:4317` as below.
 
 2. Point the Scrapy process at the collector and run a short crawl:
 
