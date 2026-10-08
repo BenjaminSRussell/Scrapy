@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import json
 import logging
+import os
+import subprocess
 import sys
 import types
+from pathlib import Path
 
 import pytest
 
@@ -146,3 +150,60 @@ def test_settings_default_is_none(monkeypatch):
     import src.settings as settings
 
     assert settings.ASR_PROVIDER == "none"
+
+
+# --- #470: pipeline registration is behind ASR_ENABLED ---------------------
+
+_PROJECT = Path(__file__).resolve().parents[2]
+_PROBE = (
+    "import json, sys, src.settings as s; "
+    "print(json.dumps({'pipeline': 'src.common.async_asr_processor.ASRPipeline' in s.ITEM_PIPELINES, "
+    "'priority': s.ITEM_PIPELINES.get('src.common.async_asr_processor.ASRPipeline'), "
+    "'sr_loaded': 'speech_recognition' in sys.modules, "
+    "'asr_loaded': 'src.common.async_asr_processor' in sys.modules, 'provider': s.ASR_PROVIDER}))"
+)
+
+
+def _settings_probe(**env):
+    e = {k: v for k, v in os.environ.items() if k not in ("ASR_ENABLED", "ASR_PROVIDER")}
+    e.update(env)
+    out = subprocess.run(
+        [sys.executable, "-c", _PROBE], cwd=_PROJECT, env=e, capture_output=True, text=True, timeout=120, check=True
+    )
+    return json.loads(out.stdout.strip().splitlines()[-1])
+
+
+def test_default_settings_do_not_register_or_import_asr():
+    probe = _settings_probe()
+    assert probe == {"pipeline": False, "priority": None, "sr_loaded": False, "asr_loaded": False, "provider": "none"}
+
+
+def test_asr_enabled_registers_pipeline_before_kafka():
+    probe = _settings_probe(ASR_ENABLED="true", ASR_PROVIDER="whisper")
+    assert probe["pipeline"] is True and probe["priority"] == 260
+    assert probe["provider"] == "whisper"
+
+
+def test_pipeline_passes_through_items_without_media(tmp_path):
+    pipe = asr.ASRPipeline(_proc(tmp_path, provider="whisper"))
+    item = {"url": "https://uconn.edu/a"}
+    assert pipe.process_item(item) is item
+
+
+def test_pipeline_transcribes_media_items(fake_sr, tmp_path, monkeypatch):
+    proc = _proc(tmp_path, provider="whisper")
+    calls = []
+
+    def fake_process(url, item):
+        calls.append(url)
+        from twisted.internet import defer
+
+        item["transcript"] = "t"
+        return defer.succeed(item)
+
+    monkeypatch.setattr(proc, "process_media_url", fake_process)
+    out = {}
+    asr.ASRPipeline(proc).process_item({"media_url": "https://uconn.edu/talk.wav"}).addCallback(
+        lambda r: out.setdefault("item", r)
+    )
+    assert calls == ["https://uconn.edu/talk.wav"] and out["item"]["transcript"] == "t"

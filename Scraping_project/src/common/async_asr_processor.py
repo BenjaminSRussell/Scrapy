@@ -359,6 +359,45 @@ class AsyncASRProcessor:
         self.executor.shutdown(wait=True)
         logger.info("AsyncASRProcessor shutdown complete")
 
+class ASRPipeline:
+    """Item pipeline that transcribes ``item["media_url"]`` (#470).
+
+    Only registered when ``ASR_ENABLED`` is true (see ``src/settings.py``), so a
+    default crawl never imports this module or ``speech_recognition``. Item
+    pipelines may return a Deferred, which Scrapy waits on before handing the
+    item to the next pipeline. Spider middleware output cannot do that, so
+    this is the supported entry point. Items without ``media_url``, and
+    non-dict items, pass straight through.
+
+    Cost: one download plus one transcription process per media item, at most
+    ``ASR_MAX_WORKERS`` in parallel, with downloads capped at
+    ``ASR_MAX_DOWNLOAD_BYTES``. ``ASR_PROVIDER`` picks the backend (#429).
+    """
+
+    def __init__(self, processor: "AsyncASRProcessor"):
+        self.processor = processor
+
+    @classmethod
+    def from_crawler(cls, crawler):
+        s = crawler.settings
+        return cls(
+            AsyncASRProcessor(
+                max_workers=s.getint("ASR_MAX_WORKERS", 4),
+                temp_dir=s.get("ASR_TEMP_DIR") or None,
+                max_download_bytes=s.getint("ASR_MAX_DOWNLOAD_BYTES", DEFAULT_MAX_DOWNLOAD_BYTES),
+                provider=s.get("ASR_PROVIDER") or None,
+            )
+        )
+
+    def process_item(self, item, spider=None):
+        if not isinstance(item, dict) or not item.get("media_url"):
+            return item
+        return self.processor.process_media_url(item["media_url"], item)
+
+    def close_spider(self, spider=None):
+        self.processor.shutdown()
+
+
 class ASRMiddleware:
 
     def __init__(
