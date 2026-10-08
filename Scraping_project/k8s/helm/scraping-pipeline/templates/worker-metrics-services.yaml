@@ -1,0 +1,32 @@
+{{- /*
+#789: headless Services so Prometheus resolves every Stage 2/3 worker pod
+(dns_sd_configs type A). A ClusterIP Service would round-robin scrapes across
+replicas and turn per-pod counters into noise.
+*/ -}}
+{{- if .Values.workerMetrics.enabled }}
+{{- $root := . }}
+{{- $fullname := include "scraping-pipeline.fullname" . }}
+{{- range $stage := list "stage2" "stage3" }}
+{{- if (index $root.Values (printf "%sWorker" $stage)).enabled }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $fullname }}-{{ $stage }}-metrics
+  labels:
+    {{- include "scraping-pipeline.labels" $root | nindent 4 }}
+    app.kubernetes.io/component: {{ $stage }}
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: true
+  selector:
+    {{- include "scraping-pipeline.selectorLabels" $root | nindent 4 }}
+    app.kubernetes.io/component: {{ $stage }}
+  ports:
+  - name: metrics
+    port: {{ $root.Values.workerMetrics.port }}
+    targetPort: metrics
+    protocol: TCP
+{{- end }}
+{{- end }}
+{{- end }}
