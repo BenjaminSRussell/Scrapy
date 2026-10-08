@@ -624,6 +624,10 @@ class LakehouseManager:
 
                 try:
                     self._write_with_retry(table_name, data, mode)
+                except Exception as e:
+                    # Never ack a batch that was neither written nor spilled (#225, #661).
+                    logger.error(f"Writer raised for {table_name}: {e!r}; spilling batch", exc_info=True)
+                    self._spill_batch(table_name, data, mode, reason=f"writer raised: {e!r}")
                 finally:
                     # Acked only after the batch is written or durably spilled (#225).
                     self.write_queue.task_done()
@@ -672,7 +676,12 @@ class LakehouseManager:
         (replay with ``replay_spilled_writes()``).
         """
         for attempt in range(1, self.write_retries + 1):
-            if self._write_sync(table_name, data, mode):
+            try:
+                written = self._write_sync(table_name, data, mode)
+            except Exception as e:  # any raise is a failed attempt: retry, then spill (#661)
+                logger.error(f"Write to {table_name} raised on attempt {attempt}: {e!r}")
+                written = False
+            if written:
                 return True
             if DELTA_WRITE_FAILURES is not None:
                 DELTA_WRITE_FAILURES.labels(table=table_name, outcome="retry").inc()
@@ -877,7 +886,11 @@ class LakehouseManager:
         table_path = self.tables.get(table_name)
         if not table_path:
             table_path = self.base_path / table_name
-            table_path.mkdir(parents=True, exist_ok=True)
+            try:
+                table_path.mkdir(parents=True, exist_ok=True)
+            except OSError as e:  # EACCES/ENOSPC/EROFS: a failed write, not a crash (#661)
+                self._handle_writer_exception(e, table_name)
+                return False
             self.tables[table_name] = table_path
             logger.info(f"Dynamically created new table path for: {table_name}")
 
