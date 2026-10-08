@@ -125,9 +125,17 @@ AUTOTHROTTLE_DEBUG = _scrapy_config.get("autothrottle_debug", False)
 HTTPCACHE_ENABLED = _scrapy_config.get("httpcache_enabled", True)
 HTTPCACHE_EXPIRATION_SECS = _scrapy_config.get("httpcache_expiration_secs", 3600)
 HTTPCACHE_DIR = PROJECT_ROOT / "data" / "cache" / "scrapy"
+# Filesystem storage (one directory per entry) so HttpCacheQuota can prune the
+# oldest responses. A DBM cache is a single file that can't shrink while open (#496).
 HTTPCACHE_STORAGE = _scrapy_config.get(
-    "httpcache_storage", "scrapy.extensions.httpcache.DbmCacheStorage"
+    "httpcache_storage", "scrapy.extensions.httpcache.FilesystemCacheStorage"
 )
+# Disk quota (#496): prune oldest entries down to TARGET_RATIO * MAX_BYTES once
+# usage exceeds MAX_BYTES. Checked at spider open, every PRUNE_INTERVAL_SECS, and
+# at close. 0 disables pruning; size is still exported as scrapy_httpcache_bytes.
+HTTPCACHE_MAX_BYTES = int(_scrapy_config.get("httpcache_max_bytes", 2 * 1024**3))
+HTTPCACHE_PRUNE_INTERVAL_SECS = float(_scrapy_config.get("httpcache_prune_interval_secs", 300))
+HTTPCACHE_PRUNE_TARGET_RATIO = float(_scrapy_config.get("httpcache_prune_target_ratio", 0.8))
 
 TWISTED_REACTOR = _scrapy_config.get(
     "twisted_reactor", "twisted.internet.asyncioreactor.AsyncioSelectorReactor"
@@ -162,6 +170,8 @@ EXTENSIONS = _scrapy_config.get(
     {
         "src.scrapy_prometheus.PrometheusExtension": 500,
         "src.otel_tracing.OtelTracingExtension": 510,
+        # No-op (NotConfigured) unless HTTPCACHE_ENABLED (#496).
+        "src.stage1.extensions.httpcache_quota.HttpCacheQuota": 520,
     },
 )
 
