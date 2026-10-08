@@ -193,5 +193,29 @@
         const head = state.glyph + ' ' + state.title;
         return base ? head + ' \u00B7 ' + base : head;
     }
-    return { parseMetrics, ratePerMinute, resolveMetricsUrl, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler, stageActivity, doughnutLegendLayout, connectionState, documentTitle };
+    // #962: what (if anything) to say to screen readers for a new activity
+    // item. Identical consecutive messages (e.g. "Failed to fetch metrics"
+    // every poll during an outage) are spoken once per repeatMs.
+    const ACTIVITY_SPOKEN_TYPE = { success: 'Success', warning: 'Warning', danger: 'Error', info: 'Info' };
+    function createActivityAnnouncer(opts) {
+        const o = opts || {};
+        const now = o.now || (() => Date.now());
+        const repeatMs = o.repeatMs == null ? 300000 : o.repeatMs;
+        let lastKey = null;
+        let lastAt = -Infinity;
+        return {
+            text(type, message) {
+                const msg = String(message == null ? '' : message).replace(/\s+/g, ' ').trim();
+                if (!msg) return null;
+                const label = ACTIVITY_SPOKEN_TYPE[type] || 'Info';
+                const key = label + '\u0000' + msg;
+                const t = now();
+                if (key === lastKey && t - lastAt < repeatMs) return null;
+                lastKey = key;
+                lastAt = t;
+                return label + ': ' + msg;
+            },
+        };
+    }
+    return { parseMetrics, ratePerMinute, resolveMetricsUrl, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler, stageActivity, doughnutLegendLayout, connectionState, documentTitle, createActivityAnnouncer };
 });

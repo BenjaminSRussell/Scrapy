@@ -8,6 +8,7 @@ Use for every dashboard PR:
 - [ ] Toggle buttons expose `aria-pressed`; tabs expose `aria-selected`
 - [ ] Text contrast ≥ 4.5:1 (3:1 for large text / UI chrome)
 - [ ] Status changes announced via `role="status"` / `aria-live="polite"` (not spammy)
+  - Activity items: only the new item is spoken, via the always-present `#activity-announce` region (additions only, identical repeats at most once per 5 min). The visual feeds are `aria-live="off"` because they re-render wholesale (#962).
 - [ ] Charts have a text alternative (data table / caption)
 - [ ] No information conveyed by color alone
 - [ ] Respects `prefers-reduced-motion`
