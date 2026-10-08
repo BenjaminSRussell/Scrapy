@@ -60,8 +60,12 @@ docker-compose.yml
 # CI/CD
 .github/
 
-# Monitoring
-monitoring/
+# Monitoring: configs/dashboards stay out of the image; the exporter code ships
+# for the `metrics` Dockerfile target (#449).
+monitoring/*
+!monitoring/__init__.py
+!monitoring/metrics_exporter.py
+!monitoring/metric_helpers.py
 
 # Kubernetes
 k8s/
