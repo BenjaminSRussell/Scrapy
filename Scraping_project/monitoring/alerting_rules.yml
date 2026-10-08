@@ -380,6 +380,20 @@ groups:
           impact: "Medium - Risk of evictions or OOM"
           action: "Review queue sizes and consider scaling Redis"
 
+      # Soft-ban / captcha responses (#582): pages are quarantined, never
+      # analysed; a sustained rate means a site is blocking the crawler.
+      - alert: ScrapySoftBanSpike
+        expr: sum by (stage, signature) (rate(scrapy_soft_ban_total[10m])) > 0.2
+        for: 10m
+        labels:
+          severity: warning
+          component: crawler
+        annotations:
+          summary: "Soft bans ({{ $labels.signature }}) in {{ $labels.stage }}"
+          description: "{{ $value }}/s responses classified as soft-ban/captcha. They are quarantined (stage2_errors / dropped in Stage 1) and the domain is backed off, but crawl budget is being burned."
+          impact: "Medium - Affected domains are not being crawled; no poisoned content written"
+          action: "Check scrapy_soft_ban_domain_backoff_total and stage2_errors rows with error_message LIKE 'soft_ban:%'; lower concurrency or raise SOFT_BAN_BACKOFF_COOLDOWN for the domain"
+
       # Redis pool saturated (#533). The seen/claim paths fail closed on
       # exhaustion (admission pauses, no duplicate crawl), so this means
       # throughput is being throttled by REDIS_MAX_CONNECTIONS or a slow Redis.
