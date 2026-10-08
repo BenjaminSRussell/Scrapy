@@ -374,6 +374,27 @@ Every outbound HTTPS request verifies the server certificate. aiohttp, httpx and
 
 **Exception process.** For a site with a broken chain, fix trust (install the issuing CA on the host or image) rather than disabling checks. As a temporary last resort, set `SCRAPY_TLS_INSECURE=1` for that run. It is logged at ERROR on startup and exported as `scrapy_tls_verification_disabled 1`, so it shows up in monitoring.
 
+### Kafka topics and validation failures (#410)
+
+`config.yml` `kafka.topics` lists every topic the pipeline produces to, and `kafka.topic_settings` sets partitions and retention for each one:
+
+| Logical name | Default topic | Producer | Retention |
+|---|---|---|---|
+| `scraped_items` | `scraped-items` | `KafkaPipeline` (Stage 1 items for kafka-delta-ingest) | 7 days |
+| `dead_letter` | `scraped-items-dlq` | Dead-letter queue | 30 days |
+| `validation_failures` | `validation_failures` | `SchemaValidationPipeline` | 14 days |
+
+`python -m src.utils.kafka_topics` creates the missing topics with those settings and never alters topics that already exist. `--dry-run` prints the plan without connecting. It reads `KAFKA_BOOTSTRAP_SERVERS` and the `KAFKA_SASL_*` variables. The Helm chart runs the same command as a post-install/upgrade hook Job (`kafka.topicsJob`). Scrapy's `VALIDATION_FAILURES_TOPIC` setting comes from `kafka.topics.validation_failures`.
+
+**Triage.** Each message on `validation_failures` is one `ValidationFailureRecord` (`src/schemas.py`) in JSON. The fields are `url`, `field_name`, `violation_rule`, `attempted_value`, `error_message`, `spider_name`, `failed_at_utc` and `pipeline_version`. The item itself was dropped. Read the topic with any consumer, for example:
+
+```bash
+kafka-console-consumer --bootstrap-server "$KAFKA_BOOTSTRAP_SERVERS" \
+  --topic validation_failures --from-beginning --group validation-triage
+```
+
+Group the records by `field_name` and `violation_rule` to find the spider or schema rule that is rejecting items. Fix the cause, then recrawl the affected URLs. They are not replayed automatically.
+
 ## Testing
 
 ### Run All Tests
