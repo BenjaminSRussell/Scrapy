@@ -138,3 +138,31 @@ tests:
         exp_samples:
           - labels: 'kafka:messages_failed:rate5m'
             value: 15
+
+  # #661: a batch that could neither be written nor spilled (outcome="lost")
+  # pages immediately; spilled-only failures do not trigger DeltaWriteDataLoss.
+  - interval: 1m
+    input_series:
+      - series: 'delta_write_failures_total{table="stage2_page_analysis",outcome="lost"}'
+        values: '0 0 0 0 0 0 1 1 1 1 1 1 1 1 1 1'
+      - series: 'delta_write_failures_total{table="stage1_discovery",outcome="spilled"}'
+        values: '0+1x15'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: DeltaWriteDataLoss
+        exp_alerts: []
+      - eval_time: 8m
+        alertname: DeltaWriteDataLoss
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              component: delta
+              table: stage2_page_analysis
+            exp_annotations:
+              summary: "Delta write batches for stage2_page_analysis were LOST (write and spill both failed)"
+              description: "1 batches for stage2_page_analysis could neither be written nor spilled in 5m; see DATA LOSS in the writer logs."
+              impact: "Critical - Rows are permanently missing from the lake"
+              action: "Page the on-call: free space / fix permissions on the lake volume (df -h, df -i), then re-run the affected stage for the window"
+      - eval_time: 14m
+        alertname: DeltaWriteDataLoss
+        exp_alerts: []

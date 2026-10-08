@@ -347,6 +347,20 @@ groups:
           impact: "High - Data is durable on local disk but missing from the lake until replayed"
           action: "Fix the Delta/storage error, then run LakehouseManager.replay_spilled_writes()"
 
+      # A batch could not be written AND could not be spilled (e.g. ENOSPC on the
+      # lake volume, which also holds _write_spill/). Those rows are gone (#661).
+      - alert: DeltaWriteDataLoss
+        expr: sum by (table) (increase(delta_write_failures_total{outcome="lost"}[5m])) > 0
+        for: 0m
+        labels:
+          severity: critical
+          component: delta
+        annotations:
+          summary: "Delta write batches for {{ $labels.table }} were LOST (write and spill both failed)"
+          description: "{{ $value }} batches for {{ $labels.table }} could neither be written nor spilled in 5m; see DATA LOSS in the writer logs."
+          impact: "Critical - Rows are permanently missing from the lake"
+          action: "Page the on-call: free space / fix permissions on the lake volume (df -h, df -i), then re-run the affected stage for the window"
+
       # Producers hitting a full async queue (backpressure) instead of hanging.
       - alert: DeltaWriteQueueSaturated
         expr: sum(increase(delta_write_queue_full_total[10m])) > 0

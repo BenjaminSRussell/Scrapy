@@ -57,7 +57,7 @@ try:  # async write durability (#225) and queue backpressure (#167)
 
     DELTA_WRITE_FAILURES = _WCounter(
         "delta_write_failures_total",
-        "Failed Delta write attempts, by table and outcome (retry|spilled).",
+        "Failed Delta write attempts, by table and outcome (retry|spilled|lost: spill also failed).",
         ["table", "outcome"],
     )
     DELTA_WRITE_QUEUE_FULL = _WCounter(
@@ -591,7 +591,15 @@ class LakehouseManager:
         (replay with ``replay_spilled_writes()``).
         """
         for attempt in range(1, self.write_retries + 1):
-            if self._write_sync(table_name, data, mode):
+            try:
+                written = self._write_sync(table_name, data, mode)
+            except Exception as e:
+                # _write_sync should return False, but an exception escaping it
+                # (e.g. EACCES creating a table dir) used to skip retry AND spill:
+                # _process_queue logged "Queue worker error" and the batch was gone (#661).
+                logger.error(f"Write to {table_name} raised {type(e).__name__}: {e}", exc_info=True)
+                written = False
+            if written:
                 return True
             if DELTA_WRITE_FAILURES is not None:
                 DELTA_WRITE_FAILURES.labels(table=table_name, outcome="retry").inc()
@@ -630,6 +638,9 @@ class LakehouseManager:
                 os.fsync(fh.fileno())
             tmp.replace(path)
         except Exception as e:  # last line of defence: make the loss loud
+            # e.g. ENOSPC on the lake volume also fills the spill dir under it.
+            if DELTA_WRITE_FAILURES is not None:
+                DELTA_WRITE_FAILURES.labels(table=table_name, outcome="lost").inc()
             logger.critical(f"DATA LOSS: could not spill {len(data)} rows for {table_name} ({reason}): {e}")
             return None
         if DELTA_WRITE_FAILURES is not None:
@@ -714,7 +725,11 @@ class LakehouseManager:
         table_path = self.tables.get(table_name)
         if not table_path:
             table_path = self.base_path / table_name
-            table_path.mkdir(parents=True, exist_ok=True)
+            try:
+                table_path.mkdir(parents=True, exist_ok=True)
+            except OSError as e:  # EACCES/ENOSPC/EROFS: report, don't raise (#661)
+                self._handle_writer_exception(e, table_name)
+                return False
             self.tables[table_name] = table_path
             logger.info(f"Dynamically created new table path for: {table_name}")
 
