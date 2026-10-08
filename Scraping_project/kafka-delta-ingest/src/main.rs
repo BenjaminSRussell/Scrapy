@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use cadence::{Counted, CountedExt, StatsdClient, UdpMetricSink};
+use cadence::{Counted, CountedExt, StatsdClient, Timed, UdpMetricSink};
 use clap::{Parser, Subcommand};
 use deltalake::arrow::array::{RecordBatch, StringArray};
 use deltalake::arrow::datatypes::Schema;
@@ -795,13 +795,18 @@ async fn write_batch(
 
     let batch = RecordBatch::try_new(Arc::new(schema.clone()), columns)?;
 
-    // Write to Delta Lake
+    // Write to Delta Lake. "batch.write" is a StatsD timer (ms) covering the
+    // write and the commit; statsd_mapping.yml turns it into the
+    // kafka_delta_ingest_batch_write_seconds histogram that the
+    // SlowDeltaLakeWrites alert reads (#178).
+    let write_started = std::time::Instant::now();
     let mut writer = RecordBatchWriter::for_table(table)?;
     writer.write(batch).await?;
     // Commit into the caller's table so its snapshot advances (it previously
     // committed into a throwaway clone and kept writing from a stale version).
     writer.flush_and_commit(table).await?;
 
+    metrics.time("batch.write", write_started.elapsed()).ok();
     metrics.incr("batches.written").ok();
 
     Ok(())
