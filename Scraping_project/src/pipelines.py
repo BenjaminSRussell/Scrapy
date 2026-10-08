@@ -695,6 +695,22 @@ class _TimedFlushMixin:
             loop.stop()
 
 
+def _canonical_queue_row(item: dict) -> dict:
+    """Copy of a queue handoff with canonical ``url`` and matching ``url_hash`` (#728).
+
+    The lake row, Redis seen-set member and ``url_hash`` all derive from the
+    same canonical string, so ``/page/`` and ``/page?utm_source=x`` can't land
+    as separate rows.
+    """
+    from src.utils.url_canon import canonical_or_raw, url_hash
+
+    row = dict(item)
+    if isinstance(row.get("url"), str) and row["url"]:
+        row["url"] = canonical_or_raw(row["url"])
+        row["url_hash"] = url_hash(row["url"])
+    return row
+
+
 class QueueItemPipeline(_TimedFlushMixin):
     """Batch queue hand-offs into ``js_spider_queue`` / ``stage2_queue``.
 
@@ -734,13 +750,23 @@ class QueueItemPipeline(_TimedFlushMixin):
         target_spider = item.get("target_spider")
         target_stage = item.get("target_stage")
 
+        if target_spider == "javascript" or target_stage == "stage2":
+            from src.utils.ssrf import count_blocked, ssrf_block_reason
+
+            reason = ssrf_block_reason(str(item.get("url") or ""))
+            if reason is not None:  # never queue an SSRF-like target (#682)
+                self.ssrf_dropped = getattr(self, "ssrf_dropped", 0) + 1
+                count_blocked("queue", reason)
+                logger.warning(f"[QUEUE] Not queueing {item.get('url')!r}: ssrf_blocked:{reason}")
+                return item
+
         # Copy: later pipelines (Metadata, Recency) mutate the item in place and
         # must not add columns to the queued row before the batch flushes.
         if target_spider == "javascript":
-            self.js_queue_batch.add(dict(item))
+            self.js_queue_batch.add(_canonical_queue_row(item))
             self.items_processed += 1
         elif target_stage == "stage2":
-            self.stage2_queue_batch.add(dict(item))
+            self.stage2_queue_batch.add(_canonical_queue_row(item))
             self.items_processed += 1
         else:
             # Content records (dicts without routing metadata) are not queue

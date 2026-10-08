@@ -2,7 +2,7 @@
 # ==================================================================
 # Entrypoint for Kafka Delta Ingest Service (Rust)
 # ==================================================================
-set -e
+set -euo pipefail  # project standard (#822): scripts/SHELL_STANDARD.md
 
 # Display startup banner
 echo "==============================================="
@@ -21,7 +21,7 @@ echo "  STATSD_PORT: ${STATSD_PORT:-9125}"
 echo "==============================================="
 
 # Wait for Kafka to be ready
-if [ -n "$KAFKA_BOOTSTRAP_SERVERS" ]; then
+if [ -n "${KAFKA_BOOTSTRAP_SERVERS:-}" ]; then
   KAFKA_HOST=$(echo "${KAFKA_BOOTSTRAP_SERVERS}" | cut -d: -f1)
   KAFKA_PORT=$(echo "${KAFKA_BOOTSTRAP_SERVERS}" | cut -d: -f2)
   echo "Waiting for Kafka at ${KAFKA_HOST}:${KAFKA_PORT}..."
@@ -34,7 +34,7 @@ fi
 
 echo "==============================================="
 echo "Starting kafka-delta-ingest..."
-echo "Command: kafka-delta-ingest $@"
+echo "Command: kafka-delta-ingest $*"
 echo "==============================================="
 
 # Execute the kafka-delta-ingest binary with provided arguments

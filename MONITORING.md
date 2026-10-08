@@ -89,3 +89,16 @@ with start_span("stage2.run", stage="stage2", crawl_job_id=job):
 ```
 
 Set the same `CRAWL_JOB_ID` (and `OTEL_EXPORTER_OTLP_ENDPOINT`) in the worker environment to stitch Scrapy + worker spans in Jaeger.
+
+## ZSC classifier service: readiness and low-confidence review
+
+**Readiness (#485).** `src/ml_service.py` serves `GET /healthz` (liveness) and `GET /readyz` on `ZSC_HEALTH_PORT` (default `8095`; `0` turns it off). `/readyz` returns `503` with the current `phase` (`starting → loading_model → warming_up → subscribing`) and returns `200` only after the model has loaded, one warm-up inference has succeeded, and the Kafka consumer has subscribed. The service never polls Kafka before warm-up. If the model fails to load, the phase is `failed` and the process exits. Point a Kubernetes `readinessProbe` at `/readyz` and a `livenessProbe` at `/healthz`. Give the readiness probe a generous `failureThreshold`, because a first model load can take minutes.
+
+**Low-confidence review export (#422).** Records under `ZSC_CONFIDENCE_THRESHOLD` go to the `low_confidence_review` topic. To dump them for labeling:
+
+```bash
+cd Scraping_project
+python cli.py ml review-export --output exports/low_confidence_review.jsonl --limit 1000
+```
+
+Each line is a `LowConfidenceRecord` (`url`, `title`, `content_preview`, `predicted_category`, `confidence_score`, `threshold`, `needs_review`, `created_at_utc`). The export uses a throwaway consumer group and never commits, so it doesn't move the service's offsets. It stops after `--limit` records, or after `--idle-timeout` seconds with no new messages.

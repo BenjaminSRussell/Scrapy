@@ -123,29 +123,32 @@ class ConnectionPool(Generic[T]):
         created_at = None
 
         try:
-            # Try to get from pool
-            try:
-                conn, created_at = await asyncio.wait_for(
-                    self._pool.get(),
-                    timeout=self.timeout
-                )
-                self.metrics["pool_hits"] += 1
-
-                # Validate connection
-                if not await self._is_connection_valid(conn, created_at):
-                    # Connection invalid, create new one
-                    self._size -= 1
-                    conn = await self._create_connection()
-                    created_at = datetime.now()
-                    self.metrics["pool_misses"] += 1
-
-            except asyncio.TimeoutError:
-                # Pool empty, try to create new connection
-                self.metrics["timeouts"] += 1
+            if self._pool.empty() and self._size < self.max_size:
+                # Nothing idle but room to grow: don't make the caller wait
+                # ``timeout`` seconds for a connection that may never come back (#260).
                 conn = await self._create_connection()
                 created_at = datetime.now()
                 self.metrics["pool_misses"] += 1
-
+            else:
+                try:
+                    conn, created_at = await asyncio.wait_for(self._pool.get(), timeout=self.timeout)
+                except asyncio.TimeoutError:
+                    # Every connection busy for ``timeout`` s: one more if allowed,
+                    # else PoolExhausted (the defined exhaustion behaviour).
+                    self.metrics["timeouts"] += 1
+                    conn = await self._create_connection()
+                    created_at = datetime.now()
+                    self.metrics["pool_misses"] += 1
+                else:
+                    self.metrics["pool_hits"] += 1
+                    if not await self._is_connection_valid(conn, created_at):
+                        # Expired/unhealthy: close it (was leaked) and replace it.
+                        stale, conn = conn, None
+                        self._size -= 1
+                        await self._close_connection(stale)
+                        conn = await self._create_connection()
+                        created_at = datetime.now()
+                        self.metrics["pool_misses"] += 1
             self.metrics["active_connections"] += 1
             yield conn
 
@@ -154,7 +157,9 @@ class ConnectionPool(Generic[T]):
             if conn is not None:
                 self.metrics["active_connections"] -= 1
                 try:
-                    await self._pool.put((conn, created_at))
+                    # put_nowait: put() would block forever on a full queue instead of
+                    # raising QueueFull, so the discard branch below never ran.
+                    self._pool.put_nowait((conn, created_at))
                 except asyncio.QueueFull:
                     # Pool full, discard connection
                     self._size -= 1
@@ -167,18 +172,26 @@ class ConnectionPool(Generic[T]):
         while not self._pool.empty():
             try:
                 conn, _ = self._pool.get_nowait()
-                # Call close if connection has close method
-                if hasattr(conn, 'close'):
-                    try:
-                        await conn.close()
-                    except Exception as e:
-                        logger.warning(f"Error closing connection: {e}")
+                await self._close_connection(conn)
                 self._size -= 1
             except asyncio.QueueEmpty:
                 break
 
         self._initialized = False
         logger.info("Connection pool closed")
+
+    @staticmethod
+    async def _close_connection(conn: Any) -> None:
+        """Call ``conn.close()`` whether it is sync or async; never raises."""
+        close = getattr(conn, "close", None)
+        if close is None:
+            return
+        try:
+            result = close()
+            if asyncio.iscoroutine(result) or isinstance(result, asyncio.Future):
+                await result
+        except Exception as e:
+            logger.warning(f"Error closing connection: {e}")
 
     def get_stats(self) -> dict:
         """Get pool statistics."""
@@ -199,7 +212,12 @@ class ConnectionPool(Generic[T]):
 
 
 class HTTPConnectionPool:
-    """HTTP connection pool using aiohttp."""
+    """HTTP connection pool using aiohttp.
+
+    The connector and session are created lazily inside the running event loop
+    and recreated after ``close()`` (a closed connector can't be reused, so
+    ``get_session()`` after ``close()`` used to fail) (#260).
+    """
 
     def __init__(
         self,
@@ -207,32 +225,36 @@ class HTTPConnectionPool:
         max_per_host: int = 10,
         timeout: float = 30.0
     ):
-        import aiohttp
-        
-        self.connector = aiohttp.TCPConnector(
-            limit=max_connections,
-            limit_per_host=max_per_host,
-            ttl_dns_cache=300
-        )
-        
-        self.timeout = aiohttp.ClientTimeout(total=timeout)
-        self._session: Optional[aiohttp.ClientSession] = None
+        self.max_connections = max_connections
+        self.max_per_host = max_per_host
+        self.timeout_seconds = timeout
+        self.connector: Any = None
+        self._session: Any = None
 
     async def get_session(self) -> Any:
-        """Get or create aiohttp session."""
+        """Get or create the aiohttp session (and its connector)."""
         if self._session is None or self._session.closed:
             import aiohttp
+
+            self.connector = aiohttp.TCPConnector(
+                limit=self.max_connections,
+                limit_per_host=self.max_per_host,
+                ttl_dns_cache=300,
+            )
             self._session = aiohttp.ClientSession(
                 connector=self.connector,
-                timeout=self.timeout
+                timeout=aiohttp.ClientTimeout(total=self.timeout_seconds),
             )
         return self._session
 
     async def close(self):
         """Close session and connector."""
-        if self._session and not self._session.closed:
+        if self._session is not None and not self._session.closed:
             await self._session.close()
+        if self.connector is not None and not self.connector.closed:
             await self.connector.close()
+        self._session = None
+        self.connector = None
 
 
 # Global HTTP pool
