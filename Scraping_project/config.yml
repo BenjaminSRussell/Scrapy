@@ -28,6 +28,11 @@ stage1:
   # Target domains (dynamically populated from start_urls if not specified)
   allowed_domains:
     - uconn.edu
+  # Domain URL side table (#317). Off unless a profile opts in; this bundled
+  # UConn profile does. URLs whose host is an allowed domain (or a subdomain)
+  # are also upserted into domain_urls_table.
+  write_domain_urls: true
+  domain_urls_table: uconn_urls
 
   # NEW: Aggressive URL Collection Mode
   aggressive_collection: true  # Capture EVERYTHING - Stage 2 will filter
@@ -123,6 +128,8 @@ stage1:
 stage2:
   # Worker Configuration
   max_workers: 100
+  # Max in-flight fetches per host (#195); env STAGE2_PER_HOST_CONCURRENCY overrides.
+  per_host_concurrency: 4
   batch_size: 50
   poll_interval_seconds: 3
 

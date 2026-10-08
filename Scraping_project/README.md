@@ -596,6 +596,8 @@ All tables use PyArrow schemas for validation:
 | `stage3_queue` | Summarization queue | Stage3Summary |
 | `errors` | Error tracking | ErrorRecord |
 
+`stage1_discovery` and `stage2_page_analysis` are partitioned by registrable domain. A row whose URL has no usable http(s) host (empty, `mailto:`, garbage) is not written under a catch-all `domain=unknown` partition. It goes to `domain_quarantine` (`source_table`, `url`, `reason`, `row_json`, `quarantined_at`), counted by `delta_unknown_domain_rows_total{table}`, and the `DeltaUndomainableRows` alert fires on a sustained stream (#458). For tables written before this change, `LakehouseManager.repair_unknown_domains(table)` reports what is in the legacy `unknown` partition. Pass `apply=True` to move repairable rows to their real domain and the rest to quarantine.
+
 ### Schema Evolution Policy
 
 Every append and overwrite reads the table's current schema from its `_delta_log`, not from process memory. So any number of workers or pods writing the same table agree on one schema.
@@ -605,6 +607,19 @@ Every append and overwrite reads the table's current schema from its `_delta_log
 - **Required columns are never null-filled.** A row missing a non-nullable column is quarantined, in both modes. The rest of the batch is still written.
 - **Overwrite replaces rows, not the schema (#509).** `mode="overwrite"` goes through the same cast and additive path and commits with `schema_mode="merge"`. Columns that other writers evolved survive, null in the new rows.
 - **Breaking changes** (renames, type narrowing, dropping columns) are never implicit. Rewrite the table deliberately with `write(..., mode="overwrite", schema_overwrite=True)`. That write is always synchronous, logged as `[SCHEMA OVERWRITE]`, and counted in `delta_schema_overwrites_total{table}`.
+
+### Bronze record contract (#227, #302)
+
+Crawl items are validated once against `src/schemas.py` `BaseRecordSchema` (by `SchemaValidationPipeline`) and again by kafka-delta-ingest. Both enforce the same required list: `BRONZE_REQUIRED_FIELDS` in Python and `REQUIRED_INGEST_FIELDS` in `kafka-delta-ingest/src/main.rs`. `tests/unit/test_bronze_schema_contract.py` fails if they diverge.
+
+| Field | Bronze | Notes |
+|---|---|---|
+| `url`, `scraped_at_utc`, `spider_name` | required | `scraped_at_utc` and `spider_name` are stamped before validation if the spider didn't set them |
+| `source_url` | optional | defaults to `url` |
+| `title`, `content`, `publication_date` | optional | a page with no extractable title or date is still crawl data |
+| costs, `category_*`, `entity_id`, `recency_score` | optional | still validated when present (non-negative costs, totals add up, confidence in [0, 1]) |
+
+Silver and analytics consumers that need `publication_date` filter on it or backfill it there. Ordering and partitioning fall back to `scraped_at_utc`; the Delta `date` partition is derived from it. Items accepted without a date are counted in `scrapy_items_missing_publication_date_total{spider}`. Drops are counted in `scrapy_schema_validation_drops_total{spider,field}` and published to `validation_failures`.
 
 ### Type-Safe Operations
 
