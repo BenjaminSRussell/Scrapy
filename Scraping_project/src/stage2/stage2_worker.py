@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+import random
 import time
 from collections import Counter as TallyCounter
 from contextlib import asynccontextmanager
@@ -17,6 +18,7 @@ from src.core.constants import TABLE_STAGE2_ERRORS
 from src.utils.delta import get_delta
 from src.utils.soft_ban import DomainBackoff, SoftBanDetector, count_deferred, count_soft_ban, domain_of
 from src.utils.postgres import get_postgres_manager
+from src.utils.retry import CircuitBreaker
 from src.utils.metrics_sink import record_error, record_performance
 from src.otel_tracing import ensure_crawl_job_id, init_tracing, start_span
 
@@ -65,6 +67,24 @@ try:  # analysis upsert failures; their queue rows are left pending (#311)
 except Exception:
     STAGE2_ANALYSIS_WRITE_FAILURES = None
 
+try:  # in-request HTTP retries and per-host circuit breaker (#158)
+    from prometheus_client import Counter as _HCounter
+
+    STAGE2_HTTP_FETCHES = _HCounter(
+        "stage2_http_fetches_total",
+        "Stage 2 URL fetches by outcome: first_try, recovered (succeeded after a retry), "
+        "exhausted (transient failure on every attempt) or circuit_open (host breaker open; URL deferred).",
+        ["outcome"],
+    )
+    STAGE2_HTTP_RETRIES = _HCounter(
+        "stage2_http_retries_total",
+        "Stage 2 HTTP retry attempts by transient reason (timeout, connection, http_5xx/408).",
+        ["reason"],
+    )
+except Exception:
+    STAGE2_HTTP_FETCHES = None
+    STAGE2_HTTP_RETRIES = None
+
 DEFAULT_STAGE2_MERGE_RETRIES = 4
 ANALYSIS_TABLE = "stage2_page_analysis"
 
@@ -89,6 +109,40 @@ def split_stage2_results(results: list[Any]) -> tuple[list[dict[str, Any]], list
 
 DEFAULT_STAGE2_MAX_RETRIES = 3
 SOFT_BAN_PREFIX = "soft_ban:"
+# In-request retry policy (#158). 429 is deliberately absent: it is a soft-ban
+# signal (#582) handled by quarantine + DomainBackoff, and retried by the queue.
+TRANSIENT_HTTP_STATUSES = frozenset({408, 500, 502, 503, 504})
+DEFAULT_STAGE2_HTTP_ATTEMPTS = 3
+DEFAULT_STAGE2_HTTP_BACKOFF_BASE = 0.5
+DEFAULT_STAGE2_HTTP_BACKOFF_MAX = 8.0
+DEFAULT_STAGE2_BREAKER_FAILURES = 5
+DEFAULT_STAGE2_BREAKER_RECOVERY = 60
+
+
+def _env_number(name: str, default: float, minimum: float, cast: Any = float) -> Any:
+    try:
+        return max(minimum, cast(os.getenv(name, default)))
+    except (TypeError, ValueError):
+        return cast(default)
+
+
+def _parse_retry_after(value: str | None) -> float | None:
+    """Seconds from a numeric Retry-After header; HTTP-date forms are ignored."""
+    if not value:
+        return None
+    try:
+        return max(0.0, float(value.strip()))
+    except ValueError:
+        return None
+
+
+class TransientHTTPError(Exception):
+    """A retryable HTTP status (TRANSIENT_HTTP_STATUSES) that was not a soft ban."""
+
+    def __init__(self, status: int, retry_after: float | None = None):
+        super().__init__(f"HTTP {status}")
+        self.status = status
+        self.retry_after = retry_after
 
 
 def _is_terminal_error(row: dict[str, Any]) -> bool:
@@ -159,6 +213,13 @@ class Stage2Worker:
         # Soft-ban/captcha guard (#582).
         self.soft_ban = SoftBanDetector()
         self.domain_backoff = DomainBackoff(stage="stage2")
+        # In-request retries + per-host circuit breaker (#158).
+        self.http_attempts = _env_number("STAGE2_HTTP_ATTEMPTS", DEFAULT_STAGE2_HTTP_ATTEMPTS, 1, int)
+        self.http_backoff_base = _env_number("STAGE2_HTTP_BACKOFF_BASE", DEFAULT_STAGE2_HTTP_BACKOFF_BASE, 0.0)
+        self.http_backoff_max = _env_number("STAGE2_HTTP_BACKOFF_MAX", DEFAULT_STAGE2_HTTP_BACKOFF_MAX, 0.0)
+        self.breaker_failures = _env_number("STAGE2_BREAKER_FAILURES", DEFAULT_STAGE2_BREAKER_FAILURES, 1, int)
+        self.breaker_recovery = _env_number("STAGE2_BREAKER_RECOVERY", DEFAULT_STAGE2_BREAKER_RECOVERY, 0, int)
+        self._host_breakers: dict[str, CircuitBreaker] = {}
 
     def _load_prior_failures(self) -> dict[str, int]:
         """Per-URL failure counts from earlier runs, from the stage2_errors quarantine."""
@@ -457,42 +518,23 @@ class Stage2Worker:
             if backoff.blocked(domain):
                 count_deferred("stage2")
                 return {"url": url, "url_hash": url_hash, "_deferred": True}
+            breaker = self._breaker(domain)
+            if not breaker.can_execute():
+                # Host keeps failing: leave the row pending instead of burning attempts.
+                count_deferred("stage2")
+                self._count_fetch("circuit_open")
+                return {"url": url, "url_hash": url_hash, "_deferred": True}
             try:
                 session = self._session
                 owns_session = session is None  # direct callers outside run()
                 if session is None:
                     session = self._new_session()
                 try:
-                    async with session.get(url, allow_redirects=True) as response:
-                        if response.status >= 400:
-                            body = ""
-                            if response.status in (403, 503):
-                                body = await self._read_error_body(response)
-                            sig = self._detector().detect(response.status, body, response.headers)
-                            if sig:
-                                return self._soft_ban_record(url, url_hash, response.status, sig, domain)
-                            return self._error_record(url, url_hash, response.status, "http_error")
-
-                        content_type = response.headers.get("Content-Type", "").lower()
-
-                        if "text/html" in content_type:
-                            html = await response.text()
-                            sig = self._detector().detect(response.status, html, response.headers)
-                            if sig:  # challenge page served as 200: never analysed as content
-                                return self._soft_ban_record(url, url_hash, response.status, sig, domain)
-                            return await self._analyze_html(url, url_hash, html, is_heavy)
-                        elif "application/pdf" in content_type:
-                            return self._route_pdf_to_stage4(url, url_hash)
-                        else:
-                            return self._minimal_record(url, url_hash, content_type)
+                    return await self._fetch_with_retries(session, url, url_hash, is_heavy, domain, breaker)
                 finally:
                     if owns_session:
                         await session.close()
-
-            except TimeoutError as e:
-                self._log_error_to_postgres(url, "TimeoutError", str(e))
-                return self._error_record(url, url_hash, 0, "timeout")
-            except aiohttp.ClientError as e:
+            except aiohttp.ClientError as e:  # non-transient client errors fail fast
                 error_type = f"ClientError: {type(e).__name__}"
                 self._log_error_to_postgres(url, error_type, str(e))
                 return self._error_record(url, url_hash, 0, error_type)
@@ -500,6 +542,115 @@ class Stage2Worker:
                 logger.error(f"Failed to analyze {url}: {e}")
                 self._log_error_to_postgres(url, type(e).__name__, str(e))
                 return self._error_record(url, url_hash, 0, f"error: {str(e)}")
+
+    async def _fetch_with_retries(
+        self,
+        session: aiohttp.ClientSession,
+        url: str,
+        url_hash: str,
+        is_heavy: bool,
+        domain: str,
+        breaker: CircuitBreaker,
+    ) -> dict[str, Any]:
+        """Fetch + analyse with bounded exponential backoff on transient failures (#158).
+
+        Retried: timeouts, connection/payload errors and TRANSIENT_HTTP_STATUSES.
+        Not retried: soft bans (quarantine + domain backoff), other 4xx, non-network errors.
+        Exhausting every attempt counts one failure on the host's circuit breaker.
+        """
+        attempts = max(1, int(getattr(self, "http_attempts", DEFAULT_STAGE2_HTTP_ATTEMPTS)))
+        code, message = 0, "timeout"
+        for attempt in range(1, attempts + 1):
+            retry_after: float | None = None
+            try:
+                result = await self._fetch_once(session, url, url_hash, is_heavy, domain)
+            except TransientHTTPError as e:
+                code, message, reason, retry_after = e.status, "http_error", f"http_{e.status}", e.retry_after
+                exc_type, exc_text = "HTTPError", str(e)
+            except TimeoutError as e:
+                code, message, reason = 0, "timeout", "timeout"
+                exc_type, exc_text = "TimeoutError", str(e)
+            except (aiohttp.ClientConnectionError, aiohttp.ClientPayloadError) as e:
+                code, message, reason = 0, f"ClientError: {type(e).__name__}", "connection"
+                exc_type, exc_text = message, str(e)
+            else:
+                breaker.record_success()
+                if attempt > 1:
+                    logger.info(f"[STAGE2] {url[:80]} succeeded on attempt {attempt}/{attempts}")
+                self._count_fetch("recovered" if attempt > 1 else "first_try")
+                return result
+
+            if attempt < attempts:
+                delay = self._retry_delay(attempt, retry_after)
+                logger.info(
+                    f"[STAGE2] Transient {reason} for {url[:80]} (attempt {attempt}/{attempts}); "
+                    f"retrying in {delay:.2f}s"
+                )
+                if STAGE2_HTTP_RETRIES is not None:
+                    STAGE2_HTTP_RETRIES.labels(reason=reason).inc()
+                await asyncio.sleep(delay)
+
+        breaker.record_failure()
+        self._count_fetch("exhausted")
+        logger.warning(f"[STAGE2] {url[:80]} failed after {attempts} attempt(s): {message} (code={code})")
+        self._log_error_to_postgres(url, exc_type, f"{exc_text} after {attempts} attempt(s)")
+        return self._error_record(url, url_hash, code, message)
+
+    async def _fetch_once(
+        self, session: aiohttp.ClientSession, url: str, url_hash: str, is_heavy: bool, domain: str
+    ) -> dict[str, Any]:
+        """One GET. Raises TransientHTTPError / TimeoutError / ClientError for the retry loop."""
+        async with session.get(url, allow_redirects=True) as response:
+            if response.status >= 400:
+                body = ""
+                if response.status in (403, 503):
+                    body = await self._read_error_body(response)
+                sig = self._detector().detect(response.status, body, response.headers)
+                if sig:  # soft bans are never retried in-request (#582)
+                    return self._soft_ban_record(url, url_hash, response.status, sig, domain)
+                if response.status in TRANSIENT_HTTP_STATUSES:
+                    raise TransientHTTPError(response.status, _parse_retry_after(response.headers.get("Retry-After")))
+                return self._error_record(url, url_hash, response.status, "http_error")
+
+            content_type = response.headers.get("Content-Type", "").lower()
+
+            if "text/html" in content_type:
+                html = await response.text()
+                sig = self._detector().detect(response.status, html, response.headers)
+                if sig:  # challenge page served as 200: never analysed as content
+                    return self._soft_ban_record(url, url_hash, response.status, sig, domain)
+                return await self._analyze_html(url, url_hash, html, is_heavy)
+            elif "application/pdf" in content_type:
+                return self._route_pdf_to_stage4(url, url_hash)
+            else:
+                return self._minimal_record(url, url_hash, content_type)
+
+    def _retry_delay(self, attempt: int, retry_after: float | None = None) -> float:
+        """Exponential backoff with jitter, capped; a numeric Retry-After raises it (also capped)."""
+        cap = float(getattr(self, "http_backoff_max", DEFAULT_STAGE2_HTTP_BACKOFF_MAX))
+        base = min(cap, float(getattr(self, "http_backoff_base", DEFAULT_STAGE2_HTTP_BACKOFF_BASE)) * (2 ** (attempt - 1)))
+        delay: float = base * (0.5 + random.random() / 2)
+        if retry_after is not None:
+            delay = max(delay, min(float(retry_after), cap))
+        return delay
+
+    def _breaker(self, domain: str) -> CircuitBreaker:
+        breakers: dict[str, CircuitBreaker] | None = getattr(self, "_host_breakers", None)
+        if breakers is None:
+            breakers = self._host_breakers = {}
+        breaker: CircuitBreaker | None = breakers.get(domain)
+        if breaker is None:
+            breaker = breakers[domain] = CircuitBreaker(
+                failure_threshold=int(getattr(self, "breaker_failures", DEFAULT_STAGE2_BREAKER_FAILURES)),
+                recovery_timeout=int(getattr(self, "breaker_recovery", DEFAULT_STAGE2_BREAKER_RECOVERY)),
+                name=f"stage2:{domain}",
+            )
+        return breaker
+
+    @staticmethod
+    def _count_fetch(outcome: str) -> None:
+        if STAGE2_HTTP_FETCHES is not None:
+            STAGE2_HTTP_FETCHES.labels(outcome=outcome).inc()
 
     async def _analyze_html(self, url: str, url_hash: str, html: str, is_heavy: bool) -> dict[str, Any]:
         soup = BeautifulSoup(html, "html.parser")
