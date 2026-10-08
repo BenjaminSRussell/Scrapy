@@ -323,6 +323,16 @@ Metrics: `scrapy_soft_ban_total{stage,signature}`,
 `scrapy_soft_ban_domain_backoff_total{stage}`, `scrapy_soft_ban_deferred_total{stage}`.
 Alert: `ScrapySoftBanSpike`. Fixture pages live in `tests/fixtures/soft_ban/`.
 
+### Docker build context
+
+`.dockerignore` comments every exclusion (#625). Runtime data (`data/`,
+`logs/`), caches, VCS/CI metadata, docs, Kubernetes manifests and Rust
+`target/` stay out of the context. `Dockerfile`, `docker-compose.yml` and
+`monitoring/` stay in. Compose still **bind-mounts**
+`monitoring/prometheus.yml` and `monitoring/alerting/` at runtime, so config
+edits apply without a rebuild; the copy inside the image is the default and
+can be baked in when wanted.
+
 ### Environment Variables
 
 ```bash

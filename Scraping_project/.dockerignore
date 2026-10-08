@@ -1,14 +1,13 @@
-# Docker ignore file to reduce build context
+# Docker build context excludes (#625). Every entry says why it is excluded.
+# Only exclude what the image never needs; anything an operator might want to
+# bake in (Dockerfile, compose file, monitoring configs) stays in the context.
 
-# Python
+# --- Python build/cache artefacts: regenerated inside the image ---------------
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
-env/
-venv/
-ENV/
 build/
 develop-eggs/
 dist/
@@ -25,43 +24,56 @@ wheels/
 .installed.cfg
 *.egg
 
-# Testing
+# --- Local virtualenvs: the image installs requirements.txt itself ------------
+env/
+venv/
+ENV/
+.venv/
+
+# --- Test/coverage output: never shipped ---------------------------------------
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
 .coverage
 htmlcov/
 *.cover
 .hypothesis/
 
-# Documentation
+# --- Docs: not needed at runtime (README kept for the package metadata) --------
 docs/
 *.md
 !README.md
 
-# IDE
+# --- Editor files ----------------------------------------------------------------
 .vscode/
 .idea/
 *.swp
 *.swo
 
-# Git
+# --- VCS metadata: large and irrelevant to the build ----------------------------
 .git/
 .gitignore
 
-# Data and logs
+# --- Runtime data and logs: mounted as volumes (./data, ./logs), never baked ---
 data/
 logs/
 *.log
 
-# Docker
-Dockerfile
-docker-compose.yml
-.dockerignore
+# --- Rust build output: kafka-delta-ingest is compiled from source, and a
+#     local target/ dir is multiple GB -------------------------------------------
+kafka-delta-ingest/target/
 
-# CI/CD
+# --- CI config: not used inside containers ----------------------------------------
 .github/
 
-# Monitoring
-monitoring/
-
-# Kubernetes
+# --- Kubernetes manifests/Helm chart: applied with kubectl/helm from the repo,
+#     never read inside a container --------------------------------------------------
 k8s/
+
+# Deliberately NOT excluded:
+# - Dockerfile, docker-compose.yml, .dockerignore: small, and tools such as
+#   BuildKit frontends / compose-in-image / SBOM scanners expect them.
+# - monitoring/: docker-compose bind-mounts monitoring/prometheus.yml and
+#   monitoring/alerting at runtime (edits apply without a rebuild), but the
+#   directory is also kept in the image so monitoring/metrics_exporter.py and
+#   the default configs are available, e.g. to bake dashboards.
