@@ -300,6 +300,20 @@ groups:
           impact: "Medium - Writer thread cannot keep up; batches spilled to disk"
           action: "Check writer thread health and storage latency; raise delta_lake.queue_maxsize only if storage is healthy"
 
+      # Sustained async-queue backlog (#166): batches only in process memory are
+      # lost on SIGKILL/OOM, so a queue that never drains is a data-loss window.
+      - alert: DeltaWriteQueueBacklog
+        expr: max(delta_write_queue_depth) > 100
+        for: 10m
+        labels:
+          severity: warning
+          component: delta
+        annotations:
+          summary: "Delta async write queue has had a backlog for 10m"
+          description: "{{ $value }} batches have been waiting in the in-memory write queue. They are durable only after the writer commits them (SIGTERM drains or spills them; SIGKILL/OOM loses them)."
+          impact: "Medium - Batches still in memory are lost on a hard crash"
+          action: "Check Delta storage latency and writer thread health; consider async_write=False for critical tables"
+
   # ============================================
   # Infrastructure Alerts
   # ============================================
