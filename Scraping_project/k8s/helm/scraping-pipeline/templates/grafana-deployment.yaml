@@ -67,8 +67,11 @@ metadata:
     {{- include "scraping-pipeline.labels" . | nindent 4 }}
     app.kubernetes.io/component: grafana
 data:
-  unified_dashboard.json: |
-{{ (.Files.Get "files/monitoring/dashboards/unified_dashboard.json") | indent 4 }}
+  # Copies of monitoring/dashboards/*.json; tests keep them identical (#157).
+{{- range $path, $_ := .Files.Glob "files/monitoring/dashboards/*.json" }}
+  {{ base $path }}: |
+{{ $.Files.Get $path | indent 4 }}
+{{- end }}
 ---
 apiVersion: v1
 kind: Service
@@ -162,10 +165,10 @@ spec:
           mountPath: /etc/grafana/provisioning/datasources
         - name: dashboards-config
           mountPath: /etc/grafana/provisioning/dashboards
-        - name: dashboards
-          mountPath: /var/lib/grafana/dashboards
         - name: storage
           mountPath: /var/lib/grafana
+        - name: dashboards
+          mountPath: /var/lib/grafana/dashboards
         resources:
           {{- toYaml .Values.grafana.resources | nindent 10 }}
       volumes:
@@ -178,9 +181,6 @@ spec:
       - name: dashboards
         configMap:
           name: {{ $fullname }}-grafana-dashboard-unified
-          items:
-          - key: unified_dashboard.json
-            path: unified_dashboard.json
       {{- if .Values.grafana.persistence.enabled }}
       - name: storage
         persistentVolumeClaim:
