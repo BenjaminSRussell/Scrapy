@@ -504,7 +504,9 @@ class LakehouseManager:
                 logger.error(f"Maintenance worker error: {e}", exc_info=True)
 
     def _process_queue(self):
-        while not self.shutdown_event.is_set():
+        # Drain until the shutdown sentinel (#166): batches queued before
+        # shutdown() are still written, not abandoned when shutdown_event is set.
+        while True:
             try:
                 task = self.write_queue.get(timeout=1.0)
                 if task is None:
@@ -522,9 +524,30 @@ class LakehouseManager:
                         DELTA_WRITE_QUEUE_DEPTH.set(self.write_queue.qsize())
 
             except queue.Empty:
+                if self.shutdown_event.is_set():
+                    break  # sentinel was consumed by _spill_queued_batches
                 continue
             except Exception as e:
                 logger.error(f"Queue worker error: {e}", exc_info=True)
+
+    def _spill_queued_batches(self, reason: str) -> int:
+        """Durably spill every batch still in the write queue (#166). Returns batches spilled."""
+        spilled = 0
+        while True:
+            try:
+                task = self.write_queue.get_nowait()
+            except queue.Empty:
+                break
+            try:
+                if task is not None:
+                    table_name, data, mode = task
+                    self._spill_batch(table_name, data, mode, reason=reason)
+                    spilled += 1
+            finally:
+                self.write_queue.task_done()
+        if DELTA_WRITE_QUEUE_DEPTH is not None:
+            DELTA_WRITE_QUEUE_DEPTH.set(self.write_queue.qsize())
+        return spilled
 
     def _handle_writer_exception(self, e: Exception, table_name: str):
         logger.error(f"Write failed for {table_name}: {e}", exc_info=True)
@@ -828,6 +851,11 @@ class LakehouseManager:
             if DELTA_SCHEMA_OVERWRITES is not None:
                 DELTA_SCHEMA_OVERWRITES.labels(table=table_name).inc()
             return self._write_sync(table_name, data, mode, schema_overwrite=True)
+        if async_write and self.shutdown_event.is_set():
+            # Shutting down: the worker may already be gone, so a queued batch
+            # could sit unread. Write it synchronously instead (#166).
+            logger.debug(f"Shutdown in progress; writing {len(data)} rows for {table_name} synchronously")
+            return self._write_sync(table_name, data, mode)
         if async_write:
             try:
                 self.write_queue.put((table_name, data, mode), timeout=self.queue_put_timeout)
@@ -1017,13 +1045,10 @@ class LakehouseManager:
         logger.info(f"Waiting for queue to finish (timeout: {timeout}s)...")
 
         start_time = time.time()
-        while not self.write_queue.empty() and (time.time() - start_time) < timeout:
-            try:
-                self.write_queue.join()
-                break
-            except Exception as e:
-                logger.warning(f"Queue join error: {e}")
-                time.sleep(0.1)
+        # Bounded wait (#166): Queue.join() has no timeout and hung forever when
+        # the worker had already exited, so a SIGTERM'd pod never finished.
+        while self.write_queue.unfinished_tasks and (time.time() - start_time) < timeout:
+            time.sleep(0.05)
 
         elapsed = time.time() - start_time
         remaining = self.write_queue.qsize()
@@ -1077,6 +1102,14 @@ class LakehouseManager:
                     logger.warning(f"  {name} did not stop in time")
                 else:
                     logger.info(f" {name} stopped gracefully")
+
+        # Whatever the worker could not write in time is spilled, never dropped (#166).
+        spilled = self._spill_queued_batches(reason="shutdown before write")
+        if spilled:
+            logger.error(
+                f"Shutdown: spilled {spilled} queued batches to {self.spill_path} "
+                "(replay with replay_spilled_writes())"
+            )
 
         self.checkpoint(timeout=min(timeout, 5))
 
