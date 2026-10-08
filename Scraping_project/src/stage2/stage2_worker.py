@@ -13,7 +13,7 @@ import pyarrow as pa
 from bs4 import BeautifulSoup
 from deltalake import DeltaTable
 
-from src.core.config import stage_worker_settings
+from src.core.config import stage2_quality_thresholds, stage_worker_settings
 from src.core.constants import TABLE_STAGE2_ERRORS
 from src.utils.delta import get_delta
 from src.utils.soft_ban import DomainBackoff, SoftBanDetector, count_deferred, count_soft_ban, domain_of
@@ -196,9 +196,16 @@ class Stage2Worker:
         self.delta = get_delta()
         self.postgres = get_postgres_manager()
 
-        self.MIN_WORD_COUNT = 50
-        self.MIN_TEXT_TO_HTML_RATIO = 0.1
-        self.MASSIVE_DOC_THRESHOLD = 50000
+        # Quality gates from config.yml stage2.* / STAGE2_* env (#329).
+        thresholds = stage2_quality_thresholds()
+        self.MIN_WORD_COUNT = thresholds.min_word_count
+        self.MIN_TEXT_TO_HTML_RATIO = thresholds.min_text_to_html_ratio
+        self.MASSIVE_DOC_THRESHOLD = thresholds.massive_doc_threshold
+        logger.info(
+            f"[STAGE2] Quality thresholds: min_word_count={self.MIN_WORD_COUNT}, "
+            f"min_text_to_html_ratio={self.MIN_TEXT_TO_HTML_RATIO}, "
+            f"massive_doc_threshold={self.MASSIVE_DOC_THRESHOLD}"
+        )
 
         self.perf_start_time = None
         self.perf_urls_processed = 0
