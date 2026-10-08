@@ -54,7 +54,8 @@ class FakeSession:
     def __init__(self, response: FakeResponse):
         self.response = response
 
-    def get(self, url, **kwargs):
+    async def get(self, url, **kwargs):
+        # Stage 2 awaits session.get(...) and follows redirects itself (#682 SSRF guard).
         return self.response
 
 
