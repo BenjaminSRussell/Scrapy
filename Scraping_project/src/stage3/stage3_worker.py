@@ -196,9 +196,10 @@ class Stage3Worker:
                 return None
 
     def _fallback_summary(self, text: str, max_chars: int = 500) -> str:
-        if len(text) <= max_chars:
-            return text
-        return text[:max_chars] + "..."
+        """At most ``max_chars``; ends at a sentence when possible (#740)."""
+        from src.utils.text_truncate import truncate_text
+
+        return truncate_text(text, max_chars)
 
     def _extract_key_facts(self, text: str, keywords: list[str]) -> list[str]:
         sentences = text.split(".")

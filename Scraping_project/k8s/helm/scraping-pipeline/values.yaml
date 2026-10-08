@@ -88,6 +88,15 @@ postgresql:
   auth:
     database: scraping_pipeline
     username: postgres
+    # #538: least-privilege role the application connects as. files/init-db.sql
+    # creates it from APP_DB_USER/APP_DB_PASSWORD (SELECT/INSERT on the pipeline
+    # tables only); `username` above stays the superuser for init/migrations.
+    # Empty = app connects as `username` (pre-#538 behaviour). Recommended for new
+    # installs: appUsername=scrapy_app plus secrets.postgres.appPassword (or, with
+    # external secrets, an APP_DB_PASSWORD key in postgres-credentials, whose
+    # DB_PASSWORD must then be the app password). Existing volumes never re-run
+    # init scripts: run files/init-db.sql as the superuser once before enabling.
+    appUsername: ""
     # Password should be set via secret or external secret manager
     existingSecret: "postgres-credentials"
     secretKeys:
@@ -534,6 +543,7 @@ secrets:
   # NEVER deploy with these default values!
   postgres:
     password: ""  # MUST BE SET - see warning above
+    appPassword: ""  # required when postgresql.auth.appUsername is set (#538); must differ from password
 
   grafana:
     adminUser: "admin"
