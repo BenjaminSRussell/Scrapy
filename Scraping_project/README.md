@@ -409,8 +409,11 @@ Access at `http://localhost:3000` (admin/admin):
 ### Health Checks
 
 ```bash
-# Check worker health
-curl http://localhost:8000/health
+# Container health (Docker HEALTHCHECK = `python -m src.utils.probe container`:
+# main process alive, Redis answers PING when REDIS_HOST is set, plus any
+# HEALTHCHECK_TCP=host:port dependencies). Workers expose no HTTP /health route.
+docker inspect --format '{{.State.Health.Status}}' <container>
+docker compose exec stage3-worker python -m src.utils.probe container && echo healthy
 
 # Check Redis
 redis-cli ping

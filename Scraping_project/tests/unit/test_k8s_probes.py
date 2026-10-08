@@ -96,3 +96,64 @@ def test_no_pgrep_probes_in_python_images():
         if path.name == "kafka-delta-ingestor-deployment.yaml":
             continue  # separate (non-Python) image
         assert "pgrep" not in path.read_text(), path.name
+
+
+# ---------------------------------------------------------------- #542
+def _fake_proc(tmp_path, state):
+    (tmp_path / "1").mkdir()
+    (tmp_path / "1" / "stat").write_text(f"1 (python) {state} 0 1 1 0 -1")
+    return tmp_path
+
+
+@pytest.mark.parametrize("state,ok", [("S", True), ("R", True), ("Z", False), ("X", False)])
+def test_container_pid1_state(tmp_path, monkeypatch, state, ok):
+    monkeypatch.delenv("REDIS_HOST", raising=False)
+    monkeypatch.delenv("HEALTHCHECK_TCP", raising=False)
+    assert probe.container_healthy(_fake_proc(tmp_path, state))[0] is ok
+
+
+def test_container_missing_pid1_unhealthy(tmp_path, monkeypatch):
+    monkeypatch.delenv("REDIS_HOST", raising=False)
+    assert probe.container_healthy(tmp_path) == (False, "main process (PID 1) not running")
+
+
+def test_container_redis_down_flips_unhealthy(tmp_path, monkeypatch):
+    proc = _fake_proc(tmp_path, "S")
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        dead_port = s.getsockname()[1]
+    monkeypatch.setenv("REDIS_HOST", "127.0.0.1")
+    monkeypatch.setenv("REDIS_PORT", str(dead_port))
+    ok, why = probe.container_healthy(proc, timeout=0.5)
+    assert not ok and "not answering PING" in why
+    monkeypatch.setenv("HEALTHCHECK_REDIS", "0")
+    assert probe.container_healthy(proc, timeout=0.5)[0] is True
+
+
+def test_container_tcp_dependency(tmp_path, monkeypatch):
+    proc = _fake_proc(tmp_path, "S")
+    monkeypatch.delenv("REDIS_HOST", raising=False)
+    with socket.socket() as srv:
+        srv.bind(("127.0.0.1", 0))
+        srv.listen(1)
+        port = srv.getsockname()[1]
+        monkeypatch.setenv("HEALTHCHECK_TCP", f"127.0.0.1:{port}")
+        assert probe.container_healthy(proc, timeout=1)[0] is True
+    monkeypatch.setenv("HEALTHCHECK_TCP", f"127.0.0.1:{port},bogus")
+    assert probe.container_healthy(proc, timeout=0.5)[0] is False
+
+
+def test_container_cli_exit_codes(monkeypatch):
+    monkeypatch.setattr(probe, "container_healthy", lambda: (False, "x"))
+    assert probe.main(["container"]) == 1
+    monkeypatch.setattr(probe, "container_healthy", lambda: (True, "ok"))
+    assert probe.main(["container"]) == 0
+
+
+def test_dockerfile_healthcheck_is_real_and_docs_match():
+    root = Path(__file__).resolve().parents[2]
+    dockerfile = (root / "Dockerfile").read_text()
+    assert 'CMD ["python", "-m", "src.utils.probe", "container"]' in dockerfile
+    assert "sys.exit(0)" not in dockerfile
+    for doc in ("README.md", "DEPLOYMENT.md"):
+        assert "localhost:8000/health" not in (root / doc).read_text()
