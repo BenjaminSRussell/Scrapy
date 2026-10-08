@@ -158,6 +158,20 @@ if PROMETHEUS_AVAILABLE:
         ["spider", "reason"],
     )
 
+    # Hidden-URL discovery quality, per extractor category (#392). Grafana:
+    #   sum by (category) (rate(scrapy_hidden_urls_found_total[5m]))
+    #   sum by (route) (rate(scrapy_hidden_urls_routed_total[5m]))
+    HIDDEN_URLS_FOUND = Counter(
+        "scrapy_hidden_urls_found_total",
+        "URLs found by HiddenURLExtractor, by category (offsite = outside allowed_domains)",
+        ["spider", "category"],
+    )
+    HIDDEN_URLS_ROUTED = Counter(
+        "scrapy_hidden_urls_routed_total",
+        "What happened to each hidden URL: depth_crawl, js, offsite, low_value or duplicate",
+        ["spider", "route"],
+    )
+
     # --- Delta Lake Manager Metrics ---
     DELTA_MANAGER_CONTEXT_ENTER_TOTAL = Counter(
         "delta_manager_context_enter_total", "Total number of times a DeltaLakeManager context has been entered."
@@ -188,6 +202,7 @@ else:
     OFFSITE_LINKS_FOUND = OFFSITE_CANDIDATES_SAVED = None
     CRAWLER_CONTENT_SUMMARY = None
     CRAWLER_SUMMARY_SKIPPED = None
+    HIDDEN_URLS_FOUND = HIDDEN_URLS_ROUTED = None
 
 class PrometheusExtension:
 
