@@ -33,6 +33,11 @@ stage1:
   aggressive_collection: true  # Capture EVERYTHING - Stage 2 will filter
   expand_seeds: true  # Auto-add discovered URLs back to seed_urls
   parse_sitemaps: true  # Auto-discover and parse sitemaps
+  sitemap:  # Walk limits for nested sitemap indexes (#206)
+    max_depth: 5          # sitemapindex nesting levels to follow
+    max_urls: 50000       # hard cap on URLs collected per site walk
+    max_sitemaps: 500     # hard cap on sitemap documents fetched per walk
+    max_bytes: 52428800   # per-sitemap body cap after decompression (50 MiB)
   enable_depth_mode: true  # Switch to depth spider when idle
   enable_rescraping: true  # Re-scrape existing URLs to find missed links
 
