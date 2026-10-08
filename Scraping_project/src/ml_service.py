@@ -1,7 +1,10 @@
 import json
 import logging
 import os
+import threading
 import time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from typing import Any
 
 try:
@@ -35,6 +38,99 @@ logger = logging.getLogger(__name__)
 DEFAULT_DELIVERY_TIMEOUT = 30.0
 DEFAULT_MAX_MESSAGE_ATTEMPTS = 3
 DEFAULT_RETRY_BACKOFF = 1.0
+
+
+DEFAULT_HEALTH_PORT = 8095
+WARMUP_TEXT = "Tuition and fees for undergraduate students."
+
+
+class ReadinessState:
+    """Liveness/readiness for the ZSC service (#485).
+
+    ``/healthz`` returns 200 once the process is up. ``/readyz`` returns 503
+    while the model loads and warms up, and 200 only after the warm-up
+    inference succeeded *and* the consumer subscribed. A pod is therefore
+    never Ready (and never consuming) before it can classify.
+    """
+
+    def __init__(self) -> None:
+        self.phase = "starting"  # starting -> loading_model -> warming_up -> subscribing -> ready | failed
+        self.detail = ""
+        self._lock = threading.Lock()
+
+    def set(self, phase: str, detail: str = "") -> None:
+        with self._lock:
+            self.phase, self.detail = phase, detail
+        logger.info(f"[ZSC] readiness: {phase} {detail}".rstrip())
+
+    @property
+    def ready(self) -> bool:
+        return self.phase == "ready"
+
+    def snapshot(self) -> dict[str, Any]:
+        with self._lock:
+            return {"phase": self.phase, "detail": self.detail, "ready": self.phase == "ready"}
+
+
+def start_health_server(state: ReadinessState, port: int, host: str = "0.0.0.0") -> ThreadingHTTPServer:
+    """Serve ``/healthz`` and ``/readyz`` from a daemon thread (#485)."""
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:  # noqa: N802 (http.server API)
+            path = self.path.split("?", 1)[0]
+            if path == "/healthz":
+                code, body = 200, {"status": "alive", **state.snapshot()}
+            elif path == "/readyz":
+                snap = state.snapshot()
+                code, body = (200 if snap["ready"] else 503), snap
+            else:
+                code, body = 404, {"error": "not found"}
+            payload = json.dumps(body).encode()
+            self.send_response(code)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+
+        def log_message(self, *args: Any) -> None:  # probes every few seconds: keep logs quiet
+            pass
+
+    server = ThreadingHTTPServer((host, port), Handler)
+    threading.Thread(target=server.serve_forever, name="zsc-health", daemon=True).start()
+    logger.info(f"[ZSC] health endpoints on {host}:{server.server_address[1]} (/healthz, /readyz)")
+    return server
+
+
+def export_low_confidence(consumer: Any, out_path: Path, max_records: int = 1000, idle_timeout: float = 5.0) -> int:
+    """Write recent ``low_confidence_review`` records to JSONL for labeling (#422).
+
+    ``consumer`` must already be assigned or subscribed, with auto-commit off,
+    so an export never moves the service's offsets. Each line is a validated
+    ``LowConfidenceRecord`` dump; malformed messages are skipped. Stops after
+    ``max_records`` or ``idle_timeout`` seconds without a message. Returns the
+    number of rows written.
+    """
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    written = skipped = 0
+    deadline = time.monotonic() + idle_timeout
+    with out_path.open("w", encoding="utf-8") as fh:
+        while written < max_records and time.monotonic() < deadline:
+            msg = consumer.poll(timeout=min(1.0, idle_timeout))
+            if msg is None:
+                continue
+            if msg.error():
+                continue
+            deadline = time.monotonic() + idle_timeout
+            try:
+                record = LowConfidenceRecord.model_validate_json(msg.value())
+            except Exception:
+                skipped += 1
+                continue
+            fh.write(record.model_dump_json() + "\n")
+            written += 1
+    if skipped:
+        logger.warning(f"[ZSC] review export skipped {skipped} malformed messages")
+    return written
 
 
 class MessageOutcome:
@@ -158,6 +254,7 @@ class ZSCMicroservice:
         confidence_threshold: float = 0.85,
         model_name: str = "facebook/bart-large-mnli",
         device: int = -1,
+        readiness: ReadinessState | None = None,
     ):
         """Initialize the ZSC microservice.
 
@@ -180,11 +277,13 @@ class ZSCMicroservice:
         self.low_confidence_topic = low_confidence_topic
         self.group_id = group_id
 
-        self.classifier = ZeroShotClassifier(
-            model_name=model_name,
-            confidence_threshold=confidence_threshold,
-            device=device,
-        )
+        # Model load is deferred to start() (#485): it can take minutes, and
+        # the health server must already be answering /readyz=503 meanwhile.
+        self.model_name = model_name
+        self.confidence_threshold = confidence_threshold
+        self.device = device
+        self.classifier: Any = None
+        self.readiness = readiness or ReadinessState()
 
         self.consumer: Any = None
         self.producer: Any = None
@@ -201,8 +300,36 @@ class ZSCMicroservice:
         # (topic, partition, offset) -> failed attempts, for poison-message cut-off.
         self._attempts: dict[tuple[str, int, int], int] = {}
 
+    def _ensure_classifier(self) -> Any:
+        if self.classifier is None:
+            self.classifier = ZeroShotClassifier(
+                model_name=self.model_name,
+                confidence_threshold=self.confidence_threshold,
+                device=self.device,
+            )
+        return self.classifier
+
+    def warm_up(self) -> None:
+        """Load the model and run one inference before any Kafka consume (#485).
+
+        The first pipeline call pays tokenizer/graph initialisation; doing it
+        here keeps that latency (and any load failure) out of the consume loop.
+        """
+        if self.classifier is None:
+            self.readiness.set("loading_model", self.model_name)
+        self._ensure_classifier()
+        self.readiness.set("warming_up")
+        started = time.monotonic()
+        self.classifier.classify(WARMUP_TEXT)
+        logger.info(f"[ZSC] warm-up inference took {time.monotonic() - started:.2f}s")
+
     def start(self):
         logger.info("Starting ZSC Microservice")
+        try:
+            self.warm_up()
+        except Exception as e:
+            self.readiness.set("failed", f"model warm-up: {e}")
+            raise
 
         consumer_config = {
             "bootstrap.servers": self.bootstrap_servers,
@@ -215,6 +342,7 @@ class ZSCMicroservice:
 
         self._add_security_config(consumer_config)
 
+        self.readiness.set("subscribing", self.input_topic)
         self.consumer = Consumer(consumer_config)
         self.consumer.subscribe([self.input_topic])
 
@@ -231,6 +359,7 @@ class ZSCMicroservice:
 
         logger.info(f"Consuming from topic: {self.input_topic}")
         logger.info(f"Publishing to: {self.output_topic}, {self.low_confidence_topic}")
+        self.readiness.set("ready")
 
         try:
             while True:
@@ -251,6 +380,7 @@ class ZSCMicroservice:
         except KeyboardInterrupt:
             logger.info("Shutdown signal received")
         finally:
+            self.readiness.set("stopping")
             self._shutdown()
 
     def _handle(self, msg: Any) -> str:
@@ -310,7 +440,7 @@ class ZSCMicroservice:
             return MessageOutcome.SKIP
 
         try:
-            classification = self.classifier.classify(text)
+            classification = self._ensure_classifier().classify(text)
         except Exception as e:
             logger.error(f"[ZSC] Classification failed for {item_dict.get('url')}: {e}")
             return MessageOutcome.RETRY
@@ -439,6 +569,11 @@ def main():
     model_name = os.getenv("ZSC_MODEL_NAME", "facebook/bart-large-mnli")
     device = int(os.getenv("ZSC_DEVICE", "-1"))
 
+    readiness = ReadinessState()
+    health_port = int(os.getenv("ZSC_HEALTH_PORT", str(DEFAULT_HEALTH_PORT)))
+    if health_port > 0:
+        start_health_server(readiness, health_port)
+
     service = ZSCMicroservice(
         bootstrap_servers=bootstrap_servers,
         input_topic=input_topic,
@@ -447,6 +582,7 @@ def main():
         confidence_threshold=confidence_threshold,
         model_name=model_name,
         device=device,
+        readiness=readiness,
     )
 
     try:
