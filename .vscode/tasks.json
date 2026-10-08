@@ -1,0 +1,41 @@
+{
+  // Tasks (#363): Terminal > Run Task. Same commands as CI's test job.
+  "version": "2.0.0",
+  "options": {"cwd": "${workspaceFolder}/Scraping_project"},
+  "tasks": [
+    {
+      "label": "pytest: unit",
+      "type": "shell",
+      "command": "python -m pytest tests/unit -m 'not slow and not kafka and not performance' -o addopts= -q",
+      "group": {"kind": "test", "isDefault": true},
+      "problemMatcher": []
+    },
+    {
+      "label": "pytest: CI default set",
+      "type": "shell",
+      "command": "./run_all_tests.sh",
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "lint: ruff + mypy + bandit (CI gates)",
+      "type": "shell",
+      "command": "ruff check src/ --select F,E4,E7,E9 && mypy src/ --config-file mypy.ini --ignore-missing-imports --no-strict-optional && bandit -r src/ -ll -q",
+      "group": "build",
+      "problemMatcher": []
+    },
+    {
+      "label": "smoke: local environment check",
+      "type": "shell",
+      "command": "bash scripts/smoke_local.sh",
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "compose: up",
+      "type": "shell",
+      "command": "python start.py",
+      "problemMatcher": []
+    }
+  ]
+}

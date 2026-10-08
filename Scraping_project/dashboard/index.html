@@ -392,6 +392,22 @@
             background: #fffbeb;
         }
 
+        .activity-item.timeout {
+            border-left-color: var(--warning);
+            background: #fff7ed;
+            border-left-style: dashed;
+        }
+
+        .shortcut-hint {
+            margin: 0.25rem 0 0.75rem;
+            font-size: 0.8rem;
+            color: var(--gray-600, #4b5563);
+        }
+
+        @media (pointer: coarse) {
+            .shortcut-hint { display: none; }
+        }
+
         .activity-item.danger {
             border-left-color: var(--danger);
             background: #fef2f2;
@@ -514,6 +530,24 @@
             color: var(--gray-700);
         }
 
+        /* #953: >=44px touch targets wherever the pointer is coarse (phones/tablets). */
+        @media (pointer: coarse) {
+            .tab-button,
+            .refresh-bar .btn,
+            .refresh-bar select {
+                min-height: 44px;
+                min-width: 44px;
+            }
+        }
+
+        .refresh-interval {
+            font: inherit;
+            padding: 0.15rem 0.35rem;
+            border: 1px solid var(--gray-300, #d1d5db);
+            border-radius: 6px;
+            background: white;
+        }
+
         .refresh-countdown {
             font-weight: 700;
             color: var(--primary);
@@ -543,6 +577,7 @@
             .tab-button {
                 font-size: 0.75rem;
                 padding: 0.75rem 0.5rem;
+                min-height: 44px; /* #953: WCAG 2.5.5 touch target */
             }
 
             .container {
@@ -744,6 +779,7 @@
                 <button type="button" class="tab-button" data-tab="system">⚙️ System Health</button>
                 <button type="button" class="tab-button" data-tab="activity">📋 Activity Log</button>
             </div></div>
+            <p class="shortcut-hint" id="shortcut-hint">Shortcuts: 1–5 switch tabs · R refresh</p>
 
             <!-- Overview Tab -->
             <div class="tab-content active" id="tab-overview">
@@ -1192,6 +1228,13 @@
             <div class="refresh-info">
                 Last updated: <span id="last-refresh-time">Never</span>
             </div>
+            <label class="refresh-info refresh-interval-label" for="refresh-interval">Every
+                <select id="refresh-interval" class="refresh-interval" aria-label="Auto-refresh interval">
+                    <option value="5000" selected>5s</option>
+                    <option value="10000">10s</option>
+                    <option value="30000">30s</option>
+                </select>
+            </label>
             <button type="button" id="pause-refresh" class="btn" aria-pressed="false" aria-label="Pause auto-refresh">Pause</button>
             <span class="refresh-info" id="cc-version" title="Control Center build">v—</span>
             <button type="button" id="manual-refresh" class="btn" aria-label="Refresh metrics now">Refresh now</button>

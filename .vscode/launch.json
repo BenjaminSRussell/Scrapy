@@ -1,0 +1,49 @@
+{
+  // Debug configs (#363). All run from Scraping_project with the same
+  // PYTHONPATH pytest.ini uses (". src").
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Python: current file",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${file}",
+      "cwd": "${workspaceFolder}/Scraping_project",
+      "env": {"PYTHONPATH": "${workspaceFolder}/Scraping_project:${workspaceFolder}/Scraping_project/src"},
+      "console": "integratedTerminal",
+      "justMyCode": false
+    },
+    {
+      "name": "pytest: current test file",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "pytest",
+      "args": ["${file}", "-o", "addopts=", "-q"],
+      "cwd": "${workspaceFolder}/Scraping_project",
+      "console": "integratedTerminal",
+      "justMyCode": false
+    },
+    {
+      "name": "pytest: unit tests",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "pytest",
+      "args": ["tests/unit", "-m", "not slow and not kafka and not performance", "-o", "addopts=", "-q"],
+      "cwd": "${workspaceFolder}/Scraping_project",
+      "console": "integratedTerminal",
+      "justMyCode": false
+    },
+    {
+      "name": "cli.py (prompt for args)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/Scraping_project/cli.py",
+      "args": "${input:cliArgs}",
+      "cwd": "${workspaceFolder}/Scraping_project",
+      "console": "integratedTerminal"
+    }
+  ],
+  "inputs": [
+    {"id": "cliArgs", "type": "promptString", "description": "cli.py arguments", "default": "health"}
+  ]
+}
