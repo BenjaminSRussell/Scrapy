@@ -421,6 +421,11 @@ class Stage2Worker:
         prior_failures = self._load_prior_failures()
 
         for i in range(0, len(pending), self.batch_size):
+            stop = self._crawl_guard_reason()
+            if stop:
+                # #456: stop starting new batches; remaining URLs stay pending.
+                logger.critical(f"[STAGE2] Crawl guard engaged ({stop}); leaving {len(pending) - i} URLs pending")
+                break
             batch = pending[i : i + self.batch_size]
             logger.info(f"Processing batch {i // self.batch_size + 1}: {len(batch)} URLs")
 
@@ -612,6 +617,28 @@ class Stage2Worker:
             .execute()
         )
 
+    def _crawl_guard(self) -> Any:
+        guard = getattr(self, "_crawl_guard_obj", None)
+        if guard is None:
+            from src.utils.crawl_guard import CrawlGuard
+
+            guard = self._crawl_guard_obj = CrawlGuard.from_config()
+        return guard
+
+    def _crawl_guard_reason(self) -> str | None:
+        try:
+            reason: str | None = self._crawl_guard().block_reason(stage="stage2")
+            return reason
+        except Exception as e:  # guard must never take Stage 2 down
+            logger.warning(f"[STAGE2] crawl guard check failed: {e}")
+            return None
+
+    def _crawl_guard_charge(self) -> None:
+        try:
+            self._crawl_guard().charge(requests=1)
+        except Exception as e:
+            logger.warning(f"[STAGE2] crawl guard charge failed: {e}")
+
     async def _analyze_url(self, record: dict[str, Any]) -> dict[str, Any]:
         url_value = record.get("url")
         url_hash_value = record.get("url_hash")
@@ -636,6 +663,10 @@ class Stage2Worker:
             if backoff.blocked(domain):
                 count_deferred("stage2")
                 return {"url": url, "url_hash": url_hash, "_deferred": True}
+            if self._crawl_guard_reason():
+                # Kill switch / spent budget (#456): not attempted, not a failure.
+                return {"url": url, "url_hash": url_hash, "_deferred": True}
+            self._crawl_guard_charge()
             breaker = self._breaker(domain)
             if not breaker.can_execute():
                 # Host keeps failing: leave the row pending instead of burning attempts.

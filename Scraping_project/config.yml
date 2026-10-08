@@ -95,6 +95,19 @@ stage1:
     - staff
   priority_penalty_keywords: []  # REMOVED - we want everything now
 
+  # Adapt to noisy sections (#26): once a section (host/first-path-segment)
+  # has produced min_pages pages whose follow-able links are at least
+  # low_value_ratio low-confidence (traps: dated archives, calendar/sort/filter
+  # params, session ids, repeating paths; or URLValueAssessor "low"), its
+  # low-confidence links are no longer followed and the rest are capped at
+  # follow_cap per page. Metrics: stage1_noisy_sections,
+  # stage1_noisy_section_skips_total.
+  noisy_sections:
+    enabled: true
+    min_pages: 5
+    low_value_ratio: 0.6
+    follow_cap: 10
+
   # Depth Spider Mode (when regular queues are empty)
   depth_spider:
     enabled: true
