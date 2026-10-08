@@ -227,6 +227,23 @@ function addActivityLogItem(type, message) {
     }
 
     updateActivityLog();
+    announceActivity(type, message);
+}
+
+// #962: the visual feeds are re-rendered wholesale (and live in hidden tabs),
+// so they are aria-live="off"; only the new item goes to a dedicated,
+// always-present live region. Text only, never HTML.
+const ACTIVITY_ANNOUNCE_KEEP = 5;
+const activityAnnouncer = createActivityAnnouncer();
+function announceActivity(type, message) {
+    const region = document.getElementById('activity-announce');
+    if (!region) return;
+    const text = activityAnnouncer.text(type, message);
+    if (!text) return;
+    const node = document.createElement('div');
+    node.textContent = text;
+    region.appendChild(node);
+    while (region.childElementCount > ACTIVITY_ANNOUNCE_KEEP) region.firstElementChild.remove();
 }
 
 let activityPinned = false;
@@ -438,8 +455,7 @@ function updateDashboard(metrics) {
     checkMilestones(metrics);
     if (metricsWasDown) {
         metricsWasDown = false;
-        const ann = document.getElementById('metrics-reconnect-announce') || document.getElementById('refresh-status');
-        if (ann) ann.textContent = 'Metrics connection restored';
+        // spoken once via the activity announcer (#962), not a second region
         addActivityLogItem('success', 'Metrics connection restored');
     }
     const s1Discovered = metrics['stage1_urls_discovered_total'] || 0;

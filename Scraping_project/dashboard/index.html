@@ -768,7 +768,7 @@
                         <div class="card-header">
                             <span class="card-title">Recent Activity</span>
                         </div>
-                        <div class="activity-feed" id="overview-activity">
+                        <div class="activity-feed" id="overview-activity" aria-live="off">
                             <div class="activity-item success">
                                 <div class="activity-timestamp">Just now</div>
                                 <div class="activity-message">Pipeline monitoring started</div>
@@ -1099,7 +1099,7 @@
                             <button type="button" id="clear-activity" class="btn" aria-label="Clear activity log">Clear</button>
                         </div>
                     </div>
-                    <div class="activity-feed" id="activity-log" role="log" aria-live="polite">
+                    <div class="activity-feed" id="activity-log" role="log" aria-live="off">
                         <div class="activity-item success">
                             <div class="activity-timestamp">System initialized</div>
                             <div class="activity-message">Pipeline Control Center started monitoring</div>
@@ -1111,7 +1111,7 @@
 
         <div class="refresh-bar">
             <div id="refresh-status" class="visually-hidden" role="status" aria-live="polite" aria-atomic="true"></div>
-            <div id="metrics-reconnect-announce" class="visually-hidden" role="status" aria-live="polite" aria-atomic="true"></div>
+            <div id="activity-announce" class="visually-hidden" role="log" aria-live="polite" aria-relevant="additions" aria-atomic="false" aria-label="New activity"></div>
             <div class="refresh-info">Updated <span id="last-updated-rel">just now</span> · 
                 Auto-refresh: <span class="refresh-countdown" id="refresh-countdown">5</span> seconds
             </div>
