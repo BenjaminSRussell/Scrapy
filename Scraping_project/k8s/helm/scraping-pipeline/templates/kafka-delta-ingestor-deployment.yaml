@@ -37,7 +37,9 @@ spec:
       - name: kafka-delta-ingestor
         image: "{{ .Values.kafkaDeltaIngestor.image.repository }}:{{ .Values.kafkaDeltaIngestor.image.tag }}"
         imagePullPolicy: {{ .Values.kafkaDeltaIngestor.image.pullPolicy }}
-        command:
+        # args, not command: keep the image ENTRYPOINT (Kafka wait + exec
+        # kafka-delta-ingest), so this runs `kafka-delta-ingest ingest ...` (#449).
+        args:
         - ingest
         - {{ .Values.kafkaDeltaIngestor.config.topic | quote }}
         - "/delta/delta_lake/scraped_data"

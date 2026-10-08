@@ -6,7 +6,7 @@ from datetime import datetime
 from urllib.parse import urlparse
 
 import scrapy
-from scrapy.http import Response
+from scrapy.http import HtmlResponse, Response
 
 from src.stage1.content_policy import classify_response, count_skipped
 from src.stage1.middlewares.spider_config import get_spider_settings
@@ -16,6 +16,11 @@ from src.stage1.processors.url_processor import should_follow_url
 from src.lakehouse import SeedManager
 from src.stage1.base_spider import BaseSpider
 from src.stage1.sitemap_parser import discover_sitemaps_sync
+
+try:
+    from src.scrapy_prometheus import URLS_SKIPPED
+except Exception:  # prometheus_client missing
+    URLS_SKIPPED = None
 
 def get_delta_manager(*args, **kwargs):
     return get_delta()
@@ -68,6 +73,13 @@ class ScoutSpider(BaseSpider):
         if not decision.parse_html:
             count_skipped("scout", decision.reason)
             logger.debug(f"[SCOUT] Not parsing ({decision.reason}) {response.url[:80]}")
+            return
+
+        empty_reason = self._empty_body_reason(response)
+        if empty_reason:
+            # Zero-byte bodies and blank shells (no text, no links/assets) carry
+            # no URLs worth queueing; don't let them feed Stage 2 (#199).
+            self._skip_response(response, empty_reason)
             return
 
         discovered_urls = self._extract_urls(response)
@@ -144,6 +156,35 @@ class ScoutSpider(BaseSpider):
         total_discovered = sum(self.scout_stats.values())
         if total_discovered % 100 == 0:
             self._log_scout_stats()
+
+    @staticmethod
+    def _empty_body_reason(response: Response) -> str | None:
+        """``"empty_body"`` for a zero-byte/whitespace body or an HTML shell with
+        no visible text and no ``href``/``src`` references; otherwise None (#199).
+
+        JS app shells (``<div id=app></div><script src=app.js>``) are not empty:
+        the ``src`` keeps them on the JS-detection path.
+        """
+        if not response.body or not response.body.strip():
+            return "empty_body"
+        if not isinstance(response, HtmlResponse):
+            # Only HTML has a meaningful "blank shell"; a non-empty text/XML/JSON
+            # body may carry bare URLs and is left to the extractors.
+            return None
+        try:
+            has_text = bool(response.xpath("//body//text()[normalize-space()]").get())
+            has_refs = bool(response.css("[href], [src]").get())
+        except (ValueError, AttributeError):  # undecodable/non-text body
+            return None
+        if not has_text and not has_refs:
+            return "empty_body"
+        return None
+
+    def _skip_response(self, response: Response, reason: str) -> None:
+        self._track_skip(response.url, reason)
+        if URLS_SKIPPED is not None:
+            URLS_SKIPPED.labels(spider=self.name, skip_reason=reason).inc()
+        logger.info(f"[SCOUT] Skipping {reason} response ({len(response.body)} bytes): {response.url[:80]}")
 
     def _initialize_discovery(self, response: Response) -> None:
 
