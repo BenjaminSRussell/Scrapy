@@ -84,6 +84,10 @@ test-ci: ## Run the default PR selection exactly as CI does
 	@echo "$(BLUE)Running CI default test selection...$(NC)"
 	python -m pytest tests/ -m "not slow and not kafka and not performance" -o addopts= --strict-markers
 
+test-smoke: ## Fast offline smoke gate (imports, one spider parse, one pipeline, settings; #286)
+	@echo "$(BLUE)Running smoke tests...$(NC)"
+	python -m pytest tests/ -m smoke -o addopts= -q
+
 test-perf: ## Run load/performance tests (excluded from PR CI, #287)
 	@echo "$(BLUE)Running performance tests...$(NC)"
 	python -m pytest tests/performance -m performance -o addopts= -v
