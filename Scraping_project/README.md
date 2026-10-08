@@ -268,6 +268,18 @@ Each process's `RedisHelper` uses a bounded `redis.BlockingConnectionPool` (#533
 - **Per process,** a pool larger than the process's real concurrency (threads plus in-flight async tasks touching Redis) only wastes Redis memory. Size it to the concurrency, then check the inequality above.
 - **Diagnosing:** a steady `redis_pool_exhausted_total` rate with healthy Redis latency means the pool is too small for the worker's concurrency. If it comes with high latency (`SLOWLOG`, CPU), fix Redis first, because a larger pool only queues more work on a slow server.
 
+### Deployment profiles: core vs streaming
+
+`docker/entrypoints/crawler-entrypoint.sh` (#615) chooses its profile from the environment:
+
+| Profile | Where | Kafka | Entrypoint behaviour |
+|---|---|---|---|
+| **core** | `Scraping_project/docker-compose.yml` (Redis + stage workers) | none | `KAFKA_BOOTSTRAP_SERVERS` unset, so the Kafka wait is skipped |
+| **streaming** | Helm chart (`application-configmap` sets `KAFKA_BOOTSTRAP_SERVERS`) | yes | waits for the first broker in the list (`host:port`; a `PLAINTEXT://` scheme is fine) |
+
+- Both waits are bounded: `REDIS_WAIT_TIMEOUT` and `KAFKA_WAIT_TIMEOUT` each default to 120 s. When a dependency is unreachable, the container exits 1 (visible as restarts or CrashLoopBackOff) instead of looping forever.
+- `REQUIRE_KAFKA=1` makes a missing `KAFKA_BOOTSTRAP_SERVERS` a hard error, for streaming deployments that must not silently fall back to core.
+
 ### Environment Variables
 
 ```bash
