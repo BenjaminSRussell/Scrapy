@@ -36,7 +36,12 @@ from scrapy.exceptions import DropItem, NotConfigured
 
 from src.items import OffsiteCandidateItem
 from src.core.timeutil import utc_now_iso
-from src.utils.kafka_config import producer_durability_config
+from src.utils.kafka_config import (
+    enforce_idempotent_producer,
+    idempotence_required,
+    message_key,
+    producer_durability_config,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -208,6 +213,8 @@ class KafkaPipeline:
         produce_retries: int = 3,
         retry_backoff: float = 0.2,
         close_flush_timeout: float = 30.0,
+        message_key_field: str | None = "url_hash",
+        require_idempotence: bool | None = None,
     ):
         """Initialize the Kafka pipeline.
 
@@ -219,6 +226,10 @@ class KafkaPipeline:
             produce_retries: Attempts per message before spilling
             retry_backoff: Base backoff seconds between produce attempts
             close_flush_timeout: Seconds to flush on spider close
+            message_key_field: Record field used as the Kafka message key (#285);
+                empty/None sends unkeyed messages
+            require_idempotence: Refuse to start unless the producer is idempotent
+                (#464); None reads KAFKA_REQUIRE_IDEMPOTENCE
         """
         self.bootstrap_servers = bootstrap_servers
         self.topic = topic
@@ -231,6 +242,8 @@ class KafkaPipeline:
         self.produce_retries = max(1, int(produce_retries))
         self.retry_backoff = float(retry_backoff)
         self.close_flush_timeout = float(close_flush_timeout)
+        self.message_key_field = message_key_field or None
+        self.require_idempotence = idempotence_required(require_idempotence)
         # Messages handed to librdkafka but not yet acknowledged, so anything
         # still pending after the close flush can be spilled (#249).
         self._inflight: dict[int, bytes] = {}
@@ -260,6 +273,8 @@ class KafkaPipeline:
             produce_retries=crawler.settings.getint("KAFKA_PRODUCE_RETRIES", 3),
             retry_backoff=crawler.settings.getfloat("KAFKA_PRODUCE_RETRY_BACKOFF", 0.2),
             close_flush_timeout=crawler.settings.getfloat("KAFKA_CLOSE_FLUSH_TIMEOUT", 30.0),
+            message_key_field=crawler.settings.get("KAFKA_MESSAGE_KEY_FIELD", "url_hash"),
+            require_idempotence=crawler.settings.getbool("KAFKA_REQUIRE_IDEMPOTENCE", False),
         )
 
         crawler.signals.connect(pipeline.open_spider, signal=signals.spider_opened)
@@ -298,6 +313,8 @@ class KafkaPipeline:
             config["sasl.password"] = sasl_password
 
         config.update(self.producer_config)
+        if self.require_idempotence:
+            enforce_idempotent_producer(config)  # #464: fail fast, never run non-idempotent
 
         try:
             self.producer = Producer(config)
@@ -390,6 +407,9 @@ class KafkaPipeline:
         if self.producer is None:
             raise DropItem("Kafka producer is not initialized")
 
+        # Same URL -> same partition -> ordered, dedupable by consumers (#285).
+        key = message_key(item_dict, self.message_key_field)
+
         last_error: Exception | None = None
         for attempt in range(1, self.produce_retries + 1):
             msg_id = self._next_id
@@ -398,6 +418,7 @@ class KafkaPipeline:
                 self._inflight[msg_id] = value
                 self.producer.produce(
                     topic=self.topic,
+                    key=key,
                     value=value,
                     callback=self._delivery_callback(msg_id),
                 )
@@ -607,21 +628,48 @@ class GrafanaSummaryPipeline:
         self.items_processed += 1
 
         if self.items_processed % self.SAMPLE_RATE == 0:
-            adapter = ItemAdapter(item)
-            text_content = self._extract_text_content(adapter)
-
-            if text_content:
-                truncated_content = text_content[: self.MAX_CONTENT_LENGTH]
-                if len(text_content) > self.MAX_CONTENT_LENGTH:
-                    truncated_content += "..."
-
-                self.sampled_content.append(truncated_content)
-                logger.debug(f"Sampled content from item #{self.items_processed}")
-
-                if len(self.sampled_content) >= self.BATCH_SIZE:
-                    self._generate_and_export_summary(spider)
+            # Optional telemetry (#462): a sampling/export failure must never
+            # drop the item or fail the crawl.
+            try:
+                self._sample(item, spider)
+            except Exception as e:
+                self._skip(spider, "sample_error", e)
 
         return item
+
+    def _sample(self, item: Any, spider: Spider) -> None:
+        adapter = ItemAdapter(item)
+        text_content = self._extract_text_content(adapter)
+
+        if text_content:
+            truncated_content = text_content[: self.MAX_CONTENT_LENGTH]
+            if len(text_content) > self.MAX_CONTENT_LENGTH:
+                truncated_content += "..."
+
+            self.sampled_content.append(truncated_content)
+            logger.debug(f"Sampled content from item #{self.items_processed}")
+
+            if len(self.sampled_content) >= self.BATCH_SIZE:
+                self._generate_and_export_summary(spider)
+
+    def _skip(self, spider: Spider, reason: str, error: BaseException | None = None) -> None:
+        """Record a skipped summary export (``summary_skipped`` stat + metric)."""
+        stats = getattr(getattr(spider, "crawler", None), "stats", None)
+        if stats is not None:
+            stats.inc_value("summary_skipped")
+            stats.inc_value(f"summary_skipped/{reason}")
+        try:
+            from src.scrapy_prometheus import CRAWLER_SUMMARY_SKIPPED
+
+            if CRAWLER_SUMMARY_SKIPPED is not None:
+                CRAWLER_SUMMARY_SKIPPED.labels(spider=spider.name, reason=reason).inc()
+        except Exception:  # metrics are best effort here
+            pass
+        if error is None:
+            logger.debug(f"GrafanaSummaryPipeline skipped summary export ({reason})")
+        else:
+            logger.warning(f"GrafanaSummaryPipeline skipped summary export ({reason}): {error}")
+        self.sampled_content = []
 
     def _extract_text_content(self, adapter: ItemAdapter) -> str:
         text_fields = ["text", "content", "body", "description", "summary", "title"]
@@ -649,13 +697,21 @@ class GrafanaSummaryPipeline:
 
         try:
             from src.scrapy_prometheus import CRAWLER_CONTENT_SUMMARY
+        except Exception as e:  # missing/broken optional metrics deps (#462)
+            self._skip(spider, "deps_unavailable", e)
+            return
 
-            if CRAWLER_CONTENT_SUMMARY:
-                # Note: Prometheus Gauge doesn't accept string values directly
-                CRAWLER_CONTENT_SUMMARY.labels(spider=spider.name).set(len(self.sampled_content))
-                logger.info(f" Content Summary ({len(self.sampled_content)} samples): {summary[:200]}...")
-        except ImportError:
-            pass
+        if CRAWLER_CONTENT_SUMMARY is None:
+            self._skip(spider, "metrics_disabled")
+            return
+
+        try:
+            # Note: Prometheus Gauge doesn't accept string values directly
+            CRAWLER_CONTENT_SUMMARY.labels(spider=spider.name).set(len(self.sampled_content))
+            logger.info(f" Content Summary ({len(self.sampled_content)} samples): {summary[:200]}...")
+        except Exception as e:
+            self._skip(spider, "export_error", e)
+            return
 
         self.sampled_content = []
 
@@ -663,7 +719,10 @@ class GrafanaSummaryPipeline:
         logger.info(f"Closing GrafanaSummaryPipeline for spider: {spider.name}")
 
         if self.sampled_content:
-            self._generate_and_export_summary(spider)
+            try:
+                self._generate_and_export_summary(spider)
+            except Exception as e:  # never fail the spider close path (#462)
+                self._skip(spider, "close_error", e)
 
         logger.info(f"GrafanaSummaryPipeline stats - Total items processed: {self.items_processed}")
 
