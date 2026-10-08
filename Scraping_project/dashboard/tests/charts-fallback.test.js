@@ -41,7 +41,8 @@ function sandbox(Chart) {
         querySelectorAll(sel) { return sel === '.chart-container' ? containers : []; },
         createElement: node,
     };
-    const ctx = { document, window: {}, console: { log() {}, warn() {}, error() {} } };
+    // format-utils.js publishes its helpers as globals in the browser.
+    const ctx = { ...require('../format-utils.js'), document, window: {}, console: { log() {}, warn() {}, error() {} } };
     if (Chart) ctx.Chart = Chart;
     vm.createContext(ctx);
     vm.runInContext(appSrc, ctx);
