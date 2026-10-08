@@ -6,7 +6,7 @@
 # Usage: ./rebuild_env.sh [docker|k8s|both]
 # ==================================================================
 
-set -e
+set -euo pipefail  # project standard (#822): scripts/SHELL_STANDARD.md
 
 # Colors
 RED='\033[0;31m'
@@ -93,9 +93,10 @@ if [ "$MODE" = "docker" ] || [ "$MODE" = "both" ]; then
     print_info "Services stopped"
 
     print_step "Step 2: Removing all volumes..."
-    docker volume ls --format "{{.Name}}" | grep -E "scraping|grafana|prometheus|kafka|redis|postgres|zookeeper|delta" | while read vol; do
+    # `|| true`: no matching volume makes grep exit 1, which pipefail would turn into an abort.
+    docker volume ls --format "{{.Name}}" | grep -E "scraping|grafana|prometheus|kafka|redis|postgres|zookeeper|delta" | while read -r vol; do
         docker volume rm "$vol" 2>/dev/null && print_info "Removed $vol" || true
-    done
+    done || true
 
     print_step "Step 3: Cleaning up old images..."
     read -p "Remove and rebuild all images? (yes/no): " REBUILD_IMAGES
@@ -165,7 +166,8 @@ if [ "$MODE" = "docker" ] || [ "$MODE" = "both" ]; then
     check_http() {
         local url=$1
         local name=$2
-        local code=$(curl -s -o /dev/null -w "%{http_code}" "$url" 2>/dev/null || echo "000")
+        local code
+        code=$(curl -s -o /dev/null -w "%{http_code}" "$url" 2>/dev/null || echo "000")
         if [ "$code" = "200" ] || [ "$code" = "302" ]; then
             print_info "${name}: Accessible (HTTP ${code})"
         else
@@ -224,7 +226,8 @@ if [ "$MODE" = "k8s" ] || [ "$MODE" = "both" ]; then
     NAMESPACE="default"
 
     print_step "Step 1: Removing old 'coco' release..."
-    if helm list -n "$NAMESPACE" | grep -q "^${OLD_RELEASE}"; then
+    RELEASES="$(helm list -n "$NAMESPACE" 2>/dev/null || true)"
+    if grep -q "^${OLD_RELEASE}" <<<"$RELEASES"; then
         helm uninstall "$OLD_RELEASE" -n "$NAMESPACE" || true
         print_info "Old release uninstalled"
         sleep 10
