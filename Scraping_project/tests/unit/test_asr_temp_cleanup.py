@@ -16,6 +16,13 @@ from prometheus_client import REGISTRY  # noqa: E402
 
 from src.common import async_asr_processor as asr  # noqa: E402
 
+
+@pytest.fixture(autouse=True)
+def _allow_loopback_test_servers(monkeypatch):
+    # The local test servers live on 127.0.0.1; the SSRF guard (#450) blocks
+    # loopback unless FETCH_ALLOWED_CIDRS opts it in.
+    monkeypatch.setenv("FETCH_ALLOWED_CIDRS", "127.0.0.0/8,::1/128")
+
 PAYLOAD = b"RIFF" + b"\x00" * 50_000
 
 

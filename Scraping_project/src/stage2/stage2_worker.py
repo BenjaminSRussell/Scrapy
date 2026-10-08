@@ -9,6 +9,8 @@ from datetime import datetime
 from typing import Any
 
 import aiohttp
+
+from src.utils.url_safety import UnsafeURLError, check_url, redirect_guard, safe_resolver
 import pyarrow as pa
 from bs4 import BeautifulSoup
 from deltalake import DeltaTable
@@ -56,6 +58,16 @@ try:  # queue status MERGE failures after retries (#168)
     )
 except Exception:
     STAGE2_QUEUE_UPDATE_FAILURES = None
+
+try:  # SSRF guard refusals (#450)
+    from prometheus_client import Counter as _UCounter
+
+    STAGE2_UNSAFE_URLS: Any = _UCounter(
+        "stage2_unsafe_urls_blocked_total",
+        "Stage 2 fetches refused because the URL, a redirect or its DNS answer is non-public.",
+    )
+except Exception:
+    STAGE2_UNSAFE_URLS = None
 
 try:  # analysis upsert failures; their queue rows are left pending (#311)
     from prometheus_client import Counter as _ACounter
@@ -271,8 +283,13 @@ class Stage2Worker:
             limit=self.max_concurrent,
             limit_per_host=max(1, min(self.max_concurrent, 10)),
             ttl_dns_cache=300,
+            resolver=safe_resolver(),  # refuse non-public DNS answers at connect time (#450)
         )
-        return aiohttp.ClientSession(connector=connector, timeout=aiohttp.ClientTimeout(total=30))
+        return aiohttp.ClientSession(
+            connector=connector,
+            timeout=aiohttp.ClientTimeout(total=30),
+            trace_configs=[redirect_guard()],  # and redirects to non-public IP literals
+        )
 
     @asynccontextmanager
     async def _http_session(self):
@@ -567,10 +584,16 @@ class Stage2Worker:
         """
         attempts = max(1, int(getattr(self, "http_attempts", DEFAULT_STAGE2_HTTP_ATTEMPTS)))
         code, message = 0, "timeout"
+        try:  # SSRF guard (#450): scheme, internal names, non-public IP literals
+            check_url(url, resolve=False)
+        except UnsafeURLError as e:
+            return self._unsafe_url_record(url, url_hash, e)
         for attempt in range(1, attempts + 1):
             retry_after: float | None = None
             try:
                 result = await self._fetch_once(session, url, url_hash, is_heavy, domain)
+            except UnsafeURLError as e:  # redirect to a non-public address
+                return self._unsafe_url_record(url, url_hash, e)
             except TransientHTTPError as e:
                 code, message, reason, retry_after = e.status, "http_error", f"http_{e.status}", e.retry_after
                 exc_type, exc_text = "HTTPError", str(e)
@@ -578,6 +601,9 @@ class Stage2Worker:
                 code, message, reason = 0, "timeout", "timeout"
                 exc_type, exc_text = "TimeoutError", str(e)
             except (aiohttp.ClientConnectionError, aiohttp.ClientPayloadError) as e:
+                unsafe = getattr(e, "os_error", None) or e.__cause__
+                if isinstance(unsafe, UnsafeURLError):  # resolver refused a non-public address
+                    return self._unsafe_url_record(url, url_hash, unsafe)
                 code, message, reason = 0, f"ClientError: {type(e).__name__}", "connection"
                 exc_type, exc_text = message, str(e)
             else:
@@ -841,6 +867,14 @@ class Stage2Worker:
         self._backoff().record(domain)
         logger.warning(f"[STAGE2] Soft ban ({signature}, HTTP {status}) for {url[:80]}; quarantined")
         return self._error_record(url, url_hash, status, f"{SOFT_BAN_PREFIX}{signature}")
+
+    def _unsafe_url_record(self, url: str, url_hash: str, error: Exception) -> dict[str, Any]:
+        """Never fetched: the URL (or a redirect/DNS answer) is non-public (#450). Not retried."""
+        logger.warning(f"[STAGE2] Refusing non-public URL {url[:80]}: {error}")
+        if STAGE2_UNSAFE_URLS is not None:
+            STAGE2_UNSAFE_URLS.inc()
+        self._count_fetch("blocked_unsafe")
+        return self._error_record(url, url_hash, 0, f"blocked_unsafe_url: {error}")
 
     def _error_record(self, url: str, url_hash: str, error_code: int, error_msg: str) -> dict[str, Any]:
         return {

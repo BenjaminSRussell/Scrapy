@@ -15,6 +15,13 @@ from src.stage1.middlewares.soft_ban_middleware import SoftBanMiddleware
 from src.stage2.stage2_worker import Stage2Worker, plan_queue_updates
 from src.utils.soft_ban import DomainBackoff, SoftBanDetector
 
+
+@pytest.fixture(autouse=True)
+def _allow_loopback_test_servers(monkeypatch):
+    # The local test servers live on 127.0.0.1; the SSRF guard (#450) blocks
+    # loopback unless FETCH_ALLOWED_CIDRS opts it in.
+    monkeypatch.setenv("FETCH_ALLOWED_CIDRS", "127.0.0.0/8,::1/128")
+
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "soft_ban"
 
 
