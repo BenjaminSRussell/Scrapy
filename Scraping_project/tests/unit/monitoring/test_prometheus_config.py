@@ -20,7 +20,6 @@ def test_scrape_jobs_cover_core_services():
     jobs = {job["job_name"]: job for job in config["scrape_configs"]}
     expected_jobs = {
         "scrapy_app",
-        "kafka_ingestor",
         "scraping_pipeline",
         "redis",
         "postgres",
@@ -30,3 +29,5 @@ def test_scrape_jobs_cover_core_services():
     assert expected_jobs <= jobs.keys()
     assert jobs["scrapy_app"]["static_configs"][0]["targets"]
     assert jobs["scraping_pipeline"]["static_configs"][0]["targets"] == ["metrics-exporter:9090"]
+    # kafka-delta-ingest only speaks StatsD; scraping it directly is always down (#178).
+    assert "kafka_ingestor" not in jobs
