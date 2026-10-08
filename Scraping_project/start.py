@@ -22,10 +22,36 @@ REQUIRED_TOOLS = {
 
 LOCAL_GRAFANA_URL = "http://localhost:3000"
 LOCAL_PROMETHEUS_URLS: list[str] = [
-    "http://localhost:9091",
-    "http://localhost:9097",
+    "http://localhost:9090",
 ]
 LOCAL_SEED_FILE = Path("data/raw/uconn_urls.csv")
+COMPOSE_FILE = Path(__file__).resolve().parent / "docker-compose.yml"
+
+# Display labels for `docker-compose logs -f <service>` hints, in print order.
+# Only services that the Compose file defines are printed (#399); names from
+# the full Kafka stack (see #145) show up automatically once they exist.
+LOCAL_SERVICE_LABELS: dict[str, str] = {
+    "scraper": "Scraper (Stage 1)",
+    "scrapy-app": "Scrapy app",
+    "stage1-worker": "Stage 1 worker",
+    "stage2-worker": "Stage 2 worker",
+    "stage3-worker": "Stage 3 worker",
+    "stage4-worker": "Stage 4 worker",
+    "kafka": "Kafka",
+    "redis": "Redis",
+    "postgres": "PostgreSQL",
+    "prometheus": "Prometheus",
+    "grafana": "Grafana",
+}
+# Readiness gate for local mode: the first of these that the Compose file defines.
+LOCAL_READINESS_CANDIDATES = ("postgres", "redis")
+# Service used for one-off `run` commands (Delta reset).
+LOCAL_APP_CANDIDATES = ("scraper", "scrapy-app")
+# The Helm chart deploys Stage 1-3 only; there is no Stage 4 workload (#492).
+K8S_STAGE4_NOTE = (
+    "The Helm chart has no Stage 4 (PDF/OCR) workload; run Stage 4 with Compose "
+    "(stage4-worker) or deploy it separately."
+)
 
 DEFAULT_HELM_CHART = "k8s/helm/scraping-pipeline"
 DEFAULT_HELM_VALUES = os.path.join(DEFAULT_HELM_CHART, "values.yaml")
@@ -59,6 +85,36 @@ K8S_STAGE_DEFAULTS = {
 }
 
 
+def compose_services(compose_file: Path | str = COMPOSE_FILE) -> list[str]:
+    """Service names defined in the Compose file, in file order ([] if unreadable)."""
+    try:
+        import yaml  # PyYAML is in requirements.txt
+
+        data = yaml.safe_load(Path(compose_file).read_text(encoding="utf-8")) or {}
+    except Exception as exc:  # OSError, ImportError, yaml.YAMLError
+        print(f"Warning: could not read {compose_file}: {exc}", file=sys.stderr)
+        return []
+    services = data.get("services") if isinstance(data, dict) else None
+    return [str(name) for name in (services or {})]
+
+
+def first_defined(candidates: Iterable[str], services: Iterable[str]) -> str | None:
+    defined = set(services)
+    return next((name for name in candidates if name in defined), None)
+
+
+def local_log_hints(services: Iterable[str]) -> list[str]:
+    """`docker-compose logs -f` lines for defined services only, labelled where known."""
+    defined = list(services)
+    ordered = [name for name in LOCAL_SERVICE_LABELS if name in defined]
+    ordered += [name for name in defined if name not in LOCAL_SERVICE_LABELS]
+    hints = ["   - All services:        docker-compose logs -f"]
+    for name in ordered:
+        label = f"{LOCAL_SERVICE_LABELS.get(name, name)}:"
+        hints.append(f"   - {label:<20} docker-compose logs -f {name}")
+    return hints
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Start the scraping pipeline for local development or Kubernetes.",
@@ -85,7 +141,11 @@ def parse_args() -> argparse.Namespace:
         "--stage",
         choices=("pipeline", "stage1", "stage2", "stage3", "all-stages"),
         default="pipeline",
-        help="For Kubernetes deployments, choose which portion of the pipeline to deploy.",
+        help=(
+            "Kubernetes only (--env k8s): which portion of the pipeline to deploy. "
+            "Ignored by --env local, which always starts every Compose service. "
+            + K8S_STAGE4_NOTE
+        ),
     )
     parser.add_argument(
         "--release",
@@ -195,11 +255,25 @@ def wait_for_exec(service: str, timeout: int) -> None:
 
 
 def start_local(args: argparse.Namespace) -> None:
+    services = compose_services()
+    if getattr(args, "stage", "pipeline") != "pipeline":
+        print(
+            f"Note: --stage {args.stage} only applies to --env k8s; local mode starts every "
+            "Compose service. Use `docker-compose up -d <service>` to start a subset.",
+            file=sys.stderr,
+        )
     print("Starting local environment with docker-compose...")
+    if services:
+        print(f"Compose services: {', '.join(services)}")
     run_command(("docker-compose", "up", "-d"))
 
-    print(f"Waiting for 'postgres' service readiness (timeout={args.wait_timeout}s)...")
-    wait_for_exec("postgres", args.wait_timeout)
+    ready_service = first_defined(LOCAL_READINESS_CANDIDATES, services) if services else "postgres"
+    if ready_service:
+        print(f"Waiting for '{ready_service}' service readiness (timeout={args.wait_timeout}s)...")
+        wait_for_exec(ready_service, args.wait_timeout)
+    else:
+        print("No postgres/redis service defined; skipping readiness wait.")
+    app_service = (first_defined(LOCAL_APP_CANDIDATES, services) if services else None) or "scraper"
 
     if args.reset_delta:
         if not LOCAL_SEED_FILE.exists():
@@ -217,7 +291,7 @@ def start_local(args: argparse.Namespace) -> None:
                     "--rm",
                     "--no-deps",
                     "-T",
-                    "scrapy-app",
+                    app_service,
                     "python",
                     "cli.py",
                     "reset",
@@ -233,19 +307,12 @@ def start_local(args: argparse.Namespace) -> None:
     print(f"\n📊 Grafana Dashboard: {LOCAL_GRAFANA_URL}")
     print("   - Default credentials: admin / (password from .env GRAFANA_ADMIN_PASSWORD)")
     print("   - View real-time metrics, dashboards, and alerts")
-    print("\n📈 Prometheus Replicas (HA Setup):")
-    for idx, url in enumerate(LOCAL_PROMETHEUS_URLS, 1):
-        print(f"   - Replica {idx}: {url}")
+    print("\n📈 Prometheus:")
+    for url in LOCAL_PROMETHEUS_URLS:
+        print(f"   - {url}")
     print("\n📝 Viewing Logs:")
-    print("   - All services:        docker-compose logs -f")
-    print("   - Scrapy app:          docker-compose logs -f scrapy-app")
-    print("   - Stage 2 worker:      docker-compose logs -f stage2-worker")
-    print("   - Stage 3 worker:      docker-compose logs -f stage3-worker")
-    print("   - Stage 4 worker:      docker-compose logs -f stage4-worker")
-    print("   - Kafka:               docker-compose logs -f kafka")
-    print("   - Redis:               docker-compose logs -f redis")
-    print("   - PostgreSQL:          docker-compose logs -f postgres")
-    print("   - Grafana:             docker-compose logs -f grafana")
+    for line in local_log_hints(services):
+        print(line)
     print("\n🔧 Other Useful Commands:")
     print("   - Check service status: docker-compose ps")
     print("   - Stop all services:    docker-compose down")
@@ -353,6 +420,7 @@ def verify_hpa_status(namespace: str) -> None:
 
 def start_k8s(args: argparse.Namespace) -> None:
     prompt_prerequisites()
+    print(f"Note: {K8S_STAGE4_NOTE}")
     if args.stage == "all-stages" and (args.release or args.namespace):
         print(
             "Note: '--release' and '--namespace' overrides are ignored when deploying multiple stages. "

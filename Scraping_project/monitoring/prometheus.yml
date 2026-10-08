@@ -45,15 +45,10 @@ scrape_configs:
           component: 'scraper'
           environment: 'development'
 
-  # Scrape Kafka to Delta Lake ingestor metrics
-  - job_name: 'kafka_ingestor'
-    scrape_interval: 30s  # Use consistent interval
-    scrape_timeout: 10s
-    static_configs:
-      - targets: ['kafka-delta-ingestor:8001']
-        labels:
-          service: 'ingestor'
-          component: 'kafka-delta'
+  # kafka-delta-ingest has no HTTP endpoint (nothing listens on :8001); it
+  # sends StatsD, so its metrics arrive through the 'statsd' job below. The old
+  # 'kafka_ingestor' job was always down, which kept PrometheusScrapeFailures
+  # and KafkaPipelineDown firing (#178).
 
   # Scrape pipeline metrics - Delta Lake, queues, circuit breakers
   - job_name: 'scraping_pipeline'
