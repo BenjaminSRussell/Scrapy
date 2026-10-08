@@ -43,9 +43,12 @@ services:
     # keeps an open Redis for local dev ONLY - the app logs a warning. The port
     # is bound to localhost so the host never exposes Redis to its network.
     # $$ defers expansion to the container shell (not compose interpolation).
+    # volatile-lru (#161): only keys with a TTL are evictable. Seen-URL sets and
+    # queues have no TTL, so under memory pressure writes fail loudly instead of
+    # the seen set being silently evicted (which caused full recrawls).
     command: >-
       sh -c 'exec redis-server --appendonly yes --maxmemory 2gb
-      --maxmemory-policy allkeys-lru $${REDIS_PASSWORD:+--requirepass "$$REDIS_PASSWORD"}'
+      --maxmemory-policy volatile-lru $${REDIS_PASSWORD:+--requirepass "$$REDIS_PASSWORD"}'
     environment:
       - REDIS_PASSWORD=${REDIS_PASSWORD:-}
     ports:

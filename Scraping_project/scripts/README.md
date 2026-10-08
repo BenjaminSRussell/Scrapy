@@ -54,16 +54,22 @@ This directory contains scripts for managing, debugging, and resetting the scrap
 **Purpose**: Complete Docker Compose stack reset and rebuild.
 
 **What it does**:
-1. Stops all services
-2. Removes all volumes and data
-3. Optionally rebuilds Docker images
-4. Resets credentials to admin/admin
-5. Starts services in correct order
-6. Verifies health and connectivity
+1. Stops all services and removes this Compose project's volumes (`docker compose down -v`)
+2. Optionally rebuilds Docker images
+3. Checks `.env` (warns about missing `GRAFANA_ADMIN_PASSWORD`/`DB_PASSWORD`, prints key names only, never values)
+4. Starts services in dependency order: infrastructure, monitoring, exporters, applications
+5. Verifies health and connectivity
+
+Only services defined in the active Compose file are started. Kafka, Alertmanager and the
+exporters belong to the full-stack compose (see #145); when they are absent they are listed
+as skipped instead of failing `docker compose up`. `diagnose_issues.sh` and `../diagnose.sh`
+use the same discovery (`scripts/compose_lib.sh`, i.e. `docker compose config --services`).
 
 **Usage**:
 ```bash
-./scripts/complete_reset.sh
+./scripts/complete_reset.sh               # interactive
+./scripts/complete_reset.sh --dry-run     # show which services each step would start
+./scripts/complete_reset.sh --yes --no-rebuild
 ```
 
 **Interactive prompts**:
