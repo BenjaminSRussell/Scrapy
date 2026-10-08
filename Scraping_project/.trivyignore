@@ -1,5 +1,13 @@
-# This file contains suppressed CVEs.
-# Format: CVE-ID
+# Reviewed Trivy suppressions (#499). Format: one CVE-ID per line, '#' comments.
+#
+# Used by the CI gate in .github/workflows/cd-release.yml ("Trivy scan ... fail on
+# fixable CRITICAL"), which scans the crawler / metrics / kafka-delta-ingest images
+# on every PR that touches the image recipe and on every release tag.
+#
+# Rules for adding an entry (see trivy-reports/README.md):
+#   * group it under a comment naming the image/package and WHY it is safe to ignore
+#   * prefer bumping the base image or package over suppressing
+#   * re-review the whole list when a base image is bumped; delete stale entries
 
 # Suppressing gosu vulnerabilities in the redis image.
 # These are not directly related to the application's functionality and will be addressed by updating the base image.
