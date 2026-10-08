@@ -167,7 +167,12 @@ def test_external_exporter_jobs_are_scraped():
 
 
 def test_up_selectors_name_real_jobs():
+    # Rules are shared by the compose config (monitoring/prometheus.yml) and the
+    # Helm one; compose only scrapes what compose runs (#371), so a selector
+    # must name a job in at least one of them.
     jobs = {j["job_name"] for j in yaml.safe_load((MON / "prometheus.yml").read_text())["scrape_configs"]}
+    helm = (ROOT / "k8s" / "helm" / "scraping-pipeline" / "templates" / "prometheus-statefulset.yaml").read_text()
+    jobs |= set(re.findall(r"job_name: '([^']+)'", helm))
     for rule, expr in _rule_exprs():
         for job in re.findall(r'up\{job="([^"]+)"\}', expr):
             assert job in jobs, f"{rule}: up{{job={job!r}}} matches no scrape job"
