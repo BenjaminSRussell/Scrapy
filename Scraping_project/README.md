@@ -635,6 +635,19 @@ delta.write_typed("stage2_queue", data, Stage2Analysis)
 validated_data = delta.read_typed("stage2_queue", Stage2Analysis)
 ```
 
+### Retention: tiers, preview, forensic hold
+
+| What | Policy | Config (`delta_lake.*`) |
+|---|---|---|
+| Delta vacuum (old files after overwrite/delete) | Per-table tier; `default` 168h, `stage1_errors`/`stage2_errors` 720h (30 days of forensic history) (#632) | `table_retention_hours` |
+| Completed/failed queue rows | Archived to `<table>_history`, then deleted after 168h (#754) | `queue_retention_hours`, `queue_gc_archive` |
+| File DLQ (`data/dlq/*.json`) | Deleted after 30 days by the idle maintenance worker (#632) | `dlq_retention_days` (0 = keep) |
+| `stage1_offsite_candidates` | Pending sightings dropped after 30 days, rejected ones 7 days after review; accepted kept (#878) | `offsite_pending_retention_days`, `offsite_rejected_retention_days` |
+
+- **Preview before reclaiming (#602):** `python cli.py lake-vacuum [--table T] [--verbose]` lists what a vacuum would delete (files and bytes per table) and deletes nothing. Add `--apply` to reclaim. Tiers below 168h turn off the delta-rs retention safety check for that table, so set them deliberately.
+- **Forensic hold:** to keep error evidence longer, raise that table's tier (e.g. `stage1_errors: 2160`) or set `dlq_retention_days: 0`. Nothing older than the tier can be restored by time travel once vacuumed.
+- **Offsite review (#878):** run `python cli.py offsite list [--status pending]`, then `offsite accept URL…` or `offsite reject URL…`. `offsite promote` seeds accepted URLs once (idempotent MERGE; `promoted_at` stamped). `offsite gc [--dry-run]` applies the retention above, which the maintenance worker also runs. Gauge: `delta_offsite_candidate_urls{status}`.
+
 ## Project Structure
 
 Paths are relative to `Scraping_project/`; run every command from there (#334).
