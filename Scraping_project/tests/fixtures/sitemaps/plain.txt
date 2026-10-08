@@ -1,0 +1,5 @@
+https://www.example.edu/plain-a
+
+# comment
+ftp://www.example.edu/not-http
+https://www.example.edu/plain-b
