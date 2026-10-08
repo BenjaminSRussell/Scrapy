@@ -140,7 +140,7 @@ tests:
             value: 15
 
   # #661: a batch that could neither be written nor spilled (outcome="lost")
-  # pages immediately; spilled-only failures do not trigger DeltaWriteDataLoss.
+  # pages after 1m; spilled-only failures do not trigger DeltaWriteDataLoss.
   - interval: 1m
     input_series:
       - series: 'delta_write_failures_total{table="stage2_page_analysis",outcome="lost"}'

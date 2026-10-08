@@ -79,7 +79,7 @@ def test_sync_write_on_full_disk_reports_failure_and_leaves_table_intact(mgr, mo
     assert mgr.write("t661", _rows("a"), async_write=False) is True
     v0 = _version(mgr, "t661")
 
-    monkeypatch.setattr(deltalake, "write_deltalake", _DiskFull(times=99, err=err))
+    monkeypatch.setattr("deltalake.write_deltalake", _DiskFull(times=99, err=err))
     assert mgr.write("t661", _rows("b"), async_write=False) is False  # not silent success
 
     monkeypatch.undo()
@@ -89,7 +89,7 @@ def test_sync_write_on_full_disk_reports_failure_and_leaves_table_intact(mgr, mo
 
 def test_async_write_retries_through_transient_enospc_without_duplicates(mgr, monkeypatch):
     full = _DiskFull(times=2)
-    monkeypatch.setattr(deltalake, "write_deltalake", full)
+    monkeypatch.setattr("deltalake.write_deltalake", full)
     assert mgr._write_with_retry("t661", _rows("a"), "append") is True
     assert full.calls == 3
     assert _urls(mgr, "t661") == sorted(r["url"] for r in _rows("a"))  # exactly once
@@ -97,7 +97,7 @@ def test_async_write_retries_through_transient_enospc_without_duplicates(mgr, mo
 
 
 def test_persistent_enospc_spills_and_replays_exactly_once(mgr, monkeypatch):
-    monkeypatch.setattr(deltalake, "write_deltalake", _DiskFull(times=99))
+    monkeypatch.setattr("deltalake.write_deltalake", _DiskFull(times=99))
     assert mgr._write_with_retry("t661", _rows("a"), "append") is False
     assert len(list((mgr.spill_path / "t661").glob("*.jsonl"))) == 1
 
@@ -110,7 +110,7 @@ def test_persistent_enospc_spills_and_replays_exactly_once(mgr, monkeypatch):
 @needs_non_root
 def test_spill_failure_is_loud_and_counted(mgr, monkeypatch, caplog):
     """Disk full for the lake AND the spill dir: the batch is lost, so say so."""
-    monkeypatch.setattr(deltalake, "write_deltalake", _DiskFull(times=99))
+    monkeypatch.setattr("deltalake.write_deltalake", _DiskFull(times=99))
     mgr.spill_path.mkdir(parents=True)
     mgr.spill_path.chmod(stat.S_IRUSR | stat.S_IXUSR)
     before = _counter(table="t661", outcome="lost")

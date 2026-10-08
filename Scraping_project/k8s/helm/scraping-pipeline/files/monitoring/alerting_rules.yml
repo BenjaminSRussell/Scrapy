@@ -351,7 +351,7 @@ groups:
       # lake volume, which also holds _write_spill/). Those rows are gone (#661).
       - alert: DeltaWriteDataLoss
         expr: sum by (table) (increase(delta_write_failures_total{outcome="lost"}[5m])) > 0
-        for: 0m
+        for: 1m  # >= scrape interval (tests/observability); increase() over 5m keeps it true
         labels:
           severity: critical
           component: delta
