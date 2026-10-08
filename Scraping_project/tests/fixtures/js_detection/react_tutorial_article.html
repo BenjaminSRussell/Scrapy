@@ -1,0 +1,19 @@
+<!doctype html>
+<html><head><title>Getting started with React</title></head>
+<body>
+<header><nav><a href="/">Home</a> <a href="/blog">Blog</a></nav></header>
+<article>
+<h1>Getting started with React and react-dom</h1>
+<p>This server-rendered tutorial explains how react.js and react-dom fit together. Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris.</p>
+<p>Older apps rendered into an element marked with data-reactroot. Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris.</p>
+<pre><code>import { createRoot } from "react-dom/client";
+async function load() {
+  const res = await fetch("/api/items");
+  return res.json().then((items) =&gt; items);
+}
+</code></pre>
+<p>Redux apps often hydrate from window.__INITIAL_STATE__ or window.__PRELOADED_STATE__. Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris.</p>
+<p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris. Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris.</p>
+</article>
+<footer>© Example University</footer>
+</body></html>
