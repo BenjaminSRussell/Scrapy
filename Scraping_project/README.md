@@ -333,6 +333,22 @@ Stage 1 obeys robots.txt by default (#186). `ROBOTSTXT_OBEY` is on in `src/setti
 - **Retry-After** (#188). On a 429 or 503 with `Retry-After` (seconds or an HTTP date), `RetryAfterMiddleware` (priority 560, so it runs ahead of Scrapy's RetryMiddleware) raises that host's download delay to the wait, capped at `RETRY_AFTER_MAX_DELAY` (120s). The retry and every other request to the host wait at least that long, and the old delay is restored afterwards. Waits are counted in `scrapy_retry_after_waits_total{spider}` and `scrapy_retry_after_seconds_total{spider}`.
 - **Opting out** is only for sites you own: `ROBOTSTXT_OBEY=false`, `scrapy.robotstxt_obey: false`, or `stage1.spiders.<name>.robotstxt_obey: false`.
 
+### Rate limits and per-domain concurrency
+
+These are the production politeness defaults (#194). Scrapy's "domain" slot is the **hostname**, so each `*.uconn.edu` subdomain is throttled on its own.
+
+| Setting | scout | deep_dive | Notes |
+|---|---|---|---|
+| `concurrent_requests` (global) | 1024 | 32 | spread across hosts |
+| `concurrent_requests_per_domain` | 16 | 8 | hard per-host cap |
+| `autothrottle_target_concurrency` | 8 | 2 | per host; clamped to the per-domain cap |
+| `autothrottle_max_delay` | 60s | 60s | floored at 30s with a warning |
+
+- **AutoThrottle** can only slow a host down to `AUTOTHROTTLE_MAX_DELAY`. The old 1–1.5s caps could not absorb a 429 storm, so `polite_autothrottle_max_delay()` (`src/stage1/middlewares/spider_config.py`) never lets it fall below 30s. `polite_target_concurrency()` clamps the target to the per-domain cap; the scout profile used to have 2048 against 512, which meant AutoThrottle never slowed anything down.
+- **429/503 without Retry-After.** `RetryAfterMiddleware` backs the host off exponentially. The delay doubles on each consecutive one, starting at `RATE_LIMIT_BACKOFF_MIN` (1s) and going up to `RATE_LIMIT_BACKOFF_MAX` (defaults to the AutoThrottle max), and is held for `RATE_LIMIT_COOLDOWN_FACTOR` (4) times the delay before the old delay is restored. These are counted in `scrapy_rate_limit_backoffs_total{spider}` and in crawl stats `rate_limit/backoff_count` and `rate_limit/max_delay`.
+- **Active waits survive AutoThrottle.** AutoThrottle recomputes the delay on every 200 response. While a Retry-After wait or a backoff is active, the enforced delay is re-applied on every request and response for that host.
+- All of these can be overridden per spider under `stage1.spiders.<name>` in `config.yml` (`rate_limit_backoff_min`, `rate_limit_backoff_max`, `rate_limit_cooldown_factor`) or project-wide under `scrapy.*`.
+
 ### Soft-ban / captcha guard
 
 Challenge and captcha pages are not content (#582). `src/utils/soft_ban.py`

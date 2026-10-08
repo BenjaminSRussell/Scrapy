@@ -131,11 +131,28 @@ LOG_LEVEL = os.getenv("LOG_LEVEL", _scrapy_config.get("log_level", "INFO"))
 # ============================================================================
 CLOSESPIDER_TIMEOUT = _scrapy_config.get("closespider_timeout", 600)
 
+# Politeness (#194): AutoThrottle must be able to slow a host down far enough
+# under a 429 storm. AUTOTHROTTLE_MAX_DELAY is floored at 30s and the target
+# concurrency is per remote host (Scrapy semantics), so it can never exceed
+# CONCURRENT_REQUESTS_PER_DOMAIN. See README "Rate limits and per-domain
+# concurrency".
+from src.stage1.middlewares.spider_config import (  # noqa: E402
+    MIN_AUTOTHROTTLE_MAX_DELAY,
+    polite_autothrottle_max_delay,
+    polite_target_concurrency,
+)
+
 AUTOTHROTTLE_ENABLED = _scrapy_config.get("autothrottle_enabled", True)
 AUTOTHROTTLE_START_DELAY = _scrapy_config.get("autothrottle_start_delay", 0.1)
-AUTOTHROTTLE_MAX_DELAY = _scrapy_config.get("autothrottle_max_delay", 1.0)
-AUTOTHROTTLE_TARGET_CONCURRENCY = float(CONCURRENT_REQUESTS)
+AUTOTHROTTLE_MAX_DELAY = polite_autothrottle_max_delay(_scrapy_config.get("autothrottle_max_delay", 60.0))
+AUTOTHROTTLE_TARGET_CONCURRENCY = polite_target_concurrency(
+    _scrapy_config.get("autothrottle_target_concurrency", 4.0), CONCURRENT_REQUESTS_PER_DOMAIN
+)
 AUTOTHROTTLE_DEBUG = _scrapy_config.get("autothrottle_debug", False)
+# 429/503 without Retry-After: exponential per-host backoff (RetryAfterMiddleware).
+RATE_LIMIT_BACKOFF_MIN = float(_scrapy_config.get("rate_limit_backoff_min", 1.0))
+RATE_LIMIT_BACKOFF_MAX = float(_scrapy_config.get("rate_limit_backoff_max", AUTOTHROTTLE_MAX_DELAY))
+RATE_LIMIT_COOLDOWN_FACTOR = float(_scrapy_config.get("rate_limit_cooldown_factor", 4.0))
 
 HTTPCACHE_ENABLED = _scrapy_config.get("httpcache_enabled", True)
 HTTPCACHE_EXPIRATION_SECS = _scrapy_config.get("httpcache_expiration_secs", 3600)

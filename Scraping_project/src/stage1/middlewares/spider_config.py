@@ -1,6 +1,50 @@
 """Helpers for assembling Scrapy settings from config.yml."""
 
+import logging
+from typing import Any
+
 from src.core.config import Config
+
+logger = logging.getLogger(__name__)
+
+# #194: AutoThrottle can only slow a host down to AUTOTHROTTLE_MAX_DELAY. With
+# the old 1-1.5s caps a 429 storm could never be absorbed, so the production
+# floor is 30s (a host is still probed at least every 30s while backing off).
+MIN_AUTOTHROTTLE_MAX_DELAY = 30.0
+
+
+def polite_autothrottle_max_delay(value: Any) -> float:
+    """Configured AUTOTHROTTLE_MAX_DELAY, raised to the 30s floor (#194)."""
+    try:
+        delay = float(value)
+    except (TypeError, ValueError):
+        delay = MIN_AUTOTHROTTLE_MAX_DELAY
+    if delay < MIN_AUTOTHROTTLE_MAX_DELAY:
+        logger.warning(
+            f"autothrottle_max_delay={value} is below the {MIN_AUTOTHROTTLE_MAX_DELAY:g}s politeness floor; "
+            f"using {MIN_AUTOTHROTTLE_MAX_DELAY:g}s (#194)"
+        )
+        return MIN_AUTOTHROTTLE_MAX_DELAY
+    return delay
+
+
+def polite_target_concurrency(value: Any, per_domain: Any) -> float:
+    """AUTOTHROTTLE_TARGET_CONCURRENCY, never above the per-domain cap (#194).
+
+    AutoThrottle's target is the average number of parallel requests *per
+    remote site*; a target above CONCURRENT_REQUESTS_PER_DOMAIN (the scout
+    profile had 2048 vs 512) means AutoThrottle never slows anything down.
+    """
+    try:
+        target = float(value)
+    except (TypeError, ValueError):
+        target = 1.0
+    try:
+        cap = float(per_domain)
+    except (TypeError, ValueError):
+        cap = target
+    return max(1.0, min(target, cap))
+
 
 def get_spider_settings(spider_name: str) -> dict:
     config_instance = Config.get_instance()
@@ -22,8 +66,11 @@ def get_spider_settings(spider_name: str) -> dict:
         "RETRY_TIMES": spider_config.get("retry_times", 3),
         "AUTOTHROTTLE_ENABLED": spider_config.get("autothrottle_enabled", True),
         "AUTOTHROTTLE_START_DELAY": spider_config.get("autothrottle_start_delay", 0.25),
-        "AUTOTHROTTLE_MAX_DELAY": spider_config.get("autothrottle_max_delay", 10),
-        "AUTOTHROTTLE_TARGET_CONCURRENCY": spider_config.get("autothrottle_target_concurrency", 2.0),
+        "AUTOTHROTTLE_MAX_DELAY": polite_autothrottle_max_delay(spider_config.get("autothrottle_max_delay", 60)),
+        "AUTOTHROTTLE_TARGET_CONCURRENCY": polite_target_concurrency(
+            spider_config.get("autothrottle_target_concurrency", 2.0),
+            spider_config.get("concurrent_requests_per_domain", 8),
+        ),
         "REACTOR_THREADPOOL_MAXSIZE": spider_config.get("reactor_threadpool_maxsize", 20),
         "DNS_TIMEOUT": spider_config.get("dns_timeout", 15),
         "MEMUSAGE_ENABLED": True,
@@ -48,6 +95,16 @@ def get_spider_settings(spider_name: str) -> dict:
             "src.stage1.middlewares.retry_after_middleware.RetryAfterMiddleware": 560,
         },
         "RETRY_AFTER_MAX_DELAY": float(spider_config.get("retry_after_max_delay", 120)),
+        # #194: 429/503 without Retry-After double the host's delay (>= 1s) up to
+        # the AutoThrottle max, held for 4x that delay.
+        "RATE_LIMIT_BACKOFF_MIN": float(spider_config.get("rate_limit_backoff_min", 1.0)),
+        "RATE_LIMIT_BACKOFF_MAX": float(
+            spider_config.get(
+                "rate_limit_backoff_max",
+                polite_autothrottle_max_delay(spider_config.get("autothrottle_max_delay", 60)),
+            )
+        ),
+        "RATE_LIMIT_COOLDOWN_FACTOR": float(spider_config.get("rate_limit_cooldown_factor", 4.0)),
         "SOFT_BAN_SLOT_DELAY": spider_config.get("soft_ban_slot_delay", 30.0),
         "SPIDER_MIDDLEWARES": {
             "scrapy.spidermiddlewares.depth.DepthMiddleware": 900,
