@@ -1,23 +1,28 @@
 // Pipeline Control Center - Main Application
 // Real-time monitoring dashboard for UConn scraping pipeline
 
-const METRICS_URL = 'http://localhost:9090/metrics';
+// #141: resolved from window.CC_METRICS_URL, ?metrics=, or <this host>:9090 (format-utils.js).
+const METRICS_URL = resolveMetricsUrl(
+    typeof location !== 'undefined' ? location : null,
+    (typeof window !== 'undefined' && window.CC_METRICS_URL) || null
+);
 const REFRESH_INTERVAL = 5000;
 let refreshPaused = false;
-let refreshTimer = null;
 let metricsWasDown = false;
 let chartsHaveSample = false;
 
-let countdown = 5;
+let refreshScheduler = null;
 let charts = {};
 let historicalData = {
     timestamps: [],
     urls: [],
     pages: [],
     summaries: [],
+    sampleTimes: [],  // ms, parallel to the arrays above (#141)
     maxDataPoints: 50
 };
 let previousMetrics = {};
+let previousMetricsAt = 0;  // ms timestamp of previousMetrics (#141)
 let startTime = Date.now();
 let activityLog = [];
 let lastHistoryDayKey = null;
@@ -305,12 +310,14 @@ function updateHistoricalData(metrics) {
     historicalData.urls.push(metrics['stage1_urls_discovered_total'] || 0);
     historicalData.pages.push(metrics['stage2_pages_analyzed_total'] || 0);
     historicalData.summaries.push(metrics['stage3_summaries_created_total'] || 0);
+    historicalData.sampleTimes.push(now.getTime());
 
     if (historicalData.timestamps.length > historicalData.maxDataPoints) {
         historicalData.timestamps.shift();
         historicalData.urls.shift();
         historicalData.pages.shift();
         historicalData.summaries.shift();
+        historicalData.sampleTimes.shift();
     }
 
     updatePerformanceCharts();
@@ -340,8 +347,9 @@ function updatePerformanceCharts() {
         const pagesRate = [];
 
         for (let i = 1; i < historicalData.urls.length; i++) {
-            urlsRate.push((historicalData.urls[i] - historicalData.urls[i-1]) * 12);
-            pagesRate.push((historicalData.pages[i] - historicalData.pages[i-1]) * 12);
+            const ms = historicalData.sampleTimes[i] - historicalData.sampleTimes[i-1];
+            urlsRate.push(ratePerMinute(historicalData.urls[i], historicalData.urls[i-1], ms));
+            pagesRate.push(ratePerMinute(historicalData.pages[i], historicalData.pages[i-1], ms));
         }
 
         charts.throughput.data.labels = historicalData.timestamps.slice(1);
@@ -353,24 +361,17 @@ function updatePerformanceCharts() {
     updateOverviewSparklines();
 }
 
-function calculateRates(metrics) {
+function calculateRates(metrics, now = Date.now()) {
+    // #141: all rates are per minute, from the actual time since the last sample.
     const prev = previousMetrics;
-    const timeElapsed = 5;
-
-    const rates = {
-        urls: 0,
-        pages: 0,
-        summaries: 0,
-        largeDocs: 0
-    };
-
+    const elapsedMs = previousMetricsAt ? now - previousMetricsAt : 0;
+    const rates = { urls: 0, pages: 0, summaries: 0, largeDocs: 0 };
     if (Object.keys(prev).length > 0) {
-        rates.urls = ((metrics['stage1_urls_discovered_total'] - prev['stage1_urls_discovered_total']) / timeElapsed) * 60;
-        rates.pages = (metrics['stage2_pages_analyzed_total'] - prev['stage2_pages_analyzed_total']) / timeElapsed;
-        rates.summaries = (metrics['stage3_summaries_created_total'] - prev['stage3_summaries_created_total']) / timeElapsed;
-        rates.largeDocs = (metrics['stage4_large_doc_summaries_total'] - prev['stage4_large_doc_summaries_total']) / timeElapsed;
+        rates.urls = ratePerMinute(metrics['stage1_urls_discovered_total'], prev['stage1_urls_discovered_total'], elapsedMs);
+        rates.pages = ratePerMinute(metrics['stage2_pages_analyzed_total'], prev['stage2_pages_analyzed_total'], elapsedMs);
+        rates.summaries = ratePerMinute(metrics['stage3_summaries_created_total'], prev['stage3_summaries_created_total'], elapsedMs);
+        rates.largeDocs = ratePerMinute(metrics['stage4_large_doc_summaries_total'], prev['stage4_large_doc_summaries_total'], elapsedMs);
     }
-
     return rates;
 }
 
@@ -503,15 +504,15 @@ function updateDashboard(metrics) {
     });
 
     const s3RateElem = document.getElementById('pipeline-s3-rate');
-    if (s3RateElem) { const __n = rates.summaries.toFixed(1) + '/s'; if (s3RateElem.textContent !== String(__n)) { s3RateElem.textContent = __n; s3RateElem.classList.remove('flash'); void s3RateElem.offsetWidth; s3RateElem.classList.add('flash'); } else { s3RateElem.textContent = __n; } }
+    if (s3RateElem) { const __n = rates.summaries.toFixed(1) + '/min'; if (s3RateElem.textContent !== String(__n)) { s3RateElem.textContent = __n; s3RateElem.classList.remove('flash'); void s3RateElem.offsetWidth; s3RateElem.classList.add('flash'); } else { s3RateElem.textContent = __n; } }
 
     const s4RateElem = document.getElementById('pipeline-s4-rate');
-    if (s4RateElem) { const __n = rates.largeDocs.toFixed(1) + '/s'; if (s4RateElem.textContent !== String(__n)) { s4RateElem.textContent = __n; s4RateElem.classList.remove('flash'); void s4RateElem.offsetWidth; s4RateElem.classList.add('flash'); } else { s4RateElem.textContent = __n; } }
+    if (s4RateElem) { const __n = rates.largeDocs.toFixed(1) + '/min'; if (s4RateElem.textContent !== String(__n)) { s4RateElem.textContent = __n; s4RateElem.classList.remove('flash'); void s4RateElem.offsetWidth; s4RateElem.classList.add('flash'); } else { s4RateElem.textContent = __n; } }
 
     setMetricText('perf-s1-rate', rates.urls.toFixed(1) + ' URLs/min');
-    setMetricText('perf-s2-rate', rates.pages.toFixed(2) + ' pages/sec');
-    setMetricText('perf-s3-rate', rates.summaries.toFixed(2) + ' summaries/sec');
-    setMetricText('perf-s4-rate', rates.largeDocs.toFixed(2) + ' docs/sec');
+    setMetricText('perf-s2-rate', rates.pages.toFixed(1) + ' pages/min');
+    setMetricText('perf-s3-rate', rates.summaries.toFixed(1) + ' summaries/min');
+    setMetricText('perf-s4-rate', rates.largeDocs.toFixed(1) + ' docs/min');
 
     const redisKeys = metrics['pipeline_redis_keys'] || 0;
     const redisMemory = metrics['pipeline_redis_memory_bytes'] || 0;
@@ -552,6 +553,7 @@ function updateDashboard(metrics) {
     updateHistoricalData(metrics);
 
     previousMetrics = { ...metrics };
+    previousMetricsAt = Date.now();
 }
 
 
@@ -605,8 +607,6 @@ async function fetchMetrics() {
         hasEverSucceeded = true;
         lastMetricsAt = Date.now();
         setConnectionStatus('online');
-
-        countdown = 5;
     } catch (error) {
         metricsWasDown = true;
         console.error('Error fetching metrics:', error);
@@ -886,32 +886,32 @@ function formatRelative(ts) {
 let lastMetricsAt = null;
 let hasEverSucceeded = false;
 
-function startCountdown() {
+// Display only: the countdown is read from the scheduler's nextFetchAt, so it
+// reaches 0 exactly when a fetch starts and cannot drift from the poll (#986).
+function renderCountdown() {
+    if (!refreshScheduler) return;
+    const el = document.getElementById('refresh-countdown');
+    if (el) {
+        const s = refreshScheduler.secondsRemaining();
+        const text = s === null ? 'paused' : String(s);
+        if (el.textContent !== text) el.textContent = text;
+    }
+    const rel = document.getElementById('last-updated-rel');
+    if (rel) rel.textContent = formatRelative(lastMetricsAt);
+}
 
-    let lastAnnounced = null;
-    setInterval(() => {
-        if (refreshPaused) {
-            const el = document.getElementById('refresh-countdown');
-            if (el) el.textContent = 'paused';
-            return;
-        }
-        countdown--;
-        if (countdown <= 0) {
-            countdown = 5;
-        }
-        const el = document.getElementById('refresh-countdown');
-        if (el) el.textContent = countdown;
-        const rel = document.getElementById('last-updated-rel');
-        if (rel) rel.textContent = formatRelative(lastMetricsAt);
-        // Throttle aria announcements to each full cycle reset (#1093)
-        const live = document.getElementById('refresh-status');
-        if (live && countdown === 5 && lastAnnounced !== 'refreshed') {
-            live.textContent = 'Metrics refreshed';
-            lastAnnounced = 'refreshed';
-        } else if (countdown !== 5) {
-            lastAnnounced = null;
-        }
-    }, 1000);
+function startCountdown() {
+    renderCountdown();
+    setInterval(renderCountdown, 250);
+}
+
+// One aria announcement per completed successful fetch (#1093).
+async function fetchAndAnnounce() {
+    const before = lastMetricsAt;
+    await fetchMetrics();
+    const live = document.getElementById('refresh-status');
+    if (live && lastMetricsAt !== before) live.textContent = 'Metrics refreshed';
+    renderCountdown();
 }
 
 
@@ -952,6 +952,7 @@ function initialize() {
     if (deep) activateTab(deep, false);
     initializeCharts();
     ensureChartPlaceholders();
+    refreshScheduler = createRefreshScheduler({ interval: REFRESH_INTERVAL, fetch: fetchAndAnnounce });
     startCountdown();
 
     const pauseBtn = document.getElementById('pause-refresh');
@@ -961,19 +962,18 @@ function initialize() {
             pauseBtn.setAttribute('aria-pressed', refreshPaused ? 'true' : 'false');
             pauseBtn.textContent = refreshPaused ? 'Resume' : 'Pause';
             pauseBtn.setAttribute('aria-label', refreshPaused ? 'Resume auto-refresh' : 'Pause auto-refresh');
+            refreshScheduler.setPaused(refreshPaused);
+            renderCountdown();
             const live = document.getElementById('refresh-status');
             if (live) live.textContent = refreshPaused ? 'Auto-refresh paused' : 'Auto-refresh resumed';
         });
     }
     const manualBtn = document.getElementById('manual-refresh');
-    if (manualBtn) manualBtn.addEventListener('click', () => fetchMetrics());
+    if (manualBtn) manualBtn.addEventListener('click', () => refreshScheduler.refreshNow());
 
     addActivityLogItem('success', 'Pipeline Control Center initialized');
 
-    fetchMetrics();
-    refreshTimer = setInterval(() => {
-        if (!refreshPaused) fetchMetrics();
-    }, REFRESH_INTERVAL);
+    refreshScheduler.start();
 
     const chartHeightMql = window.matchMedia('(max-width: 640px)');
     const onChartBreak = () => {

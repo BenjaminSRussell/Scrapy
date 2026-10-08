@@ -3,6 +3,19 @@
 # ==================================================================
 # These rules define alerts for critical conditions in the pipeline
 # Alerts are sent to Alertmanager for routing and notification
+#
+# Every metric an expr reads must have a real producer (#178). The sources:
+#   - Python prometheus_client metrics defined in src/ (scrapy_*, delta_*,
+#     redis_pool_*, scrapy_pg_*, ...), scraped on the scrapy_app job
+#   - recording_rules.yml outputs (e.g. kafka_consumergroup_lag_max)
+#   - statsd-exporter, via k8s/helm/.../files/monitoring/statsd_mapping.yml:
+#     kafka-delta-ingest (kafka_delta_ingest_*) and monitoring/metrics_exporter.py
+#     (redis_queue_length, pipeline_errors_total, circuit_breaker_open_count)
+#   - kafka JMX exporter names from files/monitoring/kafka_jmx_config.yml
+#   - redis_exporter, postgres_exporter, Prometheus' own metrics and `up`
+# tests/unit/monitoring/test_alert_metric_catalog.py fails CI when an expr
+# names a metric none of these produce. The Helm copy of this file must be
+# identical (same test).
 # ==================================================================
 
 groups:
@@ -229,22 +242,33 @@ groups:
   - name: kafka_pipeline
     interval: 30s
     rules:
-      # Critical: Kafka pipeline is down
+      # Critical: Kafka pipeline is down. kafka-delta-ingest serves no HTTP
+      # endpoint (it only sends StatsD), so up{job="kafka_ingestor"} was always 0
+      # in Compose and absent in Helm (#178). Fire instead when the broker is
+      # taking messages but the ingestor has received none for 10 minutes;
+      # `or vector(0)` covers an ingestor that never started.
       - alert: KafkaPipelineDown
-        expr: up{job="kafka_ingestor"} == 0
-        for: 2m
+        expr: |
+          sum(rate(kafka_server_brokertopicmetrics_messagesin_total[10m])) > 0
+          and on()
+          (sum(rate(kafka_delta_ingest_messages_received_total[10m])) or vector(0)) == 0
+        for: 5m
         labels:
           severity: critical
           component: ingestor
         annotations:
           summary: "Kafka to Delta Lake pipeline is down"
-          description: "Kafka ingestor has been unreachable for more than 2 minutes."
+          description: "Kafka is receiving messages but kafka-delta-ingest has consumed none for 15 minutes."
           impact: "Critical - Data not being persisted to Delta Lake"
           action: "Check ingestor: docker-compose logs kafka-delta-ingestor"
 
       # Critical: High message failure rate
+      # main.rs counts per-message failures as kafka_delta_ingest.errors.<reason>
+      # (mapped to kafka_delta_ingest_errors_total{reason}); there is no
+      # ingestor_records_failed_total (#178).
       - alert: KafkaHighMessageFailureRate
-        expr: rate(ingestor_records_failed_total[5m]) > 10
+        expr: |
+          sum(rate(kafka_delta_ingest_errors_total{reason=~"parse_failed|schema_validation_failed|missing_required_field"}[5m])) > 10
         for: 5m
         labels:
           severity: critical
@@ -256,15 +280,17 @@ groups:
           action: "Check ingestor logs for errors and Delta Lake connectivity"
 
       # Warning: Slow Delta Lake writes
+      # main.rs times write+commit as the StatsD timer batch.write; statsd-exporter
+      # turns it into the kafka_delta_ingest_batch_write_seconds histogram (#178).
       - alert: SlowDeltaLakeWrites
-        expr: histogram_quantile(0.95, rate(ingestor_batch_write_latency_ms_bucket[5m])) > 5000
+        expr: histogram_quantile(0.95, sum by (le) (rate(kafka_delta_ingest_batch_write_seconds_bucket[5m]))) > 5
         for: 10m
         labels:
           severity: warning
           component: ingestor
         annotations:
           summary: "Slow Delta Lake write performance"
-          description: "P95 batch write latency is {{ $value }}ms."
+          description: "P95 batch write latency is {{ $value }}s."
           impact: "Medium - Ingestion performance degraded"
           action: "Check Delta Lake storage performance and network"
 
@@ -368,17 +394,20 @@ groups:
           action: "Restart Redis: docker-compose restart redis"
 
       # Warning: High Redis memory usage
+      # #161: maxmemory-policy is volatile-lru, so TTL-less seen sets and queues
+      # are never evicted; at maxmemory Redis rejects writes instead. Warn at 80%
+      # so there is time to act before enqueues and seen-marks start failing.
       - alert: RedisHighMemory
-        expr: redis_memory_used_bytes / redis_memory_max_bytes > 0.9
+        expr: redis_memory_used_bytes / (redis_memory_max_bytes > 0) > 0.8
         for: 5m
         labels:
           severity: warning
           component: redis
         annotations:
           summary: "Redis memory usage high"
-          description: "Redis is using {{ $value | humanizePercentage }} of max memory."
-          impact: "Medium - Risk of evictions or OOM"
-          action: "Review queue sizes and consider scaling Redis"
+          description: "Redis is using {{ $value | humanizePercentage }} of maxmemory."
+          impact: "Medium - At 100% Redis rejects writes (enqueue, seen-marks); durable keys are never evicted"
+          action: "Raise maxmemory or drain queues; never switch to an allkeys-* policy"
 
       # Soft-ban / captcha responses (#582): pages are quarantined, never
       # analysed; a sustained rate means a site is blocking the crawler.
@@ -539,9 +568,11 @@ groups:
           impact: "Low - Some domains are temporarily blocked"
           action: "Normal operation - circuits will auto-recover"
 
-      # Warning: Low Delta Lake write rate
+      # Warning: Low Delta Lake write rate. Each batches.written is one Delta
+      # commit (write_batch commits once per batch); there is no
+      # ingestor_delta_commits_total (#178).
       - alert: LowDeltaLakeWrites
-        expr: rate(ingestor_delta_commits_total[5m]) == 0
+        expr: sum(rate(kafka_delta_ingest_batches_written_total[15m])) == 0
         for: 15m
         labels:
           severity: warning
@@ -551,3 +582,34 @@ groups:
           description: "No data is being written to Delta Lake."
           impact: "Medium - Data persistence stalled"
           action: "Check Kafka consumer and Delta Lake connectivity"
+
+      # Moved from the old monitoring/alerts.yml, which Prometheus never loaded
+      # (rule_files lists only recording_rules.yml and alerting_rules.yml) and
+      # which used names nothing emitted (#178). metrics_exporter.py sends
+      # errors.total{stage,error_type}; statsd_mapping.yml names it
+      # pipeline_errors_total.
+      - alert: PipelineHighErrorRate
+        expr: sum by (stage) (rate(pipeline_errors_total[5m])) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          component: pipeline
+        annotations:
+          summary: "High pipeline error rate in {{ $labels.stage }}"
+          description: "{{ $value }} errors/sec recorded for {{ $labels.stage }} over 5 minutes."
+          impact: "Medium - URLs in this stage are failing"
+          action: "Check the stage worker logs and the error_type label of pipeline_errors_total"
+
+      # metrics_exporter.py sends redis.queue.length{queue}; statsd_mapping.yml
+      # names it redis_queue_length.
+      - alert: QueueBacklog
+        expr: max by (queue) (redis_queue_length) > 10000
+        for: 10m
+        labels:
+          severity: warning
+          component: pipeline
+        annotations:
+          summary: "Large backlog in {{ $labels.queue }}"
+          description: "{{ $labels.queue }} has {{ $value }} items pending for 10 minutes."
+          impact: "Medium - Crawl latency grows while workers fall behind"
+          action: "Scale the consuming stage or check it for stalls"
