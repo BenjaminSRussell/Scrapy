@@ -745,6 +745,9 @@ async function fetchMetrics() {
         hasEverSucceeded = true;
         lastMetricsAt = Date.now();
         consecutiveFetchFailures = 0;
+        finishLoading(false);
+        hideFetchError();
+        renderStale();
         setConnectionStatus('online', metrics['pipeline_running']);
     } catch (error) {
         if (error && error.superseded) return; // a newer request owns the result (#1031)
@@ -752,6 +755,8 @@ async function fetchMetrics() {
         console.error('Error fetching metrics:', error);
         const failure = metricsFailureActivity(error, METRICS_TIMEOUT_MS);
         addActivityLogItem(failure.type, failure.message);
+        if (!hasEverSucceeded) finishLoading(true);
+        showFetchError(failure.message);
         consecutiveFetchFailures += 1;
         setConnectionStatus(hasEverSucceeded ? 'offline' : 'never');
         document.querySelectorAll('.card-badge.badge-info, .card-badge.badge-success').forEach(b => {
@@ -972,6 +977,7 @@ function activateTab(tabName, pushUrl = true) {
         const on = btn.getAttribute('data-tab') === tabName;
         btn.classList.toggle('active', on);
         btn.setAttribute('aria-selected', on ? 'true' : 'false');
+        btn.setAttribute('tabindex', on ? '0' : '-1'); // #153 roving tabindex
         if (on) found = true;
     });
     if (!found) return false;
@@ -1025,7 +1031,7 @@ function setupShortcuts() {
             const btn = document.querySelector(`.tab-button[data-tab="${action.tab}"]`);
             if (btn) btn.focus();
         } else if (action.type === 'refresh' && refreshScheduler) {
-            refreshScheduler.refreshNow();
+            requestRefresh();
         }
     });
 }
@@ -1097,10 +1103,85 @@ function setupTabs() {
         button.addEventListener('click', () => {
             const tabName = button.getAttribute('data-tab');
             activateTab(tabName, true);
-            const panel = document.getElementById(`tab-${tabName}`);
-            if (panel) { panel.setAttribute('tabindex', '-1'); panel.focus(); }
         });
     });
+
+    // #153: WAI-ARIA tabs pattern. Arrow keys / Home / End move between the
+    // visible tabs and select them (automatic activation); Tab moves into the panel.
+    const tablist = document.querySelector('[role="tablist"]');
+    if (tablist) {
+        tablist.addEventListener('keydown', (event) => {
+            const tabs = Array.from(tablist.querySelectorAll('[role="tab"]')).filter(t => !t.hidden && t.style.display !== 'none');
+            const current = tabs.indexOf(document.activeElement);
+            if (current < 0) return;
+            const next = tabKeyTarget(event.key, current, tabs.length);
+            if (next === null) return;
+            event.preventDefault();
+            const target = tabs[next];
+            activateTab(target.getAttribute('data-tab'), true);
+            target.focus();
+        });
+    }
+}
+
+// #352: until the first successful fetch, numbers are placeholders, not zeros.
+const LOADING_SELECTOR = '.metric-value, .stage-metric-value, .topbar-stat-value, .health-value';
+function markLoading() {
+    document.querySelectorAll(LOADING_SELECTOR).forEach(el => {
+        el.classList.add('is-loading');
+        el.setAttribute('aria-busy', 'true');
+    });
+    const top = document.getElementById('topbar-status');
+    if (top) top.textContent = 'Loading…';
+}
+function finishLoading(failed) {
+    document.querySelectorAll('.is-loading').forEach(el => {
+        el.classList.remove('is-loading');
+        el.removeAttribute('aria-busy');
+        // Never fetched: say "unknown" instead of revealing the static 0 / Never.
+        if (failed) el.textContent = '\u2014';
+    });
+}
+
+// #362: visible error with a Retry control; cleared by the next success.
+function showFetchError(message) {
+    const banner = document.getElementById('fetch-error-banner');
+    const text = document.getElementById('fetch-error-text');
+    if (text) text.textContent = `Could not load metrics: ${message}`;
+    if (banner && banner.hidden) banner.hidden = false;
+}
+function hideFetchError() {
+    const banner = document.getElementById('fetch-error-banner');
+    if (banner && !banner.hidden) banner.hidden = true;
+}
+
+// #351: Stale badge once the last good sample is older than 3 refresh intervals.
+let staleShown = false;
+function renderStale() {
+    const interval = refreshScheduler ? refreshScheduler.getInterval() : REFRESH_INTERVAL;
+    const { stale } = staleState(lastMetricsAt, Date.now(), interval, 3);
+    if (stale === staleShown) return;
+    staleShown = stale;
+    ['stale-badge', 'topbar-stale'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.hidden = !stale;
+    });
+    const live = document.getElementById('refresh-status');
+    if (live) live.textContent = stale ? 'Metrics are stale: no successful update for several intervals' : 'Metrics are current again';
+}
+
+// #349: Refresh now shows a busy state while a fetch is in flight (it stays
+// focusable: aria-disabled, not disabled), and the countdown restarts after it.
+function setRefreshBusy(busy) {
+    const btn = document.getElementById('manual-refresh');
+    if (!btn) return;
+    btn.setAttribute('aria-busy', busy ? 'true' : 'false');
+    btn.setAttribute('aria-disabled', busy ? 'true' : 'false');
+    btn.textContent = busy ? 'Refreshing…' : 'Refresh now';
+}
+function requestRefresh() {
+    if (!refreshScheduler || refreshScheduler.isFetching()) return;
+    refreshScheduler.refreshNow();
 }
 
 function formatRelative(ts) {
@@ -1125,6 +1206,7 @@ function renderCountdown() {
     }
     const rel = document.getElementById('last-updated-rel');
     if (rel) rel.textContent = formatRelative(lastMetricsAt);
+    renderStale();
 }
 
 function startCountdown() {
@@ -1135,7 +1217,12 @@ function startCountdown() {
 // One aria announcement per completed successful fetch (#1093).
 async function fetchAndAnnounce() {
     const before = lastMetricsAt;
-    await Promise.all([fetchMetrics(), fetchQueueDepths()]);
+    setRefreshBusy(true);
+    try {
+        await Promise.all([fetchMetrics(), fetchQueueDepths()]);
+    } finally {
+        setRefreshBusy(false);
+    }
     const live = document.getElementById('refresh-status');
     if (live && lastMetricsAt !== before) live.textContent = 'Metrics refreshed';
     renderCountdown();
@@ -1178,6 +1265,7 @@ function initialize() {
     setupShortcuts();
     const initialTab = pickInitialTab(tabFromLocation(), storeGet(STORE_TAB_KEY), visibleTabNames());
     if (initialTab) activateTab(initialTab, false);
+    markLoading();
     initializeCharts();
     ensureChartPlaceholders();
     refreshScheduler = createRefreshScheduler({ interval: REFRESH_INTERVAL, fetch: fetchAndAnnounce });
@@ -1199,7 +1287,9 @@ function initialize() {
         });
     }
     const manualBtn = document.getElementById('manual-refresh');
-    if (manualBtn) manualBtn.addEventListener('click', () => refreshScheduler.refreshNow());
+    if (manualBtn) manualBtn.addEventListener('click', requestRefresh);
+    const retryBtn = document.getElementById('retry-fetch');
+    if (retryBtn) retryBtn.addEventListener('click', requestRefresh);
 
     addActivityLogItem('success', 'Pipeline Control Center initialized');
 
