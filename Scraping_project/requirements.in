@@ -13,7 +13,7 @@ scrapy>=2.13.3
 # Data & State Management - Delta Lake as central nervous system
 deltalake>=1.1.0
 pyarrow>=17.0.0
-pandas>=2.0.0,<3.0.0
+pandas>=2.0.0,<4.0.0
 numpy>=1.26.0,<3.0.0
 
 # Specialized Processing
@@ -25,9 +25,9 @@ aiohttp>=3.12.0  # Async HTTP client for Stage 2 worker
 # Analysis & Utility
 beautifulsoup4>=4.12.0,<5.0.0  # HTML parsing
 lxml>=6.0.0,<7.0.0  # Fast XML/HTML parsing
-datasketch>=1.6.0,<2.0.0  # Efficient similarity detection (Stage 3)
+datasketch>=1.6.0,<3.0.0  # Efficient similarity detection (Stage 3)
 yake>=0.6.0  # Keyword extraction
-networkx==3.5 # Pinned to resolve conflict
+networkx==3.6.1 # Pinned to resolve conflict
 
 # NLP / ML / OCR — NOT in the default pip-compile set anymore (#143 / #144).
 # Install via pyproject extras instead:
@@ -38,7 +38,7 @@ networkx==3.5 # Pinned to resolve conflict
 
 # Database
 psycopg2-binary>=2.9.0  # PostgreSQL adapter
-redis>=5.0,<8.0  # Redis for distributed queues and caching (MAJOR: was <6 for fakeredis; verify fakeredis compatibility with redis-py 7.x)
+redis>=5.0,<9.0  # Redis for distributed queues and caching (MAJOR: was <6 for fakeredis; verify fakeredis compatibility with redis-py 7.x)
 
 # Message Queue - Kafka for event streaming
 confluent-kafka>=2.3.0  # High-performance Kafka client (librdkafka wrapper)
