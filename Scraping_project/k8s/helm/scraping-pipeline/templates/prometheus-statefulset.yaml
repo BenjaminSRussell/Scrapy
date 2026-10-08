@@ -53,7 +53,7 @@ data:
               component: 'metrics'
 
 {{- if .Values.workerMetrics.enabled }}
-{{- range $stage := list "stage2" "stage3" }}
+{{- range $stage := list "stage2" "stage3" "stage4" }}
 {{- if (index $root.Values (printf "%sWorker" $stage)).enabled }}
       # #789: one target per worker pod via the headless Service.
       - job_name: '{{ $stage }}_worker'

@@ -5,6 +5,7 @@ Centralizes all Redis operations to eliminate duplicate code across the pipeline
 Replaces src/common/redis_manager.py with a simpler, more consistent API.
 """
 
+from src.utils.url_canon import canonical_or_raw
 from typing import Any, Optional, Set, List, cast
 import json
 import os
@@ -222,7 +223,7 @@ class RedisHelper:
         """
         try:
             key = f"{key_prefix}:urls"
-            return bool(self.client.sismember(key, url))
+            return bool(self.client.sismember(key, canonical_or_raw(url)))  # #728
         except Exception as e:
             return bool(self._seen_store_error("check", e, fallback=False))
 
@@ -243,7 +244,7 @@ class RedisHelper:
         """
         try:
             key = f"{key_prefix}:urls"
-            self.client.sadd(key, url)
+            self.client.sadd(key, canonical_or_raw(url))  # #728
             return True
         except Exception as e:
             return bool(self._seen_store_error("mark", e, fallback=False))
@@ -256,7 +257,7 @@ class RedisHelper:
         ``SeenStoreUnavailable`` on Redis errors unless fail mode is ``open``.
         """
         try:
-            return int(cast(int, self.client.sadd(f"{key_prefix}:urls", url))) == 1
+            return int(cast(int, self.client.sadd(f"{key_prefix}:urls", canonical_or_raw(url)))) == 1
         except Exception as e:
             # Fail-open treats the URL as unseen, i.e. claimed (old behaviour).
             return bool(self._seen_store_error("claim", e, fallback=True))
@@ -268,7 +269,7 @@ class RedisHelper:
         try:
             pipe = self.client.pipeline(transaction=False)
             for url in urls:
-                pipe.sadd(f"{key_prefix}:urls", url)
+                pipe.sadd(f"{key_prefix}:urls", canonical_or_raw(url))  # #728: variants collide
             results = pipe.execute()
             return [u for u, added in zip(urls, results, strict=False) if int(added) == 1]
         except Exception as e:

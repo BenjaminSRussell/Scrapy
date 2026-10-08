@@ -420,6 +420,21 @@ Metrics: `stage2_http_fetches_total{outcome=first_try|recovered|exhausted|circui
 and `stage2_http_retries_total{reason}`. Each retry and each recovery is logged
 with its attempt number.
 
+### URL canonicalization
+
+Every URL touchpoint uses `src/utils/url_canon.py` (#728): Redis seen/claim
+set members, `QueueItemPipeline` rows (`stage2_queue`, `js_spider_queue`),
+`SeedManager`, Stage 2 `url_hash`, `URLProcessor` and
+`validation.normalize_url`. Canonical form:
+- lowercase scheme, host and path;
+- no default port and no fragment;
+- trailing slash stripped (except the root);
+- `utm_*` and other tracking parameters removed, remaining params sorted.
+
+`url_hash` = sha256(canonical URL)[:16]. The rules match what Stage 1 already
+hashed with, so existing scout hashes are unchanged; `js_spider` hashes and
+raw-URL SeedManager hashes now converge on the same value.
+
 ### Docker build context
 
 `.dockerignore` comments every exclusion (#625). Runtime data (`data/`,

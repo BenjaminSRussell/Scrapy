@@ -17,7 +17,7 @@ from deltalake import DeltaTable
 from src.core.config import get_config, stage2_quality_thresholds, stage_worker_settings
 from src.core.constants import TABLE_STAGE2_ERRORS
 from src.utils.delta import get_delta
-from src.utils.ssrf import SSRFBlocked, count_blocked, ssrf_block_reason
+from src.utils.ssrf import SSRFBlocked, count_blocked, safe_resolver, ssrf_block_reason, ssrf_error_from
 from src.utils.soft_ban import DomainBackoff, SoftBanDetector, count_deferred, count_soft_ban, domain_of
 from src.utils.postgres import get_postgres_manager
 from src.utils.retry import CircuitBreaker
@@ -371,6 +371,7 @@ class Stage2Worker:
             limit=self.max_concurrent,
             limit_per_host=self._per_host_limit(),
             ttl_dns_cache=300,
+            resolver=safe_resolver("stage2"),  # #450: refuse non-public DNS answers at connect time
         )
         return aiohttp.ClientSession(connector=connector, timeout=aiohttp.ClientTimeout(total=30))
 
@@ -750,6 +751,10 @@ class Stage2Worker:
                 code, message, reason = 0, "timeout", "timeout"
                 exc_type, exc_text = "TimeoutError", str(e)
             except (aiohttp.ClientConnectionError, aiohttp.ClientPayloadError) as e:
+                dns_blocked = ssrf_error_from(e)
+                if dns_blocked is not None:  # #450: resolver refused a non-public address
+                    logger.warning(f"[STAGE2] SSRF guard blocked {url[:80]} ({dns_blocked.reason})")
+                    return self._error_record(url, url_hash, 0, f"ssrf_blocked:{dns_blocked.reason}")
                 code, message, reason = 0, f"ClientError: {type(e).__name__}", "connection"
                 exc_type, exc_text = message, str(e)
             else:
