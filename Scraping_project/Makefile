@@ -139,7 +139,17 @@ docker-down: ## Stop Docker services
 	$(COMPOSE) down
 	@echo "$(GREEN)✓ Services stopped$(NC)"
 
-docker-down-clean: ## Stop and remove volumes
+# Destructive targets go through src/utils/destructive_guard (#522, #576): a dry
+# run unless I_REALLY_MEAN_IT=1 and ALLOW_LAKE_RESET=1 are both set (ENV=production
+# also needs BREAK_GLASS=1 and a typed confirmation). Every attempt is audited.
+GUARD_PY ?= $(if $(wildcard .venv/bin/python),.venv/bin/python,python3)
+define destructive_guard
+	@$(GUARD_PY) -m src.utils.destructive_guard $(1) $(2) $(if $(I_REALLY_MEAN_IT),--execute --i-really-mean-it) $(if $(BREAK_GLASS),--break-glass); \
+	rc=$$?; if [ $$rc -eq 10 ]; then echo "Dry run: nothing removed. Re-run with I_REALLY_MEAN_IT=1 ALLOW_LAKE_RESET=1 make $@"; exit 1; elif [ $$rc -ne 0 ]; then exit $$rc; fi
+endef
+
+docker-down-clean: ## Stop and remove volumes (incl. the lake; guarded, see I_REALLY_MEAN_IT)
+	$(call destructive_guard,make-docker-down-clean,compose-volumes)
 	@echo "$(YELLOW)Stopping services and removing volumes...$(NC)"
 	$(COMPOSE) down -v
 	@echo "$(GREEN)✓ Services and volumes removed$(NC)"
@@ -233,7 +243,8 @@ db-migrate: ## Create/upgrade the Postgres metrics schema (idempotent CREATE IF 
 	@echo "$(BLUE)Initializing database schema...$(NC)"
 	python -c "from src.utils.postgres import PostgresManager; m = PostgresManager.get_instance(); assert m is not None, 'Postgres is not configured (DB_HOST/DB_USER/...)'; m.initialize_schema()"
 
-db-reset: ## Reset database (WARNING: deletes all data)
+db-reset: ## Reset database (WARNING: deletes all data; guarded, see I_REALLY_MEAN_IT)
+	$(call destructive_guard,make-db-reset,volume:postgres_data)
 	@echo "$(RED)Resetting database...$(NC)"
 	$(COMPOSE) down postgres
 	docker volume rm scraping_project_postgres_data || true

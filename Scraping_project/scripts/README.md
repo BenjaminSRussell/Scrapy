@@ -7,9 +7,49 @@ This directory contains scripts for managing, debugging, and resetting the scrap
 | Script | Purpose | When to Use |
 |--------|---------|-------------|
 | `diagnose_issues.sh` | Check system health and identify problems | First step when troubleshooting |
-| `complete_reset.sh` | Full Docker stack reset and rebuild | Major issues, fresh start needed |
+| `complete_reset.sh` | Full Docker stack reset and rebuild (guarded) | Major issues, fresh start needed |
+| `reset_lake.py` | Move the Delta Lake aside and re-seed (guarded) | Start the lake over from seeds |
+| `../drain_lake.py` | Empty pipeline queue tables, undoable (guarded) | Stuck or poisoned queues |
 | `reset_grafana_complete.sh` | Reset Grafana only (Docker/K8s) | Grafana login or dashboard issues |
 | `k8s_reset_and_deploy.sh` | Remove "coco" prefix and redeploy K8s | Fix Kubernetes naming issues |
+
+---
+
+## Destructive operations are guarded (#522, #576)
+
+`complete_reset.sh`, `reset_lake.py`, `drain_lake.py` (and `cli.py drain`), plus
+`make docker-down-clean` / `clean-all` / `db-reset`, all share one guard
+(`src/utils/destructive_guard.py`):
+
+| Rule | How |
+|---|---|
+| **Dry run by default** | Without `--execute` they only list what would be affected (tables with Delta version and row estimate, or volumes) and exit 0 |
+| **Dual confirmation** | `--execute --i-really-mean-it` **and** `ALLOW_LAKE_RESET=1` in the environment. For make targets: `I_REALLY_MEAN_IT=1 ALLOW_LAKE_RESET=1 make <target>` |
+| **Production break-glass** | With `ENV=prod`/`production` (the Helm default) also `--break-glass` (`BREAK_GLASS=1` for make) **and** typing `<operation> <env>` on an interactive terminal. There is no non-interactive way to wipe production |
+| **Audit trail** | Every attempt (dry run, refusal, execution, failure) appends a JSON line (actor, sudo user, host, pid, argv, env, targets, outcome, Delta versions before) to `data/logs/destructive_ops.jsonl` (override: `LAKE_AUDIT_LOG`). It sits outside the lake, so a reset can't erase its own record |
+
+Exit codes: `0` done or dry run, `3` refused (missing confirmation), `1` failed.
+
+```bash
+python scripts/reset_lake.py                       # dry run
+ALLOW_LAKE_RESET=1 python scripts/reset_lake.py --execute --i-really-mean-it
+python drain_lake.py --list
+ALLOW_LAKE_RESET=1 python drain_lake.py --execute --i-really-mean-it      # transient queues
+ALLOW_LAKE_RESET=1 ./scripts/complete_reset.sh --execute --i-really-mean-it
+```
+
+### Recovery
+
+| Operation | What it actually does | Undo |
+|---|---|---|
+| `reset_lake.py --execute` | **Moves** the lake to `<lake>.bak-<UTC stamp>` (nothing copied or deleted), then re-seeds | `mv data/delta_lake data/delta_lake.failed && mv data/delta_lake.bak-<stamp> data/delta_lake` |
+| `reset_lake.py --execute --no-backup` | Deletes the lake; additionally needs `DELTA_ALLOW_HARD_DELETE=1` | None. Restore from your volume/object-store backup |
+| `reset_lake.py --seed-only --execute` | Overwrites `seed_urls` (Delta history kept) | Time travel: `DeltaTable(path).restore(<previous version>)` |
+| `drain_lake.py --execute` | Delta DELETE of every row in the queue tables (schema and history kept). Prints the pre-drain version | `drain_lake.py --restore <table> --to-version <v> --execute --i-really-mean-it` (`<v>` is also in the audit log) |
+| `complete_reset.sh` / `make docker-down-clean` | Removes Docker volumes, **including `delta_data` (the lake)** | None. Snapshot the volume first: `docker run --rm -v scraping_project_delta_data:/d -v "$PWD":/b alpine tar czf /b/delta_data.tgz -C /d .` |
+
+The lake these tools act on is the one the pipeline writes: `DELTA_LAKE_PATH`, else
+`delta_lake.base_path` from config.
 
 ---
 
@@ -61,13 +101,14 @@ This directory contains scripts for managing, debugging, and resetting the scrap
 5. Starts services in correct order
 6. Verifies health and connectivity
 
-**Usage**:
+**Usage** (dry run by default; see [Destructive operations](#destructive-operations-are-guarded-522-576)):
 ```bash
-./scripts/complete_reset.sh
+./scripts/complete_reset.sh                                              # lists what would be removed
+ALLOW_LAKE_RESET=1 ./scripts/complete_reset.sh --execute --i-really-mean-it
 ```
 
 **Interactive prompts**:
-- Confirmation before deleting data
+- Confirmation before deleting data (after the guard)
 - Option to rebuild Docker images
 
 **When to use**:
@@ -206,8 +247,8 @@ Then login with `admin/admin`
 # Check what's wrong first
 ./scripts/diagnose_issues.sh
 
-# If Prometheus is down, full reset needed
-./scripts/complete_reset.sh
+# If Prometheus is down, full reset needed (removes all volumes, incl. the lake)
+ALLOW_LAKE_RESET=1 ./scripts/complete_reset.sh --execute --i-really-mean-it
 ```
 
 ---
@@ -239,8 +280,8 @@ docker-compose up -d stage4-worker
 # Look for Kafka errors
 docker-compose logs kafka
 
-# If needed, full reset
-./scripts/complete_reset.sh
+# If needed, full reset (removes all volumes, incl. the lake)
+ALLOW_LAKE_RESET=1 ./scripts/complete_reset.sh --execute --i-really-mean-it
 ```
 
 ---
@@ -383,8 +424,8 @@ If still stuck:
 
 ### Docker Compose:
 ```bash
-# 1. Complete reset
-./scripts/complete_reset.sh
+# 1. Complete reset (removes all volumes, incl. the lake)
+ALLOW_LAKE_RESET=1 ./scripts/complete_reset.sh --execute --i-really-mean-it
 
 # 2. Access Grafana
 open http://localhost:3000

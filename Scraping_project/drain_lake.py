@@ -1,290 +1,156 @@
 #!/usr/bin/env python3
-"""Drain Lake Utility - Selective queue draining for Redis message queues.
+"""Drain pipeline queue tables, guarded (#522, #576).
 
-This utility allows selective clearing of transient queues while preserving
-persistent queues (like Stage 4 large document processing).
+The pipeline's queues are Delta tables, not Redis lists (the Redis version of
+this tool imported modules that no longer exist and could not start):
+
+* transient: ``stage2_queue`` (Stage 1 -> 2), ``js_spider_queue`` (JS rendering)
+* persistent: ``stage4_large_docs`` (Stage 4 backlog; only with ``--include-persistent``)
+
+Draining is a Delta DELETE of every row: schema and history stay, so a drain
+can be undone with ``--restore <table> --to-version <v>`` (the pre-drain
+version is printed and written to the audit log). Default is a dry run;
+executing needs ``--execute --i-really-mean-it`` plus ``ALLOW_LAKE_RESET=1``,
+and with ``ENV=production`` also ``--break-glass`` and a typed confirmation.
 """
+
+from __future__ import annotations
 
 import argparse
 import logging
 import sys
 from pathlib import Path
 
-# Add project root to path
 sys.path.insert(0, str(Path(__file__).parent))
 
-from src.common.config import Config
-from src.common.redis_manager import get_redis_manager
+from src.utils.destructive_guard import DestructiveOpRefused, add_guard_arguments, audit, authorize
+from src.utils.lake_inventory import TableInfo, describe_table, format_inventory, resolve_lake_path
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
-
-class LakeDrainer:
-    """Manages selective draining of Redis queues."""
-
-    def __init__(self):
-        """Initialize drainer with config."""
-        self.config = Config.get_instance()
-
-        redis_config = self.config.redis_config
-        self.redis = get_redis_manager(
-            host=redis_config.get("host", "localhost"),
-            port=redis_config.get("port", 6379),
-            db=redis_config.get("db", 0),
-            password=redis_config.get("password"),
-        )
-
-        # Get queue configuration
-        mq_config = self.config.message_queue_config
-        self.persistent_queues = set(mq_config.get("persistent_queues", []))
-        self.transient_queues = set(mq_config.get("transient_queues", []))
-
-    def list_queues(self):
-        """List all queues with their sizes."""
-        print("\n" + "=" * 70)
-        print("REDIS QUEUE STATUS")
-        print("=" * 70 + "\n")
-
-        stats = self.redis.get_all_queue_stats()
-
-        if not stats:
-            print("No queues found.")
-            return
-
-        # Separate persistent and transient
-        persistent = []
-        transient = []
-        other = []
-
-        for queue_name, size in stats.items():
-            if queue_name in self.persistent_queues:
-                persistent.append((queue_name, size, "PERSISTENT"))
-            elif queue_name in self.transient_queues:
-                transient.append((queue_name, size, "TRANSIENT"))
-            else:
-                other.append((queue_name, size, "UNKNOWN"))
-
-        # Print persistent queues
-        if persistent:
-            print("🔒 PERSISTENT QUEUES (will NOT be drained):")
-            print("-" * 70)
-            for name, size, _status in sorted(persistent):
-                print(f"  {name:<40} {size:>10,} items")
-            print()
-
-        # Print transient queues
-        if transient:
-            print("💨 TRANSIENT QUEUES (will be drained):")
-            print("-" * 70)
-            for name, size, _status in sorted(transient):
-                print(f"  {name:<40} {size:>10,} items")
-            print()
-
-        # Print other queues
-        if other:
-            print("❓ OTHER QUEUES:")
-            print("-" * 70)
-            for name, size, _status in sorted(other):
-                print(f"  {name:<40} {size:>10,} items")
-            print()
-
-        # Print priority queue
-        pq_size = self.redis.get_queue_size()
-        if pq_size > 0:
-            print("🎯 PRIORITY QUEUE:")
-            print("-" * 70)
-            print(f"  pending URLs                             {pq_size:>10,} items")
-            print()
-
-    def drain_transient_queues(self, dry_run: bool = False):
-        """Drain all transient queues.
-
-        Args:
-            dry_run: If True, only show what would be drained
-        """
-        stats = self.redis.get_all_queue_stats()
-        transient_to_drain = [(name, size) for name, size in stats.items() if name in self.transient_queues]
-
-        if not transient_to_drain:
-            print("\nNo transient queues to drain.")
-            return
-
-        print("\n" + "=" * 70)
-        print("DRAINING TRANSIENT QUEUES")
-        print("=" * 70 + "\n")
-
-        total_items = 0
-
-        for queue_name, size in sorted(transient_to_drain):
-            total_items += size
-
-            if dry_run:
-                print(f"[DRY RUN] Would drain: {queue_name} ({size:,} items)")
-            else:
-                removed = self.redis.clear_queue(queue_name)
-                print(f"✅ Drained: {queue_name} ({removed:,} items)")
-
-        if dry_run:
-            print(f"\n[DRY RUN] Would remove {total_items:,} total items")
-        else:
-            print(f"\n✅ Total items removed: {total_items:,}")
-
-    def drain_all_queues(self, dry_run: bool = False, include_persistent: bool = False):
-        """Drain all queues.
-
-        Args:
-            dry_run: If True, only show what would be drained
-            include_persistent: If True, also drain persistent queues (DANGEROUS!)
-        """
-        stats = self.redis.get_all_queue_stats()
-
-        if not stats:
-            print("\nNo queues to drain.")
-            return
-
-        if include_persistent:
-            print("\n⚠️  WARNING: This will drain ALL queues including persistent ones!")
-        else:
-            print("\n💨 Draining all TRANSIENT queues...")
-
-        print("=" * 70 + "\n")
-
-        total_items = 0
-
-        for queue_name, size in sorted(stats.items()):
-            # Skip persistent queues unless explicitly requested
-            if not include_persistent and queue_name in self.persistent_queues:
-                print(f"🔒 Skipped (persistent): {queue_name} ({size:,} items)")
-                continue
-
-            total_items += size
-
-            if dry_run:
-                print(f"[DRY RUN] Would drain: {queue_name} ({size:,} items)")
-            else:
-                removed = self.redis.clear_queue(queue_name)
-                print(f"✅ Drained: {queue_name} ({removed:,} items)")
-
-        # Also drain priority queue
-        pq_size = self.redis.get_queue_size()
-        if pq_size > 0:
-            total_items += pq_size
-
-            if dry_run:
-                print(f"[DRY RUN] Would drain: priority_queue ({pq_size:,} items)")
-            else:
-                self.redis.clear_priority_queue()
-                print(f"✅ Drained: priority_queue ({pq_size:,} items)")
-
-        if dry_run:
-            print(f"\n[DRY RUN] Would remove {total_items:,} total items")
-        else:
-            print(f"\n✅ Total items removed: {total_items:,}")
-
-    def drain_specific_queue(self, queue_name: str, dry_run: bool = False):
-        """Drain a specific queue by name.
-
-        Args:
-            queue_name: Name of queue to drain
-            dry_run: If True, only show what would be drained
-        """
-        size = self.redis.get_queue_length(queue_name)
-
-        if size == 0:
-            print(f"\nQueue '{queue_name}' is empty or does not exist.")
-            return
-
-        # Check if persistent
-        if queue_name in self.persistent_queues:
-            print(f"\n⚠️  WARNING: '{queue_name}' is a PERSISTENT queue!")
-            confirm = input("Are you sure you want to drain it? (type 'YES' to confirm): ")
-            if confirm != "YES":
-                print("Aborted.")
-                return
-
-        print(f"\nDraining queue: {queue_name}")
-
-        if dry_run:
-            print(f"[DRY RUN] Would drain {size:,} items")
-        else:
-            removed = self.redis.clear_queue(queue_name)
-            print(f"✅ Drained {removed:,} items")
+TRANSIENT_QUEUES = ("stage2_queue", "js_spider_queue")
+PERSISTENT_QUEUES = ("stage4_large_docs",)
+ALL_QUEUES = TRANSIENT_QUEUES + PERSISTENT_QUEUES
 
 
-def main():
-    """Main CLI entry point."""
+def queue_tables(lake: Path, names: tuple[str, ...] = ALL_QUEUES) -> list[TableInfo]:
+    return [describe_table(lake / n) for n in names if (lake / n / "_delta_log").is_dir()]
+
+
+def select_targets(args: argparse.Namespace) -> list[str]:
+    if args.queue:
+        unknown = [q for q in args.queue if q not in ALL_QUEUES]
+        if unknown:
+            raise SystemExit(f"not a queue table: {', '.join(unknown)} (queues: {', '.join(ALL_QUEUES)})")
+        blocked = [q for q in args.queue if q in PERSISTENT_QUEUES and not args.include_persistent]
+        if blocked:
+            raise SystemExit(f"{', '.join(blocked)} is persistent; add --include-persistent to drain it")
+        return list(args.queue)
+    if args.drain_all:
+        return list(ALL_QUEUES if args.include_persistent else TRANSIENT_QUEUES)
+    return list(TRANSIENT_QUEUES)
+
+
+def drain_table(path: Path) -> int:
+    """Delete every row (Delta DELETE commit); returns the new version."""
+    from deltalake import DeltaTable
+
+    dt = DeltaTable(str(path))
+    dt.delete()
+    return dt.version()
+
+
+def restore_table(path: Path, version: int) -> int:
+    from deltalake import DeltaTable
+
+    dt = DeltaTable(str(path))
+    dt.restore(version)
+    return dt.version()
+
+
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Drain Lake - Selective Redis queue management",
+        description="Drain pipeline queue tables (dry run unless --execute)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # List all queues
   python drain_lake.py --list
-
-  # Drain transient queues (dry run)
-  python drain_lake.py --drain-transient --dry-run
-
-  # Drain transient queues (for real)
-  python drain_lake.py --drain-transient
-
-  # Drain specific queue
-  python drain_lake.py --queue stage1_discovered_urls
-
-  # Drain ALL queues including persistent (DANGEROUS!)
-  python drain_lake.py --drain-all --include-persistent
+  python drain_lake.py                                  # dry run: transient queues
+  ALLOW_LAKE_RESET=1 python drain_lake.py --execute --i-really-mean-it
+  ALLOW_LAKE_RESET=1 python drain_lake.py --queue stage2_queue --execute --i-really-mean-it
+  ALLOW_LAKE_RESET=1 python drain_lake.py --drain-all --include-persistent --execute --i-really-mean-it
+  ALLOW_LAKE_RESET=1 python drain_lake.py --restore stage2_queue --to-version 41 --execute --i-really-mean-it
         """,
     )
+    parser.add_argument("--list", "-l", action="store_true", help="List queue tables with row estimates and exit")
+    parser.add_argument("--drain-transient", "-t", action="store_true", help="Drain transient queues (the default selection)")
+    parser.add_argument("--drain-all", "-a", action="store_true", help="Drain all queues (persistent only with --include-persistent)")
+    parser.add_argument("--queue", "-q", action="append", help="Drain a specific queue table (repeatable)")
+    parser.add_argument("--include-persistent", action="store_true", help="Allow draining persistent queues (stage4_large_docs)")
+    parser.add_argument("--restore", metavar="TABLE", help="Restore a queue table to --to-version (undo a drain)")
+    parser.add_argument("--to-version", type=int, help="Delta version for --restore")
+    parser.add_argument("--dry-run", "-n", action="store_true", help="Kept for compatibility; dry run is already the default")
+    parser.add_argument("--lake", type=Path, default=None, help=argparse.SUPPRESS)
+    add_guard_arguments(parser)
+    return parser
 
-    parser.add_argument("--list", "-l", action="store_true", help="List all queues with their sizes")
 
-    parser.add_argument(
-        "--drain-transient",
-        "-t",
-        action="store_true",
-        help="Drain all transient queues (safe operation)",
-    )
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
+    lake: Path = args.lake or resolve_lake_path()
 
-    parser.add_argument("--drain-all", "-a", action="store_true", help="Drain all queues")
-
-    parser.add_argument("--queue", "-q", type=str, help="Drain a specific queue by name")
-
-    parser.add_argument(
-        "--include-persistent",
-        action="store_true",
-        help="Also drain persistent queues (DANGEROUS! Use with caution)",
-    )
-
-    parser.add_argument(
-        "--dry-run",
-        "-n",
-        action="store_true",
-        help="Show what would be drained without actually draining",
-    )
-
-    args = parser.parse_args()
-
-    # Create drainer
-    drainer = LakeDrainer()
-
-    # Execute command
     if args.list:
-        drainer.list_queues()
+        print(f"Queue tables under {lake}:")
+        print(format_inventory(queue_tables(lake)))
+        print(f"persistent (never drained by default): {', '.join(PERSISTENT_QUEUES)}")
+        return 0
 
-    elif args.drain_transient:
-        drainer.drain_transient_queues(dry_run=args.dry_run)
-
-    elif args.drain_all:
-        drainer.drain_all_queues(dry_run=args.dry_run, include_persistent=args.include_persistent)
-
-    elif args.queue:
-        drainer.drain_specific_queue(args.queue, dry_run=args.dry_run)
-
+    if args.restore:
+        if args.restore not in ALL_QUEUES or args.to_version is None:
+            raise SystemExit("--restore needs a queue table and --to-version")
+        targets = [args.restore]
+        operation = "restore-queue"
+        print(f"Would restore {args.restore} to version {args.to_version}")
     else:
-        # Default action - list queues
-        drainer.list_queues()
-        print("\nUse --help to see available commands")
+        targets = select_targets(args)
+        operation = "drain-queues"
+        present = queue_tables(lake, tuple(targets))
+        print(f"Queue tables to drain under {lake}:")
+        print(format_inventory(present))
+        targets = [t.name for t in present]
+        if not targets:
+            print("Nothing to drain.")
+            return 0
+
+    try:
+        execute = args.execute and not args.dry_run
+        if not authorize(operation, targets, execute=execute, i_really_mean_it=args.i_really_mean_it, break_glass=args.break_glass):
+            print("\nDry run only; nothing changed. Re-run with --execute --i-really-mean-it and ALLOW_LAKE_RESET=1.")
+            return 0
+    except DestructiveOpRefused as e:
+        logger.error(str(e))
+        return 3
+
+    results: dict[str, dict[str, object]] = {}
+    try:
+        for name in targets:
+            path = lake / name
+            before = describe_table(path)
+            if operation == "restore-queue":
+                after = restore_table(path, args.to_version)
+            else:
+                after = drain_table(path)
+            results[name] = {"version_before": before.version, "rows_before": before.rows, "version_after": after}
+            print(f"{'Restored' if operation == 'restore-queue' else 'Drained'} {name}: version {before.version} -> {after}"
+                  + ("" if operation == "restore-queue" else f" (undo: --restore {name} --to-version {before.version})"))
+    except Exception as e:
+        audit(operation, targets, "failed", dry_run=False, details={"results": results, "error": repr(e)})
+        logger.error(f"{operation} failed: {e}")
+        return 1
+    audit(operation, targets, "executed", dry_run=False, details={"results": results})
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

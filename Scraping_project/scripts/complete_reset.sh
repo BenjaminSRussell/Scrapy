@@ -11,6 +11,20 @@
 
 set -e
 
+# Guarded (#522, #576): dry run unless --execute --i-really-mean-it AND
+# ALLOW_LAKE_RESET=1; ENV=production also needs --break-glass plus a typed
+# confirmation. Every attempt is audited to data/logs/destructive_ops.jsonl.
+#   ./scripts/complete_reset.sh                     # dry run: lists what would go
+#   ALLOW_LAKE_RESET=1 ./scripts/complete_reset.sh --execute --i-really-mean-it
+cd "$(dirname "$0")/.."
+GUARD_ARGS=()
+for arg in "$@"; do
+    case "$arg" in
+        --execute|--i-really-mean-it|--break-glass) GUARD_ARGS+=("$arg") ;;
+        *) echo "unknown argument: $arg" >&2; exit 2 ;;
+    esac
+done
+
 echo "=========================================="
 echo "  Complete Stack Reset and Rebuild"
 echo "=========================================="
@@ -27,6 +41,37 @@ print_info() { echo -e "${GREEN}[INFO]${NC} $1"; }
 print_warning() { echo -e "${YELLOW}[WARNING]${NC} $1"; }
 print_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 print_step() { echo -e "${BLUE}[STEP]${NC} $1"; }
+
+# List of volumes to remove
+VOLUMES=(
+    "redis_data"
+    "postgres_data"
+    "zookeeper_data"
+    "zookeeper_logs"
+    "kafka_data"
+    "delta_data"
+    "prometheus_a_data"
+    "prometheus_b_data"
+    "alertmanager_1_data"
+    "alertmanager_2_data"
+    "alertmanager_3_data"
+    "grafana_data"
+)
+
+# Guard: dry run / dual confirmation / production break-glass / audit
+PY="${PYTHON:-python3}"
+[ -x .venv/bin/python ] && PY="${PYTHON:-.venv/bin/python}"
+set +e
+"$PY" -m src.utils.destructive_guard complete-reset "${VOLUMES[@]/#/volume:}" "${GUARD_ARGS[@]}"
+GUARD_RC=$?
+set -e
+if [ "$GUARD_RC" -eq 10 ]; then
+    print_info "Dry run: would stop the stack and remove the volumes above (incl. delta_data = the lake). Nothing changed."
+    exit 0
+elif [ "$GUARD_RC" -ne 0 ]; then
+    print_error "Refused (see above)."
+    exit 3
+fi
 
 # Ask for confirmation
 echo ""
@@ -48,21 +93,6 @@ print_step "Step 2: Removing all volumes..."
 echo "=========================================="
 print_info "Removing Docker volumes..."
 
-# List of volumes to remove
-VOLUMES=(
-    "redis_data"
-    "postgres_data"
-    "zookeeper_data"
-    "zookeeper_logs"
-    "kafka_data"
-    "delta_data"
-    "prometheus_a_data"
-    "prometheus_b_data"
-    "alertmanager_1_data"
-    "alertmanager_2_data"
-    "alertmanager_3_data"
-    "grafana_data"
-)
 
 for vol in "${VOLUMES[@]}"; do
     # Try different volume name patterns

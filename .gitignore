@@ -120,6 +120,7 @@ audit.toml.lock
 # Delta Lake / Data Lakes
 # ====================================
 data/delta_lake/
+**/data/delta_lake.bak-*/
 _delta_log/
 *.checkpoint.parquet
 *.checkpoint/

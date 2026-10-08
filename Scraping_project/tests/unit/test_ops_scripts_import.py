@@ -7,8 +7,11 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
-SCRIPTS = ["scripts/load_seeds.py", "scripts/reset_lake.py", "scripts/vacuum_delta_tables.py", "reseed.py", "cli.py"]
-REMOVED = ("src.common.delta_lake", "src.common.constants")
+SCRIPTS = [
+    "scripts/load_seeds.py", "scripts/reset_lake.py", "scripts/vacuum_delta_tables.py", "reseed.py", "cli.py",
+    "drain_lake.py",  # #522: imported src.common.config / redis_manager, which no longer exist
+]
+REMOVED = ("src.common.delta_lake", "src.common.constants", "src.common.config", "src.common.redis_manager")
 
 
 @pytest.mark.parametrize("rel", SCRIPTS)

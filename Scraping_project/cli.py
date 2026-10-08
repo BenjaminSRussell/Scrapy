@@ -8,7 +8,7 @@ Commands:
   scrapy      Run Scrapy spiders (simple Docker entrypoint)
   pipeline    Run full multi-stage pipeline
   setup       Download and validate models
-  drain       Drain Delta Lake tables
+  drain       Drain queue tables (dry run unless --execute)
   export      Export Delta Lake data
   health      Check pipeline health
 """
@@ -23,7 +23,7 @@ Commands:
   scrapy      Run Scrapy spiders (simple Docker entrypoint)
   pipeline    Run full multi-stage pipeline
   setup       Download and validate models
-  drain       Drain Delta Lake tables
+  drain       Drain queue tables (dry run unless --execute)
   export      Export Delta Lake data
   health      Check pipeline health
 """
@@ -242,11 +242,10 @@ def cmd_pipeline(args):
 
 
 def cmd_drain(args):
-    """Drain Delta Lake tables."""
-    from drain_lake import drain_tables
+    """Drain pipeline queue tables (dry run unless --execute; see drain_lake.py)."""
+    from drain_lake import main as drain_main
 
-    logger.info("Draining Delta Lake...")
-    drain_tables()
+    return drain_main(args.drain_args)
 
 
 def cmd_export(args):
@@ -533,7 +532,9 @@ def main():
     pipeline_parser.set_defaults(func=cmd_pipeline)
 
     # Drain command
-    drain_parser = subparsers.add_parser("drain", help="Drain Delta Lake")
+    drain_parser = subparsers.add_parser(
+        "drain", help="Drain queue tables (dry run unless --execute)", add_help=False
+    )
     drain_parser.set_defaults(func=cmd_drain)
 
     # Export command
@@ -610,15 +611,20 @@ def main():
     seeds_audit.set_defaults(func=cmd_seeds)
 
     # Parse and execute
-    args = parser.parse_args()
+    # `drain` forwards everything after it to drain_lake.py (its own guard flags).
+    args, extra = parser.parse_known_args()
+    if getattr(args, "command", None) == "drain":
+        args.drain_args = extra
+    elif extra:
+        parser.error(f"unrecognized arguments: {' '.join(extra)}")
 
     if not args.command:
         parser.print_help()
         sys.exit(1)
 
     try:
-        args.func(args)
-        sys.exit(0)
+        rc = args.func(args)
+        sys.exit(rc if isinstance(rc, int) else 0)
     except Exception as e:
         logger.error(f"Error: {e}", exc_info=True)
         sys.exit(1)
