@@ -38,6 +38,16 @@ mappings:
     labels:
       job: "kafka-delta-ingest"
 
+  # write_batch() times write+commit as a StatsD timer (ms); statsd-exporter
+  # observes timers in seconds. SlowDeltaLakeWrites reads the buckets (#178).
+  - match: "kafka_delta_ingest.batch.write"
+    observer_type: histogram
+    histogram_options:
+      buckets: [0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60]
+    name: "kafka_delta_ingest_batch_write_seconds"
+    labels:
+      job: "kafka-delta-ingest"
+
   - match: "kafka_delta_ingest.errors.*"
     name: "kafka_delta_ingest_errors_total"
     labels:
@@ -97,26 +107,49 @@ mappings:
       job: "kafka-delta-ingest"
 
   # ============================================
+  # monitoring/metrics_exporter.py (#178)
+  # ============================================
+  # The exporter sends DogStatsD tags (queue, stage, error_type), which
+  # statsd-exporter turns into labels. alerting_rules.yml reads these names.
+  - match: "redis.queue.length"
+    name: "redis_queue_length"
+
+  - match: "errors.total"
+    name: "pipeline_errors_total"
+
+  - match: "circuit_breaker.open_count"
+    name: "circuit_breaker_open_count"
+
+  - match: "urls.processed.total"
+    name: "pipeline_urls_processed_total"
+
+  - match: "urls.processed.per_second"
+    name: "pipeline_urls_processed_per_second"
+
+  - match: "workers.active"
+    name: "pipeline_workers_active"
+
+  # ============================================
   # Generic Pattern Matching
   # ============================================
 
   # Match metrics with topic labels
-  - match: "ingestor.*.*.count"
+  # Regex mappings need capture groups for ${1}/${2} (#178).
+  - match: 'ingestor\.([^.]+)\.([^.]+)\.count'
     match_type: regex
     name: "ingestor_${1}_${2}_total"
     labels:
       job: "kafka-delta-ingest"
 
   # Match timing metrics
-  - match: "ingestor.*.*.time"
+  - match: 'ingestor\.([^.]+)\.([^.]+)\.time'
     match_type: regex
     name: "ingestor_${1}_${2}_seconds"
     labels:
       job: "kafka-delta-ingest"
 
-  # Fallback: pass through any other metrics
-  - match: ".*"
-    match_type: regex
-    name: "statsd_${1}"
-    labels:
-      job: "unknown"
+  # No catch-all. The old one (match ".*", name "statsd_${1}") had no capture
+  # group, so every unmapped metric, including all of metrics_exporter.py's,
+  # was renamed to the same "statsd_" series (#178). Unmapped names now get
+  # statsd-exporter's default: dots become underscores
+  # (delta_lake.total_records -> delta_lake_total_records).
