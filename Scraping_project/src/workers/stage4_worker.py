@@ -14,4 +14,9 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    # Compose runs this module directly. Without this the root logger had no handler and
+    # every INFO line from the stage 4 worker was dropped (#466).
+    from src.utils.logging_config import configure_logging
+
+    configure_logging("stage4")
     main()
