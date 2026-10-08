@@ -9,7 +9,7 @@
 [![Scrapy](https://img.shields.io/badge/scrapy-2.11+-green.svg)](https://scrapy.org/)
 [![License](https://img.shields.io/badge/license-MIT-purple.svg)](LICENSE)
 
-[Quick Start](#-quick-start) • [Features](#-features) • [Architecture](#-architecture) • [Monitoring](#-monitoring) • [Docs](Scraping_project/README.md#architecture)
+[Quick Start](#-quick-start) • [Features](#-features) • [Architecture](#-architecture) • [Monitoring](#-monitoring) • [Guides](Scraping_project/docs/guides/README.md) • [Docs](Scraping_project/README.md#architecture)
 
 </div>
 
@@ -62,20 +62,19 @@ graph LR
 <td width="50%">
 
 ### 💾 **Robust Storage**
-- Delta Lake for raw data
-- PostgreSQL for metrics
-- Redis for queues
-- Unified interface
+- Delta Lake for all pipeline data
+- Redis for seen-URL sets and queues
+- PostgreSQL metrics sink (optional)
+- One `LakehouseManager` entry point
 
 </td>
 <td width="50%">
 
-### 🧪 **Production Ready**
-- 90%+ test coverage
-- Type-safe configuration
-- Docker + Kubernetes
-- Auto-scaling support
-
+### 🧪 **Tested & Deployable**
+- Unit + integration suites in CI
+- Config precedence: env ➜ YAML ➜ defaults
+- Docker Compose + Helm chart
+- Horizontal pod autoscaling
 </td>
 </tr>
 </table>
@@ -103,7 +102,7 @@ That's it! 🎉 The pipeline starts with:
 
 ### View Your Dashboard
 
-Open **http://localhost:3000** (login: `admin` / `admin`)
+Open **http://localhost:3000** (user `admin`; the password is `GRAFANA_ADMIN_PASSWORD` from `.env` and defaults to `admin` for local dev only)
 
 <div align="center">
 
@@ -111,8 +110,8 @@ Open **http://localhost:3000** (login: `admin` / `admin`)
 |---------|-----|---------|
 | 📊 **Grafana** | `localhost:3000` | Visual dashboards |
 | 🔥 **Prometheus** | `localhost:9090` | Metrics database (published by `docker-compose.yml`) |
-| 🕷️ **Spider Metrics** | `scrapy-app:9410` | Spider stats (scraped by Prometheus inside the compose network) |
-| 📮 **Queue / exporter metrics** | `metrics-exporter:9090` | Queue depth (scrape target in `monitoring/prometheus.yml`; not published to the host) |
+| 🕷️ **Spider Metrics** | `scraper:9410` | Spider stats (scraped by Prometheus inside the compose network) |
+| ⚙️ **Stage worker / Redis / Postgres metrics** | `stage{2,3,4}-worker:9430`, `redis-exporter:9121`, `postgres-exporter:9187` | Scrape targets in `monitoring/prometheus.yml` (not published to the host) |
 
 </div>
 
@@ -120,54 +119,45 @@ Open **http://localhost:3000** (login: `admin` / `admin`)
 
 ## 🏗️ Architecture
 
-### Three-Tier Manager System
-
 <div align="center">
 
 ```mermaid
 graph TB
     subgraph "🎛️ Configuration"
-        CM[ConfigManager]
+        CFG["get_config() · src/core/config.py"]
     end
 
-    subgraph "💾 Storage Layer"
-        SM[StorageManager]
-        DL[Delta Lake]
-        PG[PostgreSQL]
-        RD[Redis]
-        SM --> DL
-        SM --> PG
-        SM --> RD
+    subgraph "🕷️ Stage 1: Discovery"
+        S1["scout / deep_dive / depth / javascript"]
+        UP["URLProcessor + URLValueAssessor"]
+        S1 --> UP
     end
 
-    subgraph "🔗 URL Processing"
-        UP[URLProcessor]
-        EX[Extractor]
-        AS[Assessor]
-        UP --> EX
-        UP --> AS
+    subgraph "⚙️ Stage workers"
+        W2["Stage 2: analysis"]
+        W3["Stage 3: summaries"]
+        W4["Stage 4: large docs"]
     end
 
-    subgraph "🕷️ Crawling Pipeline"
-        S1[Scout Spider]
-        S2[Deep Dive Spider]
-        S3[JS Spider]
+    subgraph "💾 Storage"
+        LH["LakehouseManager · src/lakehouse/"]
+        DL[(Delta Lake)]
+        RD[(Redis: seen sets, queues)]
+        PG[(Postgres: metrics sink)]
+        LH --> DL
     end
 
-    CM --> SM
-    CM --> UP
-    SM --> S1
-    SM --> S2
-    SM --> S3
-    UP --> S1
-    UP --> S2
-
-    style CM fill:#667eea
-    style SM fill:#f093fb
-    style UP fill:#4facfe
-    style S1 fill:#43e97b
-    style S2 fill:#fa709a
-    style S3 fill:#fee140
+    CFG --> S1
+    CFG --> LH
+    S1 --> LH
+    S1 --> RD
+    LH -- stage2_queue --> W2
+    W2 --> LH
+    LH --> W3
+    LH --> W4
+    W3 --> LH
+    W4 --> LH
+    W2 -.-> PG
 ```
 
 </div>
@@ -175,15 +165,20 @@ graph TB
 ### 📁 Project Structure
 
 ```
-📦 Scraping Pipeline
-├── 🎛️  src/common/          # Core managers (Config, Storage, URL)
-├── 🕷️  src/stage1/          # scout_spider.py (+ experimental/ depth, javascript, deep_dive, base)
-├── 📊 src/stage2/          # Page analysis workers
-├── 🤖 src/stage3/          # Summarization workers
-├── 📈 monitoring/          # Prometheus + Grafana configs
+📦 Scraping_project/
+├── 🎛️  src/core/            # config.py: get_config(), stage worker settings
+├── 💾 src/lakehouse/       # LakehouseManager, SeedManager (Delta Lake)
+├── 🧰 src/common/          # URL value assessor, scoring, crawl data helpers
+├── 🕷️  src/stage1/          # scout_spider.py, processors/ (URLProcessor), middlewares/, experimental/ spiders
+├── 📊 src/stage2/          # page analysis worker
+├── 🤖 src/stage3/          # summarization worker
+├── 📄 src/stage4/          # large-document (PDF) processing
+├── ⚙️  src/workers/         # container entrypoints: python -m src.workers.stageN_worker
+├── 📈 monitoring/          # Prometheus rules + Grafana dashboards
 ├── 🦀 kafka-delta-ingest/  # Rust ingestion service
-├── ☸️  k8s/                # Kubernetes deployments
-└── 🧪 tests/              # Comprehensive test suite
+├── ☸️  k8s/                # Helm chart
+├── 📚 docs/guides/         # configuration, running, monitoring, data usage
+└── 🧪 tests/              # unit / integration / e2e suites
 ```
 
 ---
@@ -249,21 +244,17 @@ scrapy crawl scout     # not `scrapy crawl scout_spider`
 ### Usage
 
 ```python
-from src.common.config_manager import ConfigManager
-from src.common.storage_manager import StorageManager
-from src.common.url_processor import URLProcessor
+from src.core.config import get_config
+from src.lakehouse.lakehouse_manager import LakehouseManager
+from src.stage1.processors.url_processor import URLProcessor
 
-# Single source of truth
-config = ConfigManager.get_instance()
-
-# Unified storage
-storage = StorageManager.get_instance()
-storage.delta.write_batch('table', records)
-
-# Smart URL processing
-processor = URLProcessor(base_url, domains)
-urls = processor.discover_and_assess(response, min_value_score=40)
+config = get_config()                                  # config.yml singleton
+lake = LakehouseManager.get_instance()                 # Delta Lake tables
+processor = URLProcessor("https://www.uconn.edu/", config.get("stage1.allowed_domains", ["uconn.edu"]))
 ```
+
+Crawl another domain without editing config: `scrapy crawl scout -a allowed_domains=example.org -a start_urls=https://www.example.org/`
+([Running guide](Scraping_project/docs/guides/RUNNING.md)).
 
 ---
 
@@ -271,16 +262,15 @@ urls = processor.discover_and_assess(response, min_value_score=40)
 
 ### Live Dashboards
 
-<div align="center">
+Grafana at **http://localhost:3000** provisions these from `monitoring/dashboards/`:
 
-| Dashboard | Metrics | Update Frequency |
-|-----------|---------|------------------|
-| **Spider Overview** | URLs/min, Success rate, Queue depth | Real-time |
-| **Storage Health** | Write throughput, Table sizes, Errors | 10s |
-| **System Resources** | CPU, Memory, Disk I/O | 5s |
-| **Quality Metrics** | Content scores, Dedup rate, JS confidence | Real-time |
+| Dashboard | What it shows |
+|-----------|---------------|
+| **Scraping Pipeline Health** (`/d/scraping-pipeline-health`) | Items/s, error ratio, circuit breakers, Delta write queue, per-stage throughput, Stage 1 discovery, error tracking, storage & infrastructure |
+| **Unified Dashboard** | Kafka consumer lag, off-site link discovery |
 
-</div>
+Prometheus (http://localhost:9090) evaluates 41 alert rules from `monitoring/alerting_rules.yml`.
+📚 **[Monitoring guide →](Scraping_project/docs/guides/MONITORING.md)**
 
 ### Quick Commands
 
@@ -290,7 +280,7 @@ urls = processor.discover_and_assess(response, min_value_score=40)
 docker-compose ps
 
 # Follow spider logs
-docker-compose logs -f scrapy-app
+docker-compose logs -f scraper
 
 # Check system health
 ./scripts/diagnose_issues.sh
@@ -303,23 +293,9 @@ python start.py --reset-delta
 
 ## 🛠️ Configuration
 
-### Three-Level Hierarchy
+### Precedence
 
-<div align="center">
-
-```mermaid
-graph TD
-    A[🌍 Environment Variables] --> B[📝 YAML Config]
-    B --> C[⚙️ Code Defaults]
-
-    style A fill:#48bb78,color:#fff
-    style B fill:#4299e1,color:#fff
-    style C fill:#9f7aea,color:#fff
-```
-
-**Highest Priority** ➜ **Lowest Priority**
-
-</div>
+**Environment variable** (where one exists) ➜ **`config.yml`** ➜ **default in code**
 
 ### Example Configuration
 
@@ -338,133 +314,89 @@ stage2:
   min_word_count: 50
 ```
 
-Override with environment variables:
+Override with environment variables (only the keys that have one; see the guide):
 ```bash
 export REDIS_HOST=production-redis
-export DB_PASSWORD=secret123
+export DB_PASSWORD=...          # never commit secrets to config.yml
+export DELTA_LAKE_PATH=/data/delta
 ```
 
 Access in code:
 ```python
-config = ConfigManager.get_instance()
-redis_host = config.redis.host          # Type-safe!
-batch_size = config.stage1.batch_size   # IDE autocomplete
+from src.core.config import get_config
+
+config = get_config()
+redis_host = config.get("redis.host", "localhost")      # dot-notation keys
+batch_size = config.get("stage1.batch_size", 50)
 ```
 
-📚 **[Full Configuration Guide →](Scraping_project/README.md#configuration)**
+📚 **[Full Configuration Guide →](Scraping_project/docs/guides/CONFIGURATION.md)** (every section and environment variable)
 
 ---
 
 ## 💾 Storage
 
-### Unified Interface
+All pipeline data lives in Delta Lake tables under `DELTA_LAKE_PATH` (default `./data/delta_lake`),
+managed by `LakehouseManager` (`src/lakehouse/lakehouse_manager.py`). Redis holds the seen-URL sets and
+queues; Postgres is an optional metrics/error sink.
 
 ```python
-storage = StorageManager.get_instance()
+from src.lakehouse.lakehouse_manager import LakehouseManager
 
-# Delta Lake - Raw data
-storage.delta.write('stage1_discovery', records)
-data = storage.delta.read('stage1_discovery')
+lake = LakehouseManager.get_instance()
 
-# PostgreSQL - Metrics
-storage.postgres.log_error('spider_name', error)
-metrics = storage.postgres.get_performance_metrics()
+# Write (async by default; async_write=False commits before returning)
+lake.write("stage1_discovery", [{"url": "https://www.uconn.edu/", "url_hash": "abc"}], async_write=False)
 
-# Redis - Queues
-storage.redis.mark_url_seen('https://example.com')
-storage.redis.enqueue('queue_name', item)
+# Read with partition pruning, or count
+rows = lake.read("stage1_discovery", filters=[("domain", "=", "uconn.edu")], columns=["url"])
+total = lake.count("stage1_discovery")
 
-# Health checks
-health = storage.health_check()
-# {'delta': True, 'postgres': True, 'redis': True}
+# Stream a table to CSV / JSON lines / Parquet
+lake.export("stage1_discovery", "exports/discovery.parquet", format="parquet")
+
+# Drain the write queue and stop the background writer
+lake.shutdown()
 ```
 
-### Auto-cleanup
-
-```python
-# Context manager automatically closes connections
-with StorageManager() as storage:
-    storage.delta.write_batch('table', data)
-    # Connections closed on exit
-```
+📚 **[Data usage guide →](Scraping_project/docs/guides/DATA_USAGE.md)** (tables, pandas/deltalake queries, time travel, export)
 
 ---
 
 ## 🔗 URL Processing
 
-### All-in-One
+`URLProcessor` (`src/stage1/processors/url_processor.py`) is what the spiders use to discover, canonicalize,
+filter and score links.
 
 ```python
-processor = URLProcessor('https://example.com', ['example.com'])
+from scrapy.http import HtmlResponse
 
-# Discover + assess in one call
-urls = processor.discover_and_assess(
-    response,
-    min_value_score=40  # Filter low-value URLs
-)
+from src.stage1.processors.url_processor import URLProcessor
 
-# Each URL includes:
-# - value_score (0-100)
-# - recommended_spider ('scout'/'depth'/'js')
-# - reasons (why this score)
+processor = URLProcessor(base_url="https://www.uconn.edu/", allowed_domains=["uconn.edu"])
+
+# Discover + assess the links on a page in one call
+response = HtmlResponse(url="https://www.uconn.edu/", body=b'<a href="/research/">Research</a>', encoding="utf-8")
+urls = processor.discover_and_assess(response, min_value_score=40)
+# [{'url': 'https://www.uconn.edu/research', 'value_score': 70, 'recommended_spider': 'scout', 'reasons': [...], ...}]
+
+# Canonicalize: lowercases, drops tracking params and fragments, sorts the query
+processor.normalize_url("https://WWW.UConn.edu/About/?utm_source=x&b=2&a=1#top")
+# 'https://www.uconn.edu/about?a=1&b=2'
+
+# Filter static assets and unwanted URLs
+processor.should_follow_url("https://www.uconn.edu/logo.png")    # False
+
+# Deduplicate by canonical form
+processor.deduplicate_urls(["https://www.uconn.edu/a", "https://www.uconn.edu/a?utm_source=x"])
+# ['https://www.uconn.edu/a']
+
+# Crawl priority (0-100)
+processor.calculate_priority("https://www.uconn.edu/research/labs", value_score=85, depth=2)
+# 75
 ```
 
-### Smart Operations
-
-<table>
-<tr>
-<td>
-
-**Normalization**
-```python
-# Removes tracking, lowercases
-url = processor.normalize_url(
-    'https://Example.com?utm_source=test'
-)
-# → 'https://example.com'
-```
-
-</td>
-<td>
-
-**Validation**
-```python
-# Filters unwanted URLs
-should_follow = processor.should_follow_url(
-    'https://example.com/login'
-)
-# → False
-```
-
-</td>
-</tr>
-<tr>
-<td>
-
-**Deduplication**
-```python
-# Removes duplicates
-unique = processor.deduplicate_urls([
-    'url1', 'url2', 'url1'
-])
-# → ['url1', 'url2']
-```
-
-</td>
-<td>
-
-**Prioritization**
-```python
-# Calculates crawl priority
-priority = processor.calculate_priority(
-    url, value_score=85, depth=2
-)
-# → 75 (0-100)
-```
-
-</td>
-</tr>
-</table>
+The scoring itself lives in `URLValueAssessor` (`src/common/url_value_assessor.py`).
 
 ---
 
@@ -505,25 +437,15 @@ Compose (`stage4-worker`).
 
 ## 🧪 Testing
 
-### Comprehensive Coverage
-
-<div align="center">
-
-| Component | Coverage | Tests |
-|-----------|----------|-------|
-| **ConfigManager** | 95%+ | 20+ |
-| **StorageManager** | 90%+ | 30+ |
-| **URLProcessor** | 95%+ | 40+ |
-| **Spiders** | 85%+ | 50+ |
-
-</div>
+CI (`.github/workflows/main.yml`) runs ruff, mypy, bandit and the unit/integration suite on every PR.
+Coverage is measured but not gated in CI; `pytest.ini` sets `fail_under = 70` for local `--cov` runs.
 
 ### Run Tests
 
 ```bash
 # from Scraping_project/
-# All tests
-pytest
+# What CI runs
+pytest tests/ -m "not slow and not kafka and not performance"
 
 # Specific component
 pytest tests/unit/common/test_config_manager.py -v
@@ -544,17 +466,18 @@ pytest -m "not slow"
 <td width="50%">
 
 ### 📖 Documentation
-- **[Architecture Guide](Scraping_project/README.md#architecture)** - Detailed technical docs
-- **[Evolution Roadmap](Scraping_project/EVOLUTION_ROADMAP.md)** - Recent and planned changes
-- **[K8s Deployment](Scraping_project/DEPLOYMENT.md#kubernetes-deployment)** - Production setup (see also [k8s/README.md](Scraping_project/k8s/README.md))
+- **[Guides](Scraping_project/docs/guides/README.md)**: [Configuration](Scraping_project/docs/guides/CONFIGURATION.md) • [Running](Scraping_project/docs/guides/RUNNING.md) (other domains, resuming) • [Monitoring](Scraping_project/docs/guides/MONITORING.md) • [Data usage](Scraping_project/docs/guides/DATA_USAGE.md) (Delta Lake queries, CSV/Parquet export)
+- **[Architecture Guide](Scraping_project/README.md#architecture)**: detailed technical docs
+- **[Evolution Roadmap](Scraping_project/EVOLUTION_ROADMAP.md)**: recent and planned changes
+- **[K8s Deployment](Scraping_project/DEPLOYMENT.md#kubernetes-deployment)**: production setup (see also [k8s/README.md](Scraping_project/k8s/README.md))
 
 </td>
 <td width="50%">
 
 ### 🎯 Examples
-- **[ConfigManager Tests](Scraping_project/tests/unit/common/test_config_manager.py)** - Usage examples
-- **[BaseSpider](Scraping_project/src/stage1/base_spider.py)** - Integration patterns
-- **[Worker Template](Scraping_project/src/stage2/stage2_worker.py)** - Worker structure
+- **[Config tests](Scraping_project/tests/unit/common/test_config_manager.py)**: `get_config()` usage
+- **[BaseSpider](Scraping_project/src/stage1/experimental/base_spider.py)**: spider integration patterns
+- **[Worker Template](Scraping_project/src/stage2/stage2_worker.py)**: worker structure
 
 </td>
 </tr>
@@ -600,20 +523,20 @@ pre-commit run --all-files
 
 ```bash
 # from Scraping_project/
-# Reseed data
+# Reseed from the bundled CSV (or --csv path/to/urls.csv)
 python reseed.py
 
-# Load new URLs
-python cli.py load_seeds data/urls.csv
+# Add one seed URL
+python cli.py seeds add https://www.example.org/ --note "why" --actor me
 
 # Reset Delta tables
 python start.py --reset-delta
 
 # View logs
-docker-compose logs -f scrapy-app
+docker-compose logs -f scraper
 
 # Enter container
-docker-compose exec scrapy-app bash
+docker-compose exec scraper bash
 ```
 
 ---
@@ -668,12 +591,10 @@ View the complete ignore rules in [.gitignore](.gitignore).
 docker-compose ps
 
 # Check specific service
-docker-compose logs kafka-delta-ingestor
+docker-compose logs stage2-worker
 
-# Verify storage health
-python -c "from src.common.storage_manager import StorageManager; \
-           print(StorageManager.get_instance().health_check())"
-```
+# Delta table row/file counts
+python cli.py health
 
 ### Common Issues
 
@@ -683,7 +604,7 @@ python -c "from src.common.storage_manager import StorageManager; \
 Check seed URLs are loaded:
 ```bash
 # from Scraping_project/
-docker-compose exec scrapy-app python cli.py list_seeds
+docker-compose exec scraper python cli.py seeds list --active-only
 ```
 
 Reload if needed:
@@ -727,24 +648,24 @@ python shutdown.py && python start.py
 
 ## 📊 Performance
 
-### Benchmarks
+### Design targets
 
-<div align="center">
+These are the design targets used when tuning the spiders' default settings. They are not measured benchmarks,
+because real throughput depends on the target site, robots.txt/Crawl-delay, network and hardware.
+Measure your own run on the Grafana **Scraping Pipeline Health** dashboard
+(Items Scraped / s, URLs Processed per Second by Stage, Response Time p95).
 
-| Metric | Scout Spider | Deep Dive | JS Spider |
-|--------|--------------|-----------|-----------|
-| **Throughput** | 1000+ URLs/min | 100+ URLs/min | 20+ URLs/min |
-| **Concurrent Requests** | 1024 | 32 | 20 |
-| **Memory Usage** | ~2GB | ~1GB | ~4GB |
-| **Discovery Rate** | 95%+ | 85%+ | 100% |
-
-</div>
+| Spider | Concurrency source | Notes |
+|--------|--------------------|-------|
+| **scout** | `stage1.spiders.scout` in `config.yml` | broad, fast discovery |
+| **deep_dive** | `stage1.spiders.deep_dive` | conservative, extracts hidden URLs |
+| **javascript** | `stage1.spiders.javascript` + `PLAYWRIGHT_MAX_CONTEXTS` | Playwright rendering; memory-bound |
 
 ### Optimization Tips
 
-- 🎯 Use `min_value_score` to filter low-value URLs early
-- 🔄 Enable Redis queue for distributed crawling
-- 📊 Monitor queue depth to prevent backpressure
+- 🎯 Use `min_value_score` (`URLProcessor.discover_and_assess`) to drop low-value URLs early
+- 🔄 Enable the Redis queue (`stage1.use_redis_queue`) for distributed crawling
+- 📊 Watch the Redis queue depth and Delta Write Queue Depth panels for backpressure
 - ⚡ Adjust `batch_size` based on available memory
 
 ---
@@ -773,10 +694,10 @@ the exact CI commands, and the release process.
 
 ### Code Standards
 
-- ✅ Type hints required
-- ✅ Tests required (90%+ coverage)
-- ✅ Documentation required
-- ✅ Ruff linting passes
+- ✅ Type hints (mypy runs in CI)
+- ✅ Tests for new behaviour; `pytest.ini` sets a 70% coverage floor for local `--cov` runs
+- ✅ Docs updated with behaviour changes ([guides](Scraping_project/docs/guides/README.md))
+- ✅ Ruff, mypy and bandit pass (the same commands as CI; see [CONTRIBUTING.md](CONTRIBUTING.md))
 - ✅ Pre-commit hooks pass
 
 ---

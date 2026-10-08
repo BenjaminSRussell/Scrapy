@@ -44,17 +44,33 @@
         if (delta <= 0) return 0;
         return delta / (ms / 60000);
     }
-    // #141: no hard-coded localhost. Precedence: explicit override
-    // (window.CC_METRICS_URL), then ?metrics=<url>, then port 9090 on the host the
-    // dashboard was loaded from (works from other machines / containers).
+    // #141/#400: no hard-coded localhost. Precedence: explicit override
+    // (window.CC_METRICS_URL), then ?metrics=<url>, then the same-origin proxy
+    // /api/metrics on serve.py (METRICS_UPSTREAM picks the exporter server-side).
+    // Opened as a file:// page there is no proxy, so fall back to localhost:9090.
     function resolveMetricsUrl(loc, override) {
         if (override) return String(override);
         const search = (loc && loc.search) || '';
         const fromQuery = new URLSearchParams(search).get('metrics');
         if (fromQuery && /^https?:\/\/[^\s]+$/i.test(fromQuery)) return fromQuery;  // http(s) only
-        const protocol = loc && /^https?:$/.test(loc.protocol) ? loc.protocol : 'http:';
-        const host = (loc && loc.hostname) || 'localhost';
-        return `${protocol}//${host}:9090/metrics`;
+        if (loc && /^https?:$/.test(loc.protocol)) return '/api/metrics';
+        return 'http://localhost:9090/metrics';
+    }
+    // #401: /api/queues payload -> rows for the System tab. Redis down (ok:false)
+    // is reported as an error, never as zero-depth queues.
+    function queueDepthRows(payload) {
+        if (!payload || payload.ok !== true || !Array.isArray(payload.queues)) {
+            const why = payload && typeof payload.error === 'string' ? payload.error : 'no data';
+            return { error: `Queue depths unavailable: ${why}`, rows: [] };
+        }
+        const rows = payload.queues
+            .filter(q => q && typeof q.key === 'string')
+            .map(q => ({
+                key: q.key,
+                type: typeof q.type === 'string' ? q.type : 'unknown',
+                depth: Number.isFinite(Number(q.depth)) ? Number(q.depth) : null,
+            }));
+        return { error: null, rows };
     }
     // #910: an explicit ?metrics= that we refuse must be reported, not silently
     // replaced by the default (the operator would watch the wrong exporter).
@@ -340,5 +356,5 @@
         if (n === 0) return 'Shortcut: R refresh';
         return `Shortcuts: ${n === 1 ? '1' : '1\u2013' + n} switch tabs \u00b7 R refresh`;
     }
-    return { metricsFailureActivity, shortcutHintText, parseMetrics, ratePerMinute, resolveMetricsUrl, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler, stageActivity, doughnutLegendLayout, connectionState, documentTitle, createActivityAnnouncer, metricsUrlProblem, splitLinks, createMetricsFetcher, REFRESH_INTERVAL_CHOICES, parseRefreshInterval, shortcutAction, pickInitialTab };
+    return { queueDepthRows, metricsFailureActivity, shortcutHintText, parseMetrics, ratePerMinute, resolveMetricsUrl, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler, stageActivity, doughnutLegendLayout, connectionState, documentTitle, createActivityAnnouncer, metricsUrlProblem, splitLinks, createMetricsFetcher, REFRESH_INTERVAL_CHOICES, parseRefreshInterval, shortcutAction, pickInitialTab };
 });

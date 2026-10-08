@@ -122,6 +122,8 @@ groups:
 
       # --- Consumer Group Lag Aggregation ---
       # The 'group' label is extracted from 'client_id' assuming the convention '{group}-{identifier}'.
+      # Only the LAST hyphen segment is the identifier, so hyphenated groups survive
+      # ("scraping-pipeline-0" -> "scraping-pipeline"); a client_id with no hyphen is its own group.
       # This is necessary because the JMX metric only provides per-partition lag via client_id.
 
       # Max lag per consumer group (worst partition) - FOR SLO ALERTS
@@ -130,7 +132,7 @@ groups:
           max by (topic, group) (
             label_replace(
               kafka_consumer_records_lag,
-              "group", "$1", "client_id", "([^-]+).*"
+              "group", "$1", "client_id", "(.+?)(?:-[^-]+)?"
             )
           )
 
@@ -140,7 +142,7 @@ groups:
           sum by (topic, group) (
             label_replace(
               kafka_consumer_records_lag,
-              "group", "$1", "client_id", "([^-]+).*"
+              "group", "$1", "client_id", "(.+?)(?:-[^-]+)?"
             )
           )
 

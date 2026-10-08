@@ -57,6 +57,29 @@ def pytest_configure(config):
     config._guarded_before = _guarded_files()
 
 
+def pytest_collection_modifyitems(config, items):
+    """Quarantine ``@pytest.mark.flaky`` tests (#288); see tests/flaky_policy.py."""
+    from tests.flaky_policy import flaky_reason, has_issue_ref
+
+    run_flaky = os.environ.get("RUN_FLAKY") == "1"
+    missing = []
+    for item in items:
+        marker = item.get_closest_marker("flaky")
+        if marker is None:
+            continue
+        reason = flaky_reason(marker)
+        if not has_issue_ref(reason):
+            missing.append(item.nodeid)
+            continue
+        if not run_flaky:
+            item.add_marker(pytest.mark.skip(reason=f"quarantined flaky test: {reason}"))
+    if missing:
+        raise pytest.UsageError(
+            "@pytest.mark.flaky needs reason=\"... #<issue>\" (an open issue tracking the fix):\n  "
+            + "\n  ".join(missing)
+        )
+
+
 def pytest_sessionfinish(session, exitstatus):
     before = getattr(session.config, "_guarded_before", None)
     if before is None:
@@ -372,3 +395,69 @@ def http_server():
     server.shutdown()
     server.server_close()
     thread.join(timeout=5)
+
+
+# ---------------------------------------------------------------------------
+# HTML snapshot fixtures (#273) and record factories (#275)
+# ---------------------------------------------------------------------------
+
+_HTML_FIXTURES = Path(__file__).resolve().parent / "fixtures" / "html"
+
+
+@pytest.fixture
+def html_response():
+    """Build a Scrapy ``HtmlResponse`` from ``tests/fixtures/html/<name>.html``.
+
+    Usage::
+
+        def test_parse(html_response):
+            response = html_response("simple", url="https://example.com/dept/")
+    """
+    from scrapy import Request
+    from scrapy.http import HtmlResponse
+
+    def _make(name: str, *, url: str = "https://example.com/", meta: dict | None = None,
+              encoding: str = "utf-8") -> HtmlResponse:
+        path = _HTML_FIXTURES / f"{name}.html"
+        if not path.is_file():
+            raise FileNotFoundError(f"HTML fixture not found: {path}")
+        request = Request(url, meta=dict(meta if meta is not None else {"depth": 0}))
+        return HtmlResponse(
+            url=url,
+            body=path.read_bytes(),
+            encoding=encoding,
+            request=request,
+            headers={b"Content-Type": b"text/html; charset=utf-8"},
+        )
+
+    return _make
+
+
+@pytest.fixture
+def make_url_record():
+    from tests.factories import url_record
+    return url_record
+
+
+@pytest.fixture
+def make_stage2_record():
+    from tests.factories import stage2_record
+    return stage2_record
+
+
+@pytest.fixture
+def make_stage3_summary():
+    from tests.factories import stage3_summary
+    return stage3_summary
+
+
+@pytest.fixture
+def make_stage4_large_doc():
+    from tests.factories import stage4_large_doc
+    return stage4_large_doc
+
+
+@pytest.fixture
+def make_stage4_chunk():
+    from tests.factories import stage4_chunk
+    return stage4_chunk

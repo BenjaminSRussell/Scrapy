@@ -1,0 +1,6 @@
+# Google-style wildcards: * matches any run of characters, $ anchors the end.
+User-agent: *
+Disallow: /*.pdf$
+Disallow: /*?sessionid=
+Disallow: /search*
+Allow: /search-help

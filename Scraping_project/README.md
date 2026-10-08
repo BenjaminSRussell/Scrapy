@@ -2,6 +2,8 @@
 
 A production-grade, type-safe, resilient web scraping pipeline designed for large-scale institutional data collection and analysis.
 
+> **Task guides:** [Configuration](docs/guides/CONFIGURATION.md) • [Running](docs/guides/RUNNING.md) (other domains, resuming after a crash) • [Monitoring](docs/guides/MONITORING.md) • [Data usage](docs/guides/DATA_USAGE.md) (querying Delta Lake, CSV/JSON/Parquet export)
+
 ## Overview
 
 This is an enterprise-ready multi-stage web scraping system with comprehensive type safety, error handling, caching, and production deployment configurations. The pipeline has evolved through 10 major phases to deliver a scalable, maintainable, and observable system.
@@ -426,6 +428,31 @@ raw-URL SeedManager hashes now converge on the same value.
 edits apply without a rebuild; the copy inside the image is the default and
 can be baked in when wanted.
 
+### Memory soft-stop vs. container limits
+
+A cgroup OOM kill gives Twisted no chance to run `close_spider`, so batched
+queue rows and the Kafka producer queue would be lost (#539).
+`src.memory_soft_stop.MemorySoftStop` (enabled in `EXTENSIONS`, including
+orchestrator runs) reads the container's limit and usage from cgroup v2
+(`memory.max` / `memory.current`) or v1. When usage reaches
+`MEMORY_SOFT_STOP_FRACTION` (0.85) of the limit, it calls
+`engine.close_spider(spider, "memory_soft_stop")`: no new requests, in-flight
+responses finish, and every pipeline's `close_spider` flushes. The Kafka
+pipeline spills anything undelivered to its fsync'd spill file.
+
+- **Kubernetes/compose:** the soft stop keys off `resources.limits.memory` /
+  `deploy.resources.limits.memory` automatically. Leave ~15% headroom: the
+  drain itself (Kafka flush, final Delta batch) needs memory. Lower the
+  fraction for spiders with large batches.
+- **No visible limit** (bare metal, `memory.max = max`): the extension
+  disables itself unless `MEMORY_SOFT_STOP_LIMIT_MB` is set.
+- Scrapy's `MEMUSAGE_LIMIT_MB` is still set but compares *peak* RSS with a
+  fixed number. Treat it as a backstop, not the container guard.
+- **Observability:** `scrapy_memory_soft_stop_total`, `scrapy_memory_usage_ratio`,
+  crawl stat `memory_soft_stop/triggered`, finish reason `memory_soft_stop`.
+  A soft-stopped crawl exits cleanly; the next scheduled run resumes from
+  the queues.
+
 ### Environment Variables
 
 ```bash
@@ -676,6 +703,17 @@ All tables use PyArrow schemas for validation:
 | `errors` | Error tracking | ErrorRecord |
 
 `stage1_discovery` and `stage2_page_analysis` are partitioned by registrable domain. A row whose URL has no usable http(s) host (empty, `mailto:`, garbage) is not written under a catch-all `domain=unknown` partition. It goes to `domain_quarantine` (`source_table`, `url`, `reason`, `row_json`, `quarantined_at`), counted by `delta_unknown_domain_rows_total{table}`, and the `DeltaUndomainableRows` alert fires on a sustained stream (#458). For tables written before this change, `LakehouseManager.repair_unknown_domains(table)` reports what is in the legacy `unknown` partition. Pass `apply=True` to move repairable rows to their real domain and the rest to quarantine.
+
+### Recency scoring contract (silver → gold)
+
+`RecencyScoringPipeline` writes `recency_score` as exponential decay of the item's `publication_date` (`RECENCY_DECAY_CONSTANT`, default 0.01/day):
+
+- **The score is in `[0.0, 1.0]`** when `publication_date` parses. 1.0 means published now.
+- **The score is `null` when the date is missing or unparseable.** That means "freshness unknown", not median relevance. The pipeline no longer invents `0.5` (#675). To opt back into imputation, set `RECENCY_DEFAULT_SCORE` (or `scrapy.recency_default_score` in `config.yml`) to a float. Imputed items are still counted as missing.
+- **Gold:** `entity_summaries.max_recency_score` is the highest *known* score among an entity's items. It is `null` when none of them has a date. Items without a score rank after scored ones.
+- **Metric:** `scrapy_recency_items_total{outcome="scored|missing_date|unparseable_date"}`. Missing-date rate = `sum(rate(scrapy_recency_items_total{outcome!="scored"}[5m])) / sum(rate(scrapy_recency_items_total[5m]))`.
+
+Consumers must handle `null` explicitly, for example by excluding those rows from freshness-weighted averages, rather than coalescing to a number.
 
 ### Schema Evolution Policy
 
