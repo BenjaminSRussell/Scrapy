@@ -354,6 +354,27 @@ Alert: `ScrapySoftBanSpike`. Fixture pages live in `tests/fixtures/soft_ban/`.
 - **Idempotent producer** (#174, #464). The defaults are `acks=all`, `enable.idempotence=true`, and at most 5 in-flight requests, so librdkafka retries never duplicate or reorder messages within a partition. With `KAFKA_REQUIRE_IDEMPOTENCE=true` (`kafka.require_idempotence`), the producer **refuses to start** if any override (env `KAFKA_PRODUCER_ACKS`, `config.yml kafka.producer`, `KAFKA_PRODUCER_CONFIG`) would break that guarantee. The Helm application configmap sets it to `true`. Locally it is off, so `KAFKA_PRODUCER_ACKS=1` still works.
 - **What is exactly-once and what isn't.** The producer is exactly-once and in-order per partition within one producer session. End to end, delivery is **at-least-once**: a restarted producer or a crash between kafka-delta-ingest's Delta commit and its offset commit can replay messages. Lake tables dedupe by `url_hash`.
 
+### Stage 2 HTTP retries and circuit breaker
+
+Stage 2 retries transient fetch failures inside the same run (#158), so a
+single blip doesn't cost a whole queue cycle:
+
+| Failure | Behaviour |
+|---|---|
+| Timeout, connection/payload error, HTTP 408/500/502/503/504 | Retried up to `STAGE2_HTTP_ATTEMPTS` (3) total attempts with exponential backoff and jitter: `STAGE2_HTTP_BACKOFF_BASE` (0.5s) × 2^(attempt−1), capped at `STAGE2_HTTP_BACKOFF_MAX` (8s). A numeric `Retry-After` header raises the delay (still capped). |
+| Soft ban (429, challenge pages) | Not retried in-request; handled by the soft-ban guard above. |
+| Other 4xx (400/401/404/410, …) | Fail fast: one request, terminal error. |
+| Every attempt failed | Error record to `stage2_errors`; the queue row stays `pending` and is retried next run, then sent to the DLQ after `STAGE2_MAX_RETRIES`. |
+
+Each host has its own circuit breaker. After `STAGE2_BREAKER_FAILURES` (5)
+URLs on one host exhaust their attempts, the breaker opens for
+`STAGE2_BREAKER_RECOVERY` (60s). While it is open, that host's URLs are
+deferred (left `pending`, not counted as failures) instead of being fetched.
+
+Metrics: `stage2_http_fetches_total{outcome=first_try|recovered|exhausted|circuit_open}`
+and `stage2_http_retries_total{reason}`. Each retry and each recovery is logged
+with its attempt number.
+
 ### Environment Variables
 
 ```bash
