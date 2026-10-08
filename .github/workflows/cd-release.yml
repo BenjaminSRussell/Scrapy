@@ -18,10 +18,17 @@ on:
       - '.github/workflows/cd-release.yml'
   workflow_dispatch:
 
+# Image builds are the heaviest jobs: a new push to a PR cancels its superseded
+# build. Tag (release) runs are never cancelled. See main.yml.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   build-and-push:
     name: image (${{ matrix.image }})
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     permissions:
       contents: read
       packages: write

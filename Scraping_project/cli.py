@@ -492,6 +492,26 @@ def cmd_ml(args):
     print(f"wrote {n} low-confidence record(s) from {topic} to {args.output}")
 
 
+def cmd_queue_gc(args):
+    """Delete expired completed/failed rows from the stage queue tables (#754)."""
+    from src.lakehouse.lakehouse_manager import LakehouseManager
+
+    manager = LakehouseManager(start_workers=False)
+    hours = args.retention_hours if args.retention_hours is not None else manager.queue_retention_hours
+    if not hours or hours <= 0:
+        logger.error("Queue retention is disabled (delta_lake.queue_retention_hours <= 0).")
+        return 1
+    results = manager.gc_all_queues(
+        hours, archive=not args.no_archive, dry_run=args.dry_run, vacuum=not args.dry_run
+    )
+    verb = "would delete" if args.dry_run else "deleted"
+    for res in results:
+        n = res["matched"] if args.dry_run else res["deleted"]
+        extra = f" (skipped: {res['skipped']})" if res["skipped"] else ""
+        print(f"{res['table']}: {verb} {n} rows older than {hours}h{extra}")
+    return 0
+
+
 def cmd_seeds(args):
     """List/add/disable seed URLs with append-only audit log."""
     from src.common.seed_ops import SeedRegistry
@@ -640,6 +660,21 @@ def main():
         help="Override artifact roots relative to Scraping_project/",
     )
     gc_parser.set_defaults(func=cmd_data_gc)
+
+    queue_gc_parser = subparsers.add_parser(
+        "queue-gc", help="Delete expired completed/failed rows from stage queue tables"
+    )
+    queue_gc_parser.add_argument(
+        "--retention-hours",
+        type=float,
+        default=None,
+        help="Override delta_lake.queue_retention_hours",
+    )
+    queue_gc_parser.add_argument("--dry-run", action="store_true", help="Only count rows")
+    queue_gc_parser.add_argument(
+        "--no-archive", action="store_true", help="Do not copy rows to <table>_history first"
+    )
+    queue_gc_parser.set_defaults(func=cmd_queue_gc)
 
     # seeds — operator seed registry + audit (#1100)
     ks_parser = subparsers.add_parser("killswitch", help="Global crawl kill switch and budgets (#456)")

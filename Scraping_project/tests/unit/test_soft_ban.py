@@ -146,7 +146,8 @@ async def _serve(app):
     return runner, f"http://127.0.0.1:{port}"
 
 
-async def test_stage2_quarantines_soft_bans_and_backs_off_domain(site):
+async def test_stage2_quarantines_soft_bans_and_backs_off_domain(site, monkeypatch):
+    monkeypatch.setenv("SSRF_ALLOWED_HOSTS", "127.0.0.1")  # local fixture server (#682)
     app, hits = site
     runner, base = await _serve(app)
     try:
