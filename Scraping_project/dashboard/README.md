@@ -1,7 +1,15 @@
 # Pipeline Control Center dashboard
 
 Static dashboard served by `serve.py` (port 8080). Metrics are fetched from the
-Prometheus endpoint (`:9090/metrics`).
+Prometheus-format endpoint on port 9090 **of the host the page was loaded from**
+(`http://<host>:9090/metrics`), so it also works from another machine or container.
+Override it with `?metrics=http://exporter:9090/metrics` (http/https only) or by setting
+`window.CC_METRICS_URL` before `app.js` loads (#141).
+
+All throughput figures are per minute, computed from the real time between samples (#141).
+Labelled series such as `errors_total{stage="stage1"}` are kept under their full key and
+also summed under the bare name (`errors_total`) unless an unlabelled series of that name
+exists (#365).
 
 ```bash
 python Scraping_project/dashboard/serve.py
@@ -21,7 +29,8 @@ insertion; only `http(s)://` URLs are then linkified (`safeLinkify`) with
 `rel="noopener noreferrer"`. `javascript:` and other schemes are never linked.
 Do not introduce `innerHTML` writes of unescaped data.
 
-**Metrics origin.** The dashboard trusts whatever `METRICS_URL` returns.
+**Metrics origin.** The dashboard trusts whatever `METRICS_URL` returns (including a
+`?metrics=` override, so only open dashboard links you trust).
 Values are parsed numerically (`parseMetrics`) and rendered via `textContent`,
 so a hostile metrics endpoint can lie about numbers but cannot inject markup.
 Keep the metrics endpoint on localhost / a trusted network; `serve.py` sends
