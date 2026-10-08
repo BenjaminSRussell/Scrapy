@@ -91,6 +91,17 @@
         }
         return seen.size > 0 ? seen.size : null;
     }
+    // Which pipeline stages are currently doing work (#976). Order matches the
+    // four Pipeline-tab stage cards. A stage is active when its per-interval
+    // rate is a finite number above `threshold`; missing/NaN rates (series not
+    // exported, first sample) count as idle rather than guessing.
+    const STAGE_RATE_KEYS = ['urls', 'pages', 'summaries', 'largeDocs'];
+    function stageActivity(rates, threshold = 0) {
+        return STAGE_RATE_KEYS.map(k => {
+            const v = Number(rates && rates[k]);
+            return Number.isFinite(v) && v > threshold;
+        });
+    }
     // Single refresh scheduler (#986). Owns the only fetch timer and records
     // when the next fetch will start, so the visible countdown is derived from
     // `nextFetchAt` instead of a second, independently ticking counter that
@@ -151,5 +162,5 @@
             },
         };
     }
-    return { parseMetrics, ratePerMinute, resolveMetricsUrl, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler };
+    return { parseMetrics, ratePerMinute, resolveMetricsUrl, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler, stageActivity };
 });
