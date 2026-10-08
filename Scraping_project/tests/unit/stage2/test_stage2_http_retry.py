@@ -10,13 +10,6 @@ from aiohttp import web
 import src.stage2.stage2_worker as sw
 from src.stage2.stage2_worker import TRANSIENT_HTTP_STATUSES, Stage2Worker, _parse_retry_after
 
-
-@pytest.fixture(autouse=True)
-def _allow_loopback_test_servers(monkeypatch):
-    # The local test servers live on 127.0.0.1; the SSRF guard (#450) blocks
-    # loopback unless FETCH_ALLOWED_CIDRS opts it in.
-    monkeypatch.setenv("FETCH_ALLOWED_CIDRS", "127.0.0.0/8,::1/128")
-
 ARTICLE = "<html><head><title>T</title></head><body><p>" + "word " * 200 + "</p></body></html>"
 
 
@@ -57,6 +50,8 @@ async def site():
 
 @pytest.fixture
 def worker(monkeypatch):
+    # The scripted site is on 127.0.0.1 (and localhost), which the SSRF guard blocks by default (#682).
+    monkeypatch.setenv("SSRF_ALLOWED_HOSTS", "127.0.0.1,localhost")
     w = Stage2Worker(max_concurrent=4)
     w.http_attempts = 3
     delays: list[tuple[int, float | None]] = []

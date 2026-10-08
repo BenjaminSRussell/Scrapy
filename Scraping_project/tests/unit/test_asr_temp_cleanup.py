@@ -16,13 +16,6 @@ from prometheus_client import REGISTRY  # noqa: E402
 
 from src.common import async_asr_processor as asr  # noqa: E402
 
-
-@pytest.fixture(autouse=True)
-def _allow_loopback_test_servers(monkeypatch):
-    # The local test servers live on 127.0.0.1; the SSRF guard (#450) blocks
-    # loopback unless FETCH_ALLOWED_CIDRS opts it in.
-    monkeypatch.setenv("FETCH_ALLOWED_CIDRS", "127.0.0.0/8,::1/128")
-
 PAYLOAD = b"RIFF" + b"\x00" * 50_000
 
 
@@ -58,6 +51,12 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(PAYLOAD)))
         self.end_headers()
         self.wfile.write(PAYLOAD)
+
+
+@pytest.fixture(autouse=True)
+def _allow_local_media_server(monkeypatch):
+    # The ASR downloader is SSRF-guarded (#450); the fixture server is loopback.
+    monkeypatch.setenv("SSRF_ALLOWED_HOSTS", "127.0.0.1")
 
 
 @pytest.fixture(scope="module")
@@ -97,7 +96,10 @@ def make_processor(tmp_path):
     made = []
 
     def _make(max_download_bytes=asr.DEFAULT_MAX_DOWNLOAD_BYTES, executor=None):
-        proc = asr.AsyncASRProcessor(max_workers=1, temp_dir=str(tmp_path), max_download_bytes=max_download_bytes)
+        # provider="whisper" (local): ASR defaults to "none", which skips the download path under test (#429).
+        proc = asr.AsyncASRProcessor(
+            max_workers=1, temp_dir=str(tmp_path), max_download_bytes=max_download_bytes, provider="whisper"
+        )
         proc.executor.shutdown(wait=False)
         proc.executor = executor or _FakeExecutor(result={"success": True, "transcript": "hi", "duration": 1.0})
         made.append(proc)

@@ -1,3 +1,4 @@
+import functools
 import logging
 import os
 import tempfile
@@ -5,7 +6,7 @@ from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 from typing import Any
 
-from src.utils.url_safety import safe_get
+from src.utils.ssrf import guarded_get
 
 try:
     import requests
@@ -56,6 +57,39 @@ except Exception:  # prometheus_client missing or metric already registered
     ASR_DOWNLOADS_REJECTED = None
 
 
+# Speech-to-text backend (#429). ``none`` (default) never downloads or sends
+# media anywhere. ``google`` uploads audio to Google's Web Speech API and is an
+# explicit opt-in. ``whisper`` transcribes locally (needs the openai-whisper
+# package) and keeps audio on the box.
+ASR_PROVIDERS = ("none", "google", "whisper")
+DEFAULT_ASR_PROVIDER = "none"
+_google_warning_logged = False
+
+
+def resolve_asr_provider(value: str | None = None) -> str:
+    """Normalize ``value`` (or ``$ASR_PROVIDER``) to one of ``ASR_PROVIDERS``.
+
+    Unknown values fall back to ``none``. A typo must never turn into network
+    egress.
+    """
+    raw = value if value is not None else os.environ.get("ASR_PROVIDER", DEFAULT_ASR_PROVIDER)
+    provider = (raw or DEFAULT_ASR_PROVIDER).strip().lower()
+    if provider not in ASR_PROVIDERS:
+        logger.warning(f"Unknown ASR_PROVIDER={raw!r}; ASR disabled (choose one of {', '.join(ASR_PROVIDERS)})")
+        return "none"
+    return provider
+
+
+def _warn_google_once() -> None:
+    global _google_warning_logged
+    if not _google_warning_logged:
+        _google_warning_logged = True
+        logger.warning(
+            "ASR_PROVIDER=google: media audio will be uploaded to Google's Web Speech API "
+            "for transcription. Use ASR_PROVIDER=whisper to keep audio local, or none to disable."
+        )
+
+
 class MediaTooLargeError(Exception):
     """The media file exceeds the configured max download size."""
 
@@ -85,7 +119,14 @@ def remove_temp_file(path: str | None) -> bool:
     _count(ASR_TEMP_FILES, outcome="cleaned")
     return True
 
-def transcribe_audio_file(audio_path: str, language: str = "en-US") -> dict[str, Any]:
+def transcribe_audio_file(audio_path: str, language: str = "en-US", provider: str = DEFAULT_ASR_PROVIDER) -> dict[str, Any]:
+    if provider not in ("google", "whisper"):
+        return {
+            "success": False,
+            "transcript": "",
+            "error": "ASR disabled (ASR_PROVIDER=none)",
+            "duration": 0,
+        }
     if not SPEECH_RECOGNITION_AVAILABLE:
         return {
             "success": False,
@@ -102,8 +143,12 @@ def transcribe_audio_file(audio_path: str, language: str = "en-US") -> dict[str,
 
             duration = len(audio_data.frame_data) / audio_data.sample_rate
 
-            # Note: This requires internet connection
-            transcript = recognizer.recognize_google(audio_data, language=language)
+            if provider == "google":
+                # Uploads audio to Google; explicit opt-in only (#429).
+                transcript = recognizer.recognize_google(audio_data, language=language)
+            else:
+                # Local model, no egress. Whisper takes ISO-639-1 ("en"), not "en-US".
+                transcript = recognizer.recognize_whisper(audio_data, language=language.split("-")[0].lower())
 
             return {
                 "success": True,
@@ -147,6 +192,7 @@ class AsyncASRProcessor:
         max_workers: int = 4,
         temp_dir: str | None = None,
         max_download_bytes: int | None = DEFAULT_MAX_DOWNLOAD_BYTES,
+        provider: str | None = None,
     ):
         """Initialize the async ASR processor.
 
@@ -155,6 +201,8 @@ class AsyncASRProcessor:
             temp_dir: Directory for temporary files (default: system temp)
             max_download_bytes: Abort (and delete) a media download larger
                 than this; ``None`` or ``0`` disables the cap.
+            provider: ``none`` / ``google`` / ``whisper``; defaults to
+                ``$ASR_PROVIDER`` or ``none`` (no download, no egress).
         """
         if not TWISTED_AVAILABLE:
             raise ImportError("Twisted is required for AsyncASRProcessor")
@@ -170,15 +218,23 @@ class AsyncASRProcessor:
                 "requests library not available. Media download will be disabled. Install with: pip install requests"
             )
 
+        self.provider = resolve_asr_provider(provider)
+        if self.provider == "google":
+            _warn_google_once()
+        elif self.provider == "none":
+            logger.info("ASR provider is 'none': media URLs are passed through untranscribed")
+
         self.max_workers = max_workers
         self.temp_dir = temp_dir or tempfile.gettempdir()
         self.max_download_bytes = max_download_bytes or None
         self.executor = ProcessPoolExecutor(max_workers=max_workers)
 
-        logger.info(f"AsyncASRProcessor initialized with {max_workers} workers, temp_dir={self.temp_dir}")
+        logger.info(
+            f"AsyncASRProcessor initialized with {max_workers} workers, provider={self.provider}, temp_dir={self.temp_dir}"
+        )
 
     def process_media_url(self, media_url: str, item_dict: dict[str, Any]) -> "defer.Deferred":
-        if not REQUESTS_AVAILABLE or not SPEECH_RECOGNITION_AVAILABLE:
+        if self.provider == "none" or not REQUESTS_AVAILABLE or not SPEECH_RECOGNITION_AVAILABLE:
             return defer.succeed(item_dict)
 
         url_lower = media_url.lower()
@@ -219,8 +275,8 @@ class AsyncASRProcessor:
         temp_file.close()
 
         try:
-            # SSRF guard (#450): checks the URL and every redirect hop.
-            response = safe_get(media_url, session=requests, timeout=60, stream=True)
+            # SSRF guard (#450): URL and every redirect hop, DNS answers included.
+            response = guarded_get(media_url, session=requests, timeout=60, stream=True)
             try:
                 response.raise_for_status()
 
@@ -259,7 +315,7 @@ class AsyncASRProcessor:
         logger.info(f"Submitting transcription job: {local_path}")
 
         try:
-            future = self.executor.submit(transcribe_audio_file, local_path)
+            future = self.executor.submit(functools.partial(transcribe_audio_file, provider=self.provider), local_path)
         except BaseException:
             # Executor shut down / broken pool: the job never runs, so the
             # file would never be removed by on_complete.
@@ -306,6 +362,45 @@ class AsyncASRProcessor:
         self.executor.shutdown(wait=True)
         logger.info("AsyncASRProcessor shutdown complete")
 
+class ASRPipeline:
+    """Item pipeline that transcribes ``item["media_url"]`` (#470).
+
+    Only registered when ``ASR_ENABLED`` is true (see ``src/settings.py``), so a
+    default crawl never imports this module or ``speech_recognition``. Item
+    pipelines may return a Deferred, which Scrapy waits on before handing the
+    item to the next pipeline. Spider middleware output cannot do that, so
+    this is the supported entry point. Items without ``media_url``, and
+    non-dict items, pass straight through.
+
+    Cost: one download plus one transcription process per media item, at most
+    ``ASR_MAX_WORKERS`` in parallel, with downloads capped at
+    ``ASR_MAX_DOWNLOAD_BYTES``. ``ASR_PROVIDER`` picks the backend (#429).
+    """
+
+    def __init__(self, processor: "AsyncASRProcessor"):
+        self.processor = processor
+
+    @classmethod
+    def from_crawler(cls, crawler):
+        s = crawler.settings
+        return cls(
+            AsyncASRProcessor(
+                max_workers=s.getint("ASR_MAX_WORKERS", 4),
+                temp_dir=s.get("ASR_TEMP_DIR") or None,
+                max_download_bytes=s.getint("ASR_MAX_DOWNLOAD_BYTES", DEFAULT_MAX_DOWNLOAD_BYTES),
+                provider=s.get("ASR_PROVIDER") or None,
+            )
+        )
+
+    def process_item(self, item, spider=None):
+        if not isinstance(item, dict) or not item.get("media_url"):
+            return item
+        return self.processor.process_media_url(item["media_url"], item)
+
+    def close_spider(self, spider=None):
+        self.processor.shutdown()
+
+
 class ASRMiddleware:
 
     def __init__(
@@ -313,11 +408,13 @@ class ASRMiddleware:
         max_workers: int = 4,
         temp_dir: str | None = None,
         max_download_bytes: int | None = DEFAULT_MAX_DOWNLOAD_BYTES,
+        provider: str | None = None,
     ):
         self.processor = AsyncASRProcessor(
             max_workers=max_workers,
             temp_dir=temp_dir,
             max_download_bytes=max_download_bytes,
+            provider=provider,
         )
 
     @classmethod
@@ -327,6 +424,7 @@ class ASRMiddleware:
             max_workers=max_workers,
             temp_dir=crawler.settings.get("ASR_TEMP_DIR") or None,
             max_download_bytes=crawler.settings.getint("ASR_MAX_DOWNLOAD_BYTES", DEFAULT_MAX_DOWNLOAD_BYTES),
+            provider=crawler.settings.get("ASR_PROVIDER") or None,
         )
 
         crawler.signals.connect(

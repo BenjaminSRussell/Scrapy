@@ -3,17 +3,9 @@
 import asyncio
 
 import aiohttp
-import pytest
 from aiohttp import web
 
 from src.stage2 import stage2_worker as s2
-
-
-@pytest.fixture(autouse=True)
-def _allow_loopback_test_servers(monkeypatch):
-    # The local test server lives on 127.0.0.1; the SSRF guard (#450) blocks
-    # loopback unless FETCH_ALLOWED_CIDRS opts it in.
-    monkeypatch.setenv("FETCH_ALLOWED_CIDRS", "127.0.0.0/8,::1/128")
 
 HTML = "<html><head><title>T</title></head><body>" + "<p>word " * 120 + "</p></body></html>"
 
@@ -47,6 +39,7 @@ async def _serve():
 
 
 def test_one_session_for_whole_run_and_closed_after(monkeypatch):
+    monkeypatch.setenv("SSRF_ALLOWED_HOSTS", "127.0.0.1")  # local fixture server (#682)
     created: list[aiohttp.ClientSession] = []
     real = aiohttp.ClientSession
 

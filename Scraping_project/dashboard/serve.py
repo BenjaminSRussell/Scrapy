@@ -18,26 +18,87 @@ Grafana Purpose (Different):
 - Alert management
 """
 
+import argparse
 import http.server
 import socketserver
 import os
 import subprocess
+import sys
 from pathlib import Path
 
-PORT = 8080
+# #735: loopback by default. Containers/LAN must opt in explicitly
+# (CC_HOST=0.0.0.0 or --host 0.0.0.0), which prints a warning.
+DEFAULT_HOST = "127.0.0.1"
+DEFAULT_PORT = 8080
+PORT = DEFAULT_PORT  # kept for backwards compatibility
+WILDCARD_HOSTS = frozenset({"", "0.0.0.0", "::", "[::]"})
 DASHBOARD_DIR = Path(__file__).parent
+# #721: only dashboard assets are served; source, tests, docs and dotfiles are 404.
+ALLOWED_SUFFIXES = frozenset({".html", ".js", ".css", ".map", ".png", ".svg", ".ico", ".jpg", ".jpeg",
+                              ".gif", ".webp", ".woff", ".woff2", ".json", ".txt"})
+DENIED_DIRS = frozenset({"tests", "__pycache__", "node_modules"})
+
+# #906 CSP note: report-only for now. index.html still has inline <style>/<script>
+# and loads Chart.js from jsDelivr, so an enforcing policy would break the page.
+# Violations appear in the browser console. Activity rows are DOM-built
+# (textContent), so they need no inline-script allowance. connect-src allows
+# http(s) because METRICS_URL is usually <host>:9090 (another origin).
+CSP_REPORT_ONLY = (
+    "default-src 'self'; "
+    "script-src 'self' https://cdn.jsdelivr.net; "
+    "style-src 'self' https://cdn.jsdelivr.net; "
+    "connect-src 'self' http: https:; "
+    "img-src 'self' data:; "
+    "object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+)
+
+# #906 CSP note: report-only for now. index.html still has inline <style>/<script>
+# and loads Chart.js from jsDelivr, so an enforcing policy would break the page.
+# Violations appear in the browser console. Activity rows are DOM-built
+# (textContent), so they need no inline-script allowance. connect-src allows
+# http(s) because METRICS_URL is usually <host>:9090 (another origin).
+CSP_REPORT_ONLY = (
+    "default-src 'self'; "
+    "script-src 'self' https://cdn.jsdelivr.net; "
+    "style-src 'self' https://cdn.jsdelivr.net; "
+    "connect-src 'self' http: https:; "
+    "img-src 'self' data:; "
+    "object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+)
 
 class DashboardHandler(http.server.SimpleHTTPRequestHandler):
     """Custom request handler for dashboard files."""
 
+    root: Path = DASHBOARD_DIR
+    error_message_format = "<!DOCTYPE html><title>%(code)d</title><p>%(code)d %(message)s</p>\n"
+
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, directory=str(DASHBOARD_DIR), **kwargs)
+        super().__init__(*args, directory=str(self.root), **kwargs)
+
+    def list_directory(self, path):  # noqa: ARG002 - no directory listings (#721)
+        self.send_error(404, "Not Found")
+        return None
+
+    def _is_servable(self, url_path: str) -> bool:
+        parts = [p for p in url_path.split("?", 1)[0].split("#", 1)[0].split("/") if p]
+        if not parts:
+            return True
+        if any(p.startswith(".") or p in DENIED_DIRS for p in parts):
+            return False
+        return Path(parts[-1]).suffix.lower() in ALLOWED_SUFFIXES
+
+    def send_head(self):
+        if not self._is_servable(self.path):
+            self.send_error(404, "Not Found")
+            return None
+        return super().send_head()
 
     def end_headers(self):
         self.send_header('Access-Control-Allow-Origin', '*')
         self.send_header('Access-Control-Allow-Methods', 'GET, OPTIONS')
         self.send_header('Access-Control-Allow-Headers', 'Content-Type')
         self.send_header('Cache-Control', 'no-cache, no-store, must-revalidate')
+        self.send_header('Content-Security-Policy-Report-Only', CSP_REPORT_ONLY)
         super().end_headers()
 
     def do_GET(self):
@@ -71,12 +132,41 @@ def _cc_version() -> str:
         pass
     return 'dev'
 
-def main():
+def resolve_bind(host: str | None = None, port: int | str | None = None, env=None) -> tuple[str, int]:
+    """--host/--port, else CC_HOST/CC_PORT, else 127.0.0.1:8080 (#735)."""
+    env = os.environ if env is None else env
+    host = host if host is not None else env.get("CC_HOST", DEFAULT_HOST)
+    raw_port = port if port is not None else env.get("CC_PORT", DEFAULT_PORT)
+    try:
+        port_num = int(raw_port)
+    except (TypeError, ValueError):
+        raise SystemExit(f"invalid port: {raw_port!r}")
+    if not 0 <= port_num <= 65535:
+        raise SystemExit(f"invalid port: {raw_port!r}")
+    return str(host), port_num
+
+
+def make_server(host: str, port: int, handler=DashboardHandler, server_factory=socketserver.TCPServer):
+    """Create (but do not start) the server; the factory is injectable for tests."""
+    if host in WILDCARD_HOSTS:
+        print(f"⚠️  Binding the dashboard to all interfaces ({host or '*'}:{port}); "
+              "keep it behind a trusted network.", file=sys.stderr)
+    return server_factory((host, port), handler)
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description="Serve the Pipeline Control Center")
+    parser.add_argument("--host", default=None, help=f"bind address (default: CC_HOST or {DEFAULT_HOST})")
+    parser.add_argument("--port", default=None, help=f"port (default: CC_PORT or {DEFAULT_PORT})")
+    args = parser.parse_args(argv)
+    host, port = resolve_bind(args.host, args.port)
+    shown = "localhost" if host in ("127.0.0.1", "localhost", "::1") else (host or "0.0.0.0")
+
     print("=" * 80)
     print("🎛️  PIPELINE CONTROL CENTER")
     print("=" * 80)
     print()
-    print("📊 Dashboard:  http://localhost:8080")
+    print(f"📊 Dashboard:  http://{shown}:{port}")
     print("📈 Metrics:    http://<this host>:9090/metrics  (override: ?metrics=<url>)")
     print("📉 Grafana:    http://localhost:3001 (separate analytics)")
     print()
@@ -92,9 +182,9 @@ def main():
     print("=" * 80)
     print()
 
-    with socketserver.TCPServer(("", PORT), DashboardHandler) as httpd:
+    with make_server(host, port) as httpd:
         try:
-            print(f"✅ Server started on port {PORT}")
+            print(f"✅ Server started on {host or '*'}:{port}")
             httpd.serve_forever()
         except KeyboardInterrupt:
             print("\n\n🛑 Shutting down dashboard server...")

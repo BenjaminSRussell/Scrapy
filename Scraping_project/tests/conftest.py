@@ -6,11 +6,87 @@ Phase 9: Testing infrastructure with reusable fixtures.
 
 import pytest
 import asyncio
+import os
 from pathlib import Path
 from typing import Generator, AsyncGenerator
 from unittest.mock import Mock
 import tempfile
 import shutil
+
+
+# ---------------------------------------------------------------------------
+# Filesystem isolation (#683): no test writes to the project's data/ lake.
+#
+# Code under test defaults to ./data/delta_lake (DELTA_LAKE_PATH / config) and
+# ./data/dlq (DLQ_PATH). Before collection, each pytest process (each xdist
+# worker is its own process) gets a private temp root, and both variables point
+# into it unless the caller already set them. Tests that need a specific lake
+# still use tmp_path or monkeypatch.setenv. At the end of the session, any file
+# that appeared under the guarded project directories fails the run.
+# ---------------------------------------------------------------------------
+_PROJECT_ROOT = Path(__file__).resolve().parents[1]
+_ISOLATED_ENV = {"DELTA_LAKE_PATH": "delta_lake", "DLQ_PATH": "dlq"}
+_GUARDED_DIRS = ("data/delta_lake", "data/dlq", "data/kafka_spill")
+
+
+def _guarded_files() -> set[Path]:
+    files: set[Path] = set()
+    for rel in _GUARDED_DIRS:
+        base = _PROJECT_ROOT / rel
+        if base.is_dir():
+            files.update(p for p in base.rglob("*") if p.is_file())
+    return files
+
+
+def pytest_configure(config):
+    worker = os.environ.get("PYTEST_XDIST_WORKER", "main")
+    root = Path(tempfile.mkdtemp(prefix=f"scrapy-tests-{worker}-"))
+    # xdist workers inherit the controller's environment, so a value that points
+    # into an inherited isolation root is replaced with this worker's own root.
+    inherited = os.environ.get("SCRAPY_TESTS_ISOLATION_ROOT")
+    config._isolation_root = root
+    config._isolation_set = []
+    config._isolation_prev = {"SCRAPY_TESTS_ISOLATION_ROOT": inherited}
+    for var, sub in _ISOLATED_ENV.items():
+        current = os.environ.get(var)
+        if not current or (inherited and current.startswith(inherited)):
+            config._isolation_prev[var] = current
+            os.environ[var] = str(root / sub)
+            config._isolation_set.append(var)
+    os.environ["SCRAPY_TESTS_ISOLATION_ROOT"] = str(root)
+    config._guarded_before = _guarded_files()
+
+
+def pytest_sessionfinish(session, exitstatus):
+    before = getattr(session.config, "_guarded_before", None)
+    if before is None:
+        return
+    leaked = sorted(_guarded_files() - before)
+    if leaked:
+        listing = "\n  ".join(str(p.relative_to(_PROJECT_ROOT)) for p in leaked[:20])
+        more = f"\n  ... and {len(leaked) - 20} more" if len(leaked) > 20 else ""
+        reporter = session.config.pluginmanager.get_plugin("terminalreporter")
+        message = (
+            f"\n{len(leaked)} file(s) written under the project's data/ directories during the "
+            f"test run (#683). Tests must use tmp_path or the isolated DELTA_LAKE_PATH/DLQ_PATH:\n  "
+            f"{listing}{more}\n"
+        )
+        if reporter is not None:
+            reporter.write_line(message, red=True)
+        else:
+            print(message)
+        session.exitstatus = pytest.ExitCode.TESTS_FAILED
+
+
+def pytest_unconfigure(config):
+    for var, value in getattr(config, "_isolation_prev", {}).items():
+        if value is None:
+            os.environ.pop(var, None)
+        else:
+            os.environ[var] = value
+    root = getattr(config, "_isolation_root", None)
+    if root is not None:
+        shutil.rmtree(root, ignore_errors=True)
 
 # Async support
 @pytest.fixture(scope="session")

@@ -133,9 +133,9 @@ class TestBaseSpiderURLExtraction:
 
         links = spider.extract_links(response)
 
-        assert len(links) == 2
-        assert "https://www.uconn.edu/valid" in links
-        assert "https://www.uconn.edu/example.com" in links
+        # The email domain used to come back as the bogus relative URL
+        # https://www.uconn.edu/example.com, which 404s in Stage 2 (#25).
+        assert links == ["https://www.uconn.edu/valid"]
 
 class TestBaseSpiderDepthControl:
 
