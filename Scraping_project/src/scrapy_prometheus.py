@@ -152,6 +152,11 @@ if PROMETHEUS_AVAILABLE:
         "Sample summary of scraped content for qualitative monitoring",
         ["spider"],
     )
+    CRAWLER_SUMMARY_SKIPPED = Counter(
+        "scrapy_crawler_summary_skipped_total",
+        "GrafanaSummaryPipeline summary exports skipped instead of failing the crawl (#462)",
+        ["spider", "reason"],
+    )
 
     # --- Delta Lake Manager Metrics ---
     DELTA_MANAGER_CONTEXT_ENTER_TOTAL = Counter(
@@ -182,6 +187,7 @@ else:
     NEW_URLS_FOUND_PER_MINUTE = AVERAGE_FILE_SIZE_BYTES = None
     OFFSITE_LINKS_FOUND = OFFSITE_CANDIDATES_SAVED = None
     CRAWLER_CONTENT_SUMMARY = None
+    CRAWLER_SUMMARY_SKIPPED = None
 
 class PrometheusExtension:
 
