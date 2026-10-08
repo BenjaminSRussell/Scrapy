@@ -441,7 +441,8 @@ Current test status:
 
 Available at `http://localhost:9090`:
 
-- `pipeline_errors_total`: Total pipeline errors
+- `pipeline_errors_total`: Total pipeline errors (metrics_exporter.py `errors.total`, named by `statsd_mapping.yml`)
+- `redis_queue_length{queue}`: Pending items per queue (metrics_exporter.py `redis.queue.length`)
 - `cache_hits_total`: Cache hit count
 - `cache_misses_total`: Cache miss count
 - `retry_attempts_total`: Retry attempts
@@ -576,7 +577,8 @@ Scraping_project/
 │   └── deployment.yaml
 ├── monitoring/                  # Monitoring (Phase 10)
 │   ├── prometheus.yml
-│   └── alerts.yml
+│   ├── alerting_rules.yml       # alerts (Helm ships an identical copy)
+│   └── recording_rules.yml
 ├── .github/workflows/           # CI/CD (Phase 10)
 │   └── ci-cd.yml
 ├── docker-compose.yml           # Docker Compose (Phase 10)
