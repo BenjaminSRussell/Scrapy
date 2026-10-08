@@ -1,0 +1,8 @@
+# Googlebot-only group vs the catch-all group: our crawler must fall into "*".
+User-agent: Googlebot
+Disallow: /nogoogle/
+Allow: /
+
+User-agent: *
+Disallow: /private/
+Disallow: /tmp/
