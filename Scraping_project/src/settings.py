@@ -14,6 +14,7 @@ from typing import Any, Optional
 
 from src.core.config import Config, get_config
 from src.core.tls_policy import downloader_context_factory
+from src.stage1.middlewares.fetch_policy_middleware import DEFAULT_LARGE_DOC_EXTENSIONS
 
 ENV = os.getenv("ENV", "development")
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -55,6 +56,13 @@ def derive_scrapy_config(config: Optional[Config] = None) -> dict[str, Any]:
             "stage1.spiders.scout.autothrottle_start_delay"
         ),
         "autothrottle_max_delay": cfg.get("stage1.spiders.scout.autothrottle_max_delay"),
+        # #395/#396: stage1.fetch_policy (cookies, large-document timeouts)
+        "cookies_enabled": cfg.get("stage1.fetch_policy.cookies_enabled"),
+        "cookies_allowed_domains": cfg.get("stage1.fetch_policy.cookies_allowed_domains"),
+        "large_doc_download_timeout": cfg.get("stage1.fetch_policy.large_doc_download_timeout"),
+        "large_doc_maxsize": cfg.get("stage1.fetch_policy.large_doc_maxsize"),
+        "large_doc_extensions": cfg.get("stage1.fetch_policy.large_doc_extensions"),
+        "large_doc_url_patterns": cfg.get("stage1.fetch_policy.large_doc_url_patterns"),
     }
     for key, value in bridges.items():
         if key not in scrapy and value is not None:
@@ -134,6 +142,15 @@ DOWNLOADER_CLIENTCONTEXTFACTORY = downloader_context_factory()
 
 DOWNLOAD_DELAY = _scrapy_config.get("download_delay", 0.1)
 DOWNLOAD_TIMEOUT = _scrapy_config.get("download_timeout", 10)
+# #396: HTML keeps the short DOWNLOAD_TIMEOUT; PDF/Office/archive URLs get a
+# longer timeout and size cap from FetchPolicyMiddleware (registered below).
+LARGE_DOC_DOWNLOAD_TIMEOUT = float(_scrapy_config.get("large_doc_download_timeout", 120))
+LARGE_DOC_MAXSIZE = int(_scrapy_config.get("large_doc_maxsize", 100 * 1024 * 1024))
+LARGE_DOC_EXTENSIONS = _scrapy_config.get("large_doc_extensions", list(DEFAULT_LARGE_DOC_EXTENSIONS))
+LARGE_DOC_URL_PATTERNS = _scrapy_config.get("large_doc_url_patterns", []) or []
+DOWNLOADER_MIDDLEWARES = dict(DOWNLOADER_MIDDLEWARES)
+# Before DownloadTimeoutMiddleware (350) and CookiesMiddleware (700).
+DOWNLOADER_MIDDLEWARES.setdefault("src.stage1.middlewares.fetch_policy_middleware.FetchPolicyMiddleware", 340)
 DNS_TIMEOUT = _scrapy_config.get("dns_timeout", 5)
 
 RETRY_ENABLED = _scrapy_config.get("retry_enabled", True)
@@ -198,7 +215,12 @@ FEED_EXPORT_ENCODING = _scrapy_config.get("feed_export_encoding", "utf-8")
 # debugging.
 DUPEFILTER_CLASS = _scrapy_config.get("dupefilter_class", "scrapy.dupefilters.RFPDupeFilter")
 
-COOKIES_ENABLED = False
+# #395: config-driven (stage1.fetch_policy.cookies_enabled), default False.
+# Cookies carry session/CSRF state and can identify the crawler across pages;
+# keep them off unless a section needs a login/session, and then scope them
+# with cookies_allowed_domains so every other host stays cookieless.
+COOKIES_ENABLED = str(_scrapy_config.get("cookies_enabled", False)).strip().lower() in {"1", "true", "yes", "on"}
+COOKIES_ALLOWED_DOMAINS = list(_scrapy_config.get("cookies_allowed_domains") or [])
 DEPTH_LIMIT = 10
 DEPTH_PRIORITY = 1
 DEPTH_STATS_VERBOSE = True

@@ -390,6 +390,30 @@ stage3Worker:
     scaleUpStabilizationWindowSeconds: 60
     scaleDownStabilizationWindowSeconds: 300
 
+# Stage 4: large documents / PDF + OCR (#504). Off by default: it needs an image
+# with the PDF/OCR toolchain and more memory. Enable it with
+# `--set stage4Worker.enabled=true` or `python start.py --env k8s --stage stage4`.
+# No HPA (OCR jobs are long-running); scale with replicaCount.
+stage4Worker:
+  enabled: false
+  replicaCount: 1
+  image:
+    repository: ""  # REQUIRED when enabled: image with the PDF/OCR toolchain
+    tag: ""  # REQUIRED when enabled
+    pullPolicy: IfNotPresent
+
+  terminationGracePeriodSeconds: 300  # let an in-flight OCR document finish
+
+  resources:
+    limits:
+      cpu: 2000m
+      memory: 4Gi
+    requests:
+      cpu: 500m
+      memory: 1Gi
+
+  queueName: "stage4_large_docs"
+
 kafkaDeltaIngestor:
   enabled: true
   replicaCount: 2
@@ -609,4 +633,10 @@ networkPolicy:
 # ============================================
 podDisruptionBudget:
   enabled: true
+  # Stateful stores with more than one replica. Single-replica stores (postgres,
+  # redis and kafka today) get maxUnavailable: 1 instead, so node drains can proceed (#514).
   minAvailable: 1
+  # Scraper and stage workers (#514): at most this many pods of a workload are evicted
+  # at once. Allows draining a single replica (preStop drains its queue first).
+  workers:
+    maxUnavailable: 1
