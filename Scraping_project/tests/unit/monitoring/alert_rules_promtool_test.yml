@@ -138,3 +138,44 @@ tests:
         exp_samples:
           - labels: 'kafka:messages_failed:rate5m'
             value: 15
+
+  # Consumer-group lag derives `group` from client_id ({group}-{identifier}); hyphenated
+  # group names such as scraping-pipeline / zsc-service must survive intact.
+  - interval: 1m
+    input_series:
+      - series: 'kafka_consumer_records_lag{client_id="scraping-pipeline-0",partition="0",topic="stage2"}'
+        values: '100x30'
+      - series: 'kafka_consumer_records_lag{client_id="scraping-pipeline-1",partition="1",topic="stage2"}'
+        values: '300000x30'
+      - series: 'kafka_consumer_records_lag{client_id="zsc-service-3",partition="0",topic="stage2"}'
+        values: '50x30'
+    promql_expr_test:
+      - expr: kafka_consumergroup_lag_max
+        eval_time: 5m
+        exp_samples:
+          - labels: 'kafka_consumergroup_lag_max{group="scraping-pipeline",topic="stage2"}'
+            value: 300000
+          - labels: 'kafka_consumergroup_lag_max{group="zsc-service",topic="stage2"}'
+            value: 50
+      - expr: kafka_consumergroup_lag_sum
+        eval_time: 5m
+        exp_samples:
+          - labels: 'kafka_consumergroup_lag_sum{group="scraping-pipeline",topic="stage2"}'
+            value: 300100
+          - labels: 'kafka_consumergroup_lag_sum{group="zsc-service",topic="stage2"}'
+            value: 50
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: KafkaConsumerLagSLO
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              component: kafka
+              slo: "true"
+              group: scraping-pipeline
+              topic: stage2
+            exp_annotations:
+              summary: "Kafka consumer lag has breached the SLO"
+              description: "Consumer group scraping-pipeline on topic stage2 has a max lag of 300000 messages for over 15 minutes, violating the SLO."
+              impact: "Critical - Service Level Objective for data processing timeliness is not being met."
+              action: "Immediately investigate consumer performance, consider scaling up consumers or pausing producers if necessary."
