@@ -23,6 +23,18 @@ try:
 except Exception:  # prometheus_client missing
     URLS_SKIPPED = None
 
+def _stage1_flag(config, key: str, default: bool) -> bool:
+    """Read a boolean ``stage1.<key>`` (falling back to ``stages.stage1.<key>``) (#27)."""
+    for prefix in ("stage1", "stages.stage1"):
+        value = config.get(f"{prefix}.{key}")
+        if value is None:
+            continue
+        if isinstance(value, str):
+            return value.strip().lower() in ("1", "true", "yes", "on")
+        return bool(value)
+    return default
+
+
 def get_delta_manager(*args, **kwargs):
     return get_delta()
 
@@ -55,9 +67,11 @@ class ScoutSpider(BaseSpider):
 
         config = get_config()
 
-        self.expand_seeds = config.get("stages.stage1.expand_seeds", True)
-        self.parse_sitemaps = config.get("stages.stage1.parse_sitemaps", True)
-        self.aggressive_collection = config.get("stages.stage1.aggressive_collection", True)
+        # config.yml keeps these under ``stage1:``; ``stages.stage1.*`` (what
+        # this used to read, and which config.yml never had) is still honoured.
+        self.expand_seeds = _stage1_flag(config, "expand_seeds", True)
+        self.parse_sitemaps = _stage1_flag(config, "parse_sitemaps", True)
+        self.aggressive_collection = _stage1_flag(config, "aggressive_collection", True)
 
         self.seed_manager = SeedManager(self.delta)
 

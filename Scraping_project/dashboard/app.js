@@ -7,7 +7,11 @@ const METRICS_URL = resolveMetricsUrl(
     (typeof window !== 'undefined' && window.CC_METRICS_URL) || null
 );
 const REFRESH_INTERVAL = 5000;
+const METRICS_TIMEOUT_MS = 4000; // #1032
+const STORE_TAB_KEY = 'cc.lastTab'; // #1034
+const STORE_INTERVAL_KEY = 'cc.refreshInterval'; // #1015
 let refreshPaused = false;
+let metricsFetcher = null;
 let metricsWasDown = false;
 let consecutiveFetchFailures = 0;
 // Static <title> captured once; connection state is prefixed onto it (#945).
@@ -692,12 +696,11 @@ async function fetchMetrics() {
     const main = document.getElementById('main') || document.querySelector('.container');
     if (main) main.setAttribute('aria-busy', 'true');
     try {
-        const response = await fetch(METRICS_URL);
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        // #1031/#1032: aborts a previous in-flight request; times out after 4s.
+        if (!metricsFetcher) {
+            metricsFetcher = createMetricsFetcher({ fetch: (u, init) => fetch(u, init), timeoutMs: METRICS_TIMEOUT_MS });
         }
-
-        const text = await response.text();
+        const text = await metricsFetcher.fetchText(METRICS_URL);
         const metrics = parseMetrics(text);
         updateDashboard(metrics);
         hasEverSucceeded = true;
@@ -705,9 +708,11 @@ async function fetchMetrics() {
         consecutiveFetchFailures = 0;
         setConnectionStatus('online', metrics['pipeline_running']);
     } catch (error) {
+        if (error && error.superseded) return; // a newer request owns the result (#1031)
         metricsWasDown = true;
         console.error('Error fetching metrics:', error);
-        addActivityLogItem('danger', `Failed to fetch metrics: ${error.message}`);
+        const failure = metricsFailureActivity(error, METRICS_TIMEOUT_MS);
+        addActivityLogItem(failure.type, failure.message);
         consecutiveFetchFailures += 1;
         setConnectionStatus(hasEverSucceeded ? 'offline' : 'never');
         document.querySelectorAll('.card-badge.badge-info, .card-badge.badge-success').forEach(b => {
@@ -938,6 +943,7 @@ function activateTab(tabName, pushUrl = true) {
     requestAnimationFrame(() => {
         Object.values(charts || {}).forEach(ch => { try { ch.resize(); } catch (_) {} });
     });
+    storeSet(STORE_TAB_KEY, tabName); // #1034
     if (pushUrl) {
         const url = new URL(window.location.href);
         url.searchParams.set('tab', tabName);
@@ -945,6 +951,78 @@ function activateTab(tabName, pushUrl = true) {
         history.replaceState(null, '', url);
     }
     return true;
+}
+
+// localStorage can be missing or throw (privacy mode, file://); never fatal.
+function storeGet(key) {
+    try { return window.localStorage ? window.localStorage.getItem(key) : null; } catch (_) { return null; }
+}
+function storeSet(key, value) {
+    try { if (window.localStorage) window.localStorage.setItem(key, String(value)); } catch (_) { /* ignore */ }
+}
+
+function visibleTabNames() {
+    return Array.from(document.querySelectorAll('.tab-button'))
+        .filter(b => !b.hidden && b.style.display !== 'none')
+        .map(b => b.getAttribute('data-tab'));
+}
+
+// #952/#1010: 1-5 switch tabs, R refreshes (see shortcutAction in format-utils.js).
+function setupShortcuts() {
+    visibleTabNames().forEach((name, i) => {
+        const btn = document.querySelector(`.tab-button[data-tab="${name}"]`);
+        if (btn && i < 9) btn.setAttribute('aria-keyshortcuts', String(i + 1));
+    });
+    const manualBtn = document.getElementById('manual-refresh');
+    if (manualBtn) manualBtn.setAttribute('aria-keyshortcuts', 'R');
+    const hint = document.getElementById('shortcut-hint');
+    if (hint) hint.textContent = shortcutHintText(visibleTabNames().length);  // #503
+    document.addEventListener('keydown', (event) => {
+        const action = shortcutAction(event, visibleTabNames());
+        if (!action) return;
+        event.preventDefault();
+        if (action.type === 'tab') {
+            activateTab(action.tab, true);
+            const btn = document.querySelector(`.tab-button[data-tab="${action.tab}"]`);
+            if (btn) btn.focus();
+        } else if (action.type === 'refresh' && refreshScheduler) {
+            refreshScheduler.refreshNow();
+        }
+    });
+}
+
+// #963: no polling while the tab is hidden; fetch at once when it is shown
+// again. A manual Pause (refreshPaused) is kept either way.
+function setupVisibilityPause() {
+    document.addEventListener('visibilitychange', () => {
+        if (!refreshScheduler) return;
+        const live = document.getElementById('refresh-status');
+        if (document.hidden) {
+            refreshScheduler.setPaused(true);
+        } else if (!refreshPaused) {
+            refreshScheduler.setPaused(false);
+            refreshScheduler.refreshNow();
+            if (live) live.textContent = 'Auto-refresh resumed';
+        }
+        renderCountdown();
+    });
+}
+
+// #1015: 5/10/30s interval picker, remembered in localStorage.
+function setupIntervalControl() {
+    const select = document.getElementById('refresh-interval');
+    const ms = parseRefreshInterval(storeGet(STORE_INTERVAL_KEY), REFRESH_INTERVAL);
+    refreshScheduler.setInterval(ms);
+    if (!select) return;
+    select.value = String(ms);
+    select.addEventListener('change', () => {
+        const v = parseRefreshInterval(select.value, REFRESH_INTERVAL);
+        refreshScheduler.setInterval(v);
+        storeSet(STORE_INTERVAL_KEY, v);
+        renderCountdown();
+        const live = document.getElementById('refresh-status');
+        if (live) live.textContent = `Auto-refresh every ${v / 1000} seconds`;
+    });
 }
 
 function tabFromLocation() {
@@ -1058,11 +1136,14 @@ function initialize() {
     applyFeatureFlags();
     applyVersionWatermark();
     setupTabs();
-    const deep = tabFromLocation();
-    if (deep) activateTab(deep, false);
+    setupShortcuts();
+    const initialTab = pickInitialTab(tabFromLocation(), storeGet(STORE_TAB_KEY), visibleTabNames());
+    if (initialTab) activateTab(initialTab, false);
     initializeCharts();
     ensureChartPlaceholders();
     refreshScheduler = createRefreshScheduler({ interval: REFRESH_INTERVAL, fetch: fetchAndAnnounce });
+    setupIntervalControl();
+    setupVisibilityPause();
     startCountdown();
 
     const pauseBtn = document.getElementById('pause-refresh');
