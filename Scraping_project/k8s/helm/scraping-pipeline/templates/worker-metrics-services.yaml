@@ -1,12 +1,12 @@
 {{- /*
-#789: headless Services so Prometheus resolves every Stage 2/3 worker pod
+#789: headless Services so Prometheus resolves every Stage 2/3/4 worker pod
 (dns_sd_configs type A). A ClusterIP Service would round-robin scrapes across
 replicas and turn per-pod counters into noise.
 */ -}}
 {{- if .Values.workerMetrics.enabled }}
 {{- $root := . }}
 {{- $fullname := include "scraping-pipeline.fullname" . }}
-{{- range $stage := list "stage2" "stage3" }}
+{{- range $stage := list "stage2" "stage3" "stage4" }}
 {{- if (index $root.Values (printf "%sWorker" $stage)).enabled }}
 ---
 apiVersion: v1

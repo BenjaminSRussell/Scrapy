@@ -140,9 +140,9 @@ def test_values_declare_worker_metrics():
 def test_stage_deployments_annotated_and_expose_port():
     text = (TEMPLATES / "stage-workers-deployments.yaml").read_text()
     for key in ("prometheus.io/scrape", "prometheus.io/port", "prometheus.io/path"):
-        assert text.count(key) == 2, key  # stage2 + stage3
-    assert text.count("containerPort: {{ .Values.workerMetrics.port }}") == 2
-    assert text.count("WORKER_METRICS_PORT") == 2
+        assert text.count(key) == 3, key  # stage2 + stage3 + stage4 (#504)
+    assert text.count("containerPort: {{ .Values.workerMetrics.port }}") == 3
+    assert text.count("WORKER_METRICS_PORT") == 3
 
 
 def test_prometheus_has_per_pod_jobs_for_workers():
