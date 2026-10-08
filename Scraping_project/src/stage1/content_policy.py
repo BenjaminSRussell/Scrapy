@@ -14,6 +14,14 @@ CSS/XPath extraction:
 
 Header values are normalised (case, parameters, whitespace, undecodable
 bytes), so malformed headers cannot bypass the policy.
+
+Stage 2 (``Stage2Worker._fetch_once``) applies the same matrix (#205), plus
+routing for documents:
+
+- ``application/pdf``, or a ``%PDF-`` body under any/no header -> ``stage4_large_docs``
+- a parse decision above                                    -> HTML analysis
+- everything else (JSON, images, Office, mislabeled binary)  -> minimal record,
+  never the HTML analyzer
 """
 
 from __future__ import annotations
