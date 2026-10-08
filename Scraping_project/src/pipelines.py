@@ -350,7 +350,12 @@ class KafkaPipeline:
             )
 
     def _spill(self, value: bytes, reason: str, error: str = "") -> bool:
-        """Append one undeliverable message to the spill file (fsync'd)."""
+        """Append one undeliverable message to the spill file (fsync'd).
+
+        Every undeliverable message is also dead-lettered (stage=kafka, #162)
+        so it shows up in ``python -m src.utils.dead_letter_queue list``.
+        """
+        self._dead_letter(value, reason, error)
         try:
             self.spill_dir.mkdir(parents=True, exist_ok=True)
             path = self.spill_dir / f"{self.topic}.jsonl"
@@ -372,6 +377,41 @@ class KafkaPipeline:
         if KAFKA_SPILLED is not None:
             KAFKA_SPILLED.labels(reason=reason).inc()
         return True
+
+    def _dead_letter(self, value: bytes, reason: str, error: str) -> None:
+        """Record an undeliverable message in the DLQ; never raises (#162).
+
+        DLQ dir: ``$DLQ_PATH``, else a ``dlq`` sibling of the spill dir
+        (data/dlq by default, the same place Stage 2 dead-letters to).
+        Disable with ``KAFKA_DLQ_ENABLED=0``.
+        """
+        if os.getenv("KAFKA_DLQ_ENABLED", "1").strip().lower() in ("0", "false", "no", "off"):
+            return
+        try:
+            dlq = getattr(self, "_dlq", None)
+            if dlq is None:
+                from src.utils.dead_letter_queue import DeadLetterQueue, default_dlq_path
+
+                dlq = DeadLetterQueue(default_dlq_path(fallback=Path(self.spill_dir).parent / "dlq"))
+                self._dlq = dlq
+            try:
+                item = json.loads(value)
+            except (ValueError, UnicodeDecodeError):
+                item = {"raw": value.decode("utf-8", errors="replace")}
+            if not isinstance(item, dict):
+                item = {"value": item}
+            dlq.add(
+                item,
+                RuntimeError(f"Kafka {reason}: {error}" if error else f"Kafka {reason}"),
+                stage="kafka",
+                context={
+                    "topic": self.topic,
+                    "reason": reason,
+                    "spill_file": str(Path(self.spill_dir) / f"{self.topic}.jsonl"),
+                },
+            )
+        except Exception as e:
+            logger.error(f"Could not dead-letter Kafka message ({reason}): {e}")
 
     def _delivery_callback(self, msg_id: int):
         def _cb(err: Any, msg: Any) -> None:

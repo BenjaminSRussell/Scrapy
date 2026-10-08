@@ -36,6 +36,7 @@ def derive_scrapy_config(config: Optional[Config] = None) -> dict[str, Any]:
     bridges: dict[str, Any] = {
         "kafka_bootstrap_servers": cfg.get("kafka.bootstrap_servers"),
         "kafka_topic": cfg.get("kafka.topics.scraped_items"),
+        "validation_failures_topic": cfg.get("kafka.topics.validation_failures"),  # #410
         "kafka_producer_config": (cfg.get_section("kafka") or {}).get("producer"),
         "kafka_message_key_field": cfg.get("kafka.message_key_field"),
         "kafka_require_idempotence": cfg.get("kafka.require_idempotence"),
