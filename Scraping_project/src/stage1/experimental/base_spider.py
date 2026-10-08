@@ -16,6 +16,7 @@ from scrapy.spidermiddlewares.httperror import HttpError
 from twisted.internet.error import DNSLookupError, TCPTimedOutError, TimeoutError
 
 from src.core.config import get_config
+from src.stage1.content_policy import classify_response, count_skipped
 from src.utils.delta import get_delta
 from src.utils.redis import get_redis
 from src.stage1.processors.url_processor import URLProcessor, should_follow_url
@@ -254,9 +255,14 @@ class BaseSpider(scrapy.Spider):
         discovered_item["resource_type"] = self._categorize_resource(response.url, content_type)
         results.append(discovered_item)
 
-        if "text/html" not in content_type and "application/xhtml" not in content_type:
-            logger.debug(f"Non-HTML content discovered: {content_type} for {response.url[:80]}")
-            self._record_non_html(response, url_hash, depth, content_type)
+        decision = classify_response(response)  # #662: no binary into HTML parsing
+        if not decision.parse_html:
+            count_skipped(str(getattr(self, "name", "base")), decision.reason)
+            logger.debug(f"Not parsing ({decision.reason}) {content_type} for {response.url[:80]}")
+            if decision.reason != "empty_body":
+                self._record_non_html(response, url_hash, depth, content_type)
+            if discovered_item["discovery_type"] == "html":
+                discovered_item["discovery_type"] = "resource"
             return results
 
         requires_js, confidence = self._detect_js_requirement(response)
