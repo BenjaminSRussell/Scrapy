@@ -276,7 +276,27 @@ async def process_data(data):
 
 Edit [`config.yml`](config.yml) — the single source of truth loaded by
 `src.core.config.get_config()` and used by Scrapy settings (`src/settings.py`).
-Do not rely on `config/{ENV}.yml` (not present for normal operation).
+Per-environment differences go in an overlay (below), not a copy of the file.
+
+### Environment overlays (`CONFIG_ENV`)
+
+Set `CONFIG_ENV=<name>` and `config/<name>.yml` is deep-merged over `config.yml` on every load and reload (#788):
+
+```bash
+cp config/dev.yml.example config/dev.yml      # or prod.yml.example
+CONFIG_ENV=dev python -m src.orchestrator.main
+```
+
+| Case | Result |
+|---|---|
+| `CONFIG_ENV` unset or blank | `config.yml` only |
+| `config/<name>.yml` missing | `config.yml` only, with a warning |
+| Overlay has a mapping where the base has a mapping | merged key by key, recursively; list only what differs |
+| Overlay has a list, scalar or `null` | replaces the base value outright, so lists are not appended |
+| Overlay can't be parsed or isn't a mapping | treated like a broken `config.yml`: a reload keeps the previous snapshot (see below) |
+| `CONFIG_ENV` contains anything but `[A-Za-z0-9_-]` | rejected, so it can't point outside `config/` |
+
+`Config.active_overlay` holds the overlay path in effect, and the load log line names it. The `*.yml.example` files are templates and are never loaded. Keep secrets in environment variables, not overlays.
 
 ### Config reload semantics
 

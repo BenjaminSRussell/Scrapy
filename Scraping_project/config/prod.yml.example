@@ -1,0 +1,11 @@
+# Environment overlay for production (#788). Copy to config/prod.yml and run
+# with CONFIG_ENV=prod. Keep secrets out of this file: passwords still come
+# from the environment (REDIS_PASSWORD, DB_PASSWORD, ...).
+logging:
+  level: WARNING
+
+redis:
+  host: redis        # compose / k8s service name instead of localhost
+
+postgres:
+  host: postgres

@@ -1,0 +1,19 @@
+# Environment overlay for local development (#788).
+#
+#   cp config/dev.yml.example config/dev.yml
+#   CONFIG_ENV=dev python -m src.orchestrator.main ...
+#
+# Deep-merged over ../config.yml by src.core.config.get_config():
+#   - mappings merge key by key (only list what differs),
+#   - lists and scalars replace the base value outright,
+#   - `null` replaces too.
+# Unset CONFIG_ENV, or a missing config/<name>.yml, means config.yml alone.
+logging:
+  level: DEBUG
+
+stage1:
+  aggressive_collection: false   # keep local crawls small
+
+stage2:
+  max_workers: 4
+  poll_interval_seconds: 1

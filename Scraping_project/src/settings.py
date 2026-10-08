@@ -2,8 +2,9 @@
 
 Canonical configuration lives in Scraping_project/config.yml and is loaded via
 ``src.core.config.get_config()``. Scrapy settings are derived from that SSOT
-(with optional ``scrapy:`` overrides and env vars). Do not rely on
-``config/{ENV}.yml`` for normal operation — that path is unused.
+(with optional ``scrapy:`` overrides and env vars). Per-environment differences
+go in ``config/<name>.yml`` overlays selected by ``CONFIG_ENV`` (#788), which
+``get_config()`` deep-merges over config.yml before anything here reads it.
 """
 
 from __future__ import annotations

@@ -36,6 +36,50 @@ except Exception:  # prometheus_client missing or metric already registered
     CONFIG_RELOAD_FAILURES = None
 
 
+# --------------------------------------------------------------- overlays (#788)
+#: Environment variable naming the overlay: ``CONFIG_ENV=prod`` deep-merges
+#: ``config/prod.yml`` (next to ``config.yml``) over the base file.
+CONFIG_ENV_VAR = "CONFIG_ENV"
+_ENV_NAME_CHARS = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-")
+
+
+def deep_merge(base: Any, overlay: Any) -> Any:
+    """Return ``overlay`` merged over ``base`` without mutating either.
+
+    Mappings merge key by key, recursively. Anything else (lists, scalars,
+    ``null``) in the overlay replaces the base value outright, so an overlay
+    can shorten a list or null out a setting.
+    """
+    if isinstance(base, dict) and isinstance(overlay, dict):
+        merged = {k: copy.deepcopy(v) for k, v in base.items()}
+        for key, value in overlay.items():
+            merged[key] = deep_merge(base[key], value) if key in base else copy.deepcopy(value)
+        return merged
+    return copy.deepcopy(overlay)
+
+
+def config_env_name(raw: Optional[str] = None) -> Optional[str]:
+    """Validated overlay name from ``CONFIG_ENV`` (or ``raw``), or None.
+
+    Only ``[A-Za-z0-9_-]`` is accepted so the value can never escape the
+    ``config/`` directory (``../secrets``, absolute paths, ...).
+    """
+    value = os.getenv(CONFIG_ENV_VAR, "") if raw is None else raw
+    value = value.strip()
+    if not value:
+        return None
+    if not set(value) <= _ENV_NAME_CHARS or value.startswith("-"):
+        raise ValueError(f"{CONFIG_ENV_VAR}={value!r} is not a valid overlay name ([A-Za-z0-9_-]+)")
+    return value
+
+
+def overlay_path_for(config_path: Path, env_name: Optional[str]) -> Optional[Path]:
+    """``<dir of config.yml>/config/<env>.yml`` for ``env_name``, else None."""
+    if not env_name:
+        return None
+    return Path(config_path).parent / "config" / f"{env_name}.yml"
+
+
 def _lookup(data: dict, key: str, default: Any) -> Any:
     value: Any = data
     for k in key.split('.'):
@@ -89,23 +133,34 @@ class Config:
       falls back to defaults.
     * Values handed out by ``get()``/``get_section()``/``get_raw_config()``
       are copies; mutating them doesn't change the live config. Use ``set()``.
+
+    Environment overlays (#788): with ``CONFIG_ENV=<name>`` every load/reload
+    deep-merges ``config/<name>.yml`` over the base file (see ``deep_merge``).
+    A missing overlay means base only (logged); an overlay that cannot be
+    parsed is treated like an unparseable base file, so a reload keeps the
+    previous snapshot.
     """
 
     _instance: Optional['Config'] = None
     _instance_lock = threading.Lock()
 
-    def __init__(self, config_path: Optional[Path] = None):
+    def __init__(self, config_path: Optional[Path] = None, config_env: Optional[str] = None):
         """
         Initialize configuration.
 
         Args:
             config_path: Path to YAML config file. Defaults to project_root/config.yml
+            config_env: Overlay name; defaults to the ``CONFIG_ENV`` env var,
+                re-read on every load so a reload picks up a changed value.
         """
         if config_path is None:
             project_root = Path(__file__).parent.parent.parent
             config_path = project_root / "config.yml"
 
         self.config_path = Path(config_path)
+        self._config_env = config_env
+        #: Overlay file merged into the live snapshot, or None (base only).
+        self.active_overlay: Optional[Path] = None
         self._lock = threading.RLock()
         self._snapshot: Optional[ConfigSnapshot] = None
         self.load()
@@ -139,14 +194,32 @@ class Config:
         return snap
 
     # ---------------------------------------------------------------- load
-    def _read_file(self) -> dict:
-        with open(self.config_path) as f:
+    @staticmethod
+    def _parse_mapping(path: Path) -> dict:
+        with open(path) as f:
             loaded = yaml.safe_load(f)
         if loaded is None:
             return {}
         if not isinstance(loaded, dict):
-            raise ValueError(f"top level of {self.config_path} is {type(loaded).__name__}, not a mapping")
+            raise ValueError(f"top level of {path} is {type(loaded).__name__}, not a mapping")
         return loaded
+
+    def _read_file(self) -> dict:
+        return self._parse_mapping(self.config_path)
+
+    def _overlay(self) -> tuple[Optional[Path], dict]:
+        """(overlay path, overlay data) for the configured env; raises on a bad overlay."""
+        env_name = config_env_name(self._config_env)
+        path = overlay_path_for(self.config_path, env_name)
+        if path is None:
+            return None, {}
+        if not path.exists():
+            logger.warning(
+                "%s=%s but %s does not exist; using base config only",
+                CONFIG_ENV_VAR, env_name, path,
+            )
+            return None, {}
+        return path, self._parse_mapping(path)
 
     def load(self) -> bool:
         """Load configuration from YAML file and swap it in atomically.
@@ -167,11 +240,21 @@ class Config:
                         CONFIG_RELOAD_FAILURES.inc()
                     return False
                 logger.warning(f"Config file not found: {self.config_path}, using defaults")
-                self._swap(self._default_config())
+                data = self._default_config()
+                try:
+                    overlay_path, overlay = self._overlay()
+                except Exception as e:
+                    logger.error(f"Failed to load config overlay: {e}, using defaults")
+                    overlay_path, overlay = None, {}
+                self.active_overlay = overlay_path
+                self._swap(deep_merge(data, overlay) if overlay_path else data)
                 return True
 
             try:
                 data = self._read_file()
+                overlay_path, overlay = self._overlay()
+                if overlay_path is not None:
+                    data = deep_merge(data, overlay)
             except Exception as e:
                 if self._snapshot is not None:
                     logger.error(
@@ -182,11 +265,19 @@ class Config:
                         CONFIG_RELOAD_FAILURES.inc()
                     return False
                 logger.error(f"Failed to load config: {e}, using defaults")
+                self.active_overlay = None
                 self._swap(self._default_config())
                 return True
 
+            self.active_overlay = overlay_path
             snap = self._swap(data)
-            logger.info(f"Configuration loaded from {self.config_path} (generation {snap.generation})")
+            if overlay_path is not None:
+                logger.info(
+                    f"Configuration loaded from {self.config_path} + overlay {overlay_path} "
+                    f"(generation {snap.generation})"
+                )
+            else:
+                logger.info(f"Configuration loaded from {self.config_path} (generation {snap.generation})")
             return True
 
     def _default_config(self) -> dict:
