@@ -40,7 +40,8 @@ install: ## Install production dependencies
 install-dev: install ## Install development dependencies
 	@echo "$(BLUE)Installing development dependencies...$(NC)"
 	pip install -r dev-requirements.txt
-	pre-commit install
+	@# The git hook runs from the repo root, so point it at this directory's config (#358).
+	pre-commit install --config "$$(git rev-parse --show-prefix).pre-commit-config.yaml"
 	@echo "$(GREEN)✓ Development environment ready!$(NC)"
 
 # Lockfiles are compiled from this directory with relative paths so the generated
