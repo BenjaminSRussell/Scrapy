@@ -37,7 +37,12 @@ def get_spider_settings(spider_name: str) -> dict:
         "DOWNLOAD_MAXSIZE": 10485760,
         "DOWNLOAD_WARNSIZE": 5242880,
         # #582: drop captcha/challenge responses; back off a domain on a spike.
+        # #186/#188: robots.txt Disallow + Crawl-delay (replaces Scrapy's middleware).
+        "ROBOTSTXT_OBEY": bool(spider_config.get("robotstxt_obey", True)),
+        "ROBOTS_MAX_CRAWL_DELAY": float(spider_config.get("robots_max_crawl_delay", 60)),
         "DOWNLOADER_MIDDLEWARES": {
+            "scrapy.downloadermiddlewares.robotstxt.RobotsTxtMiddleware": None,
+            "src.stage1.middlewares.robots_middleware.PoliteRobotsTxtMiddleware": 100,
             "src.stage1.middlewares.soft_ban_middleware.SoftBanMiddleware": 540,
         },
         "SOFT_BAN_SLOT_DELAY": spider_config.get("soft_ban_slot_delay", 30.0),

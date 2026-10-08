@@ -92,6 +92,22 @@ REQUEST_FINGERPRINTER_CLASS = _scrapy_config.get(
 
 USER_AGENT = _scrapy_config.get("user_agent", "UConn-Discovery-Crawler/1.0")
 
+# robots.txt (#186, #188): obey Disallow and Crawl-delay by default. Scrapy's own
+# RobotsTxtMiddleware is swapped for PoliteRobotsTxtMiddleware (adds metrics and
+# Crawl-delay, capped at ROBOTS_MAX_CRAWL_DELAY). Opt out only for sites you own:
+# ROBOTSTXT_OBEY=false or scrapy.robotstxt_obey: false.
+ROBOTSTXT_OBEY = str(os.getenv("ROBOTSTXT_OBEY", _scrapy_config.get("robotstxt_obey", True))).strip().lower() not in {
+    "0", "false", "no", "off"
+}
+ROBOTS_MAX_CRAWL_DELAY = float(os.getenv("ROBOTS_MAX_CRAWL_DELAY", _scrapy_config.get("robots_max_crawl_delay", 60)))
+DOWNLOADER_MIDDLEWARES = _scrapy_config.get(
+    "downloader_middlewares",
+    {
+        "scrapy.downloadermiddlewares.robotstxt.RobotsTxtMiddleware": None,
+        "src.stage1.middlewares.robots_middleware.PoliteRobotsTxtMiddleware": 100,
+    },
+)
+
 CONCURRENT_REQUESTS = _scrapy_config.get("concurrent_requests", 64)
 CONCURRENT_REQUESTS_PER_DOMAIN = _scrapy_config.get("concurrent_requests_per_domain", 32)
 CONCURRENT_REQUESTS_PER_IP = _scrapy_config.get("concurrent_requests_per_ip", 32)

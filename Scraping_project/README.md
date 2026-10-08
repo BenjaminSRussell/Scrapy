@@ -323,6 +323,15 @@ Each process's `RedisHelper` uses a bounded `redis.BlockingConnectionPool` (#533
 - Both waits are bounded: `REDIS_WAIT_TIMEOUT` and `KAFKA_WAIT_TIMEOUT` each default to 120 s. When a dependency is unreachable, the container exits 1 (visible as restarts or CrashLoopBackOff) instead of looping forever.
 - `REQUIRE_KAFKA=1` makes a missing `KAFKA_BOOTSTRAP_SERVERS` a hard error, for streaming deployments that must not silently fall back to core.
 
+### robots.txt and Crawl-delay
+
+Stage 1 obeys robots.txt by default (#186). `ROBOTSTXT_OBEY` is on in `src/settings.py` and in every spider's settings from `get_spider_settings()`. `PoliteRobotsTxtMiddleware` (`src/stage1/middlewares/robots_middleware.py`) replaces Scrapy's `RobotsTxtMiddleware` at the same priority (100):
+
+- **Disallow.** robots.txt is fetched once per host and cached. Disallowed URLs are never requested. They are counted in `scrapy_robots_forbidden_total{spider}` and in crawl stats `robotstxt/forbidden`, and the first refusal per host is logged at INFO.
+- **Crawl-delay** (#188). The host's download-slot delay is raised to the `Crawl-delay` for our user agent, capped at `ROBOTS_MAX_CRAWL_DELAY` (60s). The delay is re-applied before each request, so AutoThrottle can't drop below it. Hosts affected are counted in `scrapy_robots_crawl_delay_hosts_total{spider}`.
+- **Missing robots.txt** (404) or a fetch error allows everything, matching Scrapy's behaviour.
+- **Opting out** is only for sites you own: `ROBOTSTXT_OBEY=false`, `scrapy.robotstxt_obey: false`, or `stage1.spiders.<name>.robotstxt_obey: false`.
+
 ### Soft-ban / captcha guard
 
 Challenge and captcha pages are not content (#582). `src/utils/soft_ban.py`
