@@ -46,6 +46,25 @@ stage1:
   enable_depth_mode: true  # Switch to depth spider when idle
   enable_rescraping: true  # Re-scrape existing URLs to find missed links
 
+  # Also run HiddenURLExtractor (meta refresh, "/api/..." literals, JS routes)
+  # in the scout parse path. Off by default (#481). Metric:
+  # scrapy_url_extractor_urls_total{heuristic="hidden_urls"}.
+  extract_hidden_urls: false
+
+  # URL discovery heuristics (#27). Set any to false to switch it off; unlisted
+  # ones stay on. Per-heuristic yield: scrapy_url_extractor_urls_total{heuristic}.
+  discovery_heuristics:
+    standard_tags: true
+    inline_scripts: true
+    script_tags: true
+    css: true
+    data_attributes: true
+    meta_tags: true
+    json_ld: true
+    comments: true
+    event_handlers: true
+    raw_regex: true  # regex over the whole page body; the noisiest source (#25)
+
   # JS Detection
   js_confidence_threshold: 0.5  # REDUCED - render more pages (was 0.7)
 
@@ -68,6 +87,19 @@ stage1:
     - directory
     - staff
   priority_penalty_keywords: []  # REMOVED - we want everything now
+
+  # Adapt to noisy sections (#26): once a section (host/first-path-segment)
+  # has produced min_pages pages whose follow-able links are at least
+  # low_value_ratio low-confidence (traps: dated archives, calendar/sort/filter
+  # params, session ids, repeating paths; or URLValueAssessor "low"), its
+  # low-confidence links are no longer followed and the rest are capped at
+  # follow_cap per page. Metrics: stage1_noisy_sections,
+  # stage1_noisy_section_skips_total.
+  noisy_sections:
+    enabled: true
+    min_pages: 5
+    low_value_ratio: 0.6
+    follow_cap: 10
 
   # Depth Spider Mode (when regular queues are empty)
   depth_spider:
