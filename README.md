@@ -460,6 +460,12 @@ python start.py --env k8s --stage all-stages \
   --namespace-prefix scraping
 ```
 
+`--stage` only applies to `--env k8s`. `python start.py` (local) always runs
+`docker-compose up -d` for every Compose service and prints the services it found;
+start a subset with `docker-compose up -d <service>`. The Helm chart deploys
+Stages 1–3 only (there is no Stage 4 PDF/OCR workload yet), so run Stage 4 with
+Compose (`stage4-worker`).
+
 ### Auto-Scaling
 
 - Horizontal pod autoscaling enabled
