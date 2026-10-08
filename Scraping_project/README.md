@@ -603,6 +603,8 @@ All tables use PyArrow schemas for validation:
 | `stage3_queue` | Summarization queue | Stage3Summary |
 | `errors` | Error tracking | ErrorRecord |
 
+`stage1_discovery` and `stage2_page_analysis` are partitioned by registrable domain. A row whose URL has no usable http(s) host (empty, `mailto:`, garbage) is not written under a catch-all `domain=unknown` partition. It goes to `domain_quarantine` (`source_table`, `url`, `reason`, `row_json`, `quarantined_at`), counted by `delta_unknown_domain_rows_total{table}`, and the `DeltaUndomainableRows` alert fires on a sustained stream (#458). For tables written before this change, `LakehouseManager.repair_unknown_domains(table)` reports what is in the legacy `unknown` partition. Pass `apply=True` to move repairable rows to their real domain and the rest to quarantine.
+
 ### Schema Evolution Policy
 
 Every append and overwrite reads the table's current schema from its `_delta_log`, not from process memory. So any number of workers or pods writing the same table agree on one schema.
