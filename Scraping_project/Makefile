@@ -106,18 +106,17 @@ test-watch: ## Run tests in watch mode (needs `pip install pytest-watch`)
 
 # ruff covers the pyflakes/pycodestyle checks flake8 ran; flake8 had no config
 # and duplicated (and disagreed with) ruff, so it is no longer part of lint (#361).
-lint: ## Run all linters (ruff, black, isort)
+# Same single path as the pre-commit hooks (#357): ruff lint (incl. isort "I") + ruff format.
+lint: ## Run linters (ruff check + ruff format --check), same as pre-commit
 	@echo "$(BLUE)Running linters...$(NC)"
 	ruff check .
-	black --check src tests
-	isort --check-only src tests
+	ruff format --check src tests
 	@echo "$(GREEN)✓ Linting complete$(NC)"
 
-lint-fix: ## Fix linting issues automatically
+lint-fix: ## Fix linting issues automatically (ruff --fix + ruff format)
 	@echo "$(BLUE)Fixing linting issues...$(NC)"
 	ruff check --fix .
-	black src tests
-	isort src tests
+	ruff format src tests
 	@echo "$(GREEN)✓ Auto-fix complete$(NC)"
 
 format: lint-fix ## Format code (alias for lint-fix)

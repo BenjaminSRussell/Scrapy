@@ -421,6 +421,11 @@ class Stage2Worker:
         prior_failures = self._load_prior_failures()
 
         for i in range(0, len(pending), self.batch_size):
+            stop = self._crawl_guard_reason()
+            if stop:
+                # #456: stop starting new batches; remaining URLs stay pending.
+                logger.critical(f"[STAGE2] Crawl guard engaged ({stop}); leaving {len(pending) - i} URLs pending")
+                break
             batch = pending[i : i + self.batch_size]
             logger.info(f"Processing batch {i // self.batch_size + 1}: {len(batch)} URLs")
 
@@ -612,6 +617,28 @@ class Stage2Worker:
             .execute()
         )
 
+    def _crawl_guard(self) -> Any:
+        guard = getattr(self, "_crawl_guard_obj", None)
+        if guard is None:
+            from src.utils.crawl_guard import CrawlGuard
+
+            guard = self._crawl_guard_obj = CrawlGuard.from_config()
+        return guard
+
+    def _crawl_guard_reason(self) -> str | None:
+        try:
+            reason: str | None = self._crawl_guard().block_reason(stage="stage2")
+            return reason
+        except Exception as e:  # guard must never take Stage 2 down
+            logger.warning(f"[STAGE2] crawl guard check failed: {e}")
+            return None
+
+    def _crawl_guard_charge(self) -> None:
+        try:
+            self._crawl_guard().charge(requests=1)
+        except Exception as e:
+            logger.warning(f"[STAGE2] crawl guard charge failed: {e}")
+
     async def _analyze_url(self, record: dict[str, Any]) -> dict[str, Any]:
         url_value = record.get("url")
         url_hash_value = record.get("url_hash")
@@ -636,6 +663,10 @@ class Stage2Worker:
             if backoff.blocked(domain):
                 count_deferred("stage2")
                 return {"url": url, "url_hash": url_hash, "_deferred": True}
+            if self._crawl_guard_reason():
+                # Kill switch / spent budget (#456): not attempted, not a failure.
+                return {"url": url, "url_hash": url_hash, "_deferred": True}
+            self._crawl_guard_charge()
             breaker = self._breaker(domain)
             if not breaker.can_execute():
                 # Host keeps failing: leave the row pending instead of burning attempts.
@@ -858,7 +889,20 @@ class Stage2Worker:
         ratio_score = min(text_ratio * 0.4, 0.4)
         return round(word_score + ratio_score, 3)
 
+    # Full text up to this many chars rides on the stage4_large_docs row, so
+    # Stage 4 summarizes what Stage 2 already extracted instead of re-fetching
+    # the live URL (#320). Longer docs (or 0) leave it empty and Stage 4 fetches.
+    STAGE4_INLINE_TEXT_MAX_CHARS = 2_000_000
+
+    def _stage4_inline_text_limit(self) -> int:
+        raw = os.environ.get("STAGE4_INLINE_TEXT_MAX_CHARS")
+        try:
+            return int(raw) if raw is not None else self.STAGE4_INLINE_TEXT_MAX_CHARS
+        except ValueError:
+            return self.STAGE4_INLINE_TEXT_MAX_CHARS
+
     async def _route_to_stage4(self, url: str, url_hash: str, text: str, word_count: int, content_length: int):
+        limit = self._stage4_inline_text_limit()
         record = {
             "url": url,
             "url_hash": url_hash,
@@ -866,6 +910,8 @@ class Stage2Worker:
             "content_length": content_length,
             "status": "pending",
             "queued_at": datetime.now().isoformat(),
+            "text_content": text if text and 0 < len(text) <= limit else "",
+            "content_type": "html",
         }
 
         try:

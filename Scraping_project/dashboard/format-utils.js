@@ -147,7 +147,7 @@
     // `nextFetchAt` instead of a second, independently ticking counter that
     // drifted against the real poll. Timers/clock are injectable for tests.
     function createRefreshScheduler(opts) {
-        const interval = opts.interval;
+        let interval = opts.interval;
         const doFetch = opts.fetch;
         const now = opts.now || (() => Date.now());
         const setT = opts.setTimeout || ((fn, ms) => setTimeout(fn, ms));
@@ -190,6 +190,14 @@
                 if (paused) cancel();
                 else if (!inFlight && timer === null) schedule();
             },
+            // #1015: change the poll interval; a pending wait restarts with the new length.
+            setInterval(ms) {
+                const v = Number(ms);
+                if (!Number.isFinite(v) || v <= 0) return;
+                interval = v;
+                if (timer !== null) schedule();
+            },
+            getInterval: () => interval,
             isPaused: () => paused,
             isFetching: () => inFlight !== null,
             nextFetchAt: () => nextAt,
@@ -227,7 +235,7 @@
     // #962: what (if anything) to say to screen readers for a new activity
     // item. Identical consecutive messages (e.g. "Failed to fetch metrics"
     // every poll during an outage) are spoken once per repeatMs.
-    const ACTIVITY_SPOKEN_TYPE = { success: 'Success', warning: 'Warning', danger: 'Error', info: 'Info' };
+    const ACTIVITY_SPOKEN_TYPE = { success: 'Success', warning: 'Warning', danger: 'Error', info: 'Info', timeout: 'Timeout' };
     function createActivityAnnouncer(opts) {
         const o = opts || {};
         const now = o.now || (() => Date.now());
@@ -248,5 +256,89 @@
             },
         };
     }
-    return { parseMetrics, ratePerMinute, resolveMetricsUrl, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler, stageActivity, doughnutLegendLayout, connectionState, documentTitle, createActivityAnnouncer, metricsUrlProblem, splitLinks };
+    // #1031/#1032: one metrics request at a time, bounded by a timeout. Starting a
+    // new request aborts the previous one (its rejection has superseded=true so
+    // callers can ignore it); a request still running after timeoutMs is
+    // aborted and rejects with timedOut=true.
+    function createMetricsFetcher(opts) {
+        const o = opts || {};
+        const doFetch = o.fetch;
+        const timeoutMs = o.timeoutMs || 4000;
+        const AC = o.AbortController || (typeof AbortController !== 'undefined' ? AbortController : null);
+        const setT = o.setTimeout || ((fn, ms) => setTimeout(fn, ms));
+        const clearT = o.clearTimeout || ((id) => clearTimeout(id));
+        let current = null;
+        function fetchText(url) {
+            if (current) { current.superseded = true; if (current.ctrl) current.ctrl.abort(); }
+            const req = { ctrl: AC ? new AC() : null, superseded: false, timedOut: false };
+            current = req;
+            const timer = setT(() => { req.timedOut = true; if (req.ctrl) req.ctrl.abort(); }, timeoutMs);
+            const init = req.ctrl ? { signal: req.ctrl.signal } : {};
+            return Promise.resolve()
+                .then(() => doFetch(url, init))
+                .then(response => {
+                    if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                    return response.text();
+                })
+                .catch(err => {
+                    let e = err;
+                    if (req.timedOut) {
+                        e = new Error(`Timed out after ${Math.round(timeoutMs / 100) / 10}s`);
+                        e.timedOut = true;
+                    } else if (req.superseded) {
+                        e = new Error('Superseded by a newer request');
+                        e.superseded = true;
+                    }
+                    throw e;
+                })
+                .finally(() => { clearT(timer); if (current === req) current = null; });
+        }
+        return { fetchText, inFlight: () => current !== null, timeoutMs };
+    }
+    // #1015: allowed auto-refresh intervals (ms); anything else falls back to 5s.
+    const REFRESH_INTERVAL_CHOICES = [5000, 10000, 30000];
+    function parseRefreshInterval(value, fallback = 5000) {
+        const v = Number(value);
+        return REFRESH_INTERVAL_CHOICES.includes(v) ? v : fallback;
+    }
+    // #952/#1010: keyboard shortcuts. Digits 1..N pick the Nth visible tab, R
+    // refreshes. Ignored with modifier keys, during IME composition, or while
+    // typing in a form field / contenteditable.
+    function shortcutAction(event, tabNames) {
+        if (!event || event.defaultPrevented || event.isComposing) return null;
+        if (event.ctrlKey || event.metaKey || event.altKey) return null;
+        const t = event.target || {};
+        const tag = String(t.tagName || '').toUpperCase();
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || t.isContentEditable) return null;
+        const key = String(event.key || '');
+        if (/^[1-9]$/.test(key)) {
+            const tab = (tabNames || [])[Number(key) - 1];
+            return tab ? { type: 'tab', tab } : null;
+        }
+        if (key === 'r' || key === 'R') return { type: 'refresh' };
+        return null;
+    }
+    // #1034: a deep link (?tab= / #tab) wins; otherwise the remembered tab if it
+    // still exists; otherwise null (keep the default tab).
+    function pickInitialTab(deepLink, stored, validTabs) {
+        const valid = new Set(validTabs || []);
+        if (deepLink && valid.has(deepLink)) return deepLink;
+        if (stored && valid.has(stored)) return stored;
+        return null;
+    }
+    // #767: a timed-out metrics request is its own activity type, not a generic error.
+    function metricsFailureActivity(error, timeoutMs) {
+        if (error && error.timedOut) {
+            const secs = Math.round((Number(timeoutMs) || 0) / 100) / 10;
+            return { type: 'timeout', message: `Metrics request timed out after ${secs}s and was aborted` };
+        }
+        return { type: 'danger', message: `Failed to fetch metrics: ${error && error.message ? error.message : String(error)}` };
+    }
+    // #503: on-screen hint text for the digit shortcuts.
+    function shortcutHintText(tabCount) {
+        const n = Math.min(Math.max(0, Number(tabCount) || 0), 9);
+        if (n === 0) return 'Shortcut: R refresh';
+        return `Shortcuts: ${n === 1 ? '1' : '1\u2013' + n} switch tabs \u00b7 R refresh`;
+    }
+    return { metricsFailureActivity, shortcutHintText, parseMetrics, ratePerMinute, resolveMetricsUrl, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler, stageActivity, doughnutLegendLayout, connectionState, documentTitle, createActivityAnnouncer, metricsUrlProblem, splitLinks, createMetricsFetcher, REFRESH_INTERVAL_CHOICES, parseRefreshInterval, shortcutAction, pickInitialTab };
 });
