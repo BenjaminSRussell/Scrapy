@@ -3,6 +3,7 @@ import binascii
 import json
 import logging
 import re
+from collections.abc import Iterable, Mapping
 from re import Pattern
 from typing import Any
 from urllib.parse import unquote, urljoin, urlparse
@@ -22,6 +23,71 @@ try:  # decode/parse failures that used to be swallowed by `except Exception: pa
     )
 except Exception:  # prometheus_client missing or metric already registered
     URL_EXTRACTOR_DECODE_FAILURES = None
+
+try:  # which heuristic found each new URL, so noisy ones can be spotted and turned off (#27)
+    from prometheus_client import Counter as _HCounter
+
+    URL_EXTRACTOR_URLS: Any = _HCounter(
+        "scrapy_url_extractor_urls_total",
+        "URLs first found by each URLExtractor discovery heuristic.",
+        ["heuristic"],
+    )
+except Exception:
+    URL_EXTRACTOR_URLS = None
+
+# Discovery heuristics, in the order they run. Each can be switched off in
+# config.yml under ``stage1.discovery_heuristics`` (#27).
+DISCOVERY_HEURISTICS: tuple[str, ...] = (
+    "standard_tags",   # <a href>, <img src>, <link>, <iframe>, <form action>, media
+    "inline_scripts",  # URLs, JS vars and atob/decodeURIComponent payloads in <script> text
+    "script_tags",     # <script src>
+    "css",             # url(...) in <style>
+    "data_attributes", # data-href/data-url/... attributes
+    "meta_tags",       # og:url, refresh, canonical-like meta
+    "json_ld",         # application/ld+json blocks
+    "comments",        # URLs inside HTML comments
+    "event_handlers",  # onclick/onload/... attributes
+    "raw_regex",       # regex over the whole body (noisiest; see #25)
+)
+
+
+def resolve_heuristics(setting: Any = None, config: Any = None) -> frozenset[str]:
+    """Enabled heuristics from an explicit setting or ``stage1.discovery_heuristics``.
+
+    Accepts a mapping ``{name: bool}`` (unlisted names stay enabled) or an
+    iterable of enabled names. ``None`` means "read config"; no config means all.
+    """
+    if setting is None:
+        if config is None:
+            try:
+                from src.core.config import get_config
+
+                config = get_config()
+            except Exception:
+                config = None
+        if config is not None:
+            for key in ("stage1.discovery_heuristics", "stages.stage1.discovery_heuristics"):
+                try:
+                    setting = config.get(key)
+                except Exception:
+                    setting = None
+                if setting is not None:
+                    break
+    if setting is None:
+        return frozenset(DISCOVERY_HEURISTICS)
+    if isinstance(setting, Mapping):
+        unknown = sorted(set(map(str, setting)) - set(DISCOVERY_HEURISTICS))
+        enabled = {h for h in DISCOVERY_HEURISTICS if setting.get(h, True) not in (False, "false", "off", 0, "0")}
+    elif isinstance(setting, Iterable) and not isinstance(setting, (str, bytes)):
+        names = {str(h) for h in setting}
+        unknown = sorted(names - set(DISCOVERY_HEURISTICS))
+        enabled = names & set(DISCOVERY_HEURISTICS)
+    else:
+        logger.warning(f"[URLExtractor] Ignoring discovery_heuristics={setting!r}; expected a mapping or list")
+        return frozenset(DISCOVERY_HEURISTICS)
+    if unknown:
+        logger.warning(f"[URLExtractor] Unknown discovery heuristics ignored: {unknown}; known: {list(DISCOVERY_HEURISTICS)}")
+    return frozenset(enabled)
 
 _PAYLOAD_PREVIEW = 80
 
@@ -55,33 +121,27 @@ class URLExtractor:
         r'(?:fetch|axios\.get|axios\.post|\.get|\.post)\s*\(\s*["\']([^"\']+)["\']',
     ]
 
-    def __init__(self, base_url: str, allowed_domains: list[str]):
+    def __init__(self, base_url: str, allowed_domains: list[str], heuristics: Any = None):
+        """``heuristics``: mapping or list of enabled heuristics; None reads config (#27)."""
         self.base_url = base_url
         self.allowed_domains = allowed_domains
         self.discovered_urls: set[str] = set()
+        self.heuristics = resolve_heuristics(heuristics)
+        self.heuristic_counts: dict[str, int] = {}
 
     def discover_all_urls(self, response: Response) -> set[str]:
         self.discovered_urls = set()
+        self.heuristic_counts = {}
 
-        self._extract_from_standard_tags(response)
-
-        self._extract_from_inline_scripts(response)
-
-        self._extract_from_script_tags(response)
-
-        self._extract_from_css(response)
-
-        self._extract_from_data_attributes(response)
-
-        self._extract_from_meta_tags(response)
-
-        self._extract_from_json_ld(response)
-
-        self._extract_from_comments(response)
-
-        self._extract_from_event_handlers(response)
-
-        self._extract_from_raw_regex(response)
+        for name in DISCOVERY_HEURISTICS:
+            if name not in self.heuristics:
+                continue
+            before = len(self.discovered_urls)
+            getattr(self, f"_extract_from_{name}")(response)
+            found = len(self.discovered_urls) - before
+            self.heuristic_counts[name] = found
+            if found and URL_EXTRACTOR_URLS is not None:
+                URL_EXTRACTOR_URLS.labels(heuristic=name).inc(found)
 
         return self.discovered_urls
 

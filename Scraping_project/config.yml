@@ -36,6 +36,20 @@ stage1:
   enable_depth_mode: true  # Switch to depth spider when idle
   enable_rescraping: true  # Re-scrape existing URLs to find missed links
 
+  # URL discovery heuristics (#27). Set any to false to switch it off; unlisted
+  # ones stay on. Per-heuristic yield: scrapy_url_extractor_urls_total{heuristic}.
+  discovery_heuristics:
+    standard_tags: true
+    inline_scripts: true
+    script_tags: true
+    css: true
+    data_attributes: true
+    meta_tags: true
+    json_ld: true
+    comments: true
+    event_handlers: true
+    raw_regex: true  # regex over the whole page body; the noisiest source (#25)
+
   # JS Detection
   js_confidence_threshold: 0.5  # REDUCED - render more pages (was 0.7)
 
