@@ -83,24 +83,21 @@ rustup default stable
 
 ### Environment Variables
 
-Create a `.env` file with required variables:
+Copy the template and edit it:
 
 ```bash
-# Kafka Configuration
-KAFKA_BOOTSTRAP_SERVERS=localhost:9092
-
-# Delta Lake / S3 Configuration (only relevant once S3 support is enabled, see below)
-AWS_ACCESS_KEY_ID=your_key
-AWS_SECRET_ACCESS_KEY=your_secret
-AWS_REGION=us-east-1
-
-# StatsD Metrics (optional)
-STATSD_HOST=localhost
-STATSD_PORT=9125
-
-# Logging
-RUST_LOG=info
+cp .env.example .env
 ```
+
+The binary loads `.env` on startup, and a real environment variable takes precedence. It reads only these variables:
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `RUST_LOG` | `info` | Log level |
+| `STATSD_HOST` / `STATSD_PORT` | `localhost` / `9125` | StatsD metrics target |
+| `REDIS_URL` | `redis://localhost:6379` | Redis for the Scrapy-style spider metrics (use `redis://:<password>@host:6379` with AUTH) |
+
+The Kafka brokers, consumer group and table path are **command-line arguments**, not environment variables: `--kafka`, `--app-id` and `<TABLE_PATH>`. The container entrypoint reads `KAFKA_BOOTSTRAP_SERVERS` only to wait for the broker before it starts. `AWS_*` variables have no effect in this build (see below).
 
 ### S3 table paths
 
@@ -265,7 +262,6 @@ kafka-delta-ingest/
 ├── src/
 │   └── main.rs         # Main application code
 ├── .env.example        # Example environment variables
-├── .gitignore          # Comprehensive gitignore
 └── README.md           # This file
 ```
 

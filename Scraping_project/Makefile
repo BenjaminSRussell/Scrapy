@@ -1,5 +1,5 @@
 # Every recipe is phony (none produce a file named after the target) (#796).
-.PHONY: help install install-dev lock update-deps test test-unit test-integration test-fast \
+.PHONY: help cli-help install install-dev lock update-deps test test-unit test-integration test-fast \
 	test-ci test-perf test-coverage test-coverage-min test-watch lint lint-fix format typecheck security \
 	security-full docker-build docker-up docker-down docker-down-clean docker-logs docker-ps \
 	docker-shell docker-test pre-commit pre-commit-update ci ci-docker clean clean-all dev \
@@ -29,6 +29,11 @@ help: ## Display this help message
 	@echo "$(BLUE)Scraping Pipeline - Development Commands$(NC)"
 	@echo ""
 	@awk 'BEGIN {FS = ":.*##"; printf "Usage:\n  make $(YELLOW)<target>$(NC)\n"} /^[a-zA-Z_0-9-]+:.*?##/ { printf "  $(GREEN)%-20s$(NC) %s\n", $$1, $$2 } /^##@/ { printf "\n$(BLUE)%s$(NC)\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
+	@echo ""
+	@echo "Ops CLI: python cli.py --help   (health, validate, seeds, export, queue-gc, killswitch, reset, ...; see make cli-help)"
+
+cli-help: ## List the ops CLI (cli.py) subcommands
+	python cli.py --help
 
 ##@ Installation
 
