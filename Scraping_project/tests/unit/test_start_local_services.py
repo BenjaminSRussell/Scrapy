@@ -1,4 +1,5 @@
 """start.py local mode only waits on / prints services Compose defines (#399); --stage is k8s-only (#492)."""
+
 from __future__ import annotations
 
 import importlib.util
@@ -89,18 +90,20 @@ def test_stage_flag_warns_in_local_mode(start, monkeypatch, capsys):
 
 
 def test_help_says_stage_is_k8s_only_and_mentions_stage4():
-    out = subprocess.run([sys.executable, str(ROOT / "start.py"), "--help"], capture_output=True,
-                         text=True, check=True, cwd=ROOT).stdout
+    out = subprocess.run(
+        [sys.executable, str(ROOT / "start.py"), "--help"], capture_output=True, text=True, check=True, cwd=ROOT
+    ).stdout
     text = " ".join(out.split())
     assert "Kubernetes only (--env k8s)" in text
     assert "Ignored by --env local" in text
-    assert "no Stage 4" in text
+    assert "Stage 4 (PDF/OCR, stage4Worker) is off by default" in text  # #504 (was "no Stage 4", #492)
+    assert "stage4" in text
 
 
 def test_k8s_stage_overrides_cover_chart_workloads(start):
     values = yaml.safe_load((ROOT / start.DEFAULT_HELM_VALUES).read_text(encoding="utf-8"))
     workloads = {k for k in ("scrapyApp", "stage2Worker", "stage3Worker", "stage4Worker") if k in values}
-    assert "stage4Worker" not in workloads, "chart gained Stage 4: add it to K8S_STAGE_DEFAULTS and drop the note"
+    assert "stage4Worker" in workloads  # #504: the chart has Stage 4 (off by default)
     for stage, cfg in start.K8S_STAGE_DEFAULTS.items():
-        disabled = {o.split(".")[0] for o in cfg["set_overrides"]}
-        assert disabled <= workloads, (stage, disabled - workloads)
+        toggled = {o.split(".")[0] for o in cfg["set_overrides"]}
+        assert toggled <= workloads, (stage, toggled - workloads)

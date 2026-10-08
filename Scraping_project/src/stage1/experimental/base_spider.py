@@ -1,8 +1,8 @@
 """Shared crawling logic for Stage 1 spiders."""
 
-import hashlib
 import logging
 import time
+from src.utils.url_canon import url_hash
 from collections import deque
 from collections.abc import Callable, Iterator
 from datetime import datetime
@@ -122,8 +122,7 @@ class BaseSpider(scrapy.Spider):
             )
 
     def _hash_url(self, url: str) -> str:
-        normalized = self.normalize_url(url)
-        return hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:16]
+        return url_hash(url)  # shared canonical hash (#728)
 
     def normalize_url(self, url: str) -> str:
         normalized = self.url_processor.normalize_url(url)
