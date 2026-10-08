@@ -5,6 +5,7 @@ import signal
 import sys
 import threading
 import time
+from collections import deque
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
@@ -350,6 +351,7 @@ def table_file_stats(table: Any) -> tuple[int, int]:
     keys = set(zip(*(actions.column(c).to_pylist() for c in part_cols)))
     return actions.num_rows, len(keys)
 
+MEMORY_HISTORY_DEPTH = 10  # InMemoryBackend versions retained per table (#484)
 
 MAINTENANCE_MAX_ATTEMPTS = 4
 MAINTENANCE_RETRY_BACKOFF = 0.2  # seconds, doubled per attempt
@@ -528,7 +530,9 @@ class LakehouseManager:
                 logger.error(f"Maintenance worker error: {e}", exc_info=True)
 
     def _process_queue(self):
-        while not self.shutdown_event.is_set():
+        # Drain until the shutdown sentinel (#166): batches queued before
+        # shutdown() are still written, not abandoned when shutdown_event is set.
+        while True:
             try:
                 task = self.write_queue.get(timeout=1.0)
                 if task is None:
@@ -546,9 +550,30 @@ class LakehouseManager:
                         DELTA_WRITE_QUEUE_DEPTH.set(self.write_queue.qsize())
 
             except queue.Empty:
+                if self.shutdown_event.is_set():
+                    break  # sentinel was consumed by _spill_queued_batches
                 continue
             except Exception as e:
                 logger.error(f"Queue worker error: {e}", exc_info=True)
+
+    def _spill_queued_batches(self, reason: str) -> int:
+        """Durably spill every batch still in the write queue (#166). Returns batches spilled."""
+        spilled = 0
+        while True:
+            try:
+                task = self.write_queue.get_nowait()
+            except queue.Empty:
+                break
+            try:
+                if task is not None:
+                    table_name, data, mode = task
+                    self._spill_batch(table_name, data, mode, reason=reason)
+                    spilled += 1
+            finally:
+                self.write_queue.task_done()
+        if DELTA_WRITE_QUEUE_DEPTH is not None:
+            DELTA_WRITE_QUEUE_DEPTH.set(self.write_queue.qsize())
+        return spilled
 
     def _handle_writer_exception(self, e: Exception, table_name: str):
         logger.error(f"Write failed for {table_name}: {e}", exc_info=True)
@@ -852,6 +877,11 @@ class LakehouseManager:
             if DELTA_SCHEMA_OVERWRITES is not None:
                 DELTA_SCHEMA_OVERWRITES.labels(table=table_name).inc()
             return self._write_sync(table_name, data, mode, schema_overwrite=True)
+        if async_write and self.shutdown_event.is_set():
+            # Shutting down: the worker may already be gone, so a queued batch
+            # could sit unread. Write it synchronously instead (#166).
+            logger.debug(f"Shutdown in progress; writing {len(data)} rows for {table_name} synchronously")
+            return self._write_sync(table_name, data, mode)
         if async_write:
             try:
                 self.write_queue.put((table_name, data, mode), timeout=self.queue_put_timeout)
@@ -1077,13 +1107,10 @@ class LakehouseManager:
         logger.info(f"Waiting for queue to finish (timeout: {timeout}s)...")
 
         start_time = time.time()
-        while not self.write_queue.empty() and (time.time() - start_time) < timeout:
-            try:
-                self.write_queue.join()
-                break
-            except Exception as e:
-                logger.warning(f"Queue join error: {e}")
-                time.sleep(0.1)
+        # Bounded wait (#166): Queue.join() has no timeout and hung forever when
+        # the worker had already exited, so a SIGTERM'd pod never finished.
+        while self.write_queue.unfinished_tasks and (time.time() - start_time) < timeout:
+            time.sleep(0.05)
 
         elapsed = time.time() - start_time
         remaining = self.write_queue.qsize()
@@ -1137,6 +1164,14 @@ class LakehouseManager:
                     logger.warning(f"  {name} did not stop in time")
                 else:
                     logger.info(f" {name} stopped gracefully")
+
+        # Whatever the worker could not write in time is spilled, never dropped (#166).
+        spilled = self._spill_queued_batches(reason="shutdown before write")
+        if spilled:
+            logger.error(
+                f"Shutdown: spilled {spilled} queued batches to {self.spill_path} "
+                "(replay with replay_spilled_writes())"
+            )
 
         self.checkpoint(timeout=min(timeout, 5))
 
@@ -1664,10 +1699,27 @@ class LakehouseManager:
 # =====================================================================================
 
 class InMemoryBackend:
+    """Ephemeral test/demo backend.
 
-    def __init__(self, **kwargs):
+    Limits (#484): time travel keeps only the last ``history_depth`` versions per
+    table (kwarg, else ``delta_lake.memory_history_depth``, default
+    ``MEMORY_HISTORY_DEPTH``). Version numbers stay absolute (0 = first write),
+    so reading an evicted version raises ValueError rather than silently
+    returning a different snapshot. Every retained version is a full copy of
+    the table, so memory is about ``history_depth`` times the table size.
+    """
+
+    def __init__(self, history_depth: int | None = None, **kwargs):
         self.tables: dict[str, list[dict[str, Any]]] = {}
-        self.history: dict[str, list[list[dict[str, Any]]]] = {}
+        # Retained snapshots, oldest first; _next_version gives absolute numbering.
+        self.history: dict[str, deque[list[dict[str, Any]]]] = {}
+        self._next_version: dict[str, int] = {}
+        if history_depth is None:
+            try:
+                history_depth = Config.get_instance().get("delta_lake.memory_history_depth", None)
+            except Exception:
+                history_depth = None
+        self.history_depth = max(1, int(MEMORY_HISTORY_DEPTH if history_depth is None else history_depth))
         self.base_path = Path("./data/test_delta_lake")
         self.table_paths = {
             "seed_urls": Path("./data/delta_lake/seed_urls"),
@@ -1696,15 +1748,24 @@ class InMemoryBackend:
             raise ValueError(f"Unsupported mode: {mode}")
 
         if table_name not in self.history:
-            self.history[table_name] = []
+            self.history[table_name] = deque(maxlen=self.history_depth)
         self.history[table_name].append(list(self.tables[table_name]))
+        self._next_version[table_name] = self._next_version.get(table_name, 0) + 1
+
+    def _oldest_version(self, table_name: str) -> int:
+        return self._next_version.get(table_name, 0) - len(self.history.get(table_name, ()))
 
     def _get_version(self, table_name: str, version: int | None = None) -> list[dict[str, Any]]:
         if version is None:
             return self.tables.get(table_name, [])
-        if table_name not in self.history or version >= len(self.history[table_name]):
-            raise ValueError(f"Version {version} not available for table {table_name}")
-        return self.history[table_name][version]
+        oldest = self._oldest_version(table_name)
+        if table_name not in self.history or not oldest <= version < self._next_version[table_name]:
+            raise ValueError(
+                f"Version {version} not available for table {table_name} "
+                f"(retained: {oldest}..{self._next_version.get(table_name, 0) - 1}, "
+                f"history_depth={self.history_depth})"
+            )
+        return self.history[table_name][version - oldest]
 
     def read(
         self,
@@ -1745,6 +1806,8 @@ class InMemoryBackend:
             raise PermissionError(f"delete_table({name!r}) refused: pass allow_destructive=True")
         if name in self.tables:
             del self.tables[name]
+        self.history.pop(name, None)  # snapshots of a deleted table are not kept (#484)
+        self._next_version.pop(name, None)
 
     def get_table_schema(self, name: str):
         if not self.table_exists(name) or not self.tables[name]:
@@ -1775,14 +1838,16 @@ class InMemoryBackend:
         if not self.table_exists(name):
             return []
 
+        oldest = self._oldest_version(name)
         return [
             {
+                "version": oldest + i,
                 "timestamp": datetime.now(UTC).isoformat(),
                 "operation": "WRITE",
                 "operationParameters": {"mode": "Append", "partitionBy": "[]"},
                 "user": "test-user",
             }
-            for _ in self.history.get(name, [])
+            for i in range(len(self.history.get(name, ())))
         ]
 
     def add_to_batch(self, table: str, rows: list[dict]):
