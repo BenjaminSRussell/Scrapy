@@ -87,10 +87,11 @@ CMD ["python", "metrics_exporter.py", "--port", "9100"]
 # rust:1 (latest stable) rather than the crate's rust-version floor (1.90): the
 # locked dependency tree may need a newer compiler than the declared MSRV.
 FROM rust:1-slim-bookworm as kafka-delta-ingest-build
-# zstd-sys runs bindgen at build time, which needs libclang (CI failed without it).
+# zstd-sys runs bindgen at build time, which needs libclang; librdkafka's
+# cmake build (rdkafka "cmake-build") compiles its curl support (curl/curl.h).
 RUN apt-get update && apt-get install -y --no-install-recommends \
     cmake make g++ pkg-config perl libssl-dev libsasl2-dev zlib1g-dev libzstd-dev \
-    clang libclang-dev \
+    clang libclang-dev libcurl4-openssl-dev \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /build
 COPY kafka-delta-ingest/Cargo.toml kafka-delta-ingest/Cargo.lock ./
@@ -100,7 +101,7 @@ RUN cargo build --release --locked \
 
 FROM debian:bookworm-slim as kafka-delta-ingest
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates libssl3 libsasl2-2 zlib1g libzstd1 procps \
+    ca-certificates libssl3 libsasl2-2 zlib1g libzstd1 libcurl4 procps \
     && rm -rf /var/lib/apt/lists/* \
     && useradd -m -u 1000 ingest
 COPY --from=kafka-delta-ingest-build /build/target/release/kafka-delta-ingest /usr/local/bin/kafka-delta-ingest
