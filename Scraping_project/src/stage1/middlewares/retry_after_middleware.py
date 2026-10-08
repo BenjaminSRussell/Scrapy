@@ -18,6 +18,18 @@ While a wait is active the enforced delay is re-applied on every request and
 response for that host. AutoThrottle recomputes ``slot.delay`` on each 200
 response and clamps it to ``AUTOTHROTTLE_MAX_DELAY``, so without this a
 single successful in-flight response would cancel the wait.
+
+Scrapy measures the slot delay from when the *previous request was sent*
+(``slot.lastseen``), not from when its response arrived. A slow 429 would
+therefore eat into the wait (a 150 ms round trip turns Retry-After: 1 into a
+0.85 s gap). The wait is anchored to the moment the 429/503 is received by
+moving ``slot.lastseen`` forward to "now".
+
+Download-delay jitter is switched off for the host while a wait is enforced.
+With Scrapy's default ``RANDOMIZE_DOWNLOAD_DELAY=True`` the slot sleeps
+``uniform(0.5, 1.5) * delay``, so a Retry-After of N seconds would only be
+honoured for 0.5*N. The slot's own ``randomize_delay`` is restored together
+with the old delay once the wait is over.
 """
 
 from __future__ import annotations
@@ -86,15 +98,18 @@ class RetryAfterMiddleware:
                  clock: Callable[[], float] = time.monotonic,
                  backoff_min: float = DEFAULT_BACKOFF_MIN,
                  backoff_max: float = DEFAULT_BACKOFF_FLOOR_MAX,
-                 cooldown_factor: float = DEFAULT_COOLDOWN_FACTOR):
+                 cooldown_factor: float = DEFAULT_COOLDOWN_FACTOR,
+                 wall_clock: Callable[[], float] = time.time):
         self.crawler = crawler
+        self.wall_clock = wall_clock  # same clock as Scrapy's Slot.lastseen
         self.max_delay = max_delay
         self.clock = clock
         self.backoff_min = max(0.0, backoff_min)
         self.backoff_max = max(self.backoff_min, backoff_max)
         self.cooldown_factor = max(1.0, cooldown_factor)
-        # slot key -> (delay before the wait, restore at, delay enforced until then)
-        self._restore: dict[str, tuple[float, float, float]] = {}
+        # slot key -> (delay before the wait, restore at, delay enforced until then,
+        #              slot.randomize_delay before the wait)
+        self._restore: dict[str, tuple[float, float, float, bool]] = {}
 
     @classmethod
     def from_crawler(cls, crawler: Any) -> "RetryAfterMiddleware":
@@ -119,14 +134,19 @@ class RetryAfterMiddleware:
         """Re-apply an active wait, or restore the old delay once it is over."""
         if key is None or key not in self._restore:
             return
-        old_delay, until, enforced = self._restore[key]
+        old_delay, until, enforced, old_randomize = self._restore[key]
         if self.clock() >= until:
             del self._restore[key]
             if slot is not None:
                 slot.delay = old_delay
+                if hasattr(slot, "randomize_delay"):
+                    slot.randomize_delay = old_randomize
             logger.info(f"[retry_after] {key}: wait over; download delay back to {old_delay}s")
-        elif slot is not None and slot.delay < enforced:
-            slot.delay = enforced  # undo AutoThrottle lowering it mid-wait
+        elif slot is not None:
+            if slot.delay < enforced:
+                slot.delay = enforced  # undo AutoThrottle lowering it mid-wait
+            if getattr(slot, "randomize_delay", False):
+                slot.randomize_delay = False
 
     def process_request(self, request: Any, spider: Any = None) -> None:
         if not self._restore:
@@ -135,10 +155,17 @@ class RetryAfterMiddleware:
         return None
 
     def _hold(self, key: str, slot: Any, delay: float, duration: float) -> None:
-        old_delay, until, enforced = self._restore.get(key, (slot.delay, 0.0, 0.0))
+        default = (slot.delay, 0.0, 0.0, bool(getattr(slot, "randomize_delay", False)))
+        old_delay, until, enforced, old_randomize = self._restore.get(key, default)
         enforced = max(enforced, delay)
-        self._restore[key] = (old_delay, max(until, self.clock() + duration), enforced)
+        self._restore[key] = (old_delay, max(until, self.clock() + duration), enforced, old_randomize)
         slot.delay = max(slot.delay, enforced)
+        if hasattr(slot, "lastseen"):
+            # Count the wait from this response, not from when the request left.
+            slot.lastseen = max(slot.lastseen, self.wall_clock())
+        if hasattr(slot, "randomize_delay"):
+            # Jitter would shorten the wait to as little as 0.5 x delay.
+            slot.randomize_delay = False
 
     def _spider_name(self, spider: Any) -> str:
         name = getattr(spider, "name", None) or getattr(getattr(self.crawler, "spider", None), "name", None)

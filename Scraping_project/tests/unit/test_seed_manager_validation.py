@@ -63,15 +63,22 @@ def test_dedupe_by_url_keeps_first_and_one_merge_row_per_hash():
 
 
 def test_dedupe_by_hash_when_the_hasher_normalises():
-    """Two spellings, one url_hash: a MERGE must never get two source rows for one key."""
+    """Two URLs, one url_hash: a MERGE must never get two source rows for one key."""
     backend = Recorder()
-    sm = SeedManager(backend, url_hasher=lambda u: default_url_hasher(u.lower().rstrip("/")))
-    result = sm.add_urls_to_seeds(["https://UCONN.edu/A/", "https://uconn.edu/a"], "seed", "manual",
+    sm = SeedManager(backend, url_hasher=lambda u: default_url_hasher(u.split("?", 1)[0]))
+    result = sm.add_urls_to_seeds(["https://uconn.edu/a?x=1", "https://uconn.edu/a?x=2"], "seed", "manual",
                                   enqueue_stage2=True)
     assert result["seed_inserted"] == 1 and result["stage2_enqueued"] == 1
     for _, rows in backend.merges:
         assert len({r["url_hash"] for r in rows}) == len(rows) == 1
-    assert backend.read("seed_urls")[0]["url"] == "https://UCONN.edu/A/"  # first spelling wins
+    assert backend.read("seed_urls")[0]["url"] == "https://uconn.edu/a?x=1"  # first one wins
+
+
+def test_canonical_spellings_collapse_to_one_row():
+    """#728 canonicalization runs after validation, so case/trailing-slash variants dedupe."""
+    backend = Recorder()
+    result = SeedManager(backend).add_urls_to_seeds(["https://UCONN.edu/A/", "https://uconn.edu/a"], "seed", "manual")
+    assert result["seed_inserted"] == 1 and result["rejected"] == 0
 
 
 def test_rerun_is_idempotent():

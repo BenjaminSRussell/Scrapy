@@ -88,7 +88,7 @@ def test_is_uconn_domain_matches_host_exactly_or_as_subdomain(url, expected):
         ("  Hello   World  ", None, "Hello World"),
         ("a\tb\nc\r\nd", None, "a b c d"),
         ("abcdef", 3, "abc"),
-        ("abc", 0, "abc"),  # 0 means "no limit", not "empty"
+        ("abc", 0, ""),  # 0 means empty, not "no limit" (#757)
         ("", 10, ""),
         (None, None, ""),
         (123, None, ""),

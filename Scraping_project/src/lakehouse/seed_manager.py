@@ -20,7 +20,6 @@ Schema Assumptions:
 All writes are idempotent via merge_into using url_hash as merge key.
 """
 
-import hashlib
 import logging
 import warnings
 from collections.abc import Callable, Iterable
@@ -28,14 +27,15 @@ from typing import Any
 from urllib.parse import urlparse
 
 from src.lakehouse.lakehouse_manager import LakehouseManager
+from src.utils.url_canon import canonical_or_raw, url_hash
 from src.core.timeutil import utc_now_iso
 
 logger = logging.getLogger(__name__)
 
 
 def default_url_hasher(url: str) -> str:
-    """Default URL hasher using SHA256 (first 16 chars)."""
-    return hashlib.sha256(url.encode("utf-8")).hexdigest()[:16]
+    """SHA256[:16] of the canonical URL (#728), same as every other stage."""
+    return url_hash(url)
 
 
 DEFAULT_DOMAIN_URLS_TABLE = "uconn_urls"  # legacy table name, kept for existing lakes
@@ -219,19 +219,21 @@ class SeedManager:
         write_domain = self.write_domain_urls if write_domain_urls is None else bool(write_domain_urls)
 
         # Reject non-crawlable seeds (ftp:, javascript:, blanks, host-less, >2 KB)
-        # with a stable reason code, then dedupe by url_hash, not just by string:
-        # two spellings with one hash would be two source rows for one MERGE key (#255).
+        # with a stable reason code, canonicalize (#728), then dedupe by
+        # url_hash, not just by string: two spellings with one hash would be two
+        # source rows for one MERGE key (#255).
         from src.utils.validation import url_rejection_reason
 
         rejected: dict[str, int] = {}
         by_hash: dict[str, str] = {}
         for raw in urls:
-            url = raw.strip() if isinstance(raw, str) else raw
-            reason = url_rejection_reason(url)
+            candidate = raw.strip() if isinstance(raw, str) else raw
+            reason = url_rejection_reason(candidate)
             if reason is not None:
                 rejected[reason] = rejected.get(reason, 0) + 1
                 continue
-            by_hash.setdefault(self.url_hasher(url), url)
+            canonical = canonical_or_raw(candidate)
+            by_hash.setdefault(self.url_hasher(canonical), canonical)
         n_rejected = sum(rejected.values())
         if n_rejected:
             logger.warning(f"[SeedManager] Rejected {n_rejected} invalid seed URL(s) from {source_spider}: {rejected}")
@@ -243,11 +245,11 @@ class SeedManager:
 
         # Prepare base records
         rows = []
-        for url_hash, url in by_hash.items():
+        for h, url in by_hash.items():
             rows.append(
                 {
                     "url": url,
-                    "url_hash": url_hash,
+                    "url_hash": h,
                     "discovered_at": now,
                     "source_url": source_url,
                     "source_spider": source_spider,

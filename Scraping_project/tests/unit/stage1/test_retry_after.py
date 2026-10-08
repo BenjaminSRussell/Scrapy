@@ -166,6 +166,7 @@ CRAWL = textwrap.dedent('''
             hits.append((self.path, time.monotonic()))
             first = sum(1 for p, _ in hits if p == self.path) == 1
             if self.path == "/limited" and first:
+                time.sleep(0.3)  # a slow 429: the wait must count from its arrival
                 self.send_response(429); self.send_header("Retry-After", "1")
                 self.send_header("Content-Length", "0"); self.end_headers(); return
             body = b"<html><body>ok</body></html>"
@@ -203,7 +204,9 @@ def test_real_crawl_retry_waits_for_retry_after():
     assert out.returncode == 0, out.stderr[-2000:]
     r = json.loads(out.stdout.strip().splitlines()[-1])
     assert r["attempts"] == 2  # 429, then the retry succeeded
-    assert r["gap"] >= 0.9  # waited ~Retry-After: 1 (stock Scrapy retries immediately)
+    # Retry-After: 1 counted from the 429's arrival (0.3 s after the hit), not from
+    # dispatch; stock Scrapy retries immediately.
+    assert r["gap"] >= 1.25, r
 
 
 STORM = textwrap.dedent('''
@@ -269,3 +272,53 @@ def test_real_crawl_stock_scrapy_retries_a_429_storm_immediately():
     r = _storm("off")
     assert r["attempts"] == 4
     assert max(r["gaps"]) < 0.25, r["gaps"]
+
+
+# --- download-delay jitter must not shorten an enforced wait -----------------
+
+
+def test_wait_disables_slot_jitter_then_restores_it():
+    """RANDOMIZE_DOWNLOAD_DELAY waits uniform(0.5, 1.5) x delay; Retry-After is a floor."""
+    from scrapy.core.downloader import Slot
+
+    mw, _, clock = _mw()
+    slot = Slot(concurrency=1, delay=0.25, randomize_delay=True)
+    mw.crawler.engine.downloader.slots["uconn.edu"] = slot
+    mw.process_response(REQ, _resp(429, "10"), SPIDER)
+    assert slot.delay == 10.0 and slot.randomize_delay is False
+    assert min(slot.download_delay() for _ in range(200)) == 10.0
+    clock.t += 5
+    slot.randomize_delay = True  # nothing else should flip it back mid-wait
+    mw.process_request(REQ, SPIDER)
+    assert slot.randomize_delay is False
+    clock.t += 6
+    mw.process_request(REQ, SPIDER)
+    assert slot.delay == 0.25 and slot.randomize_delay is True  # both restored
+
+
+def test_backoff_also_disables_jitter_and_keeps_original_setting():
+    from scrapy.core.downloader import Slot
+
+    mw, _, clock = _mw()
+    slot = Slot(concurrency=1, delay=0.25, randomize_delay=False)
+    mw.crawler.engine.downloader.slots["uconn.edu"] = slot
+    mw.process_response(REQ, _resp(503), SPIDER)
+    assert slot.randomize_delay is False
+    clock.t += 1000
+    mw.process_request(REQ, SPIDER)
+    assert slot.randomize_delay is False  # was off before; stays off
+
+
+def test_wait_is_anchored_to_the_429_not_the_request_dispatch():
+    """Slot.lastseen is the dispatch time; a slow 429 must not shorten Retry-After."""
+    from scrapy.core.downloader import Slot
+
+    mw, _, _ = _mw()
+    mw.wall_clock = lambda: 5000.0
+    slot = Slot(concurrency=1, delay=0.0, randomize_delay=False)
+    slot.lastseen = 4999.85  # request sent 150 ms before the 429 arrived
+    mw.crawler.engine.downloader.slots["uconn.edu"] = slot
+    mw.process_response(REQ, _resp(429, "1"), SPIDER)
+    assert slot.lastseen == 5000.0
+    # Scrapy's _process_queue penalty: delay - now + lastseen
+    assert slot.download_delay() - 5000.0 + slot.lastseen == 1.0
