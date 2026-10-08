@@ -33,6 +33,11 @@ _port: int | None = None
 _info_gauge: Any = None
 
 
+# Prometheus scrapes workers from another container, so listen on all
+# interfaces by default; WORKER_METRICS_ADDR=127.0.0.1 restricts it.
+DEFAULT_METRICS_ADDR = "0.0.0.0"  # nosec B104
+
+
 def metrics_port(env: Mapping[str, str] | None = None) -> int | None:
     """Port the worker should listen on, or None when disabled."""
     env = os.environ if env is None else env
@@ -65,9 +70,7 @@ def _mark_up(component: str) -> None:
     _info_gauge.labels(component=component).set(1)
 
 
-def start_worker_metrics_server(
-    component: str, env: Mapping[str, str] | None = None
-) -> int | None:
+def start_worker_metrics_server(component: str, env: Mapping[str, str] | None = None) -> int | None:
     """Start the HTTP exporter once per process; return the bound port or None."""
     global _server, _port
     if _port is not None:
@@ -77,7 +80,7 @@ def start_worker_metrics_server(
         logger.info("%s worker metrics endpoint disabled (WORKER_METRICS_ENABLED)", component)
         return None
     env = os.environ if env is None else env
-    addr = env.get("WORKER_METRICS_ADDR", "0.0.0.0").strip() or "0.0.0.0"
+    addr = env.get("WORKER_METRICS_ADDR", DEFAULT_METRICS_ADDR).strip() or DEFAULT_METRICS_ADDR
     try:
         from prometheus_client import start_http_server
     except ImportError:  # pragma: no cover - prometheus-client is a hard dependency
@@ -88,7 +91,10 @@ def start_worker_metrics_server(
     except OSError as exc:
         logger.warning(
             "%s worker metrics endpoint could not bind %s:%d (%s); metrics not exposed",
-            component, addr, port, exc,
+            component,
+            addr,
+            port,
+            exc,
         )
         return None
     server = result[0] if isinstance(result, tuple) else None
