@@ -2,6 +2,9 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
+# Module-wide so new tests here can't silently join the default PR run (#287).
+pytestmark = [pytest.mark.performance, pytest.mark.slow]
+
 @pytest.mark.performance
 @pytest.mark.slow
 class TestHashingPerformance:
