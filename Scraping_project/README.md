@@ -348,6 +348,27 @@ Metrics: `scrapy_soft_ban_total{stage,signature}`,
 `scrapy_soft_ban_domain_backoff_total{stage}`, `scrapy_soft_ban_deferred_total{stage}`.
 Alert: `ScrapySoftBanSpike`. Fixture pages live in `tests/fixtures/soft_ban/`.
 
+### Stage 2 HTTP retries and circuit breaker
+
+Stage 2 retries transient fetch failures inside the same run (#158), so a
+single blip doesn't cost a whole queue cycle:
+
+| Failure | Behaviour |
+|---|---|
+| Timeout, connection/payload error, HTTP 408/500/502/503/504 | Retried up to `STAGE2_HTTP_ATTEMPTS` (3) total attempts with exponential backoff and jitter: `STAGE2_HTTP_BACKOFF_BASE` (0.5s) × 2^(attempt−1), capped at `STAGE2_HTTP_BACKOFF_MAX` (8s). A numeric `Retry-After` header raises the delay (still capped). |
+| Soft ban (429, challenge pages) | Not retried in-request; handled by the soft-ban guard above. |
+| Other 4xx (400/401/404/410, …) | Fail fast: one request, terminal error. |
+| Every attempt failed | Error record to `stage2_errors`; the queue row stays `pending` and is retried next run, then sent to the DLQ after `STAGE2_MAX_RETRIES`. |
+
+Each host has its own circuit breaker. After `STAGE2_BREAKER_FAILURES` (5)
+URLs on one host exhaust their attempts, the breaker opens for
+`STAGE2_BREAKER_RECOVERY` (60s). While it is open, that host's URLs are
+deferred (left `pending`, not counted as failures) instead of being fetched.
+
+Metrics: `stage2_http_fetches_total{outcome=first_try|recovered|exhausted|circuit_open}`
+and `stage2_http_retries_total{reason}`. Each retry and each recovery is logged
+with its attempt number.
+
 ### Environment Variables
 
 ```bash
@@ -392,6 +413,22 @@ Configure the Helm chart via `k8s/helm/scraping-pipeline/values.yaml` (supported
 - Resource requests/limits
 - Persistent volume sizes
 - Service configuration
+
+### Redis memory policy: durable keys vs TTL keys (#161)
+
+Redis holds durable crawl state, and losing it is not a cache miss:
+
+| Keys | TTL | If lost |
+|---|---|---|
+| `seen:urls` and other `seen:*` sets (dedup/claims) | none | every URL looks new, so the crawl starts over |
+| Stage queues and the priority queue | none | queued work disappears |
+| `depth_spider:last_crawl:*` and other cache-like keys | yes (`ex=`) | recomputed |
+
+Compose, `k8s/deployment.yaml` and Helm (`redis.config.maxmemoryPolicy`) run `--maxmemory-policy volatile-lru`, so only keys with a TTL can be evicted. When Redis reaches `maxmemory` with nothing evictable left, it rejects writes (`OOM command not allowed`) instead of silently dropping a seen set. The seen store then fails closed (see `RedisSeenStoreFailingClosed`).
+
+- **Never use an `allkeys-*` policy.** `RedisHelper` logs an ERROR at connect time if the server runs one.
+- **New cache-like keys must set a TTL.** Durable keys must not.
+- **Memory SLO.** Stay under 80% of `maxmemory`. The `RedisHighMemory` alert fires above that for 5 minutes. Raise `maxmemory` or drain the queues before writes start failing.
 
 ### TLS certificate verification (#584)
 
@@ -477,6 +514,24 @@ curl http://localhost:9090/-/healthy
 ```bash
 docker-compose up -d
 ```
+
+### Observability (Loki, Jaeger, OpenTelemetry)
+
+`docker-compose.observability.yml` is an overlay on the main file (same network, mounts
+under `./monitoring/`). There is no separate standalone production compose file:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.observability.yml up -d
+```
+
+See [../MONITORING.md](../MONITORING.md) for enabling OTEL traces.
+
+### Release images
+
+`.github/workflows/cd-release.yml` builds three targets from `Dockerfile` on `v*` tags
+(and on pull requests that touch the image recipe, without pushing): `crawler`,
+`metrics` and `kafka-delta-ingest`. Build one locally with
+`docker build --target metrics -t scrapy-metrics .`.
 
 ### Production Deployment
 

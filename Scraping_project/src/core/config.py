@@ -375,3 +375,59 @@ def stage_worker_settings(
         or default_batch_size
     )
     return concurrent, batch_size
+
+
+@dataclass(frozen=True)
+class Stage2Thresholds:
+    """Stage 2 page-quality gates (#329)."""
+
+    min_word_count: int
+    min_text_to_html_ratio: float
+    massive_doc_threshold: int
+
+
+DEFAULT_STAGE2_THRESHOLDS = Stage2Thresholds(min_word_count=50, min_text_to_html_ratio=0.1, massive_doc_threshold=50000)
+
+
+def _non_negative_int(value: Any) -> Optional[int]:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed >= 0 else None
+
+
+def _ratio(value: Any) -> Optional[float]:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if 0.0 <= parsed <= 1.0 else None
+
+
+def stage2_quality_thresholds(config: Optional[Config] = None) -> Stage2Thresholds:
+    """Resolve Stage 2 quality thresholds (#329).
+
+    Precedence per key: env ``STAGE2_MIN_WORD_COUNT`` / ``STAGE2_MIN_TEXT_TO_HTML_RATIO``
+    / ``STAGE2_MASSIVE_DOC_THRESHOLD`` > config.yml ``stage2.<key>`` > legacy
+    ``stages.stage2.<key>`` > ``DEFAULT_STAGE2_THRESHOLDS`` (today's values).
+    Invalid values (non-numeric, negative, ratio outside [0, 1], massive <= 0)
+    fall through to the next source.
+    """
+    cfg = config if config is not None else get_config()
+
+    def pick(key: str, parse: Any, default: Any) -> Any:
+        for raw in (os.getenv(f"STAGE2_{key.upper()}"), cfg.get(f"stage2.{key}"), cfg.get(f"stages.stage2.{key}")):
+            if raw is None or raw == "":
+                continue
+            parsed = parse(raw)
+            if parsed is not None:
+                return parsed
+        return default
+
+    d = DEFAULT_STAGE2_THRESHOLDS
+    return Stage2Thresholds(
+        min_word_count=pick("min_word_count", _non_negative_int, d.min_word_count),
+        min_text_to_html_ratio=pick("min_text_to_html_ratio", _ratio, d.min_text_to_html_ratio),
+        massive_doc_threshold=pick("massive_doc_threshold", _positive_int, d.massive_doc_threshold),
+    )
