@@ -36,6 +36,11 @@ def get_spider_settings(spider_name: str) -> dict:
         "DEPTH_STATS_VERBOSE": True,
         "DOWNLOAD_MAXSIZE": 10485760,
         "DOWNLOAD_WARNSIZE": 5242880,
+        # #582: drop captcha/challenge responses; back off a domain on a spike.
+        "DOWNLOADER_MIDDLEWARES": {
+            "src.stage1.middlewares.soft_ban_middleware.SoftBanMiddleware": 540,
+        },
+        "SOFT_BAN_SLOT_DELAY": spider_config.get("soft_ban_slot_delay", 30.0),
         "SPIDER_MIDDLEWARES": {
             "scrapy.spidermiddlewares.depth.DepthMiddleware": 900,
         },

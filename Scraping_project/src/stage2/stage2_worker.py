@@ -15,6 +15,7 @@ from deltalake import DeltaTable
 from src.core.config import stage_worker_settings
 from src.core.constants import TABLE_STAGE2_ERRORS
 from src.utils.delta import get_delta
+from src.utils.soft_ban import DomainBackoff, SoftBanDetector, count_deferred, count_soft_ban, domain_of
 from src.utils.postgres import get_postgres_manager
 from src.utils.metrics_sink import record_error, record_performance
 from src.otel_tracing import ensure_crawl_job_id, init_tracing, start_span
@@ -87,12 +88,15 @@ def split_stage2_results(results: list[Any]) -> tuple[list[dict[str, Any]], list
 
 
 DEFAULT_STAGE2_MAX_RETRIES = 3
+SOFT_BAN_PREFIX = "soft_ban:"
 
 
 def _is_terminal_error(row: dict[str, Any]) -> bool:
     """Errors that retrying cannot fix: bad URLs and 4xx other than 408/429."""
     if row.get("error_message") == "invalid_url":
         return True
+    if str(row.get("error_message") or "").startswith(SOFT_BAN_PREFIX):
+        return False  # soft ban/captcha (#582): retry after backoff, up to max_retries
     code = int(row.get("error_code") or 0)
     return 400 <= code < 500 and code not in (408, 429)
 
@@ -152,6 +156,9 @@ class Stage2Worker:
         self._dlq: Any = None
         # One pooled HTTP session per run (#200); created in _run_traced.
         self._session: aiohttp.ClientSession | None = None
+        # Soft-ban/captcha guard (#582).
+        self.soft_ban = SoftBanDetector()
+        self.domain_backoff = DomainBackoff(stage="stage2")
 
     def _load_prior_failures(self) -> dict[str, int]:
         """Per-URL failure counts from earlier runs, from the stage2_errors quarantine."""
@@ -251,6 +258,12 @@ class Stage2Worker:
             batch_time = time.time() - batch_start
 
             valid_results = self._normalize_gather_results(batch, results)
+            # Domain in soft-ban cooldown (#582): not attempted, not a failure,
+            # stays pending for the next run.
+            deferred = [r for r in valid_results if r.get("_deferred")]
+            if deferred:
+                valid_results = [r for r in valid_results if not r.get("_deferred")]
+                logger.warning(f"[STAGE2] Deferred {len(deferred)} URLs from domains in soft-ban cooldown")
             # Silver analysis excludes failures; they go to a quarantine table (#331).
             accepted, quarantined = split_stage2_results(valid_results)
 
@@ -439,6 +452,11 @@ class Stage2Worker:
         is_heavy = bool(record.get("is_heavy", False))
 
         async with self.semaphore:
+            domain = domain_of(url)
+            backoff = self._backoff()
+            if backoff.blocked(domain):
+                count_deferred("stage2")
+                return {"url": url, "url_hash": url_hash, "_deferred": True}
             try:
                 session = self._session
                 owns_session = session is None  # direct callers outside run()
@@ -447,12 +465,21 @@ class Stage2Worker:
                 try:
                     async with session.get(url, allow_redirects=True) as response:
                         if response.status >= 400:
+                            body = ""
+                            if response.status in (403, 503):
+                                body = await self._read_error_body(response)
+                            sig = self._detector().detect(response.status, body, response.headers)
+                            if sig:
+                                return self._soft_ban_record(url, url_hash, response.status, sig, domain)
                             return self._error_record(url, url_hash, response.status, "http_error")
 
                         content_type = response.headers.get("Content-Type", "").lower()
 
                         if "text/html" in content_type:
                             html = await response.text()
+                            sig = self._detector().detect(response.status, html, response.headers)
+                            if sig:  # challenge page served as 200: never analysed as content
+                                return self._soft_ban_record(url, url_hash, response.status, sig, domain)
                             return await self._analyze_html(url, url_hash, html, is_heavy)
                         elif "application/pdf" in content_type:
                             return self._route_pdf_to_stage4(url, url_hash)
@@ -627,6 +654,35 @@ class Stage2Worker:
             "has_error": False,
             "processed_at": datetime.now().isoformat(),
         }
+
+    # -------------------------------------------------------- soft ban (#582)
+    def _detector(self) -> SoftBanDetector:
+        if getattr(self, "soft_ban", None) is None:
+            self.soft_ban = SoftBanDetector()
+        return self.soft_ban
+
+    def _backoff(self) -> DomainBackoff:
+        if getattr(self, "domain_backoff", None) is None:
+            self.domain_backoff = DomainBackoff(stage="stage2")
+        return self.domain_backoff
+
+    @staticmethod
+    async def _read_error_body(response: Any) -> str:
+        try:
+            raw = await response.content.read(65536)
+            return str(raw.decode("utf-8", errors="replace"))
+        except Exception:
+            try:
+                return str(await response.text())[:65536]
+            except Exception:
+                return ""
+
+    def _soft_ban_record(self, url: str, url_hash: str, status: int, signature: str, domain: str) -> dict[str, Any]:
+        """Quarantine a soft-ban response (stage2_errors) and feed the domain backoff."""
+        count_soft_ban("stage2", signature)
+        self._backoff().record(domain)
+        logger.warning(f"[STAGE2] Soft ban ({signature}, HTTP {status}) for {url[:80]}; quarantined")
+        return self._error_record(url, url_hash, status, f"{SOFT_BAN_PREFIX}{signature}")
 
     def _error_record(self, url: str, url_hash: str, error_code: int, error_msg: str) -> dict[str, Any]:
         return {
