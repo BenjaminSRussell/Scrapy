@@ -1,4 +1,4 @@
-"""#625: .dockerignore keeps Dockerfile/monitoring in the build context, documents every exclusion."""
+"""#625: .dockerignore keeps Dockerfile/compose and the monitoring exporter in the build context, documents every exclusion."""
 
 from pathlib import Path
 
@@ -14,6 +14,9 @@ def test_dockerfile_compose_and_monitoring_not_excluded():
     pats = _patterns()
     for keep in ("Dockerfile", "docker-compose.yml", "monitoring/", "monitoring"):
         assert keep not in pats, f"{keep} must stay in the build context"
+    # #449: monitoring configs are excluded, but the exporter code the `metrics` target runs ships.
+    if "monitoring/*" in pats:
+        assert {"!monitoring/metrics_exporter.py", "!monitoring/metric_helpers.py"} <= set(pats)
     assert (ROOT / "monitoring" / "prometheus.yml").exists()
 
 

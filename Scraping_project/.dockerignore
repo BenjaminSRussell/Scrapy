@@ -66,6 +66,13 @@ kafka-delta-ingest/target/
 # --- CI config: not used inside containers ----------------------------------------
 .github/
 
+# Monitoring: configs/dashboards stay out of the image; the exporter code ships
+# for the `metrics` Dockerfile target (#449).
+monitoring/*
+!monitoring/__init__.py
+!monitoring/metrics_exporter.py
+!monitoring/metric_helpers.py
+
 # --- Kubernetes manifests/Helm chart: applied with kubectl/helm from the repo,
 #     never read inside a container --------------------------------------------------
 k8s/
@@ -73,7 +80,7 @@ k8s/
 # Deliberately NOT excluded:
 # - Dockerfile, docker-compose.yml, .dockerignore: small, and tools such as
 #   BuildKit frontends / compose-in-image / SBOM scanners expect them.
-# - monitoring/: docker-compose bind-mounts monitoring/prometheus.yml and
-#   monitoring/alerting at runtime (edits apply without a rebuild), but the
-#   directory is also kept in the image so monitoring/metrics_exporter.py and
-#   the default configs are available, e.g. to bake dashboards.
+# - monitoring exporter modules (metrics_exporter.py, metric_helpers.py): the
+#   `metrics` target runs them (#449). The configs are excluded above because
+#   docker-compose bind-mounts monitoring/prometheus.yml and monitoring/alerting
+#   at runtime, so edits apply without a rebuild.
