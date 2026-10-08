@@ -268,7 +268,11 @@ VALIDATION_FAILURES_TOPIC = _scrapy_config.get(
 # ============================================================================
 RECENCY_DECAY_CONSTANT = _scrapy_config.get("recency_decay_constant", 0.01)
 
-RECENCY_DEFAULT_SCORE = _scrapy_config.get("recency_default_score", 0.5)
+# Score for items without a usable publication_date. Default None: the score
+# stays null ("freshness unknown") instead of a fabricated 0.5 that downstream
+# ranking would read as median relevance (#675). Set a float only to opt back
+# into legacy imputation.
+RECENCY_DEFAULT_SCORE = _scrapy_config.get("recency_default_score", None)
 
 # ============================================================================
 # ============================================================================
