@@ -36,7 +36,53 @@ function formatHistoryLabel(d = new Date()) {
 }
 
 
+// Chart.js comes from a CDN. When it is blocked (offline / corporate proxy)
+// `Chart` is undefined; constructing charts used to throw inside initialize()
+// and abort everything after it, including the metrics poll (#983). Charts are
+// optional: degrade to a visible notice and keep the numeric metrics live.
+let chartsUnavailable = false;
+
+function showChartsUnavailable() {
+    chartsUnavailable = true;
+    document.querySelectorAll('.chart-container').forEach(el => {
+        el.classList.add('is-unavailable');
+        if (!el.querySelector('.chart-unavailable-note')) {
+            const note = document.createElement('div');
+            note.className = 'chart-unavailable-note';
+            note.textContent = 'Chart unavailable';
+            el.appendChild(note);
+        }
+    });
+    if (document.getElementById('charts-unavailable')) return;
+    const banner = document.createElement('div');
+    banner.id = 'charts-unavailable';
+    banner.className = 'charts-unavailable-banner';
+    banner.setAttribute('role', 'status');
+    banner.textContent = 'Charts unavailable: Chart.js could not be loaded (offline or CDN blocked). Numeric metrics still update.';
+    const host = document.getElementById('main') || document.querySelector('.container') || document.body;
+    host.insertBefore(banner, host.firstChild);
+}
+
+/** Returns true when charts were created, false when running chart-less. */
 function initializeCharts() {
+    if (typeof Chart === 'undefined') {
+        console.warn('Chart.js not loaded; running without charts');
+        showChartsUnavailable();
+        return false;
+    }
+    try {
+        buildCharts();
+        return true;
+    } catch (err) {
+        console.error('Chart initialization failed:', err);
+        Object.values(charts).forEach(ch => { try { ch.destroy(); } catch (_) {} });
+        charts = {};
+        showChartsUnavailable();
+        return false;
+    }
+}
+
+function buildCharts() {
     const chartConfig = {
         responsive: true,
         maintainAspectRatio: false,
