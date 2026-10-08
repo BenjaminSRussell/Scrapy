@@ -30,13 +30,18 @@ try:
         "stage2_page_analysis rows materialized by the Stage 4 fallback, by read mode (filtered|full_scan)",
         ["mode"],
     )
+    STAGE4_CONTENT_SOURCE: Any = Counter(
+        "stage4_content_source_total",
+        "Where Stage 4 got a large doc's text: stage2_text (reused, no network) or fetch",
+        ["source"],
+    )
     STAGE4_DOCS_SELECTED: Any = Counter(
         "stage4_docs_selected_total",
         "Large docs selected for processing, by source (queue|analysis_fallback)",
         ["source"],
     )
 except Exception:  # prometheus_client missing or already registered
-    STAGE4_ANALYSIS_ROWS_READ = STAGE4_DOCS_SELECTED = None
+    STAGE4_ANALYSIS_ROWS_READ = STAGE4_DOCS_SELECTED = STAGE4_CONTENT_SOURCE = None
 
 
 def _count(metric: Any, n: int, **labels: str) -> None:
@@ -216,6 +221,24 @@ class Stage4Worker:
                 f"{len(quarantined or {})} quarantined"
             )
 
+    @staticmethod
+    def _stored_text(doc: dict[str, Any]) -> str | None:
+        """Stage 2's extracted text, if it is the *complete* body (#320).
+
+        Stage 2 writes the full text onto the queue row when routing (up to
+        ``stage4.inline_text_max_chars``). ``stage2_page_analysis.text_content``
+        is cut at 10k chars, so a fallback row whose text is shorter than its
+        ``content_length`` is truncated and must be re-fetched. Summarizing a
+        prefix would silently drop most of the document.
+        """
+        text = doc.get("text_content")
+        if not isinstance(text, str) or not text.strip():
+            return None
+        expected = doc.get("content_length")
+        if isinstance(expected, int) and expected > 0 and len(text) < expected:
+            return None
+        return text
+
     async def _process_large_document(
         self, doc: dict[str, Any]
     ) -> tuple[dict[str, Any] | None, str | None]:
@@ -230,8 +253,15 @@ class Stage4Worker:
             or url.lower().split("?", 1)[0].endswith(".pdf")
         )
 
-        logger.info(f"[STAGE4] Fetching content from {url[:80]}")
-        text, content_type = self.processor._fetch_content(url, is_pdf=is_pdf)
+        stored = None if is_pdf else self._stored_text(doc)
+        if stored is not None:
+            text, content_type = stored, doc.get("content_type") or "html"
+            _count(STAGE4_CONTENT_SOURCE, 1, source="stage2_text")
+            logger.info(f"[STAGE4] Reusing Stage 2 text for {url[:80]} (no re-fetch)")
+        else:
+            logger.info(f"[STAGE4] Fetching content from {url[:80]}")
+            text, content_type = self.processor._fetch_content(url, is_pdf=is_pdf)
+            _count(STAGE4_CONTENT_SOURCE, 1, source="fetch")
 
         if not text:
             logger.warning(f"[STAGE4] No text content for {url[:80]}")

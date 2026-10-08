@@ -818,7 +818,20 @@ class Stage2Worker:
         ratio_score = min(text_ratio * 0.4, 0.4)
         return round(word_score + ratio_score, 3)
 
+    # Full text up to this many chars rides on the stage4_large_docs row, so
+    # Stage 4 summarizes what Stage 2 already extracted instead of re-fetching
+    # the live URL (#320). Longer docs (or 0) leave it empty and Stage 4 fetches.
+    STAGE4_INLINE_TEXT_MAX_CHARS = 2_000_000
+
+    def _stage4_inline_text_limit(self) -> int:
+        raw = os.environ.get("STAGE4_INLINE_TEXT_MAX_CHARS")
+        try:
+            return int(raw) if raw is not None else self.STAGE4_INLINE_TEXT_MAX_CHARS
+        except ValueError:
+            return self.STAGE4_INLINE_TEXT_MAX_CHARS
+
     async def _route_to_stage4(self, url: str, url_hash: str, text: str, word_count: int, content_length: int):
+        limit = self._stage4_inline_text_limit()
         record = {
             "url": url,
             "url_hash": url_hash,
@@ -826,6 +839,8 @@ class Stage2Worker:
             "content_length": content_length,
             "status": "pending",
             "queued_at": datetime.now().isoformat(),
+            "text_content": text if text and 0 < len(text) <= limit else "",
+            "content_type": "html",
         }
 
         try:

@@ -1,4 +1,4 @@
-"""#318: Stage 4's fallback never materializes the whole stage2_page_analysis table."""
+"""#318: the Stage 4 fallback never materializes all of stage2_page_analysis. #320: Stage 4 reuses Stage 2 text instead of re-fetching."""
 
 import asyncio
 
@@ -112,3 +112,82 @@ def test_config_flag_is_read(monkeypatch):
     monkeypatch.setattr(s4, "get_delta", lambda: None)
     monkeypatch.setattr(s4, "LargeDocProcessor", lambda model_name: None)
     assert Stage4Worker().analysis_fallback is False
+
+
+# --- #320: reuse Stage 2 text instead of re-fetching ------------------------
+
+
+def _source(source):
+    return REGISTRY.get_sample_value("stage4_content_source_total", {"source": source}) or 0.0
+
+
+def _queue_row(delta, url, **extra):
+    row = {"url": url, "url_hash": f"h-{url}", "word_count": 1, "content_length": 0, "status": "pending", **extra}
+    delta.write(s4.QUEUE_TABLE, [row], mode="append", async_write=False)
+
+
+def test_html_doc_with_complete_stage2_text_is_not_refetched(tmp_path):
+    w = _worker(tmp_path, analysis_fallback=False)
+    body = "word " * 5000
+    _queue_row(w.delta, "https://uconn.edu/big", text_content=body, content_length=len(body), content_type="html")
+    before_reuse, before_fetch = _source("stage2_text"), _source("fetch")
+    assert asyncio.run(w._run_traced()) == 1
+    assert w.processor.fetched == []  # no network
+    summary = w.delta.read(s4.SUMMARY_TABLE)[0]
+    assert summary["original_size"] == len(body)
+    assert _source("stage2_text") == before_reuse + 1 and _source("fetch") == before_fetch
+
+
+def test_truncated_stage2_text_is_refetched(tmp_path):
+    w = _worker(tmp_path, analysis_fallback=False)
+    _queue_row(w.delta, "https://uconn.edu/cut", text_content="x" * 10000, content_length=250000)
+    before = _source("fetch")
+    asyncio.run(w._run_traced())
+    assert w.processor.fetched == ["https://uconn.edu/cut"]
+    assert _source("fetch") == before + 1
+
+
+def test_pdf_still_fetches_even_with_text(tmp_path):
+    w = _worker(tmp_path, analysis_fallback=False)
+    _queue_row(w.delta, "https://uconn.edu/a.pdf", is_pdf=True, text_content="stale", content_length=5)
+    asyncio.run(w._run_traced())
+    assert w.processor.fetched == ["https://uconn.edu/a.pdf"]
+
+
+def test_legacy_queue_row_without_text_fetches(tmp_path):
+    w = _worker(tmp_path, analysis_fallback=False)
+    _queue_row(w.delta, "https://uconn.edu/old")
+    asyncio.run(w._run_traced())
+    assert w.processor.fetched == ["https://uconn.edu/old"]
+
+
+def _stage2():
+    from src.stage2.stage2_worker import Stage2Worker
+
+    w = Stage2Worker.__new__(Stage2Worker)
+    written = []
+
+    class _Delta:
+        def write(self, table, rows, mode="append", async_write=True):
+            written.append((table, rows))
+            return True
+
+    w.delta = _Delta()
+    return w, written
+
+
+def test_stage2_routes_full_text_to_stage4_queue(monkeypatch):
+    monkeypatch.delenv("STAGE4_INLINE_TEXT_MAX_CHARS", raising=False)
+    w, written = _stage2()
+    text = "t" * 60000
+    asyncio.run(w._route_to_stage4("https://uconn.edu/big", "h", text, 1, len(text)))
+    (table, rows), = written
+    assert table == "stage4_large_docs"
+    assert rows[0]["text_content"] == text and rows[0]["content_type"] == "html"
+
+
+def test_stage2_inline_text_cap(monkeypatch):
+    monkeypatch.setenv("STAGE4_INLINE_TEXT_MAX_CHARS", "1000")
+    w, written = _stage2()
+    asyncio.run(w._route_to_stage4("https://uconn.edu/huge", "h", "t" * 5000, 1, 5000))
+    assert written[0][1][0]["text_content"] == ""  # Stage 4 will fetch
