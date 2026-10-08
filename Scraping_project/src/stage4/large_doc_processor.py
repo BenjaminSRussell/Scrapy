@@ -433,6 +433,15 @@ class LargeDocProcessor:
             "model_used": self.model_name,
         }
 
+    def chunk_records(self, url: str, url_hash: str, text: str) -> list[dict[str, Any]]:
+        """Versioned chunk records (#659): ids, order and source refs, same spans
+        as :meth:`_split_into_chunks` (whitespace-only chunks dropped)."""
+        from src.core.contracts import make_chunks
+
+        spans = [(0, len(text))] if len(text) <= self.CHUNK_SIZE else chunk_spans(text, self.CHUNK_SIZE, self.OVERLAP)
+        spans = [(a, b) for a, b in spans if text[a:b].strip()]
+        return make_chunks(url, url_hash, text, spans)
+
     def _split_into_chunks(self, text: str) -> list[str]:
         """Overlapping chunks (see ``chunk_spans``); whitespace-only chunks are dropped (#738)."""
         if len(text) <= self.CHUNK_SIZE:

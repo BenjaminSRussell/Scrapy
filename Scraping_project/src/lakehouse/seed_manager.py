@@ -26,6 +26,7 @@ from collections.abc import Callable, Iterable
 from typing import Any
 from urllib.parse import urlparse
 
+from src.core.contracts import STAGE1_STAGE2
 from src.lakehouse.lakehouse_manager import LakehouseManager
 from src.utils.url_canon import canonical_or_raw, url_hash
 from src.core.timeutil import utc_now_iso
@@ -303,6 +304,7 @@ class SeedManager:
                         "url_hash": r["url_hash"],
                         "enqueued_at": now,
                         "status": "pending",
+                        "schema_version": STAGE1_STAGE2.version,  # #667
                     }
                     for r in rows
                 ]

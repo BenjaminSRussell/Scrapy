@@ -12,6 +12,7 @@ from src.core.constants import (
     SUMMARY_LIMITS,
     TABLE_STAGE3_SUMMARIES,
 )
+from src.core.contracts import STAGE2_STAGE3, record_rejects, split_valid
 from src.otel_tracing import ensure_crawl_job_id, init_tracing, start_span
 from src.utils.delta import get_delta
 from src.utils.metrics_sink import record_error, record_performance
@@ -92,6 +93,9 @@ class Stage3Worker:
             and not doc.get("has_error", False)
             and doc.get("text_content")
         ]
+        # stage2->stage3 contract (#668): reject before any summarisation work.
+        quality_docs, rejected = split_valid(quality_docs, STAGE2_STAGE3)
+        record_rejects(rejected, logger)
 
         logger.info(f"Found {len(quality_docs)} quality documents to process")
 

@@ -16,6 +16,7 @@ from deltalake import DeltaTable
 
 from src.core.config import get_config, stage2_quality_thresholds, stage_worker_settings
 from src.core.constants import TABLE_STAGE2_ERRORS
+from src.core.contracts import STAGE1_STAGE2, STAGE2_STAGE3, STAGE2_STAGE4, record_rejects, split_valid, stamp
 from src.utils.delta import get_delta
 from src.utils.ssrf import SSRFBlocked, count_blocked, safe_resolver, ssrf_block_reason, ssrf_error_from
 from src.utils.soft_ban import DomainBackoff, SoftBanDetector, count_deferred, count_soft_ban, domain_of
@@ -443,6 +444,10 @@ class Stage2Worker:
 
         pending = [item for item in all_queue_items if item.get("status") == "pending"]
         _record_queue_state(len(pending))
+        # Versioned stage1->stage2 contract (#667): rows from an unknown (newer)
+        # producer or missing required fields are left untouched, not processed.
+        pending, rejected = split_valid(pending, STAGE1_STAGE2)
+        record_rejects(rejected, logger)
 
         logger.info(f"[STAGE2] Found {len(pending)} pending URLs to analyze (out of {len(all_queue_items)} total)")
 
@@ -568,7 +573,7 @@ class Stage2Worker:
 
     async def _write_analysis(self, accepted: list[dict[str, Any]]) -> bool:
         """Upsert accepted analysis rows into stage2_page_analysis by url_hash (#311)."""
-        rows = ensure_url_hash(accepted)
+        rows = [stamp(r, STAGE2_STAGE3) for r in ensure_url_hash(accepted)]  # #668
         update_columns = sorted({k for r in rows for k in r} - {"url_hash"})
         try:
             affected = await asyncio.to_thread(
@@ -1047,6 +1052,7 @@ class Stage2Worker:
             "content_length": content_length,
             "status": "pending",
             "queued_at": datetime.now().isoformat(),
+            "schema_version": STAGE2_STAGE4.version,
             "text_content": text if text and 0 < len(text) <= limit else "",
             "content_type": "html",
         }
@@ -1063,6 +1069,7 @@ class Stage2Worker:
             "word_count": 0,
             "content_length": 0,
             "status": "pending",
+            "schema_version": STAGE2_STAGE4.version,
             "is_pdf": True,
             "queued_at": datetime.now().isoformat(),
         }

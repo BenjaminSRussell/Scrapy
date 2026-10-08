@@ -768,7 +768,9 @@ class QueueItemPipeline(_TimedFlushMixin):
             self.js_queue_batch.add(_canonical_queue_row(item))
             self.items_processed += 1
         elif target_stage == "stage2":
-            self.stage2_queue_batch.add(_canonical_queue_row(item))
+            from src.core.contracts import STAGE1_STAGE2, stamp
+
+            self.stage2_queue_batch.add(stamp(_canonical_queue_row(item), STAGE1_STAGE2))
             self.items_processed += 1
         else:
             # Content records (dicts without routing metadata) are not queue

@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import Any
 
 from src.core.config import get_config
+from src.core.contracts import STAGE2_STAGE4, record_rejects, split_valid
 from src.utils.delta import get_delta
 from src.stage4.large_doc_processor import LargeDocProcessor
 from src.stage4.pdf_sandbox import PdfQuarantined
@@ -120,6 +121,10 @@ class Stage4Worker:
             else:
                 first_pending.setdefault(url, row)
         pending = [r for u, r in first_pending.items() if u not in settled and u not in done_urls]
+        # stage2->stage4 contract (#659): an unsupported schema_version fails
+        # here, before any fetch or model work; the row stays pending.
+        pending, rejected = split_valid(pending, STAGE2_STAGE4)
+        record_rejects(rejected, logger)
         return pending, queued
 
     def _fallback_from_analysis(self, exclude: set[str]) -> list[dict[str, Any]]:
