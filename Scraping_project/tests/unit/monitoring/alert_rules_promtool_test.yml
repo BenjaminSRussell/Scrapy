@@ -179,3 +179,52 @@ tests:
               description: "Consumer group scraping-pipeline on topic stage2 has a max lag of 300000 messages for over 15 minutes, violating the SLO."
               impact: "Critical - Service Level Objective for data processing timeliness is not being met."
               action: "Immediately investigate consumer performance, consider scaling up consumers or pausing producers if necessary."
+  # #220: Stage 2 empty for an hour while Stage 1 scrapes -> starved; idle
+  # (Stage 1 not scraping) -> no alert.
+  - interval: 1m
+    input_series:
+      - series: 'stage2_queue_empty'
+        values: '1x120'
+      - series: 'scrapy_items_scraped_total{spider="scout"}'
+        values: '0+60x120'
+    alert_rule_test:
+      - eval_time: 10m  # still inside `for: 15m`
+        alertname: Stage2StarvedWhileStage1Active
+        exp_alerts: []
+      - eval_time: 90m
+        alertname: Stage2StarvedWhileStage1Active
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              component: stage2
+            exp_annotations:
+              summary: "Stage 2 has found no pending work for 1h while Stage 1 is still scraping"
+              description: "stage2_queue_empty has been 1 for every Stage 2 run in the last hour, but Stage 1 is scraping 1 items/s. Stage 1 output is not reaching stage2_queue."
+              impact: "Medium - Discovered pages are not analysed"
+              action: "Check the Stage 1 -> stage2_queue handoff (pipelines.py, Delta writes/spills) and stage2_queue row statuses"
+  - interval: 1m
+    input_series:
+      - series: 'stage2_queue_empty'
+        values: '1x120'
+      - series: 'scrapy_items_scraped_total{spider="scout"}'
+        values: '100x120'
+    alert_rule_test:
+      - eval_time: 100m
+        alertname: Stage2StarvedWhileStage1Active
+        exp_alerts: []
+  - interval: 1m
+    input_series:
+      - series: 'stage2_queue_read_failures_total'
+        values: '0 0 1 1 1 1 1 1 1 1 1 1 1'
+    alert_rule_test:
+      - eval_time: 9m
+        alertname: Stage2QueueUnreadable
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              component: stage2
+            exp_annotations:
+              summary: "Stage 2 cannot read stage2_queue"
+              description: "1 Stage 2 runs in 30m failed to read stage2_queue and exited without work."
+              impact: "High - Stage 2 is stalled while looking idle"
+              action: "Check Delta storage access and the stage2_queue table (worker logs: 'Could not read stage2_queue')"
