@@ -3,16 +3,16 @@ use cadence::{Counted, CountedExt, StatsdClient, UdpMetricSink};
 use clap::{Parser, Subcommand};
 use deltalake::arrow::array::{RecordBatch, StringArray};
 use deltalake::arrow::datatypes::Schema;
-use deltalake::delta_datafusion::DataFusionMixins;
 use deltalake::kernel::{DataType as DeltaDataType, StructField};
 use deltalake::writer::{DeltaWriter, RecordBatchWriter};
-use deltalake::{DeltaTable, DeltaTableBuilder};
-use jsonschema::{Draft, JSONSchema};
+use deltalake::{ensure_table_uri, DeltaTable, DeltaTableBuilder};
+use jsonschema::Draft;
 use rdkafka::config::ClientConfig;
-use rdkafka::consumer::{Consumer, StreamConsumer};
-use rdkafka::Message;
+use rdkafka::consumer::{CommitMode, Consumer, StreamConsumer};
+use rdkafka::{Message, Offset, TopicPartitionList};
 use redis::{aio::ConnectionManager, AsyncCommands};
 use serde_json::{json, Value};
+use std::collections::HashMap;
 use std::net::UdpSocket;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -209,6 +209,11 @@ enum Commands {
         /// Partition transform (e.g., 'date: substr(scraped_at_utc, `0`, `10`)')
         #[arg(long)]
         transform: Option<String>,
+
+        /// Delta write attempts per batch (exponential backoff) before exiting
+        /// without committing offsets, so the batch is re-consumed on restart
+        #[arg(long, default_value = "5")]
+        max_write_attempts: u32,
     },
 }
 
@@ -236,6 +241,7 @@ async fn main() -> Result<()> {
             allowed_latency,
             max_messages_per_batch,
             transform,
+            max_write_attempts,
         } => {
             ingest(
                 &topic,
@@ -246,6 +252,7 @@ async fn main() -> Result<()> {
                 allowed_latency,
                 max_messages_per_batch,
                 transform,
+                max_write_attempts,
             )
             .await?;
         }
@@ -263,6 +270,7 @@ async fn ingest(
     allowed_latency: u64,
     max_messages_per_batch: usize,
     transform: Option<String>,
+    max_write_attempts: u32,
 ) -> Result<()> {
     info!("Starting Kafka to Delta Lake ingestor");
     info!("Topic: {}", topic);
@@ -272,10 +280,10 @@ async fn ingest(
 
     // Build and compile JSON schema for validation
     let schema_def = build_scraped_item_schema();
-    let schema_validator = JSONSchema::options()
+    let schema_validator = jsonschema::options()
         .with_draft(Draft::Draft7)
-        .compile(&schema_def)
-        .context("Failed to compile JSON schema")?;
+        .build(&schema_def)
+        .map_err(|e| anyhow::anyhow!("Failed to compile JSON schema: {e}"))?;
     info!("Schema validation enabled - all messages will be validated against the schema");
 
     // Initialize StatsD client for metrics
@@ -294,13 +302,19 @@ async fn ingest(
     // Signal: spider_opened
     scrapy_metrics.spider_opened().await?;
 
-    // Create Kafka consumer
+    // Create Kafka consumer.
+    //
+    // Delivery semantics (#282): AT-LEAST-ONCE. Offsets are committed manually,
+    // only after the batch containing those messages has been committed to
+    // Delta. A failed write is retried with backoff; if it still fails the
+    // process exits WITHOUT committing, so the batch is re-consumed after
+    // restart. A crash between the Delta commit and the offset commit can
+    // re-deliver (duplicate) a batch, but never skips one.
     let consumer: StreamConsumer = ClientConfig::new()
         .set("bootstrap.servers", kafka_brokers)
         .set("group.id", app_id)
         .set("auto.offset.reset", auto_offset_reset)
-        .set("enable.auto.commit", "true")
-        .set("auto.commit.interval.ms", "5000")
+        .set("enable.auto.commit", "false")
         .create()
         .context("Failed to create Kafka consumer")?;
 
@@ -327,37 +341,43 @@ async fn ingest(
         None
     };
 
-    // Load or create Delta table
-    let delta_table = load_or_create_table(table_path, partition_column.as_deref()).await?;
-    let schema = delta_table.snapshot()?.arrow_schema()?.clone();
+    // Load or create Delta table (mutable: each commit advances its snapshot)
+    let mut delta_table = load_or_create_table(table_path, partition_column.as_deref()).await?;
+    let schema: Schema = delta_table.snapshot()?.snapshot().arrow_schema().as_ref().clone();
 
     info!("Delta table loaded/created successfully");
     info!("Schema: {:?}", schema);
 
     let mut buffer: Vec<Value> = Vec::new();
     let mut last_write = std::time::Instant::now();
+    // Next offset to commit per (topic, partition): every message seen so far,
+    // including deliberately dropped invalid ones, but only committed once the
+    // buffered batch has reached Delta.
+    let mut pending_offsets = PendingOffsets::default();
 
     loop {
         match consumer.recv().await {
             Ok(message) => {
+                pending_offsets.record(message.topic(), message.partition(), message.offset());
                 if let Some(payload) = message.payload() {
                     match serde_json::from_slice::<Value>(payload) {
                         Ok(json_value) => {
                             // CRITICAL: Validate message against schema before processing
-                            match schema_validator.validate(&json_value) {
-                                Ok(_) => {
+                            let validation_errors: Vec<String> = schema_validator
+                                .iter_errors(&json_value)
+                                .map(|e| format!("{} at {}", e, e.instance_path))
+                                .collect();
+                            match validation_errors.is_empty() {
+                                true => {
                                     // Signal: response_received - Track HTTP status (default 200 for successful parse)
                                     scrapy_metrics.response_received(200).await.ok();
 
                                     buffer.push(json_value);
                                     metrics.incr("messages.received").ok();
                                 }
-                                Err(errors) => {
+                                false => {
                                     // Schema validation failed - log detailed errors
-                                    let error_details: Vec<String> = errors
-                                        .map(|e| format!("{} at {}", e, e.instance_path))
-                                        .collect();
-                                    let error_summary = error_details.join("; ");
+                                    let error_summary = validation_errors.join("; ");
 
                                     warn!(
                                         "Schema validation failed for message: {}. Errors: {}",
@@ -403,19 +423,44 @@ async fn ingest(
 
                                 info!("Writing batch of {} messages to Delta Lake", buffer.len());
 
-                                match write_batch(&delta_table, &schema, &buffer, &metrics, &mut scrapy_metrics).await {
-                                    Ok(()) => {
-                                        info!("Successfully wrote {} records", buffer.len());
-                                        metrics.count("records.written", buffer.len() as i64).ok();
-                                        buffer.clear();
-                                        last_write = std::time::Instant::now();
-                                    }
-                                    Err(e) => {
-                                        error!("Failed to write batch: {}", e);
-                                        metrics.incr("errors.write_failed").ok();
+                                let mut attempt: u32 = 0;
+                                loop {
+                                    attempt += 1;
+                                    match write_batch(&mut delta_table, &schema, &buffer, &metrics, &mut scrapy_metrics).await {
+                                        Ok(()) => {
+                                            info!("Successfully wrote {} records", buffer.len());
+                                            metrics.count("records.written", buffer.len() as i64).ok();
+                                            buffer.clear();
+                                            last_write = std::time::Instant::now();
+                                            // Only now is it safe to advance the group's offsets.
+                                            match pending_offsets.commit(&consumer) {
+                                                Ok(()) => metrics.incr("offsets.committed").ok(),
+                                                Err(e) => {
+                                                    // Data is in Delta; keep the offsets and retry
+                                                    // the commit next batch (worst case: duplicates).
+                                                    warn!("Offset commit failed after Delta write: {}", e);
+                                                    metrics.incr("errors.offset_commit_failed").ok()
+                                                }
+                                            };
+                                            break;
+                                        }
+                                        Err(e) => {
+                                            error!("Failed to write batch (attempt {}/{}): {}", attempt, max_write_attempts, e);
+                                            metrics.incr("errors.write_failed").ok();
 
-                                        // Signal: spider_error
-                                        scrapy_metrics.spider_error("write_failed", &e.to_string()).await.ok();
+                                            // Signal: spider_error
+                                            scrapy_metrics.spider_error("write_failed", &e.to_string()).await.ok();
+
+                                            if attempt >= max_write_attempts {
+                                                // Do NOT commit: exit so the uncommitted batch is
+                                                // re-consumed after restart instead of being skipped.
+                                                return Err(e.context(format!(
+                                                    "Delta write failed {} times; exiting without committing offsets",
+                                                    attempt
+                                                )));
+                                            }
+                                            tokio::time::sleep(write_retry_backoff(attempt)).await;
+                                        }
                                     }
                                 }
                             }
@@ -444,9 +489,49 @@ async fn ingest(
     }
 }
 
+/// Exponential backoff between Delta write attempts: 1s, 2s, 4s ... capped at 30s.
+fn write_retry_backoff(attempt: u32) -> Duration {
+    Duration::from_secs((1u64 << attempt.saturating_sub(1).min(5)).min(30))
+}
+
+/// Next offset to commit for every (topic, partition) seen since the last commit.
+#[derive(Default, Debug)]
+struct PendingOffsets {
+    next: HashMap<(String, i32), i64>,
+}
+
+impl PendingOffsets {
+    /// Record a consumed message; the committed offset is the *next* one to read.
+    fn record(&mut self, topic: &str, partition: i32, offset: i64) {
+        let entry = self.next.entry((topic.to_string(), partition)).or_insert(offset + 1);
+        if offset + 1 > *entry {
+            *entry = offset + 1;
+        }
+    }
+
+    fn to_list(&self) -> Result<TopicPartitionList> {
+        let mut tpl = TopicPartitionList::new();
+        for ((topic, partition), offset) in &self.next {
+            tpl.add_partition_offset(topic, *partition, Offset::Offset(*offset))?;
+        }
+        Ok(tpl)
+    }
+
+    /// Synchronously commit everything recorded; cleared only on success.
+    fn commit(&mut self, consumer: &StreamConsumer) -> Result<()> {
+        if self.next.is_empty() {
+            return Ok(());
+        }
+        consumer.commit(&self.to_list()?, CommitMode::Sync)?;
+        self.next.clear();
+        Ok(())
+    }
+}
+
 async fn load_or_create_table(table_path: &str, partition_column: Option<&str>) -> Result<DeltaTable> {
     // Try to load existing table
-    match DeltaTableBuilder::from_uri(table_path).load().await {
+    let table_url = ensure_table_uri(table_path).context("Invalid Delta table location")?;
+    match DeltaTableBuilder::from_uri(table_url)?.load().await {
         Ok(table) => {
             info!("Loaded existing Delta table from: {}", table_path);
             Ok(table)
@@ -488,7 +573,7 @@ async fn load_or_create_table(table_path: &str, partition_column: Option<&str>) 
 }
 
 async fn write_batch(
-    table: &DeltaTable,
+    table: &mut DeltaTable,
     schema: &Schema,
     records: &[Value],
     metrics: &StatsdClient,
@@ -545,10 +630,40 @@ async fn write_batch(
     // Write to Delta Lake
     let mut writer = RecordBatchWriter::for_table(table)?;
     writer.write(batch).await?;
-    let mut table_mut = table.clone();
-    writer.flush_and_commit(&mut table_mut).await?;
+    // Commit into the caller's table so its snapshot advances (it previously
+    // committed into a throwaway clone and kept writing from a stale version).
+    writer.flush_and_commit(table).await?;
 
     metrics.incr("batches.written").ok();
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pending_offsets_track_next_offset_per_partition() {
+        let mut p = PendingOffsets::default();
+        p.record("items", 0, 10);
+        p.record("items", 0, 11);
+        p.record("items", 1, 5);
+        p.record("items", 0, 7); // out-of-order never moves an offset backwards
+        assert_eq!(p.next[&("items".to_string(), 0)], 12);
+        assert_eq!(p.next[&("items".to_string(), 1)], 6);
+
+        let tpl = p.to_list().unwrap();
+        assert_eq!(tpl.count(), 2);
+        let e = tpl.find_partition("items", 0).unwrap();
+        assert_eq!(e.offset(), Offset::Offset(12));
+    }
+
+    #[test]
+    fn backoff_is_exponential_and_capped() {
+        assert_eq!(write_retry_backoff(1), Duration::from_secs(1));
+        assert_eq!(write_retry_backoff(2), Duration::from_secs(2));
+        assert_eq!(write_retry_backoff(4), Duration::from_secs(8));
+        assert_eq!(write_retry_backoff(50), Duration::from_secs(30));
+    }
 }

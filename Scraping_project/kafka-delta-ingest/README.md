@@ -127,6 +127,14 @@ kafka-delta-ingest ingest scraped-items /app/data/delta_lake/scraped_items \
 | `--auto-offset-reset` | Offset reset strategy | earliest |
 | `--allowed-latency` | Max seconds before forcing batch write | 300 |
 | `--max-messages-per-batch` | Max messages per batch | 1000 |
+| `--max-write-attempts` | Delta write attempts per batch (backoff 1s, 2s, 4s … max 30s) before exiting without committing | 5 |
+
+### Delivery semantics: at-least-once (#282)
+
+- **Manual offset commits.** Auto-commit is **off**. The ingestor records the next offset per partition for every consumed message (including invalid messages it deliberately drops). It commits those offsets synchronously **only after** the batch has been committed to Delta (`flush_and_commit`).
+- **Failed writes are retried with backoff.** After `--max-write-attempts` failures the process exits non-zero **without committing**. On restart (or rebalance) the uncommitted messages are consumed again, so a failed lake write can never skip messages.
+- **Offset commit failure after a successful Delta write** is logged (`errors.offset_commit_failed`) and retried with the next batch.
+- **Duplicates, not loss.** A crash between the Delta commit and the offset commit re-delivers that batch. Downstream readers should dedupe on `url` + `scraped_at_utc` if they need exactly-once views.
 
 ## 📊 Schema
 
