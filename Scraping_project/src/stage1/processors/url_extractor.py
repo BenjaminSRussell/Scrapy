@@ -1,12 +1,36 @@
 import base64
+import binascii
+import json
 import logging
 import re
 from re import Pattern
+from typing import Any
 from urllib.parse import unquote, urljoin, urlparse
 
 from scrapy.http import Response
 
 logger = logging.getLogger(__name__)
+
+try:  # decode/parse failures that used to be swallowed by `except Exception: pass` (#385)
+    from prometheus_client import Counter
+
+    URL_EXTRACTOR_DECODE_FAILURES: Any = Counter(
+        "scrapy_url_extractor_decode_failures_total",
+        "URLExtractor inputs that could not be decoded/parsed, by source "
+        "(atob, uri, json_ld, urljoin).",
+        ["source"],
+    )
+except Exception:  # prometheus_client missing or metric already registered
+    URL_EXTRACTOR_DECODE_FAILURES = None
+
+_PAYLOAD_PREVIEW = 80
+
+
+def _record_decode_failure(source: str, payload: str, error: Exception) -> None:
+    if URL_EXTRACTOR_DECODE_FAILURES is not None:
+        URL_EXTRACTOR_DECODE_FAILURES.labels(source=source).inc()
+    preview = payload if len(payload) <= _PAYLOAD_PREVIEW else payload[:_PAYLOAD_PREVIEW] + "..."
+    logger.debug(f"[URLExtractor] {source} decode failed ({type(error).__name__}: {error}): {preview!r}")
 
 class URLExtractor:
 
@@ -21,6 +45,8 @@ class URLExtractor:
         re.compile(r'decodeURIComponent\(["\']([^"\']+)["\']\)'),
         re.compile(r'unescape\(["\']([^"\']+)["\']\)'),
     ]
+    # Which decoder each ENCODED_URL_PATTERNS entry needs (#385).
+    ENCODED_URL_DECODERS: tuple[str, ...] = ("atob", "uri", "unescape")
 
     JS_VAR_PATTERNS = [
         r'(?:var|let|const)\s+(\w+)\s*=\s*["\']([^"\']*(?:https?://|/)[^"\']+)["\']',
@@ -97,15 +123,11 @@ class URLExtractor:
                     url = match.groups()[-1]
                     self._add_url(url)
 
-            for encoded_pattern in self.ENCODED_URL_PATTERNS:
+            for encoded_pattern, decoder in zip(self.ENCODED_URL_PATTERNS, self.ENCODED_URL_DECODERS):
                 for match in encoded_pattern.finditer(script):
-                    encoded = match.group(1)
-                    try:
-                        decoded = self._decode_url(encoded)
-                        if decoded:
-                            self._add_url(decoded)
-                    except Exception:
-                        pass
+                    decoded = self._decode_url(match.group(1), decoder)
+                    if decoded:
+                        self._add_url(decoded)
 
     def _extract_from_script_tags(self, response: Response):
         for src in response.css("script::attr(src)").getall():
@@ -161,14 +183,13 @@ class URLExtractor:
             self._add_url(url)
 
     def _extract_from_json_ld(self, response: Response):
-        import json
-
         for script in response.css('script[type="application/ld+json"]::text').getall():
             try:
                 data = json.loads(script)
-                self._extract_urls_from_json(data)
-            except Exception:
-                pass
+            except (ValueError, RecursionError) as e:  # JSONDecodeError is a ValueError
+                _record_decode_failure("json_ld", script.strip(), e)
+                continue
+            self._extract_urls_from_json(data)
 
     def _extract_urls_from_json(self, data):
         if isinstance(data, dict):
@@ -219,22 +240,43 @@ class URLExtractor:
         ]
         return any(indicator in url for indicator in template_indicators)
 
-    def _decode_url(self, encoded: str) -> str | None:
-        try:
-            decoded = base64.b64decode(encoded).decode("utf-8")
-            if "http" in decoded or decoded.startswith("/"):
-                return decoded
-        except Exception:
-            pass
+    @staticmethod
+    def _looks_like_url(decoded: str) -> bool:
+        return "http" in decoded or decoded.startswith("/")
 
-        try:
-            decoded = unquote(encoded)
-            if "http" in decoded or decoded.startswith("/"):
-                return decoded
-        except Exception:
-            pass
+    def _decode_url(self, encoded: str, decoder: str = "auto") -> str | None:
+        """Decode an atob()/decodeURIComponent()/unescape() argument (#385).
 
-        return None
+        ``decoder`` is ``atob`` (base64 + UTF-8, like JS: whitespace ignored,
+        padding optional), ``uri`` (decodeURIComponent: percent-decoding as
+        UTF-8), ``unescape`` (percent-decoding as Latin-1, never fails) or
+        ``auto`` (base64, then percent-decoding). Malformed input is counted in
+        ``scrapy_url_extractor_decode_failures_total{source}`` and logged at DEBUG
+        with a truncated payload; nothing is swallowed silently.
+        """
+        if decoder in ("atob", "auto"):
+            try:
+                compact = re.sub(r"\s+", "", encoded)
+                compact += "=" * (-len(compact) % 4)
+                decoded = base64.b64decode(compact, validate=True).decode("utf-8")
+            except (binascii.Error, ValueError) as e:  # bad alphabet/padding; UnicodeDecodeError
+                if decoder == "atob":
+                    _record_decode_failure("atob", encoded, e)
+                    return None
+            else:
+                if self._looks_like_url(decoded):
+                    return decoded
+                if decoder == "atob":
+                    return None
+        if decoder == "unescape":
+            decoded = unquote(encoded, encoding="latin-1")
+            return decoded if self._looks_like_url(decoded) else None
+        try:
+            decoded = unquote(encoded, errors="strict")
+        except UnicodeDecodeError as e:  # e.g. %FF%FE: not valid UTF-8 once unquoted
+            _record_decode_failure("uri", encoded, e)
+            return None
+        return decoded if self._looks_like_url(decoded) else None
 
     def _add_url(self, url: str):
         if not url or not isinstance(url, str):
@@ -256,7 +298,8 @@ class URLExtractor:
 
         try:
             absolute_url = urljoin(self.base_url, url)
-        except Exception:
+        except ValueError as e:  # e.g. invalid IPv6 netloc "http://[::1"
+            _record_decode_failure("urljoin", url, e)
             return
 
         if not self._is_valid_url(absolute_url):
@@ -295,5 +338,5 @@ class URLExtractor:
 
             return True
 
-        except Exception:
+        except ValueError:  # urlparse rejects malformed netlocs (invalid IPv6, bad port)
             return False

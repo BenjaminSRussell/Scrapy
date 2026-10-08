@@ -10,32 +10,51 @@ import shutil
 import subprocess
 import sys
 from collections.abc import Iterable, Sequence
+from pathlib import Path
 
 REQUIRED_TOOLS = {
     "local": ("docker-compose",),
     "k8s": ("helm",),
 }
 
-INFRA_VOLUMES = [
-    "redis_data",
-    "kafka_data",
-    "zookeeper_data",
-    "zookeeper_logs",
-    "prometheus_a_data",
-    "prometheus_b_data",
-    "alertmanager_1_data",
-    "alertmanager_2_data",
-    "alertmanager_3_data",
-    "grafana_data",
-]
+COMPOSE_FILE = Path(__file__).resolve().parent / "docker-compose.yml"
 
-STATEFUL_SERVICE_VOLUMES = [
-    "postgres_data",
-]
+# Fallback only: used when docker-compose.yml cannot be read/parsed. The real
+# prune list is the top-level `volumes:` of the Compose file (#383), so it never
+# drifts from what `docker compose up` actually creates.
+DEFAULT_COMPOSE_VOLUMES = ("redis-data", "postgres-data", "prometheus-data", "grafana-data")
 
-DELTA_LAKE_VOLUMES = [
-    "delta_data",
-]
+
+def compose_volume_names(compose_file: Path | str = COMPOSE_FILE) -> list[str]:
+    """Top-level named volumes declared in the Compose file."""
+    try:
+        import yaml  # PyYAML is in requirements.txt
+
+        data = yaml.safe_load(Path(compose_file).read_text(encoding="utf-8")) or {}
+    except Exception as exc:  # OSError, ImportError, yaml.YAMLError
+        print(f"Warning: could not read {compose_file} ({exc}); using default volume list.", file=sys.stderr)
+        return list(DEFAULT_COMPOSE_VOLUMES)
+    if not isinstance(data, dict):
+        return list(DEFAULT_COMPOSE_VOLUMES)
+    volumes = data.get("volumes") or {}
+    return [str(name) for name in volumes]
+
+
+def is_delta_volume(name: str) -> bool:
+    return "delta" in name.lower()
+
+
+def classify_volumes(names: Iterable[str]) -> tuple[list[str], list[str]]:
+    """Split Compose volumes into (always pruned, pruned only with --purge-data)."""
+    regular, delta = [], []
+    for name in names:
+        (delta if is_delta_volume(name) else regular).append(name)
+    return regular, delta
+
+
+def planned_volume_prune(purge_data: bool, compose_file: Path | str = COMPOSE_FILE) -> list[str]:
+    regular, delta = classify_volumes(compose_volume_names(compose_file))
+    return regular + (delta if purge_data else [])
 
 PIPELINE_RELEASE = "scraping-pipeline"
 PIPELINE_NAMESPACE = "scraping"
@@ -56,9 +75,14 @@ K8S_STAGE_DEFAULTS = {
 
 
 def parse_args() -> argparse.Namespace:
+    regular, delta = classify_volumes(compose_volume_names())
     parser = argparse.ArgumentParser(
         description="Tear down local or Kubernetes resources for the scraping pipeline.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+        epilog=(
+            f"Local volumes pruned (from {COMPOSE_FILE.name}): {', '.join(regular) or 'none'}. "
+            f"Delta Lake volumes (only with --purge-data): {', '.join(delta) or 'none'}."
+        ),
     )
     parser.add_argument(
         "--env",
@@ -94,6 +118,11 @@ def parse_args() -> argparse.Namespace:
         "--purge-data",
         action="store_true",
         help="Also remove Delta Lake volumes during local shutdown.",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Local only: print the Compose volumes that would be pruned and exit without changes.",
     )
     parser.add_argument(
         "--skip-images",
@@ -150,23 +179,19 @@ def remove_volume(volume_name: str) -> None:
     )
 
 
+def matching_docker_volumes(base: str, existing: Iterable[str]) -> list[str]:
+    """Docker names a Compose volume `<project>_<name>`; match either form."""
+    suffix = f"_{base}"
+    return [name for name in existing if name == base or name.endswith(suffix)]
+
+
 def prune_local_volumes(purge_data: bool) -> None:
     existing = list_docker_volumes()
     if not existing:
         return
 
-    def matching_names(base: str) -> list[str]:
-        suffix = f"_{base}"
-        return [name for name in existing if name == base or name.endswith(suffix)]
-
-    removable = list(INFRA_VOLUMES)
-    removable.extend(STATEFUL_SERVICE_VOLUMES)
-    if purge_data:
-        removable.extend(DELTA_LAKE_VOLUMES)
-
-    for base in removable:
-        matches = matching_names(base)
-        for name in matches:
+    for base in planned_volume_prune(purge_data):
+        for name in matching_docker_volumes(base, existing):
             print(f"Removing Docker volume '{name}'...")
             remove_volume(name)
 
@@ -377,7 +402,7 @@ def detect_running_k8s_release() -> None:
 def shutdown_local(purge_data: bool, skip_images: bool) -> None:
     prompt_parts = [
         "This will stop all local containers and clear Docker volumes for caches,",
-        "brokers, metrics, and Postgres.",
+        f"metrics, and Postgres ({', '.join(planned_volume_prune(purge_data)) or 'none'}).",
     ]
     if not skip_images:
         prompt_parts.append("Docker images will also be removed.")
@@ -471,6 +496,14 @@ def shutdown_k8s(args: argparse.Namespace) -> None:
 
 def main() -> None:
     args = parse_args()
+    if args.env == "local" and args.dry_run:
+        names = planned_volume_prune(args.purge_data)
+        print("Would prune Compose volumes: " + (", ".join(names) or "none"))
+        if not args.purge_data:
+            _, delta = classify_volumes(compose_volume_names())
+            if delta:
+                print("Preserved (add --purge-data to remove): " + ", ".join(delta))
+        return
     ensure_tools_available(args.env)
 
     if args.env == "local":
