@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html><head><title>Registrar - Academic calendar</title>
+<script src="/assets/jquery-3.7.1.min.js"></script></head>
+<body>
+<main>
+<h1>Academic calendar</h1>
+<p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris.</p><p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris.</p>
+<table><tr><td>Fall classes begin</td><td>August 25</td></tr><tr><td>Thanksgiving recess</td><td>November 23-29</td></tr></table>
+<p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris.</p>
+</main>
+<script>
+$.ajax({url: "/track", method: "POST", data: {page: location.pathname}});
+$.get("/consent-banner");
+</script>
+</body></html>

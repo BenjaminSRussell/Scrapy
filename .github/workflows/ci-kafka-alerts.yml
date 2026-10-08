@@ -36,17 +36,15 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install pyyaml
+          pip install pyyaml pytest
 
-      - name: Start mock metrics server
-        run: |
-          python3 Scraping_project/tests/observability/_mock_metrics_server.py &
-          sleep 3 # Give the server a moment to start
-
+      # pytest (not unittest) like the rest of the repo (#299). --noconftest keeps this job
+      # on pyyaml+pytest only; -o addopts= drops the coverage/xdist options from pytest.ini.
       - name: Run tests
+        working-directory: Scraping_project
         run: |
-          python3 -m unittest Scraping_project/tests/observability/test_kafka_lag_alert.py
-          python3 -m unittest Scraping_project/tests/observability/test_recording_rules.py
+          python3 -m pytest tests/observability/test_kafka_lag_alert.py tests/observability/test_recording_rules.py \
+            -o addopts= -p no:cacheprovider --noconftest -q
 
       - name: Archive rules for inspection
         uses: actions/upload-artifact@v6

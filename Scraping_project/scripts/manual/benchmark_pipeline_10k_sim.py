@@ -1,7 +1,17 @@
 #!/usr/bin/env python3
-"""
-Comprehensive 10K URL Pipeline Test
-Tests all 4 stages with performance monitoring and detailed logging
+"""Manual 10K-URL pipeline *simulation* (not an automated test).
+
+Historically lived at the repo root as ``test_pipeline_10k.py``. It invents
+throughput numbers with ``random`` and writes a log; it does **not** exercise
+real stages, Redis, Kafka or Delta Lake, and a zero exit code does not mean the
+pipeline works. Treat it as a whiteboard / latency sketch for operators.
+
+Run (from ``Scraping_project/``)::
+
+    python scripts/manual/benchmark_pipeline_10k_sim.py
+
+For real offline coverage use ``pytest -m smoke``. For load against a live
+stack, use ``make test-perf``.
 """
 
 import time

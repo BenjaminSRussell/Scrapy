@@ -6,18 +6,39 @@ from typing import Any
 
 from datasketch import MinHash, MinHashLSH
 
+from src.core.config import get_config, stage_worker_settings
 from src.core.constants import (
     LEGACY_TABLE_STAGE3_SUMMARIES,
     SUMMARY_LIMITS,
     TABLE_STAGE3_SUMMARIES,
 )
-from src.core.config import stage_worker_settings
-from src.utils.delta import get_delta
-from src.utils.postgres import PostgresManager
-from src.utils.metrics_sink import record_error, record_performance
 from src.otel_tracing import ensure_crawl_job_id, init_tracing, start_span
+from src.utils.delta import get_delta
+from src.utils.metrics_sink import record_error, record_performance
+from src.utils.postgres import PostgresManager
 
 logger = logging.getLogger(__name__)
+
+DEFAULT_SIMILARITY_THRESHOLD = 0.3
+# The extractive summary keeps the first N sentences, but text without sentence
+# punctuation would otherwise come back whole as its own "summary" (#223).
+MAX_SUMMARY_CHARS = 1000
+
+
+def _similarity_threshold() -> float:
+    """``stage3.similarity_threshold`` from config.yml (MinHash LSH Jaccard, 0 < t <= 1).
+
+    The worker used a hard-coded 0.3 and ignored the documented setting.
+    """
+    try:
+        value = float(get_config().get("stage3.similarity_threshold", DEFAULT_SIMILARITY_THRESHOLD))
+    except (TypeError, ValueError):
+        return DEFAULT_SIMILARITY_THRESHOLD
+    if not 0.0 < value <= 1.0:
+        logger.warning(f"stage3.similarity_threshold={value} outside (0, 1]; using {DEFAULT_SIMILARITY_THRESHOLD}")
+        return DEFAULT_SIMILARITY_THRESHOLD
+    return value
+
 
 class Stage3Worker:
 
@@ -27,7 +48,7 @@ class Stage3Worker:
         self.semaphore = asyncio.Semaphore(max_concurrent)
         self.delta = get_delta()
         self.postgres = PostgresManager.get_instance()
-        self.SIMILARITY_THRESHOLD = 0.3
+        self.SIMILARITY_THRESHOLD = _similarity_threshold()
 
     def _processed_hashes(self) -> set:
         """url_hashes Stage 3 has already summarized (#316/#612).
@@ -174,6 +195,8 @@ class Stage3Worker:
                 sentences = text.split(".")[:max_sentences]
                 summary_body = ". ".join(sentence.strip() for sentence in sentences if sentence.strip())
                 summary = summary_body + "." if summary_body else ""
+                if len(summary) > MAX_SUMMARY_CHARS:
+                    summary = self._fallback_summary(summary, MAX_SUMMARY_CHARS)
 
                 return {
                     "url": url,

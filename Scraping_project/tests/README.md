@@ -21,7 +21,21 @@ python -m pytest tests/unit -m "not slow" -o addopts= -q    # unit tests, offlin
 python -m pytest tests/unit/stage2 -m unit -o addopts= -q   # one component
 python -m pytest tests/ -k redis -o addopts= -q             # by keyword
 make test-fast                                              # not slow / not performance
+make test-smoke                                             # curated smoke gate, ~15s
 ```
+
+## Smoke suite (#286)
+
+`pytest -m smoke -o addopts=` (or `make test-smoke`) runs a curated offline gate that
+finishes in well under 60 seconds:
+
+- core modules import (`unit/testing/test_smoke_suite.py`);
+- one spider parse: ScoutSpider on the `simple.html` fixture (`unit/stage1/test_scout_parse_fixtures.py`);
+- one item pipeline: `DataValidationPipeline` pass vs drop;
+- one settings check: SSRF guard middleware wired, `ROBOTSTXT_OBEY` is a bool, pipelines configured.
+
+Mark a test `@pytest.mark.smoke` only if it is offline, deterministic and fast (well under a
+second). The smoke suite is a quick PR signal, not a replacement for the CI selection.
 
 ## Layout
 
@@ -35,13 +49,15 @@ make test-fast                                              # not slow / not per
 | `observability/` | Prometheus config, alert rules and metric-name checks (offline) |
 | `performance/` | Load/stress benchmarks (`performance` + `slow`; `make test-perf`) |
 | `retry/`, `test_*.py` | Retry/circuit breaker, cache, models, Redis smoke |
-| `fixtures/` | HTML and data fixtures |
+| `fixtures/` | Data fixtures; `fixtures/html/` holds HTML page snapshots for spiders (#273) |
+| `factories.py` | Record builders for Stage 1–4 rows (#275) |
+| `flaky_policy.py` | Flaky-test quarantine rules (#288) |
 | `conftest.py` | Shared fixtures: `redis_clean` (FakeRedis), `delta_sandbox`, `postgres_clean`, `http_server`, … |
 
 ## Markers (`pytest.ini`, `--strict-markers`)
 
 `unit`, `integration`, `slow`, `redis`, `postgres`, `kafka`, `scrapy`, `stage1`–`stage4`,
-`smoke`, `security`, `performance`, `critical`, `component`, `contract`.
+`smoke`, `security`, `performance`, `critical`, `component`, `contract`, `delta`, `flaky`.
 
 - **Skip Kafka:** `-m "not kafka"`. The Kafka suites need a broker and run in their
   own workflow.
@@ -90,3 +106,54 @@ Coverage is collected through `addopts` (`--cov=src --cov-branch`) when you run 
   `unit/stage2/`.
 - Heavy or long tests must carry `@pytest.mark.slow` or `performance`;
   `tests/unit/test_marker_policy.py` guards the performance suite.
+
+## HTML fixtures and record factories (#273, #275)
+
+- **HTML pages:** `tests/fixtures/html/{simple,js_heavy,empty,nav_heavy}.html`. The
+  `html_response` fixture builds a Scrapy `HtmlResponse` (with a request and `meta`):
+
+  ```python
+  def test_parse(html_response):
+      response = html_response("simple", url="https://example.com/dept/", meta={"depth": 1})
+  ```
+
+  Add a new file there rather than an inline HTML string when a test needs a new page shape.
+- **Records:** `tests/factories.py` has `url_record`, `stage2_record`, `stage3_summary`,
+  `stage4_large_doc` (keys match `src.core.schemas` exactly; `test_factories.py` builds a
+  PyArrow table from each) and `stage4_chunk` (an in-memory `chunk_spans()` span plus
+  text; Stage 4 never persists chunk rows). Every field takes a keyword override:
+
+  ```python
+  from tests.factories import stage2_record
+  row = stage2_record(word_count=12, is_low_quality=True)
+  ```
+
+  The same builders are available as fixtures: `make_url_record`, `make_stage2_record`,
+  `make_stage3_summary`, `make_stage4_large_doc`, `make_stage4_chunk`. The older
+  `sample_url_record` / `sample_stage2_data` fixtures are unchanged.
+
+## Flaky tests: quarantine policy (#288)
+
+1. **Fix first.** A flaky test is a bug in the test or the code. Quarantine only when the fix
+   is not quick and the test blocks unrelated PRs.
+2. **Open an issue** describing the failure (seed, ordering, timing) and link the CI run.
+3. **Quarantine** with the `flaky` marker and the issue reference in the reason:
+
+   ```python
+   @pytest.mark.flaky(reason="races the Redis pool under xdist, #1234")
+   def test_something(): ...
+   ```
+
+   Quarantined tests are **skipped** in normal runs (CI included) with
+   `quarantined flaky test: <reason>`. Run them with `RUN_FLAKY=1 pytest -m flaky -o addopts=`.
+4. **No silent quarantine.** A `flaky` marker whose reason has no `#<number>` or GitHub issue
+   URL fails collection (`tests/flaky_policy.py`). There are no automatic reruns; a retry
+   would hide order bugs (for example under `-n auto`).
+5. **Exit:** remove the marker in the PR that closes the issue.
+
+## Manual scripts are not tests
+
+`scripts/manual/benchmark_pipeline_10k_sim.py` (formerly the root `test_pipeline_10k.py`)
+is a simulation with random rates; it is not collected by pytest and is not a pass/fail
+check (#291).
+
