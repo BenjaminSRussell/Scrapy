@@ -19,9 +19,9 @@ function forcedBlock() {
 }
 
 function rule(block, selector) {
-    const re = new RegExp('(^|[\\s,}])' + selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*[,{][^{]*\\{([^}]*)\\}');
+    const re = new RegExp('(^|[\\s,}])' + selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*(,[^{]*)?\\{([^}]*)\\}');
     const m = block.match(re);
-    return m ? m[2] : null;
+    return m ? m[3] : null;
 }
 
 test('cards get a real border (box-shadow is dropped in forced colors)', () => {
