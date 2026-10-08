@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import ast
 import functools
+import json
 import re
 import shutil
 import subprocess
@@ -132,6 +133,19 @@ def test_metric_name_parser():
 def test_every_rule_metric_has_a_producer(rule, expr):
     missing = sorted(metric_names(expr) - _catalog())
     assert not missing, f"{rule} reads metrics nothing produces: {missing}"
+
+
+def _dashboard_exprs() -> list[tuple[str, str]]:
+    """PromQL in the provisioned health dashboard (#157), variables expanded."""
+    doc = json.loads((MON / "dashboards" / "scraping_pipeline_health.json").read_text())
+    return [(f"{p['title']}:{t['refId']}", t["expr"].replace("$spider", ".*").replace("$stage", ".*"))
+            for p in doc["panels"] for t in p.get("targets", [])]
+
+
+@pytest.mark.parametrize("panel,expr", _dashboard_exprs(), ids=lambda v: v if ":" in str(v) else "")
+def test_every_dashboard_metric_has_a_producer(panel, expr):
+    missing = sorted(metric_names(expr) - _catalog())
+    assert not missing, f"dashboard panel {panel} reads metrics nothing produces: {missing}"
 
 
 def test_the_old_phantom_names_are_gone():

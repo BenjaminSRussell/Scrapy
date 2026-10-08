@@ -8,5 +8,6 @@ providers:
     updateIntervalSeconds: 5
     allowUiUpdates: true
     options:
-      path: /etc/grafana/provisioning/dashboards/grafana
+      # docker-compose.yml and the Helm chart both mount monitoring/dashboards/ here (#157).
+      path: /var/lib/grafana/dashboards
       foldersFromFilesStructure: false

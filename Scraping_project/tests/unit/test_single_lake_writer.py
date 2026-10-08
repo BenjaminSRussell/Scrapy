@@ -109,3 +109,24 @@ def test_stage2_style_call_sites_go_through_the_shared_writer(lake):
     helper.manager.write_queue.join()
     assert helper.manager is LakehouseManager.get_instance()
     assert delta_mod._delta_helper is helper
+
+
+def test_explicitly_injected_manager_is_respected(lake):
+    """Setting helper._manager (tests, tools) must not be undone by re-attachment."""
+    from unittest.mock import MagicMock
+
+    helper = get_delta()
+    fake = MagicMock()
+    helper._manager = fake
+    assert helper.manager is fake
+    assert LakehouseManager._instance is None  # nothing silently created
+
+
+def test_injected_manager_survives_with_an_existing_singleton(lake):
+    from unittest.mock import MagicMock
+
+    helper = get_delta()
+    real = helper.manager
+    fake = MagicMock()
+    helper._manager = fake
+    assert helper.manager is fake and LakehouseManager._instance is real
