@@ -8,6 +8,7 @@ Canonical configuration lives in Scraping_project/config.yml and is loaded via
 
 from __future__ import annotations
 
+import logging
 import os
 from pathlib import Path
 from typing import Any, Optional
@@ -15,8 +16,62 @@ from typing import Any, Optional
 from src.core.config import Config, get_config
 from src.core.tls_policy import downloader_context_factory
 
+logger = logging.getLogger(__name__)
+
 ENV = os.getenv("ENV", "development")
 PROJECT_ROOT = Path(__file__).parent.parent
+
+
+#: #787: crawl concurrency has ONE documented knob per spider profile,
+#: ``stage1.spiders.<profile>.<key>`` in config.yml. The scout profile also
+#: supplies the project-wide Scrapy defaults below. ``scrapy.<key>`` is a
+#: deprecated duplicate: it used to win here while the scout spider's
+#: custom_settings silently overrode it, so tuning it had no effect.
+CRAWL_CONCURRENCY_KEYS = (
+    "concurrent_requests",
+    "concurrent_requests_per_domain",
+    "download_delay",
+    "autothrottle_target_concurrency",
+)
+_DEAD_CRAWL_KNOBS = {
+    # key -> (canonical replacement, why it is dead)
+    "stage1.depth_spider.concurrent_requests": (
+        "stage1.spiders.deep_dive.concurrent_requests",
+        "the depth spider runs with the deep_dive profile",
+    ),
+}
+
+
+def crawl_knob_warnings(config: Optional[Config] = None) -> list[str]:
+    """Human-readable problems with duplicate/dead crawl-concurrency keys."""
+    cfg = config if config is not None else get_config()
+    scrapy_section = cfg.get_section("scrapy") or {}
+    problems: list[str] = []
+    for key in CRAWL_CONCURRENCY_KEYS:
+        if key not in scrapy_section:
+            continue
+        legacy = scrapy_section[key]
+        canonical = cfg.get(f"stage1.spiders.scout.{key}")
+        if canonical is None:
+            problems.append(
+                f"config.yml scrapy.{key} is deprecated; move it to "
+                f"stage1.spiders.scout.{key} (the documented knob, #787)"
+            )
+        elif legacy != canonical:
+            problems.append(
+                f"config.yml sets scrapy.{key}={legacy!r} but "
+                f"stage1.spiders.scout.{key}={canonical!r}; using {canonical!r}. "
+                f"scrapy.{key} is deprecated, tune stage1.spiders.<profile>.{key} (#787)"
+            )
+    for dead, (replacement, why) in _DEAD_CRAWL_KNOBS.items():
+        value = cfg.get(dead)
+        if value is not None:
+            current = cfg.get(replacement)
+            problems.append(
+                f"config.yml {dead}={value!r} is ignored ({why}); "
+                f"set {replacement} (currently {current!r}) instead (#787)"
+            )
+    return problems
 
 
 def derive_scrapy_config(config: Optional[Config] = None) -> dict[str, Any]:
@@ -52,10 +107,20 @@ def derive_scrapy_config(config: Optional[Config] = None) -> dict[str, Any]:
             "stage1.spiders.scout.autothrottle_start_delay"
         ),
         "autothrottle_max_delay": cfg.get("stage1.spiders.scout.autothrottle_max_delay"),
+        "autothrottle_target_concurrency": cfg.get(
+            "stage1.spiders.scout.autothrottle_target_concurrency"
+        ),
     }
     for key, value in bridges.items():
         if key not in scrapy and value is not None:
             scrapy[key] = value
+    # #787: the per-profile knob wins over the deprecated scrapy.* duplicate.
+    for key in CRAWL_CONCURRENCY_KEYS:
+        canonical = bridges.get(key)
+        if canonical is not None:
+            scrapy[key] = canonical
+    for problem in crawl_knob_warnings(cfg):
+        logger.warning(problem)
     return scrapy
 
 
@@ -92,6 +157,7 @@ REQUEST_FINGERPRINTER_CLASS = _scrapy_config.get(
 
 USER_AGENT = _scrapy_config.get("user_agent", "UConn-Discovery-Crawler/1.0")
 
+# Tune in config.yml stage1.spiders.<profile>.* only (#787); see README "Crawl concurrency".
 CONCURRENT_REQUESTS = _scrapy_config.get("concurrent_requests", 64)
 CONCURRENT_REQUESTS_PER_DOMAIN = _scrapy_config.get("concurrent_requests_per_domain", 32)
 CONCURRENT_REQUESTS_PER_IP = _scrapy_config.get("concurrent_requests_per_ip", 32)
@@ -116,7 +182,9 @@ CLOSESPIDER_TIMEOUT = _scrapy_config.get("closespider_timeout", 600)
 AUTOTHROTTLE_ENABLED = _scrapy_config.get("autothrottle_enabled", True)
 AUTOTHROTTLE_START_DELAY = _scrapy_config.get("autothrottle_start_delay", 0.1)
 AUTOTHROTTLE_MAX_DELAY = _scrapy_config.get("autothrottle_max_delay", 1.0)
-AUTOTHROTTLE_TARGET_CONCURRENCY = float(CONCURRENT_REQUESTS)
+AUTOTHROTTLE_TARGET_CONCURRENCY = float(
+    _scrapy_config.get("autothrottle_target_concurrency", CONCURRENT_REQUESTS)
+)
 AUTOTHROTTLE_DEBUG = _scrapy_config.get("autothrottle_debug", False)
 
 HTTPCACHE_ENABLED = _scrapy_config.get("httpcache_enabled", True)

@@ -64,10 +64,15 @@ stage1:
     enabled: true
     trigger_when_queue_below: 10  # Switch to depth mode when queue < 10 items
     max_depth: 50  # Go MUCH deeper when in depth mode (was 10)
-    concurrent_requests: 64  # Slower but more thorough
+    # concurrency: see stage1.spiders.deep_dive (the depth spider's profile, #787)
     rescrape_interval_hours: 24  # Re-scrape existing URLs after 24 hours
 
   # Spider-Specific Settings
+  # Crawl concurrency knob (#787): concurrent_requests,
+  # concurrent_requests_per_domain, download_delay and
+  # autothrottle_target_concurrency are tuned HERE, per profile, and nowhere
+  # else. scout -> scout spider + project-wide Scrapy defaults; deep_dive ->
+  # deep_dive and depth spiders. A scrapy.* duplicate is deprecated and loses.
   spiders:
     scout:
       # Aggressive spider settings

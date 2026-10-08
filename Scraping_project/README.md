@@ -278,6 +278,23 @@ Edit [`config.yml`](config.yml) — the single source of truth loaded by
 `src.core.config.get_config()` and used by Scrapy settings (`src/settings.py`).
 Do not rely on `config/{ENV}.yml` (not present for normal operation).
 
+### Crawl concurrency (one knob)
+
+Tune crawl concurrency in `config.yml` under `stage1.spiders.<profile>` and nowhere else (#787):
+
+| Key | Effect |
+|---|---|
+| `concurrent_requests`, `concurrent_requests_per_domain`, `download_delay`, `autothrottle_target_concurrency` | Scrapy `CONCURRENT_REQUESTS`, `CONCURRENT_REQUESTS_PER_DOMAIN`, `DOWNLOAD_DELAY`, `AUTOTHROTTLE_TARGET_CONCURRENCY` |
+
+| Profile | Used by |
+|---|---|
+| `scout` | the scout spider **and** the project-wide Scrapy defaults in `src/settings.py` |
+| `deep_dive` | the deep_dive and depth spiders |
+
+- **Deprecated duplicates:** a `scrapy.<key>` duplicate of one of these keys is deprecated. If it differs from `stage1.spiders.scout.<key>`, the profile value wins and a warning names both values. Before #787 it won in `settings.py` while the scout spider's own settings overrode it, so tuning it had no effect.
+- **Dead key:** `stage1.depth_spider.concurrent_requests` was never read and is now flagged as ignored.
+- **JavaScript spider:** keeps fixed caps (`CONCURRENT_REQUESTS` 20 / 10 per domain), because Chromium is bounded separately by `PLAYWRIGHT_MAX_CONTEXTS` and `PLAYWRIGHT_MAX_PAGES_PER_CONTEXT`.
+
 ### Config reload semantics
 
 `src/core/config.py` keeps the live configuration as an immutable, versioned snapshot (#590):
