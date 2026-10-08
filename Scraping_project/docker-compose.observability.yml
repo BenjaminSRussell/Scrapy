@@ -1,7 +1,13 @@
-# Production Docker Compose with TLS, Tracing, and Log Aggregation
-# Usage: docker-compose -f docker-compose.production.yml up -d
-
-version: '3.8'
+# Observability add-on: Loki, Jaeger, OpenTelemetry Collector (#476).
+#
+# This is an overlay on the main stack, not a standalone file. Run it from
+# Scraping_project/ together with docker-compose.yml so the services share the
+# app's `scraper-network` and the ./monitoring mounts resolve:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.observability.yml up -d
+#
+# Then point the app at the collector: OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+# (from containers) or http://localhost:4317 (from the host). See ../MONITORING.md.
 
 services:
   # ============================================
@@ -18,7 +24,7 @@ services:
     command: -config.file=/etc/loki/local-config.yaml
     restart: unless-stopped
     networks:
-      - scraping_network
+      - scraper-network
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:3100/ready"]
       interval: 10s
@@ -45,7 +51,7 @@ services:
       - COLLECTOR_OTLP_ENABLED=true
     restart: unless-stopped
     networks:
-      - scraping_network
+      - scraper-network
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:14269/"]
       interval: 10s
@@ -68,7 +74,7 @@ services:
     command: ["--config=/etc/otel/config.yaml"]
     restart: unless-stopped
     networks:
-      - scraping_network
+      - scraper-network
     depends_on:
       - jaeger
       - loki
@@ -77,6 +83,4 @@ volumes:
   loki_data:
     driver: local
 
-networks:
-  scraping_network:
-    external: true
+# `scraper-network` is defined by docker-compose.yml (merged via -f).
