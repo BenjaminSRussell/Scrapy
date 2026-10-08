@@ -128,12 +128,62 @@ impl ScrapyMetrics {
     }
 }
 
+/// Fields every ingested message must carry as non-empty strings. Shared with the
+/// Python producer contract (`src/core/ingest_contract.py`, checked by
+/// `tests/unit/test_ingest_field_contract.py`) (#531).
+const REQUIRED_INGEST_FIELDS: [&str; 3] = ["url", "scraped_at_utc", "spider_name"];
+
+/// One validated message, typed. Required fields are never defaulted: a message
+/// that lacks one is rejected instead of being written with an empty string (#531).
+#[derive(Debug, Clone, PartialEq)]
+struct IngestRow {
+    url: String,
+    title: Option<String>,
+    content: Option<String>,
+    scraped_at_utc: String,
+    spider_name: String,
+    pipeline_version: Option<String>,
+    /// `YYYY-MM-DD` prefix of `scraped_at_utc`, used for the `date` partition.
+    date: Option<String>,
+}
+
+fn required_str(record: &Value, field: &str) -> std::result::Result<String, String> {
+    match record.get(field) {
+        Some(Value::String(s)) if !s.trim().is_empty() => Ok(s.clone()),
+        Some(Value::String(_)) => Err(format!("required field `{field}` is empty")),
+        Some(Value::Null) | None => Err(format!("required field `{field}` is missing")),
+        Some(_) => Err(format!("required field `{field}` is not a string")),
+    }
+}
+
+fn optional_str(record: &Value, field: &str) -> Option<String> {
+    record.get(field).and_then(|v| v.as_str()).map(str::to_string)
+}
+
+/// Convert a JSON message into an [`IngestRow`], rejecting (not coercing) any
+/// missing / empty / non-string required field.
+fn parse_ingest_row(record: &Value) -> std::result::Result<IngestRow, String> {
+    let url = required_str(record, "url")?;
+    let scraped_at_utc = required_str(record, "scraped_at_utc")?;
+    let spider_name = required_str(record, "spider_name")?;
+    let date = scraped_at_utc.get(0..10).map(str::to_string);
+    Ok(IngestRow {
+        url,
+        title: optional_str(record, "title"),
+        content: optional_str(record, "content"),
+        scraped_at_utc,
+        spider_name,
+        pipeline_version: optional_str(record, "pipeline_version"),
+        date,
+    })
+}
+
 /// Build the JSON schema for scraped items to validate incoming messages
 fn build_scraped_item_schema() -> Value {
     json!({
         "$schema": "http://json-schema.org/draft-07/schema#",
         "type": "object",
-        "required": ["url", "scraped_at_utc", "spider_name"],
+        "required": REQUIRED_INGEST_FIELDS,
         "properties": {
             "url": {
                 "type": "string",
@@ -348,7 +398,7 @@ async fn ingest(
     info!("Delta table loaded/created successfully");
     info!("Schema: {:?}", schema);
 
-    let mut buffer: Vec<Value> = Vec::new();
+    let mut buffer: Vec<IngestRow> = Vec::new();
     let mut last_write = std::time::Instant::now();
     // Next offset to commit per (topic, partition): every message seen so far,
     // including deliberately dropped invalid ones, but only committed once the
@@ -372,8 +422,18 @@ async fn ingest(
                                     // Signal: response_received - Track HTTP status (default 200 for successful parse)
                                     scrapy_metrics.response_received(200).await.ok();
 
-                                    buffer.push(json_value);
-                                    metrics.incr("messages.received").ok();
+                                    match parse_ingest_row(&json_value) {
+                                        Ok(row) => {
+                                            buffer.push(row);
+                                            metrics.incr("messages.received").ok();
+                                        }
+                                        Err(reason) => {
+                                            // Never write a defaulted ("") required field (#531).
+                                            warn!("Rejected message: {}", reason);
+                                            metrics.incr("errors.missing_required_field").ok();
+                                            scrapy_metrics.item_dropped("missing_required_field").await.ok();
+                                        }
+                                    }
                                 }
                                 false => {
                                     // Schema validation failed - log detailed errors
@@ -406,21 +466,7 @@ async fn ingest(
                                 || last_write.elapsed() >= Duration::from_secs(allowed_latency);
 
                             if should_write {
-                                // Add date partition column if partitioning is enabled
-                                if partition_column.is_some() {
-                                    for item in &mut buffer {
-                                        if let Some(obj) = item.as_object_mut() {
-                                            if let Some(timestamp) = obj.get("scraped_at_utc").and_then(|v| v.as_str()) {
-                                                // Extract date (first 10 characters: YYYY-MM-DD)
-                                                if timestamp.len() >= 10 {
-                                                    let date = &timestamp[0..10];
-                                                    obj.insert("date".to_string(), Value::String(date.to_string()));
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-
+                                // The `date` partition value is derived in parse_ingest_row.
                                 info!("Writing batch of {} messages to Delta Lake", buffer.len());
 
                                 let mut attempt: u32 = 0;
@@ -575,7 +621,7 @@ async fn load_or_create_table(table_path: &str, partition_column: Option<&str>) 
 async fn write_batch(
     table: &mut DeltaTable,
     schema: &Schema,
-    records: &[Value],
+    records: &[IngestRow],
     metrics: &StatsdClient,
     scrapy_metrics: &mut ScrapyMetrics,
 ) -> Result<()> {
@@ -596,15 +642,15 @@ async fn write_batch(
     let has_date_column = schema.fields().iter().any(|f| f.name() == "date");
 
     for record in records {
-        urls.push(record.get("url").and_then(|v| v.as_str()).unwrap_or(""));
-        titles.push(record.get("title").and_then(|v| v.as_str()));
-        contents.push(record.get("content").and_then(|v| v.as_str()));
-        scraped_ats.push(record.get("scraped_at_utc").and_then(|v| v.as_str()).unwrap_or(""));
-        spider_names.push(record.get("spider_name").and_then(|v| v.as_str()).unwrap_or(""));
-        pipeline_versions.push(record.get("pipeline_version").and_then(|v| v.as_str()));
+        urls.push(record.url.as_str());
+        titles.push(record.title.as_deref());
+        contents.push(record.content.as_deref());
+        scraped_ats.push(record.scraped_at_utc.as_str());
+        spider_names.push(record.spider_name.as_str());
+        pipeline_versions.push(record.pipeline_version.as_deref());
 
         if has_date_column {
-            dates.push(record.get("date").and_then(|v| v.as_str()));
+            dates.push(record.date.as_deref());
         }
 
         // Signal: item_scraped for each successfully written item
@@ -657,6 +703,72 @@ mod tests {
         assert_eq!(tpl.count(), 2);
         let e = tpl.find_partition("items", 0).unwrap();
         assert_eq!(e.offset(), Offset::Offset(12));
+    }
+
+    fn valid_message() -> Value {
+        json!({
+            "url": "https://uconn.edu/a",
+            "title": "A",
+            "scraped_at_utc": "2026-10-07T22:30:00.123456Z",
+            "spider_name": "discovery",
+            "pipeline_version": "1.0.0"
+        })
+    }
+
+    #[test]
+    fn parse_ingest_row_accepts_valid_message() {
+        let row = parse_ingest_row(&valid_message()).unwrap();
+        assert_eq!(row.url, "https://uconn.edu/a");
+        assert_eq!(row.spider_name, "discovery");
+        assert_eq!(row.title.as_deref(), Some("A"));
+        assert_eq!(row.content, None);
+        assert_eq!(row.date.as_deref(), Some("2026-10-07"));
+    }
+
+    #[test]
+    fn parse_ingest_row_rejects_instead_of_coercing() {
+        for field in REQUIRED_INGEST_FIELDS {
+            let mut missing = valid_message();
+            missing.as_object_mut().unwrap().remove(field);
+            let err = parse_ingest_row(&missing).unwrap_err();
+            assert!(err.contains(field) && err.contains("missing"), "{err}");
+
+            let mut empty = valid_message();
+            empty[field] = json!("  ");
+            assert!(parse_ingest_row(&empty).unwrap_err().contains("empty"));
+
+            let mut null = valid_message();
+            null[field] = Value::Null;
+            assert!(parse_ingest_row(&null).unwrap_err().contains("missing"));
+
+            let mut wrong_type = valid_message();
+            wrong_type[field] = json!(42);
+            assert!(parse_ingest_row(&wrong_type).unwrap_err().contains("not a string"));
+        }
+    }
+
+    #[test]
+    fn optional_fields_may_be_absent_or_null() {
+        let mut msg = valid_message();
+        msg["pipeline_version"] = Value::Null;
+        msg.as_object_mut().unwrap().remove("title");
+        let row = parse_ingest_row(&msg).unwrap();
+        assert_eq!(row.pipeline_version, None);
+        assert_eq!(row.title, None);
+    }
+
+    #[test]
+    fn json_schema_requires_the_shared_field_list() {
+        let schema = build_scraped_item_schema();
+        let required: Vec<&str> = schema["required"].as_array().unwrap().iter().map(|v| v.as_str().unwrap()).collect();
+        assert_eq!(required, REQUIRED_INGEST_FIELDS.to_vec());
+
+        let validator = jsonschema::options().with_draft(Draft::Draft7).build(&schema).unwrap();
+        assert!(validator.is_valid(&valid_message()));
+        let mut drifted = valid_message();
+        let name = drifted.as_object_mut().unwrap().remove("spider_name").unwrap();
+        drifted["spider"] = name; // name drift must be rejected, not defaulted
+        assert!(!validator.is_valid(&drifted));
     }
 
     #[test]
