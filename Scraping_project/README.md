@@ -254,6 +254,20 @@ Stage workers report batch throughput and per-URL errors through `src/utils/metr
 2. **Postgres, best effort:** the same record goes to `performance_metrics` / `error_logs` for history.
 3. **Postgres failure:** never raised into the crawl and never silently dropped. `scrapy_pg_metrics_writes_total{kind,outcome="failure"}` is incremented, the record is logged at WARNING as `metrics_sink_fallback kind=... payload={json}`, and the `PostgresMetricsSinkFailing` alert fires above a 10% failure rate for 5m. With Postgres disabled (no `DB_PASSWORD`), writes are counted as `outcome="disabled"`.
 
+### Redis connection pool sizing (capacity model)
+
+Each process's `RedisHelper` uses a bounded `redis.BlockingConnectionPool` (#533):
+
+| Env | Default | Meaning |
+|---|---|---|
+| `REDIS_MAX_CONNECTIONS` | `50` | Max pooled connections per process |
+| `REDIS_POOL_TIMEOUT` | `2.0` | Seconds to wait for a free connection before giving up |
+
+- **On exhaustion,** the seen/claim paths **fail closed**. `SeenStoreUnavailable` is raised, admission pauses, and `redis_pool_exhausted_total{op}` is incremented. A timed-out claim is never treated as "unseen", so a burst can't become a duplicate-crawl storm. The `RedisPoolExhausted` and `RedisSeenStoreFailingClosed` alerts cover this.
+- **Sizing rule:** `sum over processes (REDIS_MAX_CONNECTIONS) <= 0.8 × Redis maxclients`, where Redis defaults to `maxclients 10000`. The 20% is headroom for exporters, admin and failover. Example: 40 worker pods × 2 processes × 50 = 4,000 connections, which fits comfortably.
+- **Per process,** a pool larger than the process's real concurrency (threads plus in-flight async tasks touching Redis) only wastes Redis memory. Size it to the concurrency, then check the inequality above.
+- **Diagnosing:** a steady `redis_pool_exhausted_total` rate with healthy Redis latency means the pool is too small for the worker's concurrency. If it comes with high latency (`SLOWLOG`, CPU), fix Redis first, because a larger pool only queues more work on a slow server.
+
 ### Environment Variables
 
 ```bash

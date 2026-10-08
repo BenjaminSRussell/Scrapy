@@ -38,6 +38,43 @@ logger = logging.getLogger(__name__)
 
 SEEN_FAIL_MODE_ENV = "REDIS_SEEN_FAIL_MODE"
 
+# ---------------------------------------------------------------------------
+# Connection pool backpressure (#533)
+#
+# Each RedisHelper owns a bounded ``redis.BlockingConnectionPool``. A caller
+# that finds every connection busy waits up to REDIS_POOL_TIMEOUT seconds,
+# then gets ``redis.ConnectionError("No connection available")``. On the
+# seen/claim paths that error goes through the fail-closed policy above:
+# ``SeenStoreUnavailable`` is raised (admission pauses) and
+# ``redis_pool_exhausted_total{op}`` is incremented. It is never treated as
+# "unseen", so a burst can't turn pool exhaustion into a duplicate-crawl storm.
+# Before this, the pool was redis-py's default, which is unbounded with no
+# backpressure, so a burst opened connections until Redis hit maxclients.
+# Sizing: see "Redis connection pool sizing" in the README.
+# ---------------------------------------------------------------------------
+MAX_CONNECTIONS_ENV = "REDIS_MAX_CONNECTIONS"
+POOL_TIMEOUT_ENV = "REDIS_POOL_TIMEOUT"
+DEFAULT_MAX_CONNECTIONS = 50
+DEFAULT_POOL_TIMEOUT = 2.0
+_POOL_EXHAUSTED_MARKER = "No connection available"
+
+
+def _env_positive(name: str, default: float, cast_to: type) -> Any:
+    raw = os.getenv(name)
+    if raw is None or raw.strip() == "":
+        return cast_to(default)
+    try:
+        value = cast_to(raw)
+    except (TypeError, ValueError):
+        logger.warning("Ignoring invalid %s=%r; using %s", name, raw, default)
+        return cast_to(default)
+    return value if value > 0 else cast_to(default)
+
+
+def is_pool_exhausted(error: BaseException) -> bool:
+    """True for redis-py's BlockingConnectionPool timeout error."""
+    return isinstance(error, redis.ConnectionError) and _POOL_EXHAUSTED_MARKER in str(error)
+
 
 class SeenStoreUnavailable(RuntimeError):
     """Redis seen-URL store is unreachable; admission must pause (fail-closed)."""
@@ -51,8 +88,14 @@ try:
         "Redis seen-URL store errors by operation (check/mark/claim).",
         ["op"],
     )
+    REDIS_POOL_EXHAUSTED: Any = _PromCounter(
+        "redis_pool_exhausted_total",
+        "Redis operations that found every pooled connection busy for REDIS_POOL_TIMEOUT (#533).",
+        ["op"],
+    )
 except Exception:  # prometheus_client missing or metric already registered
     REDIS_SEEN_ERRORS = None
+    REDIS_POOL_EXHAUSTED = None
 
 
 def seen_fail_mode() -> str:
@@ -69,6 +112,8 @@ class RedisHelper:
         port: Optional[int] = None,
         db: int = 0,
         password: Optional[str] = None,
+        max_connections: Optional[int] = None,
+        pool_timeout: Optional[float] = None,
     ):
         """
         Initialize Redis helper.
@@ -86,21 +131,34 @@ class RedisHelper:
         # secret / compose .env). Empty means no AUTH (local dev only).
         self.password = password or os.getenv("REDIS_PASSWORD") or None
         self._client: Optional[redis.Redis] = None
+        # #533: bounded pool; see the module comment for the policy.
+        self.max_connections = int(max_connections) if max_connections else _env_positive(
+            MAX_CONNECTIONS_ENV, DEFAULT_MAX_CONNECTIONS, int)
+        self.pool_timeout = float(pool_timeout) if pool_timeout else _env_positive(
+            POOL_TIMEOUT_ENV, DEFAULT_POOL_TIMEOUT, float)
 
     @property
     def client(self) -> redis.Redis:
         """Lazy connection to Redis."""
         if self._client is None:
             try:
-                self._client = redis.Redis(
+                conn_kwargs: dict[str, Any] = dict(
                     host=self.host,
                     port=self.port,
                     db=self.db,
                     password=self.password,
                     decode_responses=True,
                     socket_timeout=5,
-                    socket_connect_timeout=5
+                    socket_connect_timeout=5,
                 )
+                pool = redis.BlockingConnectionPool(
+                    max_connections=self.max_connections,
+                    timeout=self.pool_timeout,
+                    **conn_kwargs,
+                )
+                # Connection kwargs are passed too (redis-py ignores them when
+                # a pool is given) so construction stays inspectable.
+                self._client = redis.Redis(connection_pool=pool, **conn_kwargs)
                 self._client.ping()
                 logger.info(f"Connected to Redis at {self.host}:{self.port}")
                 if not self.password:
@@ -188,6 +246,13 @@ class RedisHelper:
         """Apply the seen-store failure policy: count, then raise or fall back."""
         if REDIS_SEEN_ERRORS is not None:
             REDIS_SEEN_ERRORS.labels(op=op).inc()
+        if is_pool_exhausted(error):
+            if REDIS_POOL_EXHAUSTED is not None:
+                REDIS_POOL_EXHAUSTED.labels(op=op).inc()
+            logger.warning(
+                "Redis pool exhausted during %s (%d connections busy for %.2fs)",
+                op, self.max_connections, self.pool_timeout,
+            )
         if seen_fail_mode() == "open":
             logger.error(f"Redis seen-store {op} failed; failing OPEN ({SEEN_FAIL_MODE_ENV}=open): {error}")
             return fallback
