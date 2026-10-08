@@ -184,6 +184,12 @@ stage2:
   retry_backoff_base: 2  # Exponential backoff: 2^attempt seconds
   retry_on_status_codes: [408, 429, 500, 502, 503, 504]
 
+  # Fetch body cap (#248): HTML bodies over this are recorded as
+  # "oversized:html" and skipped (env STAGE2_MAX_BODY_BYTES; 0 = no cap).
+  # PDFs are queued for Stage 4 unless Content-Length exceeds Stage 4's own
+  # cap (STAGE4_PDF_MAX_BYTES, 50 MiB). Metric: stage2_oversized_skipped_total.
+  max_body_bytes: 20971520  # 20 MiB
+
 # ============================================
 # Stage 3: Summarization Settings
 # ============================================
