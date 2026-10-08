@@ -172,16 +172,19 @@
             gap: 1.5rem;
         }
 
+        /* min(100%, Npx): a track never exceeds the container, so phones
+           narrower than N px get one full-width column instead of horizontal
+           page scroll (#954). */
         .grid-2 {
-            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(min(100%, 400px), 1fr));
         }
 
         .grid-3 {
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
         }
 
         .grid-4 {
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr));
         }
 
         .card {
@@ -507,6 +510,12 @@
         @media (max-width: 1024px) {
             .stage-pipeline {
                 grid-template-columns: repeat(2, 1fr);
+            }
+
+            /* The horizontal connector assumes one row of 4 cards; once cards
+               wrap (2-col / 1-col) it would cut through them (#957). */
+            .stage-pipeline::before {
+                display: none;
             }
 
             .topbar-stats {
