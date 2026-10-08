@@ -194,7 +194,8 @@ class SeedManager:
                 "seed_inserted": int,      # URLs merged into seed_urls
                 "domain_inserted": int,    # URLs merged into the domain side table
                 "uconn_inserted": int,     # legacy alias of domain_inserted
-                "stage2_enqueued": int     # URLs enqueued to stage2_queue
+                "stage2_enqueued": int,    # URLs enqueued to stage2_queue
+                "rejected": int            # invalid URLs skipped (see url_rejection_reason)
             }
 
         Examples:
@@ -217,19 +218,36 @@ class SeedManager:
                 write_domain_urls = write_uconn_urls
         write_domain = self.write_domain_urls if write_domain_urls is None else bool(write_domain_urls)
 
-        url_list = list(set(urls))  # Deduplicate
-        if not url_list:
-            return {"seed_inserted": 0, "domain_inserted": 0, "uconn_inserted": 0, "stage2_enqueued": 0}
+        # Reject non-crawlable seeds (ftp:, javascript:, blanks, host-less, >2 KB)
+        # with a stable reason code, then dedupe by url_hash, not just by string:
+        # two spellings with one hash would be two source rows for one MERGE key (#255).
+        from src.utils.validation import url_rejection_reason
+
+        rejected: dict[str, int] = {}
+        by_hash: dict[str, str] = {}
+        for raw in urls:
+            url = raw.strip() if isinstance(raw, str) else raw
+            reason = url_rejection_reason(url)
+            if reason is not None:
+                rejected[reason] = rejected.get(reason, 0) + 1
+                continue
+            by_hash.setdefault(self.url_hasher(url), url)
+        n_rejected = sum(rejected.values())
+        if n_rejected:
+            logger.warning(f"[SeedManager] Rejected {n_rejected} invalid seed URL(s) from {source_spider}: {rejected}")
+        if not by_hash:
+            return {"seed_inserted": 0, "domain_inserted": 0, "uconn_inserted": 0, "stage2_enqueued": 0,
+                    "rejected": n_rejected}
 
         now = utc_now_iso()
 
         # Prepare base records
         rows = []
-        for url in url_list:
+        for url_hash, url in by_hash.items():
             rows.append(
                 {
                     "url": url,
-                    "url_hash": self.url_hasher(url),
+                    "url_hash": url_hash,
                     "discovered_at": now,
                     "source_url": source_url,
                     "source_spider": source_spider,
@@ -302,6 +320,7 @@ class SeedManager:
             "domain_inserted": ins_uconn,
             "uconn_inserted": ins_uconn,
             "stage2_enqueued": enq,
+            "rejected": n_rejected,
         }
 
     def bulk_seed_from_list(
@@ -326,6 +345,7 @@ class SeedManager:
             "domain_inserted": 0,
             "uconn_inserted": 0,
             "stage2_enqueued": 0,
+            "rejected": 0,
         }
 
         for i in range(0, len(urls), batch_size):
@@ -337,7 +357,7 @@ class SeedManager:
                 enqueue_stage2=False,  # Bulk imports typically don't enqueue for Stage 2
             )
             for key in total_results:
-                total_results[key] += result[key]
+                total_results[key] += result.get(key, 0)
 
         logger.info(f"[SeedManager] Bulk seeded {len(urls)} URLs: {total_results}")
         return total_results

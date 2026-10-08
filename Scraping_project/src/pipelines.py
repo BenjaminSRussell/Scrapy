@@ -818,6 +818,11 @@ class OffsiteCandidatePipeline(_TimedFlushMixin):
         if not isinstance(item, OffsiteCandidateItem):
             return item
 
+        missing = item.missing_required()
+        if missing:
+            # A row without its source/target/timestamp cannot be reviewed (#247).
+            raise DropItem(f"OffsiteCandidateItem missing required field(s): {', '.join(missing)}")
+
         adapter = ItemAdapter(item)
         before = self.batch.rows_written
         self.batch.add(adapter.asdict())
