@@ -8,5 +8,29 @@ trim_trailing_whitespace = true
 indent_style = space
 indent_size = 4
 
-[*.yml]
+# YAML: workflows, Compose (docker-compose*.yml), Helm values, configs.
+[*.{yml,yaml}]
 indent_size = 2
+
+[Makefile]
+indent_style = tab
+
+[*.mk]
+indent_style = tab
+
+[*.md]
+indent_size = 2
+# Two trailing spaces are a Markdown line break.
+trim_trailing_whitespace = false
+
+[*.json]
+indent_size = 2
+
+[{Dockerfile,Dockerfile.*,*.sh}]
+indent_size = 4
+
+[*.{js,html,css}]
+indent_size = 4
+
+[*.{toml,ini,cfg}]
+indent_size = 4

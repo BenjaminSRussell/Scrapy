@@ -8,6 +8,13 @@
 
 set -e
 
+# Service names come from the active Compose file (#326): checks for services
+# the file does not define (Kafka/exporters live in the full-stack compose,
+# see #145) are reported as skipped instead of as failures.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR/.."
+. "$SCRIPT_DIR/compose_lib.sh"
+
 echo "=========================================="
 echo "  Stack Diagnostic Tool"
 echo "=========================================="
@@ -27,7 +34,7 @@ print_ok() { echo -e "${GREEN}[OK]${NC} $1"; }
 print_section() { echo -e "\n${BLUE}=== $1 ===${NC}"; }
 
 # Detect environment
-if [ -f "docker-compose.yml" ] && command -v docker-compose &> /dev/null; then
+if [ -f "docker-compose.yml" ] && { docker compose version &> /dev/null || command -v docker-compose &> /dev/null; }; then
     ENV_TYPE="docker"
     print_info "Environment: Docker Compose"
 elif command -v kubectl &> /dev/null && kubectl cluster-info &> /dev/null; then
@@ -44,16 +51,17 @@ fi
 if [ "$ENV_TYPE" = "docker" ]; then
 
     print_section "Docker Services Status"
-    docker-compose ps
+    compose ps
 
     print_section "Health Checks"
 
     # Check critical services
-    SERVICES=("redis" "postgres" "zookeeper" "kafka" "prometheus-a" "grafana")
+    APP_SERVICE="$(compose_first scraper scrapy-app || true)"
+    read -r -a SERVICES <<< "$(compose_filter redis postgres zookeeper kafka prometheus prometheus-a grafana)"
 
     for service in "${SERVICES[@]}"; do
-        if docker-compose ps | grep "$service" | grep -q "Up"; then
-            if docker-compose ps | grep "$service" | grep -q "healthy"; then
+        if compose ps | grep "$service" | grep -q "Up"; then
+            if compose ps | grep "$service" | grep -q "healthy"; then
                 print_ok "${service}: Running and Healthy"
             else
                 print_warning "${service}: Running but not healthy"
@@ -100,15 +108,22 @@ if [ "$ENV_TYPE" = "docker" ]; then
     }
 
     test_endpoint "http://localhost:3000" "Grafana"
-    test_endpoint "http://localhost:9091" "Prometheus A"
-    test_endpoint "http://localhost:9097" "Prometheus B"
-    test_endpoint "http://localhost:6379" "Redis"
-    test_endpoint "http://localhost:9090/metrics" "Metrics Exporter"
+    if compose_has prometheus; then
+        test_endpoint "http://localhost:9090/-/ready" "Prometheus"
+    fi
+    if compose_has redis; then
+        # Redis is not an HTTP endpoint; ping it through the container.
+        if docker_out=$(compose exec -T redis redis-cli ping 2>/dev/null) && [ "$docker_out" = "PONG" ]; then
+            print_ok "Redis: PONG"
+        else
+            print_error "Redis: no PONG"
+        fi
+    fi
 
     print_section "Grafana Configuration"
 
     # Check Grafana datasources
-    if docker-compose ps | grep grafana | grep -q "Up"; then
+    if compose ps | grep grafana | grep -q "Up"; then
         print_info "Checking Grafana datasources..."
 
         DATASOURCES=$(curl -s -u admin:admin http://localhost:3000/api/datasources 2>/dev/null || echo "[]")
@@ -128,14 +143,14 @@ if [ "$ENV_TYPE" = "docker" ]; then
 
     print_section "Pipeline Stages Status"
 
-    STAGE_SERVICES=("scrapy-app" "stage2-worker" "stage3-worker" "stage4-worker")
+    read -r -a STAGE_SERVICES <<< "$(compose_filter ${APP_SERVICE} stage1-worker stage2-worker stage3-worker stage4-worker)"
 
     for stage in "${STAGE_SERVICES[@]}"; do
-        if docker-compose ps | grep "$stage" | grep -q "Up"; then
+        if compose ps | grep "$stage" | grep -q "Up"; then
             print_ok "${stage}: Running"
 
             # Check logs for errors
-            ERROR_COUNT=$(docker-compose logs --tail=50 "$stage" 2>/dev/null | grep -i "error\|exception\|failed" | wc -l || echo "0")
+            ERROR_COUNT=$(compose logs --tail=50 "$stage" 2>/dev/null | grep -i "error\|exception\|failed" | wc -l || echo "0")
             if [ "$ERROR_COUNT" -gt 0 ]; then
                 print_warning "${stage}: Found ${ERROR_COUNT} errors in recent logs"
             fi
@@ -146,18 +161,20 @@ if [ "$ENV_TYPE" = "docker" ]; then
 
     print_section "Kafka Status"
 
-    if docker-compose ps | grep kafka | grep -q "Up"; then
+    if ! compose_has kafka; then
+        print_info "Kafka is not part of this Compose file (full stack: see #145); skipping"
+    elif compose ps | grep kafka | grep -q "Up"; then
         print_ok "Kafka broker is running"
 
         # Test Kafka connectivity
         print_info "Testing Kafka connectivity..."
-        docker-compose exec -T kafka kafka-topics --bootstrap-server localhost:9092 --list &>/dev/null && \
+        compose exec -T kafka kafka-topics --bootstrap-server localhost:9092 --list &>/dev/null && \
             print_ok "Kafka is responsive" || \
             print_error "Kafka is not responsive"
 
         # List topics
         print_info "Kafka topics:"
-        docker-compose exec -T kafka kafka-topics --bootstrap-server localhost:9092 --list 2>/dev/null || \
+        compose exec -T kafka kafka-topics --bootstrap-server localhost:9092 --list 2>/dev/null || \
             print_warning "Could not list Kafka topics"
     else
         print_error "Kafka broker not running"
@@ -165,7 +182,7 @@ if [ "$ENV_TYPE" = "docker" ]; then
 
     print_section "Volume Status"
 
-    VOLUMES=$(docker volume ls --format "{{.Name}}" | grep -i "scraping\|grafana\|prometheus" || echo "")
+    VOLUMES=$(compose config --volumes 2>/dev/null | while read -r v; do docker volume ls --format "{{.Name}}" | grep -E "_${v}\$" ; done || echo "")
 
     if [ -n "$VOLUMES" ]; then
         print_info "Found volumes:"
@@ -179,7 +196,7 @@ if [ "$ENV_TYPE" = "docker" ]; then
     print_section "Recent Error Logs"
 
     print_info "Checking for recent errors in all services..."
-    docker-compose logs --tail=100 2>/dev/null | grep -i "error\|exception\|failed\|fatal" | tail -20 || \
+    compose logs --tail=100 2>/dev/null | grep -i "error\|exception\|failed\|fatal" | tail -20 || \
         print_ok "No recent errors found"
 
 # ==========================================
@@ -279,7 +296,7 @@ fi
 
 if [ -f "docker-compose.yml" ]; then
     # Check if stage4 is in docker-compose
-    if grep -q "stage4-worker" docker-compose.yml; then
+    if compose_has stage4-worker; then
         print_ok "Stage 4 worker defined in docker-compose.yml"
     else
         print_warning "Stage 4 worker NOT defined in docker-compose.yml"
@@ -295,7 +312,7 @@ if [ "$ENV_TYPE" = "docker" ]; then
     print_info "Recommended actions for Docker:"
     echo "  1. If Grafana has issues: ./scripts/reset_grafana_complete.sh"
     echo "  2. For complete reset:    ./scripts/complete_reset.sh"
-    echo "  3. View logs:             docker-compose logs -f <service-name>"
+    echo "  3. View logs:             docker compose logs -f <service-name>"
 elif [ "$ENV_TYPE" = "kubernetes" ]; then
     print_info "Recommended actions for Kubernetes:"
     echo "  1. Remove 'coco' and redeploy: ./scripts/k8s_reset_and_deploy.sh"
