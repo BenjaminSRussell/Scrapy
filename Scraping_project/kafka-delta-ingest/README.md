@@ -151,6 +151,8 @@ The default schema for scraped data:
 }
 ```
 
+**Required fields are rejected, never defaulted (#531).** A message whose `url`, `scraped_at_utc` or `spider_name` is missing, null, empty or not a string is dropped and counted (`errors.schema_validation_failed`, or `errors.missing_required_field` from the typed row check). It is never written with an empty string. Field-name drift such as `spider` instead of `spider_name` is rejected the same way. The list lives in `REQUIRED_INGEST_FIELDS` in `src/main.rs` and in `src/core/ingest_contract.py` on the Python side. `tests/unit/test_ingest_field_contract.py` fails if the two disagree or if the producer's output stops satisfying them.
+
 ## 🔍 Monitoring
 
 ### Metrics
@@ -161,6 +163,8 @@ The application emits StatsD metrics:
 - `batches.written` - Batches committed
 - `errors.kafka` - Kafka errors
 - `errors.parse_failed` - JSON parsing errors
+- `errors.schema_validation_failed` - Messages failing the JSON schema (dropped)
+- `errors.missing_required_field` - Messages rejected for a missing/empty required field (#531)
 - `errors.write_failed` - Delta Lake write errors
 
 ### Logging
