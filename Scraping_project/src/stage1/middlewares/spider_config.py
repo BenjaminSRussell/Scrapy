@@ -44,7 +44,10 @@ def get_spider_settings(spider_name: str) -> dict:
             "scrapy.downloadermiddlewares.robotstxt.RobotsTxtMiddleware": None,
             "src.stage1.middlewares.robots_middleware.PoliteRobotsTxtMiddleware": 100,
             "src.stage1.middlewares.soft_ban_middleware.SoftBanMiddleware": 540,
+            # Before RetryMiddleware (550) on the response path: wait Retry-After.
+            "src.stage1.middlewares.retry_after_middleware.RetryAfterMiddleware": 560,
         },
+        "RETRY_AFTER_MAX_DELAY": float(spider_config.get("retry_after_max_delay", 120)),
         "SOFT_BAN_SLOT_DELAY": spider_config.get("soft_ban_slot_delay", 30.0),
         "SPIDER_MIDDLEWARES": {
             "scrapy.spidermiddlewares.depth.DepthMiddleware": 900,

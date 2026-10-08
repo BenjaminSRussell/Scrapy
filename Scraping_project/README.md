@@ -323,13 +323,14 @@ Each process's `RedisHelper` uses a bounded `redis.BlockingConnectionPool` (#533
 - Both waits are bounded: `REDIS_WAIT_TIMEOUT` and `KAFKA_WAIT_TIMEOUT` each default to 120 s. When a dependency is unreachable, the container exits 1 (visible as restarts or CrashLoopBackOff) instead of looping forever.
 - `REQUIRE_KAFKA=1` makes a missing `KAFKA_BOOTSTRAP_SERVERS` a hard error, for streaming deployments that must not silently fall back to core.
 
-### robots.txt and Crawl-delay
+### robots.txt, Crawl-delay and Retry-After
 
 Stage 1 obeys robots.txt by default (#186). `ROBOTSTXT_OBEY` is on in `src/settings.py` and in every spider's settings from `get_spider_settings()`. `PoliteRobotsTxtMiddleware` (`src/stage1/middlewares/robots_middleware.py`) replaces Scrapy's `RobotsTxtMiddleware` at the same priority (100):
 
 - **Disallow.** robots.txt is fetched once per host and cached. Disallowed URLs are never requested. They are counted in `scrapy_robots_forbidden_total{spider}` and in crawl stats `robotstxt/forbidden`, and the first refusal per host is logged at INFO.
 - **Crawl-delay** (#188). The host's download-slot delay is raised to the `Crawl-delay` for our user agent, capped at `ROBOTS_MAX_CRAWL_DELAY` (60s). The delay is re-applied before each request, so AutoThrottle can't drop below it. Hosts affected are counted in `scrapy_robots_crawl_delay_hosts_total{spider}`.
 - **Missing robots.txt** (404) or a fetch error allows everything, matching Scrapy's behaviour.
+- **Retry-After** (#188). On a 429 or 503 with `Retry-After` (seconds or an HTTP date), `RetryAfterMiddleware` (priority 560, so it runs ahead of Scrapy's RetryMiddleware) raises that host's download delay to the wait, capped at `RETRY_AFTER_MAX_DELAY` (120s). The retry and every other request to the host wait at least that long, and the old delay is restored afterwards. Waits are counted in `scrapy_retry_after_waits_total{spider}` and `scrapy_retry_after_seconds_total{spider}`.
 - **Opting out** is only for sites you own: `ROBOTSTXT_OBEY=false`, `scrapy.robotstxt_obey: false`, or `stage1.spiders.<name>.robotstxt_obey: false`.
 
 ### Soft-ban / captcha guard

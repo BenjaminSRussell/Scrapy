@@ -105,8 +105,10 @@ DOWNLOADER_MIDDLEWARES = _scrapy_config.get(
     {
         "scrapy.downloadermiddlewares.robotstxt.RobotsTxtMiddleware": None,
         "src.stage1.middlewares.robots_middleware.PoliteRobotsTxtMiddleware": 100,
+        "src.stage1.middlewares.retry_after_middleware.RetryAfterMiddleware": 560,  # #188
     },
 )
+RETRY_AFTER_MAX_DELAY = float(os.getenv("RETRY_AFTER_MAX_DELAY", _scrapy_config.get("retry_after_max_delay", 120)))
 
 CONCURRENT_REQUESTS = _scrapy_config.get("concurrent_requests", 64)
 CONCURRENT_REQUESTS_PER_DOMAIN = _scrapy_config.get("concurrent_requests_per_domain", 32)
