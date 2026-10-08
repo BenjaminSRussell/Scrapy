@@ -4,11 +4,13 @@ from pathlib import Path
 
 import pytest
 
+from tests.unit.monitoring.test_alert_metric_catalog import _catalog as metric_catalog
+from tests.unit.monitoring.test_alert_metric_catalog import metric_names as catalog_metric_names
+
 DASHBOARD_PATHS = [
     Path(__file__).parent.parent.parent / "monitoring" / "dashboards",
     Path(__file__).parent.parent.parent / "ops" / "grafana" / "dashboards",
 ]
-METRIC_PREFIX_ALLOWLIST = {"scrapy_", "app_", "kafka_"}
 METRIC_NAME_DENYLIST = {"scrapy_pages_scraped_total", "old_request_errors_total"}
 
 def find_dashboard_files() -> list[Path]:
@@ -130,8 +132,10 @@ def test_grafana_dashboard_validity(dashboard_path: Path):
                 invalid_panels.append((panel.get("title", "N/A"), "Expression is empty or whitespace"))
                 continue
 
-            metric_names = get_all_metric_names_from_expr(expr)
-            for name in metric_names:
+            # Series names only (labels, durations and functions stripped), checked
+            # against what the code actually emits rather than a prefix list (#157).
+            names = catalog_metric_names(re.sub(r"\$\w+", ".*", expr))
+            for name in sorted(names):
                 if name in METRIC_NAME_DENYLIST:
                     invalid_panels.append(
                         (
@@ -139,11 +143,11 @@ def test_grafana_dashboard_validity(dashboard_path: Path):
                             f"Uses deprecated metric name: {name}",
                         )
                     )
-                if not any(name.startswith(prefix) for prefix in METRIC_PREFIX_ALLOWLIST):
+                elif name not in metric_catalog():
                     invalid_panels.append(
                         (
                             panel.get("title", "N/A"),
-                            f"Metric name '{name}' does not have a valid prefix.",
+                            f"Metric '{name}' is not produced by anything (see test_alert_metric_catalog.py).",
                         )
                     )
 

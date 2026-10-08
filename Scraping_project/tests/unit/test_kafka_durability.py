@@ -37,9 +37,11 @@ class FakeProducer:
         self.flush_leaves = flush_leaves
         self.queue = []
         self.produce_calls = 0
+        self.keys = []
 
-    def produce(self, topic, value, callback):
+    def produce(self, topic, value, callback, key=None):  # confluent_kafka signature (key since #285)
         self.produce_calls += 1
+        self.keys.append(key)
         if self.produce_failures > 0:
             self.produce_failures -= 1
             raise BufferError("Local: Queue full")
