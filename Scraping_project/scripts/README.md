@@ -298,7 +298,7 @@ GRAFANA_ADMIN_PASSWORD=admin
 | Prometheus B | 9097 | http://localhost:9097 |
 | Alertmanager 1 | 9093 | http://localhost:9093 |
 | Metrics Exporter | 9090 | http://localhost:9090/metrics |
-| Redis | 6379 | redis://localhost:6379 |
+| Redis | 6379 | `localhost:6379` (`REDIS_HOST`/`REDIS_PORT`/`REDIS_PASSWORD`, see README "Redis connection contract") |
 | PostgreSQL | 5432 | postgres://localhost:5432 |
 | Kafka | 9092 | kafka://localhost:9092 |
 | Kafka External | 9094 | kafka://localhost:9094 |

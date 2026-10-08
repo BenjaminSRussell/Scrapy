@@ -94,11 +94,16 @@ class MetricsExporter:
         # Initialize managers
         config = Config.get_instance()
         redis_config = config.get_section("redis")
+        # #511: env contract (REDIS_HOST/PORT, REDIS_URL fallback) wins over config.yml.
+        from src.utils.redis_env import redis_settings
+
+        env_redis = redis_settings()
+        from_env = any(os.environ.get(k) for k in ("REDIS_HOST", "REDIS_URL"))
         self.redis = get_redis(
-            host=os.environ.get("REDIS_HOST", redis_config.get("host", "localhost")),
-            port=int(os.environ.get("REDIS_PORT", redis_config.get("port", 6379))),
+            host=env_redis.host if from_env else redis_config.get("host", "localhost"),
+            port=env_redis.port if (from_env or os.environ.get("REDIS_PORT")) else int(redis_config.get("port", 6379)),
             db=redis_config.get("db", 0),
-            password=redis_config.get("password"),
+            password=redis_config.get("password") or env_redis.password,
         )
         self.js_priority_queue = JSPriorityQueue(self.redis.client)
 

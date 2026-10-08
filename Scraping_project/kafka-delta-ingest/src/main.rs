@@ -345,7 +345,8 @@ async fn ingest(
     let metrics = StatsdClient::from_sink("kafka_delta_ingest", sink);
 
     // Initialize Redis-based Scrapy metrics
-    let redis_url = std::env::var("REDIS_URL").unwrap_or_else(|_| "redis://localhost:6379".to_string());
+    // #511: same contract as the Python services (REDIS_HOST/REDIS_PORT/REDIS_PASSWORD).
+    let redis_url = redis_url_from_env(|k| std::env::var(k).ok());
     let spider_name = format!("{}_spider", topic.replace('-', "_"));
     let mut scrapy_metrics = ScrapyMetrics::new(&redis_url, spider_name).await?;
 
@@ -690,6 +691,36 @@ async fn write_batch(
     Ok(())
 }
 
+/// Redis connection URL from the shared env contract (#511).
+///
+/// `REDIS_HOST`/`REDIS_PORT`/`REDIS_PASSWORD`/`REDIS_DB` are canonical (Compose,
+/// Helm and the Python services set them); `REDIS_URL` is only a fallback when
+/// `REDIS_HOST` is unset. Same precedence as `src/utils/redis_env.py`.
+fn redis_url_from_env(get: impl Fn(&str) -> Option<String>) -> String {
+    let var = |k: &str| get(k).map(|v| v.trim().to_string()).filter(|v| !v.is_empty());
+    match var("REDIS_HOST") {
+        Some(host) => {
+            let port = var("REDIS_PORT").unwrap_or_else(|| "6379".to_string());
+            let auth = var("REDIS_PASSWORD")
+                .map(|p| format!(":{}@", percent_encode_userinfo(&p)))
+                .unwrap_or_default();
+            let db = var("REDIS_DB").unwrap_or_else(|| "0".to_string());
+            format!("redis://{auth}{host}:{port}/{db}")
+        }
+        None => var("REDIS_URL").unwrap_or_else(|| "redis://localhost:6379".to_string()),
+    }
+}
+
+/// Percent-encode everything except RFC 3986 unreserved characters.
+fn percent_encode_userinfo(s: &str) -> String {
+    s.bytes()
+        .map(|b| match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => (b as char).to_string(),
+            _ => format!("%{b:02X}"),
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -782,5 +813,41 @@ mod tests {
         assert_eq!(write_retry_backoff(2), Duration::from_secs(2));
         assert_eq!(write_retry_backoff(4), Duration::from_secs(8));
         assert_eq!(write_retry_backoff(50), Duration::from_secs(30));
+    }
+
+    fn env_of(pairs: &[(&str, &str)]) -> impl Fn(&str) -> Option<String> {
+        let map: std::collections::HashMap<String, String> =
+            pairs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
+        move |k| map.get(k).cloned()
+    }
+
+    #[test]
+    fn redis_url_defaults_to_localhost() {
+        assert_eq!(redis_url_from_env(env_of(&[])), "redis://localhost:6379");
+    }
+
+    #[test]
+    fn redis_url_built_from_host_port_password() {
+        let url = redis_url_from_env(env_of(&[
+            ("REDIS_HOST", "redis"),
+            ("REDIS_PORT", "6380"),
+            ("REDIS_PASSWORD", "p@ss:w/rd"),
+        ]));
+        assert_eq!(url, "redis://:p%40ss%3Aw%2Frd@redis:6380/0");
+    }
+
+    #[test]
+    fn redis_host_wins_over_redis_url() {
+        let url = redis_url_from_env(env_of(&[
+            ("REDIS_HOST", "redis"),
+            ("REDIS_URL", "redis://elsewhere:1234"),
+        ]));
+        assert_eq!(url, "redis://redis:6379/0");
+    }
+
+    #[test]
+    fn redis_url_used_when_host_unset_or_blank() {
+        let url = redis_url_from_env(env_of(&[("REDIS_HOST", "  "), ("REDIS_URL", "redis://r:1/2")]));
+        assert_eq!(url, "redis://r:1/2");
     }
 }

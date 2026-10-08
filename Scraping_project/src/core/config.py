@@ -49,6 +49,14 @@ def _lookup(data: dict, key: str, default: Any) -> Any:
     return copy.deepcopy(value) if isinstance(value, (dict, list)) else value
 
 
+def _default_redis_section() -> dict:
+    """Redis defaults from the #511 env contract (REDIS_HOST/PORT/DB, REDIS_URL fallback)."""
+    from src.utils.redis_env import redis_settings
+
+    env = redis_settings()
+    return {"host": env.host, "port": env.port, "db": env.db}
+
+
 @dataclass(frozen=True)
 class ConfigSnapshot:
     """One immutable generation of configuration (#590).
@@ -192,11 +200,7 @@ class Config:
     def _default_config(self) -> dict:
         """Default configuration."""
         return {
-            "redis": {
-                "host": os.getenv("REDIS_HOST", "localhost"),
-                "port": int(os.getenv("REDIS_PORT", 6379)),
-                "db": 0
-            },
+            "redis": _default_redis_section(),
             "delta_lake": {
                 "base_path": "./data/delta_lake"
             },

@@ -18,7 +18,8 @@ data:
   DB_PORT: "{{ .Values.postgresql.service.port }}"
   DB_NAME: {{ .Values.postgresql.auth.database | quote }}
   DB_USER: {{ .Values.postgresql.auth.username | quote }}
-  REDIS_URL: "redis://{{ include "scraping-pipeline.fullname" . }}-redis:{{ .Values.redis.service.port }}"
+  # #511: no REDIS_URL. Every service (kafka-delta-ingest too) builds its Redis
+  # connection from REDIS_HOST/REDIS_PORT plus REDIS_PASSWORD from the secret.
   KAFKA_BOOTSTRAP_SERVERS: "{{ include "scraping-pipeline.fullname" . }}-kafka:{{ .Values.kafka.service.internal }}"
   KAFKA_TOPIC: {{ .Values.kafkaDeltaIngestor.config.topic | quote }}
   KAFKA_REQUIRE_IDEMPOTENCE: "true"
