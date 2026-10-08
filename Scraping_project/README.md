@@ -298,6 +298,31 @@ Each process's `RedisHelper` uses a bounded `redis.BlockingConnectionPool` (#533
 - Both waits are bounded: `REDIS_WAIT_TIMEOUT` and `KAFKA_WAIT_TIMEOUT` each default to 120 s. When a dependency is unreachable, the container exits 1 (visible as restarts or CrashLoopBackOff) instead of looping forever.
 - `REQUIRE_KAFKA=1` makes a missing `KAFKA_BOOTSTRAP_SERVERS` a hard error, for streaming deployments that must not silently fall back to core.
 
+### Soft-ban / captcha guard
+
+Challenge and captcha pages are not content (#582). `src/utils/soft_ban.py`
+classifies responses:
+
+- **HTTP 429** is always a soft ban.
+- **`cf-mitigated: challenge`** header means a Cloudflare challenge, at any status.
+- **403/503** count only if the body matches a signature (a plain 403 stays a normal, terminal HTTP error).
+- **200** counts only if a signature matches *and* the page has fewer than `SOFT_BAN_MAX_WORDS` (400) visible words, so articles that merely mention captchas pass.
+
+Built-in signatures: Cloudflare, reCAPTCHA, hCaptcha, PerimeterX, DataDome,
+Akamai "Access Denied", and generic bot-check text. To extend or override
+them, set `SOFT_BAN_SIGNATURES='{"name": "regex"}'`; an empty regex disables
+a built-in.
+
+| Where | What happens |
+|---|---|
+| Stage 2 | Row quarantined to `stage2_errors` with `error_message = soft_ban:<signature>`; never written to `stage2_page_analysis`; queue row stays `pending` (retried, then DLQ after `STAGE2_MAX_RETRIES`). |
+| Stage 1 | `SoftBanMiddleware` (priority 540, after retries) drops the response with `IgnoreRequest`, so no links are followed. |
+| Domain backoff | `SOFT_BAN_BACKOFF_THRESHOLD` (3) soft bans within `SOFT_BAN_BACKOFF_WINDOW` (60s) put the domain into cooldown for `SOFT_BAN_BACKOFF_COOLDOWN` (300s). Stage 2 defers that domain's URLs (left `pending`, not counted as failures); Stage 1 raises the domain's download delay to `SOFT_BAN_SLOT_DELAY` (30s) and restores it afterwards. |
+
+Metrics: `scrapy_soft_ban_total{stage,signature}`,
+`scrapy_soft_ban_domain_backoff_total{stage}`, `scrapy_soft_ban_deferred_total{stage}`.
+Alert: `ScrapySoftBanSpike`. Fixture pages live in `tests/fixtures/soft_ban/`.
+
 ### Environment Variables
 
 ```bash
