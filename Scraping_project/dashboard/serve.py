@@ -77,7 +77,7 @@ def main():
     print("=" * 80)
     print()
     print("📊 Dashboard:  http://localhost:8080")
-    print("📈 Metrics:    http://localhost:9090/metrics")
+    print("📈 Metrics:    http://<this host>:9090/metrics  (override: ?metrics=<url>)")
     print("📉 Grafana:    http://localhost:3001 (separate analytics)")
     print()
     print("Purpose:")
