@@ -20,6 +20,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from src.core.constants import DELTA_LAKE
 from src.lakehouse.lakehouse_manager import get_delta_manager
+from src.utils.destructive_guard import add_backup_argument, add_guard_arguments, guarded_lake_wipe
 
 # Setup logging
 logging.basicConfig(
@@ -154,7 +155,9 @@ def main():
 
     parser.add_argument("--no-validate", action="store_true", help="Skip validation after seeding")
 
-    parser.add_argument("--force", action="store_true", help="Skip confirmation prompts")
+    parser.add_argument("--force", action="store_true", help="Deprecated: same as --confirm --yes (with --clear)")
+    add_guard_arguments(parser)
+    add_backup_argument(parser)
 
     args = parser.parse_args()
 
@@ -174,14 +177,10 @@ def main():
 
         # Clear Delta Lake if requested
         if args.clear:
-            logger.warning("⚠️  This will DELETE all Delta Lake tables!")
-            if not args.force:
-                confirmation = input("Are you sure? Type 'yes' to continue: ")
-                if confirmation.lower() != "yes":
-                    logger.info("Operation cancelled.")
-                    sys.exit(0)
-
-            clear_delta_lake()
+            # Dry-run unless --confirm; dual confirmation; production break-glass; audited (#522, #573, #576).
+            decision = guarded_lake_wipe(DELTA_LAKE, args, action="wipe the Delta lake before reseeding")
+            if not decision.proceed:
+                sys.exit(decision.exit_code)
 
         # Create Delta Lake manager
         logger.info("Initializing Delta Lake manager...")
