@@ -104,6 +104,33 @@ def seen_fail_mode() -> str:
     return "open" if mode == "open" else "closed"
 
 
+# #161: seen:* sets and queues have no TTL. Under an allkeys-* policy Redis
+# evicts them silently at maxmemory, the seen set vanishes and the crawl starts
+# over. Compose/Helm run volatile-lru (only TTL keys are evictable); this check
+# makes a misconfigured server loud.
+UNSAFE_EVICTION_POLICIES = ("allkeys-lru", "allkeys-lfu", "allkeys-random")
+
+
+def check_eviction_policy(client: Any) -> Optional[str]:
+    """Log an ERROR if the server may evict TTL-less keys. Returns the policy.
+
+    Returns None when CONFIG is unavailable (e.g. disabled on managed Redis).
+    """
+    try:
+        raw = (client.config_get("maxmemory-policy") or {}).get("maxmemory-policy")
+    except Exception as exc:  # noqa: BLE001 - CONFIG may be renamed/disabled
+        logger.debug(f"Could not read Redis maxmemory-policy: {exc}")
+        return None
+    policy = str(raw) if raw is not None else None
+    if policy in UNSAFE_EVICTION_POLICIES:
+        logger.error(
+            f"Redis maxmemory-policy is {policy}: seen-URL sets and queues (no TTL) can be "
+            "evicted silently under memory pressure, causing recrawl storms. "
+            "Use volatile-lru or noeviction (#161)."
+        )
+    return policy
+
+
 class RedisHelper:
     """Centralized Redis operations."""
 
@@ -162,6 +189,7 @@ class RedisHelper:
                 self._client = redis.Redis(connection_pool=pool, **conn_kwargs)
                 self._client.ping()
                 logger.info(f"Connected to Redis at {self.host}:{self.port}")
+                check_eviction_policy(self._client)
                 if not self.password:
                     logger.warning(
                         "Redis AUTH is not configured (REDIS_PASSWORD unset). "
