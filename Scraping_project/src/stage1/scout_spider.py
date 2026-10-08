@@ -8,6 +8,7 @@ from urllib.parse import urlparse
 import scrapy
 from scrapy.http import HtmlResponse, Response
 
+from src.stage1.content_policy import classify_response, count_skipped
 from src.stage1.middlewares.spider_config import get_spider_settings
 from src.utils.delta import get_delta
 from src.stage1.processors.url_extractor import URLExtractor
@@ -82,10 +83,14 @@ class ScoutSpider(BaseSpider):
             self._discover_and_add_sitemap_urls()
 
     def parse(self, response: Response) -> Iterator:
-        content_type = response.headers.get("Content-Type", b"").decode("utf-8", errors="ignore").lower()
-
-        if "text/html" not in content_type:
-            logger.debug(f"[SCOUT] Non-HTML, skipping: {content_type} for {response.url[:80]}")
+        decision = classify_response(response)  # #662: no binary into HTML parsing
+        if not decision.parse_html and decision.reason == "empty_body":
+            # Empty bodies keep the #199 accounting (skip_counters + urls_skipped_total).
+            self._skip_response(response, "empty_body")
+            return
+        if not decision.parse_html:
+            count_skipped("scout", decision.reason)
+            logger.debug(f"[SCOUT] Not parsing ({decision.reason}) {response.url[:80]}")
             return
 
         empty_reason = self._empty_body_reason(response)
