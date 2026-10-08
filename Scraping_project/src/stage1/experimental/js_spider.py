@@ -74,6 +74,7 @@ class JavaScriptSpider(scrapy.Spider):
         self.rendered_count = 0
         self.page_ledger = PageLedger()
         self.completed_urls = []
+        self.failed_urls = []
         self.priority_stats = {
             "critical": 0,
             "high": 0,
@@ -324,8 +325,9 @@ class JavaScriptSpider(scrapy.Spider):
 
     async def handle_error(self, failure):
         logger.error(f"[JAVASCRIPT] Rendering failed: {failure.getErrorMessage()} for {failure.request.url[:80]}")
-        # #452: a failed request may still carry an open page.
+        # #452: a failed request may still carry an open page (release it first).
         await self._ledger().release_from_failure(failure)
+        self.failed_urls.append(failure.request.url)  # marked failed in js_spider_queue at close (#645)
 
     def closed(self, reason):
         logger.info(f"[JAVASCRIPT] Spider closing: {reason}")
@@ -334,24 +336,36 @@ class JavaScriptSpider(scrapy.Spider):
         if leaked:
             logger.warning(f"[JAVASCRIPT] {leaked} Playwright pages still open at close (leak)")
 
-        if self.completed_urls:
-            try:
-                all_queue_data = self.delta.read("js_spider_queue")
+        self._update_queue_status()
 
-                completed_set = set(self.completed_urls)
+    def _update_queue_status(self) -> int:
+        """Mark rendered URLs completed and failed ones failed in js_spider_queue.
 
-                for record in all_queue_data:
-                    if record.get("url") in completed_set:
-                        record["status"] = "completed"
-                        record["completed_at"] = datetime.now().isoformat()
-
-                self.delta.write(
-                    "js_spider_queue",
-                    all_queue_data,
-                    mode="overwrite",
-                    async_write=False,
-                )
-                logger.info(f"[JAVASCRIPT] Marked {len(self.completed_urls)} items as completed in queue")
-
-            except Exception as e:
-                logger.error(f"[JAVASCRIPT] Failed to update queue status: {e}")
+        A Delta MERGE on ``url`` that updates only ``status``/``completed_at``
+        (#645). This used to read the whole queue and write it back with
+        ``mode="overwrite"``: rows Scout appended during the crawl were wiped,
+        and failed renders stayed ``pending`` forever. Only URLs already in the
+        queue are updated (priority-queue URLs are not inserted).
+        Returns rows updated, or -1 on failure.
+        """
+        if not (self.completed_urls or self.failed_urls):
+            return 0
+        try:
+            queued = {r.get("url") for r in self.delta.read("js_spider_queue", columns=["url"])}
+        except Exception as e:
+            logger.error(f"[JAVASCRIPT] Could not read js_spider_queue to update status: {e}")
+            return -1
+        now = datetime.now().isoformat()
+        done = [u for u in dict.fromkeys(self.completed_urls) if u in queued]
+        done_set = set(done)
+        failed = [u for u in dict.fromkeys(self.failed_urls) if u in queued and u not in done_set]
+        updates = [{"url": u, "status": "completed", "completed_at": now} for u in done]
+        updates += [{"url": u, "status": "failed", "completed_at": now} for u in failed]
+        if not updates:
+            return 0
+        n = self.delta.merge_into("js_spider_queue", updates, merge_key="url", update_columns=["status", "completed_at"])
+        if n < 0:
+            logger.error(f"[JAVASCRIPT] Failed to update queue status for {len(updates)} URLs")
+        else:
+            logger.info(f"[JAVASCRIPT] Queue status: {len(done)} completed, {len(failed)} failed")
+        return n

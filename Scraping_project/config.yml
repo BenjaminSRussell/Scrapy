@@ -38,6 +38,9 @@ stage1:
 
   # JS Detection
   js_confidence_threshold: 0.5  # REDUCED - render more pages (was 0.7)
+  # #645: Scout queues pages that need JS to js_spider_queue only when true.
+  # Turn on only if the javascript spider runs to drain it (scrapy crawl javascript).
+  js_rendering_enabled: false
 
   # Batch sizes
   batch_size: 50  # URLs to batch before writing to Delta Lake

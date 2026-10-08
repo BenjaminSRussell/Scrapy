@@ -1603,6 +1603,18 @@ class LakehouseManager:
     ) -> int:
         target = DeltaTable(str(table_path))
         source = _source_table(rows, pa.schema(target.schema().to_arrow()))
+        # deltalake 1.2: merge_schema + when_matched_update on a column the target
+        # lacks + insert_all fails with "Duplicate field name" (#645). Add new
+        # columns first (what merge_schema would add anyway), then merge.
+        have = {f.name for f in target.schema().fields}
+        new_fields = [
+            f for f in source.schema if f.name not in have and not pa.types.is_null(f.type)
+        ]
+        if new_fields:
+            from deltalake import Schema as DeltaSchema
+
+            target.alter.add_columns(list(DeltaSchema.from_arrow(pa.schema(new_fields)).fields))
+            target = DeltaTable(str(table_path))
         predicate = " AND ".join(f"target.{k} = source.{k}" for k in merge_keys)
         updates = {c: f"source.{c}" for c in update_columns if c in source.column_names}
         merger = target.merge(

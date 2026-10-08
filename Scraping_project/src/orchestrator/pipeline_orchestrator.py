@@ -47,6 +47,7 @@ def _is_count(value: object) -> bool:
 class PipelineStats:
     stage1_urls_discovered: int = 0
     stage1_urls_queued: int = 0
+    stage1_js_pending: int = 0  # js_spider_queue rows still pending after Stage 1 (#645)
     stage2_pages_analyzed: int = 0
     stage2_quality_docs: int = 0
     stage2_massive_docs: int = 0
@@ -101,6 +102,7 @@ class PipelineOrchestrator:
         process.crawl(spider_name)
         process.start()
 
+        self._report_js_queue()
         try:
             queue = self.delta.read("stage2_queue")
             queued_count = len([item for item in queue if item.get('status') == 'pending'])
@@ -110,6 +112,28 @@ class PipelineOrchestrator:
         except Exception as e:
             logger.warning(f"Could not read stage2_queue: {e}")
             return 0
+
+    def _report_js_queue(self) -> int:
+        """Surface JS pages waiting for the javascript spider (#645).
+
+        This orchestrator does not render JS itself: Stage 1 forces the select
+        reactor, and scrapy-playwright needs the asyncio one. Scout queues pages
+        only when ``stage1.js_rendering_enabled`` is true, so pending rows mean
+        the javascript spider must run (``scrapy crawl javascript``). Say so
+        instead of letting them sit unnoticed.
+        """
+        try:
+            rows = self.delta.read("js_spider_queue", columns=["status"])
+        except Exception:
+            return 0
+        pending = sum(1 for r in rows if r.get("status") == "pending")
+        self.stats.stage1_js_pending = pending
+        if pending:
+            logger.warning(
+                f"{pending} JS-rendered pages pending in js_spider_queue; "
+                "run `scrapy crawl javascript` to render them (not part of this pipeline run)"
+            )
+        return pending
 
     async def run_stage2(
         self,
@@ -336,6 +360,8 @@ class PipelineOrchestrator:
         logger.info("-" * 80)
         logger.info("  Stage 1 (URL Discovery):")
         logger.info(f"    - URLs queued for Stage 2: {self.stats.stage1_urls_queued}")
+        if self.stats.stage1_js_pending:
+            logger.info(f"    - JS pages pending render: {self.stats.stage1_js_pending}")
         logger.info("")
         logger.info("  Stage 2 (Page Analysis):")
         logger.info(f"    - Pages analyzed: {self.stats.stage2_pages_analyzed}")

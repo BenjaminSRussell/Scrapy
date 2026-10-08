@@ -53,9 +53,19 @@ class ScoutSpider(BaseSpider):
 
         config = get_config()
 
-        self.expand_seeds = config.get("stages.stage1.expand_seeds", True)
-        self.parse_sitemaps = config.get("stages.stage1.parse_sitemaps", True)
-        self.aggressive_collection = config.get("stages.stage1.aggressive_collection", True)
+        # Keys live under `stage1:` in config.yml; `stages.stage1.*` never existed,
+        # so these flags were silently ignored (always True). Old path kept as fallback.
+        def _stage1(key: str, default):
+            return config.get(f"stage1.{key}", config.get(f"stages.stage1.{key}", default))
+
+        self.expand_seeds = _stage1("expand_seeds", True)
+        self.parse_sitemaps = _stage1("parse_sitemaps", True)
+        self.aggressive_collection = _stage1("aggressive_collection", True)
+        # #645: only pages that actually need JS go to js_spider_queue, and only
+        # when something will drain it (the javascript spider). Off by default:
+        # previously every HTML link was queued there and nothing consumed it.
+        self.js_rendering_enabled = bool(_stage1("js_rendering_enabled", False))
+        self.js_confidence_threshold = float(_stage1("js_confidence_threshold", 0.5))
 
         self.seed_manager = SeedManager(self.delta)
 
@@ -82,6 +92,7 @@ class ScoutSpider(BaseSpider):
             return
 
         discovered_urls = self._extract_urls(response)
+        requires_js = self._requires_js(response)
 
         url_hash = self._hash_url(response.url)
         depth = response.meta.get("depth", 0)
@@ -92,8 +103,16 @@ class ScoutSpider(BaseSpider):
             content_size=len(response.body),
             url_count=len(discovered_urls),
             is_heavy=len(response.body) > 100000,
-            requires_js=False,
+            requires_js=requires_js,
         )
+
+        # The fetched page itself is a JS app shell: queue it for rendering
+        # (before the no-links return: shells often have no static links).
+        if requires_js and self.js_rendering_enabled:
+            referer = response.request.headers.get("Referer", b"") if response.request else b""
+            parent = referer.decode("utf-8", errors="ignore") if referer else response.url
+            yield self._queue_for_javascript_spider(response.url, parent)
+            self.scout_stats["html_queued_js"] += 1
 
         if not discovered_urls:
             return
@@ -125,10 +144,10 @@ class ScoutSpider(BaseSpider):
                 content_hint = self._guess_content_type(url)
 
                 if content_hint == "html":
-                    yield self._queue_for_javascript_spider(url, response.url)
+                    # Not queued for JS here: whether a page needs JS is only
+                    # known once it is fetched (see _requires_js in parse) (#645).
                     yield self._queue_for_stage2(url, response.url, content_hint)
 
-                    self.scout_stats["html_queued_js"] += 1
                     self.scout_stats["pages_queued_stage2"] += 1
 
                     yield scrapy.Request(
@@ -155,6 +174,19 @@ class ScoutSpider(BaseSpider):
         total_discovered = sum(self.scout_stats.values())
         if total_discovered % 100 == 0:
             self._log_scout_stats()
+
+    def _requires_js(self, response: Response) -> bool:
+        """JSDetector verdict for a fetched page, gated by js_confidence_threshold."""
+        if not isinstance(response, HtmlResponse):
+            return False
+        try:
+            from src.stage1.js_detection import JSDetector
+
+            result = JSDetector(response).requires_js_rendering()
+        except Exception as e:  # detection must never break discovery
+            logger.debug(f"[SCOUT] JS detection failed for {response.url[:80]}: {e}")
+            return False
+        return bool(result.get("requires_js")) and float(result.get("confidence", 0)) >= self.js_confidence_threshold
 
     @staticmethod
     def _empty_body_reason(response: Response) -> str | None:

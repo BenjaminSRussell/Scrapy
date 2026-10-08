@@ -67,6 +67,7 @@ def _spider():
     s.page_ledger = PageLedger()
     s.rendered_count = 0
     s.completed_urls = []
+    s.failed_urls = []
     s._add_urls_to_seeds = lambda urls, src: None
     return s
 
