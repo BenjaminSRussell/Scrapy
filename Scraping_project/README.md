@@ -297,6 +297,25 @@ Stage workers report batch throughput and per-URL errors through `src/utils/metr
 2. **Postgres, best effort:** the same record goes to `performance_metrics` / `error_logs` for history.
 3. **Postgres failure:** never raised into the crawl and never silently dropped. `scrapy_pg_metrics_writes_total{kind,outcome="failure"}` is incremented, the record is logged at WARNING as `metrics_sink_fallback kind=... payload={json}`, and the `PostgresMetricsSinkFailing` alert fires above a 10% failure rate for 5m. With Postgres disabled (no `DB_PASSWORD`), writes are counted as `outcome="disabled"`.
 
+### Redis connection contract
+
+Every process reads the same variables (#511):
+
+| Env | Default | Meaning |
+|---|---|---|
+| `REDIS_HOST` | `localhost` | Redis hostname (Compose: `redis`; Helm: `<release>-redis`) |
+| `REDIS_PORT` | `6379` | Redis port |
+| `REDIS_PASSWORD` | unset | AUTH password (#184); Helm injects it from the `redis-credentials` Secret |
+| `REDIS_DB` | `0` | Database index |
+
+Compose, Helm, the container entrypoints, the Python services
+(`src/utils/redis_env.py`) and kafka-delta-ingest (`redis_url_from_env` in
+`src/main.rs`) all build the connection from these. `REDIS_URL`
+(`redis://[:password@]host:port/db`) is accepted only as a fallback for
+whatever the variables above leave unset. If `REDIS_HOST`/`REDIS_PORT` and
+`REDIS_URL` name different servers, `REDIS_HOST`/`REDIS_PORT` win and a
+warning is logged. Set only the four variables.
+
 ### Redis connection pool sizing (capacity model)
 
 Each process's `RedisHelper` uses a bounded `redis.BlockingConnectionPool` (#533):
@@ -454,9 +473,11 @@ pipeline spills anything undelivered to its fsync'd spill file.
 ### Environment Variables
 
 ```bash
-# Redis
+# Redis (#511: the only contract; REDIS_URL is a fallback, not needed)
 REDIS_HOST=redis-service
 REDIS_PORT=6379
+REDIS_PASSWORD=
+REDIS_DB=0
 
 # Delta Lake
 DELTA_LAKE_PATH=/data/delta

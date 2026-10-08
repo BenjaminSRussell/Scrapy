@@ -152,12 +152,17 @@ class RedisHelper:
             db: Redis database number
             password: Optional Redis AUTH password
         """
-        self.host = host or os.getenv("REDIS_HOST", "localhost")
-        self.port = port or int(os.getenv("REDIS_PORT", "6379"))
-        self.db = db
+        # #511: REDIS_HOST/REDIS_PORT/REDIS_PASSWORD/REDIS_DB (REDIS_URL as fallback),
+        # resolved in one place; explicit arguments still win.
+        from src.utils.redis_env import redis_settings
+
+        env = redis_settings()
+        self.host = host or env.host
+        self.port = port or env.port
+        self.db = db or env.db
         # #184: AUTH password comes from the caller, else REDIS_PASSWORD (Helm
         # secret / compose .env). Empty means no AUTH (local dev only).
-        self.password = password or os.getenv("REDIS_PASSWORD") or None
+        self.password = password or env.password
         self._client: Optional[redis.Redis] = None
         # #533: bounded pool; see the module comment for the policy.
         self.max_connections = int(max_connections) if max_connections else _env_positive(
