@@ -5,6 +5,7 @@ from typing import Any
 import httpx
 from bs4 import BeautifulSoup
 
+from src.core.config import stage2_quality_thresholds
 from src.utils.delta import get_delta
 
 logger = logging.getLogger(__name__)
@@ -15,9 +16,11 @@ class IntelligentAnalyzer:
         self.client = httpx.Client(timeout=30, follow_redirects=True)
         self.delta = get_delta()
 
-        self.MIN_WORD_COUNT = 50
-        self.MIN_TEXT_TO_HTML_RATIO = 0.1
-        self.MASSIVE_DOC_THRESHOLD = 50000
+        # Same config-driven gates as Stage2Worker (#329).
+        thresholds = stage2_quality_thresholds()
+        self.MIN_WORD_COUNT = thresholds.min_word_count
+        self.MIN_TEXT_TO_HTML_RATIO = thresholds.min_text_to_html_ratio
+        self.MASSIVE_DOC_THRESHOLD = thresholds.massive_doc_threshold
 
     def analyze(self, url: str, is_heavy: bool = False) -> dict[str, Any]:
         try:

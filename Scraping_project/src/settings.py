@@ -36,7 +36,10 @@ def derive_scrapy_config(config: Optional[Config] = None) -> dict[str, Any]:
     bridges: dict[str, Any] = {
         "kafka_bootstrap_servers": cfg.get("kafka.bootstrap_servers"),
         "kafka_topic": cfg.get("kafka.topics.scraped_items"),
+        "validation_failures_topic": cfg.get("kafka.topics.validation_failures"),  # #410
         "kafka_producer_config": (cfg.get_section("kafka") or {}).get("producer"),
+        "kafka_message_key_field": cfg.get("kafka.message_key_field"),
+        "kafka_require_idempotence": cfg.get("kafka.require_idempotence"),
         "log_level": cfg.get("logging.level"),
         # Scout spider settings are the default Scrapy concurrency baseline
         "concurrent_requests": cfg.get("stage1.spiders.scout.concurrent_requests"),
@@ -195,6 +198,17 @@ KAFKA_TOPIC = os.getenv(
 )
 
 KAFKA_PRODUCER_CONFIG = _scrapy_config.get("kafka_producer_config", {})
+# Message key (#285): records are keyed by this field (url_hash) so a URL always
+# maps to one partition. Empty string disables keying.
+KAFKA_MESSAGE_KEY_FIELD = os.getenv(
+    "KAFKA_MESSAGE_KEY_FIELD",
+    _scrapy_config.get("kafka_message_key_field", "url_hash"),
+)
+# Refuse to start a non-idempotent producer (#464). On in the Helm configmap.
+KAFKA_REQUIRE_IDEMPOTENCE = os.getenv(
+    "KAFKA_REQUIRE_IDEMPOTENCE",
+    str(_scrapy_config.get("kafka_require_idempotence", False)),
+).strip().lower() in {"1", "true", "yes", "on"}
 # Undeliverable messages (produce errors after retries, async delivery
 # failures, anything left after the close flush) are appended to
 # KAFKA_SPILL_DIR/<topic>.jsonl instead of being dropped (#175, #249).
