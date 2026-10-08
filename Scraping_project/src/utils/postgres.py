@@ -33,6 +33,9 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+# Tables owned by docker/init-db.sql; the app role only reads/writes them (#538).
+SCHEMA_TABLES = ("performance_metrics", "error_logs", "spider_stats", "error_analysis_reports")
+
 
 class PostgresManager:
 
@@ -105,6 +108,34 @@ class PostgresManager:
                 self.connection_pool.putconn(conn)
 
     def _initialize_schema(self):
+        """Create missing tables; skip DDL entirely when they all exist (#538).
+
+        The app normally connects as the least-privilege role created by
+        docker/init-db.sql (SELECT/INSERT only, no CREATE on the schema, not the
+        table owner), which may not run CREATE TABLE/INDEX even with IF NOT
+        EXISTS. Schema changes belong to the superuser running init-db.sql.
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT " + ", ".join("to_regclass(%s)" for _ in SCHEMA_TABLES), SCHEMA_TABLES
+            )
+            present = cursor.fetchone()
+            cursor.close()
+        if present and all(present):
+            logger.info("PostgreSQL schema present (created by init-db.sql); skipping DDL")
+            return
+        try:
+            self._create_schema()
+        except Exception as e:
+            if getattr(e, "pgcode", None) == "42501":  # insufficient_privilege
+                logger.error(
+                    f"PostgreSQL tables are missing and role {self.user!r} may not create them. "
+                    "Run docker/init-db.sql as the database superuser (it also creates the app role, #538)."
+                )
+            raise
+
+    def _create_schema(self):
         with self.get_connection() as conn:
             cursor = conn.cursor()
 

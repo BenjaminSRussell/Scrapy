@@ -8,6 +8,7 @@ from urllib.parse import urlparse
 import scrapy
 from scrapy.http import HtmlResponse, Response
 
+from src.stage1.content_policy import classify_response, count_skipped
 from src.stage1.middlewares.spider_config import get_spider_settings
 from src.utils.delta import get_delta
 from src.stage1.processors.url_extractor import URLExtractor
@@ -20,6 +21,18 @@ try:
     from src.scrapy_prometheus import URLS_SKIPPED
 except Exception:  # prometheus_client missing
     URLS_SKIPPED = None
+
+def _stage1_flag(config, key: str, default: bool) -> bool:
+    """Read a boolean ``stage1.<key>`` (falling back to ``stages.stage1.<key>``) (#27)."""
+    for prefix in ("stage1", "stages.stage1"):
+        value = config.get(f"{prefix}.{key}")
+        if value is None:
+            continue
+        if isinstance(value, str):
+            return value.strip().lower() in ("1", "true", "yes", "on")
+        return bool(value)
+    return default
+
 
 def get_delta_manager(*args, **kwargs):
     return get_delta()
@@ -53,9 +66,11 @@ class ScoutSpider(BaseSpider):
 
         config = get_config()
 
-        self.expand_seeds = config.get("stages.stage1.expand_seeds", True)
-        self.parse_sitemaps = config.get("stages.stage1.parse_sitemaps", True)
-        self.aggressive_collection = config.get("stages.stage1.aggressive_collection", True)
+        # config.yml keeps these under ``stage1:``; ``stages.stage1.*`` (what
+        # this used to read, and which config.yml never had) is still honoured.
+        self.expand_seeds = _stage1_flag(config, "expand_seeds", True)
+        self.parse_sitemaps = _stage1_flag(config, "parse_sitemaps", True)
+        self.aggressive_collection = _stage1_flag(config, "aggressive_collection", True)
 
         self.seed_manager = SeedManager(self.delta)
 
@@ -68,10 +83,14 @@ class ScoutSpider(BaseSpider):
             self._discover_and_add_sitemap_urls()
 
     def parse(self, response: Response) -> Iterator:
-        content_type = response.headers.get("Content-Type", b"").decode("utf-8", errors="ignore").lower()
-
-        if "text/html" not in content_type:
-            logger.debug(f"[SCOUT] Non-HTML, skipping: {content_type} for {response.url[:80]}")
+        decision = classify_response(response)  # #662: no binary into HTML parsing
+        if not decision.parse_html and decision.reason == "empty_body":
+            # Empty bodies keep the #199 accounting (skip_counters + urls_skipped_total).
+            self._skip_response(response, "empty_body")
+            return
+        if not decision.parse_html:
+            count_skipped("scout", decision.reason)
+            logger.debug(f"[SCOUT] Not parsing ({decision.reason}) {response.url[:80]}")
             return
 
         empty_reason = self._empty_body_reason(response)

@@ -9,6 +9,9 @@ use deltalake::{ensure_table_uri, DeltaTable, DeltaTableBuilder};
 use jsonschema::Draft;
 use rdkafka::config::ClientConfig;
 use rdkafka::consumer::{CommitMode, Consumer, StreamConsumer};
+use rdkafka::message::{Header, OwnedHeaders};
+use rdkafka::producer::{FutureProducer, FutureRecord};
+use rdkafka::util::Timeout;
 use rdkafka::{Message, Offset, TopicPartitionList};
 use redis::{aio::ConnectionManager, AsyncCommands};
 use serde_json::{json, Value};
@@ -179,6 +182,135 @@ fn parse_ingest_row(record: &Value) -> std::result::Result<IngestRow, String> {
 }
 
 /// Build the JSON schema for scraped items to validate incoming messages
+/// A message the ingestor refuses to write to Delta. It goes to the DLQ (#544).
+#[derive(Debug, Clone, PartialEq)]
+struct Rejection {
+    /// Stable machine-readable reason; also the StatsD `errors.<reason>` suffix.
+    reason: &'static str,
+    detail: String,
+}
+
+/// Validate one Kafka payload: Ok(row) to buffer for Delta, or Err(rejection) for the DLQ.
+fn classify(
+    payload: Option<&[u8]>,
+    validator: &jsonschema::Validator,
+) -> std::result::Result<IngestRow, Rejection> {
+    let bytes = payload.ok_or_else(|| Rejection {
+        reason: "empty_payload",
+        detail: "message has no payload".to_string(),
+    })?;
+    let value: Value = serde_json::from_slice(bytes).map_err(|e| Rejection {
+        reason: "parse_failed",
+        detail: e.to_string(),
+    })?;
+    let errors: Vec<String> = validator
+        .iter_errors(&value)
+        .map(|e| format!("{} at {}", e, e.instance_path))
+        .collect();
+    if !errors.is_empty() {
+        return Err(Rejection {
+            reason: "schema_validation_failed",
+            detail: errors.join("; "),
+        });
+    }
+    // Never write a defaulted ("") required field (#531).
+    parse_ingest_row(&value).map_err(|detail| Rejection {
+        reason: "missing_required_field",
+        detail,
+    })
+}
+
+const DLQ_DETAIL_MAX: usize = 4000;
+
+/// Headers on every dead-lettered message: why it was rejected and where it came from,
+/// so it can be replayed to the source topic after a schema fix.
+fn dlq_headers(
+    rejection: &Rejection,
+    source_topic: &str,
+    partition: i32,
+    offset: i64,
+    rejected_at_ms: u128,
+) -> Vec<(String, String)> {
+    let mut detail = rejection.detail.clone();
+    if detail.len() > DLQ_DETAIL_MAX {
+        let mut cut = DLQ_DETAIL_MAX;
+        while !detail.is_char_boundary(cut) {
+            cut -= 1;
+        }
+        detail.truncate(cut);
+    }
+    vec![
+        ("dlq.reason".to_string(), rejection.reason.to_string()),
+        ("dlq.error".to_string(), detail),
+        ("dlq.source.topic".to_string(), source_topic.to_string()),
+        ("dlq.source.partition".to_string(), partition.to_string()),
+        ("dlq.source.offset".to_string(), offset.to_string()),
+        ("dlq.rejected_at_ms".to_string(), rejected_at_ms.to_string()),
+        ("dlq.producer".to_string(), "kafka-delta-ingest".to_string()),
+    ]
+}
+
+/// Durable dead-letter producer (#544). Each send waits for broker acks
+/// (acks=all, idempotent). The caller fails closed if it can't deliver.
+struct DeadLetterQueue {
+    producer: FutureProducer,
+    topic: String,
+    timeout: Duration,
+    max_attempts: u32,
+}
+
+impl DeadLetterQueue {
+    fn new(brokers: &str, topic: &str, max_attempts: u32) -> Result<Self> {
+        Self::with_timeout(brokers, topic, max_attempts, Duration::from_secs(30))
+    }
+
+    fn with_timeout(brokers: &str, topic: &str, max_attempts: u32, timeout: Duration) -> Result<Self> {
+        let producer: FutureProducer = ClientConfig::new()
+            .set("bootstrap.servers", brokers)
+            .set("acks", "all")
+            .set("enable.idempotence", "true")
+            .set("message.timeout.ms", timeout.as_millis().to_string())
+            .create()
+            .context("Failed to create dead-letter producer")?;
+        Ok(Self {
+            producer,
+            topic: topic.to_string(),
+            timeout,
+            max_attempts: max_attempts.max(1),
+        })
+    }
+
+    async fn send(&self, payload: &[u8], key: Option<&[u8]>, headers: &[(String, String)]) -> Result<()> {
+        let mut last_err = String::new();
+        for attempt in 1..=self.max_attempts {
+            let mut owned = OwnedHeaders::new();
+            for (k, v) in headers {
+                owned = owned.insert(Header { key: k.as_str(), value: Some(v.as_bytes()) });
+            }
+            let mut record = FutureRecord::<[u8], [u8]>::to(&self.topic).payload(payload).headers(owned);
+            if let Some(k) = key {
+                record = record.key(k);
+            }
+            match self.producer.send(record, Timeout::After(self.timeout)).await {
+                Ok(_) => return Ok(()),
+                Err((e, _)) => {
+                    last_err = e.to_string();
+                    warn!("DLQ produce to {} failed (attempt {}/{}): {}", self.topic, attempt, self.max_attempts, e);
+                    if attempt < self.max_attempts {
+                        tokio::time::sleep(write_retry_backoff(attempt)).await;
+                    }
+                }
+            }
+        }
+        Err(anyhow::anyhow!(
+            "DLQ produce to {} failed after {} attempts: {}",
+            self.topic,
+            self.max_attempts,
+            last_err
+        ))
+    }
+}
+
 fn build_scraped_item_schema() -> Value {
     json!({
         "$schema": "http://json-schema.org/draft-07/schema#",
@@ -265,6 +397,10 @@ enum Commands {
         /// without committing offsets, so the batch is re-consumed on restart
         #[arg(long, default_value = "5")]
         max_write_attempts: u32,
+
+        /// Dead-letter topic for rejected (unparseable / schema-invalid) messages (#544)
+        #[arg(long, default_value = "scraped-items-dlq")]
+        dlq_topic: String,
     },
 }
 
@@ -293,6 +429,7 @@ async fn main() -> Result<()> {
             max_messages_per_batch,
             transform,
             max_write_attempts,
+            dlq_topic,
         } => {
             ingest(
                 &topic,
@@ -304,6 +441,7 @@ async fn main() -> Result<()> {
                 max_messages_per_batch,
                 transform,
                 max_write_attempts,
+                &dlq_topic,
             )
             .await?;
         }
@@ -322,6 +460,7 @@ async fn ingest(
     max_messages_per_batch: usize,
     transform: Option<String>,
     max_write_attempts: u32,
+    dlq_topic: &str,
 ) -> Result<()> {
     info!("Starting Kafka to Delta Lake ingestor");
     info!("Topic: {}", topic);
@@ -373,6 +512,10 @@ async fn ingest(
         .subscribe(&[topic])
         .context("Failed to subscribe to topic")?;
 
+    // Rejected messages are produced here before their offsets can be committed (#544).
+    let dlq = DeadLetterQueue::new(kafka_brokers, dlq_topic, max_write_attempts)?;
+    info!("Dead-letter topic: {}", dlq_topic);
+
     info!("Successfully connected to Kafka and subscribed to topic: {}", topic);
 
     // Parse partition transform if provided
@@ -410,57 +553,49 @@ async fn ingest(
         match consumer.recv().await {
             Ok(message) => {
                 pending_offsets.record(message.topic(), message.partition(), message.offset());
-                if let Some(payload) = message.payload() {
-                    match serde_json::from_slice::<Value>(payload) {
-                        Ok(json_value) => {
-                            // CRITICAL: Validate message against schema before processing
-                            let validation_errors: Vec<String> = schema_validator
-                                .iter_errors(&json_value)
-                                .map(|e| format!("{} at {}", e, e.instance_path))
-                                .collect();
-                            match validation_errors.is_empty() {
-                                true => {
-                                    // Signal: response_received - Track HTTP status (default 200 for successful parse)
-                                    scrapy_metrics.response_received(200).await.ok();
+                match classify(message.payload(), &schema_validator) {
+                    Ok(row) => {
+                        // Signal: response_received - Track HTTP status (default 200 for successful parse)
+                        scrapy_metrics.response_received(200).await.ok();
+                        buffer.push(row);
+                        metrics.incr("messages.received").ok();
+                    }
+                    Err(rejection) => {
+                        warn!(
+                            "Rejected message {}/{}@{} ({}): {}",
+                            message.topic(),
+                            message.partition(),
+                            message.offset(),
+                            rejection.reason,
+                            rejection.detail
+                        );
+                        metrics.incr(&format!("errors.{}", rejection.reason)).ok();
+                        scrapy_metrics.item_dropped(rejection.reason).await.ok();
+                        scrapy_metrics.spider_error(rejection.reason, &rejection.detail).await.ok();
 
-                                    match parse_ingest_row(&json_value) {
-                                        Ok(row) => {
-                                            buffer.push(row);
-                                            metrics.incr("messages.received").ok();
-                                        }
-                                        Err(reason) => {
-                                            // Never write a defaulted ("") required field (#531).
-                                            warn!("Rejected message: {}", reason);
-                                            metrics.incr("errors.missing_required_field").ok();
-                                            scrapy_metrics.item_dropped("missing_required_field").await.ok();
-                                        }
-                                    }
-                                }
-                                false => {
-                                    // Schema validation failed - log detailed errors
-                                    let error_summary = validation_errors.join("; ");
-
-                                    warn!(
-                                        "Schema validation failed for message: {}. Errors: {}",
-                                        serde_json::to_string(&json_value).unwrap_or_else(|_| "<unprintable>".to_string()),
-                                        error_summary
-                                    );
-
-                                    metrics.incr("errors.schema_validation_failed").ok();
-
-                                    // Signal: item_dropped with reason
-                                    scrapy_metrics.item_dropped("schema_validation_failed").await.ok();
-
-                                    // Signal: spider_error for tracking
-                                    scrapy_metrics
-                                        .spider_error("schema_validation_error", &error_summary)
-                                        .await
-                                        .ok();
-
-                                    // TODO: Write invalid messages to dead-letter queue topic
-                                    // For now, we just log and drop them
-                                }
-                            }
+                        // #544: never drop silently. The offset is already recorded, so it is
+                        // committed with the next batch; produce to the DLQ first and fail
+                        // closed (exit without committing) if that is impossible.
+                        let rejected_at_ms = SystemTime::now()
+                            .duration_since(UNIX_EPOCH)
+                            .map(|d| d.as_millis())
+                            .unwrap_or(0);
+                        let headers = dlq_headers(
+                            &rejection,
+                            message.topic(),
+                            message.partition(),
+                            message.offset(),
+                            rejected_at_ms,
+                        );
+                        if let Err(e) = dlq.send(message.payload().unwrap_or(&[]), message.key(), &headers).await {
+                            metrics.incr("errors.dlq_produce_failed").ok();
+                            return Err(e.context(
+                                "Dead-letter produce failed; exiting without committing offsets",
+                            ));
+                        }
+                        metrics.incr("messages.dead_lettered").ok();
+                    }
+                }
 
                             // Check if we should write the batch
                             let should_write = buffer.len() >= max_messages_per_batch
@@ -511,19 +646,6 @@ async fn ingest(
                                     }
                                 }
                             }
-                        }
-                        Err(e) => {
-                            warn!("Failed to parse message as JSON: {}", e);
-                            metrics.incr("errors.parse_failed").ok();
-
-                            // Signal: item_dropped
-                            scrapy_metrics.item_dropped("parse_failed").await.ok();
-
-                            // Signal: spider_error
-                            scrapy_metrics.spider_error("parse_error", &e.to_string()).await.ok();
-                        }
-                    }
-                }
             }
             Err(e) => {
                 warn!("Kafka error: {}", e);
@@ -783,5 +905,99 @@ mod tests {
         assert_eq!(write_retry_backoff(2), Duration::from_secs(2));
         assert_eq!(write_retry_backoff(4), Duration::from_secs(8));
         assert_eq!(write_retry_backoff(50), Duration::from_secs(30));
+    }
+
+    // ------------------------------------------------------------ #544 DLQ
+    fn validator() -> jsonschema::Validator {
+        jsonschema::options()
+            .with_draft(Draft::Draft7)
+            .build(&build_scraped_item_schema())
+            .unwrap()
+    }
+
+    #[test]
+    fn classify_accepts_valid_and_rejects_each_kind() {
+        let v = validator();
+        let good = serde_json::to_vec(&valid_message()).unwrap();
+        assert!(classify(Some(&good), &v).is_ok());
+
+        assert_eq!(classify(None, &v).unwrap_err().reason, "empty_payload");
+        assert_eq!(classify(Some(b"{not json"), &v).unwrap_err().reason, "parse_failed");
+
+        let mut bad = valid_message();
+        bad["url"] = json!(12345);
+        let bad = serde_json::to_vec(&bad).unwrap();
+        let rej = classify(Some(&bad), &v).unwrap_err();
+        assert_eq!(rej.reason, "schema_validation_failed");
+        assert!(rej.detail.contains("url"), "{}", rej.detail);
+    }
+
+    #[test]
+    fn dlq_headers_carry_reason_source_and_truncated_detail() {
+        let rej = Rejection { reason: "schema_validation_failed", detail: "é".repeat(5000) };
+        let h: HashMap<String, String> = dlq_headers(&rej, "scraped-items", 3, 42, 1700000000000)
+            .into_iter()
+            .collect();
+        assert_eq!(h["dlq.reason"], "schema_validation_failed");
+        assert_eq!(h["dlq.source.topic"], "scraped-items");
+        assert_eq!(h["dlq.source.partition"], "3");
+        assert_eq!(h["dlq.source.offset"], "42");
+        assert_eq!(h["dlq.rejected_at_ms"], "1700000000000");
+        assert!(h["dlq.error"].len() <= DLQ_DETAIL_MAX);
+    }
+
+    /// Integration: a rejected payload lands on the DLQ topic, byte-for-byte, with headers
+    /// (librdkafka in-process mock cluster, no external Kafka needed).
+    #[tokio::test]
+    async fn dlq_produces_payload_and_headers_to_mock_cluster() {
+        use rdkafka::consumer::BaseConsumer;
+        use rdkafka::message::Headers;
+        use rdkafka::mocking::MockCluster;
+
+        let cluster = MockCluster::new(1).unwrap();
+        cluster.create_topic("scraped-items-dlq", 1, 1).unwrap();
+        let brokers = cluster.bootstrap_servers();
+
+        let dlq = DeadLetterQueue::with_timeout(&brokers, "scraped-items-dlq", 3, Duration::from_secs(10)).unwrap();
+        let rej = Rejection { reason: "parse_failed", detail: "expected value at line 1".into() };
+        let headers = dlq_headers(&rej, "scraped-items", 0, 7, 1);
+        dlq.send(b"{not json", Some(b"k1"), &headers).await.unwrap();
+
+        let consumer: BaseConsumer = ClientConfig::new()
+            .set("bootstrap.servers", &brokers)
+            .set("group.id", "dlq-test")
+            .set("auto.offset.reset", "earliest")
+            .create()
+            .unwrap();
+        consumer.subscribe(&["scraped-items-dlq"]).unwrap();
+        let mut got = None;
+        for _ in 0..100 {
+            if let Some(Ok(m)) = consumer.poll(Duration::from_millis(200)) {
+                got = Some(m.detach());
+                break;
+            }
+        }
+        let m = got.expect("DLQ message not delivered");
+        assert_eq!(m.payload().unwrap(), b"{not json");
+        assert_eq!(m.key().unwrap(), b"k1");
+        let hs = m.headers().unwrap();
+        let found: HashMap<String, String> = (0..hs.count())
+            .map(|i| {
+                let h = hs.get(i);
+                (h.key.to_string(), String::from_utf8_lossy(h.value.unwrap()).to_string())
+            })
+            .collect();
+        assert_eq!(found["dlq.reason"], "parse_failed");
+        assert_eq!(found["dlq.source.offset"], "7");
+    }
+
+    /// Fail closed: if the DLQ cannot be written, send() errors (the ingest loop then exits
+    /// without committing offsets) instead of dropping the message.
+    #[tokio::test]
+    async fn dlq_send_fails_closed_when_broker_unreachable() {
+        let dlq = DeadLetterQueue::with_timeout("127.0.0.1:1", "scraped-items-dlq", 1, Duration::from_millis(500)).unwrap();
+        let rej = Rejection { reason: "parse_failed", detail: "x".into() };
+        let err = dlq.send(b"x", None, &dlq_headers(&rej, "t", 0, 0, 0)).await.unwrap_err();
+        assert!(err.to_string().contains("DLQ produce"), "{err}");
     }
 }
