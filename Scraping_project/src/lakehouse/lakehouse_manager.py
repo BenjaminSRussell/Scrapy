@@ -242,6 +242,23 @@ except Exception:
     DELTA_SCHEMA_EVOLUTIONS = None
 
 
+def metadata_row_count(table: Any) -> int | None:
+    """Exact row count from the Delta log's per-file ``num_records`` stats (#372).
+
+    Returns None when any live file lacks stats (caller falls back to parquet
+    footers). Assumes no deletion vectors, which delta-rs does not write.
+    """
+    actions = pa.table(table.get_add_actions(flatten=True))
+    if actions.num_rows == 0:
+        return 0
+    if "num_records" not in actions.column_names:
+        return None
+    counts = actions.column("num_records")
+    if counts.null_count:
+        return None
+    return int(sum(counts.to_pylist()))  # one entry per data file
+
+
 PARTITIONED_TABLES = {"stage1_discovery", "stage2_page_analysis"}
 
 
@@ -751,9 +768,14 @@ class LakehouseManager:
         if not (table_path / "_delta_log").exists():
             return 0
 
+        # #372: never materialize rows to count them. The Delta log's add actions
+        # carry per-file num_records, so the exact count costs no data I/O.
         table = DeltaTable(str(table_path))
-        pa_table = table.to_pyarrow_table(columns=[])
-        return int(pa_table.num_rows)
+        total = metadata_row_count(table)
+        if total is not None:
+            return total
+        # Some files lack stats: count from parquet footers (still no data pages).
+        return int(table.to_pyarrow_dataset().count_rows())
 
     def _optimize_table(self, table_name: str):
         from deltalake import DeltaTable
