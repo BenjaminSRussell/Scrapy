@@ -1,6 +1,6 @@
 # Every recipe is phony (none produce a file named after the target) (#796).
-.PHONY: help install install-dev update-deps test test-unit test-integration test-fast \
-	test-coverage test-coverage-min test-watch lint lint-fix format typecheck security \
+.PHONY: help install install-dev lock update-deps test test-unit test-integration test-fast \
+	test-ci test-perf test-coverage test-coverage-min test-watch lint lint-fix format typecheck security \
 	security-full docker-build docker-up docker-down docker-down-clean docker-logs docker-ps \
 	docker-shell docker-test pre-commit pre-commit-update ci ci-docker clean clean-all dev \
 	serve stop restart shell notebook db-migrate db-reset logs metrics prometheus docs \
@@ -44,11 +44,22 @@ install-dev: install ## Install development dependencies
 	pre-commit install --config "$$(git rev-parse --show-prefix).pre-commit-config.yaml"
 	@echo "$(GREEN)✓ Development environment ready!$(NC)"
 
-update-deps: ## Update and compile dependencies
+# Lockfiles are compiled from this directory with relative paths so the generated
+# header never embeds a machine-local path (#397). See ../CONTRIBUTING.md.
+PIP_COMPILE = pip-compile --quiet --strip-extras
+
+lock: ## Re-pin lockfiles after editing *.in (keeps existing versions)
+	@echo "$(BLUE)Compiling lockfiles (no upgrades)...$(NC)"
+	pip install --upgrade pip-tools
+	cd "$(CURDIR)" && $(PIP_COMPILE) --output-file=requirements.txt requirements.in
+	cd "$(CURDIR)" && $(PIP_COMPILE) --output-file=dev-requirements.txt dev-requirements.in
+	@echo "$(GREEN)✓ Lockfiles compiled$(NC)"
+
+update-deps: ## Upgrade every pin and recompile lockfiles
 	@echo "$(BLUE)Updating dependencies...$(NC)"
 	pip install --upgrade pip pip-tools
-	pip-compile requirements.in --upgrade
-	pip-compile dev-requirements.in --upgrade
+	cd "$(CURDIR)" && $(PIP_COMPILE) --upgrade --output-file=requirements.txt requirements.in
+	cd "$(CURDIR)" && $(PIP_COMPILE) --upgrade --output-file=dev-requirements.txt dev-requirements.in
 	@echo "$(GREEN)✓ Dependencies updated$(NC)"
 
 ##@ Testing
@@ -65,9 +76,17 @@ test-integration: ## Run integration tests (requires services)
 	@echo "$(BLUE)Running integration tests...$(NC)"
 	pytest tests/integration -v
 
-test-fast: ## Run fast tests only (excluding slow)
+test-fast: ## Run fast tests only (excluding slow and performance)
 	@echo "$(BLUE)Running fast tests...$(NC)"
-	pytest -v -m "not slow"
+	pytest -v -m "not slow and not performance"
+
+test-ci: ## Run the default PR selection exactly as CI does
+	@echo "$(BLUE)Running CI default test selection...$(NC)"
+	python -m pytest tests/ -m "not slow and not kafka and not performance" -o addopts= --strict-markers
+
+test-perf: ## Run load/performance tests (excluded from PR CI, #287)
+	@echo "$(BLUE)Running performance tests...$(NC)"
+	python -m pytest tests/performance -m performance -o addopts= -v
 
 test-coverage: ## Run tests with coverage report
 	@echo "$(BLUE)Running tests with coverage...$(NC)"
