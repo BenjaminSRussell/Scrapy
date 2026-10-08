@@ -607,21 +607,48 @@ class GrafanaSummaryPipeline:
         self.items_processed += 1
 
         if self.items_processed % self.SAMPLE_RATE == 0:
-            adapter = ItemAdapter(item)
-            text_content = self._extract_text_content(adapter)
-
-            if text_content:
-                truncated_content = text_content[: self.MAX_CONTENT_LENGTH]
-                if len(text_content) > self.MAX_CONTENT_LENGTH:
-                    truncated_content += "..."
-
-                self.sampled_content.append(truncated_content)
-                logger.debug(f"Sampled content from item #{self.items_processed}")
-
-                if len(self.sampled_content) >= self.BATCH_SIZE:
-                    self._generate_and_export_summary(spider)
+            # Optional telemetry (#462): a sampling/export failure must never
+            # drop the item or fail the crawl.
+            try:
+                self._sample(item, spider)
+            except Exception as e:
+                self._skip(spider, "sample_error", e)
 
         return item
+
+    def _sample(self, item: Any, spider: Spider) -> None:
+        adapter = ItemAdapter(item)
+        text_content = self._extract_text_content(adapter)
+
+        if text_content:
+            truncated_content = text_content[: self.MAX_CONTENT_LENGTH]
+            if len(text_content) > self.MAX_CONTENT_LENGTH:
+                truncated_content += "..."
+
+            self.sampled_content.append(truncated_content)
+            logger.debug(f"Sampled content from item #{self.items_processed}")
+
+            if len(self.sampled_content) >= self.BATCH_SIZE:
+                self._generate_and_export_summary(spider)
+
+    def _skip(self, spider: Spider, reason: str, error: BaseException | None = None) -> None:
+        """Record a skipped summary export (``summary_skipped`` stat + metric)."""
+        stats = getattr(getattr(spider, "crawler", None), "stats", None)
+        if stats is not None:
+            stats.inc_value("summary_skipped")
+            stats.inc_value(f"summary_skipped/{reason}")
+        try:
+            from src.scrapy_prometheus import CRAWLER_SUMMARY_SKIPPED
+
+            if CRAWLER_SUMMARY_SKIPPED is not None:
+                CRAWLER_SUMMARY_SKIPPED.labels(spider=spider.name, reason=reason).inc()
+        except Exception:  # metrics are best effort here
+            pass
+        if error is None:
+            logger.debug(f"GrafanaSummaryPipeline skipped summary export ({reason})")
+        else:
+            logger.warning(f"GrafanaSummaryPipeline skipped summary export ({reason}): {error}")
+        self.sampled_content = []
 
     def _extract_text_content(self, adapter: ItemAdapter) -> str:
         text_fields = ["text", "content", "body", "description", "summary", "title"]
@@ -649,13 +676,21 @@ class GrafanaSummaryPipeline:
 
         try:
             from src.scrapy_prometheus import CRAWLER_CONTENT_SUMMARY
+        except Exception as e:  # missing/broken optional metrics deps (#462)
+            self._skip(spider, "deps_unavailable", e)
+            return
 
-            if CRAWLER_CONTENT_SUMMARY:
-                # Note: Prometheus Gauge doesn't accept string values directly
-                CRAWLER_CONTENT_SUMMARY.labels(spider=spider.name).set(len(self.sampled_content))
-                logger.info(f" Content Summary ({len(self.sampled_content)} samples): {summary[:200]}...")
-        except ImportError:
-            pass
+        if CRAWLER_CONTENT_SUMMARY is None:
+            self._skip(spider, "metrics_disabled")
+            return
+
+        try:
+            # Note: Prometheus Gauge doesn't accept string values directly
+            CRAWLER_CONTENT_SUMMARY.labels(spider=spider.name).set(len(self.sampled_content))
+            logger.info(f" Content Summary ({len(self.sampled_content)} samples): {summary[:200]}...")
+        except Exception as e:
+            self._skip(spider, "export_error", e)
+            return
 
         self.sampled_content = []
 
@@ -663,7 +698,10 @@ class GrafanaSummaryPipeline:
         logger.info(f"Closing GrafanaSummaryPipeline for spider: {spider.name}")
 
         if self.sampled_content:
-            self._generate_and_export_summary(spider)
+            try:
+                self._generate_and_export_summary(spider)
+            except Exception as e:  # never fail the spider close path (#462)
+                self._skip(spider, "close_error", e)
 
         logger.info(f"GrafanaSummaryPipeline stats - Total items processed: {self.items_processed}")
 
