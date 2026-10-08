@@ -307,6 +307,57 @@ def _z_order_config(raw: Any) -> dict[str, list[str]]:
     return out
 
 
+EXPORT_FORMATS = ("csv", "json", "parquet")
+EXPORT_DEFAULT_BATCH_SIZE = 65_536
+EXPORT_BATCH_READAHEAD = 2
+
+
+def _export_part_path(base: Path, index: int) -> Path:
+    return base.with_name(f"{base.stem}.part-{index:05d}{base.suffix}")
+
+
+class _ExportSink:
+    """One export output file, written batch by batch (#373)."""
+
+    def __init__(self, path: Path, schema: Any, format: str):
+        import pyarrow as pa
+        import pyarrow.csv as pa_csv
+        import pyarrow.parquet as pq
+
+        self.path = path
+        self.format = format
+        self.rows = 0
+        self._writer: Any = None
+        if format == "json":
+            self._stream: Any = open(path, "w", encoding="utf-8")
+        else:
+            self._stream = pa.OSFile(str(path), "wb")
+            if format == "csv":
+                self._writer = pa_csv.CSVWriter(self._stream, schema)
+            else:
+                self._writer = pq.ParquetWriter(self._stream, schema, compression="ZSTD")
+
+    def write(self, batch: Any) -> None:
+        if batch.num_rows == 0:
+            return
+        if self.format == "json":
+            text = batch.to_pandas().to_json(orient="records", lines=True)
+            self._stream.write(text if text.endswith("\n") else text + "\n")
+        else:
+            self._writer.write_batch(batch)
+        self.rows += batch.num_rows
+
+    def bytes_written(self) -> int:
+        return int(self._stream.tell())
+
+    def close(self) -> None:
+        try:
+            if self._writer is not None:
+                self._writer.close()
+        finally:
+            self._stream.close()
+
+
 class LakehouseManager:
 
     def __init__(self, base_path: str | None = None, start_workers: bool = True):
@@ -1015,51 +1066,131 @@ class LakehouseManager:
 
         return tables_info
 
-    def export(self, table_name: str, output_path: str, format: str = "csv"):
+    def _export_settings(
+        self,
+        batch_size: int | None,
+        max_rows_per_file: int | None,
+        max_bytes_per_file: int | None,
+    ) -> tuple[int, int | None, int | None]:
+        config = Config.get_instance()
+
+        def _limit(value: Any, key: str) -> int | None:
+            if value is None:
+                value = config.get(f"export.{key}", None)
+            if value is None:
+                return None
+            limit = int(value)
+            return limit if limit > 0 else None
+
+        size = batch_size if batch_size is not None else config.get("export.batch_size", None)
+        size = int(size) if size else EXPORT_DEFAULT_BATCH_SIZE
+        if size <= 0:
+            raise ValueError("export batch_size must be positive")
+        return size, _limit(max_rows_per_file, "max_rows_per_file"), _limit(max_bytes_per_file, "max_bytes_per_file")
+
+    def export(
+        self,
+        table_name: str,
+        output_path: str,
+        format: str = "csv",
+        *,
+        filters: Any = None,
+        columns: list[str] | None = None,
+        batch_size: int | None = None,
+        max_rows_per_file: int | None = None,
+        max_bytes_per_file: int | None = None,
+    ) -> dict[str, Any]:
+        """Stream a Delta table to CSV / JSON-lines / Parquet without materializing it (#373).
+
+        Rows are scanned in record batches of ``batch_size`` and written
+        incrementally, so peak memory is bounded by the batch size rather than the
+        table size.  ``filters`` (DNF tuples such as ``[("crawl_date", "=", "2026-10-07")]``
+        or a ``pyarrow.dataset`` expression) scope the export to partitions/rows.
+
+        With ``max_rows_per_file`` and/or ``max_bytes_per_file`` set (arguments or
+        the ``export.*`` config keys; 0/None = unlimited) the output rolls over into
+        ``<stem>.part-00000<suffix>``, ``<stem>.part-00001<suffix>``, ...  The byte
+        limit is checked at batch boundaries, so a file can exceed it by at most one
+        batch.
+        """
         import pyarrow as pa
-        import pyarrow.csv as pa_csv
         import pyarrow.parquet as pq
         from deltalake import DeltaTable
 
-        table_path = self.get_table_path(table_name)
+        if format not in EXPORT_FORMATS:
+            raise ValueError(f"Unsupported format: {format}")
+        batch_size, max_rows, max_bytes = self._export_settings(batch_size, max_rows_per_file, max_bytes_per_file)
+        chunked = max_rows is not None or max_bytes is not None
 
+        table_path = self.get_table_path(table_name)
         out_path = Path(output_path)
         out_path.parent.mkdir(parents=True, exist_ok=True)
 
         if not (table_path / "_delta_log").exists():
             logger.warning(f"No data in table: {table_name}, exporting empty file.")
-            pa_table = pa.Table.from_pylist([])
-            row_count = 0
-            col_count = 0
+            schema = pa.schema([])
+            batches: Any = iter(())
         else:
-            table = DeltaTable(str(table_path))
-            pa_table = table.to_pyarrow_table()
-            row_count = pa_table.num_rows
-            col_count = len(pa_table.schema)
+            dataset = DeltaTable(str(table_path)).to_pyarrow_dataset()
+            expression = filters
+            if isinstance(filters, list | tuple):
+                expression = pq.filters_to_expression(filters) if filters else None
+            scanner = dataset.scanner(
+                columns=columns,
+                filter=expression,
+                batch_size=batch_size,
+                batch_readahead=EXPORT_BATCH_READAHEAD,
+                fragment_readahead=1,
+            )
+            schema = scanner.projected_schema
+            batches = scanner.to_batches()
 
-        if format == "csv":
-            with pa_csv.CSVWriter(out_path, pa_table.schema) as writer:
-                writer.write_table(pa_table)
-        elif format == "json":
-            result_df = pa_table.to_pandas()
-            result_df.to_json(out_path, orient="records", lines=True)
-        elif format == "parquet":
-            pq.write_table(pa_table, out_path, compression="ZSTD")
-        else:
-            raise ValueError(f"Unsupported format: {format}")
+        files: list[Path] = []
+        sink: _ExportSink | None = None
+        total_rows = 0
 
-        logger.info(f" Exported {table_name} to {out_path} ({format})")
+        def _open() -> _ExportSink:
+            path = _export_part_path(out_path, len(files)) if chunked else out_path
+            files.append(path)
+            return _ExportSink(path, schema, format)
 
+        try:
+            for batch in batches:
+                offset = 0
+                while offset < batch.num_rows:
+                    if sink is None:
+                        sink = _open()
+                    take = batch.num_rows - offset
+                    if max_rows is not None:
+                        take = min(take, max_rows - sink.rows)
+                    sink.write(batch.slice(offset, take))
+                    offset += take
+                    total_rows += take
+                    if (max_rows is not None and sink.rows >= max_rows) or (
+                        max_bytes is not None and sink.bytes_written() >= max_bytes
+                    ):
+                        sink.close()
+                        sink = None
+            if not files:
+                sink = _open()  # header-only / empty output, as before
+        finally:
+            if sink is not None:
+                sink.close()
+
+        logger.info(f" Exported {table_name} to {out_path} ({format}, {total_rows} rows, {len(files)} file(s))")
+
+        size_bytes = sum(path.stat().st_size for path in files if path.exists())
         return {
             "table": table_name,
-            "output": str(out_path),
+            "output": str(files[0] if chunked else out_path),
+            "files": [str(path) for path in files],
             "format": format,
-            "rows": row_count,
-            "columns": col_count,
-            "size_mb": (out_path.stat().st_size / (1024 * 1024) if out_path.exists() else 0),
+            "rows": total_rows,
+            "columns": len(schema),
+            "size_mb": size_bytes / (1024 * 1024),
         }
 
-    def export_all(self, output_dir: str, format: str = "csv") -> list[dict[str, Any]]:
+    def export_all(self, output_dir: str, format: str = "csv", **options: Any) -> list[dict[str, Any]]:
         out_dir = Path(output_dir)
         out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -1067,7 +1198,7 @@ class LakehouseManager:
         for table_name in self.tables.keys():
             try:
                 output_path = out_dir / f"{table_name}.{format}"
-                result = self.export(table_name, str(output_path), format)
+                result = self.export(table_name, str(output_path), format, **options)
                 results.append(result)
             except Exception as e:
                 logger.warning(f"Failed to export {table_name}: {e}")

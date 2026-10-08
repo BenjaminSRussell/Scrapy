@@ -296,3 +296,7 @@ export:
   default_format: csv  # csv, json, parquet
   output_directory: ./exports
   compression: gzip  # none, gzip, bz2, xz
+  # Streaming export (#373): tables are scanned in record batches, never loaded whole.
+  batch_size: 65536          # rows per scanned batch (bounds peak memory)
+  max_rows_per_file: 0       # 0 = unlimited; else roll over to <stem>.part-NNNNN<ext>
+  max_bytes_per_file: 0      # 0 = unlimited; soft limit checked per batch

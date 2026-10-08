@@ -35,21 +35,13 @@ class TestDeltaLakeManager(unittest.TestCase):
         self.assertEqual(result["columns"], 0)
         mock_delta_table.assert_not_called()
 
-    @patch("src.lakehouse.lakehouse_manager.pa_csv")
-    @patch("deltalake.DeltaTable")
-    def test_export_non_empty_table(self, mock_delta_table, mock_pa_csv):
-        table_name = "stage1_discovery"
-        table_path = self.manager.tables[table_name]
-        (table_path / "_delta_log").mkdir(parents=True, exist_ok=True)
-
-        df = pd.DataFrame([{"col1": "a", "col2": 1}])
-        mock_table_instance = MagicMock()
+    def test_export_non_empty_table(self):
         import pyarrow as pa
+        from deltalake import write_deltalake
 
-        mock_arrow_table = pa.Table.from_pandas(df)
-
-        mock_table_instance.to_pyarrow_table.return_value = mock_arrow_table
-        mock_delta_table.return_value = mock_table_instance
+        table_name = "stage1_discovery"
+        df = pd.DataFrame([{"col1": "a", "col2": 1}])
+        write_deltalake(str(self.manager.get_table_path(table_name)), pa.Table.from_pandas(df, preserve_index=False))
 
         output_path = Path(self.tmpdir) / "output.csv"
         result = self.manager.export(table_name, str(output_path), format="csv")
@@ -57,6 +49,7 @@ class TestDeltaLakeManager(unittest.TestCase):
         self.assertEqual(result["table"], table_name)
         self.assertEqual(result["rows"], len(df))
         self.assertEqual(result["columns"], len(df.columns))
+        self.assertTrue(output_path.exists())
 
 if __name__ == "__main__":
     unittest.main()
