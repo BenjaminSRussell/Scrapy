@@ -14,6 +14,7 @@ from src.core.constants import (
 from src.core.config import stage_worker_settings
 from src.utils.delta import get_delta
 from src.utils.postgres import PostgresManager
+from src.utils.metrics_sink import record_error, record_performance
 from src.otel_tracing import ensure_crawl_job_id, init_tracing, start_span
 
 logger = logging.getLogger(__name__)
@@ -108,16 +109,14 @@ class Stage3Worker:
                 written += len(valid_results)
                 logger.info(f"Saved {len(valid_results)} summaries")
 
-                if self.postgres:
-                    try:
-                        self.postgres.log_performance_metric(
-                            stage="stage3",
-                            urls_processed=len(valid_results),
-                            processing_time_seconds=batch_time,
-                            worker_count=self.max_concurrent,
-                        )
-                    except Exception as e:
-                        logger.debug(f"Failed to log performance to PostgreSQL: {e}")
+                # #586: dual-export; never raises, never silent on a sink failure.
+                record_performance(
+                    self.postgres,
+                    stage="stage3",
+                    urls_processed=len(valid_results),
+                    processing_time_seconds=batch_time,
+                    worker_count=self.max_concurrent,
+                )
 
         logger.info("Stage 3 Worker completed all batches")
         return written
@@ -186,16 +185,13 @@ class Stage3Worker:
             except Exception as err:
                 logger.error(f"Summarization failed for {doc.get('url', '')}: {err}")
 
-                if self.postgres:
-                    try:
-                        self.postgres.log_error(
-                            stage="stage3",
-                            url=doc.get("url", ""),
-                            error_type=type(err).__name__,
-                            error_message=str(err),
-                        )
-                    except Exception as pg_error:
-                        logger.debug(f"Failed to log error to PostgreSQL: {pg_error}")
+                record_error(
+                    self.postgres,
+                    stage="stage3",
+                    url=doc.get("url", ""),
+                    error_type=type(err).__name__,
+                    error_message=str(err),
+                )
 
                 return None
 

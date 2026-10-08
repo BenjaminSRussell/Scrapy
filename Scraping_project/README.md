@@ -246,6 +246,14 @@ Do not rely on `config/{ENV}.yml` (not present for normal operation).
 - `get()`, `get_section()` and `get_raw_config()` return copies; mutating them doesn't change the live config. Use `set()`.
 - Write config files atomically (write a temp file, then `os.replace`) so a reload never sees a partial file.
 
+### Metrics dual-export (Prometheus + Postgres)
+
+Stage workers report batch throughput and per-URL errors through `src/utils/metrics_sink.py` (#586):
+
+1. **Prometheus, always:** `scrapy_stage_urls_processed_total`, `scrapy_stage_batch_seconds_total`, `scrapy_stage_errors_total{stage,error_type}`. These are updated whether or not Postgres is configured or healthy, and are the source of truth for alerting.
+2. **Postgres, best effort:** the same record goes to `performance_metrics` / `error_logs` for history.
+3. **Postgres failure:** never raised into the crawl and never silently dropped. `scrapy_pg_metrics_writes_total{kind,outcome="failure"}` is incremented, the record is logged at WARNING as `metrics_sink_fallback kind=... payload={json}`, and the `PostgresMetricsSinkFailing` alert fires above a 10% failure rate for 5m. With Postgres disabled (no `DB_PASSWORD`), writes are counted as `outcome="disabled"`.
+
 ### Environment Variables
 
 ```bash

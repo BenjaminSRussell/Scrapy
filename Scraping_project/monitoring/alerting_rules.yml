@@ -359,6 +359,24 @@ groups:
           impact: "High - Metrics storage offline"
           action: "Restart PostgreSQL: docker-compose restart postgres"
 
+      # Postgres metrics sink failing (#586). Stage metrics are dual-exported, so
+      # Prometheus still has them, but Postgres history has gaps and the dropped
+      # records only exist as metrics_sink_fallback WARNING log lines.
+      - alert: PostgresMetricsSinkFailing
+        expr: |
+          sum(rate(scrapy_pg_metrics_writes_total{outcome="failure"}[5m]))
+            / clamp_min(sum(rate(scrapy_pg_metrics_writes_total{outcome=~"success|failure"}[5m])), 1e-9)
+            > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          component: postgres
+        annotations:
+          summary: "Postgres metrics sink is failing ({{ $value | humanizePercentage }} of writes)"
+          description: "More than 10% of performance/error records failed to reach Postgres for 5 minutes. The crawl continues; Prometheus still has the stage series (scrapy_stage_*), and each dropped record is logged as 'metrics_sink_fallback' at WARNING."
+          impact: "Medium - Postgres metric/error history has gaps; Prometheus alerting is unaffected"
+          action: "Check PostgresDown / connection pool; backfill from metrics_sink_fallback log lines if the history matters"
+
       # Warning: High PostgreSQL connection usage
       - alert: PostgresHighConnections
         expr: |
