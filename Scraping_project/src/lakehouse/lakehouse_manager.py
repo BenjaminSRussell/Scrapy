@@ -5,6 +5,7 @@ import signal
 import sys
 import threading
 import time
+from collections import deque
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
@@ -306,6 +307,8 @@ def _z_order_config(raw: Any) -> dict[str, list[str]]:
             logger.warning(f"Ignoring invalid z_order_columns for {table}: {cols!r}")
     return out
 
+
+MEMORY_HISTORY_DEPTH = 10  # InMemoryBackend versions retained per table (#484)
 
 EXPORT_FORMATS = ("csv", "json", "parquet")
 EXPORT_DEFAULT_BATCH_SIZE = 65_536
@@ -1443,10 +1446,27 @@ class LakehouseManager:
 # =====================================================================================
 
 class InMemoryBackend:
+    """Ephemeral test/demo backend.
 
-    def __init__(self, **kwargs):
+    Limits (#484): time travel keeps only the last ``history_depth`` versions per
+    table (kwarg, else ``delta_lake.memory_history_depth``, default
+    ``MEMORY_HISTORY_DEPTH``). Version numbers stay absolute (0 = first write),
+    so reading an evicted version raises ValueError rather than silently
+    returning a different snapshot. Every retained version is a full copy of
+    the table, so memory is about ``history_depth`` times the table size.
+    """
+
+    def __init__(self, history_depth: int | None = None, **kwargs):
         self.tables: dict[str, list[dict[str, Any]]] = {}
-        self.history: dict[str, list[list[dict[str, Any]]]] = {}
+        # Retained snapshots, oldest first; _next_version gives absolute numbering.
+        self.history: dict[str, deque[list[dict[str, Any]]]] = {}
+        self._next_version: dict[str, int] = {}
+        if history_depth is None:
+            try:
+                history_depth = Config.get_instance().get("delta_lake.memory_history_depth", None)
+            except Exception:
+                history_depth = None
+        self.history_depth = max(1, int(MEMORY_HISTORY_DEPTH if history_depth is None else history_depth))
         self.base_path = Path("./data/test_delta_lake")
         self.table_paths = {
             "seed_urls": Path("./data/delta_lake/seed_urls"),
@@ -1475,15 +1495,24 @@ class InMemoryBackend:
             raise ValueError(f"Unsupported mode: {mode}")
 
         if table_name not in self.history:
-            self.history[table_name] = []
+            self.history[table_name] = deque(maxlen=self.history_depth)
         self.history[table_name].append(list(self.tables[table_name]))
+        self._next_version[table_name] = self._next_version.get(table_name, 0) + 1
+
+    def _oldest_version(self, table_name: str) -> int:
+        return self._next_version.get(table_name, 0) - len(self.history.get(table_name, ()))
 
     def _get_version(self, table_name: str, version: int | None = None) -> list[dict[str, Any]]:
         if version is None:
             return self.tables.get(table_name, [])
-        if table_name not in self.history or version >= len(self.history[table_name]):
-            raise ValueError(f"Version {version} not available for table {table_name}")
-        return self.history[table_name][version]
+        oldest = self._oldest_version(table_name)
+        if table_name not in self.history or not oldest <= version < self._next_version[table_name]:
+            raise ValueError(
+                f"Version {version} not available for table {table_name} "
+                f"(retained: {oldest}..{self._next_version.get(table_name, 0) - 1}, "
+                f"history_depth={self.history_depth})"
+            )
+        return self.history[table_name][version - oldest]
 
     def read(
         self,
@@ -1547,14 +1576,16 @@ class InMemoryBackend:
         if not self.table_exists(name):
             return []
 
+        oldest = self._oldest_version(name)
         return [
             {
+                "version": oldest + i,
                 "timestamp": datetime.now(UTC).isoformat(),
                 "operation": "WRITE",
                 "operationParameters": {"mode": "Append", "partitionBy": "[]"},
                 "user": "test-user",
             }
-            for _ in self.history.get(name, [])
+            for i in range(len(self.history.get(name, ())))
         ]
 
     def add_to_batch(self, table: str, rows: list[dict]):
