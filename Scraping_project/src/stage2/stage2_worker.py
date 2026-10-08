@@ -741,4 +741,7 @@ async def run_stage2_worker():
             await asyncio.sleep(10)
 
 if __name__ == "__main__":
+    from src.utils.worker_metrics import start_worker_metrics_server
+
+    start_worker_metrics_server("stage2")  # #789
     asyncio.run(run_stage2_worker())

@@ -218,4 +218,7 @@ if __name__ == "__main__":
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
     )
 
+    from src.utils.worker_metrics import start_worker_metrics_server
+
+    start_worker_metrics_server("stage4")  # #789
     asyncio.run(run_stage4_worker())

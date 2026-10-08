@@ -447,6 +447,13 @@ Available at `http://localhost:9090`:
 - `retry_attempts_total`: Retry attempts
 - `circuit_breaker_state`: Circuit breaker state (0=closed, 1=open, 2=half-open)
 
+Every queue worker (Stage 2/3/4) serves its own registry on
+`WORKER_METRICS_PORT` (default 9430, `WORKER_METRICS_ENABLED=0` to disable),
+so worker-side counters (soft bans, deferrals, recency outcomes, ...) reach
+Prometheus as `stage{2,3,4}_worker` jobs, one target per replica, with
+`scrapy_worker_up{component}` as the liveness series. Scrape topology for Helm:
+[k8s/README.md](k8s/README.md#what-gets-scraped-789).
+
 ### Grafana Dashboards
 
 Access at `http://localhost:3000` (admin/admin):

@@ -307,6 +307,14 @@ scrapyApp:
       accessMode: ReadWriteMany
       size: 200Gi
 
+# Queue-worker metrics endpoint (#789). Stage 2/3 workers serve their
+# prometheus_client registry on this port; Prometheus discovers every pod via a
+# headless Service (dns_sd_configs), so replicas are scraped individually.
+workerMetrics:
+  enabled: true
+  port: 9430  # outside the Scrapy 9410-9420 range
+  path: /metrics
+
 stage2Worker:
   enabled: true
   replicaCount: 3
