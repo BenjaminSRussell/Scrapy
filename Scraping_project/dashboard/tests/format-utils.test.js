@@ -110,3 +110,37 @@ test('resolveMetricsUrl precedence: override, then http(s) ?metrics=', () => {
     const bad = { protocol: 'http:', hostname: 'h', search: '?metrics=javascript:alert(1)' };
     assert.strictEqual(resolveMetricsUrl(bad), 'http://h:9090/metrics');
 });
+
+// #906 / #910
+const { splitLinks, metricsUrlProblem } = require('../format-utils.js');
+
+test('splitLinks: script tags stay plain text, http(s) only become links', () => {
+    const segs = splitLinks('<script>alert(1)</script> see https://example.edu/a?b=1. and javascript:alert(2)');
+    assert.deepStrictEqual(segs, [
+        { text: '<script>alert(1)</script> see ' },
+        { text: 'https://example.edu/a?b=1', href: 'https://example.edu/a?b=1' },
+        { text: '. and javascript:alert(2)' },
+    ]);
+    assert.ok(segs.every(s => !s.href || /^https?:\/\//.test(s.href)));
+});
+
+test('splitLinks: quotes and angle brackets end a URL; empty/null safe', () => {
+    assert.deepStrictEqual(splitLinks('x http://a.edu/"onmouseover=1'), [
+        { text: 'x ' }, { text: 'http://a.edu/', href: 'http://a.edu/' }, { text: '"onmouseover=1' },
+    ]);
+    assert.deepStrictEqual(splitLinks(''), []);
+    assert.deepStrictEqual(splitLinks(null), []);
+    assert.deepStrictEqual(splitLinks('(http://b.edu/x)'), [
+        { text: '(' }, { text: 'http://b.edu/x', href: 'http://b.edu/x' }, { text: ')' },
+    ]);
+});
+
+test('metricsUrlProblem: reports a rejected ?metrics=, silent otherwise', () => {
+    assert.strictEqual(metricsUrlProblem({ search: '' }), null);
+    assert.strictEqual(metricsUrlProblem(null), null);
+    assert.strictEqual(metricsUrlProblem({ search: '?metrics=https://x.edu:9090/metrics' }), null);
+    const msg = metricsUrlProblem({ search: '?metrics=javascript:alert(1)' });
+    assert.match(msg, /only http\(s\)/);
+    assert.match(msg, /javascript:alert\(1\)/);
+    assert.match(metricsUrlProblem({ search: '?metrics=' }), /Ignored/);
+});
