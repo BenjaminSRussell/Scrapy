@@ -196,6 +196,9 @@ class Stage4Worker:
 
 async def run_stage4_worker():
     logger.info("[STAGE4] Worker starting in continuous mode...")
+    from src.core.pipeline_contract import log_contract_drift
+
+    log_contract_drift()  # #948: warn on config/contract drift once at startup
 
     while True:
         try:

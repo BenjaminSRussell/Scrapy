@@ -114,17 +114,21 @@ class MetricsExporter:
             "js_spider_queue",
             "stage2_queue",
             "stage2_page_analysis",
+            "stage2_errors",
             "stage3_analytics",
             "stage3_summaries",
             "stage4_large_docs",
-            "stage4_summaries",
+            "stage4_large_doc_summaries",
+            "stage4_summaries",  # legacy Stage 3 output (pre-#612), read-only
         ]
 
+        # Each stage's *output* table (src/core/pipeline_contract.HOPS, #948).
+        # stage4_summaries is Stage 3's pre-#612 table, not Stage 4 output.
         self._throughput_table_to_stage: dict[str, str] = {
             "stage1_discovery": "stage1",
             "stage2_page_analysis": "stage2",
             "stage3_summaries": "stage3",
-            "stage4_summaries": "stage4",
+            "stage4_large_doc_summaries": "stage4",
         }
         self._tracked_stages: list[str] = sorted(set(self._throughput_table_to_stage.values()))
 

@@ -222,48 +222,28 @@ delta_lake:
     stage1_discovery: [url_hash, discovered_at]
     stage2_page_analysis: [url_hash, processed_at]
 
-  # Table Names
+  # Table names (#948): a mirror of src/core/constants.py, validated against the
+  # hop table in src/core/pipeline_contract.py at worker startup. Names are
+  # owned by code (schemas/partitioning are keyed by them); changing a value
+  # here does NOT rename a table, it logs a [contract] warning.
+  # Hop:  stage1 -> stage2_queue / js_spider_queue -> stage2 -> stage2_page_analysis
+  #       -> stage3 -> stage3_summaries;  stage2 -> stage4_large_docs -> stage4
+  #       -> stage4_large_doc_summaries
   tables:
+    seed_urls: seed_urls
     stage1_discovery: stage1_discovery
     stage1_errors: stage1_errors
+    stage1_offsite_candidates: stage1_offsite_candidates
+    metadata_queue: metadata_queue
     js_spider_queue: js_spider_queue
     stage2_queue: stage2_queue
     stage2_page_analysis: stage2_page_analysis
+    stage2_errors: stage2_errors
     stage3_summaries: stage3_summaries
     stage4_large_docs: stage4_large_docs
-    stage4_summaries: stage4_summaries
-
-# ============================================
-# Message Queue Configuration
-# ============================================
-message_queues:
-  # Stage 1 -> Stage 2
-  stage1_to_stage2: stage1_discovered_urls
-
-  # Stage 2 -> Stage 3
-  stage2_to_stage3: stage2_analyzed_pages
-
-  # Stage 2 -> Stage 4 (large docs)
-  stage2_to_stage4: stage2_large_docs
-
-  # JS Render Queue
-  js_render_queue: stage1_js_render_pending
-  js_render_results: stage1_js_render_results
-
-  # Error Queues
-  stage1_errors: stage1_error_queue
-  stage2_errors: stage2_error_queue
-  stage3_errors: stage3_error_queue
-  stage4_errors: stage4_error_queue
-
-  # Queue Persistence Settings
-  persistent_queues:
-    - stage2_large_docs  # Stage 4 queue is persistent
-  transient_queues:
-    - stage1_discovered_urls
-    - stage2_analyzed_pages
-    - stage1_js_render_pending
-    - stage1_js_render_results
+    stage4_large_doc_summaries: stage4_large_doc_summaries
+    # stage4_summaries is NOT Stage 4 output: it is where Stage 3 wrote before
+    # #612, still read (never written) so old lakes are not re-summarized.
 
 # ============================================
 # Logging Configuration

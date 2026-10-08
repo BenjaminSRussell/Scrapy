@@ -278,6 +278,25 @@ Edit [`config.yml`](config.yml) — the single source of truth loaded by
 `src.core.config.get_config()` and used by Scrapy settings (`src/settings.py`).
 Do not rely on `config/{ENV}.yml` (not present for normal operation).
 
+### Pipeline contract: tables per hop (#948)
+
+Every hop between stages is a Delta table. Names are owned by `src/core/constants.py` and declared in `src/core/pipeline_contract.HOPS`. `tests/unit/test_pipeline_contract.py` scans the modules and fails if code and table disagree:
+
+| Stage | Module(s) | Reads | Writes | Note |
+|---|---|---|---|---|
+| stage1 | `src.pipelines` | - | `stage2_queue`, `js_spider_queue`, `stage1_offsite_candidates`, `metadata_queue` | Scout spider items -> QueueItemPipeline hands URLs to Stage 2 / the JS renderer |
+| stage1-experimental | `src.stage1.experimental.base_spider` | `seed_urls` | `stage1_discovery`, `stage1_errors` |  |
+| stage1-js | `src.stage1.experimental.js_spider` | `js_spider_queue` | `js_spider_queue` | rendered pages flow back through the item pipelines; closed() rewrites queue status |
+| stage2 | `src.stage2.stage2_worker`, `src.stage2.intelligent_analyzer` | `stage2_queue`, `stage2_errors` | `stage2_page_analysis`, `stage2_errors`, `stage4_large_docs` | queue status is MERGEd back into stage2_queue |
+| stage3 | `src.stage3.stage3_worker` | `stage2_page_analysis`, `stage3_summaries`, `stage4_summaries` | `stage3_summaries` | stage4_summaries is read only, so pre-#612 lakes are not re-summarized |
+| stage4 | `src.stage4.stage4_worker` | `stage4_large_docs`, `stage2_page_analysis`, `stage4_large_doc_summaries` | `stage4_large_doc_summaries`, `stage4_large_docs` | stage4_large_docs status is a row-level MERGE, never an overwrite |
+
+`config.yml` `delta_lake.tables` mirrors these names and is checked once at worker and orchestrator startup. A `[contract]` warning is logged for:
+- a renamed value (ignored: schemas, partitioning and Z-order are keyed by the code names);
+- an unknown table;
+- the legacy `stage4_summaries`;
+- a `message_queues` section. No worker ever read those Redis queues, so the section was removed.
+
 ### Config reload semantics
 
 `src/core/config.py` keeps the live configuration as an immutable, versioned snapshot (#590):

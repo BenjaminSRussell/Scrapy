@@ -1,5 +1,4 @@
 import logging
-from datetime import datetime
 from typing import Any, Optional
 
 import httpx
@@ -287,99 +286,26 @@ class LargeDocProcessor:
             logger.error(f"Failed to process large document: {e}")
             return text[:500] + "..." if len(text) > 500 else text
 
-    def process_queue(self):
-        try:
-            all_docs = self.delta.read("stage4_large_docs")
-            pending_docs = [d for d in all_docs if d.get("status") == "pending"]
+    def process_queue(self) -> int:
+        """One Stage 4 pass; returns summaries written (#948).
 
-            if not pending_docs:
-                logger.info("No pending large documents to process")
-                return
+        Delegates to :class:`src.stage4.stage4_worker.Stage4Worker` so this
+        legacy entry point follows the pipeline contract. The old body wrote
+        summaries into ``stage4_summaries`` (Stage 3's legacy table, so Stage 3
+        then skipped those URLs as already summarized), marked every pending
+        row completed even when its fetch/summary failed, and rewrote the whole
+        ``stage4_large_docs`` table from a stale read (dropping rows Stage 2
+        appended meanwhile). The worker writes ``stage4_large_doc_summaries``,
+        MERGEs per-row status and quarantines bad PDFs (#445).
+        """
+        import asyncio
 
-            logger.info(f"Processing {len(pending_docs)} large documents")
+        from src.stage4.stage4_worker import Stage4Worker
 
-            self._load_model()
-
-            summaries = []
-            processed_count = 0
-
-            for doc in pending_docs:
-                try:
-                    summary = self._process_document(doc)
-                    if summary:
-                        summaries.append(summary)
-                        processed_count += 1
-                except Exception as e:
-                    logger.error(f"Failed to process doc {doc.get('url')}: {e}")
-
-            if summaries:
-                self.delta.write("stage4_summaries", summaries, mode="append", async_write=False)
-                logger.info(f"Saved {len(summaries)} summaries")
-
-            self._update_queue_status(all_docs, pending_docs)
-
-            logger.info(f"Completed processing {processed_count} large documents")
-
-        except Exception as e:
-            logger.error(f"Queue processing failed: {e}", exc_info=True)
-
-    def _process_document(self, doc: dict[str, Any]) -> dict[str, Any] | None:
-        url_value = doc.get("url")
-        if not isinstance(url_value, str):
-            logger.warning("Document missing URL; skipping entry")
-            return None
-
-        url = url_value
-        is_pdf = bool(doc.get("is_pdf", False))
-
-        logger.info(f"Processing large doc: {url[:80]}")
-
-        try:
-            text, content_type = self._fetch_content(url, is_pdf)
-
-            if not text:
-                logger.warning(f"No text extracted from {url}")
-                return None
-
-            word_count = len(text.split())
-            logger.info(f"Fetched {word_count} words from {url[:80]} (type: {content_type})")
-
-        except Exception as e:
-            logger.error(f"Failed to fetch content from {url}: {e}")
-            return None
-
-        chunks = self._split_into_chunks(text)
-        logger.info(f"Split into {len(chunks)} chunks")
-
-        chunk_summaries = []
-        for i, chunk in enumerate(chunks):
-            try:
-                summary = self._summarize_chunk(chunk)
-                if summary:
-                    chunk_summaries.append(summary)
-                    logger.debug(f"Summarized chunk {i + 1}/{len(chunks)}")
-            except Exception as e:
-                logger.warning(f"Failed to summarize chunk {i}: {e}")
-
-        if not chunk_summaries:
-            logger.warning(f"No summaries generated for {url}")
-            return None
-
-        combined_summary = " ".join(chunk_summaries)
-
-        if len(combined_summary) > 1000:
-            refined_summary = self._summarize_chunk(combined_summary[:5000])
-            if refined_summary:
-                combined_summary = refined_summary
-
-        return {
-            "url": url,
-            "summary": combined_summary,
-            "original_word_count": word_count,
-            "chunk_count": len(chunks),
-            "processed_at": datetime.now().isoformat(),
-            "model_used": self.model_name,
-        }
+        worker = Stage4Worker.__new__(Stage4Worker)
+        worker.delta = self.delta
+        worker.processor = self  # reuse this instance (and any loaded model)
+        return asyncio.run(worker.run())
 
     def _split_into_chunks(self, text: str) -> list[str]:
         if len(text) <= self.CHUNK_SIZE:
@@ -420,24 +346,6 @@ class LargeDocProcessor:
             logger.error(f"Chunk summarization failed: {e}")
             sentences = text.split(".")[:3]
             return ". ".join(sentences) + "."
-
-    def _update_queue_status(
-        self,
-        all_docs: list[dict[str, Any]],
-        processed_docs: list[dict[str, Any]],
-    ) -> None:
-        """Update queue with completed status."""
-        processed_urls = {d.get("url") for d in processed_docs}
-
-        updated_queue = []
-        for doc in all_docs:
-            if doc.get("url") in processed_urls:
-                doc["status"] = "completed"
-                doc["completed_at"] = datetime.now().isoformat()
-            updated_queue.append(doc)
-
-        self.delta.write("stage4_large_docs", updated_queue, mode="overwrite", async_write=False)
-        logger.info(f"Updated queue status for {len(processed_urls)} documents")
 
 def process_large_documents():
     processor = LargeDocProcessor()

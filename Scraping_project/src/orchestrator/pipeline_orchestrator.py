@@ -69,6 +69,9 @@ class PipelineOrchestrator:
         self.config = config or {}
         self.delta = get_delta()
         self.stats = PipelineStats()
+        from src.core.pipeline_contract import log_contract_drift
+
+        log_contract_drift()  # #948
 
     def run_stage1(
         self,

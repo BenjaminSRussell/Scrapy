@@ -723,6 +723,9 @@ class Stage2Worker:
 
 async def run_stage2_worker():
     logger.info("Stage 2 Worker starting in continuous mode...")
+    from src.core.pipeline_contract import log_contract_drift
+
+    log_contract_drift()  # #948: warn on config/contract drift once at startup
 
     max_concurrent, batch_size = stage_worker_settings(2, 50, 100)
     logger.info("Stage 2 Worker concurrency=%d batch_size=%d", max_concurrent, batch_size)
