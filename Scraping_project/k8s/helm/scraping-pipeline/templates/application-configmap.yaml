@@ -24,6 +24,8 @@ data:
   REDIS_URL: "redis://{{ include "scraping-pipeline.fullname" . }}-redis:{{ .Values.redis.service.port }}"
   KAFKA_BOOTSTRAP_SERVERS: "{{ include "scraping-pipeline.fullname" . }}-kafka:{{ .Values.kafka.service.internal }}"
   KAFKA_TOPIC: {{ .Values.kafkaDeltaIngestor.config.topic | quote }}
+  KAFKA_REQUIRE_IDEMPOTENCE: "true"
+  KAFKA_MESSAGE_KEY_FIELD: "url_hash"
   SCRAPY_SETTINGS_MODULE: {{ .Values.scrapyApp.env.SCRAPY_SETTINGS_MODULE | quote }}
   ENV: {{ .Values.scrapyApp.env.ENV | quote }}
   AWS_REGION: {{ .Values.secrets.aws.region | quote }}

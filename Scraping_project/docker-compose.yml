@@ -224,9 +224,18 @@ services:
       # From .env (GRAFANA_ADMIN_PASSWORD); the default is for local dev only (#439/#187).
       - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
       - GF_USERS_ALLOW_SIGN_UP=false
+      # The Redis datasource in grafana_datasource.yml needs this plugin.
+      - GF_PLUGINS_PREINSTALL=redis-datasource
+      # Read by the PostgreSQL datasource ($__env{POSTGRES_PASSWORD}).
+      - POSTGRES_PASSWORD=postgres
     volumes:
       - grafana-data:/var/lib/grafana
       - ./monitoring/alerting:/etc/grafana/provisioning/alerting
+      # Datasources + dashboards are provisioned on start (#157): open
+      # http://localhost:3000/d/scraping-pipeline-health
+      - ./monitoring/grafana_datasource.yml:/etc/grafana/provisioning/datasources/datasource.yml:ro
+      - ./monitoring/grafana_dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml:ro
+      - ./monitoring/dashboards:/var/lib/grafana/dashboards:ro
     networks:
       - scraper-network
     depends_on:
