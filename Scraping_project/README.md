@@ -348,6 +348,12 @@ Metrics: `scrapy_soft_ban_total{stage,signature}`,
 `scrapy_soft_ban_domain_backoff_total{stage}`, `scrapy_soft_ban_deferred_total{stage}`.
 Alert: `ScrapySoftBanSpike`. Fixture pages live in `tests/fixtures/soft_ban/`.
 
+### Kafka producer: keys and delivery semantics
+
+- **Keyed by `url_hash`** (#285). `KafkaPipeline` sends each record with key = `url_hash`. If an item has no `url_hash`, the key is derived from `url` with the lake hasher (`seed_manager.default_url_hasher`). Every version of a URL therefore lands on the same partition, in order, and consumers can dedupe or upsert per partition. Set `kafka.message_key_field` / `KAFKA_MESSAGE_KEY_FIELD` to key by another field, or `""` for unkeyed.
+- **Idempotent producer** (#174, #464). The defaults are `acks=all`, `enable.idempotence=true`, and at most 5 in-flight requests, so librdkafka retries never duplicate or reorder messages within a partition. With `KAFKA_REQUIRE_IDEMPOTENCE=true` (`kafka.require_idempotence`), the producer **refuses to start** if any override (env `KAFKA_PRODUCER_ACKS`, `config.yml kafka.producer`, `KAFKA_PRODUCER_CONFIG`) would break that guarantee. The Helm application configmap sets it to `true`. Locally it is off, so `KAFKA_PRODUCER_ACKS=1` still works.
+- **What is exactly-once and what isn't.** The producer is exactly-once and in-order per partition within one producer session. End to end, delivery is **at-least-once**: a restarted producer or a crash between kafka-delta-ingest's Delta commit and its offset commit can replay messages. Lake tables dedupe by `url_hash`.
+
 ### Environment Variables
 
 ```bash
