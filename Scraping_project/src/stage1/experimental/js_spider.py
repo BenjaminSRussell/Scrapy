@@ -12,6 +12,7 @@ from scrapy.http import Response
 
 from src.core.config import get_config
 from src.stage1.experimental.playwright_guard import PageLedger
+from src.stage1.experimental.gate import ExperimentalSpiderMixin
 from src.utils.url_canon import url_hash
 from src.stage1.processors.js_priority_queue import JSPriorityQueue
 from src.stage1.processors.url_processor import URLProcessor
@@ -24,7 +25,7 @@ from src.lakehouse import SeedManager
 logger = logging.getLogger(__name__)
 
 
-class JavaScriptSpider(scrapy.Spider):
+class JavaScriptSpider(ExperimentalSpiderMixin, scrapy.Spider):
 
     name = "javascript"
 

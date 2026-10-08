@@ -15,6 +15,7 @@ from typing import Any, Optional
 from src.core.config import Config, get_config
 from src.core.tls_policy import downloader_context_factory
 from src.stage1.middlewares.fetch_policy_middleware import DEFAULT_LARGE_DOC_EXTENSIONS
+from src.utils import feature_flags
 
 ENV = os.getenv("ENV", "development")
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -81,9 +82,12 @@ NEWSPIDER_MODULE = _scrapy_config.get("newspider_module", "src.stage1")
 # SSRF guard (#682): refuse loopback/private/link-local/metadata/service-name
 # targets before download, on every redirect hop. Registered in
 # DOWNLOADER_MIDDLEWARES below (and by spider_config for spider custom_settings).
-SSRF_GUARD_ENABLED = os.getenv("SSRF_GUARD_ENABLED", "1") != "0"
+SSRF_GUARD_ENABLED = feature_flags.get_bool("SSRF_GUARD_ENABLED", True)  # kill-switch (#304)
 SSRF_RESOLVE_DNS = os.getenv("SSRF_RESOLVE_DNS", "0") == "1"
 SSRF_ALLOWED_HOSTS = os.getenv("SSRF_ALLOWED_HOSTS", "")
+
+# Lab spiders (javascript, deep_dive, depth) refuse to crawl unless this is on (#391/#442).
+ENABLE_EXPERIMENTAL_SPIDERS = feature_flags.get_bool("ENABLE_EXPERIMENTAL_SPIDERS", False)
 
 ITEM_PIPELINES = _scrapy_config.get(
     "item_pipelines",
@@ -408,11 +412,8 @@ ASR_MAX_WORKERS = _scrapy_config.get("asr_max_workers", 4)
 
 # Off by default (#470): the ASR pipeline is only registered when enabled, so a
 # default crawl never imports speech_recognition. $ASR_ENABLED overrides config.
-_asr_env = os.environ.get("ASR_ENABLED")
-ASR_ENABLED = (
-    _asr_env.strip().lower() in ("1", "true", "yes", "on")
-    if _asr_env is not None
-    else bool(_scrapy_config.get("asr_enabled", False))
+ASR_ENABLED = feature_flags.get_bool(  # #304: env > feature_flags > scrapy.asr_enabled
+    "ASR_ENABLED", bool(_scrapy_config.get("asr_enabled", False))
 )
 if ASR_ENABLED:
     # After metadata/recency, before Kafka, so transcripts ship with the record.

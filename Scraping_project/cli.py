@@ -31,6 +31,7 @@ Commands:
 import argparse
 import asyncio
 import logging
+import os
 import signal
 import sys
 from pathlib import Path
@@ -49,6 +50,30 @@ logger = logging.getLogger(__name__)
 # ============================================================================
 # SCRAPY COMMAND (Docker entrypoint)
 # ============================================================================
+
+
+def _gate_experimental_spiders(names, opt_in: bool) -> bool:
+    """Warn for lab spiders; refuse unless --experimental / ENABLE_EXPERIMENTAL_SPIDERS (#391/#442).
+
+    Returns True when the run may proceed. On opt-in the env var is exported so
+    the spider's own from_crawler gate (src/stage1/experimental/gate.py) agrees.
+    """
+    from src.stage1.experimental.gate import EXPERIMENTAL_SPIDERS, FLAG, experimental_enabled, warning_text
+
+    lab = [n for n in (names or []) if n in EXPERIMENTAL_SPIDERS]
+    if not lab:
+        return True
+    for name in lab:
+        print(f"WARNING: {warning_text(name)}", file=sys.stderr)
+    if opt_in or experimental_enabled():
+        os.environ[FLAG] = "1"
+        return True
+    print(
+        f"Refusing to run experimental spider(s) {', '.join(lab)}: pass --experimental "
+        f"or set {FLAG}=1. Supported production spider: scout.",
+        file=sys.stderr,
+    )
+    return False
 
 
 def cmd_scrapy(args):
@@ -110,6 +135,8 @@ def cmd_scrapy(args):
             reactor.run()
 
     # Run
+    if not _gate_experimental_spiders(args.spiders, getattr(args, "experimental", False)):
+        sys.exit(2)
     runner = ScrapyRunner(args.spiders)
     runner.start()
 
@@ -161,7 +188,8 @@ def cmd_deep_dive(args):
             deferred.addErrback(lambda f: logger.error(f"Failed: {f}"))
             reactor.run()
 
-    # Run
+    if not _gate_experimental_spiders(["deep_dive"], getattr(args, "experimental", False)):
+        sys.exit(2)
     runner = ScrapyRunner()
     runner.start()
 
@@ -581,10 +609,20 @@ def main():
     # Scrapy command
     scrapy_parser = subparsers.add_parser("scrapy", help="Run Scrapy spiders")
     scrapy_parser.add_argument("--spiders", nargs="+", help="Spider names")
+    scrapy_parser.add_argument(
+        "--experimental", action="store_true",
+        help="Allow experimental spiders (javascript, deep_dive, depth); see src/stage1/experimental/README.md",
+    )
     scrapy_parser.set_defaults(func=cmd_scrapy)
 
     # Deep dive command
-    deep_dive_parser = subparsers.add_parser("deep_dive", help="Run deep dive spider (conservative crawling)")
+    deep_dive_parser = subparsers.add_parser(
+        "deep_dive", help="[EXPERIMENTAL] Run deep dive spider; requires --experimental"
+    )
+    deep_dive_parser.add_argument(
+        "--experimental", action="store_true",
+        help="Acknowledge this lab spider is unsupported (needs Redis, ~4 GB RAM)",
+    )
     deep_dive_parser.set_defaults(func=cmd_deep_dive)
 
     # Pipeline command

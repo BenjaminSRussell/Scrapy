@@ -10,10 +10,11 @@ from src.scrapy_prometheus import HIDDEN_URLS_FOUND, HIDDEN_URLS_ROUTED
 from src.stage1.processors.hidden_url_extractor import HiddenURLExtractor
 from src.stage1.middlewares.spider_config import get_spider_settings
 from src.stage1.base_spider import BaseSpider
+from src.stage1.experimental.gate import ExperimentalSpiderMixin
 
 logger = logging.getLogger(__name__)
 
-class DeepDiveSpider(BaseSpider):
+class DeepDiveSpider(ExperimentalSpiderMixin, BaseSpider):
 
     name = "deep_dive"
 
