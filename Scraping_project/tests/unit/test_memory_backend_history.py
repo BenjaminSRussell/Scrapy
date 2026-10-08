@@ -51,3 +51,12 @@ def test_depth_from_config_and_default(monkeypatch):
     monkeypatch.setattr(lm.Config, "get_instance", classmethod(lambda cls: _Empty()))
     assert InMemoryBackend().history_depth == lm.MEMORY_HISTORY_DEPTH
     assert InMemoryBackend(history_depth=0).history_depth == 1
+
+
+def test_delete_table_drops_history():
+    backend = InMemoryBackend(history_depth=3)
+    backend.write("t", [{"i": 0}])
+    backend.delete_table("t", allow_destructive=True)
+    assert "t" not in backend.history
+    backend.write("t", [{"i": 1}])
+    assert backend._get_version("t", 0) == [{"i": 1}]

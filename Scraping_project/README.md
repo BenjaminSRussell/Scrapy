@@ -396,12 +396,13 @@ All tables use PyArrow schemas for validation:
 
 ### Schema Evolution Policy
 
-Every append reads the table's current schema from its `_delta_log`, not from process memory. So any number of workers or pods writing the same table agree on one schema.
+Every append and overwrite reads the table's current schema from its `_delta_log`, not from process memory. So any number of workers or pods writing the same table agree on one schema.
 
 - **Additive only.** Columns a batch carries that the table lacks are appended (`schema_mode="merge"`) and counted in `delta_schema_evolutions_total{table}`. A column that is null in every row of a batch is skipped until a real value arrives, because it carries no type.
 - **Existing column types win.** Rows are cast to the table's types. Values that don't cast are quarantined to `cast_quarantine` (`delta_lake.cast_mode: strict`) or nulled (`coerce`), and counted in `delta_cast_failures_total`.
 - **Required columns are never null-filled.** A row missing a non-nullable column is quarantined, in both modes. The rest of the batch is still written.
-- **Breaking changes** (renames, type narrowing, dropping columns) are not done implicitly. Rewrite the table deliberately with `mode="overwrite"`.
+- **Overwrite replaces rows, not the schema (#509).** `mode="overwrite"` goes through the same cast and additive path and commits with `schema_mode="merge"`. Columns that other writers evolved survive, null in the new rows.
+- **Breaking changes** (renames, type narrowing, dropping columns) are never implicit. Rewrite the table deliberately with `write(..., mode="overwrite", schema_overwrite=True)`. That write is always synchronous, logged as `[SCHEMA OVERWRITE]`, and counted in `delta_schema_overwrites_total{table}`.
 
 ### Type-Safe Operations
 

@@ -151,7 +151,7 @@ class TestDeltaLakeTableManagement:
     def test_delete_table(self, delta_sandbox):
         delta_sandbox.write("test_table", [{"id": 1}], mode="overwrite", async_write=False)
 
-        delta_sandbox.delete_table("test_table")
+        delta_sandbox.delete_table("test_table", allow_destructive=True)
 
         assert delta_sandbox.table_exists("test_table") is False
 
