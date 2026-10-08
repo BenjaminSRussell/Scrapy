@@ -364,7 +364,8 @@ enum Commands {
         /// Kafka topic to consume from
         topic: String,
 
-        /// Delta Lake table path (e.g., /path/to/delta-table or s3://bucket/path)
+        /// Delta Lake table path on the local filesystem (e.g., /path/to/delta-table).
+        /// s3:// paths need the deltalake `s3` feature, which this build does not enable.
         #[arg(value_name = "TABLE_PATH")]
         table_path: String,
 

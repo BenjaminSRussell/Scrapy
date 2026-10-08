@@ -9,6 +9,9 @@ const METRICS_URL = resolveMetricsUrl(
 const REFRESH_INTERVAL = 5000;
 let refreshPaused = false;
 let metricsWasDown = false;
+let consecutiveFetchFailures = 0;
+// Static <title> captured once; connection state is prefixed onto it (#945).
+const BASE_TITLE = (typeof document !== 'undefined' && document.title) || 'Pipeline Control Center';
 let chartsHaveSample = false;
 
 let refreshScheduler = null;
@@ -41,7 +44,53 @@ function formatHistoryLabel(d = new Date()) {
 }
 
 
+// Chart.js comes from a CDN. When it is blocked (offline / corporate proxy)
+// `Chart` is undefined; constructing charts used to throw inside initialize()
+// and abort everything after it, including the metrics poll (#983). Charts are
+// optional: degrade to a visible notice and keep the numeric metrics live.
+let chartsUnavailable = false;
+
+function showChartsUnavailable() {
+    chartsUnavailable = true;
+    document.querySelectorAll('.chart-container').forEach(el => {
+        el.classList.add('is-unavailable');
+        if (!el.querySelector('.chart-unavailable-note')) {
+            const note = document.createElement('div');
+            note.className = 'chart-unavailable-note';
+            note.textContent = 'Chart unavailable';
+            el.appendChild(note);
+        }
+    });
+    if (document.getElementById('charts-unavailable')) return;
+    const banner = document.createElement('div');
+    banner.id = 'charts-unavailable';
+    banner.className = 'charts-unavailable-banner';
+    banner.setAttribute('role', 'status');
+    banner.textContent = 'Charts unavailable: Chart.js could not be loaded (offline or CDN blocked). Numeric metrics still update.';
+    const host = document.getElementById('main') || document.querySelector('.container') || document.body;
+    host.insertBefore(banner, host.firstChild);
+}
+
+/** Returns true when charts were created, false when running chart-less. */
 function initializeCharts() {
+    if (typeof Chart === 'undefined') {
+        console.warn('Chart.js not loaded; running without charts');
+        showChartsUnavailable();
+        return false;
+    }
+    try {
+        buildCharts();
+        return true;
+    } catch (err) {
+        console.error('Chart initialization failed:', err);
+        Object.values(charts).forEach(ch => { try { ch.destroy(); } catch (_) {} });
+        charts = {};
+        showChartsUnavailable();
+        return false;
+    }
+}
+
+function buildCharts() {
     const chartConfig = {
         responsive: true,
         maintainAspectRatio: false,
@@ -127,6 +176,7 @@ function initializeCharts() {
         options: {
             responsive: true,
             maintainAspectRatio: false,
+            onResize: (chart, size) => applyDoughnutLegend(chart, size.width),
             plugins: {
                 legend: {
                     display: false,
@@ -136,6 +186,7 @@ function initializeCharts() {
             }
         }
     });
+    applyDoughnutLegend(charts.routing, charts.routing.width);
 
     charts.urls = new Chart(document.getElementById('urls-chart'), {
         type: 'line',
@@ -203,18 +254,6 @@ function getUptime() {
 }
 
 
-function safeLinkify(escapedText) {
-    // Input must already be HTML-escaped. Only promote http(s) URLs.
-    return String(escapedText).replace(
-        /https?:\/\/[^\s<]+/gi,
-        (url) => {
-            if (/^javascript:/i.test(url)) return url;
-            const href = url.replace(/"/g, '&quot;');
-            return `<a href="${href}" target="_blank" rel="noopener noreferrer">${url}</a>`;
-        }
-    );
-}
-
 function escapeHtml(s) {
     return String(s ?? '')
         .replace(/&/g, '&amp;')
@@ -233,6 +272,23 @@ function addActivityLogItem(type, message) {
     }
 
     updateActivityLog();
+    announceActivity(type, message);
+}
+
+// #962: the visual feeds are re-rendered wholesale (and live in hidden tabs),
+// so they are aria-live="off"; only the new item goes to a dedicated,
+// always-present live region. Text only, never HTML.
+const ACTIVITY_ANNOUNCE_KEEP = 5;
+const activityAnnouncer = createActivityAnnouncer();
+function announceActivity(type, message) {
+    const region = document.getElementById('activity-announce');
+    if (!region) return;
+    const text = activityAnnouncer.text(type, message);
+    if (!text) return;
+    const node = document.createElement('div');
+    node.textContent = text;
+    region.appendChild(node);
+    while (region.childElementCount > ACTIVITY_ANNOUNCE_KEEP) region.firstElementChild.remove();
 }
 
 let activityPinned = false;
@@ -247,15 +303,41 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 
+// #906: rows are built with DOM APIs only (textContent / setAttribute), never
+// innerHTML, so API- or metrics-derived text can't become markup.
+function renderActivityMessage(el, message) {
+    for (const seg of splitLinks(message)) {
+        if (seg.href) {
+            const a = document.createElement('a');
+            a.href = seg.href;
+            a.target = '_blank';
+            a.rel = 'noopener noreferrer';
+            a.textContent = seg.text;
+            el.appendChild(a);
+        } else {
+            el.appendChild(document.createTextNode(seg.text));
+        }
+    }
+}
+
 function renderActivityList(container, { maxItems = 50 } = {}) {
     if (!container) return;
-    const items = activityLog.slice(0, maxItems);
-    container.innerHTML = items.map(item => `
-        <li class="activity-item ${escapeHtml(item.type)}">
-            <div class="activity-timestamp">${escapeHtml(item.timestamp)}</div>
-            <div class="activity-message">${safeLinkify(escapeHtml(item.message))}</div>
-        </li>
-    `).join('');
+    const frag = document.createDocumentFragment();
+    for (const item of activityLog.slice(0, maxItems)) {
+        const li = document.createElement('li');
+        li.className = 'activity-item';
+        const type = String(item.type || '');
+        if (/^[a-z-]+$/.test(type)) li.classList.add(type);
+        const ts = document.createElement('div');
+        ts.className = 'activity-timestamp';
+        ts.textContent = String(item.timestamp ?? '');
+        const msg = document.createElement('div');
+        msg.className = 'activity-message';
+        renderActivityMessage(msg, item.message);
+        li.append(ts, msg);
+        frag.appendChild(li);
+    }
+    container.replaceChildren(frag);
 }
 
 function updateActivityLog() {
@@ -321,6 +403,10 @@ function updateHistoricalData(metrics) {
     }
 
     updatePerformanceCharts();
+    // Leave the cold-chart state (#1076) on the first real sample. The helper
+    // existed but was never called, so legends/tooltips stayed off and the
+    // "Waiting for first metrics sample" placeholder never cleared (#977).
+    markChartsHaveSample();
 }
 
 function updatePerformanceCharts() {
@@ -359,6 +445,17 @@ function updatePerformanceCharts() {
     }
     syncAllChartTables();
     updateOverviewSparklines();
+}
+
+// Highlight the Pipeline-tab stage cards that processed work in the last
+// interval; previously stages 1-2 were hardcoded active forever (#976).
+function applyStageActivity(rates) {
+    const flags = stageActivity(rates);
+    document.querySelectorAll('#tab-pipeline .stage-card').forEach((card, i) => {
+        const on = !!flags[i];
+        card.classList.toggle('active', on);
+        card.dataset.activity = on ? 'active' : 'idle';
+    });
 }
 
 function calculateRates(metrics, now = Date.now()) {
@@ -440,8 +537,7 @@ function updateDashboard(metrics) {
     checkMilestones(metrics);
     if (metricsWasDown) {
         metricsWasDown = false;
-        const ann = document.getElementById('metrics-reconnect-announce') || document.getElementById('refresh-status');
-        if (ann) ann.textContent = 'Metrics connection restored';
+        // spoken once via the activity announcer (#962), not a second region
         addActivityLogItem('success', 'Metrics connection restored');
     }
     const s1Discovered = metrics['stage1_urls_discovered_total'] || 0;
@@ -457,7 +553,7 @@ function updateDashboard(metrics) {
 
     const rates = calculateRates(metrics);
 
-    document.getElementById('topbar-status').textContent = metrics['pipeline_running'] === 1 ? '🟢 ONLINE' : '🔴 OFFLINE';
+    // topbar status is owned by setConnectionStatus (#945)
     setMetricText('topbar-urls', formatNumber(s1Discovered));
     setMetricText('topbar-summaries', formatNumber(s3Summaries));
 
@@ -508,6 +604,8 @@ function updateDashboard(metrics) {
 
     const s4RateElem = document.getElementById('pipeline-s4-rate');
     if (s4RateElem) { const __n = rates.largeDocs.toFixed(1) + '/min'; if (s4RateElem.textContent !== String(__n)) { s4RateElem.textContent = __n; s4RateElem.classList.remove('flash'); void s4RateElem.offsetWidth; s4RateElem.classList.add('flash'); } else { s4RateElem.textContent = __n; } }
+
+    applyStageActivity(rates);
 
     setMetricText('perf-s1-rate', rates.urls.toFixed(1) + ' URLs/min');
     setMetricText('perf-s2-rate', rates.pages.toFixed(1) + ' pages/min');
@@ -569,8 +667,9 @@ function setReportedValue(id, value) {
     }
 }
 
-function setConnectionStatus(kind) {
+function setConnectionStatus(kind, pipelineRunning) {
     // kind: 'online' | 'never' | 'offline'
+    const state = connectionState(kind, pipelineRunning, consecutiveFetchFailures);
     const sys = document.getElementById('system-status');
     const top = document.getElementById('topbar-status');
     const labels = {
@@ -578,18 +677,15 @@ function setConnectionStatus(kind) {
         never: 'Not connected',
         offline: 'Disconnected',
     };
-    const topLabels = {
-        online: '● Online',
-        never: '○ Not connected',
-        offline: '● Disconnected',
-    };
     if (sys) {
         sys.classList.remove('online', 'offline', 'never');
         sys.classList.add(kind === 'online' ? 'online' : kind === 'never' ? 'never' : 'offline');
         const span = sys.querySelector('span:last-child');
         if (span) { const __n = labels[kind] || kind; if (span.textContent !== String(__n)) { span.textContent = __n; span.classList.remove('flash'); void span.offsetWidth; span.classList.add('flash'); } else { span.textContent = __n; } }
     }
-    if (top) { const __n = topLabels[kind] || kind; if (top.textContent !== String(__n)) { top.textContent = __n; top.classList.remove('flash'); void top.offsetWidth; top.classList.add('flash'); } else { top.textContent = __n; } }
+    const title = documentTitle(state, BASE_TITLE);
+    if (document.title !== title) document.title = title;
+    if (top) { const __n = state.top; if (top.textContent !== String(__n)) { top.textContent = __n; top.classList.remove('flash'); void top.offsetWidth; top.classList.add('flash'); } else { top.textContent = __n; } }
 }
 
 async function fetchMetrics() {
@@ -606,11 +702,13 @@ async function fetchMetrics() {
         updateDashboard(metrics);
         hasEverSucceeded = true;
         lastMetricsAt = Date.now();
-        setConnectionStatus('online');
+        consecutiveFetchFailures = 0;
+        setConnectionStatus('online', metrics['pipeline_running']);
     } catch (error) {
         metricsWasDown = true;
         console.error('Error fetching metrics:', error);
         addActivityLogItem('danger', `Failed to fetch metrics: ${error.message}`);
+        consecutiveFetchFailures += 1;
         setConnectionStatus(hasEverSucceeded ? 'offline' : 'never');
         document.querySelectorAll('.card-badge.badge-info, .card-badge.badge-success').forEach(b => {
             b.textContent = 'Unknown';
@@ -782,6 +880,18 @@ function resetChartHistory() {
     if (live) live.textContent = 'Chart history reset';
 }
 
+
+function applyDoughnutLegend(chart, width) {
+    const legend = chart?.options?.plugins?.legend;
+    if (!legend) return;
+    const layout = doughnutLegendLayout(width);
+    const labels = legend.labels || {};
+    const same = legend.position === layout.position && labels.boxWidth === layout.labels.boxWidth;
+    if (same) return;
+    legend.position = layout.position;
+    legend.labels = Object.assign({}, labels, layout.labels);
+    try { chart.update('none'); } catch (_) {}
+}
 
 function markChartsHaveSample() {
     if (chartsHaveSample) return;
@@ -983,6 +1093,13 @@ function initialize() {
     };
     if (chartHeightMql.addEventListener) chartHeightMql.addEventListener('change', onChartBreak);
     else if (chartHeightMql.addListener) chartHeightMql.addListener(onChartBreak);
+
+    // #910: a rejected ?metrics= override is a config error, not a silent fallback.
+    const metricsProblem = metricsUrlProblem(typeof location !== 'undefined' ? location : null);
+    if (metricsProblem) {
+        console.error(`[config] ${metricsProblem}`);
+        addActivityLogItem('danger', metricsProblem);
+    }
 
     console.log('Dashboard ready!');
 }
