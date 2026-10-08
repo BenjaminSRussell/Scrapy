@@ -31,10 +31,10 @@ def _worker(tmp_path, analysis_fallback=True):
 
 
 def _analysis(delta, n_small=500):
-    rows = [{"url": f"small-{i}", "is_massive_doc": False, "has_error": False, "content": "x" * 50} for i in range(n_small)]
+    rows = [{"url": f"https://ex.com/small-{i}", "is_massive_doc": False, "has_error": False, "content": "x" * 50} for i in range(n_small)]
     rows += [
-        {"url": "big-1", "is_massive_doc": True, "has_error": False, "content": "y"},
-        {"url": "big-err", "is_massive_doc": True, "has_error": True, "content": "z"},
+        {"url": "https://ex.com/big-1", "is_massive_doc": True, "has_error": False, "content": "y"},
+        {"url": "https://ex.com/big-err", "is_massive_doc": True, "has_error": True, "content": "z"},
     ]
     delta.write(s4.ANALYSIS_TABLE, rows, mode="append", async_write=False)
 
@@ -64,7 +64,7 @@ def test_fallback_reads_only_massive_rows(tmp_path, monkeypatch):
     before_f, before_full = _rows_read("filtered"), _rows_read("full_scan")
     before_sel = _selected("analysis_fallback")
     assert asyncio.run(w._run_traced()) == 1
-    assert w.processor.fetched == ["big-1"]
+    assert w.processor.fetched == ["https://ex.com/big-1"]
     assert seen_filters == [s4.MASSIVE_DOC_FILTER]
     assert _rows_read("filtered") == before_f + 2
     assert _rows_read("full_scan") == before_full
@@ -74,7 +74,7 @@ def test_fallback_reads_only_massive_rows(tmp_path, monkeypatch):
 def test_unfilterable_table_falls_back_to_full_scan(tmp_path):
     w = _worker(tmp_path)
     # Old-shape table without is_massive_doc: the pushed-down filter can't bind.
-    w.delta.write(s4.ANALYSIS_TABLE, [{"url": "legacy", "has_error": False}], mode="append", async_write=False)
+    w.delta.write(s4.ANALYSIS_TABLE, [{"url": "https://ex.com/legacy", "has_error": False}], mode="append", async_write=False)
     before = _rows_read("full_scan")
     assert w._fallback_from_analysis(set()) == []
     assert _rows_read("full_scan") == before + 1
@@ -89,7 +89,7 @@ def test_fallback_can_be_disabled(tmp_path, monkeypatch):
 
 def test_summary_dedup_reads_only_url_column(tmp_path, monkeypatch):
     w = _worker(tmp_path)
-    w.delta.write(s4.SUMMARY_TABLE, [{"url": "big-1", "summary": "s" * 1000}], mode="append", async_write=False)
+    w.delta.write(s4.SUMMARY_TABLE, [{"url": "https://ex.com/big-1", "summary": "s" * 1000}], mode="append", async_write=False)
     _analysis(w.delta, n_small=0)
     calls = []
     real = w.delta.read
