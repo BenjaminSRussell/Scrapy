@@ -91,5 +91,65 @@
         }
         return seen.size > 0 ? seen.size : null;
     }
-    return { parseMetrics, ratePerMinute, resolveMetricsUrl, formatNumber, formatBytes, formatEpochTime, countLabelValues };
+    // Single refresh scheduler (#986). Owns the only fetch timer and records
+    // when the next fetch will start, so the visible countdown is derived from
+    // `nextFetchAt` instead of a second, independently ticking counter that
+    // drifted against the real poll. Timers/clock are injectable for tests.
+    function createRefreshScheduler(opts) {
+        const interval = opts.interval;
+        const doFetch = opts.fetch;
+        const now = opts.now || (() => Date.now());
+        const setT = opts.setTimeout || ((fn, ms) => setTimeout(fn, ms));
+        const clearT = opts.clearTimeout || ((id) => clearTimeout(id));
+        let timer = null;
+        let nextAt = null;
+        let paused = false;
+        let inFlight = null;
+
+        function cancel() {
+            if (timer !== null) clearT(timer);
+            timer = null;
+            nextAt = null;
+        }
+        function schedule() {
+            cancel();
+            if (paused) return;
+            nextAt = now() + interval;
+            timer = setT(run, interval);
+        }
+        function run() {
+            if (inFlight) return inFlight;
+            cancel(); // countdown reads 0 while the fetch is running
+            let started;
+            try {
+                started = Promise.resolve(doFetch()); // starts synchronously at 0
+            } catch (err) {
+                started = Promise.reject(err);
+            }
+            inFlight = started
+                .catch(() => {})
+                .then(() => { inFlight = null; schedule(); });
+            return inFlight;
+        }
+        return {
+            start: run,
+            refreshNow: run,
+            setPaused(p) {
+                paused = !!p;
+                if (paused) cancel();
+                else if (!inFlight && timer === null) schedule();
+            },
+            isPaused: () => paused,
+            isFetching: () => inFlight !== null,
+            nextFetchAt: () => nextAt,
+            // Whole seconds until the next fetch starts; 0 while fetching,
+            // null while paused.
+            secondsRemaining() {
+                if (paused) return null;
+                if (nextAt === null) return 0;
+                return Math.max(0, Math.ceil((nextAt - now()) / 1000));
+            },
+        };
+    }
+    return { parseMetrics, ratePerMinute, resolveMetricsUrl, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler };
 });

@@ -4,8 +4,9 @@ from typing import Any, Optional
 
 import httpx
 from bs4 import BeautifulSoup
-from tenacity import retry, stop_after_attempt, wait_exponential
+from tenacity import retry, retry_if_not_exception_type, stop_after_attempt, wait_exponential
 
+from src.stage4.pdf_sandbox import PdfQuarantined, extract_pdf_text
 from src.utils.delta import get_delta
 
 # Stage 4 HTTP metrics. These were imported from monitoring.metrics_exporter,
@@ -66,7 +67,12 @@ class LargeDocProcessor:
             logger.error(f"Failed to load model: {e}")
             raise
 
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
+    # A quarantined PDF (#445) is deterministic: retrying would just OOM/time out again.
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=2, max=10),
+        retry=retry_if_not_exception_type(PdfQuarantined),
+    )
     def _fetch_content(self, url: str, is_pdf: bool = False) -> tuple[str, str]:
         try:
             if PROMETHEUS_AVAILABLE and stage4_http_requests_total:
@@ -109,6 +115,8 @@ class LargeDocProcessor:
                 logger.warning(f"Unsupported content type: {content_type} for {url}")
                 return "", "unknown"
 
+        except PdfQuarantined:
+            raise
         except httpx.HTTPStatusError as e:
             if PROMETHEUS_AVAILABLE and stage4_http_failures_total:
                 stage4_http_failures_total.labels(error_type="HTTPStatusError").inc()
@@ -141,26 +149,12 @@ class LargeDocProcessor:
             return ""
 
     def _extract_pdf_text(self, pdf_content: bytes) -> str:
-        try:
-            from io import BytesIO
+        """Extract in a child process under size/RSS/time budgets (#445).
 
-            from pypdf import PdfReader
-
-            pdf_file = BytesIO(pdf_content)
-            reader = PdfReader(pdf_file)
-
-            text_parts = []
-            for page in reader.pages:
-                text_parts.append(page.extract_text())
-
-            return " ".join(text_parts)
-
-        except ImportError:
-            logger.error("pypdf not installed - cannot extract PDF text")
-            return ""
-        except Exception as e:
-            logger.error(f"Failed to extract PDF text: {e}")
-            return ""
+        Raises PdfQuarantined (too_large/oom/timeout/parse_error); the worker
+        marks the queue row ``quarantined:<reason>`` instead of retrying it.
+        """
+        return extract_pdf_text(pdf_content)
 
     def _extract_docx_text(self, docx_content: bytes) -> str:
         try:
