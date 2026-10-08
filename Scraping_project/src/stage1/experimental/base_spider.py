@@ -39,6 +39,23 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+def _as_list(value: Any) -> list[str]:
+    """Spider arguments arrive as strings from ``scrapy crawl -a key=a,b``.
+
+    Accept a list/tuple as-is, or split a string on commas/whitespace. Without
+    this ``-a allowed_domains=example.org`` was iterated character by character
+    and ``-a start_urls=https://...`` yielded one request per character.
+    """
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [part for part in value.replace(",", " ").split() if part]
+    return [str(v).strip() for v in value if str(v).strip()]
+
+
+DEFAULT_ALLOWED_DOMAINS = ["uconn.edu"]
+
+
 class BaseSpider(scrapy.Spider):
 
     name = "base"
@@ -53,7 +70,13 @@ class BaseSpider(scrapy.Spider):
         self.name = kwargs.pop("name", self.name)
         super().__init__(*args, **kwargs)
 
-        self.allowed_domains = kwargs.get("allowed_domains") or ["uconn.edu"]
+        self.config = get_config()
+        # -a allowed_domains=... > config.yml stage1.allowed_domains > uconn.edu
+        self.allowed_domains = (
+            _as_list(kwargs.get("allowed_domains"))
+            or _as_list(self.config.get("stage1.allowed_domains"))
+            or list(DEFAULT_ALLOWED_DOMAINS)
+        )
 
         default_ignored_extensions = list(URLProcessor.IGNORED_EXTENSIONS)
         self.IGNORED_EXTENSIONS = (
@@ -63,7 +86,6 @@ class BaseSpider(scrapy.Spider):
         )
         self.ignored_extensions = list(self.IGNORED_EXTENSIONS)
 
-        self.config = get_config()
         self.delta = get_delta()
         redis_helper = get_redis()
         # Prefer RedisHelper.client (raw redis) for pipeline/scard usage
@@ -109,7 +131,7 @@ class BaseSpider(scrapy.Spider):
 
         self.max_depth = self.settings.getint("MAX_DEPTH") if hasattr(self, "settings") and self.settings else None
 
-        self.start_urls = kwargs.get("start_urls") or self._load_seed_urls()
+        self.start_urls = _as_list(kwargs.get("start_urls")) or self._load_seed_urls()
 
     async def start(self):
         for url in self.start_urls:

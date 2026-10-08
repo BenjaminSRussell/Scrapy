@@ -2,6 +2,8 @@
 
 A production-grade, type-safe, resilient web scraping pipeline designed for large-scale institutional data collection and analysis.
 
+> **Task guides:** [Configuration](docs/guides/CONFIGURATION.md) • [Running](docs/guides/RUNNING.md) (other domains, resuming after a crash) • [Monitoring](docs/guides/MONITORING.md) • [Data usage](docs/guides/DATA_USAGE.md) (querying Delta Lake, CSV/JSON/Parquet export)
+
 ## Overview
 
 This is an enterprise-ready multi-stage web scraping system with comprehensive type safety, error handling, caching, and production deployment configurations. The pipeline has evolved through 10 major phases to deliver a scalable, maintainable, and observable system.
