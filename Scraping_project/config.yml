@@ -193,6 +193,13 @@ kafka:
     acks: "all"
     enable.idempotence: true  # requires acks=all; retries never duplicate/reorder
     retries: 3
+  # Kafka message key (#285): url_hash keeps every version of a URL on one
+  # partition, in order. "" sends unkeyed messages (round-robin).
+  message_key_field: url_hash
+  # true = the producer refuses to start unless acks=all + enable.idempotence +
+  # max.in.flight<=5 (#464). Env KAFKA_REQUIRE_IDEMPOTENCE wins; the Helm
+  # application configmap sets it to true.
+  require_idempotence: false
   consumer:
     group_id: scraping-pipeline
     auto_offset_reset: earliest  # earliest or latest

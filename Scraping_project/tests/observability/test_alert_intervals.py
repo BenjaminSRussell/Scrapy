@@ -1,5 +1,6 @@
 import os
 import re
+import shutil
 import subprocess
 import time
 import unittest
@@ -27,6 +28,41 @@ def parse_duration_to_seconds(duration_str):
         return value * 3600
     return value
 
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+COMPOSE_FILE = os.path.join(PROJECT_ROOT, "docker-compose.yml")
+
+
+def docker_unavailable_reason():
+    """Why the online test can't run here, or None if Docker is usable (#567).
+
+    The online test needs a Docker daemon the *current user* can reach
+    (rootless Docker or membership in the ``docker`` group). It never uses sudo.
+    """
+    if shutil.which("docker") is None:
+        return "docker CLI not installed"
+    try:
+        info = subprocess.run(["docker", "info"], capture_output=True, text=True, timeout=20)
+    except (OSError, subprocess.TimeoutExpired) as e:
+        return f"docker info failed: {e}"
+    if info.returncode != 0:
+        return f"docker daemon not reachable without sudo: {info.stderr.strip()[:200]}"
+    compose = subprocess.run(["docker", "compose", "version"], capture_output=True, text=True, timeout=20)
+    if compose.returncode != 0:
+        return "docker compose v2 plugin not available"
+    return None
+
+
+def compose(*args, check=True, capture=False):
+    """Run ``docker compose -f docker-compose.yml ...`` as the current user (no sudo, no shell)."""
+    return subprocess.run(
+        ["docker", "compose", "-f", COMPOSE_FILE, *args],
+        check=check,
+        cwd=PROJECT_ROOT,
+        capture_output=capture,
+        text=True,
+    )
+
+
 class TestAlertIntervals(unittest.TestCase):
 
     @classmethod
@@ -37,16 +73,14 @@ class TestAlertIntervals(unittest.TestCase):
 
         cls.min_scrape_interval = cls.get_min_scrape_interval()
 
+        reason = docker_unavailable_reason()
+        if reason:
+            cls._stack_started = False
+            raise unittest.SkipTest(f"online alert-interval test skipped: {reason}")
+
         print("Starting monitoring stack...")
-        base_dir = os.path.dirname(__file__)
-        compose_file = os.path.abspath(os.path.join(base_dir, "../..", "docker-compose.yml"))
-        project_root = os.path.abspath(os.path.join(base_dir, "../.."))
-        subprocess.run(
-            f"sudo docker compose -f {compose_file} up -d grafana prometheus-a",
-            shell=True,
-            check=True,
-            cwd=project_root,
-        )
+        compose("up", "-d", "grafana", "prometheus-a")
+        cls._stack_started = True
 
         cls.wait_for_grafana()
 
@@ -55,16 +89,10 @@ class TestAlertIntervals(unittest.TestCase):
         if os.environ.get("OBS_OFFLINE") == "1":
             return
 
+        if not getattr(cls, "_stack_started", False):
+            return
         print("Stopping monitoring stack...")
-        base_dir = os.path.dirname(__file__)
-        compose_file = os.path.abspath(os.path.join(base_dir, "../..", "docker-compose.yml"))
-        project_root = os.path.abspath(os.path.join(base_dir, "../.."))
-        subprocess.run(
-            f"sudo docker compose -f {compose_file} down",
-            shell=True,
-            check=True,
-            cwd=project_root,
-        )
+        compose("down")
 
     @staticmethod
     def get_min_scrape_interval():
@@ -105,22 +133,10 @@ class TestAlertIntervals(unittest.TestCase):
             time.sleep(1)
 
         try:
-            result = subprocess.run(
-                "docker compose ps grafana",
-                shell=True,
-                capture_output=True,
-                text=True,
-                cwd=os.getcwd(),
-            )
+            result = compose("ps", "grafana", check=False, capture=True)
             print(f"Grafana container status:\n{result.stdout}")
 
-            logs_result = subprocess.run(
-                "docker compose logs --tail=50 grafana",
-                shell=True,
-                capture_output=True,
-                text=True,
-                cwd=os.getcwd(),
-            )
+            logs_result = compose("logs", "--tail=50", "grafana", check=False, capture=True)
             print(f"Recent Grafana logs:\n{logs_result.stdout}")
         except Exception as e:
             print(f"Could not get Grafana diagnostics: {e}")
