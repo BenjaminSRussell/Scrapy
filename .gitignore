@@ -184,6 +184,7 @@ yarn-error.log*
 *.json
 *.csv
 *.jsonl
+!Scraping_project/tests/fixtures/**/*.jsonl
 *.parquet
 *.avro
 
