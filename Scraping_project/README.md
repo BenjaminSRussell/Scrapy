@@ -445,6 +445,31 @@ raw-URL SeedManager hashes now converge on the same value.
 edits apply without a rebuild; the copy inside the image is the default and
 can be baked in when wanted.
 
+### Memory soft-stop vs. container limits
+
+A cgroup OOM kill gives Twisted no chance to run `close_spider`, so batched
+queue rows and the Kafka producer queue would be lost (#539).
+`src.memory_soft_stop.MemorySoftStop` (enabled in `EXTENSIONS`, including
+orchestrator runs) reads the container's limit and usage from cgroup v2
+(`memory.max` / `memory.current`) or v1. When usage reaches
+`MEMORY_SOFT_STOP_FRACTION` (0.85) of the limit, it calls
+`engine.close_spider(spider, "memory_soft_stop")`: no new requests, in-flight
+responses finish, and every pipeline's `close_spider` flushes. The Kafka
+pipeline spills anything undelivered to its fsync'd spill file.
+
+- **Kubernetes/compose:** the soft stop keys off `resources.limits.memory` /
+  `deploy.resources.limits.memory` automatically. Leave ~15% headroom: the
+  drain itself (Kafka flush, final Delta batch) needs memory. Lower the
+  fraction for spiders with large batches.
+- **No visible limit** (bare metal, `memory.max = max`): the extension
+  disables itself unless `MEMORY_SOFT_STOP_LIMIT_MB` is set.
+- Scrapy's `MEMUSAGE_LIMIT_MB` is still set but compares *peak* RSS with a
+  fixed number. Treat it as a backstop, not the container guard.
+- **Observability:** `scrapy_memory_soft_stop_total`, `scrapy_memory_usage_ratio`,
+  crawl stat `memory_soft_stop/triggered`, finish reason `memory_soft_stop`.
+  A soft-stopped crawl exits cleanly; the next scheduled run resumes from
+  the queues.
+
 ### Environment Variables
 
 ```bash

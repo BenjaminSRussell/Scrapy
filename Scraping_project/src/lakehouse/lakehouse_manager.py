@@ -323,6 +323,44 @@ def metadata_row_count(table: Any) -> int | None:
     return int(sum(counts.to_pylist()))  # one entry per data file
 
 
+class MissingColumnsError(ValueError):
+    """A read named columns the table (at that version) doesn't have (#301).
+
+    Subclasses ValueError, as pyarrow's ArrowInvalid does, so existing ``except ValueError``
+    callers keep working. The message names the table, the version and the missing columns
+    instead of dumping the whole Arrow schema.
+    """
+
+    def __init__(self, table_name: str, missing: list[str], available: list[str], version: int | None):
+        at = f" at version {version}" if version is not None else ""
+        super().__init__(f"{table_name}{at} has no column(s) {missing}; available: {available}")
+        self.table_name = table_name
+        self.missing = missing
+        self.available = available
+        self.version = version
+
+
+def _filter_columns(filters: Any) -> set[str] | None:
+    """Column names referenced by DNF filters ``[(col, op, val)]`` / ``[[(...)], [(...)]]``.
+
+    Returns None for anything else (e.g. a pyarrow expression): those aren't validated here.
+    """
+    if not filters:
+        return set()
+    if not isinstance(filters, (list, tuple)):
+        return None
+    first = filters[0]
+    nested = isinstance(first, (list, tuple)) and bool(first) and isinstance(first[0], (list, tuple))
+    groups = filters if nested else [filters]
+    names: set[str] = set()
+    for group in groups:
+        for clause in group:
+            if not (isinstance(clause, (list, tuple)) and len(clause) == 3 and isinstance(clause[0], str)):
+                return None
+            names.add(clause[0])
+    return names
+
+
 PARTITIONED_TABLES = {"stage1_discovery", "stage2_page_analysis"}
 
 
@@ -557,9 +595,15 @@ class LakehouseManager:
             self._start_worker()
             self._start_maintenance_worker()
 
-            if threading.current_thread() is threading.main_thread():
-                signal.signal(signal.SIGINT, self._shutdown_handler)
-                signal.signal(signal.SIGTERM, self._shutdown_handler)
+            # Shared process drain (#183): a signal no longer sys.exit()s from
+            # inside whatever a stage worker is doing. With a worker drain loop
+            # running, the loop finishes its batch and this manager's queue is
+            # flushed at exit; without one (scripts), the signal flushes and
+            # exits 0 immediately, as before (#166).
+            from src.utils.graceful_shutdown import get_shutdown, install_signal_handlers
+
+            get_shutdown().add_cleanup(self._drain_on_exit, name="lakehouse write queue")
+            if install_signal_handlers():
                 logger.info("Signal handlers registered for graceful shutdown")
 
     def _start_worker(self):
@@ -1096,6 +1140,13 @@ class LakehouseManager:
             return []
 
         table = DeltaTable(str(table_path), version=version)
+        referenced = _filter_columns(filters)
+        wanted = set(columns or ()) | (referenced or set())
+        if wanted:
+            available = [f.name for f in table.schema().fields]
+            missing = sorted(wanted - set(available))
+            if missing:
+                raise MissingColumnsError(table_name, missing, available, version)
         pa_table = table.to_pyarrow_table(filters=filters, columns=columns)
         rows: list[dict] = pa_table.to_pylist()
         return rows
@@ -1534,7 +1585,14 @@ class LakehouseManager:
             DELTA_MANAGER_SHUTDOWN_DURATION_SECONDS.observe(duration)
         logger.info(f" LakehouseManager shutdown complete in {duration:.2f} seconds")
 
+    def _drain_on_exit(self) -> None:
+        try:
+            self.shutdown(timeout=15)
+        except Exception as e:
+            logger.error(f"Error during shutdown: {e}", exc_info=True)
+
     def _shutdown_handler(self, signum, frame):
+        """Legacy direct handler (kept for callers that install it themselves)."""
         signal_name = signal.Signals(signum).name
         logger.info(f"🛑 {signal_name} received, initiating graceful shutdown...")
 

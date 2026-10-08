@@ -1,0 +1,6 @@
+# Longest (most specific) match wins: Allow under a Disallowed prefix.
+User-agent: *
+Disallow: /private/
+Allow: /private/public/
+Disallow: /docs
+Allow: /docs/index.html

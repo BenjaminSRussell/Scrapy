@@ -21,6 +21,7 @@ class JSDetector:
     TAG_STRIP_PATTERN = re.compile(r"<[^>]+>")
     SCRIPT_STRIP_PATTERN = re.compile(r"<script[^>]*>.*?</script>", flags=re.DOTALL | re.IGNORECASE)
     STYLE_STRIP_PATTERN = re.compile(r"<style[^>]*>.*?</style>", flags=re.DOTALL | re.IGNORECASE)
+    SCRIPT_BODY_PATTERN = re.compile(r"<script[^>]*>(.*?)</script>", flags=re.DOTALL | re.IGNORECASE)
 
     SPA_FRAMEWORKS = {
         "react": [
@@ -118,6 +119,22 @@ class JSDetector:
         self.html = response.text
         self.html_lower = response.text.lower()
         self.url = response.url
+        # Framework/state/async evidence must come from markup and scripts, never from
+        # visible prose: a server-rendered tutorial that mentions "react-dom" or shows
+        # `fetch(...).then(...)` in a <pre> block does not need a browser (#295).
+        self.markup = self._markup_haystack(self.html)
+        self.markup_lower = self.markup.lower()
+
+    @classmethod
+    def _markup_haystack(cls, html: str) -> str:
+        """Inline script bodies plus every tag (names and attributes), without text nodes."""
+        scripts = cls.SCRIPT_BODY_PATTERN.findall(html)
+        # Keep each <script ...> opening tag (its src/id attributes are evidence) but drop the body,
+        # which is already in `scripts`, so the tag scan below can't trip over "<" inside JS.
+        rest = cls.SCRIPT_BODY_PATTERN.sub(lambda m: m.group(0)[: m.start(1) - m.start(0)], html)
+        rest = cls.STYLE_STRIP_PATTERN.sub("", rest)
+        tags = cls.TAG_STRIP_PATTERN.findall(rest)
+        return "\n".join(scripts + tags)
 
     def requires_js_rendering(self) -> dict[str, Any]:
         reasons = []
@@ -168,7 +185,7 @@ class JSDetector:
 
     def _detect_spa_framework(self) -> dict[str, Any]:
         for framework, indicators in self.SPA_FRAMEWORKS.items():
-            matches = sum(1 for ind in indicators if ind.lower() in self.html_lower)
+            matches = sum(1 for ind in indicators if ind.lower() in self.markup_lower)
             if matches >= 2:
                 return {"detected": True, "framework": framework}
 
@@ -192,7 +209,7 @@ class JSDetector:
         found_objects = []
 
         for pattern in self.STATE_OBJECT_PATTERNS:
-            if pattern in self.html:
+            if pattern in self.markup:
                 found_objects.append(pattern)
 
         detected = len(found_objects) > 0
@@ -206,7 +223,7 @@ class JSDetector:
         count = 0
 
         for indicator in self.ASYNC_INDICATORS:
-            count += self.html_lower.count(indicator.lower())
+            count += self.markup_lower.count(indicator.lower())
 
         heavy = count >= 2
 

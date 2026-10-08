@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 """
-Unified entry-point for shutting down the scraping pipeline resources.
+Infrastructure teardown for the scraping pipeline (Compose stack / Helm release).
+
+This is *not* the in-process graceful drain. A worker process reacting to
+SIGTERM (finish the batch in flight, flush Delta, exit 0) is handled by
+``src/utils/graceful_shutdown.py``; see DEPLOYMENT.md, "Stopping:
+infrastructure teardown vs. process drain" (#183).
 """
 
 from __future__ import annotations
