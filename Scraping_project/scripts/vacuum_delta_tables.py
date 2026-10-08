@@ -30,8 +30,9 @@ def main():
     parser.add_argument(
         "--retention-hours",
         type=int,
-        default=168,
-        help="Retention period in hours (default: 168 = 7 days)",
+        default=None,
+        help="Retention period in hours (default: each table's delta.deletedFileRetentionDuration, "
+        "set from config.yml delta_lake.retention.deleted_file_retention)",
     )
     parser.add_argument("--tables", nargs="*", help="Specific tables to vacuum (default: all tables)")
     parser.add_argument(
@@ -50,7 +51,10 @@ def main():
     logger.info("=" * 70)
     logger.info("Delta Lake Vacuum Script")
     logger.info("=" * 70)
-    logger.info(f"Retention period: {args.retention_hours} hours ({args.retention_hours / 24:.1f} days)")
+    if args.retention_hours is None:
+        logger.info("Retention period: table property delta.deletedFileRetentionDuration (config.yml delta_lake.retention)")
+    else:
+        logger.info(f"Retention period: {args.retention_hours} hours ({args.retention_hours / 24:.1f} days)")
 
     if args.dry_run:
         logger.info("DRY RUN MODE - No files will be deleted")
