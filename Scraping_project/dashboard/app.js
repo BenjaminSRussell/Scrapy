@@ -4,11 +4,10 @@
 const METRICS_URL = 'http://localhost:9090/metrics';
 const REFRESH_INTERVAL = 5000;
 let refreshPaused = false;
-let refreshTimer = null;
 let metricsWasDown = false;
 let chartsHaveSample = false;
 
-let countdown = 5;
+let refreshScheduler = null;
 let charts = {};
 let historicalData = {
     timestamps: [],
@@ -605,8 +604,6 @@ async function fetchMetrics() {
         hasEverSucceeded = true;
         lastMetricsAt = Date.now();
         setConnectionStatus('online');
-
-        countdown = 5;
     } catch (error) {
         metricsWasDown = true;
         console.error('Error fetching metrics:', error);
@@ -886,32 +883,32 @@ function formatRelative(ts) {
 let lastMetricsAt = null;
 let hasEverSucceeded = false;
 
-function startCountdown() {
+// Display only: the countdown is read from the scheduler's nextFetchAt, so it
+// reaches 0 exactly when a fetch starts and cannot drift from the poll (#986).
+function renderCountdown() {
+    if (!refreshScheduler) return;
+    const el = document.getElementById('refresh-countdown');
+    if (el) {
+        const s = refreshScheduler.secondsRemaining();
+        const text = s === null ? 'paused' : String(s);
+        if (el.textContent !== text) el.textContent = text;
+    }
+    const rel = document.getElementById('last-updated-rel');
+    if (rel) rel.textContent = formatRelative(lastMetricsAt);
+}
 
-    let lastAnnounced = null;
-    setInterval(() => {
-        if (refreshPaused) {
-            const el = document.getElementById('refresh-countdown');
-            if (el) el.textContent = 'paused';
-            return;
-        }
-        countdown--;
-        if (countdown <= 0) {
-            countdown = 5;
-        }
-        const el = document.getElementById('refresh-countdown');
-        if (el) el.textContent = countdown;
-        const rel = document.getElementById('last-updated-rel');
-        if (rel) rel.textContent = formatRelative(lastMetricsAt);
-        // Throttle aria announcements to each full cycle reset (#1093)
-        const live = document.getElementById('refresh-status');
-        if (live && countdown === 5 && lastAnnounced !== 'refreshed') {
-            live.textContent = 'Metrics refreshed';
-            lastAnnounced = 'refreshed';
-        } else if (countdown !== 5) {
-            lastAnnounced = null;
-        }
-    }, 1000);
+function startCountdown() {
+    renderCountdown();
+    setInterval(renderCountdown, 250);
+}
+
+// One aria announcement per completed successful fetch (#1093).
+async function fetchAndAnnounce() {
+    const before = lastMetricsAt;
+    await fetchMetrics();
+    const live = document.getElementById('refresh-status');
+    if (live && lastMetricsAt !== before) live.textContent = 'Metrics refreshed';
+    renderCountdown();
 }
 
 
@@ -952,6 +949,7 @@ function initialize() {
     if (deep) activateTab(deep, false);
     initializeCharts();
     ensureChartPlaceholders();
+    refreshScheduler = createRefreshScheduler({ interval: REFRESH_INTERVAL, fetch: fetchAndAnnounce });
     startCountdown();
 
     const pauseBtn = document.getElementById('pause-refresh');
@@ -961,19 +959,18 @@ function initialize() {
             pauseBtn.setAttribute('aria-pressed', refreshPaused ? 'true' : 'false');
             pauseBtn.textContent = refreshPaused ? 'Resume' : 'Pause';
             pauseBtn.setAttribute('aria-label', refreshPaused ? 'Resume auto-refresh' : 'Pause auto-refresh');
+            refreshScheduler.setPaused(refreshPaused);
+            renderCountdown();
             const live = document.getElementById('refresh-status');
             if (live) live.textContent = refreshPaused ? 'Auto-refresh paused' : 'Auto-refresh resumed';
         });
     }
     const manualBtn = document.getElementById('manual-refresh');
-    if (manualBtn) manualBtn.addEventListener('click', () => fetchMetrics());
+    if (manualBtn) manualBtn.addEventListener('click', () => refreshScheduler.refreshNow());
 
     addActivityLogItem('success', 'Pipeline Control Center initialized');
 
-    fetchMetrics();
-    refreshTimer = setInterval(() => {
-        if (!refreshPaused) fetchMetrics();
-    }, REFRESH_INTERVAL);
+    refreshScheduler.start();
 
     const chartHeightMql = window.matchMedia('(max-width: 640px)');
     const onChartBreak = () => {
