@@ -53,6 +53,12 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         self.wfile.write(PAYLOAD)
 
 
+@pytest.fixture(autouse=True)
+def _allow_local_media_server(monkeypatch):
+    # The ASR downloader is SSRF-guarded (#450); the fixture server is loopback.
+    monkeypatch.setenv("SSRF_ALLOWED_HOSTS", "127.0.0.1")
+
+
 @pytest.fixture(scope="module")
 def media_server():
     server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _Handler)

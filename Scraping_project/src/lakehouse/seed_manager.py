@@ -20,7 +20,6 @@ Schema Assumptions:
 All writes are idempotent via merge_into using url_hash as merge key.
 """
 
-import hashlib
 import logging
 import warnings
 from collections.abc import Callable, Iterable
@@ -28,14 +27,15 @@ from typing import Any
 from urllib.parse import urlparse
 
 from src.lakehouse.lakehouse_manager import LakehouseManager
+from src.utils.url_canon import canonical_or_raw, url_hash
 from src.core.timeutil import utc_now_iso
 
 logger = logging.getLogger(__name__)
 
 
 def default_url_hasher(url: str) -> str:
-    """Default URL hasher using SHA256 (first 16 chars)."""
-    return hashlib.sha256(url.encode("utf-8")).hexdigest()[:16]
+    """SHA256[:16] of the canonical URL (#728), same as every other stage."""
+    return url_hash(url)
 
 
 DEFAULT_DOMAIN_URLS_TABLE = "uconn_urls"  # legacy table name, kept for existing lakes
@@ -217,7 +217,7 @@ class SeedManager:
                 write_domain_urls = write_uconn_urls
         write_domain = self.write_domain_urls if write_domain_urls is None else bool(write_domain_urls)
 
-        url_list = list(set(urls))  # Deduplicate
+        url_list = list(dict.fromkeys(canonical_or_raw(u) for u in urls))  # canonicalize + dedupe (#728)
         if not url_list:
             return {"seed_inserted": 0, "domain_inserted": 0, "uconn_inserted": 0, "stage2_enqueued": 0}
 
