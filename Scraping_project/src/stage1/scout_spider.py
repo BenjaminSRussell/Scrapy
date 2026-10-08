@@ -8,6 +8,7 @@ from urllib.parse import urlparse
 import scrapy
 from scrapy.http import HtmlResponse, Response
 
+from src.stage1.content_policy import classify_response, count_skipped
 from src.stage1.middlewares.spider_config import get_spider_settings
 from src.utils.delta import get_delta
 from src.stage1.processors.url_extractor import URLExtractor
@@ -15,11 +16,24 @@ from src.stage1.processors.url_processor import should_follow_url
 from src.lakehouse import SeedManager
 from src.stage1.base_spider import BaseSpider
 from src.stage1.sitemap_parser import discover_sitemaps_sync
+from src.stage1.section_noise import SectionNoiseTracker, section_of
 
 try:
     from src.scrapy_prometheus import URLS_SKIPPED
 except Exception:  # prometheus_client missing
     URLS_SKIPPED = None
+
+def _stage1_flag(config, key: str, default: bool) -> bool:
+    """Read a boolean ``stage1.<key>`` (falling back to ``stages.stage1.<key>``) (#27)."""
+    for prefix in ("stage1", "stages.stage1"):
+        value = config.get(f"{prefix}.{key}")
+        if value is None:
+            continue
+        if isinstance(value, str):
+            return value.strip().lower() in ("1", "true", "yes", "on")
+        return bool(value)
+    return default
+
 
 def get_delta_manager(*args, **kwargs):
     return get_delta()
@@ -53,9 +67,11 @@ class ScoutSpider(BaseSpider):
 
         config = get_config()
 
-        self.expand_seeds = config.get("stages.stage1.expand_seeds", True)
-        self.parse_sitemaps = config.get("stages.stage1.parse_sitemaps", True)
-        self.aggressive_collection = config.get("stages.stage1.aggressive_collection", True)
+        # config.yml keeps these under ``stage1:``; ``stages.stage1.*`` (what
+        # this used to read, and which config.yml never had) is still honoured.
+        self.expand_seeds = _stage1_flag(config, "expand_seeds", True)
+        self.parse_sitemaps = _stage1_flag(config, "parse_sitemaps", True)
+        self.aggressive_collection = _stage1_flag(config, "aggressive_collection", True)
 
         self.seed_manager = SeedManager(self.delta)
 
@@ -68,10 +84,14 @@ class ScoutSpider(BaseSpider):
             self._discover_and_add_sitemap_urls()
 
     def parse(self, response: Response) -> Iterator:
-        content_type = response.headers.get("Content-Type", b"").decode("utf-8", errors="ignore").lower()
-
-        if "text/html" not in content_type:
-            logger.debug(f"[SCOUT] Non-HTML, skipping: {content_type} for {response.url[:80]}")
+        decision = classify_response(response)  # #662: no binary into HTML parsing
+        if not decision.parse_html and decision.reason == "empty_body":
+            # Empty bodies keep the #199 accounting (skip_counters + urls_skipped_total).
+            self._skip_response(response, "empty_body")
+            return
+        if not decision.parse_html:
+            count_skipped("scout", decision.reason)
+            logger.debug(f"[SCOUT] Not parsing ({decision.reason}) {response.url[:80]}")
             return
 
         empty_reason = self._empty_body_reason(response)
@@ -104,6 +124,12 @@ class ScoutSpider(BaseSpider):
 
         urls_to_add_to_seeds = []
 
+        # Noisy-section adaptation (#26): judged on earlier pages of this section.
+        noise = self._section_noise()
+        section = section_of(response.url)
+        noisy = noise.is_noisy(section)
+        html_links = low_links = followed = 0
+
         for url in new_urls:
             if self._is_external_url(url):
                 yield self._create_offsite_item(response, url)
@@ -125,6 +151,13 @@ class ScoutSpider(BaseSpider):
                 content_hint = self._guess_content_type(url)
 
                 if content_hint == "html":
+                    low_value = noise.enabled and noise.is_low_value(url)
+                    html_links += 1
+                    low_links += low_value
+                    if not noise.should_follow(section, url, followed, low_value):
+                        continue
+                    followed += 1
+
                     yield self._queue_for_javascript_spider(url, response.url)
                     yield self._queue_for_stage2(url, response.url, content_hint)
 
@@ -136,7 +169,7 @@ class ScoutSpider(BaseSpider):
                         callback=self.parse,
                         errback=self.handle_error,
                         meta={"depth": depth + 1},
-                        priority=0,
+                        priority=-1 if noisy else 0,
                         dont_filter=False,
                     )
 
@@ -148,6 +181,8 @@ class ScoutSpider(BaseSpider):
 
                     urls_to_add_to_seeds.append(url)
 
+        noise.record_page(section, html_links, low_links)
+
         if urls_to_add_to_seeds and self.expand_seeds:
             self._add_urls_to_seeds(urls_to_add_to_seeds, response.url)
             self.scout_stats["urls_added_to_seeds"] += len(urls_to_add_to_seeds)
@@ -155,6 +190,19 @@ class ScoutSpider(BaseSpider):
         total_discovered = sum(self.scout_stats.values())
         if total_discovered % 100 == 0:
             self._log_scout_stats()
+
+    def _section_noise(self) -> SectionNoiseTracker:
+        tracker: SectionNoiseTracker | None = getattr(self, "_noise_tracker", None)
+        if tracker is None:
+            from src.core.config import get_config
+
+            try:
+                tracker = SectionNoiseTracker.from_config(get_config())
+            except Exception as e:
+                logger.warning(f"[SCOUT] noisy_sections config unreadable, using defaults: {e}")
+                tracker = SectionNoiseTracker()
+            self._noise_tracker = tracker
+        return tracker
 
     @staticmethod
     def _empty_body_reason(response: Response) -> str | None:
@@ -280,12 +328,12 @@ class ScoutSpider(BaseSpider):
                 urls=urls,
                 source_url=source_url,
                 source_spider=self.name,
-                write_uconn_urls=True,
                 enqueue_stage2=False,
             )
 
             logger.info(
-                f"[SCOUT] SeedManager results: seeds={result['seed_inserted']}, uconn={result['uconn_inserted']}"
+                f"[SCOUT] SeedManager results: seeds={result['seed_inserted']}, "
+                f"domain={result.get('domain_inserted', result.get('uconn_inserted', 0))}"
             )
 
         except Exception as e:

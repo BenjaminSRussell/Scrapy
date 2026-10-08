@@ -3,8 +3,10 @@
 # Service names come from the active Compose file (scripts/compose_lib.sh),
 # so nothing here assumes a service that `docker compose config --services`
 # does not list.
-set -u
-cd "$(dirname "${BASH_SOURCE[0]}")"
+# Diagnostic variant of the #822 standard (scripts/SHELL_STANDARD.md): no -e, so one
+# failing probe is reported and the remaining checks still run.
+set -uo pipefail
+cd "$(dirname "${BASH_SOURCE[0]}")" || exit 1
 . scripts/compose_lib.sh
 
 APP="$(compose_first scraper scrapy-app || true)"

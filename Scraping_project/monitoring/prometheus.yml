@@ -1,66 +1,52 @@
+# Prometheus config for the local docker compose stack (docker-compose.yml).
+#
+# Scrape only what compose actually runs (#371). Before, this file was a copy
+# of the full-stack config: it scraped scrapy-app, metrics-exporter, Kafka
+# JMX, statsd-exporter and three Alertmanagers, none of which exist in compose,
+# so every one of those targets was permanently down.
+#
+# The full stack (Kafka, kafka-delta-ingest, statsd-exporter, metrics-exporter,
+# Alertmanager cluster) runs under Helm, which renders its own config:
+#   k8s/helm/scraping-pipeline/templates/prometheus-statefulset.yaml
+# Rules are shared, so alerts on Helm-only jobs (e.g. up{job="kafka_jmx"})
+# simply have no series here and stay inactive.
 global:
   scrape_interval: 15s
   evaluation_interval: 15s
   external_labels:
     cluster: 'scraping-pipeline'
-    # This will be overridden by environment variable for each replica
-    replica: '${PROMETHEUS_REPLICA:-a}'
+    # Prometheus does not expand ${VARS} in its config; the old
+    # '${PROMETHEUS_REPLICA:-a}' value was shipped as that literal string.
+    replica: 'compose'
 
-# Alertmanager cluster configuration
-alerting:
-  alertmanagers:
-    - static_configs:
-        # Send to all 3 Alertmanager replicas
-        # The cluster handles deduplication internally
-        - targets:
-            - 'alertmanager-1:9093'
-            - 'alertmanager-2:9093'
-            - 'alertmanager-3:9093'
+# No Alertmanager runs in compose; alerts are visible at :9090/alerts and in
+# Grafana alerting (monitoring/alerting). Helm configures its Alertmanagers.
 
-# Load recording and alerting rules
+# Mounted by docker-compose.yml next to this file.
 rule_files:
   - '/etc/prometheus/recording_rules.yml'
   - '/etc/prometheus/alerting_rules.yml'
 
 scrape_configs:
-  # Scrape Scrapy application metrics - Multiple instances for extreme throughput
+  # Prometheus' own metrics (TSDB size/retention rules read these).
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Scrapy metrics extension (src/scrapy_prometheus.py, PROMETHEUS_PORT 9410)
+  # in the compose `scraper` service.
   - job_name: 'scrapy_app'
-    scrape_interval: 30s  # OPTIMIZED: Reduced from 10s (66% less load, still plenty for monitoring)
+    scrape_interval: 30s
     scrape_timeout: 10s
     static_configs:
-      - targets:
-          - 'scrapy-app:9410'
-          - 'scrapy-app:9411'
-          - 'scrapy-app:9412'
-          - 'scrapy-app:9413'
-          - 'scrapy-app:9414'
-          - 'scrapy-app:9415'
-          - 'scrapy-app:9416'
-          - 'scrapy-app:9417'
-          - 'scrapy-app:9418'
-          - 'scrapy-app:9419'
-          - 'scrapy-app:9420'
+      - targets: ['scraper:9410']
         labels:
           service: 'scrapy'
           component: 'scraper'
           environment: 'development'
 
-  # kafka-delta-ingest has no HTTP endpoint (nothing listens on :8001); it
-  # sends StatsD, so its metrics arrive through the 'statsd' job below. The old
-  # 'kafka_ingestor' job was always down, which kept PrometheusScrapeFailures
-  # and KafkaPipelineDown firing (#178).
-
-  # Scrape pipeline metrics - Delta Lake, queues, circuit breakers
-  - job_name: 'scraping_pipeline'
-    scrape_interval: 30s  # OPTIMIZED: Reduced from 5s (83% less load!)
-    scrape_timeout: 10s
-    static_configs:
-      - targets: ['metrics-exporter:9090']
-        labels:
-          service: 'pipeline'
-          component: 'metrics'
-
-  # Scrape Redis metrics
+  # Redis does not speak the Prometheus protocol (scraping redis:6379 was
+  # always down); compose runs oliver006/redis_exporter for it.
   - job_name: 'redis'
     scrape_interval: 30s
     scrape_timeout: 10s
@@ -69,7 +55,7 @@ scrape_configs:
         labels:
           service: 'redis'
 
-  # Scrape PostgreSQL metrics
+  # Same for Postgres: prometheuscommunity/postgres-exporter.
   - job_name: 'postgres'
     scrape_interval: 30s
     scrape_timeout: 10s
@@ -78,24 +64,53 @@ scrape_configs:
         labels:
           service: 'postgres'
 
-  # Scrape Kafka JMX metrics - Real-time metrics from Kafka broker
-  - job_name: 'kafka_jmx'
-    scrape_interval: 30s  # OPTIMIZED: Reduced from 10s
+  # #789: Stage 2 worker /metrics (src/utils/worker_metrics.py). dns_sd
+  # resolves every replica of the compose service, so each is scraped.
+  - job_name: 'stage2_worker'
+    scrape_interval: 30s
     scrape_timeout: 10s
-    static_configs:
-      - targets: ['kafka-jmx-exporter:5556']
-        labels:
-          service: 'kafka'
-          component: 'broker'
-          environment: 'development'
+    dns_sd_configs:
+      - names: ['stage2-worker']
+        type: A
+        port: 9430
+    relabel_configs:
+      - target_label: service
+        replacement: 'stage2'
+      - target_label: component
+        replacement: 'worker'
+      - target_label: environment
+        replacement: 'development'
 
-  # Scrape StatsD metrics (kafka-delta-ingest) - Real-time ingest metrics
-  - job_name: 'statsd'
-    scrape_interval: 30s  # OPTIMIZED: Reduced from 10s
+  # #789: Stage 3 worker /metrics (src/utils/worker_metrics.py). dns_sd
+  # resolves every replica of the compose service, so each is scraped.
+  - job_name: 'stage3_worker'
+    scrape_interval: 30s
     scrape_timeout: 10s
-    static_configs:
-      - targets: ['statsd-exporter:9102']
-        labels:
-          service: 'ingestor'
-          component: 'metrics'
-          environment: 'development'
+    dns_sd_configs:
+      - names: ['stage3-worker']
+        type: A
+        port: 9430
+    relabel_configs:
+      - target_label: service
+        replacement: 'stage3'
+      - target_label: component
+        replacement: 'worker'
+      - target_label: environment
+        replacement: 'development'
+
+  # #789: Stage 4 worker /metrics (src/utils/worker_metrics.py). dns_sd
+  # resolves every replica of the compose service, so each is scraped.
+  - job_name: 'stage4_worker'
+    scrape_interval: 30s
+    scrape_timeout: 10s
+    dns_sd_configs:
+      - names: ['stage4-worker']
+        type: A
+        port: 9430
+    relabel_configs:
+      - target_label: service
+        replacement: 'stage4'
+      - target_label: component
+        replacement: 'worker'
+      - target_label: environment
+        replacement: 'development'

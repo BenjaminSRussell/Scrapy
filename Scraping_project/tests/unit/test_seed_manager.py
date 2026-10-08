@@ -25,11 +25,12 @@ def test_add_urls_to_seeds_writes_seed_rows():
         urls=urls,
         source_url="https://uconn.edu/",
         source_spider="scout",
-        write_uconn_urls=True,
+        write_domain_urls=True,
         enqueue_stage2=False,
     )
     assert result["seed_inserted"] == 2
     assert result["uconn_inserted"] == 1
+    assert result["domain_inserted"] == 1
     assert result["stage2_enqueued"] == 0
 
     seeds = backend.read("seed_urls")
@@ -45,7 +46,7 @@ def test_enqueue_stage2():
         urls=["https://uconn.edu/page"],
         source_url="seed",
         source_spider="manual",
-        write_uconn_urls=False,
+        write_domain_urls=False,
         enqueue_stage2=True,
     )
     assert result["seed_inserted"] == 1
@@ -68,14 +69,14 @@ def test_idempotent_merge_keeps_single_row():
         urls=["https://uconn.edu/a"],
         source_url="s",
         source_spider="scout",
-        write_uconn_urls=False,
+        write_domain_urls=False,
         enqueue_stage2=False,
     )
     sm.add_urls_to_seeds(
         urls=["https://uconn.edu/a"],
         source_url="s2",
         source_spider="scout",
-        write_uconn_urls=False,
+        write_domain_urls=False,
         enqueue_stage2=False,
     )
     assert len(backend.read("seed_urls")) == 1
@@ -91,7 +92,7 @@ def test_seed_manager_unwraps_delta_helper_manager():
         urls=["https://uconn.edu/x"],
         source_url="t",
         source_spider="t",
-        write_uconn_urls=False,
+        write_domain_urls=False,
         enqueue_stage2=False,
     )
     assert result["seed_inserted"] == 1

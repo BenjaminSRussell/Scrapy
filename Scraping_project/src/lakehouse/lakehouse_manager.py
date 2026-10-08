@@ -7,7 +7,7 @@ import threading
 import time
 from collections import deque
 from contextlib import contextmanager
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Literal, TypeAlias
 
@@ -38,6 +38,9 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 CAST_QUARANTINE_TABLE = "cast_quarantine"
+# Rows of domain-partitioned tables whose URL has no usable host (#458). They
+# used to be written under domain="unknown", one hot, skewed partition.
+DOMAIN_QUARANTINE_TABLE = "domain_quarantine"
 CastMode: TypeAlias = Literal["strict", "coerce"]
 
 try:  # cast failures by table/column (#818)
@@ -50,6 +53,17 @@ try:  # cast failures by table/column (#818)
     )
 except Exception:  # prometheus_client missing or metric already registered
     DELTA_CAST_FAILURES = None
+
+try:  # undomainable rows quarantined instead of partitioned as "unknown" (#458)
+    from prometheus_client import Counter as _DCounter
+
+    DELTA_UNKNOWN_DOMAIN = _DCounter(
+        "delta_unknown_domain_rows_total",
+        "Rows for domain-partitioned tables quarantined because their URL has no usable host.",
+        ["table"],
+    )
+except Exception:  # prometheus_client missing or metric already registered
+    DELTA_UNKNOWN_DOMAIN = None
 
 try:  # async write durability (#225) and queue backpressure (#167)
     from prometheus_client import Counter as _WCounter
@@ -81,6 +95,29 @@ try:  # Delta log checkpoints (#274)
     )
 except Exception:
     DELTA_CHECKPOINTS = None
+
+try:  # stage queue row GC (#754)
+    from prometheus_client import Counter as _QCounter
+    from prometheus_client import Gauge as _QGauge
+
+    DELTA_QUEUE_ROWS = _QGauge(
+        "delta_queue_rows",
+        "Rows in stage queue Delta tables by status (refreshed by each queue GC pass).",
+        ["table", "status"],
+    )
+    DELTA_QUEUE_ROWS_GC = _QCounter(
+        "delta_queue_rows_gc_total",
+        "Terminal (completed/failed) queue rows removed by retention GC.",
+        ["table"],
+    )
+except Exception:
+    DELTA_QUEUE_ROWS = DELTA_QUEUE_ROWS_GC = None
+
+# #754: queue tables whose terminal rows are garbage-collected after a TTL.
+QUEUE_TABLES: tuple[str, ...] = ("stage2_queue", "js_spider_queue", "stage4_large_docs")
+TERMINAL_QUEUE_STATUSES: tuple[str, ...] = ("completed", "failed")
+QUEUE_STATUSES: tuple[str, ...] = ("pending", "processing", "completed", "failed")
+QUEUE_HISTORY_SUFFIX = "_history"
 
 SPILL_DIR_NAME = "_write_spill"
 CHECKPOINT_INTERVAL_PROPERTY = "delta.checkpointInterval"
@@ -293,6 +330,29 @@ def _partition_columns(table_name: str) -> list[str] | None:
     return ["domain"] if table_name in PARTITIONED_TABLES else None
 
 
+def partition_domain(url: Any) -> str | None:
+    """Partition key for an http(s) URL, or None when it has no usable host (#458).
+
+    registrable_domain() returns "unknown" for empty/unparsable input and passes
+    other junk through (``"not a url"`` -> ``"not a url"``, ``mailto:x`` ->
+    ``"mailto"``), so non-http(s) or host-less URLs are rejected here first.
+    """
+    from urllib.parse import urlparse
+
+    from src.utils.validation import registrable_domain
+
+    value = str(url or "").strip()
+    try:
+        parsed = urlparse(value)
+        host = parsed.hostname
+    except ValueError:
+        return None
+    if parsed.scheme not in ("http", "https") or not host:
+        return None
+    domain = registrable_domain(value)
+    return None if not domain or domain == "unknown" else domain
+
+
 WriteMode: TypeAlias = Literal["append", "overwrite", "error", "ignore"]
 WriteTask: TypeAlias = tuple[str, list[dict[str, Any]], WriteMode]
 # (task_type, table_name, retention_hours); retention_hours is only used by "vacuum".
@@ -468,6 +528,13 @@ class LakehouseManager:
         # table property delta.checkpointInterval. Keep it in sync with config.
         self.checkpoint_interval = max(1, int(config.get("delta_lake.checkpoint_interval", 100)))
         self._checkpoint_interval_synced: set[str] = set()
+        # #754: TTL GC of terminal queue rows, run by the idle maintenance worker.
+        self.queue_retention_hours = float(config.get("delta_lake.queue_retention_hours", 168) or 0)
+        self.queue_gc_interval_s = 60.0 * float(
+            config.get("delta_lake.queue_gc_interval_minutes", 60) or 0
+        )
+        self.queue_gc_archive = bool(config.get("delta_lake.queue_gc_archive", True))
+        self._last_queue_gc = time.monotonic()
 
         self.schema_cache: dict[str, Any] = {}
 
@@ -525,9 +592,23 @@ class LakehouseManager:
                     self.maintenance_queue.task_done()
 
             except queue.Empty:
+                self._maybe_gc_queues()
                 continue
             except Exception as e:
                 logger.error(f"Maintenance worker error: {e}", exc_info=True)
+
+    def _maybe_gc_queues(self) -> None:
+        """Run gc_all_queues() every queue_gc_interval_minutes while idle (#754)."""
+        if self.queue_gc_interval_s <= 0 or self.queue_retention_hours <= 0:
+            return
+        now = time.monotonic()
+        if now - self._last_queue_gc < self.queue_gc_interval_s:
+            return
+        self._last_queue_gc = now
+        try:
+            self.gc_all_queues(self.queue_retention_hours, archive=self.queue_gc_archive)
+        except Exception as e:
+            logger.error(f"Queue GC failed: {e}", exc_info=True)
 
     def _process_queue(self):
         # Drain until the shutdown sentinel (#166): batches queued before
@@ -543,6 +624,10 @@ class LakehouseManager:
 
                 try:
                     self._write_with_retry(table_name, data, mode)
+                except Exception as e:
+                    # Never ack a batch that was neither written nor spilled (#225, #661).
+                    logger.error(f"Writer raised for {table_name}: {e!r}; spilling batch", exc_info=True)
+                    self._spill_batch(table_name, data, mode, reason=f"writer raised: {e!r}")
                 finally:
                     # Acked only after the batch is written or durably spilled (#225).
                     self.write_queue.task_done()
@@ -591,7 +676,12 @@ class LakehouseManager:
         (replay with ``replay_spilled_writes()``).
         """
         for attempt in range(1, self.write_retries + 1):
-            if self._write_sync(table_name, data, mode):
+            try:
+                written = self._write_sync(table_name, data, mode)
+            except Exception as e:  # any raise is a failed attempt: retry, then spill (#661)
+                logger.error(f"Write to {table_name} raised on attempt {attempt}: {e!r}")
+                written = False
+            if written:
                 return True
             if DELTA_WRITE_FAILURES is not None:
                 DELTA_WRITE_FAILURES.labels(table=table_name, outcome="retry").inc()
@@ -684,24 +774,106 @@ class LakehouseManager:
             return self._write_sync_locked(table_name, data, mode, schema_overwrite=schema_overwrite)
 
     @staticmethod
-    def _enrich_records(table_name: str, data: list[dict[str, Any]]) -> None:
-        """Add partition key and ingestion metadata in place (write and merge paths)."""
+    def _enrich_records(table_name: str, data: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Add partition key and ingestion metadata in place (write and merge paths).
+
+        For domain-partitioned tables, rows whose URL has no usable host are
+        removed from ``data`` and returned, to be quarantined (#458) rather
+        than written to a skewed domain="unknown" partition.
+        """
+        undomainable: list[dict[str, Any]] = []
         if _partition_columns(table_name):
             # Partition key: public-suffix-aware registrable domain (#251).
-            from src.utils.validation import registrable_domain
-
+            kept: list[dict[str, Any]] = []
             for record in data:
-                if "url" in record and "domain" not in record:
+                if record.get("domain") in (None, "", "unknown"):
+                    record.pop("domain", None)
                     try:
-                        record["domain"] = registrable_domain(str(record["url"] or ""))
+                        domain = partition_domain(record.get("url"))
                     except Exception:
-                        record["domain"] = "unknown"
+                        domain = None
+                    if domain is None:
+                        undomainable.append(record)
+                        continue
+                    record["domain"] = domain
+                kept.append(record)
+            data[:] = kept
 
         for record in data:
             if "_ingestion_time" not in record:
                 record["_ingestion_time"] = datetime.now(UTC).isoformat()
             if "_stage" not in record:
                 record["_stage"] = table_name
+        return undomainable
+
+    def _quarantine_undomainable(self, table_name: str, rows: list[dict[str, Any]]) -> bool:
+        """Count, log and park rows with no usable host in DOMAIN_QUARANTINE_TABLE (#458).
+
+        Returns True when the rows are safely recorded (or there were none).
+        """
+        import json as _json
+
+        if not rows:
+            return True
+        if DELTA_UNKNOWN_DOMAIN is not None:
+            DELTA_UNKNOWN_DOMAIN.labels(table=table_name).inc(len(rows))
+        sample = [str(r.get("url")) for r in rows[:5]]
+        logger.warning(
+            f"[DOMAIN] {len(rows)} row(s) for {table_name} have no usable host; "
+            f"quarantined to {DOMAIN_QUARANTINE_TABLE}. e.g. URLs: {sample}"
+        )
+        now = datetime.now(UTC).isoformat()
+        quarantine = [
+            {
+                "source_table": table_name,
+                "url": str(r.get("url") or ""),
+                "reason": "no_usable_host",
+                "row_json": _json.dumps(r, default=str)[:10000],
+                "quarantined_at": now,
+            }
+            for r in rows
+        ]
+        try:
+            ok = bool(self._write_sync(DOMAIN_QUARANTINE_TABLE, quarantine, "append"))
+        except Exception as e:
+            logger.error(f"[DOMAIN] Failed to write {len(quarantine)} quarantine rows: {e}")
+            return False
+        if not ok:
+            logger.error(f"[DOMAIN] Failed to write {len(quarantine)} quarantine rows")
+        return ok
+
+    def repair_unknown_domains(self, table_name: str, apply: bool = False) -> dict[str, int]:
+        """Re-derive the partition key for rows already written as domain="unknown" (#458).
+
+        Dry run by default: returns ``{"rows", "repairable", "quarantine"}``.
+        With ``apply=True`` repairable rows are appended under their real
+        domain, the rest go to DOMAIN_QUARANTINE_TABLE, then the "unknown"
+        partition is deleted. The append happens before the delete, so a crash
+        in between can duplicate rows but never loses them.
+        """
+        if table_name not in PARTITIONED_TABLES:
+            raise ValueError(f"{table_name} is not domain-partitioned")
+        table_path = self.get_table_path(table_name)
+        if not (table_path / "_delta_log").exists():
+            return {"rows": 0, "repairable": 0, "quarantine": 0}
+        dt = DeltaTable(str(table_path))
+        rows = dt.to_pyarrow_table(partitions=[("domain", "=", "unknown")]).to_pylist()
+        repaired, bad = [], []
+        for row in rows:
+            domain = partition_domain(row.get("url"))
+            if domain is None:
+                bad.append(row)
+            else:
+                repaired.append({**row, "domain": domain})
+        report = {"rows": len(rows), "repairable": len(repaired), "quarantine": len(bad)}
+        if apply and rows:
+            if repaired and not self._write_sync(table_name, repaired, "append"):
+                raise RuntimeError(f"repair append to {table_name} failed; unknown partition left intact")
+            if not self._quarantine_undomainable(table_name, bad):
+                raise RuntimeError(f"quarantine write for {table_name} failed; unknown partition left intact")
+            DeltaTable(str(table_path)).delete("domain = 'unknown'")
+            logger.warning(f"[DOMAIN] repaired {table_name}: {report}")
+        return report
 
     def _write_sync_locked(
         self,
@@ -714,11 +886,19 @@ class LakehouseManager:
         table_path = self.tables.get(table_name)
         if not table_path:
             table_path = self.base_path / table_name
-            table_path.mkdir(parents=True, exist_ok=True)
+            try:
+                table_path.mkdir(parents=True, exist_ok=True)
+            except OSError as e:  # EACCES/ENOSPC/EROFS: a failed write, not a crash (#661)
+                self._handle_writer_exception(e, table_name)
+                return False
             self.tables[table_name] = table_path
             logger.info(f"Dynamically created new table path for: {table_name}")
 
-        self._enrich_records(table_name, data)
+        undomainable = self._enrich_records(table_name, data)
+        if undomainable:
+            self._quarantine_undomainable(table_name, undomainable)
+            if not data:
+                return True  # handled: every row is recorded in quarantine
 
         try:
             import time
@@ -1055,6 +1235,180 @@ class LakehouseManager:
     def vacuum_all_tables(self, retention_hours: int = 168):
         for table_name in self.tables.keys():
             self._vacuum_table(table_name, retention_hours)
+
+    # ------------------------------------------------------------------
+    # Queue row GC (#754)
+    # ------------------------------------------------------------------
+    def gc_queue_table(
+        self,
+        table_name: str,
+        retention_hours: float,
+        *,
+        archive: bool = True,
+        dry_run: bool = False,
+        now: datetime | None = None,
+    ) -> dict[str, Any]:
+        """Delete completed/failed rows whose ``completed_at`` is older than the TTL.
+
+        Rows still pending or processing, and terminal rows without a
+        ``completed_at``, are never touched. With ``archive`` the expired rows
+        are appended to ``<table>_history`` before the DELETE commits, so a
+        crash between the two leaves duplicates in history, never lost rows.
+        ``completed_at`` may be a timestamp (stage2_queue) or an ISO-8601
+        string (js_spider_queue, stage4_large_docs); the predicate is built
+        for whichever type the table has. ``now`` is naive local time, which
+        is how the workers stamp ``completed_at``.
+        """
+        result: dict[str, Any] = {
+            "table": table_name,
+            "matched": 0,
+            "archived": 0,
+            "deleted": 0,
+            "skipped": None,
+        }
+        if retention_hours is None or float(retention_hours) <= 0:
+            raise ValueError("retention_hours must be > 0")
+        if DeltaTable is None or pa is None:
+            result["skipped"] = "deltalake/pyarrow not installed"
+            return result
+        table_path = self.tables.get(table_name, self.base_path / table_name)
+        if not (Path(table_path) / "_delta_log").exists():
+            result["skipped"] = "table does not exist"
+            return result
+
+        import pyarrow.compute as pc
+        from deltalake.exceptions import CommitFailedError
+
+        cutoff = (now or datetime.now()) - timedelta(hours=float(retention_hours))
+        statuses = ", ".join(f"'{s}'" for s in TERMINAL_QUEUE_STATUSES)
+
+        with self._table_lock(table_name):
+            dt = DeltaTable(str(table_path))
+            schema = pa.schema(dt.schema().to_arrow())
+            if "status" not in schema.names or "completed_at" not in schema.names:
+                result["skipped"] = "no status/completed_at column"
+                return result
+            ctype = schema.field("completed_at").type
+            if pa.types.is_timestamp(ctype) and ctype.tz is None:
+                literal = cutoff.strftime("%Y-%m-%d %H:%M:%S")
+                age_sql = f"completed_at < CAST('{literal}' AS TIMESTAMP)"
+                cutoff_scalar = pa.scalar(cutoff, type=ctype)
+            elif pa.types.is_string(ctype) or pa.types.is_large_string(ctype):
+                # ISO-8601 strings sort chronologically.
+                literal = cutoff.strftime("%Y-%m-%dT%H:%M:%S")
+                age_sql = f"completed_at < '{literal}'"
+                cutoff_scalar = pa.scalar(literal, type=ctype)
+            else:
+                result["skipped"] = f"unsupported completed_at type {ctype}"
+                return result
+            predicate = (
+                f"status IN ({statuses}) AND completed_at IS NOT NULL AND {age_sql}"
+            )
+
+            data = dt.to_pyarrow_table()
+            mask = pc.and_(
+                pc.fill_null(
+                    pc.is_in(data["status"], value_set=pa.array(TERMINAL_QUEUE_STATUSES)), False
+                ),
+                pc.fill_null(pc.less(data["completed_at"], cutoff_scalar), False),
+            )
+            expired = data.filter(mask)
+            result["matched"] = expired.num_rows
+            if dry_run or expired.num_rows == 0:
+                return result
+
+            if archive:
+                write_deltalake(
+                    str(self.base_path / f"{table_name}{QUEUE_HISTORY_SUFFIX}"),
+                    expired,
+                    mode="append",
+                    schema_mode="merge",
+                )
+                result["archived"] = expired.num_rows
+
+            # Expired rows are terminal, so a concurrent writer can only add or
+            # update other rows; re-running the same DELETE after a conflict is safe.
+            for attempt in range(1, MERGE_MAX_ATTEMPTS + 1):
+                try:
+                    metrics = DeltaTable(str(table_path)).delete(predicate)
+                    break
+                except CommitFailedError as e:
+                    if attempt == MERGE_MAX_ATTEMPTS:
+                        raise
+                    logger.warning(
+                        f"Queue GC on {table_name} lost a commit race "
+                        f"(attempt {attempt}/{MERGE_MAX_ATTEMPTS}): {e}"
+                    )
+                    time.sleep(0.05 * attempt)
+            result["deleted"] = int((metrics or {}).get("num_deleted_rows", 0) or 0)
+
+        if DELTA_QUEUE_ROWS_GC is not None and result["deleted"]:
+            DELTA_QUEUE_ROWS_GC.labels(table=table_name).inc(result["deleted"])
+        logger.info(
+            f"[monitoring] queue_gc table={table_name} deleted={result['deleted']} "
+            f"archived={result['archived']} retention_hours={retention_hours}"
+        )
+        return result
+
+    def queue_row_counts(self, tables: tuple[str, ...] = QUEUE_TABLES) -> dict[str, dict[str, int]]:
+        """Row counts by status for each queue table; also refreshes the gauge (#754)."""
+        counts: dict[str, dict[str, int]] = {}
+        if DeltaTable is None:
+            return counts
+        for table_name in tables:
+            table_path = self.tables.get(table_name, self.base_path / table_name)
+            if not (Path(table_path) / "_delta_log").exists():
+                continue
+            try:
+                column = DeltaTable(str(table_path)).to_pyarrow_table(columns=["status"])["status"]
+            except Exception as e:
+                logger.warning(f"Could not count rows in {table_name}: {e}")
+                continue
+            by_status = {s: 0 for s in QUEUE_STATUSES}
+            for value in column.to_pylist():
+                key = str(value) if value is not None else "null"
+                by_status[key] = by_status.get(key, 0) + 1
+            counts[table_name] = by_status
+            if DELTA_QUEUE_ROWS is not None:
+                for status, n in by_status.items():
+                    DELTA_QUEUE_ROWS.labels(table=table_name, status=status).set(n)
+        return counts
+
+    def gc_all_queues(
+        self,
+        retention_hours: float | None = None,
+        *,
+        archive: bool | None = None,
+        dry_run: bool = False,
+        vacuum: bool = True,
+        tables: tuple[str, ...] = QUEUE_TABLES,
+    ) -> list[dict[str, Any]]:
+        """GC every queue table, then refresh the row-count gauge (#754).
+
+        A failure on one table is logged and reported, not raised, so the
+        other tables are still collected. Tables that lost rows are vacuumed
+        (retention_hours rules apply) so the deleted files are eventually freed.
+        """
+        hours = self.queue_retention_hours if retention_hours is None else retention_hours
+        keep_history = self.queue_gc_archive if archive is None else archive
+        results = []
+        for table_name in tables:
+            try:
+                res = self.gc_queue_table(
+                    table_name, hours, archive=keep_history, dry_run=dry_run
+                )
+            except Exception as e:
+                logger.error(f"Queue GC failed for {table_name}: {e}", exc_info=True)
+                res = {"table": table_name, "matched": 0, "archived": 0, "deleted": 0,
+                       "skipped": f"error: {e}"}
+            if vacuum and res["deleted"]:
+                try:
+                    self._vacuum_table(table_name, 168)
+                except Exception as e:
+                    logger.warning(f"Vacuum after queue GC failed for {table_name}: {e}")
+            results.append(res)
+        self.queue_row_counts(tables)
+        return results
 
     def _sync_checkpoint_interval(self, table_name: str, table_path: Path) -> None:
         """Set delta.checkpointInterval on tables created before it was configured (#274).
@@ -1535,7 +1889,11 @@ class LakehouseManager:
         rows = _dedupe_by_key(updates_data, merge_keys)
         # Same partition key / metadata as write(), so merged and appended rows
         # look alike (#311: stage2_page_analysis is now upserted by url_hash).
-        self._enrich_records(table_name, rows)
+        undomainable = self._enrich_records(table_name, rows)
+        if undomainable:
+            self._quarantine_undomainable(table_name, undomainable)
+            if not rows:
+                return 0
         try:
             table_path = self.get_table_path(table_name)
         except ValueError:  # unregistered table: create it, as write() does

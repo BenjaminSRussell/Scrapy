@@ -28,13 +28,42 @@ stage1:
   # Target domains (dynamically populated from start_urls if not specified)
   allowed_domains:
     - uconn.edu
+  # Domain URL side table (#317). Off unless a profile opts in; this bundled
+  # UConn profile does. URLs whose host is an allowed domain (or a subdomain)
+  # are also upserted into domain_urls_table.
+  write_domain_urls: true
+  domain_urls_table: uconn_urls
 
   # NEW: Aggressive URL Collection Mode
   aggressive_collection: true  # Capture EVERYTHING - Stage 2 will filter
   expand_seeds: true  # Auto-add discovered URLs back to seed_urls
   parse_sitemaps: true  # Auto-discover and parse sitemaps
+  sitemap:  # Walk limits for nested sitemap indexes (#206)
+    max_depth: 5          # sitemapindex nesting levels to follow
+    max_urls: 50000       # hard cap on URLs collected per site walk
+    max_sitemaps: 500     # hard cap on sitemap documents fetched per walk
+    max_bytes: 52428800   # per-sitemap body cap after decompression (50 MiB)
   enable_depth_mode: true  # Switch to depth spider when idle
   enable_rescraping: true  # Re-scrape existing URLs to find missed links
+
+  # Also run HiddenURLExtractor (meta refresh, "/api/..." literals, JS routes)
+  # in the scout parse path. Off by default (#481). Metric:
+  # scrapy_url_extractor_urls_total{heuristic="hidden_urls"}.
+  extract_hidden_urls: false
+
+  # URL discovery heuristics (#27). Set any to false to switch it off; unlisted
+  # ones stay on. Per-heuristic yield: scrapy_url_extractor_urls_total{heuristic}.
+  discovery_heuristics:
+    standard_tags: true
+    inline_scripts: true
+    script_tags: true
+    css: true
+    data_attributes: true
+    meta_tags: true
+    json_ld: true
+    comments: true
+    event_handlers: true
+    raw_regex: true  # regex over the whole page body; the noisiest source (#25)
 
   # JS Detection
   js_confidence_threshold: 0.5  # REDUCED - render more pages (was 0.7)
@@ -42,6 +71,13 @@ stage1:
   # Batch sizes
   batch_size: 50  # URLs to batch before writing to Delta Lake
   js_queue_batch_size: 50  # JS render queue batch size
+  js_queue_max_size: 100000  # #377: cap on JS render candidates; lowest priority evicted first (0 = unbounded)
+  js_queue_ttl_seconds: 86400  # #377: drop candidates queued longer than this (0 = never)
+  # #390: Playwright resource types the JS spider aborts (cheaper renders). Blocking
+  # stylesheets/images can hide content on sites that lazy-load via CSS or render text as
+  # images; override per domain (host + subdomains, most specific wins). Never blocks "document".
+  js_blocked_resource_types: [image, stylesheet, font, media]
+  js_blocked_resource_types_by_domain: {}
 
   # Circuit Breaker Settings
   circuit_breaker_enabled: true
@@ -59,6 +95,19 @@ stage1:
     - staff
   priority_penalty_keywords: []  # REMOVED - we want everything now
 
+  # Adapt to noisy sections (#26): once a section (host/first-path-segment)
+  # has produced min_pages pages whose follow-able links are at least
+  # low_value_ratio low-confidence (traps: dated archives, calendar/sort/filter
+  # params, session ids, repeating paths; or URLValueAssessor "low"), its
+  # low-confidence links are no longer followed and the rest are capped at
+  # follow_cap per page. Metrics: stage1_noisy_sections,
+  # stage1_noisy_section_skips_total.
+  noisy_sections:
+    enabled: true
+    min_pages: 5
+    low_value_ratio: 0.6
+    follow_cap: 10
+
   # Depth Spider Mode (when regular queues are empty)
   depth_spider:
     enabled: true
@@ -70,9 +119,11 @@ stage1:
   # Spider-Specific Settings
   spiders:
     scout:
-      # Aggressive spider settings
+      # Aggressive spider settings: high global concurrency spread across
+      # hosts, but each host is capped (#194). Scrapy's "domain" slot is the
+      # hostname, so every uconn.edu subdomain gets its own 16.
       concurrent_requests: 1024
-      concurrent_requests_per_domain: 512
+      concurrent_requests_per_domain: 16
       download_delay: 0.01
       download_timeout: 15
       retry_times: 2
@@ -82,8 +133,8 @@ stage1:
       # Autothrottle
       autothrottle_enabled: true
       autothrottle_start_delay: 0.005
-      autothrottle_max_delay: 1.5
-      autothrottle_target_concurrency: 2048
+      autothrottle_max_delay: 60  # >= 30s floor (#194): room to back off under 429s
+      autothrottle_target_concurrency: 8.0  # per host; must be <= concurrent_requests_per_domain
 
       # Memory limits
       memory_limit_mb: 10240
@@ -106,7 +157,7 @@ stage1:
       # Autothrottle
       autothrottle_enabled: true
       autothrottle_start_delay: 0.25
-      autothrottle_max_delay: 10
+      autothrottle_max_delay: 60  # >= 30s floor (#194)
       autothrottle_target_concurrency: 2.0
 
       # Memory limits
@@ -123,6 +174,8 @@ stage1:
 stage2:
   # Worker Configuration
   max_workers: 100
+  # Max in-flight fetches per host (#195); env STAGE2_PER_HOST_CONCURRENCY overrides.
+  per_host_concurrency: 4
   batch_size: 50
   poll_interval_seconds: 3
 
@@ -231,6 +284,12 @@ delta_lake:
   queue_maxsize: 1000  # Maximum queue size to prevent memory overload
   # Producers wait this long for queue space, then spill to _write_spill/ (#167).
   queue_put_timeout_seconds: 30
+  # #754: completed/failed rows in stage2_queue, js_spider_queue and
+  # stage4_large_docs are deleted once completed_at is older than this (0 = never),
+  # after being appended to <table>_history when queue_gc_archive is true.
+  queue_retention_hours: 168
+  queue_gc_interval_minutes: 60  # idle maintenance worker runs GC this often (0 = off)
+  queue_gc_archive: true
   # Async writes retry with exponential backoff, then spill durably (#225).
   write_retries: 3
   write_retry_backoff_seconds: 0.5

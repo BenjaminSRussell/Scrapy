@@ -323,6 +323,32 @@ Each process's `RedisHelper` uses a bounded `redis.BlockingConnectionPool` (#533
 - Both waits are bounded: `REDIS_WAIT_TIMEOUT` and `KAFKA_WAIT_TIMEOUT` each default to 120 s. When a dependency is unreachable, the container exits 1 (visible as restarts or CrashLoopBackOff) instead of looping forever.
 - `REQUIRE_KAFKA=1` makes a missing `KAFKA_BOOTSTRAP_SERVERS` a hard error, for streaming deployments that must not silently fall back to core.
 
+### robots.txt, Crawl-delay and Retry-After
+
+Stage 1 obeys robots.txt by default (#186). `ROBOTSTXT_OBEY` is on in `src/settings.py` and in every spider's settings from `get_spider_settings()`. `PoliteRobotsTxtMiddleware` (`src/stage1/middlewares/robots_middleware.py`) replaces Scrapy's `RobotsTxtMiddleware` at the same priority (100):
+
+- **Disallow.** robots.txt is fetched once per host and cached. Disallowed URLs are never requested. They are counted in `scrapy_robots_forbidden_total{spider}` and in crawl stats `robotstxt/forbidden`, and the first refusal per host is logged at INFO.
+- **Crawl-delay** (#188). The host's download-slot delay is raised to the `Crawl-delay` for our user agent, capped at `ROBOTS_MAX_CRAWL_DELAY` (60s). The delay is re-applied before each request, so AutoThrottle can't drop below it. Hosts affected are counted in `scrapy_robots_crawl_delay_hosts_total{spider}`.
+- **Missing robots.txt** (404) or a fetch error allows everything, matching Scrapy's behaviour.
+- **Retry-After** (#188). On a 429 or 503 with `Retry-After` (seconds or an HTTP date), `RetryAfterMiddleware` (priority 560, so it runs ahead of Scrapy's RetryMiddleware) raises that host's download delay to the wait, capped at `RETRY_AFTER_MAX_DELAY` (120s). The retry and every other request to the host wait at least that long, and the old delay is restored afterwards. Waits are counted in `scrapy_retry_after_waits_total{spider}` and `scrapy_retry_after_seconds_total{spider}`.
+- **Opting out** is only for sites you own: `ROBOTSTXT_OBEY=false`, `scrapy.robotstxt_obey: false`, or `stage1.spiders.<name>.robotstxt_obey: false`.
+
+### Rate limits and per-domain concurrency
+
+These are the production politeness defaults (#194). Scrapy's "domain" slot is the **hostname**, so each `*.uconn.edu` subdomain is throttled on its own.
+
+| Setting | scout | deep_dive | Notes |
+|---|---|---|---|
+| `concurrent_requests` (global) | 1024 | 32 | spread across hosts |
+| `concurrent_requests_per_domain` | 16 | 8 | hard per-host cap |
+| `autothrottle_target_concurrency` | 8 | 2 | per host; clamped to the per-domain cap |
+| `autothrottle_max_delay` | 60s | 60s | floored at 30s with a warning |
+
+- **AutoThrottle** can only slow a host down to `AUTOTHROTTLE_MAX_DELAY`. The old 1–1.5s caps could not absorb a 429 storm, so `polite_autothrottle_max_delay()` (`src/stage1/middlewares/spider_config.py`) never lets it fall below 30s. `polite_target_concurrency()` clamps the target to the per-domain cap; the scout profile used to have 2048 against 512, which meant AutoThrottle never slowed anything down.
+- **429/503 without Retry-After.** `RetryAfterMiddleware` backs the host off exponentially. The delay doubles on each consecutive one, starting at `RATE_LIMIT_BACKOFF_MIN` (1s) and going up to `RATE_LIMIT_BACKOFF_MAX` (defaults to the AutoThrottle max), and is held for `RATE_LIMIT_COOLDOWN_FACTOR` (4) times the delay before the old delay is restored. These are counted in `scrapy_rate_limit_backoffs_total{spider}` and in crawl stats `rate_limit/backoff_count` and `rate_limit/max_delay`.
+- **Active waits survive AutoThrottle.** AutoThrottle recomputes the delay on every 200 response. While a Retry-After wait or a backoff is active, the enforced delay is re-applied on every request and response for that host.
+- All of these can be overridden per spider under `stage1.spiders.<name>` in `config.yml` (`rate_limit_backoff_min`, `rate_limit_backoff_max`, `rate_limit_cooldown_factor`) or project-wide under `scrapy.*`.
+
 ### Soft-ban / captcha guard
 
 Challenge and captcha pages are not content (#582). `src/utils/soft_ban.py`
@@ -375,6 +401,16 @@ Metrics: `stage2_http_fetches_total{outcome=first_try|recovered|exhausted|circui
 and `stage2_http_retries_total{reason}`. Each retry and each recovery is logged
 with its attempt number.
 
+### Docker build context
+
+`.dockerignore` comments every exclusion (#625). Runtime data (`data/`,
+`logs/`), caches, VCS/CI metadata, docs, Kubernetes manifests and Rust
+`target/` stay out of the context. `Dockerfile`, `docker-compose.yml` and
+`monitoring/` stay in. Compose still **bind-mounts**
+`monitoring/prometheus.yml` and `monitoring/alerting/` at runtime, so config
+edits apply without a rebuild; the copy inside the image is the default and
+can be baked in when wanted.
+
 ### Environment Variables
 
 ```bash
@@ -419,6 +455,27 @@ Configure the Helm chart via `k8s/helm/scraping-pipeline/values.yaml` (supported
 - Resource requests/limits
 - Persistent volume sizes
 - Service configuration
+
+### SSRF guard (#682)
+
+Every URL is checked by `src/utils/ssrf.py` **before** any request is made or a queue row is written. The checks run at three points:
+
+- **Stage 1 (Scrapy):** `SSRFGuardMiddleware` is the first downloader middleware. It is registered in `src/settings.py` and in `spider_config`, and it raises `IgnoreRequest("ssrf_blocked:<reason>")`. Scrapy redirects re-enter the middleware chain, so every hop is checked.
+- **Queueing:** `QueueItemPipeline` never writes an SSRF-like URL to `stage2_queue` or `js_spider_queue`.
+- **Stage 2 (aiohttp):** redirects are followed by hand, with each hop checked before it connects. A refusal is a terminal `ssrf_blocked:<reason>` error and is not retried.
+
+What gets blocked:
+- non-http(s) schemes and embedded credentials;
+- loopback, private, link-local (including `169.254.169.254` metadata), CGNAT, multicast and unspecified IPs, in every spelling: decimal `2130706433`, hex `0x7f000001`, octal `0177.0.0.1`, short `127.1`, IPv6 `[::1]`, IPv4-mapped `[::ffff:127.0.0.1]`, and zone IDs;
+- `localhost` aliases and `*.localhost` / `*.internal` / `*.local`;
+- single-label names such as `redis` or `kafka` (in-cluster services).
+
+Settings and env:
+- `SSRF_GUARD_ENABLED` (default on).
+- `SSRF_RESOLVE_DNS=1` additionally rejects hostnames whose DNS answers are non-global. It's off by default because it blocks the reactor; `OffsiteMiddleware` already limits crawls to `allowed_domains`.
+- `SSRF_ALLOWED_HOSTS=127.0.0.1,10.0.0.0/8` is an explicit allowlist, for example for local fixture servers.
+
+Metric: `scrapy_ssrf_blocked_total{stage="stage1|stage2|queue", reason}`.
 
 ### Redis memory policy: durable keys vs TTL keys (#161)
 
@@ -512,6 +569,13 @@ Available at `http://localhost:9090`:
 - `retry_attempts_total`: Retry attempts
 - `circuit_breaker_state`: Circuit breaker state (0=closed, 1=open, 2=half-open)
 
+Every queue worker (Stage 2/3/4) serves its own registry on
+`WORKER_METRICS_PORT` (default 9430, `WORKER_METRICS_ENABLED=0` to disable),
+so worker-side counters (soft bans, deferrals, recency outcomes, ...) reach
+Prometheus as `stage{2,3,4}_worker` jobs, one target per replica, with
+`scrapy_worker_up{component}` as the liveness series. Scrape topology for Helm:
+[k8s/README.md](k8s/README.md#what-gets-scraped-789).
+
 ### Grafana Dashboards
 
 Access at `http://localhost:3000` (admin/admin):
@@ -596,6 +660,8 @@ All tables use PyArrow schemas for validation:
 | `stage3_queue` | Summarization queue | Stage3Summary |
 | `errors` | Error tracking | ErrorRecord |
 
+`stage1_discovery` and `stage2_page_analysis` are partitioned by registrable domain. A row whose URL has no usable http(s) host (empty, `mailto:`, garbage) is not written under a catch-all `domain=unknown` partition. It goes to `domain_quarantine` (`source_table`, `url`, `reason`, `row_json`, `quarantined_at`), counted by `delta_unknown_domain_rows_total{table}`, and the `DeltaUndomainableRows` alert fires on a sustained stream (#458). For tables written before this change, `LakehouseManager.repair_unknown_domains(table)` reports what is in the legacy `unknown` partition. Pass `apply=True` to move repairable rows to their real domain and the rest to quarantine.
+
 ### Recency scoring contract (silver → gold)
 
 `RecencyScoringPipeline` writes `recency_score` as exponential decay of the item's `publication_date` (`RECENCY_DECAY_CONSTANT`, default 0.01/day):
@@ -617,6 +683,19 @@ Every append and overwrite reads the table's current schema from its `_delta_log
 - **Overwrite replaces rows, not the schema (#509).** `mode="overwrite"` goes through the same cast and additive path and commits with `schema_mode="merge"`. Columns that other writers evolved survive, null in the new rows.
 - **Breaking changes** (renames, type narrowing, dropping columns) are never implicit. Rewrite the table deliberately with `write(..., mode="overwrite", schema_overwrite=True)`. That write is always synchronous, logged as `[SCHEMA OVERWRITE]`, and counted in `delta_schema_overwrites_total{table}`.
 
+### Bronze record contract (#227, #302)
+
+Crawl items are validated once against `src/schemas.py` `BaseRecordSchema` (by `SchemaValidationPipeline`) and again by kafka-delta-ingest. Both enforce the same required list: `BRONZE_REQUIRED_FIELDS` in Python and `REQUIRED_INGEST_FIELDS` in `kafka-delta-ingest/src/main.rs`. `tests/unit/test_bronze_schema_contract.py` fails if they diverge.
+
+| Field | Bronze | Notes |
+|---|---|---|
+| `url`, `scraped_at_utc`, `spider_name` | required | `scraped_at_utc` and `spider_name` are stamped before validation if the spider didn't set them |
+| `source_url` | optional | defaults to `url` |
+| `title`, `content`, `publication_date` | optional | a page with no extractable title or date is still crawl data |
+| costs, `category_*`, `entity_id`, `recency_score` | optional | still validated when present (non-negative costs, totals add up, confidence in [0, 1]) |
+
+Silver and analytics consumers that need `publication_date` filter on it or backfill it there. Ordering and partitioning fall back to `scraped_at_utc`; the Delta `date` partition is derived from it. Items accepted without a date are counted in `scrapy_items_missing_publication_date_total{spider}`. Drops are counted in `scrapy_schema_validation_drops_total{spider,field}` and published to `validation_failures`.
+
 ### Type-Safe Operations
 
 ```python
@@ -635,50 +714,72 @@ validated_data = delta.read_typed("stage2_queue", Stage2Analysis)
 
 ## Project Structure
 
+Paths are relative to `Scraping_project/`; run every command from there (#334).
+`tests/unit/test_readme_layout.py` fails if this tree drifts from the disk (#489).
+
 ```
 Scraping_project/
 ├── src/
-│   ├── core/                    # Core infrastructure
-│   │   ├── models.py            # Pydantic models (Phase 6)
-│   │   ├── schemas.py           # PyArrow schemas (Phase 6)
-│   │   └── exceptions.py        # Exception hierarchy (Phase 7)
-│   ├── utils/                   # Utilities
-│   │   ├── cache.py             # Caching (Phase 8)
-│   │   ├── retry.py             # Retry/circuit breaker (Phase 7)
-│   │   ├── dead_letter_queue.py # DLQ (Phase 7)
-│   │   ├── connection_pool.py   # Connection pooling (Phase 8)
-│   │   ├── profiler.py          # Profiling (Phase 8)
-│   │   └── delta.py             # Delta Lake helpers
-│   ├── workers/                 # Worker processes
-│   │   ├── stage1_worker.py
-│   │   ├── stage2_worker.py
-│   │   ├── stage3_worker.py
-│   │   └── stage4_worker.py
-│   └── stage1/                  # Spiders
-│       ├── scout_spider.py
-│       ├── depth_spider.py
-│       └── js_spider.py
-├── tests/                       # Test suite (Phase 9)
-│   ├── conftest.py              # Pytest configuration
-│   ├── test_cache.py
-│   ├── test_models.py
-│   ├── test_retry.py
+│   ├── core/                    # config.py, models.py, schemas.py, exceptions.py
+│   ├── common/                  # legacy managers (config, crawl data, seeds)
+│   ├── lakehouse/               # lakehouse_manager.py, seed_manager.py
+│   ├── utils/                   # delta.py, redis.py, retry.py, dead_letter_queue.py, cache.py
+│   ├── stage1/                  # discovery
+│   │   ├── scout_spider.py      # scrapy name: scout
+│   │   ├── sitemap_parser.py
+│   │   ├── middlewares/
+│   │   ├── processors/
+│   │   └── experimental/        # depth, javascript, deep_dive, base spiders
+│   │       ├── depth_spider.py
+│   │       ├── js_spider.py
+│   │       ├── deep_dive_spider.py
+│   │       └── base_spider.py
+│   ├── stage2/                  # stage2_worker.py, intelligent_analyzer.py
+│   ├── stage3/                  # stage3_worker.py
+│   ├── stage4/                  # stage4_worker.py, large_doc_processor.py
+│   ├── workers/                 # stage1_worker.py … stage4_worker.py entrypoints
+│   ├── orchestrator/            # pipeline_orchestrator.py
+│   ├── pipelines.py             # Scrapy item pipelines
+│   └── settings.py              # Scrapy settings
+├── tests/                       # unit/, integration/, component/, contract/, performance/
+│   ├── conftest.py
 │   └── README.md
-├── k8s/                         # Kubernetes (Phase 10)
-│   └── deployment.yaml
-├── monitoring/                  # Monitoring (Phase 10)
+├── monitoring/
 │   ├── prometheus.yml
 │   ├── alerting_rules.yml       # alerts (Helm ships an identical copy)
-│   └── recording_rules.yml
-├── .github/workflows/           # CI/CD (Phase 10)
-│   └── ci-cd.yml
-├── docker-compose.yml           # Docker Compose (Phase 10)
-├── Dockerfile                   # Docker build (Phase 10)
-├── mypy.ini                     # Type checking config (Phase 6)
-├── pytest.ini                   # Test configuration (Phase 9)
-├── requirements.txt             # Python dependencies
-└── DEPLOYMENT.md               # Deployment guide (Phase 10)
+│   ├── recording_rules.yml
+│   └── dashboards/              # Grafana dashboards (provisioned by compose/Helm)
+├── k8s/
+│   ├── deployment.yaml
+│   └── helm/                    # scraping-pipeline chart
+├── kafka-delta-ingest/          # Rust Kafka -> Delta ingestor
+├── scripts/
+├── start.py                     # local launcher (python start.py)
+├── cli.py                       # seed/ops CLI (python cli.py --help)
+├── scrapy.cfg
+├── config.yml
+├── docker-compose.yml
+├── Dockerfile
+├── Makefile
+├── mypy.ini
+├── pytest.ini
+├── requirements.txt
+├── dev-requirements.txt
+└── DEPLOYMENT.md
 ```
+
+### Spiders
+
+Spiders are run by their scrapy **name**, not their file name (`scrapy crawl depth`,
+not `scrapy crawl depth_spider`). `scrapy list` (from `Scraping_project/`) prints them:
+
+| scrapy name | Module |
+|---|---|
+| `scout` | `src/stage1/scout_spider.py` |
+| `depth` | `src/stage1/experimental/depth_spider.py` |
+| `javascript` | `src/stage1/experimental/js_spider.py` |
+| `deep_dive` | `src/stage1/experimental/deep_dive_spider.py` |
+| `base` | `src/stage1/experimental/base_spider.py` |
 
 ## Development Evolution
 

@@ -10,6 +10,11 @@ This directory contains scripts for managing, debugging, and resetting the scrap
 | `complete_reset.sh` | Full Docker stack reset and rebuild | Major issues, fresh start needed |
 | `reset_grafana_complete.sh` | Reset Grafana only (Docker/K8s) | Grafana login or dashboard issues |
 | `k8s_reset_and_deploy.sh` | Remove "coco" prefix and redeploy K8s | Fix Kubernetes naming issues |
+| `reset_lake.py` | Wipe the Delta lake and re-seed `seed_urls` | Local dev only; guarded (see below) |
+
+> **Destructive operations** (`complete_reset.sh`, `reset_lake.py`, `../cli.py reset`,
+> `../reseed.py --clear`, `../drain_lake.py` drains) follow one safety policy; see
+> [Destructive operations: safety policy](#destructive-operations-safety-policy).
 
 ---
 
@@ -67,13 +72,14 @@ use the same discovery (`scripts/compose_lib.sh`, i.e. `docker compose config --
 
 **Usage**:
 ```bash
-./scripts/complete_reset.sh               # interactive
-./scripts/complete_reset.sh --dry-run     # show which services each step would start
-./scripts/complete_reset.sh --yes --no-rebuild
+./scripts/complete_reset.sh               # no-op: prints the plan, exits 2
+./scripts/complete_reset.sh --dry-run     # show which services each step would start (exit 0)
+./scripts/complete_reset.sh --confirm     # type 'yes' to delete all project volumes
+ALLOW_LAKE_RESET=1 ./scripts/complete_reset.sh --confirm --yes --no-rebuild   # automation
 ```
 
 **Interactive prompts**:
-- Confirmation before deleting data
+- Typed confirmation before deleting data (`yes`, or `production` with break-glass)
 - Option to rebuild Docker images
 
 **When to use**:
@@ -213,7 +219,7 @@ Then login with `admin/admin`
 ./scripts/diagnose_issues.sh
 
 # If Prometheus is down, full reset needed
-./scripts/complete_reset.sh
+./scripts/complete_reset.sh --confirm
 ```
 
 ---
@@ -246,7 +252,7 @@ docker-compose up -d stage4-worker
 docker-compose logs kafka
 
 # If needed, full reset
-./scripts/complete_reset.sh
+./scripts/complete_reset.sh --confirm
 ```
 
 ---
@@ -291,17 +297,18 @@ GRAFANA_ADMIN_PASSWORD=admin
 
 ### Docker Compose:
 
+Published by `docker-compose.yml` (the Kafka, Alertmanager and
+metrics-exporter services run only in the Helm chart):
+
 | Service | Port | URL |
 |---------|------|-----|
 | Grafana | 3000 | http://localhost:3000 |
-| Prometheus A | 9091 | http://localhost:9091 |
-| Prometheus B | 9097 | http://localhost:9097 |
-| Alertmanager 1 | 9093 | http://localhost:9093 |
-| Metrics Exporter | 9090 | http://localhost:9090/metrics |
+| Prometheus | 9090 | http://localhost:9090 (targets: http://localhost:9090/targets) |
 | Redis | 6379 | redis://localhost:6379 |
 | PostgreSQL | 5432 | postgres://localhost:5432 |
-| Kafka | 9092 | kafka://localhost:9092 |
-| Kafka External | 9094 | kafka://localhost:9094 |
+
+`redis-exporter` (9121) and `postgres-exporter` (9187) are reachable only
+inside the compose network, where Prometheus scrapes them.
 
 ### Kubernetes:
 
@@ -390,7 +397,7 @@ If still stuck:
 ### Docker Compose:
 ```bash
 # 1. Complete reset
-./scripts/complete_reset.sh
+./scripts/complete_reset.sh --confirm
 
 # 2. Access Grafana
 open http://localhost:3000
@@ -417,11 +424,49 @@ open http://localhost:3000
 
 ---
 
+## Destructive operations: safety policy
+
+Applies to `scripts/complete_reset.sh`, `scripts/reset_lake.py`, `cli.py reset`,
+`reseed.py --clear` and the drain modes of `drain_lake.py` (#522, #573, #576).
+Implementation: `src/utils/destructive_guard.py` (the shell script mirrors it).
+
+| Step | Rule |
+|---|---|
+| Default | **Dry-run.** Without `--confirm` nothing is touched: the plan is printed (Delta tables with row/byte estimates from the Delta log, Redis queues with sizes, or Compose services) and the command exits **2**. An explicit `--dry-run` exits 0. |
+| Confirmation | `--confirm` **and** typing `yes`. For automation, `--yes` replaces the prompt only when `ALLOW_LAKE_RESET=1` is set. With no terminal and no `--yes`, the command refuses (exit **3**). |
+| Production | When `ENV` (or `APP_ENV`) is `production`/`prod`: refused unless `--i-know-what-im-doing` **and** `ALLOW_LAKE_RESET=1`, and the operator must type `production`. `--yes` is ignored in production. |
+| Audit | Every decision (`dry_run`, `refused`, `authorized`, `completed`, `failed`) is appended to `data/logs/destructive_ops.jsonl` (override: `DESTRUCTIVE_AUDIT_LOG`) with UTC time, actor (`SUDO_USER`/`USER`), host, env, argv and targets. |
+| Legacy `--force` | Means `--confirm --yes`, so it still needs `ALLOW_LAKE_RESET=1`. |
+
+```bash
+python scripts/reset_lake.py                                  # plan only
+python scripts/reset_lake.py --confirm --backup-dir /backups  # snapshot, then wipe + re-seed
+python cli.py reset --confirm
+python reseed.py --clear --confirm
+python drain_lake.py --drain-transient                        # plan only
+python drain_lake.py --drain-transient --confirm
+ENV=production ALLOW_LAKE_RESET=1 python drain_lake.py --drain-all --confirm --i-know-what-im-doing
+```
+
+**Recovery.** A wiped lake directory cannot be restored with Delta time travel. Before
+wiping anything you may need again, pass `--backup-dir DIR`: the lake is copied to
+`DIR/<lake>-<UTC timestamp>` first, and the path is recorded in the audit log. To restore,
+stop the workers, move the copy back to `data/delta_lake`, and restart. To roll back a bad
+*write* (not a wipe), use time travel on the table instead (`DeltaTable(path).restore(version)`)
+before `lake-vacuum --apply` removes the old files. `complete_reset.sh` deletes Docker volumes,
+so snapshot them first (e.g. `docker run --rm -v <volume>:/v -v "$PWD":/b alpine tar czf /b/<volume>.tgz -C /v .`).
+
+The Helm preStop hooks call `LakeDrainer().drain_transient_queues()` as a library and are not
+gated. Before this change they were a silent no-op: `drain_lake.py` imported the removed
+`src.common.config`, and the hook's `|| true` swallowed the ImportError.
+
+---
+
 ## Script Development
 
 All scripts follow these conventions:
 - Colored output (green=success, yellow=warning, red=error)
-- Confirmation prompts for destructive operations
+- Destructive operations: dry-run default, `--confirm` + typed confirmation, production break-glass, audit log
 - Detailed progress messages
 - Error handling with `set -e`
 - Environment detection (Docker vs Kubernetes)

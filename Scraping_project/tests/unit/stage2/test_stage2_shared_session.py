@@ -39,6 +39,7 @@ async def _serve():
 
 
 def test_one_session_for_whole_run_and_closed_after(monkeypatch):
+    monkeypatch.setenv("SSRF_ALLOWED_HOSTS", "127.0.0.1")  # local fixture server (#682)
     created: list[aiohttp.ClientSession] = []
     real = aiohttp.ClientSession
 
@@ -89,4 +90,5 @@ def test_connector_limit_matches_concurrency():
         finally:
             await sess.close()
 
-    assert asyncio.run(scenario()) == (7, 7)
+    # limit = worker concurrency (#200); per host = the per-host cap (#195, default 4)
+    assert asyncio.run(scenario()) == (7, s2.DEFAULT_STAGE2_PER_HOST_CONCURRENCY)
