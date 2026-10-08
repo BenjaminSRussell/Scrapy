@@ -52,6 +52,26 @@ data:
               service: 'pipeline'
               component: 'metrics'
 
+{{- if .Values.workerMetrics.enabled }}
+{{- range $stage := list "stage2" "stage3" }}
+{{- if (index $root.Values (printf "%sWorker" $stage)).enabled }}
+      # #789: one target per worker pod via the headless Service.
+      - job_name: '{{ $stage }}_worker'
+        metrics_path: {{ $root.Values.workerMetrics.path | quote }}
+        dns_sd_configs:
+          - names:
+              - '{{ $fullname }}-{{ $stage }}-metrics.{{ $root.Release.Namespace }}.svc'
+            type: A
+            port: {{ $root.Values.workerMetrics.port }}
+        relabel_configs:
+          - target_label: service
+            replacement: '{{ $stage }}'
+          - target_label: component
+            replacement: 'worker'
+
+{{- end }}
+{{- end }}
+{{- end }}
       - job_name: 'redis'
         static_configs:
           - targets:
