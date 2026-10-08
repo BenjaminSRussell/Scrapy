@@ -7,6 +7,7 @@ from collections import Counter as TallyCounter
 from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Any
+from urllib.parse import urljoin
 
 import aiohttp
 import pyarrow as pa
@@ -16,6 +17,7 @@ from deltalake import DeltaTable
 from src.core.config import get_config, stage2_quality_thresholds, stage_worker_settings
 from src.core.constants import TABLE_STAGE2_ERRORS
 from src.utils.delta import get_delta
+from src.utils.ssrf import SSRFBlocked, count_blocked, ssrf_block_reason
 from src.utils.soft_ban import DomainBackoff, SoftBanDetector, count_deferred, count_soft_ban, domain_of
 from src.utils.postgres import get_postgres_manager
 from src.utils.retry import CircuitBreaker
@@ -220,6 +222,8 @@ def _is_terminal_error(row: dict[str, Any]) -> bool:
     """Errors that retrying cannot fix: bad URLs and 4xx other than 408/429."""
     if row.get("error_message") == "invalid_url":
         return True
+    if str(row.get("error_message") or "").startswith("ssrf_blocked:"):
+        return True  # policy refusal (#682): retrying cannot make it safe
     if str(row.get("error_message") or "").startswith(SOFT_BAN_PREFIX):
         return False  # soft ban/captcha (#582): retry after backoff, up to max_retries
     code = int(row.get("error_code") or 0)
@@ -421,6 +425,11 @@ class Stage2Worker:
         prior_failures = self._load_prior_failures()
 
         for i in range(0, len(pending), self.batch_size):
+            stop = self._crawl_guard_reason()
+            if stop:
+                # #456: stop starting new batches; remaining URLs stay pending.
+                logger.critical(f"[STAGE2] Crawl guard engaged ({stop}); leaving {len(pending) - i} URLs pending")
+                break
             batch = pending[i : i + self.batch_size]
             logger.info(f"Processing batch {i // self.batch_size + 1}: {len(batch)} URLs")
 
@@ -612,6 +621,50 @@ class Stage2Worker:
             .execute()
         )
 
+    MAX_REDIRECTS = 10
+    REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
+
+    async def _get_guarded(self, session: Any, url: str) -> Any:
+        """GET following redirects by hand so every hop passes the SSRF guard
+        *before* a connection is made (#682). aiohttp's own
+        ``allow_redirects=True`` would follow a public URL into 169.254.169.254
+        or an in-cluster service unchecked."""
+        current = url
+        for _ in range(self.MAX_REDIRECTS + 1):
+            reason = ssrf_block_reason(current)
+            if reason is not None:
+                raise SSRFBlocked(current, reason)
+            response = await session.get(current, allow_redirects=False)
+            location = response.headers.get("Location")
+            if response.status in self.REDIRECT_STATUSES and location:
+                response.release()
+                current = urljoin(str(response.url), location)
+                continue
+            return response
+        raise SSRFBlocked(current, "too_many_redirects")
+
+    def _crawl_guard(self) -> Any:
+        guard = getattr(self, "_crawl_guard_obj", None)
+        if guard is None:
+            from src.utils.crawl_guard import CrawlGuard
+
+            guard = self._crawl_guard_obj = CrawlGuard.from_config()
+        return guard
+
+    def _crawl_guard_reason(self) -> str | None:
+        try:
+            reason: str | None = self._crawl_guard().block_reason(stage="stage2")
+            return reason
+        except Exception as e:  # guard must never take Stage 2 down
+            logger.warning(f"[STAGE2] crawl guard check failed: {e}")
+            return None
+
+    def _crawl_guard_charge(self) -> None:
+        try:
+            self._crawl_guard().charge(requests=1)
+        except Exception as e:
+            logger.warning(f"[STAGE2] crawl guard charge failed: {e}")
+
     async def _analyze_url(self, record: dict[str, Any]) -> dict[str, Any]:
         url_value = record.get("url")
         url_hash_value = record.get("url_hash")
@@ -636,6 +689,10 @@ class Stage2Worker:
             if backoff.blocked(domain):
                 count_deferred("stage2")
                 return {"url": url, "url_hash": url_hash, "_deferred": True}
+            if self._crawl_guard_reason():
+                # Kill switch / spent budget (#456): not attempted, not a failure.
+                return {"url": url, "url_hash": url_hash, "_deferred": True}
+            self._crawl_guard_charge()
             breaker = self._breaker(domain)
             if not breaker.can_execute():
                 # Host keeps failing: leave the row pending instead of burning attempts.
@@ -682,6 +739,10 @@ class Stage2Worker:
             retry_after: float | None = None
             try:
                 result = await self._fetch_once(session, url, url_hash, is_heavy, domain)
+            except SSRFBlocked as blocked:  # policy, not a transient failure: never retried
+                count_blocked("stage2", blocked.reason)
+                logger.warning(f"[STAGE2] SSRF guard blocked {blocked.url} ({blocked.reason})")
+                return self._error_record(url, url_hash, 0, f"ssrf_blocked:{blocked.reason}")
             except TransientHTTPError as e:
                 code, message, reason, retry_after = e.status, "http_error", f"http_{e.status}", e.retry_after
                 exc_type, exc_text = "HTTPError", str(e)
@@ -718,7 +779,8 @@ class Stage2Worker:
         self, session: aiohttp.ClientSession, url: str, url_hash: str, is_heavy: bool, domain: str
     ) -> dict[str, Any]:
         """One GET. Raises TransientHTTPError / TimeoutError / ClientError for the retry loop."""
-        async with session.get(url, allow_redirects=True) as response:
+        response = await self._get_guarded(session, url)  # #682: every hop SSRF-checked
+        async with response:
             if response.status >= 400:
                 body = ""
                 if response.status in (403, 503):
@@ -1025,4 +1087,7 @@ async def run_stage2_worker():
             await asyncio.sleep(10)
 
 if __name__ == "__main__":
+    from src.utils.worker_metrics import start_worker_metrics_server
+
+    start_worker_metrics_server("stage2")  # #789
     asyncio.run(run_stage2_worker())

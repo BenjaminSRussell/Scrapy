@@ -2,7 +2,7 @@
 # ==================================================================
 # Entrypoint for Metrics Exporter Service
 # ==================================================================
-set -e
+set -euo pipefail  # project standard (#822): scripts/SHELL_STANDARD.md
 
 # Display startup banner
 echo "==============================================="
@@ -21,7 +21,7 @@ echo "==============================================="
 echo "Configuration:"
 echo "  REDIS_HOST: ${REDIS_HOST}"
 echo "  REDIS_PORT: ${REDIS_PORT}"
-echo "  PYTHONPATH: ${PYTHONPATH}"
+echo "  PYTHONPATH: ${PYTHONPATH:-}"
 echo "==============================================="
 
 # Wait for Redis to be ready
@@ -34,7 +34,7 @@ echo "Redis is ready!"
 
 echo "==============================================="
 echo "Starting metrics exporter..."
-echo "Command: $@"
+echo "Command: $*"
 echo "==============================================="
 
 # Execute the provided command with exec to ensure proper signal handling

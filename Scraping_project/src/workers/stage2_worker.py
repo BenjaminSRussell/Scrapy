@@ -7,7 +7,9 @@ def main() -> None:
     import asyncio
 
     from src.stage2.stage2_worker import run_stage2_worker
+    from src.utils.worker_metrics import start_worker_metrics_server
 
+    start_worker_metrics_server("stage2")  # #789
     asyncio.run(run_stage2_worker())
 
 

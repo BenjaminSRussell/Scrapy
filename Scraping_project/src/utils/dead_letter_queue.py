@@ -62,7 +62,9 @@ class DeadLetterQueue:
         error_info: Dict[str, Any] = {
             "type": type(error).__name__,
             "message": str(error),
-            "traceback": traceback.format_exc()
+            # The error's own traceback: format_exc() is "NoneType: None" when
+            # add() is called outside the except block that caught it (#258).
+            "traceback": "".join(traceback.format_exception(type(error), error, error.__traceback__)),
         }
 
         # Add Pipeline exception details if available
@@ -90,10 +92,17 @@ class DeadLetterQueue:
         entry_id = self._generate_entry_id(stage)
         file_path = self.base_path / f"{entry_id}.json"
 
-        # Write to file
+        # Serialize first (datetimes, bytes, sets... become strings instead of
+        # aborting the write), then write atomically: a crash mid-write must not
+        # leave a truncated entry that list/stats/replay can't parse (#258).
         try:
-            with open(file_path, 'w') as f:
-                json.dump(dlq_entry, f, indent=2)
+            payload = json.dumps(dlq_entry, indent=2, default=str)
+            tmp_path = file_path.with_suffix(".json.tmp")
+            with open(tmp_path, 'w') as f:
+                f.write(payload)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp_path, file_path)
 
             logger.error(
                 f"Added item to DLQ: {entry_id} | "

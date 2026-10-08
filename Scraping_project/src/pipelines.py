@@ -734,6 +734,16 @@ class QueueItemPipeline(_TimedFlushMixin):
         target_spider = item.get("target_spider")
         target_stage = item.get("target_stage")
 
+        if target_spider == "javascript" or target_stage == "stage2":
+            from src.utils.ssrf import count_blocked, ssrf_block_reason
+
+            reason = ssrf_block_reason(str(item.get("url") or ""))
+            if reason is not None:  # never queue an SSRF-like target (#682)
+                self.ssrf_dropped = getattr(self, "ssrf_dropped", 0) + 1
+                count_blocked("queue", reason)
+                logger.warning(f"[QUEUE] Not queueing {item.get('url')!r}: ssrf_blocked:{reason}")
+                return item
+
         # Copy: later pipelines (Metadata, Recency) mutate the item in place and
         # must not add columns to the queued row before the batch flushes.
         if target_spider == "javascript":

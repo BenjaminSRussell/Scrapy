@@ -324,9 +324,8 @@ class SitemapParser:
                     changefreq = url_elem.find(f"{ns}changefreq")
 
                     if lastmod is not None or priority is not None:
-                        priority_value = (
-                            float(priority.text) if priority is not None and priority.text is not None else None
-                        )
+                        # #234: a junk <priority> must not discard the whole urlset.
+                        priority_value = self._parse_priority(priority.text if priority is not None else None)
                         metadata = {
                             "url": url,
                             "lastmod": lastmod.text if lastmod is not None else None,
@@ -346,6 +345,17 @@ class SitemapParser:
                 urls[line] = None
 
         return list(urls)
+
+    @staticmethod
+    def _parse_priority(text: str | None) -> float | None:
+        """Sitemap <priority> as a float in [0, 1], or None when absent/invalid."""
+        if text is None:
+            return None
+        try:
+            value = float(text.strip())
+        except ValueError:
+            return None
+        return value if 0.0 <= value <= 1.0 else None
 
 class SitemapIntegration:
 
