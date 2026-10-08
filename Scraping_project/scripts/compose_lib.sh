@@ -27,8 +27,12 @@ compose_services() {
 }
 
 # compose_has SERVICE : exit 0 if SERVICE is defined.
+# Captures first: callers run under pipefail (#822), where `cmd | grep -q` can fail
+# on SIGPIPE once grep exits early. Sourced library: sets no shell options itself.
 compose_has() {
-    compose_services | grep -qx -- "$1"
+    local services
+    services="$(compose_services)" || return 1
+    grep -qx -- "$1" <<<"$services"
 }
 
 # compose_filter SERVICE... : print (space separated) the services that exist,
