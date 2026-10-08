@@ -6,7 +6,7 @@
 # with standardized naming: scraping-pipeline-*
 # ==================================================================
 
-set -e
+set -euo pipefail  # project bash standard (scripts/README.md, #822)
 
 # Colors
 RED='\033[0;31m'
@@ -80,7 +80,7 @@ echo ""
 print_step "Step 2: Uninstalling old release '${OLD_RELEASE_NAME}'..."
 echo "=========================================="
 
-if helm list -n "$NAMESPACE" | grep -q "^${OLD_RELEASE_NAME}"; then
+if helm list -n "$NAMESPACE" | grep "^${OLD_RELEASE_NAME}" >/dev/null; then  # not -q: SIGPIPE under pipefail
     print_info "Uninstalling Helm release '${OLD_RELEASE_NAME}'..."
     helm uninstall "$OLD_RELEASE_NAME" -n "$NAMESPACE" || print_warning "Failed to uninstall cleanly"
     print_info "Waiting for resources to be cleaned up..."

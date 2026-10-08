@@ -450,3 +450,21 @@ For issues or questions:
 ---
 
 **Remember**: Always run diagnostics first! 🔍
+
+## Bash script standard (#822)
+
+Supported project scripts (everything except `temp_scripts/`, which is unsupported) start with:
+
+```bash
+#!/usr/bin/env bash          # or #!/bin/bash
+set -euo pipefail            # scripts that change state: reset, deploy, rebuild, entrypoints
+```
+
+- **Diagnostics** (`diagnose.sh`, `scripts/diagnose_issues.sh`) use `set -uo pipefail` with **no `-e`**. They must report every check and never stop halfway. Guard `cd` with `|| exit 1`.
+- **Libraries that are sourced** (`scripts/compose_lib.sh`) set no options. They must not change the caller's options, but must work under the caller's `set -euo pipefail`.
+- Pitfalls under strict mode:
+  - Optional env vars: use `${VAR:-}`.
+  - Don't write `producer | grep -q` (pipefail plus SIGPIPE can report a false "no match"). Use `grep -q PAT <<<"$out"` or `grep PAT >/dev/null`.
+  - Add `|| true` to pipelines whose `grep` may legitimately match nothing.
+  - Use `${arr[@]+"${arr[@]}"}` / `${arr[*]:-}` for arrays that may be empty (bash 3.2 on macOS treats an empty array as unbound).
+- `tests/unit/test_shell_strict_mode.py` enforces the headers.

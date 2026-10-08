@@ -6,13 +6,14 @@
 # Kafka, and pipeline stages
 # ==================================================================
 
-set -e
+# Diagnostic: report every check, never abort halfway, so no -e (#822).
+set -uo pipefail
 
 # Service names come from the active Compose file (#326): checks for services
 # the file does not define (Kafka/exporters live in the full-stack compose,
 # see #145) are reported as skipped instead of as failures.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR/.."
+cd "$SCRIPT_DIR/.." || exit 1
 . "$SCRIPT_DIR/compose_lib.sh"
 
 echo "=========================================="
@@ -59,9 +60,9 @@ if [ "$ENV_TYPE" = "docker" ]; then
     APP_SERVICE="$(compose_first scraper scrapy-app || true)"
     read -r -a SERVICES <<< "$(compose_filter redis postgres zookeeper kafka prometheus prometheus-a grafana)"
 
-    for service in "${SERVICES[@]}"; do
-        if compose ps | grep "$service" | grep -q "Up"; then
-            if compose ps | grep "$service" | grep -q "healthy"; then
+    for service in ${SERVICES[@]+"${SERVICES[@]}"}; do  # empty-safe under set -u (bash 3.2)
+        if compose ps | grep "$service" | grep "Up" >/dev/null; then
+            if compose ps | grep "$service" | grep "healthy" >/dev/null; then
                 print_ok "${service}: Running and Healthy"
             else
                 print_warning "${service}: Running but not healthy"
@@ -123,18 +124,18 @@ if [ "$ENV_TYPE" = "docker" ]; then
     print_section "Grafana Configuration"
 
     # Check Grafana datasources
-    if compose ps | grep grafana | grep -q "Up"; then
+    if compose ps | grep grafana | grep "Up" >/dev/null; then
         print_info "Checking Grafana datasources..."
 
         DATASOURCES=$(curl -s -u admin:admin http://localhost:3000/api/datasources 2>/dev/null || echo "[]")
 
-        if echo "$DATASOURCES" | grep -q "prometheus"; then
+        if grep -q "prometheus" <<<"$DATASOURCES"; then
             print_ok "Prometheus datasource configured"
         else
             print_warning "Prometheus datasource not found"
         fi
 
-        if echo "$DATASOURCES" | grep -q "postgres"; then
+        if grep -q "postgres" <<<"$DATASOURCES"; then
             print_ok "PostgreSQL datasource configured"
         else
             print_warning "PostgreSQL datasource not found"
@@ -145,8 +146,8 @@ if [ "$ENV_TYPE" = "docker" ]; then
 
     read -r -a STAGE_SERVICES <<< "$(compose_filter ${APP_SERVICE} stage1-worker stage2-worker stage3-worker stage4-worker)"
 
-    for stage in "${STAGE_SERVICES[@]}"; do
-        if compose ps | grep "$stage" | grep -q "Up"; then
+    for stage in ${STAGE_SERVICES[@]+"${STAGE_SERVICES[@]}"}; do
+        if compose ps | grep "$stage" | grep "Up" >/dev/null; then
             print_ok "${stage}: Running"
 
             # Check logs for errors
@@ -163,7 +164,7 @@ if [ "$ENV_TYPE" = "docker" ]; then
 
     if ! compose_has kafka; then
         print_info "Kafka is not part of this Compose file (full stack: see #145); skipping"
-    elif compose ps | grep kafka | grep -q "Up"; then
+    elif compose ps | grep kafka | grep "Up" >/dev/null; then
         print_ok "Kafka broker is running"
 
         # Test Kafka connectivity
@@ -227,7 +228,7 @@ elif [ "$ENV_TYPE" = "kubernetes" ]; then
     if command -v helm &> /dev/null; then
         helm list -n "$NAMESPACE"
 
-        if helm list -n "$NAMESPACE" | grep -q "coco"; then
+        if helm list -n "$NAMESPACE" | grep "coco" >/dev/null; then
             print_warning "Found 'coco' Helm release - should be removed"
         fi
     else
@@ -267,7 +268,7 @@ elif [ "$ENV_TYPE" = "kubernetes" ]; then
     print_section "Recent Pod Errors"
 
     print_info "Checking pod logs for errors..."
-    kubectl get pods -n "$NAMESPACE" --no-headers 2>/dev/null | awk '{print $1}' | while read pod; do
+    kubectl get pods -n "$NAMESPACE" --no-headers 2>/dev/null | awk '{print $1}' | while read -r pod; do
         ERROR_COUNT=$(kubectl logs "$pod" -n "$NAMESPACE" --tail=50 2>/dev/null | grep -i "error\|exception\|failed" | wc -l || echo "0")
         if [ "$ERROR_COUNT" -gt 5 ]; then
             print_warning "${pod}: ${ERROR_COUNT} errors in recent logs"

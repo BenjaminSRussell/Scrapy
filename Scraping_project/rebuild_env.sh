@@ -6,7 +6,7 @@
 # Usage: ./rebuild_env.sh [docker|k8s|both]
 # ==================================================================
 
-set -e
+set -euo pipefail  # project bash standard (scripts/README.md, #822)
 
 # Colors
 RED='\033[0;31m'
@@ -93,9 +93,11 @@ if [ "$MODE" = "docker" ] || [ "$MODE" = "both" ]; then
     print_info "Services stopped"
 
     print_step "Step 2: Removing all volumes..."
-    docker volume ls --format "{{.Name}}" | grep -E "scraping|grafana|prometheus|kafka|redis|postgres|zookeeper|delta" | while read vol; do
+    # `|| true`: no matching volume makes grep exit 1, which pipefail would turn
+    # into an abort of the whole rebuild.
+    docker volume ls --format "{{.Name}}" | grep -E "scraping|grafana|prometheus|kafka|redis|postgres|zookeeper|delta" | while read -r vol; do
         docker volume rm "$vol" 2>/dev/null && print_info "Removed $vol" || true
-    done
+    done || true
 
     print_step "Step 3: Cleaning up old images..."
     read -p "Remove and rebuild all images? (yes/no): " REBUILD_IMAGES
@@ -224,7 +226,7 @@ if [ "$MODE" = "k8s" ] || [ "$MODE" = "both" ]; then
     NAMESPACE="default"
 
     print_step "Step 1: Removing old 'coco' release..."
-    if helm list -n "$NAMESPACE" | grep -q "^${OLD_RELEASE}"; then
+    if helm list -n "$NAMESPACE" | grep "^${OLD_RELEASE}" >/dev/null; then  # not -q: SIGPIPE under pipefail
         helm uninstall "$OLD_RELEASE" -n "$NAMESPACE" || true
         print_info "Old release uninstalled"
         sleep 10

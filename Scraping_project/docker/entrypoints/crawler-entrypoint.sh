@@ -3,7 +3,7 @@
 # Entrypoint for Scrapy Crawler Services
 # Used by: scrapy-app, stage2-worker, stage3-worker
 # ==================================================================
-set -e
+set -euo pipefail  # project bash standard (scripts/README.md, #822)
 
 # Display startup banner
 echo "==============================================="
@@ -82,7 +82,7 @@ fi
 
 echo "==============================================="
 echo "Starting application..."
-echo "Command: $@"
+echo "Command: $*"
 echo "==============================================="
 
 # Execute the provided command with exec to ensure proper signal handling

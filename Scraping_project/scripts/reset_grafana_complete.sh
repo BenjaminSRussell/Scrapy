@@ -8,7 +8,7 @@
 # 3. Recreating with admin/admin credentials
 # ==================================================================
 
-set -e
+set -euo pipefail  # project bash standard (scripts/README.md, #822)
 
 echo "=========================================="
 echo "  Grafana Complete Reset Script"
@@ -144,7 +144,7 @@ if [ "$ENV_TYPE" = "docker" ]; then
 
     # Wait for health check
     for i in {1..30}; do
-        if docker-compose ps | grep grafana | grep -q "healthy"; then
+        if docker-compose ps | grep grafana | grep "healthy" >/dev/null; then
             print_info "Grafana is healthy!"
             break
         fi

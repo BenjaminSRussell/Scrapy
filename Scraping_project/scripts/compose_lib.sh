@@ -7,6 +7,10 @@
 # Service discovery is `docker compose config --services`, so profiles and
 # override files (COMPOSE_FILE / COMPOSE_PROFILES) are honoured automatically.
 # Tests (and dry runs without Docker) can set COMPOSE_SERVICES="a b c" instead.
+#
+# Library: sets no shell options (it must not change the caller's), but every
+# function is safe under the caller's `set -euo pipefail` (#822), including
+# bash 3.2 (macOS) empty-array rules.
 
 # compose ARGS... : `docker compose` (v2) when available, else legacy `docker-compose`.
 compose() {
@@ -28,7 +32,11 @@ compose_services() {
 
 # compose_has SERVICE : exit 0 if SERVICE is defined.
 compose_has() {
-    compose_services | grep -qx -- "$1"
+    # Here-string, not `compose_services | grep -q`: under pipefail, grep -q
+    # exiting on the first match can SIGPIPE the producer and report "missing".
+    local defined
+    defined="$(compose_services)"
+    grep -qx -- "$1" <<<"$defined"
 }
 
 # compose_filter SERVICE... : print (space separated) the services that exist,
@@ -47,7 +55,7 @@ compose_filter() {
         echo "[compose] not defined in this Compose file, skipping: ${missing[*]}" \
              "(the Kafka/exporter stack needs the full-stack compose, see #145)" >&2
     fi
-    echo "${present[*]}"
+    echo "${present[*]:-}"  # empty array: no "unbound variable" under set -u (bash 3.2)
 }
 
 # compose_first SERVICE... : print the first service that exists (fallback chains
