@@ -291,17 +291,18 @@ GRAFANA_ADMIN_PASSWORD=admin
 
 ### Docker Compose:
 
+Published by `docker-compose.yml` (the Kafka, Alertmanager and
+metrics-exporter services run only in the Helm chart):
+
 | Service | Port | URL |
 |---------|------|-----|
 | Grafana | 3000 | http://localhost:3000 |
-| Prometheus A | 9091 | http://localhost:9091 |
-| Prometheus B | 9097 | http://localhost:9097 |
-| Alertmanager 1 | 9093 | http://localhost:9093 |
-| Metrics Exporter | 9090 | http://localhost:9090/metrics |
+| Prometheus | 9090 | http://localhost:9090 (targets: http://localhost:9090/targets) |
 | Redis | 6379 | `localhost:6379` (`REDIS_HOST`/`REDIS_PORT`/`REDIS_PASSWORD`, see README "Redis connection contract") |
 | PostgreSQL | 5432 | postgres://localhost:5432 |
-| Kafka | 9092 | kafka://localhost:9092 |
-| Kafka External | 9094 | kafka://localhost:9094 |
+
+`redis-exporter` (9121) and `postgres-exporter` (9187) are reachable only
+inside the compose network, where Prometheus scrapes them.
 
 ### Kubernetes:
 

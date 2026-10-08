@@ -627,6 +627,19 @@ Every append and overwrite reads the table's current schema from its `_delta_log
 - **Overwrite replaces rows, not the schema (#509).** `mode="overwrite"` goes through the same cast and additive path and commits with `schema_mode="merge"`. Columns that other writers evolved survive, null in the new rows.
 - **Breaking changes** (renames, type narrowing, dropping columns) are never implicit. Rewrite the table deliberately with `write(..., mode="overwrite", schema_overwrite=True)`. That write is always synchronous, logged as `[SCHEMA OVERWRITE]`, and counted in `delta_schema_overwrites_total{table}`.
 
+### Bronze record contract (#227, #302)
+
+Crawl items are validated once against `src/schemas.py` `BaseRecordSchema` (by `SchemaValidationPipeline`) and again by kafka-delta-ingest. Both enforce the same required list: `BRONZE_REQUIRED_FIELDS` in Python and `REQUIRED_INGEST_FIELDS` in `kafka-delta-ingest/src/main.rs`. `tests/unit/test_bronze_schema_contract.py` fails if they diverge.
+
+| Field | Bronze | Notes |
+|---|---|---|
+| `url`, `scraped_at_utc`, `spider_name` | required | `scraped_at_utc` and `spider_name` are stamped before validation if the spider didn't set them |
+| `source_url` | optional | defaults to `url` |
+| `title`, `content`, `publication_date` | optional | a page with no extractable title or date is still crawl data |
+| costs, `category_*`, `entity_id`, `recency_score` | optional | still validated when present (non-negative costs, totals add up, confidence in [0, 1]) |
+
+Silver and analytics consumers that need `publication_date` filter on it or backfill it there. Ordering and partitioning fall back to `scraped_at_utc`; the Delta `date` partition is derived from it. Items accepted without a date are counted in `scrapy_items_missing_publication_date_total{spider}`. Drops are counted in `scrapy_schema_validation_drops_total{spider,field}` and published to `validation_failures`.
+
 ### Type-Safe Operations
 
 ```python
