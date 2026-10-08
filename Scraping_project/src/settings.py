@@ -321,5 +321,9 @@ ASR_MAX_WORKERS = _scrapy_config.get("asr_max_workers", 4)
 
 ASR_ENABLED = _scrapy_config.get("asr_enabled", False)
 
+# Speech-to-text backend: none (default, no egress) | google (uploads audio to
+# Google, explicit opt-in) | whisper (local). $ASR_PROVIDER overrides config (#429).
+ASR_PROVIDER = os.environ.get("ASR_PROVIDER") or _scrapy_config.get("asr_provider", "none")
+
 # Note: The system uses multiple Kafka topics for architectural decoupling.
 # Prefer kafka.topics.* in config.yml (or scrapy.kafka_topic) over ad-hoc defaults.
