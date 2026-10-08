@@ -96,22 +96,25 @@ def test_duplicate_queue_rows_processed_once(tmp_path):
 
 
 def test_analysis_table_is_fallback_for_unqueued_docs_only(tmp_path):
-    proc = FakeProcessor(texts={"q": "x", "legacy.pdf": "y"}, summaries={"q": "s", "legacy.pdf": "t"})
+    # stage2_page_analysis is domain-partitioned, so rows need real URLs: rows
+    # without a host are quarantined to delta_unknown_domain (#458).
+    q, legacy = "https://docs.example.edu/q", "https://docs.example.edu/legacy.pdf"
+    proc = FakeProcessor(texts={q: "x", legacy: "y"}, summaries={q: "s", legacy: "t"})
     w = _worker(tmp_path, proc)
-    _queue(w.delta, "q")
+    _queue(w.delta, q)
     w.delta.write(
         "stage2_page_analysis",
         [
-            {"url": "q", "is_massive_doc": True, "has_error": False},
-            {"url": "legacy.pdf", "is_massive_doc": True, "has_error": False},
-            {"url": "small", "is_massive_doc": False, "has_error": False},
-            {"url": "broken", "is_massive_doc": True, "has_error": True},
+            {"url": q, "is_massive_doc": True, "has_error": False},
+            {"url": legacy, "is_massive_doc": True, "has_error": False},
+            {"url": "https://docs.example.edu/small", "is_massive_doc": False, "has_error": False},
+            {"url": "https://docs.example.edu/broken", "is_massive_doc": True, "has_error": True},
         ],
         mode="append", async_write=False,
     )
     assert asyncio.run(w._run_traced()) == 2
-    assert sorted(proc.fetched) == [("legacy.pdf", True), ("q", False)]
-    assert _statuses(w.delta) == {"q": "completed"}  # fallback docs never enter the queue
+    assert sorted(proc.fetched) == [(legacy, True), (q, False)]
+    assert _statuses(w.delta) == {q: "completed"}  # fallback docs never enter the queue
 
     proc.fetched.clear()
     assert asyncio.run(w._run_traced()) == 0  # legacy deduped via summaries table
