@@ -268,6 +268,40 @@ groups:
           impact: "Medium - Ingestion performance degraded"
           action: "Check Delta Lake storage performance and network"
 
+      # Consecutive Delta write failures in the Rust ingest (#535). main.rs
+      # retries each batch with backoff (1s..30s), never commits Kafka offsets
+      # for an unwritten batch (#282), and exits after --max-write-attempts so
+      # the pod restarts and re-consumes. Failures with no successful batch in
+      # the window mean the lake is rejecting writes and ingest is stalled or
+      # crash-looping, even if consumer lag looks flat between restarts.
+      - alert: KafkaIngestConsecutiveWriteFailures
+        expr: |
+          sum(increase(kafka_delta_ingest_write_failures_total[10m])) >= 3
+            unless sum(increase(kafka_delta_ingest_batches_written_total[10m])) > 0
+        for: 5m
+        labels:
+          severity: warning
+          component: ingestor
+        annotations:
+          summary: "kafka-delta-ingest: Delta writes failing with no successful batch for 10m"
+          description: "{{ $value }} write attempts failed in the last 10m and no batch committed. Offsets are held (at-least-once), so data is safe in Kafka, but nothing is reaching the lake."
+          impact: "High - Ingest stalled; the process exits after max write attempts and restarts"
+          action: "Check ingestor logs for 'Failed to write batch', Delta storage credentials/permissions/capacity, and table schema drift"
+
+      - alert: KafkaIngestWriteFailuresSustained
+        expr: |
+          sum(increase(kafka_delta_ingest_write_failures_total[30m])) >= 10
+            unless sum(increase(kafka_delta_ingest_batches_written_total[30m])) > 0
+        for: 10m
+        labels:
+          severity: critical
+          component: ingestor
+        annotations:
+          summary: "kafka-delta-ingest: no successful Delta write for 30m+"
+          description: "{{ $value }} failed write attempts in 30m and zero committed batches. Kafka retention is now the only buffer."
+          impact: "Critical - Data loss once Kafka retention expires"
+          action: "Page the on-call: fix Delta storage, or pause producers before retention runs out"
+
   # ============================================
   # Lakehouse (Python writer) durability (#225, #167)
   # ============================================
