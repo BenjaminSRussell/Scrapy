@@ -8,19 +8,91 @@ Consolidated from:
 Provides unified configuration access with YAML file support and sensible defaults.
 """
 
-from pathlib import Path
-from typing import Any, Optional
-import yaml
+import copy
 import logging
 import os
+import threading
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Optional
+
+import yaml
 
 logger = logging.getLogger(__name__)
 
+try:
+    from prometheus_client import Counter, Gauge
+
+    CONFIG_GENERATION = Gauge(
+        "scrapy_config_generation",
+        "Generation number of the live config snapshot (bumps on every successful load/reload/set)",
+    )
+    CONFIG_RELOAD_FAILURES = Counter(
+        "scrapy_config_reload_failures_total",
+        "Config reloads rejected because the file could not be parsed; the previous snapshot stayed live",
+    )
+except Exception:  # prometheus_client missing or metric already registered
+    CONFIG_GENERATION = None
+    CONFIG_RELOAD_FAILURES = None
+
+
+def _lookup(data: dict, key: str, default: Any) -> Any:
+    value: Any = data
+    for k in key.split('.'):
+        if isinstance(value, dict) and k in value:
+            value = value[k]
+        else:
+            return default
+    if value is None:
+        return default
+    # Containers are copied so a caller can never mutate a shared snapshot.
+    return copy.deepcopy(value) if isinstance(value, (dict, list)) else value
+
+
+@dataclass(frozen=True)
+class ConfigSnapshot:
+    """One immutable generation of configuration (#590).
+
+    Every value read from a snapshot comes from the same load, so reading
+    several related keys (say ``redis.host`` and ``redis.password``) from one
+    snapshot can never mix an old value with a new one, even while another
+    thread reloads.
+    """
+
+    generation: int
+    data: dict
+
+    def get(self, key: str, default: Any = None) -> Any:
+        return _lookup(self.data, key, default)
+
+    def get_section(self, section: str) -> dict:
+        section_config = self.data.get(section, {})
+        return copy.deepcopy(section_config) if isinstance(section_config, dict) else {}
+
 
 class Config:
-    """Global configuration manager with singleton pattern."""
+    """Global configuration manager with singleton pattern.
+
+    Reload semantics (#590):
+
+    * The live configuration is an immutable :class:`ConfigSnapshot`. ``load()``,
+      ``reload()`` and ``set()`` build a complete new snapshot and swap it in
+      with one reference assignment under a lock. A reader sees the old
+      snapshot or the new one, never a mix.
+    * Each swap bumps ``generation``, which is exported as the
+      ``scrapy_config_generation`` gauge.
+    * Reads that must agree with each other should use one ``snapshot()``.
+      Separate ``get()`` calls may straddle a reload.
+    * A reload that cannot parse the file (for example, one that's
+      half-written) keeps the previous snapshot live, returns False, and
+      counts ``scrapy_config_reload_failures_total``. Only the very first load
+      falls back to defaults.
+    * Values handed out by ``get()``/``get_section()``/``get_raw_config()``
+      are copies; mutating them doesn't change the live config. Use ``set()``.
+    """
 
     _instance: Optional['Config'] = None
+    _instance_lock = threading.Lock()
 
     def __init__(self, config_path: Optional[Path] = None):
         """
@@ -34,23 +106,88 @@ class Config:
             config_path = project_root / "config.yml"
 
         self.config_path = Path(config_path)
-        self._config: dict = {}
+        self._lock = threading.RLock()
+        self._snapshot: Optional[ConfigSnapshot] = None
         self.load()
 
-    def load(self) -> None:
-        """Load configuration from YAML file."""
-        if not self.config_path.exists():
-            logger.warning(f"Config file not found: {self.config_path}, using defaults")
-            self._config = self._default_config()
-            return
+    # ------------------------------------------------------------ snapshots
+    def snapshot(self) -> ConfigSnapshot:
+        """The current generation, for reads that must be consistent."""
+        snap = self._snapshot
+        assert snap is not None
+        return snap
 
-        try:
-            with open(self.config_path) as f:
-                self._config = yaml.safe_load(f) or {}
-            logger.info(f"Configuration loaded from {self.config_path}")
-        except Exception as e:
-            logger.error(f"Failed to load config: {e}, using defaults")
-            self._config = self._default_config()
+    @property
+    def generation(self) -> int:
+        return self.snapshot().generation
+
+    @property
+    def _config(self) -> dict:
+        """Backward-compatible view of the live data (a copy)."""
+        return copy.deepcopy(self.snapshot().data)
+
+    def _swap(self, data: dict) -> ConfigSnapshot:
+        with self._lock:
+            previous = self._snapshot
+            snap = ConfigSnapshot(
+                generation=(previous.generation + 1) if previous else 1,
+                data=data,
+            )
+            self._snapshot = snap
+        if CONFIG_GENERATION is not None:
+            CONFIG_GENERATION.set(snap.generation)
+        return snap
+
+    # ---------------------------------------------------------------- load
+    def _read_file(self) -> dict:
+        with open(self.config_path) as f:
+            loaded = yaml.safe_load(f)
+        if loaded is None:
+            return {}
+        if not isinstance(loaded, dict):
+            raise ValueError(f"top level of {self.config_path} is {type(loaded).__name__}, not a mapping")
+        return loaded
+
+    def load(self) -> bool:
+        """Load configuration from YAML file and swap it in atomically.
+
+        Returns True when a new snapshot went live. On a parse failure after
+        the first load, the previous snapshot is kept and False is returned.
+        """
+        # One loader at a time, so two concurrent reloads can't interleave;
+        # readers never take this lock.
+        with self._lock:
+            if not self.config_path.exists():
+                if self._snapshot is not None:
+                    logger.error(
+                        "Config file %s disappeared; keeping generation %d",
+                        self.config_path, self._snapshot.generation,
+                    )
+                    if CONFIG_RELOAD_FAILURES is not None:
+                        CONFIG_RELOAD_FAILURES.inc()
+                    return False
+                logger.warning(f"Config file not found: {self.config_path}, using defaults")
+                self._swap(self._default_config())
+                return True
+
+            try:
+                data = self._read_file()
+            except Exception as e:
+                if self._snapshot is not None:
+                    logger.error(
+                        "Config reload from %s failed (%s); keeping generation %d",
+                        self.config_path, e, self._snapshot.generation,
+                    )
+                    if CONFIG_RELOAD_FAILURES is not None:
+                        CONFIG_RELOAD_FAILURES.inc()
+                    return False
+                logger.error(f"Failed to load config: {e}, using defaults")
+                self._swap(self._default_config())
+                return True
+
+            snap = self._swap(data)
+            logger.info(f"Configuration loaded from {self.config_path} (generation {snap.generation})")
+            return True
 
     def _default_config(self) -> dict:
         """Default configuration."""
@@ -97,59 +234,43 @@ class Config:
             config = get_config()
             redis_host = config.get("redis.host", "localhost")
         """
-        keys = key.split('.')
-        value = self._config
-
-        for k in keys:
-            if isinstance(value, dict) and k in value:
-                value = value[k]
-            else:
-                return default
-
-        return value if value is not None else default
+        return self.snapshot().get(key, default)
 
     def set(self, key: str, value: Any) -> None:
         """
         Set config value by dot notation key.
 
-        Args:
-            key: Dot-notation key (e.g., "redis.host")
-            value: Value to set
+        Copy-on-write: a new snapshot is built and swapped in, so readers
+        never see a partially applied change.
 
         Example:
             config = get_config()
             config.set("redis.host", "redis.example.com")
         """
         keys = key.split('.')
-        config = self._config
-
-        for k in keys[:-1]:
-            if k not in config:
-                config[k] = {}
-            config = config[k]
-
-        config[keys[-1]] = value
+        with self._lock:
+            data = copy.deepcopy(self.snapshot().data)
+            node = data
+            for k in keys[:-1]:
+                if not isinstance(node.get(k), dict):
+                    node[k] = {}
+                node = node[k]
+            node[keys[-1]] = value
+            self._swap(data)
 
     def get_section(self, section: str) -> dict:
         """
-        Get entire config section.
-
-        Args:
-            section: Section name
-
-        Returns:
-            Dictionary of section config
+        Get entire config section (a copy).
 
         Example:
             config = get_config()
             redis_config = config.get_section("redis")
         """
-        section_config: dict = self._config.get(section, {})
-        return section_config
+        return self.snapshot().get_section(section)
 
-    def reload(self) -> None:
-        """Reload configuration from file."""
-        self.load()
+    def reload(self) -> bool:
+        """Reload configuration from file. See the class docstring for semantics."""
+        return self.load()
 
     @classmethod
     def get_instance(cls, config_path: Optional[Path] = None) -> 'Config':
@@ -163,21 +284,25 @@ class Config:
             Config instance
         """
         if cls._instance is None:
-            cls._instance = cls(config_path)
+            with cls._instance_lock:
+                if cls._instance is None:
+                    cls._instance = cls(config_path)
         return cls._instance
 
     @classmethod
     def reset_instance(cls) -> None:
         """Reset singleton instance (useful for testing)."""
-        cls._instance = None
+        with cls._instance_lock:
+            cls._instance = None
 
     def get_raw_config(self) -> dict:
-        """Get raw config dictionary."""
-        return self._config.copy()
+        """Get raw config dictionary (a deep copy of the live snapshot)."""
+        return copy.deepcopy(self.snapshot().data)
 
 
 # Global singleton
 _config_instance: Optional[Config] = None
+_config_instance_lock = threading.Lock()
 
 
 def get_config(config_path: Optional[Path] = None) -> Config:
@@ -201,14 +326,17 @@ def get_config(config_path: Optional[Path] = None) -> Config:
     """
     global _config_instance
     if _config_instance is None:
-        _config_instance = Config(config_path)
+        with _config_instance_lock:
+            if _config_instance is None:
+                _config_instance = Config(config_path)
     return _config_instance
 
 
 def reset_config():
     """Reset global config instance (useful for testing)."""
     global _config_instance
-    _config_instance = None
+    with _config_instance_lock:
+        _config_instance = None
     Config.reset_instance()
 
 

@@ -235,6 +235,17 @@ Edit [`config.yml`](config.yml) — the single source of truth loaded by
 `src.core.config.get_config()` and used by Scrapy settings (`src/settings.py`).
 Do not rely on `config/{ENV}.yml` (not present for normal operation).
 
+### Config reload semantics
+
+`src/core/config.py` keeps the live configuration as an immutable, versioned snapshot (#590):
+
+- `load()`, `reload()` and `set()` build a complete new snapshot and swap it in atomically. A reader sees the old generation or the new one, never a mix, such as a new Redis host with the old password.
+- Each swap bumps `Config.generation`, exported as the `scrapy_config_generation` gauge.
+- When several keys have to agree, read them from one snapshot: `snap = get_config().snapshot(); snap.get("redis.host"); snap.get("redis.password")`. Separate `get()` calls may straddle a reload.
+- A reload that can't parse the file (half-written, not a mapping, or missing) keeps the previous snapshot, returns `False`, and increments `scrapy_config_reload_failures_total`. Only the very first load falls back to built-in defaults.
+- `get()`, `get_section()` and `get_raw_config()` return copies; mutating them doesn't change the live config. Use `set()`.
+- Write config files atomically (write a temp file, then `os.replace`) so a reload never sees a partial file.
+
 ### Environment Variables
 
 ```bash
