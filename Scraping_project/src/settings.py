@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from src.core.config import Config, get_config
+from src.core.tls_policy import downloader_context_factory
 
 ENV = os.getenv("ENV", "development")
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -94,6 +95,10 @@ USER_AGENT = _scrapy_config.get("user_agent", "UConn-Discovery-Crawler/1.0")
 CONCURRENT_REQUESTS = _scrapy_config.get("concurrent_requests", 64)
 CONCURRENT_REQUESTS_PER_DOMAIN = _scrapy_config.get("concurrent_requests_per_domain", 32)
 CONCURRENT_REQUESTS_PER_IP = _scrapy_config.get("concurrent_requests_per_ip", 32)
+
+# Verify TLS certificates (#584). Scrapy's default context factory accepts any
+# certificate; see src/core/tls_policy.py for the gated override.
+DOWNLOADER_CLIENTCONTEXTFACTORY = downloader_context_factory()
 
 DOWNLOAD_DELAY = _scrapy_config.get("download_delay", 0.1)
 DOWNLOAD_TIMEOUT = _scrapy_config.get("download_timeout", 10)
