@@ -11,6 +11,9 @@ import scrapy
 from scrapy.http import Response
 
 from src.core.config import get_config
+import os
+
+from src.stage1.experimental.playwright_guard import PageLedger
 from src.stage1.processors.js_priority_queue import JSPriorityQueue
 from src.stage1.processors.url_processor import URLProcessor
 from src.stage1.middlewares.spider_config import get_spider_settings
@@ -35,6 +38,11 @@ class JavaScriptSpider(scrapy.Spider):
             "headless": True,
             "timeout": 30000,
         },
+        # #452: hard caps enforced by scrapy-playwright (semaphores). When
+        # saturated, new renders wait instead of spawning more Chromium state.
+        "PLAYWRIGHT_MAX_CONTEXTS": int(os.getenv("PLAYWRIGHT_MAX_CONTEXTS", "4")),
+        "PLAYWRIGHT_MAX_PAGES_PER_CONTEXT": int(os.getenv("PLAYWRIGHT_MAX_PAGES_PER_CONTEXT", "8")),
+        "PLAYWRIGHT_DEFAULT_NAVIGATION_TIMEOUT": 30000,
         "CONCURRENT_REQUESTS": 20,
         "CONCURRENT_REQUESTS_PER_DOMAIN": 10,
         "DOWNLOAD_TIMEOUT": 60,
@@ -64,6 +72,7 @@ class JavaScriptSpider(scrapy.Spider):
         self.start_urls = self._load_js_queue()
 
         self.rendered_count = 0
+        self.page_ledger = PageLedger()
         self.completed_urls = []
         self.priority_stats = {
             "critical": 0,
@@ -156,23 +165,37 @@ class JavaScriptSpider(scrapy.Spider):
                 },
             )
 
+    def _ledger(self) -> PageLedger:
+        if getattr(self, "page_ledger", None) is None:
+            self.page_ledger = PageLedger()
+        return self.page_ledger
+
     async def parse(self, response: Response) -> AsyncGenerator[dict[str, Any], None]:
         url = response.url
 
         page = response.meta.get("playwright_page")
+        ledger = self._ledger()
+        ledger.acquired(page)
         intercepted_urls: list[str] = []
 
-        if page:
-            await self._setup_resource_blocking(page)
+        # #452: all page work happens inside try/finally and the page is closed
+        # *before* the first yield, so neither an exception mid-render nor an
+        # abandoned generator can leak it.
+        try:
+            if page:
+                # Listen before scrolling so XHRs triggered by scrolling are captured.
+                page.on("response", lambda resp: self._handle_response(resp, intercepted_urls))
 
-            await self._simulate_scrolling(page)
+                await self._setup_resource_blocking(page)
 
-            page.on("response", lambda resp: self._handle_response(resp, intercepted_urls))
+                await self._simulate_scrolling(page)
 
-        discovered_urls = self._extract_urls_from_rendered_html(response)
+            discovered_urls = self._extract_urls_from_rendered_html(response)
 
-        if page and intercepted_urls:
-            discovered_urls.extend(intercepted_urls)
+            if page and intercepted_urls:
+                discovered_urls.extend(intercepted_urls)
+        finally:
+            await ledger.release(page, "parse")
 
         discovered_urls = list(set(discovered_urls))
 
@@ -200,9 +223,6 @@ class JavaScriptSpider(scrapy.Spider):
 
         self.rendered_count += 1
         self.completed_urls.append(url)
-
-        if page:
-            await page.close()
 
     async def _setup_resource_blocking(self, page):
 
@@ -302,12 +322,17 @@ class JavaScriptSpider(scrapy.Spider):
         except Exception as e:
             logger.error(f"[JS_SPIDER] Failed to add URLs via SeedManager: {e}", exc_info=True)
 
-    def handle_error(self, failure):
+    async def handle_error(self, failure):
         logger.error(f"[JAVASCRIPT] Rendering failed: {failure.getErrorMessage()} for {failure.request.url[:80]}")
+        # #452: a failed request may still carry an open page.
+        await self._ledger().release_from_failure(failure)
 
     def closed(self, reason):
         logger.info(f"[JAVASCRIPT] Spider closing: {reason}")
         logger.info(f"[JAVASCRIPT] Rendered {self.rendered_count} pages successfully")
+        leaked = self._ledger().open_count
+        if leaked:
+            logger.warning(f"[JAVASCRIPT] {leaked} Playwright pages still open at close (leak)")
 
         if self.completed_urls:
             try:
