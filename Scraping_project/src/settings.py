@@ -239,8 +239,14 @@ EXTENSIONS = _scrapy_config.get(
         "src.otel_tracing.OtelTracingExtension": 510,
         # No-op (NotConfigured) unless HTTPCACHE_ENABLED (#496).
         "src.stage1.extensions.httpcache_quota.HttpCacheQuota": 520,
+        # #539: drain gracefully before the container's cgroup OOM killer.
+        "src.memory_soft_stop.MemorySoftStop": 530,
     },
 )
+MEMORY_SOFT_STOP_ENABLED = True
+MEMORY_SOFT_STOP_FRACTION = float(os.getenv("MEMORY_SOFT_STOP_FRACTION", "0.85"))
+MEMORY_SOFT_STOP_INTERVAL = 5.0
+MEMORY_SOFT_STOP_LIMIT_MB = int(os.getenv("MEMORY_SOFT_STOP_LIMIT_MB", "0"))
 
 # ============================================================================
 # ============================================================================

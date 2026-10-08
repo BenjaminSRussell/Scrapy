@@ -120,6 +120,36 @@ Configure in GitHub repository settings:
 - `DOCKER_PASSWORD` - Docker Hub password
 - `KUBE_CONFIG` - Kubernetes config file
 
+## Stopping: infrastructure teardown vs. process drain
+
+There are two different "shutdowns". Don't mix them up.
+
+| | What it does | Entry point |
+|---|---|---|
+| **Infrastructure teardown** | Stops/removes the Compose stack or uninstalls the Helm release (optionally pruning volumes). | `python shutdown.py` (repo root) |
+| **Process drain** | One worker process reacting to SIGTERM/SIGINT: finish the work in flight, flush, exit 0. | `src/utils/graceful_shutdown.py` |
+
+Process drain (#183, #185, #325), as used by the continuous Stage 2/3/4 workers:
+
+1. The first SIGTERM/SIGINT sets a drain flag. The worker **schedules no new
+   batch** (Stage 2/3) or document (Stage 4) after that.
+2. The batch already in flight finishes. Its rows are written to Delta and its
+   queue rows are acked (`completed`/`failed`); unstarted URLs stay `pending`
+   for the next replica. The idle sleep between runs is cut short.
+3. The process exits **0**. At exit, `LakehouseManager.shutdown()` drains the
+   async Delta write queue (#166).
+4. If the drain takes longer than `WORKER_SHUTDOWN_TIMEOUT` seconds (default
+   100), the process force-exits with status 1. A second signal forces exit
+   immediately (status 128 + signal).
+
+Keep `WORKER_SHUTDOWN_TIMEOUT` below the orchestrator's kill deadline: Helm
+`terminationGracePeriodSeconds` is 120, the raw `k8s/deployment.yaml` uses 60,
+and Docker Compose's default `stop_grace_period` is only 10 s (set it per service
+if batches are long). A process that only uses `LakehouseManager` (a script, no
+drain loop) still flushes and exits 0 on the first signal. Under Scrapy
+(Stage 1) the manager leaves Scrapy's own graceful-stop handler in place and
+flushes at interpreter exit.
+
 ## Troubleshooting
 
 ### Worker Not Starting
