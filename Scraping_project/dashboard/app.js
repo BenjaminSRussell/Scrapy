@@ -122,6 +122,7 @@ function initializeCharts() {
         options: {
             responsive: true,
             maintainAspectRatio: false,
+            onResize: (chart, size) => applyDoughnutLegend(chart, size.width),
             plugins: {
                 legend: {
                     display: false,
@@ -131,6 +132,7 @@ function initializeCharts() {
             }
         }
     });
+    applyDoughnutLegend(charts.routing, charts.routing.width);
 
     charts.urls = new Chart(document.getElementById('urls-chart'), {
         type: 'line',
@@ -314,6 +316,10 @@ function updateHistoricalData(metrics) {
     }
 
     updatePerformanceCharts();
+    // Leave the cold-chart state (#1076) on the first real sample. The helper
+    // existed but was never called, so legends/tooltips stayed off and the
+    // "Waiting for first metrics sample" placeholder never cleared (#977).
+    markChartsHaveSample();
 }
 
 function updatePerformanceCharts() {
@@ -782,6 +788,18 @@ function resetChartHistory() {
     if (live) live.textContent = 'Chart history reset';
 }
 
+
+function applyDoughnutLegend(chart, width) {
+    const legend = chart?.options?.plugins?.legend;
+    if (!legend) return;
+    const layout = doughnutLegendLayout(width);
+    const labels = legend.labels || {};
+    const same = legend.position === layout.position && labels.boxWidth === layout.labels.boxWidth;
+    if (same) return;
+    legend.position = layout.position;
+    legend.labels = Object.assign({}, labels, layout.labels);
+    try { chart.update('none'); } catch (_) {}
+}
 
 function markChartsHaveSample() {
     if (chartsHaveSample) return;

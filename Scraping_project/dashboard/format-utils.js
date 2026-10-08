@@ -51,5 +51,14 @@
         }
         return seen.size > 0 ? seen.size : null;
     }
-    return { parseMetrics, formatNumber, formatBytes, formatEpochTime, countLabelValues };
+    // Doughnut legend layout by canvas width (#977): beside the ring when the
+    // card is wide (a doughnut leaves horizontal space unused), compact labels
+    // underneath when narrow so the legend never clips or eats the ring.
+    function doughnutLegendLayout(width) {
+        if (Number(width) >= 480) {
+            return { position: 'right', labels: { boxWidth: 14, padding: 12, font: { size: 12 } } };
+        }
+        return { position: 'bottom', labels: { boxWidth: 10, padding: 6, font: { size: 11 } } };
+    }
+    return { parseMetrics, formatNumber, formatBytes, formatEpochTime, countLabelValues, doughnutLegendLayout };
 });
