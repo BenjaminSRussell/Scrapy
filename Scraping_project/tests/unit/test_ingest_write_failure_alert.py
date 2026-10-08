@@ -84,8 +84,11 @@ def test_write_failure_metric_is_emitted_on_each_failed_attempt():
 
 
 def test_specific_mappings_precede_the_catch_alls():
-    names = [m["match"] for m in yaml.safe_load(MAPPING.read_text())["mappings"]]
-    first_catch_all = min(i for i, n in enumerate(names) if n in (".*",) or n.startswith("ingestor.*"))
+    mappings = yaml.safe_load(MAPPING.read_text())["mappings"]
+    names = [m["match"] for m in mappings]
+    # Catch-alls are the regex mappings (the ".*" fallback was removed in #178).
+    first_catch_all = min((i for i, m in enumerate(mappings) if m.get("match_type") == "regex"),
+                          default=len(mappings))
     assert names.index("kafka_delta_ingest.errors.write_failed") < first_catch_all
     assert names.index("kafka_delta_ingest.errors.write_failed") < names.index("kafka_delta_ingest.errors.*")
 
