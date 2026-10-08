@@ -363,6 +363,9 @@
             margin-top: 1rem;
         }
 
+        /* Reserve one row so the first JS render does not shift layout (#978). */
+        .activity-feed:empty { min-height: 4.5rem; }
+
         .activity-feed {
             max-height: 400px;
             overflow-y: auto;
@@ -768,12 +771,8 @@
                         <div class="card-header">
                             <span class="card-title">Recent Activity</span>
                         </div>
-                        <div class="activity-feed" id="overview-activity">
-                            <div class="activity-item success">
-                                <div class="activity-timestamp">Just now</div>
-                                <div class="activity-message">Pipeline monitoring started</div>
-                            </div>
-                        </div>
+                        <!-- Rendered by app.js on init; no static seed (#978). -->
+                        <div class="activity-feed" id="overview-activity"></div>
                     </div>
                 </div>
             </div>
@@ -1099,12 +1098,8 @@
                             <button type="button" id="clear-activity" class="btn" aria-label="Clear activity log">Clear</button>
                         </div>
                     </div>
-                    <div class="activity-feed" id="activity-log" role="log" aria-live="polite">
-                        <div class="activity-item success">
-                            <div class="activity-timestamp">System initialized</div>
-                            <div class="activity-message">Pipeline Control Center started monitoring</div>
-                        </div>
-                    </div>
+                    <!-- Rendered by app.js on init; no static seed (#978). -->
+                    <div class="activity-feed" id="activity-log" role="log" aria-live="polite"></div>
                 </div>
             </div>
         </div>
