@@ -46,6 +46,12 @@ def test_cd_builds_matrix_target_and_smoke_tests_before_push():
     assert push.get("if") == "env.PUSH == 'true'"
 
 
+def test_cd_actions_are_real():
+    uses = {s["uses"].split("@")[0] for s in CD_JOB["steps"] if "uses" in s}
+    assert "anchore/syft-action" not in uses, "no such action; use anchore/sbom-action"
+    assert "anchore/sbom-action" in uses
+
+
 def test_cd_runs_on_prs_touching_the_image_recipe():
     triggers = CD[True]  # PyYAML parses the `on:` key as boolean True
     paths = triggers["pull_request"]["paths"]

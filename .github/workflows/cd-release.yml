@@ -101,13 +101,16 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=${{ matrix.image }}
 
+      # anchore/syft-action does not exist (the job failed at "Set up job");
+      # anchore/sbom-action is Anchore's Syft-based SBOM action.
       - name: Generate SBOM for ${{ matrix.image }} image
         if: env.PUSH == 'true'
-        uses: anchore/syft-action@v0
+        uses: anchore/sbom-action@v0
         with:
           image: ghcr.io/${{ github.repository }}/${{ matrix.image }}:${{ github.ref_name }}
           format: spdx-json
-          output: sbom-${{ matrix.image }}.spdx.json
+          output-file: sbom-${{ matrix.image }}.spdx.json
+          upload-artifact: false
 
       - name: Upload ${{ matrix.image }} SBOM
         if: env.PUSH == 'true'
