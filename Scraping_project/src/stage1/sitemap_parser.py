@@ -5,6 +5,8 @@ import gzip
 import logging
 import threading
 import xml.etree.ElementTree as ET
+import zlib
+from typing import Any
 
 from defusedxml import DefusedXmlException
 from defusedxml.ElementTree import fromstring as safe_fromstring
@@ -15,6 +17,82 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
+try:
+    from prometheus_client import Counter
+
+    SITEMAP_LIMIT_HITS: Any = Counter(
+        "sitemap_limit_hits_total",
+        "Sitemap walks cut short by a configured limit (#206)",
+        ["limit"],  # depth | urls | sitemaps | bytes
+    )
+    SITEMAP_URLS_DISCOVERED: Any = Counter(
+        "sitemap_urls_discovered_total", "URLs collected from sitemaps"
+    )
+    SITEMAP_FETCHES: Any = Counter(
+        "sitemap_fetches_total", "Sitemap documents fetched", ["kind"]  # index | urlset | error
+    )
+except (ImportError, ValueError):  # no prometheus_client, or already registered
+    SITEMAP_LIMIT_HITS = SITEMAP_URLS_DISCOVERED = SITEMAP_FETCHES = None
+
+# Defaults follow the sitemaps.org protocol: <= 50,000 URLs and <= 50 MiB
+# (uncompressed) per sitemap file. A whole-site walk is capped so a huge or
+# hostile sitemap tree (or an index pointing at itself) cannot exhaust memory.
+DEFAULT_SITEMAP_LIMITS = {
+    "max_depth": 5,
+    "max_urls": 50_000,
+    "max_sitemaps": 500,
+    "max_bytes": 50 * 1024 * 1024,
+}
+
+
+def sitemap_limits(config: Any = None) -> dict[str, int]:
+    """Walk limits from ``stage1.sitemap.*`` (or ``stages.stage1.sitemap.*``)."""
+    limits = dict(DEFAULT_SITEMAP_LIMITS)
+    if config is None:
+        try:
+            from src.core.config import get_config
+
+            config = get_config()
+        except Exception:  # config is optional for this module
+            return limits
+    for key in limits:
+        for prefix in ("stage1.sitemap", "stages.stage1.sitemap"):
+            try:
+                value = config.get(f"{prefix}.{key}")
+            except Exception:
+                value = None
+            if value is None:
+                continue
+            try:
+                parsed = int(value)
+            except (TypeError, ValueError):
+                logger.warning(f"Ignoring invalid {prefix}.{key}={value!r}")
+                continue
+            if parsed >= 0:
+                limits[key] = parsed
+                break
+    return limits
+
+
+def _count(metric: Any, amount: int = 1, **labels: str) -> None:
+    if metric is None or amount <= 0:
+        return
+    (metric.labels(**labels) if labels else metric).inc(amount)
+
+
+class SitemapTooLarge(ValueError):
+    """Decompressed sitemap exceeded ``max_bytes``."""
+
+
+def bounded_gunzip(content: bytes, max_bytes: int) -> bytes:
+    """gunzip that refuses to inflate past ``max_bytes`` (gzip-bomb guard)."""
+    inflater = zlib.decompressobj(16 + zlib.MAX_WBITS)
+    out = inflater.decompress(content, max_bytes + 1)
+    if len(out) > max_bytes or inflater.unconsumed_tail:
+        raise SitemapTooLarge(f"decompressed sitemap exceeds {max_bytes} bytes")
+    return out
+
+
 class SitemapParser:
 
     NAMESPACES = {
@@ -24,10 +102,25 @@ class SitemapParser:
         "video": "http://www.google.com/schemas/sitemap-video/1.1",
     }
 
-    def __init__(self, base_url: str, timeout: int = 30, max_depth: int = 5):
+    def __init__(
+        self,
+        base_url: str,
+        timeout: int = 30,
+        max_depth: int | None = None,
+        max_urls: int | None = None,
+        max_sitemaps: int | None = None,
+        max_bytes: int | None = None,
+    ):
+        """Walk limits default to config ``stage1.sitemap.*`` (see sitemap_limits)."""
+        limits = sitemap_limits()
         self.base_url = base_url
         self.timeout = timeout
-        self.max_depth = max_depth
+        self.max_depth = limits["max_depth"] if max_depth is None else max_depth
+        self.max_urls = limits["max_urls"] if max_urls is None else max_urls
+        self.max_sitemaps = limits["max_sitemaps"] if max_sitemaps is None else max_sitemaps
+        self.max_bytes = limits["max_bytes"] if max_bytes is None else max_bytes
+        self.limits_hit: set[str] = set()
+        self.stats: dict[str, int] = {"indexes": 0, "urlsets": 0, "skipped_depth": 0, "skipped_cap": 0}
         self.visited_sitemaps: set[str] = set()
         self.discovered_urls: set[str] = set()
 
@@ -59,30 +152,45 @@ class SitemapParser:
         sitemap_url: str,
         depth: int = 0,
     ):
-        """Walk a sitemap (and any nested indexes) while honoring depth."""
+        """Walk a sitemap (and any nested indexes) while honoring depth and caps."""
         if depth > self.max_depth:
-            logger.warning(f"Max sitemap depth reached: {sitemap_url}")
+            self.stats["skipped_depth"] += 1
+            self._limit_hit("depth", f"Max sitemap depth {self.max_depth} reached: {sitemap_url}")
             return
 
         if sitemap_url in self.visited_sitemaps:
+            return
+
+        if self._urls_full():
+            return
+
+        if len(self.visited_sitemaps) >= self.max_sitemaps:
+            self.stats["skipped_cap"] += 1
+            self._limit_hit("sitemaps", f"Sitemap fetch cap {self.max_sitemaps} reached; skipping {sitemap_url}")
             return
 
         self.visited_sitemaps.add(sitemap_url)
 
         try:
             logger.info(f"Parsing sitemap (depth={depth}): {sitemap_url}")
-            response = await client.get(sitemap_url)
+            response, content = await self._fetch(client, sitemap_url)
 
             if response.status_code != 200:
                 logger.warning(f"Sitemap returned {response.status_code}: {sitemap_url}")
                 return
 
-            content = response.content
-            if sitemap_url.endswith(".gz") or response.headers.get("content-encoding") == "gzip":
+            if content is None:
+                self._limit_hit("bytes", f"Sitemap larger than {self.max_bytes} bytes skipped: {sitemap_url}")
+                return
+            if content[:2] == b"\x1f\x8b":
+                # Still gzipped (a .gz file, or httpx left it encoded).
                 try:
-                    content = gzip.decompress(content)
+                    content = bounded_gunzip(content, self.max_bytes)
                     logger.debug(f"Decompressed gzipped sitemap: {sitemap_url}")
-                except Exception as e:
+                except SitemapTooLarge:
+                    self._limit_hit("bytes", f"Sitemap inflates past {self.max_bytes} bytes; skipped: {sitemap_url}")
+                    return
+                except (zlib.error, gzip.BadGzipFile, EOFError) as e:
                     logger.warning(f"Failed to decompress sitemap: {sitemap_url} - {e}")
                     return
 
@@ -93,15 +201,23 @@ class SitemapParser:
 
                 if self._is_sitemap_index(root):
                     logger.info(f"Found sitemap index: {sitemap_url}")
+                    self.stats["indexes"] += 1
+                    _count(SITEMAP_FETCHES, kind="index")
                     nested_sitemaps = self._extract_nested_sitemaps(root)
 
                     for nested_url in nested_sitemaps:
-                        await self._parse_sitemap_recursive(client, nested_url, depth + 1)
+                        if self._urls_full():
+                            break
+                        await self._parse_sitemap_recursive(
+                            client, urljoin(sitemap_url, nested_url), depth + 1
+                        )
 
                 else:
+                    self.stats["urlsets"] += 1
+                    _count(SITEMAP_FETCHES, kind="urlset")
                     urls = self._extract_urls_from_sitemap(root)
-                    self.discovered_urls.update(urls)
-                    logger.info(f"Extracted {len(urls)} URLs from {sitemap_url}")
+                    added = self._add_urls(urls)
+                    logger.info(f"Extracted {len(urls)} URLs from {sitemap_url} ({added} new)")
 
             except DefusedXmlException as e:
                 logger.warning(f"Rejected unsafe XML in sitemap {sitemap_url}: {e}")
@@ -113,7 +229,7 @@ class SitemapParser:
                     try:
                         text_content = content.decode("utf-8")
                         urls = self._extract_from_plain_text(text_content)
-                        self.discovered_urls.update(urls)
+                        self._add_urls(urls)
                         logger.info(f"Extracted {len(urls)} URLs from plain-text sitemap: {sitemap_url}")
                     except Exception as text_error:
                         logger.warning(f"Plain-text parsing also failed for {sitemap_url}: {text_error}")
@@ -121,7 +237,50 @@ class SitemapParser:
                     logger.warning(f"Failed to parse sitemap XML: {sitemap_url} - {e}")
 
         except Exception as e:
+            _count(SITEMAP_FETCHES, kind="error")
             logger.warning(f"Error processing sitemap: {sitemap_url} - {e}")
+
+    async def _fetch(self, client: httpx.AsyncClient, url: str) -> tuple[httpx.Response, bytes | None]:
+        """GET ``url``, reading at most ``max_bytes`` of (transport-decoded) body.
+
+        Streaming keeps a huge body, or a Content-Encoding: gzip bomb that
+        httpx would inflate, from being buffered whole. Returns
+        ``(response, None)`` when the body exceeds the cap.
+        """
+        async with client.stream("GET", url) as response:
+            if response.status_code != 200:
+                return response, b""
+            chunks: list[bytes] = []
+            size = 0
+            async for chunk in response.aiter_bytes():
+                size += len(chunk)
+                if size > self.max_bytes:
+                    return response, None
+                chunks.append(chunk)
+            return response, b"".join(chunks)
+
+    def _urls_full(self) -> bool:
+        return len(self.discovered_urls) >= self.max_urls
+
+    def _add_urls(self, urls: Any) -> int:
+        """Add URLs in document order up to ``max_urls``; returns how many were new."""
+        before = len(self.discovered_urls)
+        for url in urls:
+            if len(self.discovered_urls) >= self.max_urls:
+                self._limit_hit("urls", f"Sitemap URL cap {self.max_urls} reached; remaining URLs dropped")
+                break
+            self.discovered_urls.add(url)
+        added = len(self.discovered_urls) - before
+        _count(SITEMAP_URLS_DISCOVERED, added)
+        return added
+
+    def _limit_hit(self, limit: str, message: str) -> None:
+        _count(SITEMAP_LIMIT_HITS, limit=limit)
+        if limit not in self.limits_hit:
+            self.limits_hit.add(limit)
+            logger.warning(message)
+        else:
+            logger.debug(message)
 
     def _is_sitemap_index(self, root: ET.Element) -> bool:
         if root.tag.endswith("sitemapindex"):
@@ -149,15 +308,16 @@ class SitemapParser:
 
         return sitemaps
 
-    def _extract_urls_from_sitemap(self, root: ET.Element) -> set[str]:
-        urls = set()
+    def _extract_urls_from_sitemap(self, root: ET.Element) -> list[str]:
+        """URLs in document order (so the ``max_urls`` cap keeps the first ones)."""
+        urls: dict[str, None] = {}
 
         for ns in ["", "{http://www.sitemaps.org/schemas/sitemap/0.9}"]:
             for url_elem in root.findall(f"{ns}url"):
                 loc = url_elem.find(f"{ns}loc")
                 if loc is not None and loc.text:
                     url = loc.text.strip()
-                    urls.add(url)
+                    urls[url] = None
 
                     lastmod = url_elem.find(f"{ns}lastmod")
                     priority = url_elem.find(f"{ns}priority")
@@ -175,17 +335,17 @@ class SitemapParser:
                         }
                         logger.debug(f"URL metadata: {metadata}")
 
-        return urls
+        return list(urls)
 
-    def _extract_from_plain_text(self, text: str) -> set[str]:
-        urls = set()
+    def _extract_from_plain_text(self, text: str) -> list[str]:
+        urls: dict[str, None] = {}
 
         for line in text.split("\n"):
             line = line.strip()
             if line and (line.startswith("http://") or line.startswith("https://")):
-                urls.add(line)
+                urls[line] = None
 
-        return urls
+        return list(urls)
 
 class SitemapIntegration:
 
