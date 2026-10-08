@@ -114,14 +114,3 @@ scrape_configs:
         replacement: 'worker'
       - target_label: environment
         replacement: 'development'
-
-  # Scrape StatsD metrics (kafka-delta-ingest) - Real-time ingest metrics
-  - job_name: 'statsd'
-    scrape_interval: 30s  # OPTIMIZED: Reduced from 10s
-    scrape_timeout: 10s
-    static_configs:
-      - targets: ['statsd-exporter:9102']
-        labels:
-          service: 'ingestor'
-          component: 'metrics'
-          environment: 'development'
