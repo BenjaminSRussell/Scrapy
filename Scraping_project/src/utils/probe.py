@@ -9,6 +9,12 @@ Usage (exit code 0 = healthy, 1 = unhealthy)::
     python -m src.utils.probe alive <cmdline-substring>
     python -m src.utils.probe ready-redis            # REDIS_HOST / REDIS_PORT
     python -m src.utils.probe ready-tcp <host> <port>
+    python -m src.utils.probe container              # Docker HEALTHCHECK (#542)
+
+``container`` is unhealthy if PID 1 (the container's main process) is gone or
+a zombie; if ``REDIS_HOST`` is set and Redis does not answer PING; or if any
+``HEALTHCHECK_TCP=host:port[,host:port]`` dependency is unreachable. Set
+``HEALTHCHECK_REDIS=0`` to skip the Redis check.
 """
 
 from __future__ import annotations
@@ -72,6 +78,30 @@ def redis_ready(timeout: float = 3.0) -> bool:
     return reply.startswith(b"+PONG") or reply.startswith(b"-NOAUTH")
 
 
+def pid1_running(proc: Path = PROC) -> bool:
+    """PID 1 exists and is not a zombie/dead (``/proc/1/stat`` state field)."""
+    try:
+        stat = (proc / "1" / "stat").read_text()
+        state = stat.rsplit(")", 1)[1].split()[0]
+    except (OSError, IndexError):
+        return False
+    return state not in ("Z", "X", "x")
+
+
+def container_healthy(proc: Path = PROC, timeout: float = 3.0) -> tuple[bool, str]:
+    """Docker HEALTHCHECK: main process alive plus its configured dependencies."""
+    if not pid1_running(proc):
+        return False, "main process (PID 1) not running"
+    if os.getenv("REDIS_HOST") and os.getenv("HEALTHCHECK_REDIS", "1") != "0":
+        if not redis_ready(timeout=timeout):
+            return False, f"redis {os.getenv('REDIS_HOST')}:{os.getenv('REDIS_PORT', '6379')} not answering PING"
+    for dep in filter(None, (d.strip() for d in os.getenv("HEALTHCHECK_TCP", "").split(","))):
+        host, _, port = dep.rpartition(":")
+        if not host or not port.isdigit() or not tcp_ready(host, int(port), timeout=timeout):
+            return False, f"dependency {dep} unreachable"
+    return True, "ok"
+
+
 def main(argv: list[str] | None = None) -> int:
     args = sys.argv[1:] if argv is None else argv
     if len(args) == 2 and args[0] == "alive":
@@ -80,6 +110,10 @@ def main(argv: list[str] | None = None) -> int:
         ok = redis_ready()
     elif len(args) == 3 and args[0] == "ready-tcp":
         ok = tcp_ready(args[1], int(args[2]))
+    elif args == ["container"]:
+        ok, why = container_healthy()
+        if not ok:
+            print(f"unhealthy: {why}", file=sys.stderr)
     else:
         print(__doc__, file=sys.stderr)
         return 2

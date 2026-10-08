@@ -33,9 +33,10 @@ RUN useradd -m -u 1000 scraper && \
 
 USER scraper
 
-# Health check
+# Health check (#542): main process alive + Redis PING when REDIS_HOST is set
+# (+ any HEALTHCHECK_TCP=host:port deps). Fails -> container turns unhealthy.
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD python -c "import sys; sys.exit(0)"
+    CMD ["python", "-m", "src.utils.probe", "container"]
 
 # Default command
 CMD ["python", "-m", "src.main"]
