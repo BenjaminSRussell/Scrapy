@@ -62,6 +62,9 @@ class DeltaHelper:
         self.base_path.mkdir(parents=True, exist_ok=True)
         self.shared = shared
         self._manager: Optional["LakehouseManager"] = None
+        # The singleton this helper last attached to; any other non-None
+        # _manager was set explicitly (tests, tools) and is left alone.
+        self._attached: Optional["LakehouseManager"] = None
 
     @property
     def manager(self) -> "LakehouseManager":
@@ -69,13 +72,15 @@ class DeltaHelper:
         from src.lakehouse.lakehouse_manager import LakehouseManager
 
         if self.shared:
+            if self._manager is not None and self._manager is not self._attached:
+                return self._manager  # injected explicitly, or a private manager for another lake
             current = LakehouseManager._instance
             if current is not None and self._manager is current:
                 return current
             if current is None or _same_path(current.base_path, self.base_path):
                 # (Re)attach to the singleton, e.g. after lakehouse_session()
                 # reset it, so we never write through a shut-down manager.
-                self._manager = LakehouseManager.get_instance(base_path=str(self.base_path))
+                self._manager = self._attached = LakehouseManager.get_instance(base_path=str(self.base_path))
                 return self._manager
             if self._manager is None:
                 logger.warning(
