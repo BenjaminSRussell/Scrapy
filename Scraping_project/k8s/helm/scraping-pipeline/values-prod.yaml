@@ -62,6 +62,10 @@ networkPolicy:
 # REDIS_PASSWORD in redis-credentials. Do not set REDIS_URL.
 # Replace redis.example.edu and the documentation CIDR (TEST-NET-3, RFC 5737)
 # before install. NetworkPolicy is on above and cannot match a DNS name.
+# Queue and seen-set soft limits for this external server are the application
+# defaults documented on redis.capacity in values.yaml (queue depth 10000,
+# low watermark 8000, no seen-set member cap). See Scraping_project/docs/REDIS_CAPACITY.md
+# (#264). This overlay does not set those knobs and does not set REDIS_URL.
 redis:
   enabled: false
   external:

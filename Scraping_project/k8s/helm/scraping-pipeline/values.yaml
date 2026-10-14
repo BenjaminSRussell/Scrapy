@@ -75,6 +75,25 @@ redis:
     maxmemoryPolicy: "volatile-lru"
     appendonly: "yes"
 
+  # Capacity soft limits (#264). Documentation only. No template reads
+  # redis.capacity. These keys are not redis-server CONFIG, not process env,
+  # and not HPA. Do not point admit_enqueue, maxmemory, maxmemoryPolicy, or
+  # QueueBacklog at this block. Formulas: Scraping_project/docs/REDIS_CAPACITY.md
+  # (linked from DEPLOYMENT.md).
+  #
+  # Queue depth soft limit is the existing 10000: QueueBacklog
+  # (redis_queue_length > 10000) and REDIS_QUEUE_HIGH_WATERMARK.
+  # Low watermark stays 8000 (REDIS_QUEUE_LOW_WATERMARK).
+  # Seen-set keys stay site:{site_id}:{prefix}:urls. seenSetMemberCap is
+  # null on purpose: RedisHelper has no SCARD cap, and this file does not
+  # add one. The size soft limit is the existing RedisHighMemory line.
+  capacity:
+    queueDepthSoftLimit: 10000
+    queueDepthLowWatermark: 8000
+    seenSetKey: "site:{site_id}:{prefix}:urls"
+    seenSetMemberCap: null
+    seenSetSizeSoftLimit: "used_memory/maxmemory < 0.8 (RedisHighMemory); no SCARD cap"
+
 # ============================================
 # Stateful Services - PostgreSQL
 # ============================================

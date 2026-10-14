@@ -181,13 +181,26 @@ docker stats
 # Adjust memory limits in docker-compose.yml
 ```
 
+## Capacity
+
+Queue depth, seen-set memory, URLs/sec per replica, replicas per seed size, and Delta growth are formulas in [docs/REDIS_CAPACITY.md](docs/REDIS_CAPACITY.md) (#264). A measured URLs/sec, a measured bytes-per-million, and a Delta GB/day are not stated there, because they were not measured.
+
+Soft limits are documented on `redis.capacity` in `k8s/helm/scraping-pipeline/values.yaml` (not read by the chart):
+
+- Queue depth soft limit is the existing **10000** (`QueueBacklog` / `REDIS_QUEUE_HIGH_WATERMARK`). Low watermark stays **8000**.
+- Seen-set keys stay `site:{site_id}:{prefix}:urls`. There is no member-count cap. The size soft limit is the existing `RedisHighMemory` line (80% of `maxmemory`).
+
+Chart Redis stays one replica. Production keeps `redis.enabled: false` and `redis.external.host: redis.example.edu` (`values-prod.yaml`). Do not set `REDIS_URL`.
+
 ## Performance Tuning
 
 ### Redis Optimization
 
-- Adjust `maxmemory` based on available RAM
-- Use `allkeys-lru` eviction policy for caching
-- Enable AOF persistence for durability
+Use [docs/REDIS_CAPACITY.md](docs/REDIS_CAPACITY.md) to size `maxmemory` and the queue. Do not turn the formulas into a guessed bytes-per-million.
+
+- Chart and Compose `maxmemory` is `2gb`. Raise it from a measured `MEMORY USAGE`, not from a guessed constant.
+- Keep `volatile-lru`. Seen-sets and queues have no TTL. An `allkeys-*` policy, including `allkeys-lru`, evicts them and the crawl starts over (#161).
+- AOF is already on. It can recover data after the node returns, and it does not keep the queue available during node loss (#216).
 
 ### Worker Scaling
 
