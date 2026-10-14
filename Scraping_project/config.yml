@@ -275,6 +275,19 @@ stage4:
   max_workers: 1  # CPU-bound, keep low
 
 # ============================================
+# Carbon-aware scheduling hint (#769)
+# ============================================
+# Optional delay window for Stage 3 and Stage 4 batch windows. Default off.
+# carbon_scheduling.enabled turns the hint on only when it is boolean true.
+# 1, "true", "yes", and "on" do not. delay_window_minutes is optional and is
+# not applied. The reading is the local stub in src/stage3/carbon_hint.py
+# (fixed value, no network). Workers do not read this section, so a missing
+# reading cannot delay, skip, or reschedule a batch.
+carbon_scheduling:
+  enabled: false
+  delay_window_minutes: null
+
+# ============================================
 # Kafka Configuration
 # ============================================
 kafka:
