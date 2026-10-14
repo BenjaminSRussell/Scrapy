@@ -389,6 +389,63 @@
             default: return null;
         }
     }
+    // #1033: side panel for one pipeline stage. Metrics are a subset of the
+    // card (not every line). Job and queue hrefs are fragments only —
+    // those views do not exist yet (`placeholder: true`).
+    const STAGE_DRILLDOWNS = [
+        {
+            stage: 1,
+            title: 'URL Discovery',
+            metrics: [
+                { id: 'pipeline-s1-discovered', label: 'URLs Discovered' },
+                { id: 'pipeline-s1-queued', label: 'Queued for Stage 2' },
+            ],
+        },
+        {
+            stage: 2,
+            title: 'Page Analysis',
+            metrics: [
+                { id: 'pipeline-s2-analyzed', label: 'Pages Analyzed' },
+                { id: 'pipeline-s2-quality', label: 'Quality Documents' },
+            ],
+        },
+        {
+            stage: 3,
+            title: 'Summarization',
+            metrics: [
+                { id: 'pipeline-s3-summaries', label: 'Summaries Created' },
+                { id: 'pipeline-s3-rate', label: 'Processing Rate' },
+            ],
+        },
+        {
+            stage: 4,
+            title: 'Large Documents',
+            metrics: [
+                { id: 'pipeline-s4-summaries', label: 'Large Summaries' },
+                { id: 'pipeline-s4-rate', label: 'Processing Rate' },
+            ],
+        },
+    ];
+    function stageDrilldown(stage) {
+        const spec = STAGE_DRILLDOWNS.find(s => s.stage === Number(stage));
+        if (!spec) return null;
+        return {
+            stage: spec.stage,
+            title: spec.title,
+            metrics: spec.metrics.map(m => ({ id: m.id, label: m.label })),
+            links: [
+                { kind: 'jobs', label: `Stage ${spec.stage} jobs`, href: '#jobs', placeholder: true },
+                { kind: 'queue', label: `Stage ${spec.stage} queue`, href: '#queues', placeholder: true },
+            ],
+        };
+    }
+    // Enter/Space activate a stage card; Escape closes the panel. Other keys
+    // are left to the tab shortcuts.
+    function stageDrilldownKey(key) {
+        if (key === 'Enter' || key === ' ' || key === 'Spacebar') return 'activate';
+        if (key === 'Escape' || key === 'Esc') return 'close';
+        return null;
+    }
     // #351: data is stale once the last successful fetch is older than
     // `factor` refresh intervals (default 3; never before the first success,
     // which is "loading", not "stale"). Paused refresh is reported separately.
@@ -616,5 +673,5 @@
         table.appendChild(tbody);
         root.appendChild(table);
     }
-    return { tabKeyTarget, staleState, queueDepthRows, metricsFailureActivity, shortcutHintText, parseMetrics, ratePerMinute, resolveMetricsUrl, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler, stageActivity, doughnutLegendLayout, connectionState, documentTitle, createActivityAnnouncer, metricsUrlProblem, splitLinks, createMetricsFetcher, REFRESH_INTERVAL_CHOICES, parseRefreshInterval, shortcutAction, pickInitialTab, METRIC_UI_MAP, renderMetricNameMap, parseDangerSoundEnabled, dangerSoundDecision };
+    return { tabKeyTarget, staleState, queueDepthRows, metricsFailureActivity, shortcutHintText, parseMetrics, ratePerMinute, resolveMetricsUrl, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler, stageActivity, stageDrilldown, stageDrilldownKey, doughnutLegendLayout, connectionState, documentTitle, createActivityAnnouncer, metricsUrlProblem, splitLinks, createMetricsFetcher, REFRESH_INTERVAL_CHOICES, parseRefreshInterval, shortcutAction, pickInitialTab, METRIC_UI_MAP, renderMetricNameMap, parseDangerSoundEnabled, dangerSoundDecision };
 });
