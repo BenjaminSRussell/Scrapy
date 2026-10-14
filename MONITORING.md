@@ -26,7 +26,7 @@ Without this extra (or without `OTEL_EXPORTER_OTLP_ENDPOINT`), tracing soft-impo
 
    ```bash
    cd Scraping_project
-   docker compose -f docker-compose.yml -f docker-compose.observability.yml up -d
+   docker compose -f docker-compose.yml -f docker-compose.observability.yml --profile core --profile monitoring --profile observability up -d
    ```
 
    Containers on the stack reach the collector at `http://otel-collector:4317`;

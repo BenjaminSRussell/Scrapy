@@ -166,20 +166,20 @@ docker-build: ## Build Docker images
 	@echo "$(BLUE)Building Docker images...$(NC)"
 	$(COMPOSE) build --parallel
 
-docker-up: ## Start Docker services
+docker-up: ## Start core + monitoring Compose profiles (#145)
 	@echo "$(BLUE)Starting Docker services...$(NC)"
-	$(COMPOSE) up -d
+	COMPOSE_PROFILES=$${COMPOSE_PROFILES:-core,monitoring} $(COMPOSE) up -d
 	@echo "$(GREEN)✓ Services started$(NC)"
 	@echo "Run 'make docker-logs' to view logs"
 
-docker-down: ## Stop Docker services
+docker-down: ## Stop Docker services (every profile)
 	@echo "$(BLUE)Stopping Docker services...$(NC)"
-	$(COMPOSE) down
+	COMPOSE_PROFILES=core,monitoring,streaming,observability,ml,full $(COMPOSE) down
 	@echo "$(GREEN)✓ Services stopped$(NC)"
 
 docker-down-clean: ## Stop and remove volumes
 	@echo "$(YELLOW)Stopping services and removing volumes...$(NC)"
-	$(COMPOSE) down -v
+	COMPOSE_PROFILES=core,monitoring,streaming,observability,ml,full $(COMPOSE) down -v
 	@echo "$(GREEN)✓ Services and volumes removed$(NC)"
 
 docker-logs: ## View Docker logs

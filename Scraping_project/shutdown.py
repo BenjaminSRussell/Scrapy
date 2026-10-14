@@ -11,6 +11,7 @@ infrastructure teardown vs. process drain" (#183).
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
 import subprocess
 import sys
@@ -430,6 +431,13 @@ def shutdown_local(purge_data: bool, skip_images: bool) -> None:
 
     dc = compose_cmd()
     print(f"Stopping local environment with {' '.join(dc)} down...")
+    # `down` only removes services in enabled profiles. Cover every profile
+    # this repo defines so Stage 4, Kafka and the OTEL overlay stop too (#145).
+    chosen = [p.strip() for p in os.environ.get("COMPOSE_PROFILES", "").split(",") if p.strip()]
+    for name in ("core", "monitoring", "streaming", "observability", "ml", "full"):
+        if name not in chosen:
+            chosen.append(name)
+    os.environ["COMPOSE_PROFILES"] = ",".join(chosen)
     run_command((*dc, "down", "--remove-orphans"))
 
     print("Removing any leftover project containers...")

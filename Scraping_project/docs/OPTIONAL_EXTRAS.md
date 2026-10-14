@@ -25,13 +25,13 @@ make update-deps   # upgrade pins, including ML/OCR locks
 
 | Target | Contents | Compose |
 |--------|----------|---------|
-| `base` / `core` / `production` / `crawler` / `stage3` | core only | default (`scraper`, stage1–3) |
+| `base` / `core` / `production` / `crawler` / `stage3` | core only | profile `core` (`scraper`, stage1–3) |
 | `ml` / `stage4` | core + `requirements-ml.txt` + `requirements-ocr.txt` + poppler-utils | profiles `ml` or `full` (`stage4-worker`) |
 
 ```bash
-docker compose build core production stage3
+docker compose --profile core build
 docker compose --profile ml build stage4
-docker compose up -d                         # lean: no stage4
+docker compose --profile core up -d          # lean: no stage4
 docker compose --profile ml up -d stage4-worker
 ```
 

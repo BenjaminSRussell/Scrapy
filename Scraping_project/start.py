@@ -50,6 +50,7 @@ LOCAL_SERVICE_LABELS: dict[str, str] = {
     "postgres": "PostgreSQL",
     "prometheus": "Prometheus",
     "grafana": "Grafana",
+    "dashboard": "Ops dashboard",
 }
 # Readiness gate for local mode: the first of these that the Compose file defines.
 LOCAL_READINESS_CANDIDATES = ("postgres", "redis")
@@ -353,6 +354,9 @@ def start_local(args: argparse.Namespace) -> None:
     print(f"Starting local environment with {' '.join(compose())}...")
     if services:
         print(f"Compose services: {', '.join(services)}")
+    # core + monitoring (#145). Does not start Stage 4 (ml/full), Kafka
+    # (streaming) or the OTEL overlay. An explicit COMPOSE_PROFILES wins.
+    os.environ.setdefault("COMPOSE_PROFILES", "core,monitoring")
     run_command((*compose(), "up", "-d"))
 
     ready_service = first_defined(LOCAL_READINESS_CANDIDATES, services) if services else "postgres"

@@ -68,7 +68,8 @@ def test_start_local_with_current_compose(start, monkeypatch, capsys):
     assert "Compose services: " + ", ".join(SERVICES) in out
     for svc in SERVICES:
         assert f"docker-compose logs -f {svc}" in out
-    for absent in ("scrapy-app", "kafka"):
+    # kafka is a streaming-profile service (#145); scrapy-app is still not a compose service.
+    for absent in ("scrapy-app",):
         assert f"logs -f {absent}" not in out
     assert "9091" not in out and "9097" not in out
 

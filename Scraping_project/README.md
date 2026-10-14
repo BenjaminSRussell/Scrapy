@@ -693,7 +693,7 @@ docker-compose up -d
 under `./monitoring/`). There is no separate standalone production compose file:
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.observability.yml up -d
+docker compose -f docker-compose.yml -f docker-compose.observability.yml --profile core --profile monitoring --profile observability up -d
 ```
 
 See [../MONITORING.md](../MONITORING.md) for enabling OTEL traces.

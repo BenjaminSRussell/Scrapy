@@ -12,11 +12,11 @@ Run every command from `Scraping_project/`.
 
 ```bash
 cd Scraping_project
-python start.py                  # docker-compose up -d for every service, then waits for them
+python start.py                  # core + monitoring profiles, then waits for Postgres
 python start.py --reset-delta    # also reset the Delta tables and reload seeds from the seed CSV
 ```
 
-The Compose services are `scraper`, `stage1-worker` … `stage4-worker`, `redis`, `postgres`, `redis-exporter`, `postgres-exporter`, `prometheus` and `grafana`. `stage4-worker` is behind profiles `ml` and `full` (ML/OCR image, #144); `python start.py` brings up the lean stack and does not start it. Start it with `docker compose --profile ml up -d stage4-worker`. To start only some other services, use `docker-compose up -d <service>`. To stop everything, run `python shutdown.py`. On SIGTERM, `LakehouseManager` drains its Delta write queue before the process exits. For Kubernetes (`python start.py --env k8s --stage …`), see [DEPLOYMENT.md](../../DEPLOYMENT.md).
+Compose profiles (#145) are `core` (redis, scraper, stage 1–3 workers, Postgres), `monitoring` (Prometheus, Grafana, exporters, ops dashboard on port 8080), `streaming` (Kafka; Postgres is also on `core`) and `observability` (Loki / Jaeger / OTEL, overlay file). `stage4-worker` stays on profiles `ml` and `full` (ML/OCR image, #144), not `core`. `python start.py` enables `core` and `monitoring` only, so it does not start Stage 4, Kafka or the OTEL overlay. Start Stage 4 with `docker compose --profile ml up -d stage4-worker`. The same command shape with `--profile streaming` or `--profile observability` (and `-f docker-compose.observability.yml` for the overlay) opts into the rest. See [COMPOSE.md](../../COMPOSE.md). To stop everything, run `python shutdown.py`. On SIGTERM, `LakehouseManager` drains its Delta write queue before the process exits. For Kubernetes (`python start.py --env k8s --stage …`), see [DEPLOYMENT.md](../../DEPLOYMENT.md).
 
 ## Run the stages yourself (no Compose)
 
