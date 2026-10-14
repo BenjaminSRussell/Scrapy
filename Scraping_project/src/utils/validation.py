@@ -2,12 +2,18 @@
 Global validation utilities.
 
 Provides input validation functions used throughout the pipeline.
+``validate_startup_config`` schema-checks config.yml before CLI and
+orchestrator startup (#237).
 """
 
+from pathlib import Path
 from typing import Optional
 from urllib.parse import urlparse
 import re
 import logging
+
+import yaml
+from pydantic import BaseModel, ConfigDict, StrictBool, StrictInt, StrictStr, ValidationError, model_validator
 
 logger = logging.getLogger(__name__)
 
@@ -275,3 +281,147 @@ def extract_domain(url: str) -> str:
         return parsed.netloc.lower()
     except Exception:
         return ""
+
+
+# ---------------------------------------------------------------------------
+# config.yml schema (#237)
+# ---------------------------------------------------------------------------
+#
+# Redis and Kafka are strict: a wrong type (redis.port: "6379") or an unknown
+# key (a typo) fails startup. Every other top-level section is allowed through
+# so stage settings can grow without a schema edit. Dotted Kafka producer keys
+# are renamed before validation; unknown dotted keys are left as-is so
+# extra=forbid reports the typo.
+
+_PRODUCER_DOT_KEYS = {
+    "compression.type": "compression_type",
+    "enable.idempotence": "enable_idempotence",
+}
+
+_STRICT = ConfigDict(extra="forbid")
+
+
+class ConfigValidationError(ValueError):
+    """config.yml failed schema validation. ``str(error)`` lists field paths."""
+
+
+class RedisSection(BaseModel):
+    model_config = _STRICT
+    host: StrictStr
+    port: StrictInt
+    db: StrictInt
+    password: StrictStr | None = None
+    max_connections: StrictInt
+
+
+class PostgresSection(BaseModel):
+    model_config = _STRICT
+    host: StrictStr
+    port: StrictInt
+    database: StrictStr
+    user: StrictStr
+    password: StrictStr | None = None
+
+
+class KafkaTopicSettings(BaseModel):
+    """Per-topic create options. Only the keys present in config.yml are set."""
+
+    model_config = _STRICT
+    partitions: StrictInt | None = None
+    retention_ms: StrictInt | None = None
+    replication_factor: StrictInt | None = None
+
+
+class KafkaProducer(BaseModel):
+    model_config = _STRICT
+    compression_type: StrictStr
+    acks: StrictStr | StrictInt
+    enable_idempotence: StrictBool
+    retries: StrictInt
+
+    @model_validator(mode="before")
+    @classmethod
+    def _rename_dotted_keys(cls, data: object) -> object:
+        if not isinstance(data, dict):
+            return data
+        return {_PRODUCER_DOT_KEYS.get(str(key), key): value for key, value in data.items()}
+
+
+class KafkaConsumer(BaseModel):
+    model_config = _STRICT
+    group_id: StrictStr
+    auto_offset_reset: StrictStr
+    enable_auto_commit: StrictBool
+    auto_commit_interval_ms: StrictInt
+
+
+class KafkaSection(BaseModel):
+    model_config = _STRICT
+    bootstrap_servers: StrictStr
+    topics: dict[StrictStr, StrictStr]
+    topic_settings: dict[StrictStr, KafkaTopicSettings]
+    producer: KafkaProducer
+    consumer: KafkaConsumer
+    message_key_field: StrictStr
+    require_idempotence: StrictBool
+
+
+class PipelineConfig(BaseModel):
+    """Top-level config.yml. Unknown sections are ignored; redis and kafka are not."""
+
+    model_config = ConfigDict(extra="allow")
+    redis: RedisSection
+    kafka: KafkaSection
+    postgres: PostgresSection | None = None
+
+
+def default_config_path() -> Path:
+    """Scraping_project/config.yml, next to this package (not the process cwd)."""
+    return Path(__file__).resolve().parents[2] / "config.yml"
+
+
+def _field_path(loc: object) -> str:
+    if not isinstance(loc, tuple) or not loc:
+        return "<root>"
+    return ".".join(str(part) for part in loc)
+
+
+def _format_validation_error(exc: ValidationError) -> str:
+    lines = ["Invalid config.yml:"]
+    for err in exc.errors():
+        got = err.get("input")
+        lines.append(f"  {_field_path(err.get('loc'))}: {err.get('msg', 'invalid')} (got {type(got).__name__})")
+    return "\n".join(lines)
+
+
+def validate_config_document(data: object) -> None:
+    """Raise ``ConfigValidationError`` with field paths when ``data`` is not a valid config.yml.
+
+    Does not read the filesystem and does not apply defaults. A string ``redis.port``
+    fails; the shipped config.yml passes.
+    """
+    if not isinstance(data, dict):
+        raise ConfigValidationError(
+            f"Invalid config.yml:\n  <root>: top level must be a mapping (got {type(data).__name__})"
+        )
+    try:
+        PipelineConfig.model_validate(data)
+    except ValidationError as exc:
+        raise ConfigValidationError(_format_validation_error(exc)) from exc
+
+
+def validate_startup_config(path: Path | None = None) -> None:
+    """Validate config.yml before CLI or orchestrator startup (#237).
+
+    A missing file is left to ``src.core.config`` defaults (same as today).
+    A present file that does not match the schema raises ``ConfigValidationError``
+    instead of failing later inside a worker.
+    """
+    config_path = default_config_path() if path is None else Path(path)
+    if not config_path.is_file():
+        return
+    try:
+        loaded = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    except yaml.YAMLError as exc:
+        raise ConfigValidationError(f"Invalid config.yml:\n  <root>: YAML parse error ({exc})") from exc
+    validate_config_document(loaded)
