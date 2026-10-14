@@ -1,0 +1,113 @@
+{
+  "_comment": "Pinned ML models (#486). Regenerate with scripts/update_model_lock.py; verified by `python cli.py setup`.",
+  "models": [
+    {
+      "name": "stage3_summarizer",
+      "config_key": "stage3.model_name",
+      "repo_id": "sshleifer/distilbart-cnn-12-6",
+      "files": {
+        "config.json": {
+          "size": 1802,
+          "git_sha1": "fade82e22ec4f4b61f6f2eb3986ce4a64a8e23df"
+        },
+        "merges.txt": {
+          "size": 456318,
+          "git_sha1": "226b0752cac7789c48f0cb3ec53eda48b7be36cc"
+        },
+        "pytorch_model.bin": {
+          "size": 1222317369,
+          "sha256": "3bac65d18c99463302d12ca75c2220ea714f9c81ce235f205fa818efe71df6ea"
+        },
+        "tokenizer_config.json": {
+          "size": 26,
+          "git_sha1": "be4d21d94f3b4687e5a54d84bf6ab46ed0f8defd"
+        },
+        "vocab.json": {
+          "size": 898822,
+          "git_sha1": "0a39732b2d8be8e493cab3da68b68cc3e28221de"
+        }
+      },
+      "revision": "a4f8f3ea906ed274767e9906dbaede7531d660ff"
+    },
+    {
+      "name": "stage4_summarizer",
+      "config_key": "stage4.model_name",
+      "repo_id": "facebook/bart-large-cnn",
+      "files": {
+        "config.json": {
+          "size": 1585,
+          "git_sha1": "2d297163111d6483909070dc6de8d34236c72636"
+        },
+        "generation_config.json": {
+          "size": 363,
+          "git_sha1": "f729590ec05c715e3b922996b3a7b5c1c73fb1f7"
+        },
+        "merges.txt": {
+          "size": 456318,
+          "git_sha1": "226b0752cac7789c48f0cb3ec53eda48b7be36cc"
+        },
+        "model.safetensors": {
+          "size": 1625222120,
+          "sha256": "40041830399afb5348525ef8354b007ecec4286fdf3524f7e6b54377e17096cb"
+        },
+        "tokenizer.json": {
+          "size": 1355863,
+          "git_sha1": "ad0bcbeb288f0d1373d88e0762e66357f55b8311"
+        },
+        "vocab.json": {
+          "size": 898823,
+          "git_sha1": "5606f48548d99a9829d10a96cd364b816b02cd21"
+        }
+      },
+      "revision": "37f520fa929c961707657b28798b30c003dd100b"
+    },
+    {
+      "name": "stage4_entity_embeddings",
+      "config_key": null,
+      "repo_id": "sentence-transformers/all-MiniLM-L6-v2",
+      "files": {
+        "1_Pooling/config.json": {
+          "size": 190,
+          "git_sha1": "d1514c3162bbe87b343f565fadc62e6c06f04f03"
+        },
+        "config.json": {
+          "size": 612,
+          "git_sha1": "72b987fd805cfa2b58c4c8c952b274a11bfd5a00"
+        },
+        "config_sentence_transformers.json": {
+          "size": 116,
+          "git_sha1": "fd1b291129c607e5d49799f87cb219b27f98acdf"
+        },
+        "model.safetensors": {
+          "size": 90868376,
+          "sha256": "53aa51172d142c89d9012cce15ae4d6cc0ca6895895114379cacb4fab128d9db"
+        },
+        "modules.json": {
+          "size": 349,
+          "git_sha1": "952a9b81c0bfd99800fabf352f69c7ccd46c5e43"
+        },
+        "sentence_bert_config.json": {
+          "size": 53,
+          "git_sha1": "59d594003bf59880a884c574bf88ef7555bb0202"
+        },
+        "special_tokens_map.json": {
+          "size": 112,
+          "git_sha1": "e7b0375001f109a6b8873d756ad4f7bbb15fbaa5"
+        },
+        "tokenizer.json": {
+          "size": 466247,
+          "git_sha1": "cb202bfe2e3c98645018a6d12f182a434c9d3e02"
+        },
+        "tokenizer_config.json": {
+          "size": 350,
+          "git_sha1": "c79f2b6a0cea6f4b564fed1938984bace9d30ff0"
+        },
+        "vocab.txt": {
+          "size": 231508,
+          "git_sha1": "fb140275c155a9c7c5a3b3e0e77a9e839594a938"
+        }
+      },
+      "revision": "1110a243fdf4706b3f48f1d95db1a4f5529b4d41"
+    }
+  ]
+}

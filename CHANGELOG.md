@@ -17,6 +17,7 @@ renamed to the new version and date (see the release checklist).
 ### Added
 - Ops CLI is listed in CONTRIBUTING, `.env.example` marks required and optional variables, and `access_grafana.sh` opens local Compose Grafana when Kubernetes is not running (#239 #345 #379 #382).
 - Config-driven Delta partitions (`domain` or `date`) on newly created tables, a declared `metadata_queue` with a schema and day partition, and warn/reject for writes to undeclared tables (#261 #236 #268 #433).
+- `cli.py --profile` writes a cProfile `.json` and `.pstats` for one command (`make profile CMD="..."`); nothing is recorded unless the flag is passed (#465).
 - Dead-letter queue for undeliverable Kafka messages, plus an ops CLI (list/stats/show/replay/resolve).
 - Bounded (rows/bytes/age) Delta batches with a timer flush for queue and offsite tables.
 - Stage 2: configurable per-host concurrency cap; in-request HTTP retries with backoff, jitter and a per-host circuit breaker.
@@ -43,6 +44,7 @@ renamed to the new version and date (see the release checklist).
 
 ### Security
 - Compose reads the Postgres superuser password from `POSTGRES_PASSWORD` (local default `postgres`), and SECURITY.md covers secret handling and rotation (#482).
+- `cli.py setup` downloads the revisions pinned in `models.lock.json` and fails closed on a missing file, a size mismatch, or a digest mismatch (#486).
 - Redis uses `volatile-lru` so seen-sets and queues are never LRU-evicted, and logs an error on `allkeys-*` servers.
 
 <!-- No version has been released yet. The first tag (v0.1.0) turns the block above into

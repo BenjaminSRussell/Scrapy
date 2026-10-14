@@ -321,10 +321,20 @@ def cmd_health(args):
 
 
 def cmd_setup(args):
-    """Download and validate models."""
-    logger.info("Downloading transformer models...")
-    # Model download logic here
-    logger.info("✅ Setup complete")
+    """Download pinned models and verify them against models.lock.json (#486). Fails closed."""
+    from src.utils.model_integrity import DEFAULT_LOCK, ModelIntegrityError, setup_models
+
+    lock = Path(args.lock) if getattr(args, "lock", None) else DEFAULT_LOCK
+    mode = "Verifying cached" if args.verify_only else "Downloading + verifying"
+    logger.info(f"{mode} models pinned in {lock}")
+    try:
+        results = setup_models(lock, download=not args.verify_only, only=args.model or None)
+    except ModelIntegrityError as exc:
+        print(str(exc), file=sys.stderr)
+        sys.exit(1)
+    for r in results:
+        logger.info(f"verified {r.repo_id}@{r.revision[:10]} ({r.path})")
+    logger.info(f"Setup complete: {len(results)} model(s) verified")
 
 
 def cmd_reset(args):
@@ -597,11 +607,63 @@ def cmd_killswitch(args):
 # ============================================================================
 
 
+_DEFAULT_PROFILE_DIR = "data/exports/profiles"
+
+
+def _normalize_profile_argv(argv: list[str], commands: set[str]) -> list[str]:
+    """Put optional `--profile [DIR]` before the subcommand (#465).
+
+    The flag takes an optional directory, so `cli.py --profile pipeline` would
+    store the subcommand as DIR, and `cli.py pipeline --profile` is rejected
+    by argparse. A following token that is a known command or a flag means
+    "use the default directory", written as `--profile=DIR` (a bare `--` is
+    itself parsed as the subcommand on Python 3.11). An explicit path stays put.
+    """
+    if "--profile" not in argv and not any(a.startswith("--profile=") for a in argv):
+        return list(argv)
+    default = f"--profile={_DEFAULT_PROFILE_DIR}"
+    profile: list[str] = []
+    rest: list[str] = []
+    i = 0
+    while i < len(argv):
+        tok = argv[i]
+        if tok == "--profile":
+            nxt = argv[i + 1] if i + 1 < len(argv) else None
+            if nxt == "--":
+                profile = [default]
+                i += 2
+                continue
+            if nxt in ("-h", "--help"):
+                profile = ["--profile"]
+                i += 1
+                continue
+            if nxt is not None and not nxt.startswith("-") and nxt not in commands:
+                profile = ["--profile", nxt]
+                i += 2
+                continue
+            profile = [default]
+            i += 1
+            continue
+        if tok.startswith("--profile="):
+            profile = [tok]
+            i += 1
+            continue
+        rest.append(tok)
+        i += 1
+    return profile + rest
+
+
 def main():
     """Main CLI entry point."""
     parser = argparse.ArgumentParser(
         description="Unified Pipeline CLI",
         formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+
+    parser.add_argument(
+        "--profile", nargs="?", const=_DEFAULT_PROFILE_DIR, default=None, metavar="DIR",
+        help="Profile this run with cProfile; writes profile_<command>_<ts>.json/.pstats to DIR "
+        "(default data/exports/profiles). Off by default (#465).",
     )
 
     subparsers = parser.add_subparsers(dest="command", help="Commands")
@@ -652,7 +714,12 @@ def main():
     health_parser.set_defaults(func=cmd_health)
 
     # Setup command
-    setup_parser = subparsers.add_parser("setup", help="Setup models")
+    setup_parser = subparsers.add_parser(
+        "setup", help="Download pinned ML models and verify checksums (models.lock.json); fails closed"
+    )
+    setup_parser.add_argument("--verify-only", action="store_true", help="Verify the local HF cache; no download")
+    setup_parser.add_argument("--model", action="append", help="Limit to a lock entry name or repo id (repeatable)")
+    setup_parser.add_argument("--lock", help="Alternate lock file (default: models.lock.json)")
     setup_parser.set_defaults(func=cmd_setup)
 
     # Reset command
@@ -754,8 +821,9 @@ def main():
     ml_export.add_argument("--idle-timeout", type=float, default=5.0, help="Stop after N seconds without messages")
     ml_parser.set_defaults(func=cmd_ml)
 
-    # Parse and execute
-    args = parser.parse_args()
+    # Parse and execute. `--profile` is optional-DIR, so normalize before argparse
+    # can swallow the subcommand or reject the flag when it follows the command.
+    args = parser.parse_args(_normalize_profile_argv(sys.argv[1:], set(subparsers.choices)))
 
     if not args.command:
         parser.print_help()
@@ -768,7 +836,12 @@ def main():
         sys.exit(2)
 
     try:
-        args.func(args)
+        if args.profile:
+            from src.utils.profiler import run_profiled
+
+            run_profiled(lambda: args.func(args), label=args.command, out_dir=args.profile)
+        else:
+            args.func(args)
         sys.exit(0)
     except KeyboardInterrupt:
         logger.warning("Interrupted")
