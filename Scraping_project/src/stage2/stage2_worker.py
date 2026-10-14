@@ -290,7 +290,15 @@ def plan_queue_updates(
     return completed, failed, retrying
 
 
+# Not None. None means run_stage2_worker opened Redis and failed. REDIS_HOST
+# defaults to localhost, so that failure is Redis down, not "unconfigured".
+_LEASE_UNSET: Any = object()
+
+
 class Stage2Worker:
+    # Continuous replicas assign a client or None. The class default is only
+    # for a one-shot worker that was not started as a replica.
+    _claim_redis: Any = _LEASE_UNSET
 
     def __init__(self, max_concurrent: int = 50, batch_size: int = 100):
         self.max_concurrent = max_concurrent
@@ -462,16 +470,40 @@ class Stage2Worker:
             logger.info("[STAGE2] No pending URLs to process")
             return counts
 
+        # A replica lease is expected whenever this worker was given a client
+        # slot (#235). None means Redis is down. Do not analyze that batch:
+        # two replicas that both miss the lock must not both proceed.
+        if getattr(self, "_claim_redis", _LEASE_UNSET) is None:
+            logger.warning(
+                f"[STAGE2] Redis lease unavailable; not analyzing {len(pending)} pending URLs"
+            )
+            return counts
+
         prior_failures = self._load_prior_failures()
 
-        for i in range(0, len(pending), self.batch_size):
+        # Claim each pending URL before analyzing it (#235). Replicas that lose
+        # the lease, or whose SET NX EX fails, skip that URL.
+        index = 0
+        batch_number = 0
+        skipped = 0
+        while index < len(pending):
             stop = self._crawl_guard_reason()
             if stop:
                 # #456: stop starting new batches; remaining URLs stay pending.
-                logger.critical(f"[STAGE2] Crawl guard engaged ({stop}); leaving {len(pending) - i} URLs pending")
+                logger.critical(f"[STAGE2] Crawl guard engaged ({stop}); leaving {len(pending) - index} URLs pending")
                 break
-            batch = pending[i : i + self.batch_size]
-            logger.info(f"Processing batch {i // self.batch_size + 1}: {len(batch)} URLs")
+            batch: list[dict[str, Any]] = []
+            while index < len(pending) and len(batch) < self.batch_size:
+                item = pending[index]
+                index += 1
+                if not self._claim_pending_url(item):
+                    skipped += 1
+                    continue
+                batch.append(item)
+            if not batch:
+                continue
+            batch_number += 1
+            logger.info(f"Processing batch {batch_number}: {len(batch)} URLs")
 
             batch_start = time.time()
 
@@ -543,11 +575,47 @@ class Stage2Worker:
                     worker_count=self.max_concurrent,
                 )
 
-            if _drain_requested("stage2", min(i + self.batch_size, len(pending)), len(pending)):
+            if _drain_requested("stage2", min(index, len(pending)), len(pending)):
                 break
+
+        if skipped:
+            logger.info(f"[STAGE2] Left {skipped} pending URLs unanalyzed (lease not held)")
 
         logger.info("[STAGE2] Worker completed all batches")
         return counts
+
+    def _lease_owner(self) -> str:
+        """Process-stable owner so the next cycle can refresh leases it still holds.
+
+        A new ``Stage2Worker`` is built every poll. Keying the owner by pid keeps
+        retries on this replica; another pod has a different pid. Tests pin
+        ``_claim_owner_id`` so two workers in one process stay distinct.
+        """
+        owner = getattr(self, "_claim_owner_id", None)
+        if isinstance(owner, str) and owner:
+            return owner
+        pinned = os.getenv("STAGE2_CLAIM_OWNER")
+        owner = pinned.strip() if isinstance(pinned, str) and pinned.strip() else f"stage2:{os.getpid()}"
+        self._claim_owner_id = owner
+        return owner
+
+    def _claim_pending_url(self, item: dict[str, Any]) -> bool:
+        """True when this replica may analyze ``item`` (#235).
+
+        The lease is not deleted after a successful ack. A peer that already
+        read the same row as pending would otherwise ``SET NX`` and analyze it
+        too. This process refreshes its own key; a different owner is skipped
+        until the TTL expires (crash recovery). A missing client is Redis down,
+        not a single-process bypass: the URL is not analyzed.
+        """
+        client = getattr(self, "_claim_redis", _LEASE_UNSET)
+        if client is _LEASE_UNSET:
+            return True
+        if client is None:
+            return False
+        url = item.get("url") if isinstance(item.get("url"), str) else ""
+        url_hash = item.get("url_hash") if isinstance(item.get("url_hash"), str) else ""
+        return _lease_claim(client, stage2_claim_key(url, url_hash), self._lease_owner(), stage2_claim_lease_seconds())
 
     def _normalize_gather_results(
         self, batch: list[dict[str, Any]], results: list[Any]
@@ -1198,19 +1266,174 @@ def _drain_requested(stage: str, done: int, total: int) -> bool:
     return True
 
 
+DEFAULT_STAGE2_IDLE_SECONDS = 30.0
+DEFAULT_STAGE2_ERROR_SLEEP_SECONDS = 10.0
+# Half-width of the idle sleep. 15s puts replicas in [15, 45] instead of one 30s tick.
+DEFAULT_STAGE2_POLL_JITTER_SECONDS = 15.0
+# Longer than one poll so a peer with a stale pending snapshot cannot reclaim
+# URLs this process is still holding. Same-owner refresh covers queue retries.
+DEFAULT_STAGE2_CLAIM_LEASE_SECONDS = 900
+STAGE2_CLAIM_PREFIX = "stage2:claim:"
+
+
+def _configured_non_negative(env_name: str, *keys: str, default: float, config: Any = None) -> float:
+    """Env, then optional config keys, then ``default``. Negative or junk falls through."""
+    candidates: list[Any] = [os.getenv(env_name)]
+    try:
+        cfg = config if config is not None else get_config()
+        candidates.extend(cfg.get(key) for key in keys)
+    except Exception:
+        pass
+    for raw in candidates:
+        if raw is None or raw == "":
+            continue
+        try:
+            parsed = float(raw)
+        except (TypeError, ValueError):
+            logger.warning(f"[STAGE2] Ignoring invalid {env_name} value {raw!r}")
+            continue
+        if parsed < 0:
+            logger.warning(f"[STAGE2] Ignoring negative {env_name} value {raw!r}")
+            continue
+        return parsed
+    return default
+
+
+def stage2_poll_jitter_seconds(config: Any = None) -> float:
+    """Idle-sleep jitter half-width in seconds (#235). ``0`` keeps a fixed sleep.
+
+    Precedence: ``STAGE2_POLL_JITTER_SECONDS`` > ``stage2.poll_jitter_seconds`` >
+    ``stages.stage2.poll_jitter_seconds`` > 15. No config.yml key is required.
+    """
+    return _configured_non_negative(
+        "STAGE2_POLL_JITTER_SECONDS",
+        "stage2.poll_jitter_seconds",
+        "stages.stage2.poll_jitter_seconds",
+        default=DEFAULT_STAGE2_POLL_JITTER_SECONDS,
+        config=config,
+    )
+
+
+def stage2_claim_lease_seconds(config: Any = None) -> int:
+    """TTL for a pending-URL lease. Values under 1 second keep the default."""
+    raw = _configured_non_negative(
+        "STAGE2_CLAIM_LEASE_SECONDS",
+        "stage2.claim_lease_seconds",
+        "stages.stage2.claim_lease_seconds",
+        default=float(DEFAULT_STAGE2_CLAIM_LEASE_SECONDS),
+        config=config,
+    )
+    if raw < 1:
+        return DEFAULT_STAGE2_CLAIM_LEASE_SECONDS
+    return int(raw)
+
+
+def jittered_idle_seconds(base: float, jitter: float) -> float:
+    """Uniform sleep in ``[base - jitter, base + jitter]``, never below 0."""
+    base = float(base)
+    jitter = float(jitter)
+    if jitter <= 0:
+        return max(0.0, base)
+    return max(0.0, base - jitter + random.random() * (jitter * 2.0))
+
+
+def stage2_claim_key(url: str, url_hash: str = "") -> str:
+    """Lease key for one pending URL. Not a seen-set and not ``cbstate:`` / ``cbfail:``."""
+    token = url_hash.strip() if isinstance(url_hash, str) and url_hash.strip() else url
+    return f"{STAGE2_CLAIM_PREFIX}{token}"
+
+
+def _lease_claim(client: Any, key: str, owner: str, ttl: int) -> bool:
+    """``SET key owner NX EX ttl``. The same owner may refresh; anyone else waits."""
+    try:
+        acquired = client.set(key, owner, nx=True, ex=int(ttl))
+    except Exception as exc:
+        # SET NX EX failed. Do not analyze; another replica must not proceed either.
+        logger.warning(f"[STAGE2] Batch claim unavailable ({exc}); leaving {key} unanalyzed")
+        return False
+    if acquired:
+        return True
+    try:
+        current = client.get(key)
+    except Exception as exc:
+        logger.warning(f"[STAGE2] Batch claim read failed ({exc}); leaving {key} to the other replica")
+        return False
+    if isinstance(current, bytes):
+        current = current.decode("utf-8", errors="replace")
+    if current != owner:
+        return False
+    try:
+        client.expire(key, int(ttl))
+    except Exception:
+        try:
+            client.set(key, owner, ex=int(ttl))
+        except Exception as exc:
+            logger.warning(f"[STAGE2] Could not refresh lease {key} ({exc})")
+    return True
+
+
+def open_stage2_claim_redis() -> Any:
+    """Redis client for the batch lease, or None when Redis is down (#235).
+
+    ``REDIS_HOST`` defaults to localhost, so a connection error is the down
+    path, not an unconfigured single-process path. The caller must not analyze
+    a batch it could not lease. Does not read or publish ``REDIS_URL``.
+    """
+    try:
+        from src.utils.redis import get_redis
+
+        return get_redis().client
+    except Exception as exc:
+        logger.warning(f"[STAGE2] Redis lease unavailable ({exc}); pending URLs will not be analyzed")
+        return None
+
+
 async def run_stage2_worker(shutdown=None):
-    from src.utils.graceful_shutdown import run_drain_loop
+    from src.utils.graceful_shutdown import worker_shutdown
 
     logger.info("Stage 2 Worker starting in continuous mode...")
 
     max_concurrent, batch_size = stage_worker_settings(2, 50, 100)
     logger.info("Stage 2 Worker concurrency=%d batch_size=%d", max_concurrent, batch_size)
+    claim_redis = open_stage2_claim_redis()
 
     async def run_once():
-        await Stage2Worker(max_concurrent=max_concurrent, batch_size=batch_size).run()
+        worker = Stage2Worker(max_concurrent=max_concurrent, batch_size=batch_size)
+        worker._claim_redis = claim_redis
+        await worker.run()
 
-    # SIGTERM: no new batches; the batch in flight is written and acked; exit 0.
-    await run_drain_loop("stage2", run_once, idle_seconds=30, error_seconds=10, shutdown=shutdown)
+    # Same drain contract as run_drain_loop (#185, #325). Idle sleep is jittered
+    # each cycle so replicas do not poll on one 30s tick (#235). Error backoff
+    # stays a fixed 10s and is not part of the poll jitter.
+    if shutdown is None:
+        shutdown = worker_shutdown("stage2")
+    else:
+        shutdown.begin_drain()
+    try:
+        while not shutdown.requested:
+            try:
+                await run_once()
+            except KeyboardInterrupt:  # handlers not installed (non-main thread)
+                logger.info("[stage2] Worker shutting down...")
+                break
+            except Exception as e:
+                logger.error(f"[stage2] Error in worker loop: {e}")
+                if await shutdown.sleep(DEFAULT_STAGE2_ERROR_SLEEP_SECONDS):
+                    break
+                continue
+            if shutdown.requested:
+                break
+            jitter = stage2_poll_jitter_seconds()
+            wait = jittered_idle_seconds(DEFAULT_STAGE2_IDLE_SECONDS, jitter)
+            logger.info(
+                f"[stage2] Waiting {wait:.2f} seconds before next check "
+                f"(base {DEFAULT_STAGE2_IDLE_SECONDS:.0f}s, jitter ±{jitter:.0f}s)..."
+            )
+            if await shutdown.sleep(wait):
+                break
+    finally:
+        shutdown.end_drain()
+    logger.info(f"[stage2] Worker stopped ({shutdown.reason or 'loop ended'})")
 
 if __name__ == "__main__":
     from src.utils.worker_metrics import start_worker_metrics_server

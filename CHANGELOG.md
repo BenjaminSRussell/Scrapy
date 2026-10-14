@@ -51,6 +51,7 @@ renamed to the new version and date (see the release checklist).
 - `python reseed.py`, `python drain_lake.py`, `python audit_file_counts.py`, and `python monitor_and_trigger_depth.py` at the Scraping_project root. Run `python scripts/<name>.py` from `Scraping_project/` instead. `cli.py` stays the root Python entrypoint (#568).
 
 ### Fixed
+- Stage 2 replicas jitter the 30s poll (`STAGE2_POLL_JITTER_SECONDS`, default ±15s) and take an exclusive Redis lease (`SET stage2:claim:{url_hash} NX EX`) on each pending URL so two workers do not analyze the same batch. If the lease cannot be acquired, including when Redis is down, the URL is not analyzed (#235).
 - Stage 4 entity updates load stored facts for that entity id, append and dedupe them, and rewrite the summary only when that entity's cluster changed. A new document does not recompute unrelated entities (#474).
 - Circuit breakers share open state and the consecutive-failure count through Redis, keyed by name and host, so one worker's trip is visible to the others on their next check and still open after a restart. The metrics exporter emits `circuit_breaker_state{name,host}` (0 closed, 1 open, 2 half-open). Set `CIRCUIT_BREAKER_SHARED=0` to keep the old process-local breakers (#171).
 - CLI and orchestrator startup reject a config.yml whose redis or kafka fields have the wrong type or an unknown key, with the field path in the error, instead of failing later inside workers (#237).
