@@ -16,7 +16,7 @@ python start.py                  # docker-compose up -d for every service, then 
 python start.py --reset-delta    # also reset the Delta tables and reload seeds from the seed CSV
 ```
 
-The Compose services are `scraper`, `stage1-worker` … `stage4-worker`, `redis`, `postgres`, `redis-exporter`, `postgres-exporter`, `prometheus` and `grafana`. To start only some of them, use `docker-compose up -d <service>`. To stop everything, run `python shutdown.py`. On SIGTERM, `LakehouseManager` drains its Delta write queue before the process exits. For Kubernetes (`python start.py --env k8s --stage …`), see [DEPLOYMENT.md](../../DEPLOYMENT.md).
+The Compose services are `scraper`, `stage1-worker` … `stage4-worker`, `redis`, `postgres`, `redis-exporter`, `postgres-exporter`, `prometheus` and `grafana`. `stage4-worker` is behind profiles `ml` and `full` (ML/OCR image, #144); `python start.py` brings up the lean stack and does not start it. Start it with `docker compose --profile ml up -d stage4-worker`. To start only some other services, use `docker-compose up -d <service>`. To stop everything, run `python shutdown.py`. On SIGTERM, `LakehouseManager` drains its Delta write queue before the process exits. For Kubernetes (`python start.py --env k8s --stage …`), see [DEPLOYMENT.md](../../DEPLOYMENT.md).
 
 ## Run the stages yourself (no Compose)
 

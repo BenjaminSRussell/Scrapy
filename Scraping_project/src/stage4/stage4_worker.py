@@ -5,6 +5,7 @@ from typing import Any
 
 from src.core.config import get_config
 from src.utils.delta import get_delta
+from src.utils.optional_deps import require_stage4_deps
 from src.stage4.large_doc_processor import LargeDocProcessor
 from src.stage4.pdf_sandbox import PdfQuarantined
 from src.otel_tracing import ensure_crawl_job_id, init_tracing, start_span
@@ -65,6 +66,9 @@ class Stage4Worker:
 
     async def run(self) -> int:
         """Process pending large docs; returns summaries written this run."""
+        # Fail before model load when the lean core image is used (#144).
+        # __init__ stays import-light so unit tests can construct the worker.
+        require_stage4_deps()
         init_tracing(service_name="stage4-worker")
         crawl_job_id = ensure_crawl_job_id()
         with start_span("stage4.run", stage="stage4", crawl_job_id=crawl_job_id):

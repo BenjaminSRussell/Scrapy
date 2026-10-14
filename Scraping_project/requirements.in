@@ -29,12 +29,12 @@ datasketch>=1.6.0,<2.0.0  # Efficient similarity detection (Stage 3)
 yake>=0.6.0  # Keyword extraction
 networkx==3.5 # Pinned to resolve conflict
 
-# NLP / ML / OCR — NOT in the default pip-compile set anymore (#143 / #144).
-# Install via pyproject extras instead:
+# NLP / ML / OCR — NOT in the default pip-compile set (#143 / #144).
+#   pip install -r requirements-ml.txt -r requirements-ocr.txt
 #   pip install -e ".[ml]" / ".[ocr]" / ".[stage3-4]"
-# Docker: lean images use core only; stage3/4 use target "full" (see PACKAGING.md).
-# transformers / torch / sentence-transformers → optional-dependencies.ml
-# easyocr / pdf2image / PyPDF2 / pillow → optional-dependencies.ocr
+# Docker: core/production/stage3 are lean; ml/stage4 install the extra locks.
+# transformers / torch / sentence-transformers → requirements-ml.in / optional-dependencies.ml
+# easyocr / pdf2image / PyPDF2 / pillow → requirements-ocr.in / optional-dependencies.ocr
 
 # Database
 psycopg2-binary>=2.9.0  # PostgreSQL adapter

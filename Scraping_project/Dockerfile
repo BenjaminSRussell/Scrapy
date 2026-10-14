@@ -1,5 +1,10 @@
 # Multi-stage Dockerfile for UConn Scraping Pipeline
-# Phase 10: Production deployment
+# Phase 10 + #144: lean core images; ML/OCR only on ml/stage4.
+#
+# Targets:
+#   base / core / production / crawler / metrics / stage3 — requirements.txt only (no torch)
+#   ml / stage4 — core + requirements-ml.txt + requirements-ocr.txt + poppler-utils
+# Stage 3 is light (datasketch). Stage 4 fails fast without ML+OCR extras.
 
 FROM python:3.11-slim as base
 
@@ -18,7 +23,7 @@ RUN apt-get update && apt-get install -y \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements
+# Core Python dependencies only (no torch / transformers / easyocr) (#144)
 COPY requirements.txt .
 
 # Install Python dependencies
@@ -54,6 +59,33 @@ USER scraper
 # Run with production settings
 ENV ENVIRONMENT=production
 CMD ["python", "-m", "src.main"]
+
+
+# Lean alias (#144). Same contents as production.
+FROM production as core
+
+
+# Light Stage 3: datasketch is already in the core lock.
+FROM production as stage3
+CMD ["python", "-m", "src.workers.stage3_worker"]
+
+
+# Stage 4 image with ML + OCR extras. Not an ancestor of crawler/metrics,
+# so release builds of those targets do not download torch.
+FROM base as ml
+USER root
+# poppler-utils: pdf2image rasterizes PDFs
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    poppler-utils \
+    && rm -rf /var/lib/apt/lists/*
+COPY requirements-ml.txt requirements-ocr.txt ./
+RUN pip install --no-cache-dir -r requirements-ml.txt -r requirements-ocr.txt
+USER scraper
+CMD ["python", "-m", "src.workers.stage4_worker"]
+
+
+FROM ml as stage4
+CMD ["python", "-m", "src.workers.stage4_worker"]
 
 
 # ------------------------------------------------------------------

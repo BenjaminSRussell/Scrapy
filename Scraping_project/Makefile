@@ -58,15 +58,19 @@ lock: ## Re-pin lockfiles after editing *.in (keeps existing versions)
 	@echo "$(BLUE)Compiling lockfiles (no upgrades)...$(NC)"
 	pip install --upgrade pip-tools
 	cd "$(CURDIR)" && $(PIP_COMPILE) --output-file=requirements.txt requirements.in
+	cd "$(CURDIR)" && $(PIP_COMPILE) --constraint=requirements.txt --output-file=requirements-ml.txt requirements-ml.in
+	cd "$(CURDIR)" && $(PIP_COMPILE) --constraint=requirements.txt --constraint=requirements-ml.txt --output-file=requirements-ocr.txt requirements-ocr.in
 	cd "$(CURDIR)" && $(PIP_COMPILE) --output-file=dev-requirements.txt dev-requirements.in
-	@echo "$(GREEN)✓ Lockfiles compiled$(NC)"
+	@echo "$(GREEN)✓ Lockfiles compiled (core/dev stay torch-free; ML/OCR are separate)$(NC)"
 
 update-deps: ## Upgrade every pin and recompile lockfiles
 	@echo "$(BLUE)Updating dependencies...$(NC)"
 	pip install --upgrade pip pip-tools
 	cd "$(CURDIR)" && $(PIP_COMPILE) --upgrade --output-file=requirements.txt requirements.in
+	cd "$(CURDIR)" && $(PIP_COMPILE) --upgrade --constraint=requirements.txt --output-file=requirements-ml.txt requirements-ml.in
+	cd "$(CURDIR)" && $(PIP_COMPILE) --upgrade --constraint=requirements.txt --constraint=requirements-ml.txt --output-file=requirements-ocr.txt requirements-ocr.in
 	cd "$(CURDIR)" && $(PIP_COMPILE) --upgrade --output-file=dev-requirements.txt dev-requirements.in
-	@echo "$(GREEN)✓ Dependencies updated$(NC)"
+	@echo "$(GREEN)✓ Dependencies updated (core/dev stay torch-free)$(NC)"
 
 ##@ Testing
 

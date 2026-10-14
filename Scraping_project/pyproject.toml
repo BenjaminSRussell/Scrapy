@@ -84,7 +84,7 @@ dev = [
     "bandit>=1.7.0",
     "build>=1.2.0",
 ]
-# Stage 3/4 full stack
+# Stage 4 full stack (ML + OCR). Stage 3 is datasketch-only and stays in core (#144).
 stage3-4 = [
     "uconn-scraping-pipeline[ml,ocr]",
 ]
