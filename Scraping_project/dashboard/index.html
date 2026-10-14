@@ -121,6 +121,26 @@
             margin-top: 0.25rem;
         }
 
+        /* #1016: density control sits on the gradient; white text stays >= 4.5:1
+           on both ends. Pressed (compact) is blue on white. */
+        .density-toggle {
+            margin-top: 0.25rem;
+            background: transparent;
+            color: #fff;
+            border: 1px solid #fff;
+            border-radius: 999px;
+            padding: 0.2rem 0.7rem;
+            font: inherit;
+            font-size: 0.8rem;
+            font-weight: 700;
+            line-height: 1.4;
+            cursor: pointer;
+        }
+        .density-toggle[aria-pressed="true"] {
+            background: #fff;
+            color: #1e40af;
+        }
+
         .container {
             max-width: 1600px;
             margin: 0 auto;
@@ -216,6 +236,17 @@
         .card:hover {
             transform: translateY(-2px);
             box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        /* Chart-history strip: tighter than a metric card, same in both densities
+           until .compact scales it (#1016). */
+        .card-toolbar {
+            margin-bottom: 1rem;
+            padding: 0.75rem 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            flex-wrap: wrap;
         }
 
         .card-header {
@@ -350,6 +381,16 @@
         .stage-card.active {
             border-color: var(--primary);
             box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2);
+        }
+
+        /* #1016: compact cuts card padding 30% (1.5rem stays the comfortable size). */
+        html.compact .card,
+        html.compact .stage-card {
+            padding: calc(1.5rem * 0.7);
+        }
+
+        html.compact .card.card-toolbar {
+            padding: calc(0.75rem * 0.7) calc(1rem * 0.7);
         }
 
         .stage-number {
@@ -831,7 +872,8 @@
             .activity-chip,
             .activity-search,
             #clear-activity-search,
-            .refresh-bar .accent-color {
+            .refresh-bar .accent-color,
+            .density-toggle {
                 min-height: 44px;
                 min-width: 44px;
             }
@@ -1080,11 +1122,23 @@
             }
             .ui-icon { stroke: CanvasText; }
             .tab-button.active .ui-icon { stroke: HighlightText; }
+            .density-toggle {
+                border: 1px solid ButtonText;
+                background: ButtonFace;
+                color: ButtonText;
+            }
+            .density-toggle[aria-pressed="true"] {
+                forced-color-adjust: none;
+                background: Highlight;
+                color: HighlightText;
+                border-color: HighlightText;
+            }
             .tab-button:focus-visible,
             .btn:focus-visible,
             .stage-card:focus-visible,
             .activity-chip:focus-visible,
             input:focus-visible,
+            .density-toggle:focus-visible,
             .skip-to-main:focus {
                 outline: 3px solid Highlight;
                 outline-offset: 2px;
@@ -1210,6 +1264,7 @@
         .btn:focus-visible,
         .stage-card:focus-visible,
         .activity-chip:focus-visible,
+        .density-toggle:focus-visible,
         select:focus-visible,
         input:focus-visible,
         a:focus-visible,
@@ -1437,6 +1492,10 @@
                 <div class="topbar-stat">
                     <div class="topbar-stat-label">Summaries</div>
                     <div class="topbar-stat-value" id="topbar-summaries">0</div>
+                </div>
+                <div class="topbar-stat">
+                    <span class="topbar-stat-label" id="density-toggle-label">Density</span>
+                    <button type="button" id="density-toggle" class="density-toggle" aria-pressed="false" aria-labelledby="density-toggle-label density-toggle">Comfortable</button>
                 </div>
             </div>
         </div>
@@ -1717,7 +1776,7 @@
 
             <!-- Performance Tab -->
             <div class="tab-content" id="tab-performance" role="tabpanel" aria-labelledby="tabbtn-performance" tabindex="0">
-                <div class="card" style="margin-bottom:1rem;padding:0.75rem 1rem;display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap">
+                <div class="card card-toolbar">
                     <span>Performance chart history</span>
                     <button type="button" id="reset-chart-history" class="btn" aria-describedby="chart-history-cap" aria-label="Reset chart history buffers">Reset chart history</button>
                     <span id="chart-history-cap" class="refresh-info" style="flex-basis:100%">In-memory history keeps a raw buffer of 200 samples per series. Line charts plot at most the last 50 samples (LTTB). This cap is independent of the chart axis.</span>
