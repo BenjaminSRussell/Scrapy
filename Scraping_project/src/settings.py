@@ -15,6 +15,8 @@ from typing import Any, Optional
 from src.core.config import Config, get_config
 from src.core.tls_policy import downloader_context_factory
 from src.stage1.middlewares.fetch_policy_middleware import DEFAULT_LARGE_DOC_EXTENSIONS
+from src.stage1.middlewares.proxy_rotation_middleware import MIDDLEWARE_PRIORITY as PROXY_ROTATION_PRIORITY
+from src.stage1.middlewares.proxy_rotation_middleware import proxy_settings_from_sources
 from src.utils import feature_flags
 
 ENV = os.getenv("ENV", "development")
@@ -64,6 +66,11 @@ def derive_scrapy_config(config: Optional[Config] = None) -> dict[str, Any]:
         "large_doc_maxsize": cfg.get("stage1.fetch_policy.large_doc_maxsize"),
         "large_doc_extensions": cfg.get("stage1.fetch_policy.large_doc_extensions"),
         "large_doc_url_patterns": cfg.get("stage1.fetch_policy.large_doc_url_patterns"),
+        # #198: optional egress proxies. An explicit scrapy.* key wins over these.
+        "proxy_rotation_enabled": cfg.get("stage1.proxy.enabled"),
+        "proxy_list": cfg.get("stage1.proxy.urls"),
+        "proxy_quarantine_seconds": cfg.get("stage1.proxy.quarantine_seconds"),
+        "proxy_max_rotations": cfg.get("stage1.proxy.max_rotations"),
     }
     for key, value in bridges.items():
         if key not in scrapy and value is not None:
@@ -155,6 +162,18 @@ LARGE_DOC_URL_PATTERNS = _scrapy_config.get("large_doc_url_patterns", []) or []
 DOWNLOADER_MIDDLEWARES = dict(DOWNLOADER_MIDDLEWARES)
 # Before DownloadTimeoutMiddleware (350) and CookiesMiddleware (700).
 DOWNLOADER_MIDDLEWARES.setdefault("src.stage1.middlewares.fetch_policy_middleware.FetchPolicyMiddleware", 340)
+# #198: optional proxy rotation. No-op until a proxy list is configured.
+# Priority 745 is just before HttpProxyMiddleware (750). Set the path to None
+# in scrapy.downloader_middlewares to opt out.
+_proxy_settings = proxy_settings_from_sources(_scrapy_config)
+PROXY_LIST = _proxy_settings["PROXY_LIST"]
+PROXY_ROTATION_ENABLED = _proxy_settings["PROXY_ROTATION_ENABLED"]
+PROXY_QUARANTINE_SECONDS = _proxy_settings["PROXY_QUARANTINE_SECONDS"]
+PROXY_MAX_ROTATIONS = _proxy_settings["PROXY_MAX_ROTATIONS"]
+DOWNLOADER_MIDDLEWARES.setdefault(
+    "src.stage1.middlewares.proxy_rotation_middleware.ProxyRotationMiddleware",
+    PROXY_ROTATION_PRIORITY,
+)
 DNS_TIMEOUT = _scrapy_config.get("dns_timeout", 5)
 
 RETRY_ENABLED = _scrapy_config.get("retry_enabled", True)

@@ -103,6 +103,8 @@ def get_spider_settings(spider_name: str) -> dict:
             "src.stage1.middlewares.retry_after_middleware.RetryAfterMiddleware": 560,
             # #395/#396: large-doc timeout + cookie scope; before DownloadTimeout (350).
             "src.stage1.middlewares.fetch_policy_middleware.FetchPolicyMiddleware": 340,
+            # #198: just before HttpProxyMiddleware (750). No-op without a proxy list.
+            "src.stage1.middlewares.proxy_rotation_middleware.ProxyRotationMiddleware": 745,
         },
         "RETRY_AFTER_MAX_DELAY": float(spider_config.get("retry_after_max_delay", 120)),
         # #194: 429/503 without Retry-After double the host's delay (>= 1s) up to
