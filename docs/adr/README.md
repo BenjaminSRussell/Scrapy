@@ -23,3 +23,4 @@ a storage or messaging technology, cross-stage delivery semantics.
 | ADR | Title | Status |
 |-----|-------|--------|
 | [0001](0001-config-yml-is-canonical.md) | `Scraping_project/config.yml` is the canonical configuration | Accepted |
+| [0002](0002-edge-fetch-workers-post-to-kafka.md) | Edge fetch workers post to Kafka | Proposed |
