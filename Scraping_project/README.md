@@ -278,7 +278,10 @@ async def process_data(data):
 
 Edit [`config.yml`](config.yml) — the single source of truth loaded by
 `src.core.config.get_config()` and used by Scrapy settings (`src/settings.py`).
-Do not rely on `config/{ENV}.yml` (not present for normal operation).
+Do not rely on `config/{ENV}.yml` (not present, and not loaded). `CONFIG_ENV`
+is not read. Dev, stage, and prod diverge through environment variables; the
+checklist is [`docs/guides/ENV_DIVERGENCE.md`](docs/guides/ENV_DIVERGENCE.md)
+(#788). `ENV` / `APP_ENV` only tighten the destructive-operation guard.
 
 ### Config reload semantics
 

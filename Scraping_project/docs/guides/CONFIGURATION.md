@@ -1,6 +1,6 @@
 # Configuration guide
 
-The pipeline reads one YAML file, `Scraping_project/config.yml`. There is no `development.yml`, and there are no per-environment files. To use a different file, pass a path to `get_config()`. To change individual values, use the environment variables listed below.
+The pipeline reads one YAML file, `Scraping_project/config.yml`. There is no `development.yml`, and there are no per-environment files. `CONFIG_ENV` is not read. A missing `config/dev.yml` or `config/prod.yml` is correct: nothing deep-merges a second file, so the base file is the whole YAML config. To use a different file, pass a path to `get_config()` on the first call in the process; that path replaces `config.yml`, it does not overlay it. To change individual values, use the environment variables listed below. The operator checklist for dev, stage, and prod is [Environment divergence](ENV_DIVERGENCE.md) (#788). `ENV` / `APP_ENV` only change the destructive-operation guard; they do not select a YAML file.
 
 ## How the settings are resolved
 

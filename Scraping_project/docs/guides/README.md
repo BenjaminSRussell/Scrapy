@@ -5,6 +5,7 @@ These guides cover the current Delta Lake pipeline. The old SQLite storage is go
 | Guide | Covers |
 |---|---|
 | [Configuration](CONFIGURATION.md) | Every `config.yml` section, the environment variables that override it, and how code reads it |
+| [Environment divergence](ENV_DIVERGENCE.md) | How dev, stage, and prod differ without a `config/{ENV}.yml` overlay (#788) |
 | [Running](RUNNING.md) | Prerequisites, running the stages, crawling a different domain, resuming after a crash |
 | [Monitoring](MONITORING.md) | Grafana dashboards, Prometheus metrics and alerts, logs, the Delta transaction log |
 | [Data usage](DATA_USAGE.md) | Querying the Delta tables from Python and exporting to CSV, JSON lines or Parquet |
