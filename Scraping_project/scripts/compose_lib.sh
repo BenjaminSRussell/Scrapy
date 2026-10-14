@@ -9,7 +9,7 @@
 # Tests (and dry runs without Docker) can set COMPOSE_SERVICES="a b c" instead.
 #
 # Default to core+monitoring (#145) when the caller has not chosen profiles.
-# Streaming (Kafka), observability and ml/full (Stage 4) stay opt-in.
+# Streaming (Kafka), observability, ml/full (Stage 4) and backup (MinIO, #706) stay opt-in.
 export COMPOSE_PROFILES="${COMPOSE_PROFILES:-core,monitoring}"
 
 # compose ARGS... : `docker compose` (v2) when available, else legacy `docker-compose`.

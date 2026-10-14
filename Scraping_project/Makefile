@@ -300,6 +300,7 @@ notebook: ## Start Jupyter notebook
 # Local dry-runs (#300). Core help group: they do not start services.
 # DRY_RUN defaults to 1 inside the scripts when this is empty.
 # DRY_RUN=0 requires LAKE_SRC and BACKUP_DIR under /tmp or this worktree.
+# BACKUP_S3_URI uploads after the local tar (aws, else mc). Keys stay in the environment.
 backup: ## Dry-run local backup plan (no pg_dump or services). DRY_RUN=0 writes archives
 	@env \
 		DRY_RUN="$(DRY_RUN)" \
@@ -309,6 +310,9 @@ backup: ## Dry-run local backup plan (no pg_dump or services). DRY_RUN=0 writes 
 		LAKE_SRC="$(LAKE_SRC)" \
 		POSTGRES_DUMP_FILE="$(POSTGRES_DUMP_FILE)" \
 		BACKUP_ID="$(BACKUP_ID)" \
+		BACKUP_S3_URI="$(BACKUP_S3_URI)" \
+		BACKUP_S3_ENDPOINT="$(BACKUP_S3_ENDPOINT)" \
+		BACKUP_S3_CLIENT="$(BACKUP_S3_CLIENT)" \
 		./scripts/automated_backup.sh
 
 restore: ## Dry-run restore plan (no database). DRY_RUN=0 extracts; ROUNDTRIP=1 checks a temp sample
@@ -319,6 +323,9 @@ restore: ## Dry-run restore plan (no database). DRY_RUN=0 extracts; ROUNDTRIP=1 
 		RESTORE_DEST="$(RESTORE_DEST)" \
 		RESTORE_SQL_DEST="$(RESTORE_SQL_DEST)" \
 		ROUNDTRIP="$(ROUNDTRIP)" \
+		BACKUP_S3_URI="$(BACKUP_S3_URI)" \
+		BACKUP_S3_ENDPOINT="$(BACKUP_S3_ENDPOINT)" \
+		BACKUP_S3_CLIENT="$(BACKUP_S3_CLIENT)" \
 		./scripts/restore_backup.sh
 
 ##@ Anomaly

@@ -11,6 +11,7 @@ One Compose file (`docker-compose.yml`) plus an observability overlay. The obsol
 | `streaming` | Kafka (KRaft, no ZooKeeper). Postgres is also on `core` |
 | `ml`, `full` | `stage4-worker` only (torch / OCR image). Redis is on these profiles too so the worker can start |
 | `observability` | Loki, Jaeger, OpenTelemetry collector in `docker-compose.observability.yml` |
+| `backup` | MinIO only (#706). S3 API on `127.0.0.1:9000`, console on `127.0.0.1:9001`. Not started by core, `python start.py`, or `make docker-up` |
 
 All services share `scraper-network`. The overlay is not a second copy of those services inside `docker-compose.yml`.
 
@@ -57,6 +58,10 @@ docker compose -f docker-compose.yml -f docker-compose.observability.yml \
 
 # Stage 4 (ML + OCR image). Not started by core.
 docker compose --profile ml up -d stage4-worker
+
+# MinIO for off-box backups (#706). Does not start the pipeline.
+# Credentials and restore: scripts/README.md and .env.example.
+docker compose --profile backup up -d minio
 ```
 
 ## Secrets
@@ -73,6 +78,8 @@ docker compose --profile ml up -d stage4-worker
 | Grafana | 3000 |
 | Postgres | 5432 |
 | Kafka | `127.0.0.1:9092` |
+| MinIO S3 (`backup` profile) | `127.0.0.1:9000` |
+| MinIO console (`backup` profile) | `127.0.0.1:9001` |
 | Loki | 3100 |
 | Jaeger UI | 16686 |
 | OTLP gRPC/HTTP | 4317 / 4318 |

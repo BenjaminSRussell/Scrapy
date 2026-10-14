@@ -144,7 +144,12 @@ def _shutdown_module():
 def test_shutdown_prune_list_is_compose_volumes():
     sd = _shutdown_module()
     assert sd.compose_volume_names() == VOLUMES
-    assert sd.planned_volume_prune(purge_data=False) == [v for v in VOLUMES if "delta" not in v]
+    assert sd.planned_volume_prune(purge_data=False) == [
+        v for v in VOLUMES if not sd.is_preserved_volume(v)
+    ]
+    assert "minio-data" in VOLUMES
+    assert "minio-data" not in sd.planned_volume_prune(purge_data=False)
+    assert "minio-data" in sd.planned_volume_prune(purge_data=True)
     for stale in ("kafka_data", "zookeeper_data", "prometheus_a_data", "alertmanager_1_data"):
         assert stale not in sd.planned_volume_prune(purge_data=True)
 

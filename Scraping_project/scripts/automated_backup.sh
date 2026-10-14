@@ -34,10 +34,24 @@
 #   POSTGRES_DUMP_FILE   Existing .sql file to copy. Unset skips SQL.
 #   BACKUP_ID            Filename token. Default UTC YYYYMMDD_HHMMSS.
 #                        Letters, digits, dot, underscore, and hyphen only.
+#
+# Off-box copy (#706). Unset BACKUP_S3_URI keeps the archive local and does
+# not run aws, mc, or Docker. A dry-run only prints the object keys.
+#   BACKUP_S3_URI        s3://bucket or s3://bucket/prefix. No credentials in
+#                        the URI. The bucket is created on a real upload if
+#                        it is missing.
+#   BACKUP_S3_ENDPOINT   MinIO URL, for example http://127.0.0.1:9000 (the
+#                        compose `backup` profile). Omit for AWS.
+#   BACKUP_S3_CLIENT     aws or mc. Empty prefers aws, then mc.
+#   AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY are required for MinIO.
+#                        They are not printed. For the compose profile, use
+#                        the same values as MINIO_ROOT_USER / MINIO_ROOT_PASSWORD.
+# Remote retention is a bucket lifecycle. RETENTION_DAYS and RETENTION_COUNT
+# delete only files inside BACKUP_DIR. This script does not delete objects.
 set -euo pipefail
 
 if [ "$#" -ne 0 ]; then
-  echo "usage: $0 (set DRY_RUN, BACKUP_DIR, RETENTION_DAYS, RETENTION_COUNT, LAKE_SRC, POSTGRES_DUMP_FILE, BACKUP_ID)" >&2
+  echo "usage: $0 (set DRY_RUN, BACKUP_DIR, RETENTION_DAYS, RETENTION_COUNT, LAKE_SRC, POSTGRES_DUMP_FILE, BACKUP_ID, BACKUP_S3_URI, BACKUP_S3_ENDPOINT, BACKUP_S3_CLIENT)" >&2
   exit 2
 fi
 
@@ -45,6 +59,8 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 # shellcheck source=backup_guard.sh
 source "$ROOT/scripts/backup_guard.sh"
+# shellcheck source=backup_s3.sh
+source "$ROOT/scripts/backup_s3.sh"
 
 DRY_RUN="${DRY_RUN:-1}"
 BACKUP_DIR="${BACKUP_DIR:-}"
@@ -121,6 +137,14 @@ if ! is_dry; then
     guard_path POSTGRES_DUMP_FILE "$POSTGRES_DUMP_FILE"
   fi
 fi
+if [ -n "${BACKUP_S3_URI:-}" ]; then
+  if is_dry; then
+    s3_prepare_dry
+  else
+    s3_install_cleanup_trap
+    s3_prepare_real
+  fi
+fi
 
 default_lake="$ROOT/data/delta_lake"
 
@@ -161,6 +185,28 @@ else
   else
     echo "postgres: skipped (POSTGRES_DUMP_FILE unset; pg_dump is not run)"
   fi
+fi
+
+if [ -z "${BACKUP_S3_URI:-}" ]; then
+  echo "s3: skipped (BACKUP_S3_URI unset)"
+else
+  s3_print_target
+  if is_dry; then
+    echo "s3_client: aws or mc (not invoked)"
+    key="$(s3_object_key "delta_lake_${BACKUP_ID}.tar.gz")"
+    echo "s3: would upload delta_lake_${BACKUP_ID}.tar.gz to s3://${S3_BUCKET}/${key} (not uploaded)"
+    if [ -n "$POSTGRES_DUMP_FILE" ]; then
+      key="$(s3_object_key "postgres_${BACKUP_ID}.sql")"
+      echo "s3: would upload postgres_${BACKUP_ID}.sql to s3://${S3_BUCKET}/${key} (not uploaded)"
+    fi
+  else
+    echo "s3_client: $S3_CLIENT"
+    s3_upload_file "$BACKUP_DIR/delta_lake_${BACKUP_ID}.tar.gz" "delta_lake_${BACKUP_ID}.tar.gz"
+    if [ -n "$POSTGRES_DUMP_FILE" ]; then
+      s3_upload_file "$BACKUP_DIR/postgres_${BACKUP_ID}.sql" "postgres_${BACKUP_ID}.sql"
+    fi
+  fi
+  s3_note_retention
 fi
 
 rm_in_backup_dir() {

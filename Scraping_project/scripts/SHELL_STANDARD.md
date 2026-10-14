@@ -14,7 +14,7 @@ set -euo pipefail
 |---|---|---|
 | Actions (entrypoints, resets, deploys, rebuilds) | `set -euo pipefail` | Stop on the first failure; a half-applied reset is worse than none. |
 | Diagnostics (`diagnose.sh`, `scripts/diagnose_issues.sh`, `scripts/smoke_local.sh`) | `set -uo pipefail` | No `-e`: report one failing probe and keep running the rest. These scripts track failures explicitly. |
-| Sourced libraries (`scripts/compose_lib.sh`) | none | A library must not change the caller's shell options. Write it to work under the caller's strict mode. |
+| Sourced libraries (`scripts/compose_lib.sh`, `scripts/backup_guard.sh`, `scripts/backup_s3.sh`) | none | A library must not change the caller's shell options. Write it to work under the caller's strict mode. |
 
 ## Pitfalls under strict mode
 

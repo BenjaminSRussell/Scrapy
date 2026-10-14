@@ -30,7 +30,7 @@ COMPOSE_FILE = Path(__file__).resolve().parent / "docker-compose.yml"
 # Fallback only: used when docker-compose.yml cannot be read/parsed. The real
 # prune list is the top-level `volumes:` of the Compose file (#383), so it never
 # drifts from what `docker compose up` actually creates.
-DEFAULT_COMPOSE_VOLUMES = ("redis-data", "postgres-data", "prometheus-data", "grafana-data")
+DEFAULT_COMPOSE_VOLUMES = ("redis-data", "postgres-data", "prometheus-data", "grafana-data", "minio-data")
 
 
 def compose_volume_names(compose_file: Path | str = COMPOSE_FILE) -> list[str]:
@@ -48,16 +48,18 @@ def compose_volume_names(compose_file: Path | str = COMPOSE_FILE) -> list[str]:
     return [str(name) for name in volumes]
 
 
-def is_delta_volume(name: str) -> bool:
-    return "delta" in name.lower()
+def is_preserved_volume(name: str) -> bool:
+    """Delta data and the MinIO backup volume survive shutdown unless --purge-data."""
+    lowered = name.lower()
+    return "delta" in lowered or "minio" in lowered
 
 
 def classify_volumes(names: Iterable[str]) -> tuple[list[str], list[str]]:
     """Split Compose volumes into (always pruned, pruned only with --purge-data)."""
-    regular, delta = [], []
+    regular, preserved = [], []
     for name in names:
-        (delta if is_delta_volume(name) else regular).append(name)
-    return regular, delta
+        (preserved if is_preserved_volume(name) else regular).append(name)
+    return regular, preserved
 
 
 def planned_volume_prune(purge_data: bool, compose_file: Path | str = COMPOSE_FILE) -> list[str]:
@@ -89,7 +91,7 @@ def parse_args() -> argparse.Namespace:
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
         epilog=(
             f"Local volumes pruned (from {COMPOSE_FILE.name}): {', '.join(regular) or 'none'}. "
-            f"Delta Lake volumes (only with --purge-data): {', '.join(delta) or 'none'}."
+            f"Kept unless --purge-data (Delta Lake and MinIO backups): {', '.join(delta) or 'none'}."
         ),
     )
     parser.add_argument(
@@ -125,7 +127,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--purge-data",
         action="store_true",
-        help="Also remove Delta Lake volumes during local shutdown.",
+        help="Also remove Delta Lake and MinIO backup volumes during local shutdown.",
     )
     parser.add_argument(
         "--dry-run",
@@ -432,9 +434,9 @@ def shutdown_local(purge_data: bool, skip_images: bool) -> None:
     dc = compose_cmd()
     print(f"Stopping local environment with {' '.join(dc)} down...")
     # `down` only removes services in enabled profiles. Cover every profile
-    # this repo defines so Stage 4, Kafka and the OTEL overlay stop too (#145).
+    # this repo defines so Stage 4, Kafka, the OTEL overlay and MinIO stop too (#145, #706).
     chosen = [p.strip() for p in os.environ.get("COMPOSE_PROFILES", "").split(",") if p.strip()]
-    for name in ("core", "monitoring", "streaming", "observability", "ml", "full"):
+    for name in ("core", "monitoring", "streaming", "observability", "ml", "full", "backup"):
         if name not in chosen:
             chosen.append(name)
     os.environ["COMPOSE_PROFILES"] = ",".join(chosen)

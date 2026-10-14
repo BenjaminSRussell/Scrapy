@@ -29,7 +29,7 @@ pytestmark = pytest.mark.skipif(BASH is None, reason="bash not available")
 STRICT = "set -euo pipefail"
 DIAGNOSTIC = "set -uo pipefail"
 DIAGNOSTIC_SCRIPTS = {"diagnose.sh", "scripts/diagnose_issues.sh", "scripts/smoke_local.sh"}
-LIBRARIES = {"scripts/compose_lib.sh"}
+LIBRARIES = {"scripts/compose_lib.sh", "scripts/backup_guard.sh", "scripts/backup_s3.sh"}
 
 
 def _scripts() -> list[str]:

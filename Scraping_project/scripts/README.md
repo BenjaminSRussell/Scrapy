@@ -15,8 +15,8 @@ This directory contains scripts for managing, debugging, and resetting the scrap
 | `drain_lake.py` | Selective Redis queue drain | `python scripts/drain_lake.py --list` |
 | `audit_file_counts.py` | Count Python files per directory | One-shot layout audit |
 | `monitor_and_trigger_depth.py` | Launch the depth spider when queues are idle | Long-running; needs Redis |
-| `automated_backup.sh` | Dry-run archive of a lake directory and an optional SQL file | `make backup`. Does not run `pg_dump` or start services |
-| `restore_backup.sh` | Dry-run restore, or a `/tmp` sample round-trip | `make restore`. `ROUNDTRIP=1` checks a sample. SQL is not loaded |
+| `automated_backup.sh` | Dry-run archive of a lake directory and an optional SQL file. `BACKUP_S3_URI` uploads after the tar | `make backup`. Does not run `pg_dump` or start services |
+| `restore_backup.sh` | Dry-run restore, a `/tmp` sample round-trip, or a download from `BACKUP_S3_URI` | `make restore`. `ROUNDTRIP=1` checks a sample. SQL is not loaded |
 | `anomaly_scan.py` | Offline z-score of a metrics fixture | `make anomaly-scan`. Prints an Alertmanager payload and does not POST |
 
 > **Destructive operations** (`complete_reset.sh`, `reset_lake.py`, `../cli.py reset`,
@@ -36,7 +36,52 @@ Retention is applied by `automated_backup.sh` only. A dry-run lists what would b
 | `RETENTION_DAYS` | `7` | Delete `delta_lake_*.tar.gz` and `postgres_*.sql` in `BACKUP_DIR` older than this many days. `0` disables the age cutoff. |
 | `RETENTION_COUNT` | `0` | Keep at most this many newest `delta_lake_*.tar.gz` archives, plus the `postgres_*.sql` with the same id. `0` means no count cap. |
 
-`ROUNDTRIP=1 ./scripts/restore_backup.sh` builds a sample lake and SQL file under `/tmp`, backs them up, restores them, and compares the bytes. It does not use the project lake.
+`ROUNDTRIP=1 ./scripts/restore_backup.sh` builds a sample lake and SQL file under `/tmp`, backs them up, restores them, and compares the bytes. It does not use the project lake and does not upload, even if `BACKUP_S3_URI` is set in the environment.
+
+### S3 / MinIO target (#706)
+
+Set `BACKUP_S3_URI` to copy the new archive off the machine after the local tar is written. A dry-run prints the object keys and does not run `aws`, `mc`, or Docker. The Compose `backup` profile is MinIO on `127.0.0.1:9000` (console `127.0.0.1:9001`). It is not started by `core` or `python start.py`.
+
+```bash
+docker compose --profile backup up -d minio
+```
+
+Credentials are environment variables, never part of the URI. For that MinIO, set `AWS_ACCESS_KEY_ID` to `MINIO_ROOT_USER` and `AWS_SECRET_ACCESS_KEY` to `MINIO_ROOT_PASSWORD` (see `.env.example`). `BACKUP_S3_ENDPOINT` is required for MinIO. Leave it unset for AWS. `BACKUP_S3_CLIENT` is `aws` or `mc`; empty prefers `aws` when it is on `PATH`. `aws` reads the keys from the environment and, for MinIO, uses path-style addressing. `mc` is the fallback: the alias is stored only in a temporary directory and removed when the script exits.
+
+```bash
+export AWS_ACCESS_KEY_ID="${MINIO_ROOT_USER}"
+export AWS_SECRET_ACCESS_KEY="${MINIO_ROOT_PASSWORD}"
+export AWS_DEFAULT_REGION=us-east-1
+
+DRY_RUN=0 \
+  LAKE_SRC=/tmp/scrapy-lake-src \
+  BACKUP_DIR=/tmp/scrapy-backups \
+  BACKUP_ID=20260101_000000 \
+  BACKUP_S3_URI=s3://scrapy-backups/pipeline \
+  BACKUP_S3_ENDPOINT=http://127.0.0.1:9000 \
+  ./scripts/automated_backup.sh
+```
+
+The first real upload creates the bucket when it is missing. `RETENTION_DAYS` and `RETENTION_COUNT` still delete only files inside `BACKUP_DIR`. This script does not delete remote objects. Set a bucket lifecycle for the same window. Against the compose MinIO, with `mc` installed on the host:
+
+```bash
+mc alias set local http://127.0.0.1:9000 "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY"
+mc ilm rule add --expire-days "${RETENTION_DAYS:-7}" local/scrapy-backups
+```
+
+On AWS, add a lifecycle expiration rule on the bucket instead of `mc ilm`.
+
+Restore downloads `delta_lake_<BACKUP_ID>.tar.gz` into `BACKUP_DIR` when that file is not already local, then extracts it to `RESTORE_DEST` under `/tmp` or this worktree. `BACKUP_ID` is required for the download. A matching `postgres_<BACKUP_ID>.sql` object is copied and is not loaded. `data/delta_lake` is still refused. A dry-run does not download.
+
+```bash
+DRY_RUN=0 \
+  BACKUP_DIR=/tmp/scrapy-restore \
+  BACKUP_ID=20260101_000000 \
+  BACKUP_S3_URI=s3://scrapy-backups/pipeline \
+  BACKUP_S3_ENDPOINT=http://127.0.0.1:9000 \
+  RESTORE_DEST=/tmp/scrapy-restored \
+  ./scripts/restore_backup.sh
+```
 
 ## Anomaly scan (#501)
 
@@ -369,6 +414,8 @@ metrics-exporter services run only in the Helm chart):
 | Prometheus | 9090 | http://localhost:9090 (targets: http://localhost:9090/targets) |
 | Redis | 6379 | `localhost:6379` (`REDIS_HOST`/`REDIS_PORT`/`REDIS_PASSWORD`, see README "Redis connection contract") |
 | PostgreSQL | 5432 | postgres://localhost:5432 |
+| MinIO S3 (`backup` profile) | 9000 | http://127.0.0.1:9000 |
+| MinIO console (`backup` profile) | 9001 | http://127.0.0.1:9001 |
 
 `redis-exporter` (9121) and `postgres-exporter` (9187) are reachable only
 inside the compose network, where Prometheus scrapes them.

@@ -69,8 +69,11 @@ These rules apply to contributors and operators alike (#482).
 - **Local-dev defaults are public.** `docker-compose.yml` falls back to well-known
   passwords when `.env` does not set them: Postgres superuser `postgres`
   (`POSTGRES_PASSWORD`), app role `scrapy_app_dev` (`APP_DB_PASSWORD`), Grafana `admin`
-  (`GRAFANA_ADMIN_PASSWORD`), and Redis without AUTH (`REDIS_PASSWORD`). Set real values
-  before the stack is reachable from anything but your own machine.
+  (`GRAFANA_ADMIN_PASSWORD`), Redis without AUTH (`REDIS_PASSWORD`), and the opt-in
+  MinIO backup profile root `change_me_minio` (`MINIO_ROOT_PASSWORD`, user
+  `scrapybackup`). Set real values before the stack is reachable from anything
+  but your own machine. MinIO is bound to loopback; `AWS_SECRET_ACCESS_KEY` for
+  `BACKUP_S3_URI` is an environment variable and must not be committed.
 
 ### Rotating a leaked or default password
 

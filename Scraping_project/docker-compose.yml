@@ -1,5 +1,6 @@
 # Docker Compose configuration for UConn Scraping Pipeline
 # Profiles (#145): core | monitoring | streaming, plus ml | full for Stage 4 (#144).
+# Profile backup (#706) is MinIO only and is not started with core.
 # Observability (Loki / Jaeger / OTEL) is the overlay docker-compose.observability.yml.
 # One command for the lean stack + monitoring (no torch, no Kafka):
 #   docker compose --profile core --profile monitoring up -d
@@ -334,11 +335,43 @@ services:
     networks:
       - scraper-network
 
+  # Optional MinIO for automated_backup.sh (#706). Profile `backup` only, so
+  # `python start.py` and core/monitoring do not pull or start it. Loopback
+  # ports. Official minio/minio tags are no longer published; this is the
+  # community rebuild of the last public release (linux/arm64 and amd64).
+  # The image runs as uid minio and does not bundle mc or curl; root is set
+  # so the named volume is writable. Host `aws` or `mc` uploads to :9000.
+  minio:
+    profiles: ["backup"]
+    image: alpine/minio:RELEASE.2025-10-15T17-29-55Z
+    container_name: uconn-minio
+    restart: unless-stopped
+    user: "0:0"
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      - MINIO_ROOT_USER=${MINIO_ROOT_USER:-scrapybackup}
+      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-change_me_minio}
+    ports:
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
+    volumes:
+      - minio-data:/data
+    networks:
+      - scraper-network
+    healthcheck:
+      # alpine:3.20 busybox wget. /minio/health/live is the server liveness route.
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
 volumes:
   redis-data:
   postgres-data:
   prometheus-data:
   grafana-data:
+  minio-data:
 
 networks:
   scraper-network:
