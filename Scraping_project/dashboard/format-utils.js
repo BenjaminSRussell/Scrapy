@@ -379,5 +379,223 @@
         const limit = Math.max(1, Number(intervalMs) || 5000) * Math.max(1, Number(factor) || 3);
         return { stale: ageMs > limit, ageMs, limitMs: limit };
     }
-    return { tabKeyTarget, staleState, queueDepthRows, metricsFailureActivity, shortcutHintText, parseMetrics, ratePerMinute, resolveMetricsUrl, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler, stageActivity, doughnutLegendLayout, connectionState, documentTitle, createActivityAnnouncer, metricsUrlProblem, splitLinks, createMetricsFetcher, REFRESH_INTERVAL_CHOICES, parseRefreshInterval, shortcutAction, pickInitialTab };
+    // #1038: series the dashboard reads, and the UI fields each one fills.
+    // Rendered in the System tab Settings panel. An exporter rename moves a
+    // field only when this row changes with the reader in app.js.
+    const METRIC_UI_MAP = [
+        {
+            metric: 'stage1_urls_discovered_total',
+            read: 'Counter. Rates are items per minute since the previous sample; the Stage 1 card is active when that rate is above 0. Milestones at 1000, 10000, 100000 and 1000000.',
+            fields: [
+                { label: 'Top bar · Total URLs', id: 'topbar-urls' },
+                { label: 'Overview · URLs Found', id: 'overview-s1-discovered' },
+                { label: 'Pipeline · URLs Discovered', id: 'pipeline-s1-discovered' },
+                { label: 'Performance · URLs discovered chart', id: 'urls-chart' },
+                { label: 'Overview · Stage 1 discovery trend', id: 'spark-overview-s1-discovered' },
+                { label: 'Overview · Stage 1 trend direction', id: 'spark-dir-overview-s1-discovered' },
+                { label: 'Performance · Stage 1 rate', id: 'perf-s1-rate' },
+                { label: 'Overview · Throughput URLs/min', id: 'throughput-chart' },
+                { label: 'Pipeline · Stage progression (Stage 1)', id: 'stage-progression-chart' },
+                { label: 'Activity log', id: 'activity-log' },
+                { label: 'Overview · Recent Activity', id: 'overview-activity' },
+            ],
+        },
+        {
+            metric: 'stage1_urls_queued_total',
+            read: 'Counter.',
+            fields: [
+                { label: 'Overview · Queued', id: 'overview-s1-queued' },
+                { label: 'Pipeline · Queued for Stage 2', id: 'pipeline-s1-queued' },
+            ],
+        },
+        {
+            metric: 'stage2_pages_analyzed_total',
+            read: 'Counter. Rates are items per minute; the Stage 2 card is active when that rate is above 0. Same milestone thresholds as URLs discovered.',
+            fields: [
+                { label: 'Overview · Pages Analyzed', id: 'overview-s2-analyzed' },
+                { label: 'Pipeline · Pages Analyzed', id: 'pipeline-s2-analyzed' },
+                { label: 'Performance · Pages analyzed chart', id: 'pages-chart' },
+                { label: 'Overview · Stage 2 analyze trend', id: 'spark-overview-s2-analyzed' },
+                { label: 'Overview · Stage 2 trend direction', id: 'spark-dir-overview-s2-analyzed' },
+                { label: 'Performance · Stage 2 rate', id: 'perf-s2-rate' },
+                { label: 'Overview · Throughput Pages/min', id: 'throughput-chart' },
+                { label: 'Pipeline · Stage progression (Stage 2)', id: 'stage-progression-chart' },
+                { label: 'Activity log', id: 'activity-log' },
+                { label: 'Overview · Recent Activity', id: 'overview-activity' },
+            ],
+        },
+        {
+            metric: 'stage2_quality_docs_total',
+            read: 'Counter.',
+            fields: [
+                { label: 'Overview · Quality Docs', id: 'overview-s2-quality' },
+                { label: 'Pipeline · Quality Documents', id: 'pipeline-s2-quality' },
+                { label: 'Pipeline · Traffic routing (Quality Docs)', id: 'routing-chart' },
+            ],
+        },
+        {
+            metric: 'stage2_massive_docs_total',
+            read: 'Counter.',
+            fields: [
+                { label: 'Pipeline · Massive Documents', id: 'pipeline-s2-massive' },
+                { label: 'Pipeline · Traffic routing (Massive Docs)', id: 'routing-chart' },
+            ],
+        },
+        {
+            metric: 'stage2_avg_word_count',
+            read: 'Gauge.',
+            fields: [
+                { label: 'Pipeline · Avg Word Count', id: 'pipeline-s2-words' },
+            ],
+        },
+        {
+            metric: 'stage3_summaries_created_total',
+            read: 'Counter. Rates are items per minute; the Stage 3 card is active when that rate is above 0. The Stage 4 overview spark uses this sample history, not stage4_large_doc_summaries_total.',
+            fields: [
+                { label: 'Top bar · Summaries', id: 'topbar-summaries' },
+                { label: 'Overview · Summaries', id: 'overview-s3-summaries' },
+                { label: 'Pipeline · Summaries Created', id: 'pipeline-s3-summaries' },
+                { label: 'Performance · Summaries produced chart', id: 'summaries-chart' },
+                { label: 'Overview · Stage 3 summaries trend', id: 'spark-overview-s3-summaries' },
+                { label: 'Overview · Stage 3 trend direction', id: 'spark-dir-overview-s3-summaries' },
+                { label: 'Overview · Stage 4 large-doc trend', id: 'spark-overview-s4-summaries' },
+                { label: 'Overview · Stage 4 trend direction', id: 'spark-dir-overview-s4-summaries' },
+                { label: 'Pipeline · Stage 3 processing rate', id: 'pipeline-s3-rate' },
+                { label: 'Performance · Stage 3 rate', id: 'perf-s3-rate' },
+                { label: 'Pipeline · Stage progression (Stage 3)', id: 'stage-progression-chart' },
+                { label: 'Activity log', id: 'activity-log' },
+                { label: 'Overview · Recent Activity', id: 'overview-activity' },
+            ],
+        },
+        {
+            metric: 'stage3_documents_deduplicated_total',
+            read: 'Counter. A positive delta is also written to the activity log.',
+            fields: [
+                { label: 'Overview · Deduplicated', id: 'overview-s3-dedup' },
+                { label: 'Pipeline · Deduplicated', id: 'pipeline-s3-dedup' },
+                { label: 'Activity log', id: 'activity-log' },
+                { label: 'Overview · Recent Activity', id: 'overview-activity' },
+            ],
+        },
+        {
+            metric: 'stage4_large_doc_summaries_total',
+            read: 'Counter. Rates are items per minute; the Stage 4 card is active when that rate is above 0. Does not feed the Stage 4 overview spark.',
+            fields: [
+                { label: 'Overview · Processed', id: 'overview-s4-summaries' },
+                { label: 'Pipeline · Large Summaries', id: 'pipeline-s4-summaries' },
+                { label: 'Pipeline · Stage 4 processing rate', id: 'pipeline-s4-rate' },
+                { label: 'Performance · Stage 4 rate', id: 'perf-s4-rate' },
+                { label: 'Pipeline · Stage progression (Stage 4)', id: 'stage-progression-chart' },
+                { label: 'Activity log', id: 'activity-log' },
+                { label: 'Overview · Recent Activity', id: 'overview-activity' },
+            ],
+        },
+        {
+            metric: 'stage4_avg_compression_ratio',
+            read: 'Gauge. Shown as (1/value)x when value is above 0, otherwise 0x.',
+            fields: [
+                { label: 'Overview · Compression (out÷in)', id: 'overview-s4-compression' },
+                { label: 'Pipeline · Avg Compression', id: 'pipeline-s4-compression' },
+            ],
+        },
+        {
+            metric: 'pipeline_redis_keys',
+            read: 'Gauge, 0 when absent. Redis health is Healthy when this series or pipeline_redis_memory_bytes is present.',
+            fields: [
+                { label: 'System · Redis Keys', id: 'redis-keys' },
+                { label: 'System · Redis health', id: 'redis-health' },
+            ],
+        },
+        {
+            metric: 'pipeline_redis_memory_bytes',
+            read: 'Bytes. Redis health uses the same presence check as pipeline_redis_keys.',
+            fields: [
+                { label: 'System · Memory Used', id: 'redis-memory' },
+                { label: 'System · Redis health', id: 'redis-health' },
+            ],
+        },
+        {
+            metric: 'pipeline_last_update_timestamp',
+            read: 'Unix seconds. Missing, zero, or non-finite shows an em dash.',
+            fields: [
+                { label: 'System · Last Update timestamp', id: 'last-update' },
+            ],
+        },
+        {
+            metric: 'pipeline_scout_instances',
+            read: 'Gauge. An absent series shows an em dash, not zero.',
+            fields: [
+                { label: 'Pipeline · Scout Instances', id: 'scout-instances' },
+            ],
+        },
+        {
+            metric: 'pipeline_running',
+            read: 'After a successful fetch, 0 is Pipeline offline. Any other value, including an absent series, stays Online.',
+            fields: [
+                { label: 'Top bar · Status', id: 'topbar-status' },
+                { label: 'System · Status', id: 'system-status' },
+            ],
+        },
+        {
+            metric: 'delta_lake_records',
+            read: 'Count of distinct table label values. The sample value is not shown. No labelled series shows an em dash.',
+            fields: [
+                { label: 'System · Delta Lake Tables', id: 'delta-table-count' },
+            ],
+        },
+        {
+            metric: '(any series)',
+            read: 'Collecting when the scrape parsed at least one sample; Stale when it parsed none; Fetch failed after an error.',
+            fields: [
+                { label: 'System · Metrics health', id: 'metrics-health' },
+            ],
+        },
+    ];
+    function renderMetricNameMap(root, doc) {
+        const d = doc || (typeof document !== 'undefined' ? document : null);
+        if (!root || !d || typeof d.createElement !== 'function') return;
+        while (root.firstChild) root.removeChild(root.firstChild);
+        const table = d.createElement('table');
+        table.className = 'data-fallback-table';
+        table.id = 'metric-name-map-table';
+        const caption = d.createElement('caption');
+        caption.className = 'visually-hidden';
+        caption.textContent = 'Prometheus metric names and the UI fields that read them';
+        table.appendChild(caption);
+        const thead = d.createElement('thead');
+        const hr = d.createElement('tr');
+        for (const label of ['Prometheus series', 'UI fields', 'Read as']) {
+            const th = d.createElement('th');
+            th.scope = 'col';
+            th.textContent = label;
+            hr.appendChild(th);
+        }
+        thead.appendChild(hr);
+        table.appendChild(thead);
+        const tbody = d.createElement('tbody');
+        for (const row of METRIC_UI_MAP) {
+            const tr = d.createElement('tr');
+            const name = d.createElement('td');
+            const code = d.createElement('code');
+            code.textContent = row.metric;
+            name.appendChild(code);
+            tr.appendChild(name);
+            const fields = d.createElement('td');
+            const list = d.createElement('ul');
+            for (const field of row.fields) {
+                const li = d.createElement('li');
+                li.textContent = field.label + ' (' + field.id + ')';
+                list.appendChild(li);
+            }
+            fields.appendChild(list);
+            tr.appendChild(fields);
+            const read = d.createElement('td');
+            read.textContent = row.read;
+            tr.appendChild(read);
+            tbody.appendChild(tr);
+        }
+        table.appendChild(tbody);
+        root.appendChild(table);
+    }
+    return { tabKeyTarget, staleState, queueDepthRows, metricsFailureActivity, shortcutHintText, parseMetrics, ratePerMinute, resolveMetricsUrl, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler, stageActivity, doughnutLegendLayout, connectionState, documentTitle, createActivityAnnouncer, metricsUrlProblem, splitLinks, createMetricsFetcher, REFRESH_INTERVAL_CHOICES, parseRefreshInterval, shortcutAction, pickInitialTab, METRIC_UI_MAP, renderMetricNameMap };
 });
