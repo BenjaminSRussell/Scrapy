@@ -10,4 +10,5 @@
 /Scraping_project/src/lakehouse/ @BenjaminSRussell
 /Scraping_project/k8s/ @BenjaminSRussell
 /Scraping_project/monitoring/ @BenjaminSRussell
+/Scraping_project/kafka-delta-ingest/ @BenjaminSRussell
 /.github/ @BenjaminSRussell
