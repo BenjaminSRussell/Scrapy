@@ -31,6 +31,7 @@ renamed to the new version and date (see the release checklist).
 - ASR no longer sends audio to Google by default (`ASR_PROVIDER` opt-in; local whisper).
 
 ### Fixed
+- Docker HEALTHCHECK probes PID 1 and configured Redis/TCP dependencies instead of always succeeding, and the docs no longer point at a missing `/health` route (#542).
 - Dashboard UI, accessibility and XSS fixes (#954 #957 #975 #976 #977 #978 #945 #962 #982 #983 #906 #910).
 - ASR never leaks temp media files and caps download size (#468).
 - Config reloads that fail to parse keep the previous snapshot live.
