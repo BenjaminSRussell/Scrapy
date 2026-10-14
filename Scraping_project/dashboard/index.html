@@ -566,7 +566,9 @@
             .tab-button,
             .refresh-bar .btn,
             .refresh-bar select,
-            .danger-sound-label {
+            .danger-sound-label,
+            .job-controls .btn,
+            .job-stop-dialog .btn {
                 min-height: 44px;
                 min-width: 44px;
             }
@@ -739,7 +741,8 @@
         @media (forced-colors: active) {
             .card,
             .health-item,
-            .topbar {
+            .topbar,
+            .job-stop-dialog {
                 border: 1px solid CanvasText;
             }
             .stage-card {
@@ -879,6 +882,56 @@
         }
         .fetch-error-banner[hidden] { display: none; }
         .btn[aria-busy="true"] { cursor: progress; }
+
+        /* #1000: Stop / Pause / Resume stub. Uses .btn; stays disabled. */
+        .job-controls { margin-bottom: 1.5rem; }
+        .job-controls-reason {
+            font-size: 0.9rem;
+            color: var(--gray-700);
+            margin: 0 0 0.75rem;
+        }
+        .job-controls-cluster,
+        .job-stop-dialog-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            align-items: center;
+        }
+        .job-stop-dialog-actions { justify-content: flex-end; margin-top: 1rem; }
+        .job-controls .btn,
+        .job-stop-dialog .btn {
+            background: #1e293b;
+            color: #e2e8f0;
+            border: 1px solid #334155;
+            padding: 0.4rem 0.8rem;
+            border-radius: 0.375rem;
+            font: inherit;
+            cursor: pointer;
+        }
+        .job-controls .btn:disabled,
+        .job-stop-dialog .btn:disabled {
+            background: #e5e7eb;
+            color: #374151;
+            border-color: #9ca3af;
+            cursor: not-allowed;
+        }
+        .job-controls .btn.btn-danger:disabled,
+        .job-stop-dialog .btn.btn-danger:disabled {
+            background: #fee2e2;
+            color: #7f1d1d;
+            border-color: #991b1b;
+        }
+        .job-stop-dialog {
+            border: 1px solid var(--gray-300);
+            border-radius: 0.5rem;
+            padding: 1.25rem 1.5rem;
+            max-width: 28rem;
+            background: #fff;
+            color: var(--gray-900);
+        }
+        .job-stop-dialog::backdrop {
+            background: rgba(17, 24, 39, 0.55);
+        }
     </style>
 </head>
 <body>
@@ -938,6 +991,18 @@
 
             <!-- Overview Tab -->
             <div class="tab-content active" id="tab-overview" role="tabpanel" aria-labelledby="tabbtn-overview" tabindex="0">
+                <div class="card job-controls" id="job-controls">
+                    <div class="card-header">
+                        <h2 class="card-title" id="job-controls-title">Job controls</h2>
+                        <span class="card-badge badge-warning">Stub</span>
+                    </div>
+                    <p id="job-controls-reason" class="job-controls-reason">Stop, pause, and resume stay disabled until a job-control API is available. No request is sent.</p>
+                    <div class="job-controls-cluster" role="group" aria-labelledby="job-controls-title">
+                        <button type="button" class="btn btn-danger" id="job-control-stop" disabled aria-describedby="job-controls-reason">Stop</button>
+                        <button type="button" class="btn" id="job-control-pause" disabled aria-describedby="job-controls-reason">Pause</button>
+                        <button type="button" class="btn" id="job-control-resume" disabled aria-describedby="job-controls-reason">Resume</button>
+                    </div>
+                </div>
                 <div class="grid grid-4">
                     <div class="card">
                         <div class="card-header">
@@ -1425,6 +1490,15 @@
             <button type="button" id="manual-refresh" class="btn" aria-label="Refresh metrics now">Refresh now</button>
         </div>
     </main>
+
+    <dialog id="job-stop-confirm" class="job-stop-dialog" aria-labelledby="job-stop-confirm-title" aria-describedby="job-stop-confirm-reason">
+        <h2 class="card-title" id="job-stop-confirm-title">Stop the pipeline?</h2>
+        <p id="job-stop-confirm-reason" class="job-controls-reason">Confirming stop is disabled until a job-control API is available. No request is sent.</p>
+        <div class="job-stop-dialog-actions">
+            <button type="button" class="btn" id="job-stop-cancel">Cancel</button>
+            <button type="button" class="btn btn-danger" id="job-stop-confirm-btn" disabled aria-describedby="job-stop-confirm-reason">Confirm stop</button>
+        </div>
+    </dialog>
 
     <script src="features.js"></script>
     <script src="format-utils.js"></script>

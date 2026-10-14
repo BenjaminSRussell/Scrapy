@@ -1341,11 +1341,46 @@ function applyVersionWatermark() {
     if (el) el.textContent = 'v' + (window.__CC_VERSION__ || 'dev');
 }
 
+// #1000: transport controls are a stub. There is no job-control API, so Stop,
+// Pause, and Resume stay disabled and this function never sends a request.
+// Stop opens its confirm dialog only after that control is enabled.
+function setupJobControls() {
+    const reasonEl = document.getElementById('job-controls-reason');
+    const reason = reasonEl ? reasonEl.textContent : '';
+    ['job-control-stop', 'job-control-pause', 'job-control-resume', 'job-stop-confirm-btn'].forEach((id) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.disabled = true;
+        if (reason) el.title = reason;
+    });
+    const stop = document.getElementById('job-control-stop');
+    const dialog = document.getElementById('job-stop-confirm');
+    const cancel = document.getElementById('job-stop-cancel');
+    const confirmBtn = document.getElementById('job-stop-confirm-btn');
+    if (stop && dialog) {
+        stop.addEventListener('click', () => {
+            if (stop.disabled) return;
+            if (typeof dialog.showModal === 'function') dialog.showModal();
+        });
+    }
+    if (cancel && dialog) {
+        cancel.addEventListener('click', () => {
+            if (typeof dialog.close === 'function') dialog.close();
+        });
+    }
+    if (confirmBtn) {
+        confirmBtn.addEventListener('click', (event) => {
+            event.preventDefault();
+        });
+    }
+}
+
 function initialize() {
     console.log('Initializing Pipeline Control Center...');
 
     applyFeatureFlags();
     applyVersionWatermark();
+    setupJobControls();
     // #1038: Settings panel. A missing helper must not block the metrics poll.
     if (typeof renderMetricNameMap === 'function') {
         renderMetricNameMap(document.getElementById('metric-name-map-body'), document);
