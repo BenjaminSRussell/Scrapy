@@ -14,6 +14,7 @@ const STORE_DANGER_SOUND_KEY = 'cc.dangerSound'; // #1037
 let dangerSoundEnabled = false;
 let dangerAudioCtx = null;
 const STORE_COMPARE_KEY = 'cc.comparePrevHour'; // #1035
+const ACTIVITY_STORE_KEY = 'cc.activityLog'; // #1029 sessionStorage ring
 let refreshPaused = false;
 let metricsFetcher = null;
 let metricsWasDown = false;
@@ -40,6 +41,7 @@ let previousMetrics = {};
 let previousMetricsAt = 0;  // ms timestamp of previousMetrics (#141)
 let startTime = Date.now();
 let activityLog = [];
+let activityStaleText = null; // #1029 note for entries restored after a reload
 let lastHistoryDayKey = null;
 
 function formatHistoryLabel(d = new Date()) {
@@ -279,10 +281,11 @@ function addActivityLogItem(type, message) {
     const timestamp = new Date().toLocaleTimeString();
     activityLog.unshift({ type, message, timestamp });
 
-    if (activityLog.length > 50) {
-        activityLog.pop();
+    if (activityLog.length > ACTIVITY_LOG_CAP) {
+        activityLog.length = ACTIVITY_LOG_CAP;
     }
 
+    persistActivityLog();
     updateActivityLog();
     announceActivity(type, message);
 }
@@ -386,7 +389,7 @@ function renderActivityMessage(el, message) {
     }
 }
 
-function renderActivityList(container, { maxItems = 50 } = {}) {
+function renderActivityList(container, { maxItems = ACTIVITY_LOG_CAP } = {}) {
     if (!container) return;
     const frag = document.createDocumentFragment();
     for (const item of activityLog.slice(0, maxItems)) {
@@ -397,6 +400,14 @@ function renderActivityList(container, { maxItems = 50 } = {}) {
         const ts = document.createElement('div');
         ts.className = 'activity-timestamp';
         ts.textContent = String(item.timestamp ?? '');
+        if (item.restored) {
+            li.classList.add('restored');
+            ts.appendChild(document.createTextNode(' \u00b7 '));
+            const tag = document.createElement('span');
+            tag.className = 'activity-restored-tag';
+            tag.textContent = 'before reload';
+            ts.appendChild(tag);
+        }
         const msg = document.createElement('div');
         msg.className = 'activity-message';
         renderActivityMessage(msg, item.message);
@@ -416,9 +427,81 @@ function updateActivityLog() {
     logContainers.forEach(container => {
         if (!container) return;
         if (activityPinned && container.id === "activity-log") return;
-        const maxItems = container.id === 'overview-activity' ? 8 : 50;
+        const maxItems = container.id === 'overview-activity' ? 8 : ACTIVITY_LOG_CAP;
         renderActivityList(container, { maxItems });
     });
+}
+
+// #1029: sessionStorage can be missing or throw (privacy mode, quota). Never fatal.
+function sessionGet(key) {
+    try {
+        if (typeof window === 'undefined' || !window.sessionStorage) return null;
+        return window.sessionStorage.getItem(key);
+    } catch (_) { return null; }
+}
+function sessionSet(key, value) {
+    try {
+        if (typeof window !== 'undefined' && window.sessionStorage) window.sessionStorage.setItem(key, String(value));
+    } catch (_) { /* quota / privacy */ }
+}
+function sessionRemove(key) {
+    try {
+        if (typeof window !== 'undefined' && window.sessionStorage) window.sessionStorage.removeItem(key);
+    } catch (_) { /* ignore */ }
+}
+
+function persistActivityLog() {
+    const items = capActivityLog(activityLog);
+    if (!items.length) {
+        sessionRemove(ACTIVITY_STORE_KEY);
+        return;
+    }
+    sessionSet(ACTIVITY_STORE_KEY, JSON.stringify(items));
+}
+
+function syncActivityStaleNotes() {
+    ['overview-activity', 'activity-log'].forEach((id) => {
+        const feed = document.getElementById(id);
+        if (!feed || !feed.parentNode) return;
+        const noteId = 'activity-stale-note-' + id;
+        let note = document.getElementById(noteId);
+        if (!activityStaleText) {
+            if (note) note.remove();
+            return;
+        }
+        if (!note) {
+            note = document.createElement('p');
+            note.id = noteId;
+            note.className = 'activity-stale-note';
+            note.setAttribute('role', 'status');
+            note.textContent = activityStaleText;
+            feed.parentNode.insertBefore(note, feed);
+            return;
+        }
+        if (note.textContent !== activityStaleText) note.textContent = activityStaleText;
+    });
+}
+
+function restorePersistedActivityLog() {
+    const restored = restoreActivityLog(sessionGet(ACTIVITY_STORE_KEY));
+    activityLog = restored.items.map((item) => ({
+        type: item.type,
+        message: item.message,
+        timestamp: item.timestamp,
+        restored: true
+    }));
+    activityStaleText = restored.staleNote;
+    syncActivityStaleNotes();
+    if (activityLog.length) updateActivityLog();
+}
+
+function clearActivityLog() {
+    activityLog.length = 0;
+    activityStaleText = null;
+    activityPinned = false;
+    persistActivityLog();
+    syncActivityStaleNotes();
+    updateActivityLog();
 }
 
 function detectSignificantChanges(metrics) {
@@ -1272,14 +1355,7 @@ function setupTabs() {
     if (resetHist) resetHist.addEventListener('click', resetChartHistory);
 
     const clearBtn = document.getElementById('clear-activity');
-    if (clearBtn) {
-        clearBtn.addEventListener('click', () => {
-            const log = document.getElementById('activity-log');
-            if (log) log.innerHTML = '';
-            if (typeof activityLog !== 'undefined') activityLog.length = 0;
-            updateActivityLog();
-        });
-    }
+    if (clearBtn) clearBtn.addEventListener('click', clearActivityLog);
     const exportJson = document.getElementById('export-activity-json');
     if (exportJson) exportJson.addEventListener('click', () => exportActivityLog('json'));
     const exportCsv = document.getElementById('export-activity-csv');
@@ -1638,6 +1714,7 @@ function initialize() {
     const retryBtn = document.getElementById('retry-fetch');
     if (retryBtn) retryBtn.addEventListener('click', requestRefresh);
 
+    restorePersistedActivityLog(); // #1029: before the fresh init line, so it stays newest
     addActivityLogItem('success', 'Pipeline Control Center initialized');
 
     refreshScheduler.start();
