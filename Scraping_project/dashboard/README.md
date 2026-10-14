@@ -18,7 +18,46 @@ immediately.
 All throughput figures are per minute, computed from the real time between samples (#141).
 Labelled series such as `errors_total{stage="stage1"}` are kept under their full key and
 also summed under the bare name (`errors_total`) unless an unlabelled series of that name
-exists (#365).
+exists (#365). The live page does not keep every series: see the allowlist below (#665).
+
+## Metrics allowlist (#665)
+
+Prometheus `/metrics` can return thousands of series. Each 5s tick parses only the
+bare names in `CONTROL_CENTER_METRICS` (`format-utils.js`) and drops the rest,
+labelled or not. A malformed or unknown line never throws. Totals still sum every
+labelled sample of an allowlisted name (an unlabelled sample of that name wins,
+#365). Individual label keys are retained only for `delta_lake_records` and
+`delta_lake_records_total` (the System tab counts distinct `table` values), and
+only the first `CC_METRICS_SERIES_CAP` (128) of each. Further tables still add to
+the sum but do not grow the map. `updateDashboard` is coalesced onto one
+animation frame (~16ms) so a burst of samples cannot stack DOM writes.
+
+| Metric | Control Center use |
+|---|---|
+| `stage1_urls_discovered_total` | Stage 1 discovered, rate, milestone, history |
+| `stage1_urls_queued_total` | Stage 1 queued |
+| `stage2_pages_analyzed_total` | Stage 2 analyzed, rate, milestone, history |
+| `stage2_quality_docs_total` | Quality docs and the routing chart |
+| `stage2_massive_docs_total` | Massive docs and the routing chart |
+| `stage2_avg_word_count` | Average words |
+| `stage3_summaries_created_total` | Stage 3 summaries, rate, history |
+| `stage3_documents_deduplicated_total` | Deduplicated documents |
+| `stage4_large_doc_summaries_total` | Large-doc summaries and rate |
+| `stage4_avg_compression_ratio` | Compression ratio |
+| `pipeline_redis_keys` | Redis key count and health |
+| `pipeline_redis_memory_bytes` | Redis memory and health |
+| `pipeline_last_update_timestamp` | Last pipeline update |
+| `pipeline_scout_instances` | Scout instance count |
+| `pipeline_running` | `0` shows the pipeline as offline in the tab title |
+| `delta_lake_records` | Distinct `table` label values |
+| `delta_lake_records_total` | Same table count (name contains `delta_lake_records`) |
+| `stage1_urls_discovered_prev_hour_avg` | Comparison baseline for URLs discovered (#1035) |
+| `stage2_pages_analyzed_prev_hour_avg` | Comparison baseline for pages analyzed |
+| `stage3_summaries_created_prev_hour_avg` | Comparison baseline for summaries |
+| `stage1_urls_per_min_prev_hour_avg` | Comparison baseline for URL rate |
+| `stage2_pages_per_min_prev_hour_avg` | Comparison baseline for page rate |
+
+The System tab Settings panel (`METRIC_UI_MAP`, #1038) is the field-by-field list. The parse allowlist is that map's real series names, `delta_lake_records_total`, and the previous-hour gauges above. `(any series)` is not a Prometheus name and is not parsed as one.
 
 ```bash
 python Scraping_project/dashboard/serve.py

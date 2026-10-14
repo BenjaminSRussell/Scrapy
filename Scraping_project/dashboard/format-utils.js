@@ -7,25 +7,125 @@
     // Prometheus text exposition: `name{l1="v",l2="w"} value [timestamp_ms]`.
     // Label values may contain spaces, commas and escaped quotes.
     const SERIES_RE = /^([a-zA-Z_:][a-zA-Z0-9_:]*)(\{(?:[^"}]|"(?:[^"\\]|\\.)*")*\})?\s+(\S+)(?:\s+-?\d+)?\s*$/;
+    // #665: bare names the Control Center reads. Anything else in a /metrics
+    // flood is ignored. Documented in dashboard/README.md.
+    const CONTROL_CENTER_METRICS = Object.freeze([
+        'stage1_urls_discovered_total',
+        'stage1_urls_queued_total',
+        'stage2_pages_analyzed_total',
+        'stage2_quality_docs_total',
+        'stage2_massive_docs_total',
+        'stage2_avg_word_count',
+        'stage3_summaries_created_total',
+        'stage3_documents_deduplicated_total',
+        'stage4_large_doc_summaries_total',
+        'stage4_avg_compression_ratio',
+        'pipeline_redis_keys',
+        'pipeline_redis_memory_bytes',
+        'pipeline_last_update_timestamp',
+        'pipeline_scout_instances',
+        'pipeline_running',
+        'delta_lake_records',
+        'delta_lake_records_total',
+        // #1035: optional previous-hour gauges. Absent series stay placeholders.
+        'stage1_urls_discovered_prev_hour_avg',
+        'stage2_pages_analyzed_prev_hour_avg',
+        'stage3_summaries_created_prev_hour_avg',
+        'stage1_urls_per_min_prev_hour_avg',
+        'stage2_pages_per_min_prev_hour_avg',
+    ]);
+    // Only these names keep individual labelled keys (distinct `table` values).
+    // Every other allowlisted name keeps a running sum, so a per-domain flood
+    // cannot grow the map the DOM walks.
+    const CC_LABEL_METRICS = Object.freeze([
+        'delta_lake_records',
+        'delta_lake_records_total',
+    ]);
+    // Per label-retained name. Further series of that name still add to the sum.
+    const CC_METRICS_SERIES_CAP = 128;
+    const CC_METRIC_ALLOW = new Set(CONTROL_CENTER_METRICS);
+    const CC_LABEL_KEEP = new Set(CC_LABEL_METRICS);
+    function isNameStart(c) {
+        return (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || c === 95 || c === 58;
+    }
+    function isNameCont(c) {
+        return isNameStart(c) || (c >= 48 && c <= 57);
+    }
+    function metricName(line) {
+        const n = line.length;
+        if (n === 0 || !isNameStart(line.charCodeAt(0))) return '';
+        let i = 1;
+        while (i < n && isNameCont(line.charCodeAt(i))) i++;
+        return line.slice(0, i);
+    }
+    function allowSetFrom(allow) {
+        if (!allow) return null;
+        if (allow === CONTROL_CENTER_METRICS) return CC_METRIC_ALLOW;
+        if (allow instanceof Set) return allow;
+        if (Array.isArray(allow)) return new Set(allow);
+        return null;
+    }
     // #365: labelled series are kept under their full key (e.g. `x{a="b"}`, used
     // by countLabelValues) AND summed under the bare metric name, unless the
     // exporter also emits an unlabelled series of that name, which then wins.
     // So `errors_total{stage="s1"} 3` + `errors_total{stage="s2"} 4` gives
     // metrics.errors_total === 7 for the flat names updateDashboard reads.
-    function parseMetrics(text) {
+    // #665: pass `{ allow, maxSeries }` to drop every other name and cap retained
+    // label keys. Unknown or malformed lines are skipped; they never throw.
+    // With no options the historical "keep every series" behaviour stays.
+    function parseMetrics(text, opts) {
+        let body;
+        try {
+            body = typeof text === 'string' ? text : (text == null ? '' : String(text));
+        } catch (_) {
+            return {};
+        }
+        const allow = allowSetFrom(opts && opts.allow);
+        let cap = CC_METRICS_SERIES_CAP;
+        if (opts && opts.maxSeries != null && opts.maxSeries !== '') {
+            const n = Number(opts.maxSeries);
+            if (Number.isFinite(n) && n >= 0) cap = Math.floor(n);
+        }
         const metrics = {};
         const sums = Object.create(null);
         const unlabelled = new Set();
-        for (const raw of String(text || '').split('\n')) {
-            const line = raw.trim();
-            if (line === '' || line.startsWith('#')) continue;
-            const m = line.match(SERIES_RE);
-            if (!m) continue;
-            const value = parseFloat(m[3]);
+        const perName = Object.create(null);
+        const lines = body.split('\n');
+        for (let li = 0; li < lines.length; li++) {
+            let line = lines[li];
+            if (line.length === 0) continue;
+            let c0 = line.charCodeAt(0);
+            if (c0 === 35) continue; // '#'
+            if (c0 === 32 || c0 === 9 || c0 === 13) {
+                line = line.trim();
+                if (line.length === 0) continue;
+                c0 = line.charCodeAt(0);
+                if (c0 === 35) continue;
+            }
+            const name = metricName(line);
+            if (!name) continue;
+            if (allow && !allow.has(name)) continue;
+            let matched;
+            try {
+                matched = line.match(SERIES_RE);
+            } catch (_) {
+                continue;
+            }
+            if (!matched) continue;
+            const value = parseFloat(matched[3]);
             if (isNaN(value)) continue;
-            const name = m[1];
-            const labels = m[2] || '';
-            metrics[name + labels] = value;
+            const labels = matched[2] || '';
+            if (!allow) {
+                metrics[name + labels] = value;
+            } else if (!labels) {
+                metrics[name] = value;
+            } else if (CC_LABEL_KEEP.has(name)) {
+                const seen = perName[name] || 0;
+                if (seen < cap) {
+                    metrics[name + labels] = value;
+                    perName[name] = seen + 1;
+                }
+            }
             if (labels) sums[name] = (sums[name] || 0) + value;
             else unlabelled.add(name);
         }
@@ -33,6 +133,30 @@
             if (!unlabelled.has(name)) metrics[name] = sums[name];
         }
         return metrics;
+    }
+    // #665: at most one dashboard paint per frame. Later calls before the frame
+    // replace the pending callback so a burst cannot stack DOM writes.
+    function createFrameCoalescer(requestFrame, scheduleTimeout) {
+        const raf = typeof requestFrame === 'function' ? requestFrame : null;
+        const later = scheduleTimeout || ((fn, ms) => setTimeout(fn, ms));
+        let queued = false;
+        let pending = null;
+        function schedule(fn) {
+            pending = fn;
+            if (queued) return;
+            queued = true;
+            const run = () => {
+                queued = false;
+                const cb = pending;
+                pending = null;
+                if (typeof cb === 'function') cb();
+            };
+            if (raf) raf(run);
+            else later(run, 16);
+        }
+        // A failed fetch must not let an older success paint over the error.
+        schedule.cancel = function () { pending = null; };
+        return schedule;
     }
     // #141: every throughput figure is items per MINUTE, computed from the real
     // time between samples (refreshes can be paused or late). Counter resets
@@ -822,5 +946,5 @@
         const items = capActivityLog(parsed, cap);
         return { items, staleNote: activityStaleNote(items.length) };
     }
-    return { tabKeyTarget, staleState, queueDepthRows, metricsFailureActivity, shortcutHintText, parseMetrics, ratePerMinute, resolveMetricsUrl, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler, stageActivity, stageDrilldown, stageDrilldownKey, doughnutLegendLayout, connectionState, documentTitle, createActivityAnnouncer, metricsUrlProblem, splitLinks, createMetricsFetcher, REFRESH_INTERVAL_CHOICES, parseRefreshInterval, shortcutAction, pickInitialTab, METRIC_UI_MAP, renderMetricNameMap, parseDangerSoundEnabled, dangerSoundDecision, HEALTH_HISTORY_LIMIT, pushPollOutcome, healthHistoryView, COMPARISON_BASELINE_ROLE, PREV_HOUR_AVG_KEYS, readPrevHourAverage, comparisonBaselineSeries, comparisonNote, ACTIVITY_LOG_CAP, capActivityLog, activityStaleNote, restoreActivityLog };
+    return { tabKeyTarget, staleState, queueDepthRows, metricsFailureActivity, shortcutHintText, parseMetrics, CONTROL_CENTER_METRICS, CC_LABEL_METRICS, CC_METRICS_SERIES_CAP, createFrameCoalescer, ratePerMinute, resolveMetricsUrl, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler, stageActivity, stageDrilldown, stageDrilldownKey, doughnutLegendLayout, connectionState, documentTitle, createActivityAnnouncer, metricsUrlProblem, splitLinks, createMetricsFetcher, REFRESH_INTERVAL_CHOICES, parseRefreshInterval, shortcutAction, pickInitialTab, METRIC_UI_MAP, renderMetricNameMap, parseDangerSoundEnabled, dangerSoundDecision, HEALTH_HISTORY_LIMIT, pushPollOutcome, healthHistoryView, COMPARISON_BASELINE_ROLE, PREV_HOUR_AVG_KEYS, readPrevHourAverage, comparisonBaselineSeries, comparisonNote, ACTIVITY_LOG_CAP, capActivityLog, activityStaleNote, restoreActivityLog };
 });
