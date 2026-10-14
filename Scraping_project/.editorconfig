@@ -26,7 +26,13 @@ trim_trailing_whitespace = false
 [*.json]
 indent_size = 2
 
-[{Dockerfile,Dockerfile.*,*.sh}]
+[{Dockerfile,Dockerfile.*}]
+indent_size = 4
+
+# Shell: LF so a Windows checkout does not break the shebang.
+[*.sh]
+end_of_line = lf
+indent_style = space
 indent_size = 4
 
 [*.{js,html,css}]
