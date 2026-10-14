@@ -40,6 +40,7 @@ renamed to the new version and date (see the release checklist).
 - Circuit breakers share open state and the consecutive-failure count through Redis, keyed by name and host, so one worker's trip is visible to the others on their next check and still open after a restart. The metrics exporter emits `circuit_breaker_state{name,host}` (0 closed, 1 open, 2 half-open). Set `CIRCUIT_BREAKER_SHARED=0` to keep the old process-local breakers (#171).
 - CLI and orchestrator startup reject a config.yml whose redis or kafka fields have the wrong type or an unknown key, with the field path in the error, instead of failing later inside workers (#237).
 - Stage 3 keeps MinHash fingerprints for the rest of the run and in Redis, so a duplicate document in a later batch or after a restart is skipped and `stage3_documents_deduplicated_total` counts it (#222).
+- Item pipelines no longer swallow handled errors with a bare `pass`; they log `stage` and `reason` and increment `pipeline_errors_total` (#219).
 - Docker HEALTHCHECK probes PID 1 and configured Redis/TCP dependencies instead of always succeeding, and the docs no longer point at a missing `/health` route (#542).
 - Delta writes and merges keep an existing table's partition layout when it differs from `delta_lake.partitions`, instead of failing every commit (#261).
 - Dashboard UI, accessibility and XSS fixes (#954 #957 #975 #976 #977 #978 #945 #962 #982 #983 #906 #910).
