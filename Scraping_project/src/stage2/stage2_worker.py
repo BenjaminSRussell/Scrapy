@@ -290,7 +290,15 @@ def plan_queue_updates(
     return completed, failed, retrying
 
 
+# Not None. None means run_stage2_worker opened Redis and failed. REDIS_HOST
+# defaults to localhost, so that failure is Redis down, not "unconfigured".
+_LEASE_UNSET: Any = object()
+
+
 class Stage2Worker:
+    # Continuous replicas assign a client or None. The class default is only
+    # for a one-shot worker that was not started as a replica.
+    _claim_redis: Any = _LEASE_UNSET
 
     def __init__(self, max_concurrent: int = 50, batch_size: int = 100):
         self.max_concurrent = max_concurrent
@@ -462,11 +470,19 @@ class Stage2Worker:
             logger.info("[STAGE2] No pending URLs to process")
             return counts
 
+        # A replica lease is expected whenever this worker was given a client
+        # slot (#235). None means Redis is down. Do not analyze that batch:
+        # two replicas that both miss the lock must not both proceed.
+        if getattr(self, "_claim_redis", _LEASE_UNSET) is None:
+            logger.warning(
+                f"[STAGE2] Redis lease unavailable; not analyzing {len(pending)} pending URLs"
+            )
+            return counts
+
         prior_failures = self._load_prior_failures()
 
         # Claim each pending URL before analyzing it (#235). Replicas that lose
-        # the lease skip that URL instead of fetching it again. With no Redis
-        # client the lease is optional and every pending URL is processed.
+        # the lease, or whose SET NX EX fails, skip that URL.
         index = 0
         batch_number = 0
         skipped = 0
@@ -563,7 +579,7 @@ class Stage2Worker:
                 break
 
         if skipped:
-            logger.info(f"[STAGE2] Left {skipped} pending URLs leased to other replicas")
+            logger.info(f"[STAGE2] Left {skipped} pending URLs unanalyzed (lease not held)")
 
         logger.info("[STAGE2] Worker completed all batches")
         return counts
@@ -589,11 +605,14 @@ class Stage2Worker:
         The lease is not deleted after a successful ack. A peer that already
         read the same row as pending would otherwise ``SET NX`` and analyze it
         too. This process refreshes its own key; a different owner is skipped
-        until the TTL expires (crash recovery).
+        until the TTL expires (crash recovery). A missing client is Redis down,
+        not a single-process bypass: the URL is not analyzed.
         """
-        client = getattr(self, "_claim_redis", None)
-        if client is None:
+        client = getattr(self, "_claim_redis", _LEASE_UNSET)
+        if client is _LEASE_UNSET:
             return True
+        if client is None:
+            return False
         url = item.get("url") if isinstance(item.get("url"), str) else ""
         url_hash = item.get("url_hash") if isinstance(item.get("url_hash"), str) else ""
         return _lease_claim(client, stage2_claim_key(url, url_hash), self._lease_owner(), stage2_claim_lease_seconds())
@@ -1329,9 +1348,9 @@ def _lease_claim(client: Any, key: str, owner: str, ttl: int) -> bool:
     try:
         acquired = client.set(key, owner, nx=True, ex=int(ttl))
     except Exception as exc:
-        # Optional lease: a Redis blip must not stall the queue (#235).
-        logger.warning(f"[STAGE2] Batch claim unavailable ({exc}); processing without a lease")
-        return True
+        # SET NX EX failed. Do not analyze; another replica must not proceed either.
+        logger.warning(f"[STAGE2] Batch claim unavailable ({exc}); leaving {key} unanalyzed")
+        return False
     if acquired:
         return True
     try:
@@ -1356,15 +1375,16 @@ def _lease_claim(client: Any, key: str, owner: str, ttl: int) -> bool:
 def open_stage2_claim_redis() -> Any:
     """Redis client for the batch lease, or None when Redis is down (#235).
 
-    One attempt at process start. Failure keeps single-replica behaviour.
-    Does not read or publish ``REDIS_URL``.
+    ``REDIS_HOST`` defaults to localhost, so a connection error is the down
+    path, not an unconfigured single-process path. The caller must not analyze
+    a batch it could not lease. Does not read or publish ``REDIS_URL``.
     """
     try:
         from src.utils.redis import get_redis
 
         return get_redis().client
     except Exception as exc:
-        logger.warning(f"[STAGE2] Batch claim disabled; Redis unavailable ({exc})")
+        logger.warning(f"[STAGE2] Redis lease unavailable ({exc}); pending URLs will not be analyzed")
         return None
 
 
