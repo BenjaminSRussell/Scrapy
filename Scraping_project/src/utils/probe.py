@@ -60,8 +60,10 @@ def tcp_ready(host: str, port: int, timeout: float = 3.0) -> bool:
 
 def redis_ready(timeout: float = 3.0) -> bool:
     """Redis answers PING (+PONG, or -NOAUTH which still proves it is up)."""
-    host = os.getenv("REDIS_HOST", "localhost")
-    port = int(os.getenv("REDIS_PORT", "6379"))
+    from src.utils.redis_env import redis_settings
+
+    settings = redis_settings()  # #511: same contract as the app
+    host, port = settings.host, settings.port
     try:
         with socket.create_connection((host, port), timeout=timeout) as sock:
             sock.settimeout(timeout)

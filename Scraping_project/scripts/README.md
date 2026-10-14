@@ -304,7 +304,7 @@ metrics-exporter services run only in the Helm chart):
 |---------|------|-----|
 | Grafana | 3000 | http://localhost:3000 |
 | Prometheus | 9090 | http://localhost:9090 (targets: http://localhost:9090/targets) |
-| Redis | 6379 | redis://localhost:6379 |
+| Redis | 6379 | `localhost:6379` (`REDIS_HOST`/`REDIS_PORT`/`REDIS_PASSWORD`, see README "Redis connection contract") |
 | PostgreSQL | 5432 | postgres://localhost:5432 |
 
 `redis-exporter` (9121) and `postgres-exporter` (9187) are reachable only

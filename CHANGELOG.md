@@ -24,6 +24,7 @@ renamed to the new version and date (see the release checklist).
 - Repository policies: SECURITY.md, CODE_OF_CONDUCT.md, this changelog, ADRs, devcontainer (#669 #746 #747 #715 #694).
 
 ### Changed
+- Redis is one env contract: `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD` and `REDIS_DB`, with `REDIS_URL` only a fallback for values those leave unset (#511).
 - Bronze contract requires only `url`, `scraped_at_utc` and `spider_name`, shared with the Rust ingestor (#531).
 - Kafka messages are keyed by `url_hash`, with an enforceable idempotent producer (#285).
 - Undomainable rows are quarantined instead of landing in a hot `domain=unknown` partition.
