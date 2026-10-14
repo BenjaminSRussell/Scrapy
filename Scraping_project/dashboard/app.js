@@ -713,6 +713,7 @@ function updateDashboard(metrics) {
 
     previousMetrics = { ...metrics };
     previousMetricsAt = Date.now();
+    syncStageDrilldownValues();
 }
 
 
@@ -1080,6 +1081,8 @@ function setupShortcuts() {
     const hint = document.getElementById('shortcut-hint');
     if (hint) hint.textContent = shortcutHintText(visibleTabNames().length);  // #503
     document.addEventListener('keydown', (event) => {
+        // Stage drill-down owns the keyboard while it is open (#1033).
+        if (stageDrilldownIsOpen()) return;
         const action = shortcutAction(event, visibleTabNames());
         if (!action) return;
         event.preventDefault();
@@ -1314,6 +1317,155 @@ async function fetchAndAnnounce() {
 }
 
 
+// #1033: click or Enter/Space on a pipeline stage card opens a side panel
+// with a subset of that stage's metrics and placeholder job/queue links.
+let stageDrilldownReturnFocus = null;
+
+function stageDrilldownIsOpen() {
+    const root = document.getElementById('stage-drilldown');
+    return !!(root && !root.hidden);
+}
+
+function renderStageDrilldown(stage) {
+    const spec = stageDrilldown(stage);
+    const root = document.getElementById('stage-drilldown');
+    if (!spec || !root) return false;
+    const title = document.getElementById('stage-drilldown-title');
+    if (title) title.textContent = `Stage ${spec.stage}: ${spec.title}`;
+    const card = document.querySelector(`#tab-pipeline .stage-card[data-stage="${spec.stage}"]`);
+    const status = document.getElementById('stage-drilldown-status');
+    if (status) status.textContent = card && card.dataset.activity === 'active' ? 'Active' : 'Idle';
+    const list = document.getElementById('stage-drilldown-metrics');
+    if (list) {
+        list.replaceChildren();
+        spec.metrics.forEach(metric => {
+            const src = document.getElementById(metric.id);
+            const row = document.createElement('div');
+            row.className = 'stage-metric';
+            const label = document.createElement('span');
+            label.className = 'stage-metric-label';
+            label.textContent = metric.label;
+            const value = document.createElement('span');
+            value.className = 'stage-metric-value';
+            value.dataset.metricId = metric.id;
+            value.textContent = src ? src.textContent : '\u2014';
+            row.append(label, value);
+            list.append(row);
+        });
+    }
+    const links = document.getElementById('stage-drilldown-links');
+    if (links) {
+        links.replaceChildren();
+        spec.links.forEach(link => {
+            const li = document.createElement('li');
+            const a = document.createElement('a');
+            a.href = link.href;
+            a.className = 'stage-drilldown-link';
+            a.dataset.placeholder = 'true';
+            a.setAttribute('aria-disabled', 'true');
+            a.textContent = `${link.label} (coming soon)`;
+            li.append(a);
+            links.append(li);
+        });
+    }
+    root.dataset.stage = String(spec.stage);
+    document.querySelectorAll('#tab-pipeline .stage-card').forEach(el => {
+        el.setAttribute('aria-expanded', el === card ? 'true' : 'false');
+    });
+    return true;
+}
+
+function syncStageDrilldownValues() {
+    if (!stageDrilldownIsOpen()) return;
+    const root = document.getElementById('stage-drilldown');
+    const spec = stageDrilldown(root.dataset.stage);
+    if (!spec) return;
+    const card = document.querySelector(`#tab-pipeline .stage-card[data-stage="${spec.stage}"]`);
+    const status = document.getElementById('stage-drilldown-status');
+    if (status) {
+        const next = card && card.dataset.activity === 'active' ? 'Active' : 'Idle';
+        if (status.textContent !== next) status.textContent = next;
+    }
+    root.querySelectorAll('[data-metric-id]').forEach(el => {
+        const src = document.getElementById(el.dataset.metricId);
+        if (src && el.textContent !== src.textContent) el.textContent = src.textContent;
+    });
+}
+
+function openStageDrilldown(stage, trigger) {
+    if (!renderStageDrilldown(stage)) return;
+    const root = document.getElementById('stage-drilldown');
+    root.hidden = false;
+    stageDrilldownReturnFocus = trigger || document.activeElement;
+    const closeBtn = document.getElementById('stage-drilldown-close');
+    if (closeBtn) closeBtn.focus();
+    const live = document.getElementById('stage-drilldown-announce');
+    const title = document.getElementById('stage-drilldown-title');
+    if (live && title) live.textContent = `Opened ${title.textContent}`;
+}
+
+function closeStageDrilldown() {
+    const root = document.getElementById('stage-drilldown');
+    if (!root || root.hidden) return;
+    root.hidden = true;
+    document.querySelectorAll('#tab-pipeline .stage-card').forEach(el => {
+        el.setAttribute('aria-expanded', 'false');
+    });
+    const live = document.getElementById('stage-drilldown-announce');
+    if (live) live.textContent = 'Closed stage details';
+    const back = stageDrilldownReturnFocus;
+    stageDrilldownReturnFocus = null;
+    if (back && typeof back.focus === 'function') back.focus();
+}
+
+function stageDrilldownFocusables() {
+    const root = document.getElementById('stage-drilldown');
+    if (!root) return [];
+    return Array.from(root.querySelectorAll('.stage-drilldown-panel button, .stage-drilldown-panel a[href]'));
+}
+
+function setupStageDrilldown() {
+    const root = document.getElementById('stage-drilldown');
+    if (!root || typeof stageDrilldown !== 'function') return;
+    document.querySelectorAll('#tab-pipeline .stage-card').forEach(card => {
+        card.addEventListener('click', () => openStageDrilldown(card.dataset.stage, card));
+        card.addEventListener('keydown', (event) => {
+            if (stageDrilldownKey(event.key) !== 'activate') return;
+            event.preventDefault();
+            openStageDrilldown(card.dataset.stage, card);
+        });
+    });
+    const closeBtn = document.getElementById('stage-drilldown-close');
+    if (closeBtn) closeBtn.addEventListener('click', closeStageDrilldown);
+    const backdrop = document.getElementById('stage-drilldown-backdrop');
+    if (backdrop) backdrop.addEventListener('click', closeStageDrilldown);
+    root.addEventListener('click', (event) => {
+        const link = event.target.closest && event.target.closest('a[data-placeholder="true"]');
+        if (link) event.preventDefault();
+    });
+    document.addEventListener('keydown', (event) => {
+        if (!stageDrilldownIsOpen()) return;
+        if (stageDrilldownKey(event.key) === 'close') {
+            event.preventDefault();
+            closeStageDrilldown();
+            return;
+        }
+        if (event.key !== 'Tab') return;
+        const items = stageDrilldownFocusables();
+        if (!items.length) return;
+        const first = items[0];
+        const last = items[items.length - 1];
+        const active = document.activeElement;
+        if (event.shiftKey && (active === first || !root.contains(active))) {
+            event.preventDefault();
+            last.focus();
+        } else if (!event.shiftKey && (active === last || !root.contains(active))) {
+            event.preventDefault();
+            first.focus();
+        }
+    });
+}
+
 function applyEnvBadge() {
     const env = (window.__CC_FEATURES__ && window.__CC_FEATURES__.env) || window.__CC_ENV__ || 'local';
     const el = document.getElementById('env-badge');
@@ -1351,6 +1503,7 @@ function initialize() {
         renderMetricNameMap(document.getElementById('metric-name-map-body'), document);
     }
     setupTabs();
+    setupStageDrilldown();
     setupShortcuts();
     const initialTab = pickInitialTab(tabFromLocation(), storeGet(STORE_TAB_KEY), visibleTabNames());
     if (initialTab) activateTab(initialTab, false);

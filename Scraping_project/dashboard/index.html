@@ -324,6 +324,10 @@
             z-index: 1;
             border: 2px solid var(--gray-200);
             transition: all 0.3s;
+            cursor: pointer;
+            text-align: left;
+            font: inherit;
+            color: inherit;
         }
 
         .stage-card.active {
@@ -371,6 +375,81 @@
         .stage-metric-value {
             font-weight: 700;
             color: var(--gray-900);
+        }
+
+        .stage-card-hint {
+            display: block;
+            margin-top: 0.75rem;
+            font-size: 0.75rem;
+            font-weight: 700;
+            color: var(--primary-dark);
+        }
+
+        /* #1033: stage drill-down. [hidden] must beat display:flex. */
+        .stage-drilldown {
+            position: fixed;
+            inset: 0;
+            z-index: 2000;
+            display: flex;
+            justify-content: flex-end;
+        }
+        .stage-drilldown[hidden] { display: none; }
+        .stage-drilldown-backdrop {
+            position: absolute;
+            inset: 0;
+            background: rgba(15, 23, 42, 0.45);
+        }
+        .stage-drilldown-panel {
+            position: relative;
+            z-index: 1;
+            width: min(100%, 24rem);
+            max-width: 100%;
+            height: 100%;
+            overflow-y: auto;
+            background: white;
+            color: var(--gray-900);
+            padding: 1.25rem 1.5rem;
+            box-shadow: -4px 0 16px rgba(0, 0, 0, 0.15);
+        }
+        .stage-drilldown-header {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 0.75rem;
+        }
+        .stage-drilldown-header .card-title { margin: 0; }
+        #stage-drilldown-close {
+            min-height: 44px;
+            min-width: 44px;
+            flex: 0 0 auto;
+        }
+        .stage-drilldown-status {
+            margin: 0.75rem 0;
+            font-size: 0.85rem;
+            font-weight: 700;
+            color: var(--gray-800);
+        }
+        .stage-drilldown-links {
+            list-style: none;
+            padding: 0;
+            margin: 0.5rem 0 0;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+        .stage-drilldown-links-title {
+            margin: 1rem 0 0;
+            font-size: 0.95rem;
+            color: var(--gray-800);
+        }
+        .stage-drilldown-link {
+            color: var(--primary-dark);
+            font-weight: 700;
+        }
+        .stage-drilldown-note {
+            margin-top: 0.75rem;
+            font-size: 0.8rem;
+            color: var(--muted-text);
         }
 
         .chart-container {
@@ -762,9 +841,18 @@
             .tab-button.active .ui-icon { stroke: HighlightText; }
             .tab-button:focus-visible,
             .btn:focus-visible,
+            .stage-card:focus-visible,
             .skip-to-main:focus {
                 outline: 3px solid Highlight;
                 outline-offset: 2px;
+            }
+            .stage-drilldown-panel {
+                border: 2px solid CanvasText;
+                background: Canvas;
+                color: CanvasText;
+            }
+            .stage-drilldown-link {
+                color: LinkText;
             }
             .card-badge,
             .status-indicator {
@@ -797,6 +885,7 @@
             outline-offset: -3px;
         }
         .btn:focus-visible,
+        .stage-card:focus-visible,
         select:focus-visible,
         input:focus-visible,
         a:focus-visible,
@@ -1050,7 +1139,7 @@
             <!-- Pipeline Tab -->
             <div class="tab-content" id="tab-pipeline" role="tabpanel" aria-labelledby="tabbtn-pipeline" tabindex="0">
                 <div class="stage-pipeline">
-                    <div class="stage-card">
+                    <div class="stage-card" role="button" tabindex="0" data-stage="1" aria-haspopup="dialog" aria-controls="stage-drilldown" aria-expanded="false" aria-label="Open URL Discovery details">
                         <div class="stage-number">1</div>
                         <div class="stage-title">URL Discovery</div>
                         <div class="stage-metrics">
@@ -1067,9 +1156,10 @@
                                 <span class="stage-metric-value" id="scout-instances" title="Not reported by the metrics exporter">&mdash;</span>
                             </div>
                         </div>
+                        <span class="stage-card-hint">Details</span>
                     </div>
 
-                    <div class="stage-card">
+                    <div class="stage-card" role="button" tabindex="0" data-stage="2" aria-haspopup="dialog" aria-controls="stage-drilldown" aria-expanded="false" aria-label="Open Page Analysis details">
                         <div class="stage-number">2</div>
                         <div class="stage-title">Page Analysis</div>
                         <div class="stage-metrics">
@@ -1090,9 +1180,10 @@
                                 <span class="stage-metric-value" id="pipeline-s2-words">0</span>
                             </div>
                         </div>
+                        <span class="stage-card-hint">Details</span>
                     </div>
 
-                    <div class="stage-card">
+                    <div class="stage-card" role="button" tabindex="0" data-stage="3" aria-haspopup="dialog" aria-controls="stage-drilldown" aria-expanded="false" aria-label="Open Summarization details">
                         <div class="stage-number">3</div>
                         <div class="stage-title">Summarization</div>
                         <div class="stage-metrics">
@@ -1109,9 +1200,10 @@
                                 <span class="stage-metric-value" id="pipeline-s3-rate">0/min</span>
                             </div>
                         </div>
+                        <span class="stage-card-hint">Details</span>
                     </div>
 
-                    <div class="stage-card">
+                    <div class="stage-card" role="button" tabindex="0" data-stage="4" aria-haspopup="dialog" aria-controls="stage-drilldown" aria-expanded="false" aria-label="Open Large Documents details">
                         <div class="stage-number">4</div>
                         <div class="stage-title">Large Documents</div>
                         <div class="stage-metrics">
@@ -1128,6 +1220,7 @@
                                 <span class="stage-metric-value" id="pipeline-s4-rate">0/min</span>
                             </div>
                         </div>
+                        <span class="stage-card-hint">Details</span>
                     </div>
                 </div>
 
@@ -1423,6 +1516,21 @@
             <button type="button" id="pause-refresh" class="btn" aria-pressed="false" aria-label="Pause auto-refresh">Pause</button>
             <span class="refresh-info" id="cc-version" title="Control Center build">v—</span>
             <button type="button" id="manual-refresh" class="btn" aria-label="Refresh metrics now">Refresh now</button>
+        </div>
+        <div id="stage-drilldown-announce" class="visually-hidden" role="status" aria-live="polite" aria-atomic="true"></div>
+        <div id="stage-drilldown" class="stage-drilldown" hidden>
+            <div id="stage-drilldown-backdrop" class="stage-drilldown-backdrop" aria-hidden="true"></div>
+            <div class="stage-drilldown-panel" role="dialog" aria-modal="true" aria-labelledby="stage-drilldown-title" aria-describedby="stage-drilldown-note">
+                <div class="stage-drilldown-header">
+                    <h2 id="stage-drilldown-title" class="card-title">Stage details</h2>
+                    <button type="button" class="btn" id="stage-drilldown-close" aria-label="Close stage details">Close</button>
+                </div>
+                <p id="stage-drilldown-status" class="stage-drilldown-status">Idle</p>
+                <div id="stage-drilldown-metrics" class="stage-metrics"></div>
+                <h3 class="stage-drilldown-links-title">Related</h3>
+                <ul id="stage-drilldown-links" class="stage-drilldown-links"></ul>
+                <p id="stage-drilldown-note" class="stage-drilldown-note">Job and queue links are placeholders until those views exist. Press Escape to close.</p>
+            </div>
         </div>
     </main>
 
