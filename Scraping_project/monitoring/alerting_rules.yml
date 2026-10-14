@@ -117,6 +117,8 @@ groups:
           action: "Immediate action: scale consumers or pause producers"
 
       # Critical: Consumer Lag SLO Violation
+      # SLO (#179): this threshold stays 250000 messages. No minute target is
+      # published; see docs/guides/PIPELINE_SLOS.md. Do not retune this rule.
       - alert: KafkaConsumerLagSLO
         expr: max_over_time(kafka_consumergroup_lag_max[5m]) > 250000
         for: 15m
@@ -665,6 +667,9 @@ groups:
 
       # metrics_exporter.py sends redis.queue.length{queue}; statsd_mapping.yml
       # names it redis_queue_length.
+      # SLO (#179): depth stays at or below 10000. This rule is unchanged
+      # (watermarks stay high 10000, low 8000, mode block). See
+      # docs/guides/PIPELINE_SLOS.md.
       - alert: QueueBacklog
         expr: max by (queue) (redis_queue_length) > 10000
         for: 10m
@@ -676,3 +681,32 @@ groups:
           description: "{{ $labels.queue }} has {{ $value }} items pending for 10 minutes."
           impact: "Medium - Crawl latency grows while workers fall behind"
           action: "Scale the consuming stage or check it for stalls"
+
+  # ============================================
+  # Pipeline SLOs (#179)
+  # ============================================
+  # Redis depth and Kafka lag are QueueBacklog and KafkaConsumerLagSLO above.
+  # Only Stage 2 success had no alert. The 99% / 24h target is the issue's
+  # own example. for: 15m matches KafkaConsumerLagSLO's hold, not a new target.
+  - name: pipeline_slos
+    interval: 30s
+    rules:
+      - alert: Stage2SuccessSLO
+        expr: |
+          (
+            stage2:success_ratio:24h < 0.99
+          )
+          and
+          (
+            sum(increase(stage2_rows_total[24h])) > 0
+          )
+        for: 15m
+        labels:
+          severity: critical
+          component: stage2
+          slo: "true"
+        annotations:
+          summary: "Stage 2 success ratio is below 99% over 24h"
+          description: "Accepted Stage 2 rows are {{ $value }} of stage2_rows_total over 24h, under the 99% SLO. The error budget for that window is 1% of rows (any outcome other than accepted)."
+          impact: "Critical - Stage 2 is missing its published success objective"
+          action: "Check stage2_rows_total by outcome and the stage2_errors quarantine. Do not raise the 99% target to silence this alert."

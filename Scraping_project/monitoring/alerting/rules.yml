@@ -106,3 +106,32 @@ groups:
           component: redis
         annotations:
           summary: Redis has been unreachable for more than 1 minute
+
+  - orgId: 1
+    name: pipeline_slos
+    folder: Pipeline Alerts
+    interval: 1m
+    rules:
+      - uid: stage2-success-slo
+        title: Stage 2 success ratio is below 99% over 24h
+        condition: A
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            model:
+              expr: |
+                (
+                  stage2:success_ratio:24h < 0.99
+                )
+                and
+                (
+                  sum(increase(stage2_rows_total[24h])) > 0
+                )
+        every: 1m
+        for: 15m
+        labels:
+          severity: critical
+          component: stage2
+          slo: "true"
+        annotations:
+          summary: Stage 2 success ratio is below 99% over 24h

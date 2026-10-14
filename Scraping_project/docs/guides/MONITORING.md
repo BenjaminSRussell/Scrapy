@@ -27,7 +27,7 @@ The "Unified Dashboard" (`monitoring/dashboards/unified_dashboard.json`) adds Ka
 
 ## Alerts
 
-`alerting_rules.yml` has 41 rules in 9 groups:
+`alerting_rules.yml` has 43 rules in 9 groups:
 
 - `kafka_infrastructure`: broker and controller health, under-replicated or offline partitions, consumer lag (`KafkaHighConsumerLag`, `KafkaVeryHighConsumerLag`, `KafkaConsumerLagSLO`).
 - `scrapy_application`: `ScrapyAppDown`, no items scraped, error rate, item drops, slow responses, blocked.
@@ -37,10 +37,11 @@ The "Unified Dashboard" (`monitoring/dashboards/unified_dashboard.json`) adds Ka
 - `infrastructure`: Redis and Postgres up/memory/pool, soft-ban spike, metrics sink failing.
 - `monitoring`: Prometheus storage and scrape failures.
 - `data_quality`: throughput drop, open circuit breakers, low Delta writes, pipeline error rate, queue backlog.
+- `pipeline_slos`: `Stage2SuccessSLO` (Stage 2 accepted rows >= 99% over 24h). Redis depth and Kafka lag stay on `QueueBacklog` and `KafkaConsumerLagSLO`. Numbers, queries, and panels: [PIPELINE_SLOS.md](PIPELINE_SLOS.md).
 
 Every rule carries `summary`, `description`, `impact` and `action` annotations, so the alert itself tells on-call what to check. Runbooks for operator actions are in [docs/runbooks/](../runbooks/).
 
-`QueueBacklog` (`redis_queue_length` > 10000 for 10 minutes) is the alert for Redis queue growth. Producers apply the same default as a high watermark (#196): `REDIS_QUEUE_HIGH_WATERMARK` / `REDIS_QUEUE_LOW_WATERMARK` / `REDIS_QUEUE_BACKPRESSURE_MODE` (`block` or `shed`). `redis_queue_backpressure_total{queue,action}` counts block and shed events on the Scrapy process registry. `monitoring/alerts.yml` is not a Prometheus rule file and is not recreated.
+`QueueBacklog` (`redis_queue_length` > 10000 for 10 minutes) is the alert for Redis queue growth and the Redis depth SLO. Producers apply the same default as a high watermark (#196): `REDIS_QUEUE_HIGH_WATERMARK` / `REDIS_QUEUE_LOW_WATERMARK` / `REDIS_QUEUE_BACKPRESSURE_MODE` (`block` or `shed`). `redis_queue_backpressure_total{queue,action}` counts block and shed events on the Scrapy process registry. `monitoring/alerts.yml` is not a Prometheus rule file and is not recreated. The published objectives and the panel for each are in [PIPELINE_SLOS.md](PIPELINE_SLOS.md). The main dashboard stays http://localhost:3000/d/scraping-pipeline-health; the SLO panels are http://localhost:3000/d/pipeline-slos.
 
 ## Stage 4 speech-to-text (#1101)
 

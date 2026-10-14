@@ -5,6 +5,7 @@ Every `*.json` file in this directory is provisioned into Grafana automatically 
 | File | UID / URL |
 |---|---|
 | `scraping_pipeline_health.json` | `scraping-pipeline-health`, http://localhost:3000/d/scraping-pipeline-health |
+| `pipeline_slos.json` | `pipeline-slos`, http://localhost:3000/d/pipeline-slos |
 | `unified_dashboard.json` | Off-site discovery panels (legacy) |
 
 ## How provisioning works
