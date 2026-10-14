@@ -5,7 +5,7 @@
 	docker-shell docker-test pre-commit pre-commit-update ci ci-docker clean clean-all dev \
 	serve stop restart shell notebook db-migrate db-reset logs metrics prometheus docs \
 	docs-coverage benchmark quick-test quick-check quick-commit show-config tree size \
-	profile models
+	profile models backup restore
 
 # Default target
 .DEFAULT_GOAL := help
@@ -293,6 +293,32 @@ shell: ## Open Python shell with project context
 
 notebook: ## Start Jupyter notebook
 	jupyter notebook
+
+##@ Backup
+
+# Local dry-runs (#300). Core help group: they do not start services.
+# DRY_RUN defaults to 1 inside the scripts when this is empty.
+# DRY_RUN=0 requires LAKE_SRC and BACKUP_DIR under /tmp or this worktree.
+backup: ## Dry-run local backup plan (no pg_dump or services). DRY_RUN=0 writes archives
+	@env \
+		DRY_RUN="$(DRY_RUN)" \
+		BACKUP_DIR="$(BACKUP_DIR)" \
+		RETENTION_DAYS="$(RETENTION_DAYS)" \
+		RETENTION_COUNT="$(RETENTION_COUNT)" \
+		LAKE_SRC="$(LAKE_SRC)" \
+		POSTGRES_DUMP_FILE="$(POSTGRES_DUMP_FILE)" \
+		BACKUP_ID="$(BACKUP_ID)" \
+		./scripts/automated_backup.sh
+
+restore: ## Dry-run restore plan (no database). DRY_RUN=0 extracts; ROUNDTRIP=1 checks a temp sample
+	@env \
+		DRY_RUN="$(DRY_RUN)" \
+		BACKUP_DIR="$(BACKUP_DIR)" \
+		BACKUP_ID="$(BACKUP_ID)" \
+		RESTORE_DEST="$(RESTORE_DEST)" \
+		RESTORE_SQL_DEST="$(RESTORE_SQL_DEST)" \
+		ROUNDTRIP="$(ROUNDTRIP)" \
+		./scripts/restore_backup.sh
 
 ##@ Database
 
