@@ -822,5 +822,95 @@
         const items = capActivityLog(parsed, cap);
         return { items, staleNote: activityStaleNote(items.length) };
     }
-    return { tabKeyTarget, staleState, queueDepthRows, metricsFailureActivity, shortcutHintText, parseMetrics, ratePerMinute, resolveMetricsUrl, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler, stageActivity, stageDrilldown, stageDrilldownKey, doughnutLegendLayout, connectionState, documentTitle, createActivityAnnouncer, metricsUrlProblem, splitLinks, createMetricsFetcher, REFRESH_INTERVAL_CHOICES, parseRefreshInterval, shortcutAction, pickInitialTab, METRIC_UI_MAP, renderMetricNameMap, parseDangerSoundEnabled, dangerSoundDecision, HEALTH_HISTORY_LIMIT, pushPollOutcome, healthHistoryView, COMPARISON_BASELINE_ROLE, PREV_HOUR_AVG_KEYS, readPrevHourAverage, comparisonBaselineSeries, comparisonNote, ACTIVITY_LOG_CAP, capActivityLog, activityStaleNote, restoreActivityLog };
+    // #1052: hosts in play, ranked from a small set of labelled series or from
+    // an API stub of the same shape. The configured `domain` label on crawl
+    // counters is not a request host (see metric_labels.py) and is ignored.
+    // Missing series, or only sentinel hosts (`unknown`, `rejected`, `-`),
+    // are an empty state — never invented domains.
+    const SCRAPE_TARGET_METRICS = {
+        scrape_targets: 1,
+        scrape_targets_total: 1,
+        pipeline_scrape_targets: 1,
+        pipeline_scrape_targets_total: 1,
+        seed_hosts: 1,
+        seed_hosts_total: 1,
+        urls_by_host: 1,
+        urls_by_host_total: 1,
+        urls_by_domain: 1,
+        urls_by_domain_total: 1,
+    };
+    const SCRAPE_TARGET_EMPTY = 'No scrape-target metric reported.';
+    const SCRAPE_TARGET_SENTINELS = { '': 1, '-': 1, unknown: 1, rejected: 1 };
+
+    function scrapeTargetCap(limit) {
+        const n = Math.floor(Number(limit));
+        if (!Number.isFinite(n) || n <= 0) return 8;
+        return Math.min(n, 50);
+    }
+    function scrapeTargetHost(raw) {
+        const host = String(raw == null ? '' : raw).replace(/\\(.)/g, '$1').trim();
+        if (!host || host.length > 253 || SCRAPE_TARGET_SENTINELS[host.toLowerCase()]) return null;
+        if (/[\u0000-\u001f\u007f]/.test(host)) return null;
+        return host;
+    }
+    function scrapeTargetLabel(key, label) {
+        const m = String(key).match(new RegExp('(?:^|[{,])' + label + '="((?:[^"\\\\]|\\\\.)*)"'));
+        return m ? scrapeTargetHost(m[1]) : null;
+    }
+    function addScrapeTarget(totals, host, value) {
+        const name = scrapeTargetHost(host);
+        if (!name) return;
+        const prev = totals.get(name) || { host: name, value: null };
+        if (Number.isFinite(value) && value >= 0) {
+            prev.value = (Number.isFinite(prev.value) ? prev.value : 0) + value;
+        }
+        totals.set(name, prev);
+    }
+    function rowsFromTargetItems(list) {
+        const totals = new Map();
+        for (const item of list || []) {
+            if (typeof item === 'string') {
+                addScrapeTarget(totals, item, null);
+                continue;
+            }
+            if (!item || typeof item !== 'object') continue;
+            const raw = item.host != null ? item.host : item.domain;
+            const value = item.value != null ? item.value : item.count;
+            const n = Number(value);
+            addScrapeTarget(totals, raw, Number.isFinite(n) ? n : null);
+        }
+        return rankedScrapeTargets(totals);
+    }
+    function rowsFromTargetMetrics(metrics) {
+        const totals = new Map();
+        for (const key of Object.keys(metrics || {})) {
+            const brace = key.indexOf('{');
+            if (brace < 1) continue;
+            if (!SCRAPE_TARGET_METRICS[key.slice(0, brace)]) continue;
+            const host = scrapeTargetLabel(key, 'host') || scrapeTargetLabel(key, 'domain');
+            const n = Number(metrics[key]);
+            addScrapeTarget(totals, host, Number.isFinite(n) ? n : null);
+        }
+        return rankedScrapeTargets(totals);
+    }
+    function rankedScrapeTargets(totals) {
+        return [...totals.values()].sort((a, b) => {
+            const aNum = Number.isFinite(a.value);
+            const bNum = Number.isFinite(b.value);
+            if (aNum && bNum && a.value !== b.value) return b.value - a.value;
+            if (aNum !== bNum) return aNum ? -1 : 1;
+            return a.host < b.host ? -1 : a.host > b.host ? 1 : 0;
+        });
+    }
+    function topScrapeTargets(input, limit) {
+        const cap = scrapeTargetCap(limit);
+        let rows;
+        if (Array.isArray(input)) rows = rowsFromTargetItems(input);
+        else if (input && typeof input === 'object' && (Array.isArray(input.targets) || Array.isArray(input.hosts))) {
+            rows = rowsFromTargetItems(Array.isArray(input.targets) ? input.targets : input.hosts);
+        } else rows = rowsFromTargetMetrics(input);
+        if (!rows.length) return { missing: true, rows: [], empty: SCRAPE_TARGET_EMPTY };
+        return { missing: false, rows: rows.slice(0, cap), empty: SCRAPE_TARGET_EMPTY };
+    }
+    return { tabKeyTarget, staleState, queueDepthRows, metricsFailureActivity, shortcutHintText, parseMetrics, ratePerMinute, resolveMetricsUrl, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler, stageActivity, stageDrilldown, stageDrilldownKey, doughnutLegendLayout, connectionState, documentTitle, createActivityAnnouncer, metricsUrlProblem, splitLinks, createMetricsFetcher, REFRESH_INTERVAL_CHOICES, parseRefreshInterval, shortcutAction, pickInitialTab, METRIC_UI_MAP, renderMetricNameMap, parseDangerSoundEnabled, dangerSoundDecision, HEALTH_HISTORY_LIMIT, pushPollOutcome, healthHistoryView, COMPARISON_BASELINE_ROLE, PREV_HOUR_AVG_KEYS, readPrevHourAverage, comparisonBaselineSeries, comparisonNote, ACTIVITY_LOG_CAP, capActivityLog, activityStaleNote, restoreActivityLog, topScrapeTargets, SCRAPE_TARGET_EMPTY };
 });

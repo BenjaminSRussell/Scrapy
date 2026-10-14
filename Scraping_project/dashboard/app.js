@@ -871,10 +871,40 @@ function updateDashboard(metrics) {
     }
 
     updateHistoricalData(metrics);
+    renderScrapeTargets(metrics);
 
     previousMetrics = { ...metrics };
     previousMetricsAt = Date.now();
     syncStageDrilldownValues();
+}
+
+// #1052: rank hosts from the metrics sample (or an API stub of the same
+// shape). Rows are DOM nodes with textContent so a host cannot become markup.
+function renderScrapeTargets(metrics) {
+    const empty = document.getElementById('scrape-targets-empty');
+    const table = document.getElementById('scrape-targets-table');
+    const list = document.getElementById('scrape-targets-list');
+    if (!empty || !table || !list || typeof topScrapeTargets !== 'function') return;
+    const summary = topScrapeTargets(metrics);
+    list.replaceChildren();
+    if (summary.missing) {
+        empty.hidden = false;
+        empty.textContent = summary.empty;
+        table.hidden = true;
+        return;
+    }
+    empty.hidden = true;
+    table.hidden = false;
+    for (const row of summary.rows) {
+        const tr = document.createElement('tr');
+        const host = document.createElement('td');
+        host.textContent = row.host;
+        const value = document.createElement('td');
+        value.textContent = Number.isFinite(row.value) ? formatNumber(row.value) : '\u2014';
+        tr.appendChild(host);
+        tr.appendChild(value);
+        list.appendChild(tr);
+    }
 }
 
 
