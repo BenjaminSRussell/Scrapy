@@ -1346,18 +1346,41 @@ function hideFetchError() {
 }
 
 // #351: Stale badge once the last good sample is older than 3 refresh intervals.
+// #1005: also while the browser is offline, so a cached shell cannot look live.
 let staleShown = false;
 function renderStale() {
     const interval = refreshScheduler ? refreshScheduler.getInterval() : REFRESH_INTERVAL;
-    const { stale } = staleState(lastMetricsAt, Date.now(), interval, 3);
-    if (stale === staleShown) return;
-    staleShown = stale;
+    const aged = staleState(lastMetricsAt, Date.now(), interval, 3).stale;
+    const onLine = typeof navigator === 'undefined' ? true : navigator.onLine !== false;
+    const stale = offlineShellStale(onLine, aged);
+    const banner = document.getElementById('offline-shell-banner');
+    if (banner && banner.hidden !== onLine) banner.hidden = onLine;
     ['stale-badge', 'topbar-stale'].forEach(id => {
         const el = document.getElementById(id);
-        if (el) el.hidden = !stale;
+        if (!el) return;
+        const hide = !stale;
+        if (el.hidden !== hide) el.hidden = hide;
+        if (!onLine) el.title = 'Offline: metrics are not live and are not served from cache';
     });
+    if (stale === staleShown) return;
+    staleShown = stale;
     const live = document.getElementById('refresh-status');
-    if (live) live.textContent = stale ? 'Metrics are stale: no successful update for several intervals' : 'Metrics are current again';
+    // The offline banner is the announcement. Avoid claiming metrics are current
+    // when this session has not had a successful fetch (#1005).
+    if (!live || !onLine) return;
+    if (stale) live.textContent = 'Metrics are stale: no successful update for several intervals';
+    else if (lastMetricsAt) live.textContent = 'Metrics are current again';
+}
+
+// #1005: optional. flags.sw defaults on; false skips registration entirely.
+function registerOptionalShellCache() {
+    const flags = window.__CC_FEATURES__ || {};
+    if (!flags.sw) return;
+    if (typeof navigator === 'undefined' || !navigator.serviceWorker) return;
+    if (typeof location === 'undefined' || !/^https?:$/.test(location.protocol)) return;
+    navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch((err) => {
+        console.warn('Optional shell cache was not registered', err);
+    });
 }
 
 // #349: Refresh now shows a busy state while a fetch is in flight (it stays
@@ -1657,6 +1680,11 @@ function initialize() {
         console.error(`[config] ${metricsProblem}`);
         addActivityLogItem('danger', metricsProblem);
     }
+
+    registerOptionalShellCache();
+    window.addEventListener('online', renderStale);
+    window.addEventListener('offline', renderStale);
+    renderStale();
 
     console.log('Dashboard ready!');
 }

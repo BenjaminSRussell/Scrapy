@@ -127,7 +127,8 @@ Do not introduce `innerHTML` writes of unescaped data.
 
 **CSP and headers (#245).** `serve.py` sends an enforcing
 `Content-Security-Policy`: `default-src 'self'`, scripts only from this origin and
-jsDelivr (Chart.js, pinned with an SRI `integrity` hash), `connect-src 'self'`,
+jsDelivr (Chart.js, pinned with an SRI `integrity` hash), `worker-src 'self'`
+(optional shell service worker, #1005), `connect-src 'self'`,
 `object-src 'none'`, `base-uri 'none'`, `frame-ancestors 'none'`. Inline `<script>` is
 not allowed (feature flags live in `features.js`). Inline style attributes are, via
 `style-src 'unsafe-inline'`, until they move to CSS classes. It also sends
@@ -147,3 +148,16 @@ CORS headers unless `CC_CORS_ORIGINS` is set.
 
 **Feature flags / env.** `window.__CC_FEATURES__` and `__CC_ENV__` are UI hints,
 not authorization. Anything sensitive must be enforced server-side.
+
+## Offline shell (#1005)
+
+`window.__CC_FEATURES__.sw` defaults to true. `app.js` then registers `/sw.js`
+(secure contexts only: localhost or HTTPS). The worker caches same-origin HTML,
+CSS, and JS, network-first, and falls back to that cache when the network fails,
+so a hard refresh still shows the last shell. `/api/metrics`, `/api/queues`,
+`/api/health`, and any `/metrics` URL are fetched with `cache: 'no-store'` and
+are never written to the Cache API. While `navigator.onLine` is false the page
+shows the offline banner and the stale-data badges, including before the first
+successful metrics fetch. Set `sw: false` in `features.js` (or set
+`__CC_FEATURES__.sw` before `app.js` loads) to skip registration. The cached
+shell is the static UI only; it does not include metric samples.

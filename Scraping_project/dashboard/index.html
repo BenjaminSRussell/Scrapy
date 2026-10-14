@@ -910,6 +910,10 @@
                 forced-color-adjust: none;
                 background: CanvasText;
             }
+            .offline-shell-banner,
+            .stale-badge {
+                border: 1px solid CanvasText;
+            }
             .health-item.unhealthy {
                 border: 3px dashed CanvasText;  /* state without colour */
             }
@@ -1015,6 +1019,18 @@
         }
         .stale-badge[hidden] { display: none; }
 
+        /* #1005: offline shell. Hidden until the browser reports offline. */
+        .offline-shell-banner {
+            margin: 0 0 1rem;
+            padding: 0.75rem 1rem;
+            border-radius: 0.5rem;
+            background: #fef3c7;
+            color: #92400e;
+            border: 1px solid #b45309;
+            font-weight: 600;
+        }
+        .offline-shell-banner[hidden] { display: none; }
+
         /* #362: fetch error banner with Retry. */
         .fetch-error-banner {
             display: flex;
@@ -1074,6 +1090,9 @@
     </header>
 
     <main class="container" id="main">
+        <div id="offline-shell-banner" class="offline-shell-banner" role="status" hidden>
+            Offline: showing the last cached shell. Metrics are stale and are not served from cache.
+        </div>
         <div id="fetch-error-banner" class="fetch-error-banner" role="alert" hidden>
             <span id="fetch-error-text">Could not load metrics.</span>
             <button type="button" id="retry-fetch" class="btn" aria-label="Retry loading metrics now">Retry</button>

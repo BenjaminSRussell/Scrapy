@@ -15,6 +15,7 @@ renamed to the new version and date (see the release checklist).
 ## [Unreleased]
 
 ### Added
+- Control Center can cache the dashboard shell (HTML, CSS, and JS) in an optional service worker so a hard refresh still shows the last page while offline. `/api/metrics`, `/api/queues`, `/api/health`, and any `/metrics` response are never cached. The offline shell shows the stale-data badge. Set `__CC_FEATURES__.sw` to false to skip registration (#1005).
 - Control Center pipeline stage cards open a side panel with a subset of that stage's metrics and placeholder links for later job and queue detail. Cards are keyboard buttons; Escape closes the panel (#1033).
 - Control Center can play a short tone on a new danger activity item. The Sound on danger checkbox is off by default and the choice is remembered in localStorage. Reduced motion and a mute media preference keep it silent (#1037).
 - Optional Control Center job captures one Overview smoke screenshot and uploads it as `dashboard-overview-screenshot` (`overview.png` of `#tab-overview`). It is not a pixel-diff gate and does not block the dashboard unit tests (#1044).

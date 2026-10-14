@@ -79,6 +79,7 @@ def test_enforcing_csp_and_security_headers(make_server):
     assert status == 200
     csp = headers["content-security-policy"]
     assert "default-src 'self'" in csp
+    assert "worker-src 'self'" in csp
     assert "frame-ancestors 'none'" in csp
     assert "cdn.jsdelivr.net" in csp
     assert "Report-Only" not in headers
@@ -320,6 +321,11 @@ def test_real_dashboard_assets_smoke(serve):
             assert body.strip(), src
         status, headers, _ = get(base + "/styleguide.html")
         assert status == 200 and headers["content-type"].startswith("text/html")
+        status, headers, body = get(base + "/sw.js")
+        assert status == 200, "sw.js"
+        assert "javascript" in headers["content-type"]
+        assert b"network-only" in body and b"/api/" in body and b"/metrics" in body
+        assert b"no-store" in body
     finally:
         httpd.shutdown()
         httpd.server_close()
