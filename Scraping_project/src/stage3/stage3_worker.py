@@ -277,11 +277,12 @@ class Stage3Worker:
             logger.info(f"Processing batch {i // self.batch_size + 1}: {len(batch)} documents")
 
             batch_start = time.time()
+            # Gather may return BaseException; the capped path returns dict | None.
+            results: list[dict[str, Any] | BaseException | None] = []
 
             if has_numeric_cap(ensure_budget(self), "stage3"):
                 # One document at a time. Dedup runs only after the cap check so a
                 # document we cannot afford is not stored as a fingerprint (#222).
-                results = []
                 for doc in batch:
                     if stop_for_budget(self, "stage3"):
                         break
