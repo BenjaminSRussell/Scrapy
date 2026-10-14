@@ -1,0 +1,30 @@
+name: DX / tooling report
+description: "Developer experience or tooling gap"
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What is hard, missing, or inconsistent for contributors?
+    validations:
+      required: true
+  - type: textarea
+    id: paths
+    attributes:
+      label: Paths
+      description: Files, directories, commands, or workflows this touches. One path per line.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: What must be true for this to be done?
+    validations:
+      required: true
+  - type: textarea
+    id: not_duplicate
+    attributes:
+      label: Not a duplicate of
+      description: Related issues this does not duplicate, or none.
