@@ -15,6 +15,7 @@ renamed to the new version and date (see the release checklist).
 ## [Unreleased]
 
 ### Added
+- Config-driven Delta partitions (`domain` or `date`) on newly created tables, a declared `metadata_queue` with a schema and day partition, and warn/reject for writes to undeclared tables (#261 #236 #268 #433).
 - Dead-letter queue for undeliverable Kafka messages, plus an ops CLI (list/stats/show/replay/resolve).
 - Bounded (rows/bytes/age) Delta batches with a timer flush for queue and offsite tables.
 - Stage 2: configurable per-host concurrency cap; in-request HTTP retries with backoff, jitter and a per-host circuit breaker.
@@ -32,6 +33,7 @@ renamed to the new version and date (see the release checklist).
 
 ### Fixed
 - Docker HEALTHCHECK probes PID 1 and configured Redis/TCP dependencies instead of always succeeding, and the docs no longer point at a missing `/health` route (#542).
+- Delta writes and merges keep an existing table's partition layout when it differs from `delta_lake.partitions`, instead of failing every commit (#261).
 - Dashboard UI, accessibility and XSS fixes (#954 #957 #975 #976 #977 #978 #945 #962 #982 #983 #906 #910).
 - ASR never leaks temp media files and caps download size (#468).
 - Config reloads that fail to parse keep the previous snapshot live.
