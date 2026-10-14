@@ -236,6 +236,21 @@ def test_undeclared_table_rejected_in_reject_mode(tmp_path, monkeypatch):
     assert m.write("stage1_errors", [{"url": "https://a/1", "error": "x"}], async_write=False) is not False
     assert m.write("entity_summaries", [{"entity": "x"}], async_write=False) is not False
     assert "cast_quarantine" in m.declared_tables and "domain_quarantine" in m.declared_tables
+    m.shutdown()
+
+
+def test_undeclared_async_write_is_rejected_without_queue_or_spill(tmp_path, monkeypatch):
+    """Default write() is async. Reject must not report success or spill for replay."""
+    monkeypatch.setenv("DELTA_UNDECLARED_TABLES", "reject")
+    m = LakehouseManager(base_path=str(tmp_path / "lake"), start_workers=False)
+    assert m.write("rogue_async", [{"a": 1}]) is False
+    assert m.write_queue.qsize() == 0
+    assert not (tmp_path / "lake" / "_write_spill").exists()
+    assert not (tmp_path / "lake" / "rogue_async").exists()
+    assert REGISTRY.get_sample_value(
+        "delta_undeclared_table_writes_total", {"table": "rogue_async", "action": "rejected"}
+    ) == 1
+    m.shutdown()
 
 
 def test_invalid_undeclared_mode_fails_fast(tmp_path, monkeypatch):

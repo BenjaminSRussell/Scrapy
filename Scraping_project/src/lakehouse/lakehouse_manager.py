@@ -1314,7 +1314,16 @@ class LakehouseManager:
         (additive evolution only, #509). Pass ``schema_overwrite=True`` to
         deliberately replace the schema as well. That destructive write is
         always synchronous, logged, and counted.
+
+        An undeclared table in ``reject`` mode returns False before the batch
+        is queued. The default is async, and spilling a refused batch would
+        replay it (#433, #225).
         """
+        if (
+            getattr(self, "undeclared_tables_mode", "warn") == "reject"
+            and not self._undeclared_table_allowed(table_name)
+        ):
+            return False
         if schema_overwrite:
             if mode != "overwrite":
                 raise ValueError("schema_overwrite=True requires mode='overwrite'")
