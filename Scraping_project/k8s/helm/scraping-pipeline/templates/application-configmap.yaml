@@ -8,8 +8,8 @@ metadata:
     app.kubernetes.io/component: configuration
 data:
   PYTHONPATH: "/app"
-  REDIS_HOST: "{{ include "scraping-pipeline.fullname" . }}-redis"
-  REDIS_PORT: "{{ .Values.redis.service.port }}"
+  REDIS_HOST: {{ include "scraping-pipeline.redisHost" . | quote }}
+  REDIS_PORT: {{ include "scraping-pipeline.redisPort" . | quote }}
   POSTGRES_HOST: "{{ include "scraping-pipeline.fullname" . }}-postgresql"
   POSTGRES_PORT: "{{ .Values.postgresql.service.port }}"
   POSTGRES_DB: {{ .Values.postgresql.auth.database | quote }}

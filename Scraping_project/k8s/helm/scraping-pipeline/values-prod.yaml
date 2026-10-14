@@ -9,7 +9,11 @@
 #     would block writes on a single broker loss (needs RF >= minISR + 1);
 #   - Grafana is a LoadBalancer without grafana.service.allowPublicLoadBalancer;
 #   - the ingress is enabled without TLS;
-#   - networkPolicy is off without networkPolicy.breakGlass (#190).
+#   - networkPolicy is off without networkPolicy.breakGlass (#190);
+#   - Redis is still the chart's single replica, or redis.external.host is empty.
+#     Replace the host and egressCIDRs below before a real install (#216).
+#     AOF can recover data after the node returns, and it does not keep the
+#     queue available during node loss.
 profile: production
 
 kafka:
@@ -51,3 +55,17 @@ networkPolicy:
   breakGlass: false
   # Ingress controller namespace (className nginx above). Change if yours differs.
   ingressNamespace: ingress-nginx
+
+# #216: do not deploy the single-replica chart Redis. Point the existing
+# REDIS_HOST / REDIS_PORT contract at a managed Redis or the stable hostname
+# in front of a Sentinel/HA primary you run outside this chart. Password stays
+# REDIS_PASSWORD in redis-credentials. Do not set REDIS_URL.
+# Replace redis.example.edu and the documentation CIDR (TEST-NET-3, RFC 5737)
+# before install. NetworkPolicy is on above and cannot match a DNS name.
+redis:
+  enabled: false
+  external:
+    host: redis.example.edu
+    port: 6379
+    egressCIDRs:
+      - 203.0.113.0/24

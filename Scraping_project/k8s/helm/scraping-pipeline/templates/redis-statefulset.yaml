@@ -1,4 +1,10 @@
-{{- if .Values.redis.enabled }}
+{{/*
+#216: non-prod only. One replica. AOF can recover data after the node returns,
+and it does not keep the queue available during node loss. There is no
+failover here. Production sets redis.enabled=false and redis.external.host
+(REDIS_HOST / REDIS_PORT; no REDIS_URL, no Sentinel protocol in this chart).
+*/}}
+{{- if and .Values.redis.enabled (not (include "scraping-pipeline.redisExternalHost" .)) }}
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:

@@ -22,8 +22,21 @@ namespaceQuota:
 # ============================================
 # Stateful Services - Redis
 # ============================================
+# #216: this chart's Redis is one replica. AOF (appendonly) can recover data
+# after the node returns, and it does not keep the queue available during
+# node loss. Non-prod leaves external.host empty and keeps the StatefulSet.
+# Production (values-prod.yaml) sets external.host and enabled: false.
+# Clients stay on REDIS_HOST, REDIS_PORT, REDIS_PASSWORD, and REDIS_DB.
+# Do not set REDIS_URL. There is no Sentinel wire protocol in this chart.
 redis:
   enabled: true
+  # Hostname only. When set, REDIS_HOST/REDIS_PORT use it and the StatefulSet
+  # is not rendered. Password stays the redis-credentials Secret.
+  external:
+    host: ""
+    port: 6379
+    # NetworkPolicy cannot match a DNS name. Used only when host is set.
+    egressCIDRs: []
   # #184: Redis requires AUTH. The password is read from this Secret (created
   # from secrets.redis.password unless secrets.useExternalSecrets=true) and
   # injected as REDIS_PASSWORD into Redis and every app pod.

@@ -25,7 +25,7 @@ data:
       - name: Redis
         type: redis-datasource
         access: proxy
-        url: redis://{{ $fullname }}-redis:{{ .Values.redis.service.port }}
+        url: redis://{{ include "scraping-pipeline.redisHost" . }}:{{ include "scraping-pipeline.redisPort" . }}
         editable: true
         jsonData:
           client: standalone
