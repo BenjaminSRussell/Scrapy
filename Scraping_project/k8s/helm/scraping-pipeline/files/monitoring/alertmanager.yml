@@ -84,12 +84,28 @@ receivers:
     #     title: '[CRITICAL] {{ .GroupLabels.alertname }}'
     #     text: '{{ range .Alerts }}{{ .Annotations.description }}{{ end }}'
 
-    # PagerDuty integration (configure in production)
+    # Paging is off (#555). These blocks are examples only. They are not
+    # loaded. Uncomment exactly one, and only after the secret file in
+    # Scraping_project/monitoring/alertmanager-paging.md is mounted.
+    # Do not put a routing key, API key, webhook URL, or token in this file.
+    # A missing key file must not fall back to a placeholder and must not page.
+    #
+    # PagerDuty Events API v2. The file is the integration key, not a URL.
     # pagerduty_configs:
-    #   - service_key: 'YOUR_PAGERDUTY_SERVICE_KEY'
+    #   - routing_key_file: /etc/alertmanager/secrets/pagerduty-routing-key
     #     send_resolved: true
+    #     severity: critical
+    #
+    # Opsgenie. The file is the GenieKey. Do not set api_url or api_key here.
+    # opsgenie_configs:
+    #   - api_key_file: /etc/alertmanager/secrets/opsgenie-api-key
+    #     send_resolved: true
+    #     priority: P1
 
-  # Warning alerts receiver
+  # Warning alerts receiver.
+  # Not a page. Leave pagerduty_configs and opsgenie_configs off this
+  # receiver. Only severity=critical may page, and only with the secret
+  # file from Scraping_project/monitoring/alertmanager-paging.md present.
   - name: 'warning'
     # email_configs:
     #   - to: 'dev-team@example.com'
