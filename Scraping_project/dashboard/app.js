@@ -1147,8 +1147,9 @@ function finishLoading(failed) {
 function showFetchError(message) {
     const banner = document.getElementById('fetch-error-banner');
     const text = document.getElementById('fetch-error-text');
-    if (text) text.textContent = `Could not load metrics: ${message}`;
+    // Unhide before writing so role=alert announces the new text.
     if (banner && banner.hidden) banner.hidden = false;
+    if (text) text.textContent = `Could not load metrics: ${message}`;
 }
 function hideFetchError() {
     const banner = document.getElementById('fetch-error-banner');

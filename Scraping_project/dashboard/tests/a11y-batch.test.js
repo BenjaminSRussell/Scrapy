@@ -49,6 +49,17 @@ test('tablist / tab / tabpanel roles are wired with ids', () => {
     assert.strictEqual(tabs.filter(t => /tabindex="0"/.test(t)).length, 1, 'roving tabindex');
 });
 
+test('tab panels use the tab-content class the switcher queries', () => {
+    const panels = [...body.matchAll(/<div\b[^>]*id="tab-[a-z]+"[^>]*>/g)];
+    assert.strictEqual(panels.length, 5);
+    for (const p of panels) {
+        const cls = (p[0].match(/class="([^"]*)"/) || [])[1] || '';
+        assert.ok(cls.split(/\s+/).includes('tab-content'), p[0]);
+    }
+    assert.strictEqual((body.match(/tab-contentNone/g) || []).length, 0);
+    assert.match(app, /querySelectorAll\('\.tab-content'\)/);
+});
+
 test('tab emoji are decorative', () => {
     for (const t of body.matchAll(/<button[^>]*role="tab"[^>]*>(.*?)<\/button>/g)) {
         assert.match(t[1], /^<span aria-hidden="true">[^<]+<\/span> \w/);

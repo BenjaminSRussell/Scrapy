@@ -37,6 +37,7 @@ renamed to the new version and date (see the release checklist).
 - Dashboard UI, accessibility and XSS fixes (#954 #957 #975 #976 #977 #978 #945 #962 #982 #983 #906 #910).
 - ASR never leaks temp media files and caps download size (#468).
 - Config reloads that fail to parse keep the previous snapshot live.
+- Control Center: keyboard tabs, landmarks, contrast, focus, reduced motion, a wrapping mobile topbar, and loading, stale, and error states (#153 #155 #332 #340 #341 #343 #349 #351 #352 #362).
 
 ### Security
 - Redis uses `volatile-lru` so seen-sets and queues are never LRU-evicted, and logs an error on `allkeys-*` servers.
