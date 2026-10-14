@@ -120,7 +120,19 @@ def extract_key_facts(text: str, summary: str, categories: list[str]) -> list[st
 
     return key_facts
 
+def _fold_stage4_asr(analytics_data: dict) -> dict:
+    """Local ASR fixtures (#1101). Flag off does not import the processor."""
+    from src.utils.feature_flags import get_bool
+
+    if not isinstance(analytics_data, dict) or not get_bool("STAGE4_ASR_ENABLED", False):
+        return analytics_data
+    from src.common.async_asr_processor import apply_stage4_asr
+
+    return apply_stage4_asr(analytics_data)
+
+
 def create_final_summary(analytics_data: dict) -> dict:
+    analytics_data = _fold_stage4_asr(analytics_data)
     url = analytics_data.get("url")
     combined_text = analytics_data.get("combined_text", "")
     metadata = analytics_data.get("metadata", {})

@@ -24,6 +24,7 @@ New experimental features must **default to off**. Add each new flag to `FLAGS` 
 | `ENABLE_EXPERIMENTAL_SPIDERS` | off | `src/settings.py`, `src/stage1/experimental/gate.py`, `cli.py` | Allow the lab spiders `javascript`, `deep_dive` and `depth` to crawl (#391/#442) |
 | `SSRF_GUARD_ENABLED` | on | `src/settings.py` | Kill-switch for the SSRF download guard (#682); keep it on in production |
 | `ASR_ENABLED` | off (or `scrapy.asr_enabled`) | `src/settings.py` | Register the speech-to-text pipeline (#470) |
+| `STAGE4_ASR_ENABLED` | off | `src/stage4/summarization.py`, `src/stage4/stage4_worker.py` | Fold local audio/text fixtures into Stage 4 summaries (#1101). Does not download remote media |
 | `KAFKA_DLQ_ENABLED` | on | `src/pipelines.py` (`KafkaPipeline`) | Write undeliverable Kafka items to the file DLQ (#162) |
 
 `feature_flags.snapshot()` returns the effective value of every registered flag, which is useful when debugging a deployment.

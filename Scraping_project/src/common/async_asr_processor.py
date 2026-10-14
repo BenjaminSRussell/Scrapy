@@ -2,6 +2,7 @@ import functools
 import logging
 import os
 import tempfile
+import time
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 from typing import Any
@@ -40,7 +41,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_MAX_DOWNLOAD_BYTES = 200 * 1024 * 1024
 
 try:
-    from prometheus_client import Counter
+    from prometheus_client import Counter, Histogram
 
     ASR_TEMP_FILES: Any = Counter(
         "scrapy_asr_temp_files_total",
@@ -52,9 +53,26 @@ try:
         "ASR media downloads aborted before transcription",
         ["reason"],
     )
+    # Stage 4 only (#1101). The crawl pipeline keeps the scrapy_asr_* series above.
+    ASR_JOBS: Any = Counter(
+        "asr_jobs_total",
+        "Stage 4 ASR transcription attempts that called the speech backend",
+    )
+    ASR_LATENCY: Any = Histogram(
+        "asr_latency",
+        "Stage 4 ASR transcription latency in seconds",
+        buckets=(0.05, 0.1, 0.5, 1.0, 2.0, 5.0, 15.0, 60.0, float("inf")),
+    )
+    ASR_FAILURES: Any = Counter(
+        "asr_failures_total",
+        "Stage 4 ASR transcriptions that raised or returned an error",
+    )
 except Exception:  # prometheus_client missing or metric already registered
     ASR_TEMP_FILES = None
     ASR_DOWNLOADS_REJECTED = None
+    ASR_JOBS = None
+    ASR_LATENCY = None
+    ASR_FAILURES = None
 
 
 # Speech-to-text backend (#429). ``none`` (default) never downloads or sends
@@ -449,3 +467,159 @@ class ASRMiddleware:
 
     def spider_closed(self, spider):
         self.processor.shutdown()
+
+
+# Stage 4 reads local fixtures only (#1101). Remote media stays on ASRPipeline,
+# which is SSRF-guarded. A missing speech library is a skip, not a failure.
+_STAGE4_TEXT_SUFFIXES = {".txt", ".text", ".md"}
+_STAGE4_MAX_SOURCES = 8
+_STAGE4_MAX_TEXT_BYTES = 1_000_000
+_missing_speech_logged = False
+
+
+def _inc_metric(metric: Any) -> None:
+    if metric is not None:
+        metric.inc()
+
+
+def _stage4_provider() -> str:
+    """Local whisper when ``ASR_PROVIDER`` is unset. ``none`` and ``google`` are explicit."""
+    raw = os.environ.get("ASR_PROVIDER")
+    if raw is None or not str(raw).strip():
+        return "whisper"
+    return resolve_asr_provider(raw)
+
+
+def _local_stage4_file(raw: str) -> Path | None:
+    text = raw.strip()
+    if not text or "://" in text:
+        return None
+    try:
+        path = Path(text).expanduser()
+        if not path.is_file():
+            return None
+    except OSError:
+        return None
+    return path
+
+
+def _stage4_sources(record: dict[str, Any]) -> list[tuple[str, Path]]:
+    found: list[tuple[str, Path]] = []
+    groups = (
+        ("text", "text_path", "text_paths"),
+        ("audio", "audio_path", "audio_paths"),
+    )
+    audio_suffixes = AsyncASRProcessor.SUPPORTED_AUDIO_FORMATS
+    for kind, single, many in groups:
+        values: list[str] = []
+        one = record.get(single)
+        if isinstance(one, str):
+            values.append(one)
+        group = record.get(many)
+        if isinstance(group, list | tuple):
+            values.extend(item for item in group if isinstance(item, str))
+        for raw in values:
+            path = _local_stage4_file(raw)
+            if path is None:
+                continue
+            suffix = path.suffix.lower()
+            if suffix in _STAGE4_TEXT_SUFFIXES:
+                found.append(("text", path))
+            elif kind == "audio" and suffix in audio_suffixes:
+                found.append(("audio", path))
+            if len(found) >= _STAGE4_MAX_SOURCES:
+                return found
+    return found
+
+
+def _read_stage4_text(path: Path) -> str:
+    try:
+        data = path.read_bytes()[:_STAGE4_MAX_TEXT_BYTES]
+    except OSError as exc:
+        logger.warning("Stage 4 ASR could not read %s: %s", path, exc)
+        return ""
+    return data.decode("utf-8", errors="replace").strip()
+
+
+def transcribe_stage4_audio(path: str, *, provider: str | None = None) -> dict[str, Any]:
+    """Transcribe one local file. Missing deps and ``provider='none'`` set ``skipped``."""
+    chosen = _stage4_provider() if provider is None else resolve_asr_provider(provider)
+    if chosen == "none":
+        return {
+            "success": False,
+            "transcript": "",
+            "error": "ASR disabled (ASR_PROVIDER=none)",
+            "skipped": True,
+        }
+    if chosen == "google":
+        _warn_google_once()
+    if not SPEECH_RECOGNITION_AVAILABLE:
+        global _missing_speech_logged
+        if not _missing_speech_logged:
+            _missing_speech_logged = True
+            logger.warning(
+                "speech_recognition is not installed; Stage 4 skipped this audio file. "
+                "The summary continues without a transcript."
+            )
+        return {
+            "success": False,
+            "transcript": "",
+            "error": "speech_recognition library not available",
+            "skipped": True,
+        }
+    started = time.perf_counter()
+    _inc_metric(ASR_JOBS)
+    try:
+        result = transcribe_audio_file(path, provider=chosen)
+    except Exception as exc:
+        if ASR_LATENCY is not None:
+            ASR_LATENCY.observe(time.perf_counter() - started)
+        _inc_metric(ASR_FAILURES)
+        logger.warning("Stage 4 ASR failed for %s: %s", path, exc)
+        return {"success": False, "transcript": "", "error": str(exc), "skipped": False}
+    if ASR_LATENCY is not None:
+        ASR_LATENCY.observe(time.perf_counter() - started)
+    if not result.get("success"):
+        _inc_metric(ASR_FAILURES)
+    return result
+
+
+def stage4_asr_transcripts(record: dict[str, Any]) -> list[str]:
+    """Transcripts from local fixtures. Does not check the feature flag."""
+    if not isinstance(record, dict):
+        return []
+    provider = _stage4_provider()
+    transcripts: list[str] = []
+    for kind, path in _stage4_sources(record):
+        if kind == "text":
+            text = _read_stage4_text(path)
+            if text:
+                transcripts.append(text)
+            continue
+        result = transcribe_stage4_audio(str(path), provider=provider)
+        text = (result.get("transcript") or "").strip()
+        if result.get("success") and text:
+            transcripts.append(text)
+    return transcripts
+
+
+def apply_stage4_asr(analytics: dict[str, Any]) -> dict[str, Any]:
+    """Fold fixture transcripts into a copy of ``analytics``. Flag off returns it unchanged."""
+    from src.utils.feature_flags import get_bool
+
+    if not isinstance(analytics, dict) or not get_bool("STAGE4_ASR_ENABLED", False):
+        return analytics
+    added = stage4_asr_transcripts(analytics)
+    if not added:
+        return analytics
+    data = dict(analytics)
+    existing = data.get("audio_transcripts") or []
+    if not isinstance(existing, list):
+        existing = []
+    data["audio_transcripts"] = [*existing, *added]
+    combined = data.get("combined_text") or ""
+    if not isinstance(combined, str):
+        combined = ""
+    extra = "\n".join(added)
+    data["combined_text"] = f"{combined}\n{extra}".strip() if combined.strip() else extra
+    return data

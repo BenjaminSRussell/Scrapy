@@ -40,6 +40,18 @@ The "Unified Dashboard" (`monitoring/dashboards/unified_dashboard.json`) adds Ka
 
 Every rule carries `summary`, `description`, `impact` and `action` annotations, so the alert itself tells on-call what to check. Runbooks for operator actions are in [docs/runbooks/](../runbooks/).
 
+## Stage 4 speech-to-text (#1101)
+
+`STAGE4_ASR_ENABLED` defaults off. When it is on, Stage 4 reads local audio and text fixtures only. It does not download remote media (that stays on the crawl pipeline, `ASR_ENABLED`).
+
+| Metric | Type | When it moves |
+|---|---|---|
+| `asr_jobs_total` | counter | One transcription attempt that called the speech backend |
+| `asr_latency` | histogram (seconds) | Duration of those attempts (`asr_latency_sum`, `asr_latency_count`, `asr_latency_bucket`) |
+| `asr_failures_total` | counter | An attempt raised or returned an error |
+
+A missing `speech_recognition` install, or `ASR_PROVIDER=none`, is a skip: no job and no failure, and the summary still runs on the other text. Unset `ASR_PROVIDER` uses local whisper. Audio is sent to Google only when `ASR_PROVIDER=google`.
+
 ## Logs
 
 - **Application logs.** Logs go to stdout and stderr; nothing reads `logging.file` today. Each line carries `stage`, `worker` and `job` (`CRAWL_JOB_ID`). Set `LOG_FORMAT=json` to get one JSON object per line for Loki or ELK. `LOG_LEVEL` overrides `logging.level`.

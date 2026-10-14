@@ -269,6 +269,7 @@ class Stage4Worker:
             text, content_type = self.processor._fetch_content(url, is_pdf=is_pdf)
             _count(STAGE4_CONTENT_SOURCE, 1, source="fetch")
 
+        text = _fold_asr_text(doc, text or "")
         if not text:
             logger.warning(f"[STAGE4] No text content for {url[:80]}")
             return None, "no_text"
@@ -291,6 +292,26 @@ class Stage4Worker:
             "is_pdf": is_pdf,
             "processed_at": datetime.now().isoformat(),
         }, None
+
+
+def _fold_asr_text(doc: dict[str, Any], text: str) -> str:
+    """Append local ASR fixtures when ``STAGE4_ASR_ENABLED`` is on (#1101).
+
+    Flag off does not import the processor. Remote URLs are not downloaded.
+    """
+    from src.utils.feature_flags import get_bool
+
+    if not get_bool("STAGE4_ASR_ENABLED", False):
+        return text
+    from src.common.async_asr_processor import stage4_asr_transcripts
+
+    added = stage4_asr_transcripts(doc)
+    if not added:
+        return text
+    extra = "\n".join(added)
+    return f"{text}\n{extra}" if text else extra
+
+
 
 def _drain_requested(done: int, total: int) -> bool:
     """SIGTERM/SIGINT seen: stop before the next document (#325)."""

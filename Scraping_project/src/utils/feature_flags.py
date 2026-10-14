@@ -114,6 +114,7 @@ FLAGS: dict[str, tuple[Any, str]] = {
     "ENABLE_EXPERIMENTAL_SPIDERS": (False, "Allow lab spiders (javascript, deep_dive, depth) to run (#391/#442)."),
     "SSRF_GUARD_ENABLED": (True, "Kill-switch for the SSRF download guard (#682). Leave on in prod."),
     "ASR_ENABLED": (False, "Register the speech-to-text pipeline (#470)."),
+    "STAGE4_ASR_ENABLED": (False, "Fold local audio/text fixtures into Stage 4 summaries (#1101)."),
     "KAFKA_DLQ_ENABLED": (True, "Write undeliverable Kafka items to the file DLQ (#162)."),
 }
 

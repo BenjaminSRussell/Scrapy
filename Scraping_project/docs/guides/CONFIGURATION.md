@@ -58,6 +58,6 @@ These are the variables the code actually reads (`grep -rn "getenv" src cli.py s
 | Crawl politeness and safety | `ROBOTSTXT_OBEY`, `ROBOTS_MAX_CRAWL_DELAY`, `RETRY_AFTER_MAX_DELAY`, `SOFT_BAN_*`, `SSRF_GUARD_ENABLED`, `SSRF_RESOLVE_DNS`, `SSRF_ALLOWED_HOSTS`, `CRAWL_KILL_SWITCH`, `CRAWL_JOB_ID` |
 | Rendering | `PLAYWRIGHT_MAX_CONTEXTS`, `PLAYWRIGHT_MAX_PAGES_PER_CONTEXT` |
 | Observability | `LOG_LEVEL`, `STATSD_HOST`, `STATSD_PORT`, `OTEL_SERVICE_NAME`, `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_PROTOCOL` |
-| ML services | `ZSC_*` (zero-shot classifier service), `ASR_PROVIDER` |
+| ML services | `ZSC_*` (zero-shot classifier service), `ASR_PROVIDER`, `ASR_ENABLED`, `STAGE4_ASR_ENABLED` (Stage 4 local fixtures only; default off, #1101) |
 
 Keep secrets such as `DB_PASSWORD`, `REDIS_PASSWORD` and `KAFKA_SASL_PASSWORD` in the environment or a secret store, never in `config.yml`. See [SECURITY.md](../../../SECURITY.md).
