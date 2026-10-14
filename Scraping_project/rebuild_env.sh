@@ -8,6 +8,20 @@
 
 set -euo pipefail  # project standard (#822): scripts/SHELL_STANDARD.md
 
+# `docker compose` (v2 plugin) or legacy `docker-compose`, and service filtering
+# so only services the active Compose file defines are started (#342, #326).
+. "$(dirname "${BASH_SOURCE[0]}")/scripts/compose_lib.sh"
+
+# up_existing SERVICE... : start the listed services that this Compose file defines.
+up_existing() {
+    local present
+    present="$(compose_filter "$@")"
+    if [ -n "$present" ]; then
+        # shellcheck disable=SC2086  # word-split the service list on purpose
+        compose up -d $present
+    fi
+}
+
 # Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -89,7 +103,7 @@ if [ "$MODE" = "docker" ] || [ "$MODE" = "both" ]; then
     print_section "Docker Compose Rebuild"
 
     print_step "Step 1: Stopping all services..."
-    docker-compose down -v 2>/dev/null || true
+    compose down -v 2>/dev/null || true
     print_info "Services stopped"
 
     print_step "Step 2: Removing all volumes..."
@@ -126,39 +140,39 @@ if [ "$MODE" = "docker" ] || [ "$MODE" = "both" ]; then
 
     print_step "Step 5: Building Docker images..."
     if [ "$REBUILD_IMAGES" = "yes" ]; then
-        docker-compose build --no-cache
+        compose build --no-cache
     else
-        docker-compose build
+        compose build
     fi
     print_info "Images built successfully"
 
     print_step "Step 6: Starting infrastructure..."
     print_info "Starting: Redis, PostgreSQL, Zookeeper, Kafka..."
-    docker-compose up -d redis postgres zookeeper kafka
+    up_existing redis postgres zookeeper kafka
 
     print_info "Waiting 20 seconds for infrastructure to stabilize..."
     sleep 20
 
     print_step "Step 7: Starting monitoring stack..."
     print_info "Starting: Prometheus, Alertmanager, Grafana..."
-    docker-compose up -d prometheus-a prometheus-b alertmanager-1 alertmanager-2 alertmanager-3 grafana
+    up_existing prometheus prometheus-a prometheus-b alertmanager-1 alertmanager-2 alertmanager-3 grafana
 
     sleep 10
 
     print_step "Step 8: Starting exporters..."
-    docker-compose up -d redis-exporter postgres-exporter kafka-jmx-exporter statsd-exporter metrics-exporter
+    up_existing redis-exporter postgres-exporter kafka-jmx-exporter statsd-exporter metrics-exporter
 
     sleep 5
 
     print_step "Step 9: Starting application services..."
     print_info "Starting: Scrapy, Stage workers, Kafka ingestor..."
-    docker-compose up -d scrapy-app stage2-worker stage3-worker stage4-worker kafka-delta-ingestor
+    up_existing scraper scrapy-app stage1-worker stage2-worker stage3-worker stage4-worker kafka-delta-ingestor
 
     print_info "Waiting for services to start..."
     sleep 10
 
     print_step "Step 10: Verifying deployment..."
-    docker-compose ps
+    compose ps
 
     print_section "Docker Services Health Check"
 
@@ -192,9 +206,9 @@ if [ "$MODE" = "docker" ] || [ "$MODE" = "both" ]; then
     echo "  • Alertmanager:     ${CYAN}http://localhost:9093${NC}"
     echo ""
     print_info "Useful Commands:"
-    echo "  • View logs:        ${CYAN}docker-compose logs -f${NC}"
-    echo "  • Check status:     ${CYAN}docker-compose ps${NC}"
-    echo "  • Stop all:         ${CYAN}docker-compose down${NC}"
+    echo "  • View logs:        ${CYAN}docker compose logs -f${NC}"
+    echo "  • Check status:     ${CYAN}docker compose ps${NC}"
+    echo "  • Stop all:         ${CYAN}docker compose down${NC}"
     echo ""
 fi
 
@@ -363,7 +377,7 @@ echo "  4. Verify pipeline stages are processing data"
 echo ""
 print_info "Troubleshooting:"
 echo "  • Run diagnostics:  ${CYAN}./scripts/diagnose_issues.sh${NC}"
-echo "  • View logs:        ${CYAN}docker-compose logs -f <service>${NC}"
+echo "  • View logs:        ${CYAN}docker compose logs -f <service>${NC}"
 echo "  • Check docs:       ${CYAN}./scripts/README.md${NC}"
 
 echo ""

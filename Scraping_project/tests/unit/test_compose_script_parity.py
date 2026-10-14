@@ -95,7 +95,7 @@ def test_complete_reset_never_prints_env_values_or_hardcodes_volume_names():
 _LITERAL_SERVICE = re.compile(r"\bcompose (?:exec -T|logs(?: --tail=\d+)?|restart|up -d|run --rm --no-deps(?: -T)?) ([a-z][a-z0-9-]*)")
 
 
-@pytest.mark.parametrize("rel", ["diagnose.sh", "scripts/diagnose_issues.sh", "scripts/complete_reset.sh"])
+@pytest.mark.parametrize("rel", ["diagnose.sh", "scripts/diagnose_issues.sh", "scripts/complete_reset.sh", "rebuild_env.sh"])
 def test_literal_service_names_exist_in_compose(rel):
     text = (ROOT / rel).read_text(encoding="utf-8")
     assert "compose_lib.sh" in text

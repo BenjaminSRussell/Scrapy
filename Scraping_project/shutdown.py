@@ -17,8 +17,10 @@ import sys
 from collections.abc import Iterable, Sequence
 from pathlib import Path
 
+from compose_cli import MISSING_HINT, compose_available, compose_cmd
+
 REQUIRED_TOOLS = {
-    "local": ("docker-compose",),
+    "local": (),  # a Compose CLI, checked via compose_cli (#342)
     "k8s": ("helm",),
 }
 
@@ -139,6 +141,8 @@ def parse_args() -> argparse.Namespace:
 
 def ensure_tools_available(env: str) -> None:
     missing = [tool for tool in REQUIRED_TOOLS[env] if shutil.which(tool) is None]
+    if env == "local" and not compose_available():
+        missing.append(MISSING_HINT)
     if not missing:
         return
 
@@ -281,7 +285,7 @@ def display_name_for_image(image_ref: str) -> str:
 
 def remove_service_images() -> None:
     result = subprocess.run(
-        ("docker-compose", "images", "--quiet"),
+        (*compose_cmd(), "images", "--quiet"),
         capture_output=True,
         text=True,
         check=False,
@@ -424,8 +428,9 @@ def shutdown_local(purge_data: bool, skip_images: bool) -> None:
         print("Local shutdown aborted.")
         sys.exit(0)
 
-    print("Stopping local environment with docker-compose down...")
-    run_command(("docker-compose", "down", "--remove-orphans"))
+    dc = compose_cmd()
+    print(f"Stopping local environment with {' '.join(dc)} down...")
+    run_command((*dc, "down", "--remove-orphans"))
 
     print("Removing any leftover project containers...")
     remove_leftover_containers()
