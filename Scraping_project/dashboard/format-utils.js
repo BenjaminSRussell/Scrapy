@@ -673,5 +673,52 @@
         table.appendChild(tbody);
         root.appendChild(table);
     }
-    return { tabKeyTarget, staleState, queueDepthRows, metricsFailureActivity, shortcutHintText, parseMetrics, ratePerMinute, resolveMetricsUrl, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler, stageActivity, stageDrilldown, stageDrilldownKey, doughnutLegendLayout, connectionState, documentTitle, createActivityAnnouncer, metricsUrlProblem, splitLinks, createMetricsFetcher, REFRESH_INTERVAL_CHOICES, parseRefreshInterval, shortcutAction, pickInitialTab, METRIC_UI_MAP, renderMetricNameMap, parseDangerSoundEnabled, dangerSoundDecision };
+    // #1030: rolling window of metrics-poll outcomes. The status pill is only
+    // the latest sample; this keeps the last N so a flapping exporter shows up.
+    const HEALTH_HISTORY_LIMIT = 20;
+    function healthHistoryLimit(limit) {
+        const n = Math.floor(Number(limit));
+        return Number.isFinite(n) && n >= 1 ? n : HEALTH_HISTORY_LIMIT;
+    }
+    // Newest outcomes, capped at `limit`. Only strict `true` is a success.
+    function pollWindow(history, limit) {
+        const n = healthHistoryLimit(limit);
+        const next = [];
+        if (Array.isArray(history)) {
+            for (const item of history) next.push(item === true);
+        }
+        if (next.length > n) next.splice(0, next.length - n);
+        return next;
+    }
+    function pushPollOutcome(history, ok, limit) {
+        const n = healthHistoryLimit(limit);
+        const next = pollWindow(history, n);
+        next.push(ok === true);
+        if (next.length > n) next.splice(0, next.length - n);
+        return next;
+    }
+    // Slots are oldest-left, newest-right, padded with 'empty' until `limit`.
+    function healthHistoryView(history, limit) {
+        const n = healthHistoryLimit(limit);
+        const windowed = pollWindow(history, n);
+        const slots = [];
+        for (let i = windowed.length; i < n; i++) slots.push('empty');
+        let okCount = 0;
+        for (const item of windowed) {
+            if (item) { slots.push('ok'); okCount += 1; }
+            else slots.push('fail');
+        }
+        const failCount = windowed.length - okCount;
+        let caption;
+        if (windowed.length === 0) caption = 'No polls yet';
+        else {
+            const newest = windowed[windowed.length - 1] ? 'newest succeeded' : 'newest failed';
+            caption = `${okCount}/${windowed.length} succeeded, ${failCount} failed \u00b7 ${newest}`;
+        }
+        const label = windowed.length === 0
+            ? `Metrics poll history, last ${n} outcomes. No polls yet. Oldest on the left.`
+            : `Metrics poll history, last ${n} outcomes. ${caption}. Oldest on the left.`;
+        return { slots, ok: okCount, fail: failCount, total: windowed.length, limit: n, label, caption };
+    }
+    return { tabKeyTarget, staleState, queueDepthRows, metricsFailureActivity, shortcutHintText, parseMetrics, ratePerMinute, resolveMetricsUrl, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler, stageActivity, stageDrilldown, stageDrilldownKey, doughnutLegendLayout, connectionState, documentTitle, createActivityAnnouncer, metricsUrlProblem, splitLinks, createMetricsFetcher, REFRESH_INTERVAL_CHOICES, parseRefreshInterval, shortcutAction, pickInitialTab, METRIC_UI_MAP, renderMetricNameMap, parseDangerSoundEnabled, dangerSoundDecision, HEALTH_HISTORY_LIMIT, pushPollOutcome, healthHistoryView };
 });

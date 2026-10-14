@@ -17,6 +17,8 @@ let refreshPaused = false;
 let metricsFetcher = null;
 let metricsWasDown = false;
 let consecutiveFetchFailures = 0;
+// #1030: last HEALTH_HISTORY_LIMIT metrics-poll outcomes (true = success).
+let pollHistory = [];
 // Static <title> captured once; connection state is prefixed onto it (#945).
 const BASE_TITLE = (typeof document !== 'undefined' && document.title) || 'Pipeline Control Center';
 let chartsHaveSample = false;
@@ -729,6 +731,27 @@ function setReportedValue(id, value) {
     }
 }
 
+function renderHealthHistory() {
+    const strip = document.getElementById('health-history');
+    if (!strip) return;
+    const view = healthHistoryView(pollHistory, HEALTH_HISTORY_LIMIT);
+    strip.replaceChildren();
+    strip.setAttribute('aria-label', view.label);
+    for (const kind of view.slots) {
+        const seg = document.createElement('span');
+        seg.className = 'health-seg health-seg-' + kind;
+        seg.setAttribute('aria-hidden', 'true');
+        strip.appendChild(seg);
+    }
+    const caption = document.getElementById('health-history-caption');
+    if (caption) caption.textContent = view.caption;
+}
+
+function notePollOutcome(ok) {
+    pollHistory = pushPollOutcome(pollHistory, ok, HEALTH_HISTORY_LIMIT);
+    renderHealthHistory();
+}
+
 function setConnectionStatus(kind, pipelineRunning) {
     // kind: 'online' | 'never' | 'offline'
     const state = connectionState(kind, pipelineRunning, consecutiveFetchFailures);
@@ -807,6 +830,7 @@ async function fetchMetrics() {
         hideFetchError();
         renderStale();
         setConnectionStatus('online', metrics['pipeline_running']);
+        notePollOutcome(true);
     } catch (error) {
         if (error && error.superseded) return; // a newer request owns the result (#1031)
         metricsWasDown = true;
@@ -817,6 +841,7 @@ async function fetchMetrics() {
         showFetchError(failure.message);
         consecutiveFetchFailures += 1;
         setConnectionStatus(hasEverSucceeded ? 'offline' : 'never');
+        notePollOutcome(false);
         document.querySelectorAll('.card-badge.badge-info, .card-badge.badge-success').forEach(b => {
             b.textContent = 'Unknown';
             b.classList.remove('badge-info', 'badge-success');
@@ -1502,6 +1527,7 @@ function initialize() {
     if (typeof renderMetricNameMap === 'function') {
         renderMetricNameMap(document.getElementById('metric-name-map-body'), document);
     }
+    renderHealthHistory();
     setupTabs();
     setupStageDrilldown();
     setupShortcuts();
