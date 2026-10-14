@@ -36,7 +36,7 @@ def _reader_cls():
     try:
         from pypdf import PdfReader
     except ImportError:
-        from PyPDF2 import PdfReader  # requirements pin PyPDF2 3.x (same API)
+        from PyPDF2 import PdfReader  # PyPDF2 3.x via dev-requirements / requirements-ocr (#144)
     return PdfReader
 
 

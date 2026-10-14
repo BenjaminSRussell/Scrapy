@@ -15,6 +15,7 @@ from src.core.constants import (
 from src.otel_tracing import ensure_crawl_job_id, init_tracing, start_span
 from src.utils.delta import get_delta
 from src.utils.metrics_sink import record_error, record_performance
+from src.utils.optional_deps import require_stage3_deps
 from src.utils.postgres import PostgresManager
 
 logger = logging.getLogger(__name__)
@@ -43,6 +44,7 @@ def _similarity_threshold() -> float:
 class Stage3Worker:
 
     def __init__(self, max_concurrent: int = 20, batch_size: int = 50):
+        require_stage3_deps()  # datasketch/core only, not torch (#144)
         self.max_concurrent = max_concurrent
         self.batch_size = batch_size
         self.semaphore = asyncio.Semaphore(max_concurrent)

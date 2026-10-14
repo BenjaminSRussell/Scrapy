@@ -1,6 +1,10 @@
 # Include all application dependencies
 -r requirements.in
 
+# PDF text extraction unit tests (#445). Not in the lean core image; the
+# stage4 image installs the same library via requirements-ocr.txt (#144).
+PyPDF2>=3.0.0
+
 # Development & Testing
 pytest>=8.3.2
 pytest-asyncio>=0.23.8

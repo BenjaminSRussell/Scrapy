@@ -414,7 +414,7 @@ stage4Worker:
   enabled: false
   replicaCount: 1
   image:
-    repository: ""  # REQUIRED when enabled: image with the PDF/OCR toolchain
+    repository: ""  # REQUIRED when enabled: Dockerfile target stage4 (ML+OCR), not the lean crawler image
     tag: ""  # REQUIRED when enabled
     pullPolicy: IfNotPresent
 

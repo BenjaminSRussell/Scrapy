@@ -149,11 +149,11 @@ services:
           cpus: '1.0'
           memory: 2G
 
-  # Stage 3: Summarization Worker
+  # Stage 3: Summarization Worker (light — datasketch/core, no torch) (#144)
   stage3-worker:
     build:
       context: .
-      target: production
+      target: stage3
     container_name: stage3-worker
     restart: unless-stopped
     command: python -m src.workers.stage3_worker
@@ -177,11 +177,14 @@ services:
     networks:
       - scraper-network
 
-  # Stage 4: Large Document Worker
+  # Stage 4: Large Document Worker (ML + OCR image). Off the default lean
+  # stack; `docker compose --profile ml up -d stage4-worker` (or profile `full`).
+  # Redis env stays REDIS_HOST / REDIS_PORT / REDIS_PASSWORD (#511).
   stage4-worker:
+    profiles: ["ml", "full"]
     build:
       context: .
-      target: production
+      target: stage4
     container_name: stage4-worker
     restart: unless-stopped
     command: python -m src.workers.stage4_worker

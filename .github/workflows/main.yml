@@ -76,6 +76,14 @@ jobs:
         pip install -r Scraping_project/dev-requirements.txt
         pip install -r Scraping_project/ci-tools.txt
 
+    - name: Assert core lock is torch-free (#144)
+      run: |
+        set -euo pipefail
+        ! grep -E '^(torch|transformers|easyocr|sentence-transformers|scikit-learn)==' Scraping_project/requirements.txt
+        ! grep -E '^(torch|transformers|easyocr|sentence-transformers|scikit-learn)==' Scraping_project/dev-requirements.txt
+        grep -q 'pip-compile' Scraping_project/requirements.txt
+        python -c "import importlib.util; assert importlib.util.find_spec('torch') is None, 'torch should not be installed from core requirements'"
+
     - name: Lint with ruff
       working-directory: Scraping_project
       run: |
