@@ -1528,6 +1528,7 @@ function initialize() {
         renderMetricNameMap(document.getElementById('metric-name-map-body'), document);
     }
     renderHealthHistory();
+    if (typeof mountProfilePicker === 'function') mountProfilePicker(document); // #1001
     setupTabs();
     setupStageDrilldown();
     setupShortcuts();

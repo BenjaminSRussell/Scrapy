@@ -927,6 +927,19 @@
                 forced-color-adjust: none;
                 background: #ffffff;
             }
+            .profile-picker,
+            .profile-picker-list,
+            .profile-picker-input {
+                border: 1px solid CanvasText;
+            }
+            .profile-picker-option.is-active {
+                outline: 2px solid Highlight;
+            }
+            .profile-picker-input:focus-visible,
+            .profile-picker-toggle:focus-visible {
+                outline: 3px solid Highlight;
+                outline-offset: 2px;
+            }
         }
 
         /* #343: visible keyboard focus everywhere (mouse clicks do not show it).
@@ -1019,6 +1032,102 @@
         }
         .fetch-error-banner[hidden] { display: none; }
         .btn[aria-busy="true"] { cursor: progress; }
+
+        /* #1001: crawl profile combobox. Mock badge stays until /api/profiles. */
+        .profile-picker {
+            background: white;
+            border-radius: 0.5rem;
+            padding: 0.75rem 1rem;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            margin-bottom: 1rem;
+            max-width: 100%;
+        }
+        .profile-picker-row {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 0.5rem 0.75rem;
+        }
+        .profile-picker-field {
+            position: relative;
+            display: flex;
+            flex: 1 1 16rem;
+            min-width: 0;
+            max-width: 100%;
+        }
+        .profile-picker-input {
+            font: inherit;
+            color: var(--gray-900);
+            background: white;
+            flex: 1 1 auto;
+            min-width: 0;
+            width: 100%;
+            min-height: 44px;
+            padding: 0.4rem 2.75rem 0.4rem 0.65rem;
+            border: 1px solid var(--gray-300);
+            border-radius: 0.375rem;
+            cursor: pointer;
+        }
+        .profile-picker-toggle {
+            position: absolute;
+            right: 0;
+            top: 0;
+            bottom: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 44px;
+            min-height: 44px;
+            border: none;
+            background: transparent;
+            color: var(--gray-800);
+            cursor: pointer;
+        }
+        .profile-picker-list {
+            list-style: none;
+            margin: 0.35rem 0 0;
+            padding: 0.25rem;
+            border: 1px solid var(--gray-300);
+            border-radius: 0.375rem;
+            background: white;
+            max-width: 100%;
+            max-height: 16rem;
+            overflow-y: auto;
+        }
+        .profile-picker-list[hidden] { display: none; }
+        .profile-picker-option {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 0.35rem 0.6rem;
+            padding: 0.45rem 0.6rem;
+            border-radius: 0.25rem;
+            cursor: pointer;
+            min-height: 44px;
+        }
+        .profile-picker-option.is-active {
+            background: var(--gray-100);
+            outline: 2px solid var(--primary);
+            outline-offset: -2px;
+        }
+        .profile-picker-option[aria-selected="true"] .profile-picker-option-name {
+            font-weight: 700;
+        }
+        .profile-picker-domains {
+            color: var(--muted-text);
+            font-size: 0.8rem;
+        }
+        .profile-picker-hint {
+            margin: 0.4rem 0 0;
+            font-size: 0.8rem;
+            color: var(--muted-text);
+            overflow-wrap: anywhere;
+        }
+        .profile-picker-input:focus-visible,
+        .profile-picker-toggle:focus-visible {
+            outline: 3px solid var(--primary-dark);
+            outline-offset: 2px;
+        }
     </style>
 </head>
 <body>
@@ -1065,6 +1174,26 @@
         <div id="fetch-error-banner" class="fetch-error-banner" role="alert" hidden>
             <span id="fetch-error-text">Could not load metrics.</span>
             <button type="button" id="retry-fetch" class="btn" aria-label="Retry loading metrics now">Retry</button>
+        </div>
+        <!-- #1001: choose a crawl profile before start. Mock list until /api/profiles. -->
+        <div class="profile-picker" id="site-profile-picker" data-profile-source="mock">
+            <div class="profile-picker-row">
+                <label id="site-profile-label" for="site-profile-input">Crawl profile</label>
+                <div class="profile-picker-field">
+                    <input id="site-profile-input" class="profile-picker-input" type="text" role="combobox"
+                        aria-autocomplete="none" aria-expanded="false" aria-controls="site-profile-listbox"
+                        aria-haspopup="listbox" aria-describedby="site-profile-hint site-profile-badge"
+                        readonly autocomplete="off" value="UConn (mock)">
+                    <button type="button" id="site-profile-toggle" class="profile-picker-toggle btn"
+                        aria-label="Show crawl profiles" aria-expanded="false" aria-controls="site-profile-listbox">
+                        <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+                    </button>
+                </div>
+                <span id="site-profile-badge" class="card-badge badge-warning profile-picker-badge">mock</span>
+            </div>
+            <ul id="site-profile-listbox" class="profile-picker-list" role="listbox" aria-labelledby="site-profile-label" hidden></ul>
+            <p id="site-profile-hint" class="profile-picker-hint">Mock profiles until /api/profiles is available. Choosing a profile does not start a crawl.</p>
+            <p id="site-profile-status" class="visually-hidden" role="status" aria-live="polite"></p>
         </div>
         <div class="tabs">
             <nav class="tab-buttons-wrap" aria-label="Dashboard sections"><div class="tab-buttons" role="tablist" aria-label="Dashboard sections">
@@ -1594,6 +1723,7 @@
     <script src="features.js"></script>
     <script src="format-utils.js"></script>
     <script src="version.js"></script>
+    <script src="profile-picker.js"></script>
     <script src="app.js"></script>
 </body>
 </html>

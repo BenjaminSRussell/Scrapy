@@ -102,6 +102,14 @@ The System tab Settings panel lists every Prometheus series the page reads and t
 
 The Activity log has a **Sound on danger** checkbox. It is unchecked until an operator turns it on, and that choice is stored in `localStorage` under `cc.dangerSound`. When it is on, a new `danger` activity row plays a short tone (Web Audio, no audio file). The same message is not chimed again inside the screen-reader repeat window. Success, warning, info, and timeout rows never play a sound. `prefers-reduced-motion: reduce`, or a `prefers-muted` media preference, keeps the page silent even if the box is checked.
 
+## Crawl profile picker (#1001)
+
+Above the tabs, a combobox chooses the crawl profile before a job is started.
+The list is **mock** (UConn, UConn Today, Sandbox) and each row plus the field
+carries a `mock` badge until `GET /api/profiles` exists. The picker does not
+call that path and does not start a crawl. Arrow keys, Home, End, Enter, Space,
+and Escape operate it; the choice is stored in `localStorage` as `cc.siteProfile`.
+
 ## Threat model notes (#1046)
 
 **Activity log XSS.** Activity messages may contain text derived from metrics,
