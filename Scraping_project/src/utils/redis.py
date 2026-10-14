@@ -6,13 +6,14 @@ Replaces src/common/redis_manager.py with a simpler, more consistent API.
 """
 
 from src.utils.url_canon import canonical_or_raw
-from typing import Any, Optional, Set, List, cast
+from typing import Any, Callable, Optional, Set, List, cast
 import hashlib
 import json
 import os
 import re
 import redis
 import logging
+import threading
 from functools import wraps
 import time
 
@@ -177,6 +178,208 @@ except Exception:  # prometheus_client missing or metric already registered
 def seen_fail_mode() -> str:
     mode = os.getenv(SEEN_FAIL_MODE_ENV, "closed").strip().lower()
     return "open" if mode == "open" else "closed"
+
+
+# ---------------------------------------------------------------------------
+# Queue high/low watermark backpressure (#196)
+#
+# Before a producer pushes, compare the queue depth to the high watermark.
+# Above it (and until the depth falls to the low watermark) the producer
+# either blocks or sheds. Defaults match QueueBacklog in
+# monitoring/alerting_rules.yml (`redis_queue_length` > 10000). Prometheus
+# does not load monitoring/alerts.yml (#178); that file stays absent.
+#
+# Knobs (process env, not a new Redis connection setting):
+# REDIS_QUEUE_HIGH_WATERMARK, REDIS_QUEUE_LOW_WATERMARK,
+# REDIS_QUEUE_BACKPRESSURE_MODE (block|shed),
+# REDIS_QUEUE_BACKPRESSURE_SLEEP_SECONDS,
+# REDIS_QUEUE_BACKPRESSURE_MAX_BLOCK_SECONDS,
+# REDIS_QUEUE_SHED_BELOW_PRIORITY.
+# An unparsable value, a non-positive high watermark, or a negative low
+# watermark keeps that knob's default. A low watermark of 0 resumes only when
+# the queue is empty. ``block`` sleeps until the depth is at or under the low
+# watermark, bounded by the max block. ``shed`` refuses priorities below
+# REDIS_QUEUE_SHED_BELOW_PRIORITY (and pushes with no priority) immediately.
+# Higher priorities still block. One exhausted block does not sleep again
+# until the queue has drained.
+# ---------------------------------------------------------------------------
+HIGH_WATERMARK_ENV = "REDIS_QUEUE_HIGH_WATERMARK"
+LOW_WATERMARK_ENV = "REDIS_QUEUE_LOW_WATERMARK"
+BACKPRESSURE_MODE_ENV = "REDIS_QUEUE_BACKPRESSURE_MODE"
+BACKPRESSURE_SLEEP_ENV = "REDIS_QUEUE_BACKPRESSURE_SLEEP_SECONDS"
+BACKPRESSURE_MAX_BLOCK_ENV = "REDIS_QUEUE_BACKPRESSURE_MAX_BLOCK_SECONDS"
+SHED_BELOW_PRIORITY_ENV = "REDIS_QUEUE_SHED_BELOW_PRIORITY"
+
+DEFAULT_QUEUE_HIGH_WATERMARK = 10_000
+DEFAULT_QUEUE_LOW_WATERMARK = 8_000
+DEFAULT_BACKPRESSURE_MODE = "block"
+DEFAULT_BACKPRESSURE_SLEEP = 0.5
+DEFAULT_BACKPRESSURE_MAX_BLOCK = 5.0
+DEFAULT_SHED_BELOW_PRIORITY = 50
+
+try:
+    from prometheus_client import Counter as _BackpressureCounter
+
+    REDIS_QUEUE_BACKPRESSURE: Any = _BackpressureCounter(
+        "redis_queue_backpressure_total",
+        "Producer hits of Redis queue high-watermark backpressure (#196).",
+        ["queue", "action"],
+    )
+except Exception:  # prometheus_client missing or metric already registered
+    REDIS_QUEUE_BACKPRESSURE = None
+
+# Queues that have crossed the high watermark and not yet fallen to the low one.
+_pressure_state: dict[str, dict[str, bool]] = {}
+_pressure_lock = threading.Lock()
+
+
+def reset_queue_backpressure() -> None:
+    """Drop hysteresis. Tests call this so one queue name cannot leak into the next."""
+    with _pressure_lock:
+        _pressure_state.clear()
+
+
+def _env_int(name: str, default: int, *, minimum: Optional[int] = 1) -> int:
+    """Parse an int env var. ``minimum`` is inclusive; None allows any int."""
+    raw = os.getenv(name)
+    if raw is None or str(raw).strip() == "":
+        return default
+    try:
+        value = int(str(raw).strip())
+    except (TypeError, ValueError):
+        logger.warning("Ignoring invalid %s=%r; using %s", name, raw, default)
+        return default
+    if minimum is not None and value < minimum:
+        logger.warning("Ignoring %s=%r below %s; using %s", name, raw, minimum, default)
+        return default
+    return value
+
+
+def _env_float(name: str, default: float) -> float:
+    raw = os.getenv(name)
+    if raw is None or str(raw).strip() == "":
+        return default
+    try:
+        value = float(str(raw).strip())
+    except (TypeError, ValueError):
+        logger.warning("Ignoring invalid %s=%r; using %s", name, raw, default)
+        return default
+    if value <= 0:
+        logger.warning("Ignoring non-positive %s=%r; using %s", name, raw, default)
+        return default
+    return value
+
+
+def queue_watermark_settings() -> dict[str, Any]:
+    """High/low watermarks and the block-or-shed mode. Env wins over the defaults.
+
+    Also exposed as ``src.settings.redis_queue_watermarks`` so Scrapy settings
+    and the producer read one resolver. The low watermark is always strictly
+    below the high one.
+    """
+    high = _env_int(HIGH_WATERMARK_ENV, DEFAULT_QUEUE_HIGH_WATERMARK, minimum=1)
+    low = _env_int(LOW_WATERMARK_ENV, DEFAULT_QUEUE_LOW_WATERMARK, minimum=0)
+    if low >= high:
+        low = (high * 4) // 5
+        if low >= high:
+            low = high - 1
+    mode_raw = os.getenv(BACKPRESSURE_MODE_ENV, DEFAULT_BACKPRESSURE_MODE)
+    mode = str(mode_raw).strip().lower() if mode_raw is not None else DEFAULT_BACKPRESSURE_MODE
+    if mode not in ("block", "shed"):
+        logger.warning("Ignoring invalid %s=%r; using %s", BACKPRESSURE_MODE_ENV, mode_raw, DEFAULT_BACKPRESSURE_MODE)
+        mode = DEFAULT_BACKPRESSURE_MODE
+    return {
+        "high": high,
+        "low": low,
+        "mode": mode,
+        "sleep": _env_float(BACKPRESSURE_SLEEP_ENV, DEFAULT_BACKPRESSURE_SLEEP),
+        "max_block": _env_float(BACKPRESSURE_MAX_BLOCK_ENV, DEFAULT_BACKPRESSURE_MAX_BLOCK),
+        "shed_below": _env_int(SHED_BELOW_PRIORITY_ENV, DEFAULT_SHED_BELOW_PRIORITY, minimum=None),
+    }
+
+
+def _backpressure_inc(queue: str, action: str) -> None:
+    if REDIS_QUEUE_BACKPRESSURE is not None:
+        REDIS_QUEUE_BACKPRESSURE.labels(queue=queue, action=action).inc()
+
+
+def admit_enqueue(
+    queue: str,
+    depth: int,
+    *,
+    priority: Optional[int] = None,
+    depth_probe: Optional[Callable[[], int]] = None,
+    sleeper: Optional[Callable[[float], None]] = None,
+    clock: Optional[Callable[[], float]] = None,
+) -> bool:
+    """Return True if the producer may push one item onto ``queue``.
+
+    ``depth`` is the depth the caller just observed (tests pass a mock; this
+    function does not open a Redis connection). While the queue is above the
+    high watermark, or still above the low watermark after a trip, a ``shed``
+    mode refuses low-priority items and ``block`` mode sleeps until the probe
+    reports the low watermark or the block budget runs out. A refused push
+    increments ``redis_queue_backpressure_total{queue,action}``.
+    """
+    cfg = queue_watermark_settings()
+    high = int(cfg["high"])
+    low = int(cfg["low"])
+    try:
+        observed = int(depth)
+    except (TypeError, ValueError):
+        observed = 0
+    with _pressure_lock:
+        pressured = queue in _pressure_state
+        over = observed > high or (pressured and observed > low)
+        if not over:
+            _pressure_state.pop(queue, None)
+            return True
+        first = not pressured
+        state = _pressure_state.setdefault(queue, {"exhausted": False})
+        low_priority = priority is None or int(priority) < int(cfg["shed_below"])
+        if cfg["mode"] == "shed" and low_priority:
+            decision = "shed"
+        elif state["exhausted"]:
+            decision = "shed"
+        else:
+            decision = "block"
+    if first:
+        logger.warning(
+            "Redis queue %s depth %s is over the high watermark %s (low=%s, mode=%s); applying backpressure",
+            queue, observed, high, low, cfg["mode"],
+        )
+    if decision == "shed":
+        _backpressure_inc(queue, "shed")
+        return False
+
+    sleep = sleeper or time.sleep
+    now = clock or time.monotonic
+    probe = depth_probe or (lambda: observed)
+    deadline = now() + float(cfg["max_block"])
+    counted_block = False
+    while True:
+        try:
+            current = int(probe())
+        except Exception as exc:  # the caller's depth read failed; keep the last observation
+            logger.debug("Queue depth probe failed for %s: %s", queue, exc)
+            current = observed
+        if current <= low:
+            with _pressure_lock:
+                _pressure_state.pop(queue, None)
+            return True
+        remaining = deadline - now()
+        step = min(float(cfg["sleep"]), remaining)
+        if step <= 0:
+            with _pressure_lock:
+                held = _pressure_state.get(queue)
+                if held is not None:
+                    held["exhausted"] = True
+            _backpressure_inc(queue, "shed")
+            return False
+        if not counted_block:
+            _backpressure_inc(queue, "block")
+            counted_block = True
+        sleep(step)
 
 
 # #161: seen:* sets and queues have no TTL. Under an allkeys-* policy Redis

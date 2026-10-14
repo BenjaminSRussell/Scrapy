@@ -18,6 +18,7 @@ from src.stage1.middlewares.fetch_policy_middleware import DEFAULT_LARGE_DOC_EXT
 from src.stage1.middlewares.proxy_rotation_middleware import MIDDLEWARE_PRIORITY as PROXY_ROTATION_PRIORITY
 from src.stage1.middlewares.proxy_rotation_middleware import proxy_settings_from_sources
 from src.utils import feature_flags
+from src.utils.redis import queue_watermark_settings as redis_queue_watermarks
 
 ENV = os.getenv("ENV", "development")
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -270,6 +271,14 @@ MEMORY_SOFT_STOP_ENABLED = True
 MEMORY_SOFT_STOP_FRACTION = float(os.getenv("MEMORY_SOFT_STOP_FRACTION", "0.85"))
 MEMORY_SOFT_STOP_INTERVAL = 5.0
 MEMORY_SOFT_STOP_LIMIT_MB = int(os.getenv("MEMORY_SOFT_STOP_LIMIT_MB", "0"))
+
+# Redis queue backpressure (#196). redis_queue_watermarks() re-reads the env
+# on each call; these constants are the values at process start. The high
+# default matches QueueBacklog (redis_queue_length > 10000) in
+# monitoring/alerting_rules.yml. monitoring/alerts.yml is not loaded.
+REDIS_QUEUE_HIGH_WATERMARK = redis_queue_watermarks()["high"]
+REDIS_QUEUE_LOW_WATERMARK = redis_queue_watermarks()["low"]
+REDIS_QUEUE_BACKPRESSURE_MODE = redis_queue_watermarks()["mode"]
 
 # ============================================================================
 # ============================================================================

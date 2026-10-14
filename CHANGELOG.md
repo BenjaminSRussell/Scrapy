@@ -15,6 +15,7 @@ renamed to the new version and date (see the release checklist).
 ## [Unreleased]
 
 ### Added
+- Redis queue producers block, or shed low-priority URLs, when depth passes a configurable high watermark and resume at the low watermark. `redis_queue_backpressure_total{queue,action}` counts those events. Defaults match the existing `QueueBacklog` alert (`redis_queue_length` > 10000) (#196).
 - Stage 4 summarization folds local audio and text fixtures through `async_asr_processor` when `STAGE4_ASR_ENABLED` is set (default off), and records `asr_jobs_total`, `asr_latency` and `asr_failures_total` (#1101).
 - Stage 1 can rotate egress proxies and temporarily quarantine ones that return 407/429 or time out. Off unless `PROXY_LIST` or `stage1.proxy.urls` is set (#198).
 - Docker Compose profiles `core`, `monitoring`, `streaming` and `observability` (ops dashboard, optional Kafka, OTEL overlay). Stage 4 stays on `ml` / `full` so the core image does not include torch (#145).

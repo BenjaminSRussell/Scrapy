@@ -40,6 +40,8 @@ The "Unified Dashboard" (`monitoring/dashboards/unified_dashboard.json`) adds Ka
 
 Every rule carries `summary`, `description`, `impact` and `action` annotations, so the alert itself tells on-call what to check. Runbooks for operator actions are in [docs/runbooks/](../runbooks/).
 
+`QueueBacklog` (`redis_queue_length` > 10000 for 10 minutes) is the alert for Redis queue growth. Producers apply the same default as a high watermark (#196): `REDIS_QUEUE_HIGH_WATERMARK` / `REDIS_QUEUE_LOW_WATERMARK` / `REDIS_QUEUE_BACKPRESSURE_MODE` (`block` or `shed`). `redis_queue_backpressure_total{queue,action}` counts block and shed events on the Scrapy process registry. `monitoring/alerts.yml` is not a Prometheus rule file and is not recreated.
+
 ## Stage 4 speech-to-text (#1101)
 
 `STAGE4_ASR_ENABLED` defaults off. When it is on, Stage 4 reads local audio and text fixtures only. It does not download remote media (that stays on the crawl pipeline, `ASR_ENABLED`).
