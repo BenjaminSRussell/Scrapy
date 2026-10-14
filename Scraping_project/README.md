@@ -4,6 +4,8 @@ A production-grade, type-safe, resilient web scraping pipeline designed for larg
 
 > **Task guides:** [Configuration](docs/guides/CONFIGURATION.md) • [Running](docs/guides/RUNNING.md) (other domains, resuming after a crash) • [Monitoring](docs/guides/MONITORING.md) • [Data usage](docs/guides/DATA_USAGE.md) (querying Delta Lake, CSV/JSON/Parquet export)
 
+This file is the canonical project doc. The [repository root README](../README.md) is only the entry point and quick start; keep the two in agreement. Run every command from this directory (`Scraping_project/`). From a fresh clone that is `cd Scrapy/Scraping_project`.
+
 ## Overview
 
 This is an enterprise-ready multi-stage web scraping system with comprehensive type safety, error handling, caching, and production deployment configurations. The pipeline has evolved through 10 major phases to deliver a scalable, maintainable, and observable system.
@@ -55,80 +57,52 @@ This is an enterprise-ready multi-stage web scraping system with comprehensive t
 
 ## Quick Start
 
+Same commands as the [root README](../README.md#-quick-start). Do not use a bare `docker compose up -d`: every service in `docker-compose.yml` is behind a profile, so that starts nothing.
+
 ### Prerequisites
-- Docker 20.10+ and Docker Compose 2.0+
-- Python 3.11+
-- Kubernetes 1.24+ (for K8s deployment)
 
-### Installation
+- Docker with Compose
+- Python **3.11 or 3.12** on the host. CI tests exactly those two (`.github/workflows/main.yml`). The image is `python:3.11-slim`, and `.python-version` pins 3.11. Python 3.14 is not a supported version.
+- Kubernetes 1.24+ only for a Helm deploy
 
-1. Clone the repository:
+### Run the stack
+
 ```bash
-git clone <repository-url>
-cd Scraping_project
+git clone https://github.com/BenjaminSRussell/Scrapy.git
+cd Scrapy/Scraping_project
+python start.py
 ```
 
-2. Install dependencies:
-```bash
-pip install -r requirements.txt
-pip install -r dev-requirements.txt  # For development
+`python start.py` sets Compose profiles `core` and `monitoring` (Redis, scraper, stage 1–3 workers, Postgres, Prometheus, Grafana) and waits for Postgres. It does not start Stage 4 (profiles `ml` / `full`), Kafka (`streaming`), or the OpenTelemetry overlay. The equivalent Compose command is in [COMPOSE.md](COMPOSE.md): `docker compose --profile core --profile monitoring up -d`. Add `--reset-delta` to wipe Delta tables and reload seeds. Stop with `python shutdown.py`.
 
-# Optional and heavy (~2 GB): Stage 4 NLP (transformers, torch).
-# Not required for tests or the core pipeline. Does not build an image.
+Grafana is at http://localhost:3000 (user `admin`; password is `GRAFANA_ADMIN_PASSWORD` in `.env`, default `admin` for local dev only). Full detail, other domains, and resuming after a crash: [Running guide](docs/guides/RUNNING.md).
+
+### Develop on the host
+
+A virtualenv is for tests and for running workers yourself, not for the Compose path above. Pins match CI; see [CONTRIBUTING.md](../CONTRIBUTING.md).
+
+```bash
+python3.11 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt -r dev-requirements.txt -r ci-tools.txt
+```
+
+Stage 4 NLP (`transformers`, `torch`) is optional and heavy (~2 GB). It is not required for tests or the core pipeline, and it does not build an image:
+
+```bash
 make install-stage4
 # or: pip install -r requirements-stage4.txt
 ```
 
-3. Start infrastructure with Docker Compose:
+### Kubernetes
+
+The supported path is the Helm chart in namespace `scraping-pipeline`. Follow [k8s/README.md](k8s/README.md). `k8s/deployment.yaml` is a smaller manifest (stage1/stage2 workers and Redis only, namespace `uconn-scraper`), not the full stack.
+
+### Run one worker yourself
+
 ```bash
-docker-compose up -d
-```
-
-This starts:
-- Redis (caching and queue management)
-- Stage 1-4 workers
-- Prometheus (metrics)
-- Grafana (dashboards)
-
-### Running the Pipeline
-
-#### Option 1: Docker Compose (Recommended)
-```bash
-# Start all services
-docker-compose up -d
-
-# View logs
-docker-compose logs -f stage2-worker
-
-# Scale workers
-docker-compose up -d --scale stage2-worker=3
-```
-
-#### Option 2: Kubernetes Deployment
-
-The supported path is the Helm chart; see [k8s/README.md](k8s/README.md):
-`helm install scraping-pipeline k8s/helm/scraping-pipeline -n scraping-pipeline`.
-`k8s/deployment.yaml` is a minimal quick-start (stage1/stage2 workers and Redis only) with the same health probes:
-```bash
-# Minimal quick-start (not the full stack)
-kubectl apply -f k8s/deployment.yaml
-
-# Check status
-kubectl get pods -n uconn-scraper
-
-# Scale workers
-kubectl scale deployment stage2-worker --replicas=5 -n uconn-scraper
-```
-
-#### Option 3: Individual Components
-```bash
-# Run Stage 1 worker
 python -m src.workers.stage1_worker
-
-# Run Stage 2 worker
 python -m src.workers.stage2_worker
-
-# Run with custom config
 REDIS_HOST=localhost DELTA_LAKE_PATH=/data/delta python -m src.workers.stage2_worker
 ```
 
@@ -722,8 +696,10 @@ curl http://localhost:9090/-/healthy
 ### Local Development
 
 ```bash
-docker-compose up -d
+python start.py
 ```
+
+Same as Quick Start: profiles `core` and `monitoring`. See [COMPOSE.md](COMPOSE.md) and [docs/guides/RUNNING.md](docs/guides/RUNNING.md). A bare `docker compose up -d` starts no services.
 
 ### Observability (Loki, Jaeger, OpenTelemetry)
 
