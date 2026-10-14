@@ -1,0 +1,50 @@
+name: CI Delta Contracts
+
+on:
+  pull_request:
+    paths:
+      - 'docs/contracts/**'
+      - 'docs/adr/0003-delta-schema-registry.md'
+      - 'Scraping_project/scripts/check_delta_contracts.py'
+      - 'Scraping_project/tests/unit/test_delta_contract_registry.py'
+      - 'Scraping_project/src/core/schemas.py'
+      - 'Scraping_project/src/stage2/stage2_worker.py'
+      - 'Scraping_project/src/pipelines.py'
+      - 'Scraping_project/src/lakehouse/seed_manager.py'
+      - 'Scraping_project/src/stage1/scout_spider.py'
+      - '.github/workflows/ci-delta-contracts.yml'
+  push:
+    branches: [ main ]
+    paths:
+      - 'docs/contracts/**'
+      - 'docs/adr/0003-delta-schema-registry.md'
+      - 'Scraping_project/scripts/check_delta_contracts.py'
+      - 'Scraping_project/tests/unit/test_delta_contract_registry.py'
+      - 'Scraping_project/src/core/schemas.py'
+      - 'Scraping_project/src/stage2/stage2_worker.py'
+      - 'Scraping_project/src/pipelines.py'
+      - 'Scraping_project/src/lakehouse/seed_manager.py'
+      - 'Scraping_project/src/stage1/scout_spider.py'
+      - '.github/workflows/ci-delta-contracts.yml'
+
+# Stdlib contract check only. See main.yml for the concurrency rationale.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  delta-contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+
+      - name: Check writers against registered Delta schemas
+        run: python3 Scraping_project/scripts/check_delta_contracts.py
