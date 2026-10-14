@@ -15,6 +15,7 @@ renamed to the new version and date (see the release checklist).
 ## [Unreleased]
 
 ### Added
+- Queue depth, throughput, and error metrics carry a low-cardinality `site_id` label. The value is the configured site id (`SITE_ID`, else `TENANT_ID`, else `REDIS_SITE_ID`, else `default`), never a URL, job id, or raw host. No numeric cap was measured. `QueueBacklog` still fires above 10000 and now names the site. `Stage2SuccessSLO` stays 0.99 over 24h and `KafkaConsumerLagSLO` stays 250000 messages (#192).
 - Pipeline SLOs: Stage 2 success >= 99% over 24h (`Stage2SuccessSLO`), Redis queue depth via the existing `QueueBacklog` line (`redis_queue_length` > 10000), and Kafka consume lag via the existing `KafkaConsumerLagSLO` line (250000 messages). Each has a Prometheus query and a panel on the `pipeline-slos` Grafana dashboard (#179).
 - `cli.py lake-vacuum` lists the files and bytes a Delta vacuum would delete and removes nothing unless `--apply` is passed (#602).
 - Per-table vacuum retention tiers (`delta_lake.table_retention_hours`: default 168h, `stage1_errors` and `stage2_errors` 720h) and file-DLQ cleanup after `dlq_retention_days` (0 keeps everything). Vacuum scheduling stays #266 (#632).

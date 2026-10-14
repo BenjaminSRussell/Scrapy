@@ -27,9 +27,12 @@ class MetricsManager:
         self.port = port or int(os.environ.get("STATSD_PORT", "8125"))
         self._sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
-    def _increment(self, metric: str, amount: int = 1) -> None:
+    def _increment(self, metric: str, amount: int = 1, tags: dict[str, str] | None = None) -> None:
+        tag_str = ""
+        if tags:
+            tag_str = "|#" + ",".join(f"{key}:{value}" for key, value in tags.items())
         try:
-            self._sock.sendto(f"{metric}:{amount}|c".encode("utf-8"), (self.host, self.port))
+            self._sock.sendto(f"{metric}:{amount}|c{tag_str}".encode("utf-8"), (self.host, self.port))
         except Exception as e:
             logger.debug(f"Failed to send metric {metric}: {e}")
 
@@ -37,7 +40,9 @@ class MetricsManager:
         self._increment("urls.discovered.total", count)
 
     def record_stage2_page_analyzed(self, count: int = 1) -> None:
-        self._increment("urls.processed.total", count)
+        from src.utils.redis import metric_site_id
+
+        self._increment("urls.processed.total", count, {"site_id": metric_site_id()})
 
     def record_stage3_summary_created(self, count: int = 1) -> None:
         self._increment("summaries.created.total", count)

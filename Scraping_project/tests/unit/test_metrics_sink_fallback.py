@@ -19,6 +19,12 @@ def sample(name, **labels):
     return REGISTRY.get_sample_value(name, labels) or 0.0
 
 
+def _site():
+    from src.utils.redis import metric_site_id
+
+    return metric_site_id()
+
+
 class DownPostgres:
     def log_performance_metric(self, **kw):
         raise ConnectionError("connection refused")
@@ -29,12 +35,12 @@ class DownPostgres:
 
 def test_failed_performance_write_is_counted_logged_and_not_raised(caplog):
     before_fail = sample("scrapy_pg_metrics_writes_total", kind="performance", outcome="failure")
-    before_urls = sample("scrapy_stage_urls_processed_total", stage="stage2")
+    before_urls = sample("scrapy_stage_urls_processed_total", stage="stage2", site_id=_site())
     with caplog.at_level(logging.WARNING, logger="src.utils.metrics_sink"):
         assert record_performance(DownPostgres(), "stage2", 40, 2.5, worker_count=8) is False
     assert sample("scrapy_pg_metrics_writes_total", kind="performance", outcome="failure") == before_fail + 1
     # Dual-export: Prometheus got the data even though Postgres didn't.
-    assert sample("scrapy_stage_urls_processed_total", stage="stage2") == before_urls + 40
+    assert sample("scrapy_stage_urls_processed_total", stage="stage2", site_id=_site()) == before_urls + 40
     line = next(r.getMessage() for r in caplog.records if "metrics_sink_fallback" in r.getMessage())
     assert "kind=performance" in line and "ConnectionError" in line
     payload = json.loads(line.split("payload=", 1)[1])
@@ -43,12 +49,12 @@ def test_failed_performance_write_is_counted_logged_and_not_raised(caplog):
 
 def test_failed_error_write_is_counted_logged_and_not_raised(caplog):
     before = sample("scrapy_pg_metrics_writes_total", kind="error", outcome="failure")
-    before_err = sample("scrapy_stage_errors_total", stage="stage3", error_type="TimeoutError")
+    before_err = sample("scrapy_stage_errors_total", stage="stage3", error_type="TimeoutError", site_id=_site())
     with caplog.at_level(logging.WARNING, logger="src.utils.metrics_sink"):
         ok = record_error(DownPostgres(), "stage3", "https://x.example/a", "TimeoutError", "x" * 5000)
     assert ok is False
     assert sample("scrapy_pg_metrics_writes_total", kind="error", outcome="failure") == before + 1
-    assert sample("scrapy_stage_errors_total", stage="stage3", error_type="TimeoutError") == before_err + 1
+    assert sample("scrapy_stage_errors_total", stage="stage3", error_type="TimeoutError", site_id=_site()) == before_err + 1
     line = next(r.getMessage() for r in caplog.records if "metrics_sink_fallback" in r.getMessage())
     payload = json.loads(line.split("payload=", 1)[1])
     assert payload["url"] == "https://x.example/a"
@@ -78,7 +84,7 @@ def test_disabled_postgres_still_exports_to_prometheus():
 
 def test_long_error_type_label_is_bounded():
     record_error(None, "stage2", "u", "E" * 500)
-    assert sample("scrapy_stage_errors_total", stage="stage2",
+    assert sample("scrapy_stage_errors_total", stage="stage2", site_id=_site(),
                   error_type="E" * metrics_sink.MAX_LABEL_CHARS) >= 1
 
 

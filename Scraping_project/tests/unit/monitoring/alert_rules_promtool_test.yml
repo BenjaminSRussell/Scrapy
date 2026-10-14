@@ -12,9 +12,9 @@ tests:
   # statsd-exporter exposes it, above 10k for longer than `for: 10m`.
   - interval: 1m
     input_series:
-      - series: 'redis_queue_length{queue="priority_queue"}'
+      - series: 'redis_queue_length{queue="priority_queue",site_id="uconn"}'
         values: '20000x20'
-      - series: 'redis_queue_length{queue="stage2_queue"}'
+      - series: 'redis_queue_length{queue="stage2_queue",site_id="uconn"}'
         values: '5x20'
     alert_rule_test:
       - eval_time: 5m
@@ -27,9 +27,11 @@ tests:
               severity: warning
               component: pipeline
               queue: priority_queue
+              site_id: uconn
             exp_annotations:
-              summary: "Large backlog in priority_queue"
-              description: "priority_queue has 20000 items pending for 10 minutes."
+              summary: "Large backlog in priority_queue (site uconn)"
+              description: "priority_queue on site uconn has 20000 items pending for 10 minutes."
+              site: "uconn"
               impact: "Medium - Crawl latency grows while workers fall behind"
               action: "Scale the consuming stage or check it for stalls"
 
@@ -37,9 +39,9 @@ tests:
   # (1/s) in stage2 fires; stage3 at 1/min does not.
   - interval: 1m
     input_series:
-      - series: 'pipeline_errors_total{stage="stage2",error_type="timeout"}'
+      - series: 'pipeline_errors_total{stage="stage2",error_type="timeout",site_id="uconn"}'
         values: '0+60x20'
-      - series: 'pipeline_errors_total{stage="stage3",error_type="timeout"}'
+      - series: 'pipeline_errors_total{stage="stage3",error_type="timeout",site_id="uconn"}'
         values: '0+1x20'
     alert_rule_test:
       - eval_time: 15m
@@ -49,9 +51,11 @@ tests:
               severity: warning
               component: pipeline
               stage: stage2
+              site_id: uconn
             exp_annotations:
-              summary: "High pipeline error rate in stage2"
-              description: "1 errors/sec recorded for stage2 over 5 minutes."
+              summary: "High pipeline error rate in stage2 (site uconn)"
+              description: "1 errors/sec recorded for stage2 on site uconn over 5 minutes."
+              site: "uconn"
               impact: "Medium - URLs in this stage are failing"
               action: "Check the stage worker logs and the error_type label of pipeline_errors_total"
 

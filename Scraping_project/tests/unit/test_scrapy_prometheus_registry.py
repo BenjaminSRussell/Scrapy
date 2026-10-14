@@ -11,17 +11,18 @@ from src import scrapy_prometheus as sp
 from src.scrapy_prometheus import bounded_label
 
 EXPECTED = {
-    # name: labels
-    "scrapy_items_scraped": ("spider",),
-    "scrapy_items_dropped": ("spider",),
-    "scrapy_requests": ("spider", "method"),
-    "scrapy_responses": ("spider", "status_code"),
+    # name: labels. site_id is the configured id only (#192).
+    "scrapy_items_scraped": ("spider", "site_id"),
+    "scrapy_items_dropped": ("spider", "site_id"),
+    "scrapy_requests": ("spider", "method", "site_id"),
+    "scrapy_responses": ("spider", "status_code", "site_id"),
     "scrapy_spider_opened": ("spider",),
-    "scrapy_spider_errors": ("spider", "exception_type"),
+    "scrapy_spider_errors": ("spider", "exception_type", "site_id"),
     "scrapy_requests_dropped": ("spider", "reason"),
     "scrapy_urls_skipped": ("spider", "skip_reason"),
     "scrapy_hidden_urls_found": ("spider", "category"),
     "scrapy_hidden_urls_routed": ("spider", "route"),
+    "scrapy_new_urls_found_per_minute": ("spider", "site_id"),
     "delta_manager_shutdown": (),
 }
 
@@ -89,8 +90,58 @@ def test_item_scraped_skip_reason_label_is_bounded():
 
 
 def test_status_code_label_is_the_numeric_status_only():
+    from src.utils.redis import metric_site_id
+
     ext = sp.PrometheusExtension.__new__(sp.PrometheusExtension)
     spider = SimpleNamespace(name="status_card_test")
     for status in (200, 404, 200):
         ext.response_received(SimpleNamespace(status=status, url="https://x/"), SimpleNamespace(meta={}), spider)
-    assert REGISTRY.get_sample_value("scrapy_responses_total", {"spider": "status_card_test", "status_code": "200"}) == 2
+    assert REGISTRY.get_sample_value(
+        "scrapy_responses_total",
+        {"spider": "status_card_test", "status_code": "200", "site_id": metric_site_id()},
+    ) == 2
+
+
+def test_core_series_site_id_is_configured_not_a_url_or_job(monkeypatch):
+    monkeypatch.delenv("TENANT_ID", raising=False)
+    monkeypatch.delenv("REDIS_SITE_ID", raising=False)
+    monkeypatch.setenv("SITE_ID", "tenant_a")
+    monkeypatch.setenv("CRAWL_JOB_ID", "job-999")
+    ext = sp.PrometheusExtension.__new__(sp.PrometheusExtension)
+    spider = SimpleNamespace(name="site_label_test")
+    ext.item_scraped({"url": "https://evil.example/job/123"}, spider)
+    ext.spider_error(SimpleNamespace(type=RuntimeError, getErrorMessage=lambda: "x"), None, spider)
+    ext.request_scheduled(SimpleNamespace(method="GET", url="https://evil.example/j"), spider)
+    ext.response_received(
+        SimpleNamespace(status=500, url="https://evil.example/j"),
+        SimpleNamespace(meta={}),
+        spider,
+    )
+    assert REGISTRY.get_sample_value(
+        "scrapy_items_scraped_total", {"spider": "site_label_test", "site_id": "tenant_a"}
+    ) == 1
+    assert REGISTRY.get_sample_value(
+        "scrapy_spider_errors_total",
+        {"spider": "site_label_test", "exception_type": "RuntimeError", "site_id": "tenant_a"},
+    ) == 1
+    assert REGISTRY.get_sample_value(
+        "scrapy_requests_total",
+        {"spider": "site_label_test", "method": "GET", "site_id": "tenant_a"},
+    ) == 1
+    series = {
+        s.labels.get("site_id")
+        for m in REGISTRY.collect()
+        if m.name in {
+            "scrapy_items_scraped",
+            "scrapy_responses",
+            "scrapy_requests",
+            "scrapy_spider_errors",
+        }
+        for s in m.samples
+        if s.labels.get("spider") == "site_label_test"
+    }
+    assert series == {"tenant_a"}
+    monkeypatch.setenv("SITE_ID", "https://uconn.edu/a?job=1")
+    from src.utils.redis import metric_site_id
+
+    assert metric_site_id() == "rejected"

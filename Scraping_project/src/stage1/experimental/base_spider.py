@@ -18,7 +18,7 @@ from twisted.internet.error import DNSLookupError, TCPTimedOutError, TimeoutErro
 from src.core.config import get_config
 from src.stage1.content_policy import classify_response, count_skipped
 from src.utils.delta import get_delta
-from src.utils.redis import get_redis
+from src.utils.redis import get_redis, metric_site_id
 from src.stage1.processors.url_processor import URLProcessor, should_follow_url
 from src.items import OffsiteCandidateItem
 from src.stage1.js_detection import JSDetector
@@ -552,7 +552,7 @@ class BaseSpider(scrapy.Spider):
             avg_file_size = 0
 
         if NEW_URLS_FOUND_PER_MINUTE:
-            NEW_URLS_FOUND_PER_MINUTE.labels(spider=self.name).set(urls_per_minute)
+            NEW_URLS_FOUND_PER_MINUTE.labels(spider=self.name, site_id=metric_site_id()).set(urls_per_minute)
 
         if AVERAGE_FILE_SIZE_BYTES:
             AVERAGE_FILE_SIZE_BYTES.labels(spider=self.name).set(avg_file_size)

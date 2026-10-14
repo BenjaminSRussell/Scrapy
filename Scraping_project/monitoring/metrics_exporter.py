@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.core.config import Config
 from src.lakehouse.lakehouse_manager import DeltaLakeManager
-from src.utils.redis import get_redis
+from src.utils.redis import get_redis, metric_site_id
 from src.stage1.processors.js_priority_queue import JSPriorityQueue
 from src.core.timeutil import utc_now_iso
 
@@ -157,6 +157,11 @@ class MetricsExporter:
         self.error_summary_path = exports_root / "stage1_errors_summary.json"
         self._last_error_summary_fingerprint: tuple | None = None
 
+        # Configured site id for queue, throughput, and error series (#192).
+        # Captured once so a later env change cannot retag an open process,
+        # and so a URL or host never arrives as a tag from a caller.
+        self.site_id = metric_site_id()
+
         # Seed default zero values so dashboards have immediate data
         self._initialize_metrics()
 
@@ -243,6 +248,16 @@ class MetricsExporter:
 
             time.sleep(self.update_interval)
 
+    def _core_tags(self, tags: dict[str, str] | None = None) -> dict[str, str]:
+        """Tags for queue depth, throughput, and error series (#192).
+
+        ``site_id`` is the configured id from init. It is not taken from the
+        extra tags, so a URL, job id, or raw host cannot override it.
+        """
+        merged = dict(tags or {})
+        merged["site_id"] = self.site_id
+        return merged
+
     def _update_queue_metrics(self):
         """Update Redis queue depth metrics via UDP."""
         try:
@@ -251,13 +266,13 @@ class MetricsExporter:
             # JS spider priority queue (the only Redis-backed queue left;
             # everything else moved to Delta Lake tables)
             pq_size = self.js_priority_queue.size()
-            self.statsd.gauge("redis.queue.length", pq_size, {"queue": "priority_queue"})
+            self.statsd.gauge("redis.queue.length", pq_size, self._core_tags({"queue": "priority_queue"}))
             seen.add("priority_queue")
 
             # Ensure tracked queues that weren't returned still emit zeros
             for queue_name in self._tracked_queues:
                 if queue_name not in seen:
-                    self.statsd.gauge("redis.queue.length", 0, {"queue": queue_name})
+                    self.statsd.gauge("redis.queue.length", 0, self._core_tags({"queue": queue_name}))
 
         except Exception as e:
             logger.error(f"Error updating queue metrics: {e}")
@@ -367,9 +382,9 @@ class MetricsExporter:
                             rate = delta_count / time_delta if time_delta > 0 else 0.0
 
                         if delta_count > 0:
-                            self.statsd.counter("urls.processed.total", delta_count, {"stage": stage})
+                            self.statsd.counter("urls.processed.total", delta_count, self._core_tags({"stage": stage}))
 
-                        self.statsd.gauge("urls.processed.per_second", max(0.0, rate), {"stage": stage})
+                        self.statsd.gauge("urls.processed.per_second", max(0.0, rate), self._core_tags({"stage": stage}))
 
                         # Update previous count
                         self.previous_counts[table] = current_count
@@ -400,7 +415,11 @@ class MetricsExporter:
                 previous = previous_counts.get(error_type, 0)
                 delta = count - previous
                 if delta > 0:
-                    self.statsd.counter("errors.total", delta, {"stage": error_stage, "error_type": error_type})
+                    self.statsd.counter(
+                        "errors.total",
+                        delta,
+                        self._core_tags({"stage": error_stage, "error_type": error_type}),
+                    )
 
             # Ensure we remember zero-state types as well
             self.previous_error_counts[error_stage] = current_counts
@@ -447,7 +466,7 @@ class MetricsExporter:
         """Prime metrics with zeros via UDP so dashboards render immediately."""
         try:
             for queue_name in self._tracked_queues:
-                self.statsd.gauge("redis.queue.length", 0, {"queue": queue_name})
+                self.statsd.gauge("redis.queue.length", 0, self._core_tags({"queue": queue_name}))
 
             for table in self._tracked_tables:
                 self.statsd.gauge("delta_lake.records", 0, {"table": table})
@@ -460,9 +479,11 @@ class MetricsExporter:
             self.statsd.gauge("circuit_breaker.open_count", 0)
 
             for stage in self._tracked_stages:
-                self.statsd.gauge("urls.processed.per_second", 0.0, {"stage": stage})
-                self.statsd.counter("urls.processed.total", 0, {"stage": stage})
-                self.statsd.counter("errors.total", 0, {"stage": stage, "error_type": "none"})
+                self.statsd.gauge("urls.processed.per_second", 0.0, self._core_tags({"stage": stage}))
+                self.statsd.counter("urls.processed.total", 0, self._core_tags({"stage": stage}))
+                self.statsd.counter(
+                    "errors.total", 0, self._core_tags({"stage": stage, "error_type": "none"})
+                )
                 self.statsd.gauge("workers.active", 0, {"stage": stage})
 
             self.statsd.counter("stage4.http.requests.total", 0)

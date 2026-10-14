@@ -82,7 +82,7 @@
       "title": "Redis queue depth",
       "id": 3,
       "datasource": {"type": "prometheus", "uid": "${datasource}"},
-      "description": "SLO is the existing QueueBacklog rule: max by (queue) redis_queue_length > 10000 for 10m. The rule is not changed. High watermark 10000, low watermark 8000, mode block.",
+      "description": "SLO threshold is unchanged: redis_queue_length > 10000 for 10m. High watermark 10000, low watermark 8000, mode block. QueueBacklog groups by queue and site_id so the annotation names the site (#192). This panel stays max by (queue) at the same 10000 line.",
       "gridPos": {"h": 8, "w": 8, "x": 8, "y": 1},
       "targets": [
         {
