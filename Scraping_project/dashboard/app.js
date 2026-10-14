@@ -10,6 +10,9 @@ const REFRESH_INTERVAL = 5000;
 const METRICS_TIMEOUT_MS = 4000; // #1032
 const STORE_TAB_KEY = 'cc.lastTab'; // #1034
 const STORE_INTERVAL_KEY = 'cc.refreshInterval'; // #1015
+const STORE_DANGER_SOUND_KEY = 'cc.dangerSound'; // #1037
+let dangerSoundEnabled = false;
+let dangerAudioCtx = null;
 let refreshPaused = false;
 let metricsFetcher = null;
 let metricsWasDown = false;
@@ -284,10 +287,64 @@ function addActivityLogItem(type, message) {
 // always-present live region. Text only, never HTML.
 const ACTIVITY_ANNOUNCE_KEEP = 5;
 const activityAnnouncer = createActivityAnnouncer();
+function mediaQueryMatches(query) {
+    try {
+        return !!(window.matchMedia && window.matchMedia(query).matches);
+    } catch (_) {
+        return false;
+    }
+}
+
+// Short sine blip. No asset file. A missing or suspended context stays silent.
+function playDangerChime() {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    try {
+        if (!dangerAudioCtx) dangerAudioCtx = new AC();
+    } catch (_) {
+        return;
+    }
+    const ctx = dangerAudioCtx;
+    const start = () => {
+        try {
+            const t = ctx.currentTime;
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(880, t);
+            osc.frequency.exponentialRampToValueAtTime(440, t + 0.12);
+            gain.gain.setValueAtTime(0.0001, t);
+            gain.gain.exponentialRampToValueAtTime(0.05, t + 0.015);
+            gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.16);
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start(t);
+            osc.stop(t + 0.18);
+        } catch (_) { /* autoplay policy or a closed context */ }
+    };
+    if (ctx.state === 'suspended') {
+        ctx.resume().then(start).catch(() => {});
+    } else {
+        start();
+    }
+}
+
+function considerDangerSound(type, announced) {
+    const decision = dangerSoundDecision({
+        type,
+        enabled: dangerSoundEnabled,
+        reducedMotion: mediaQueryMatches('(prefers-reduced-motion: reduce)'),
+        prefersMuted: mediaQueryMatches('(prefers-muted: reduce)') || mediaQueryMatches('(prefers-muted)'),
+        announced,
+    });
+    if (decision.play) playDangerChime();
+}
+
 function announceActivity(type, message) {
     const region = document.getElementById('activity-announce');
     if (!region) return;
     const text = activityAnnouncer.text(type, message);
+    considerDangerSound(type, text != null);
     if (!text) return;
     const node = document.createElement('div');
     node.textContent = text;
@@ -1053,6 +1110,33 @@ function setupVisibilityPause() {
     });
 }
 
+// #1037: muted until the operator opts in. The choice survives reloads.
+function setupDangerSound() {
+    dangerSoundEnabled = parseDangerSoundEnabled(storeGet(STORE_DANGER_SOUND_KEY));
+    const box = document.getElementById('danger-sound-toggle');
+    if (!box) return;
+    box.checked = dangerSoundEnabled;
+    box.addEventListener('change', () => {
+        dangerSoundEnabled = !!box.checked;
+        storeSet(STORE_DANGER_SOUND_KEY, dangerSoundEnabled ? '1' : '0');
+        if (dangerSoundEnabled) {
+            const AC = window.AudioContext || window.webkitAudioContext;
+            try {
+                if (AC && !dangerAudioCtx) dangerAudioCtx = new AC();
+                if (dangerAudioCtx && dangerAudioCtx.state === 'suspended') {
+                    dangerAudioCtx.resume().catch(() => {});
+                }
+            } catch (_) { /* toggle still persists without Web Audio */ }
+        }
+        const live = document.getElementById('refresh-status');
+        if (live) {
+            live.textContent = dangerSoundEnabled
+                ? 'Sound alerts on for new danger activity'
+                : 'Sound alerts off';
+        }
+    });
+}
+
 // #1015: 5/10/30s interval picker, remembered in localStorage.
 function setupIntervalControl() {
     const select = document.getElementById('refresh-interval');
@@ -1276,6 +1360,7 @@ function initialize() {
     refreshScheduler = createRefreshScheduler({ interval: REFRESH_INTERVAL, fetch: fetchAndAnnounce });
     setupIntervalControl();
     setupVisibilityPause();
+    setupDangerSound();
     startCountdown();
 
     const pauseBtn = document.getElementById('pause-refresh');

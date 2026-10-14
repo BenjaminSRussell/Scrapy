@@ -98,6 +98,10 @@ The topbar status is derived from the same state (`connectionState()` in `format
 
 The System tab Settings panel lists every Prometheus series the page reads and the UI field (element id) it fills. The list is `METRIC_UI_MAP` in `format-utils.js`, rendered by `renderMetricNameMap`. `app.js` does not keep a second copy. Session uptime and the last-refresh clock are not series. The Stage 4 overview spark follows `stage3_summaries_created_total` (the same sample buffer as the Stage 3 spark), not `stage4_large_doc_summaries_total`.
 
+## Danger sound (#1037)
+
+The Activity log has a **Sound on danger** checkbox. It is unchecked until an operator turns it on, and that choice is stored in `localStorage` under `cc.dangerSound`. When it is on, a new `danger` activity row plays a short tone (Web Audio, no audio file). The same message is not chimed again inside the screen-reader repeat window. Success, warning, info, and timeout rows never play a sound. `prefers-reduced-motion: reduce`, or a `prefers-muted` media preference, keeps the page silent even if the box is checked.
+
 ## Threat model notes (#1046)
 
 **Activity log XSS.** Activity messages may contain text derived from metrics,

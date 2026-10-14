@@ -15,6 +15,7 @@ renamed to the new version and date (see the release checklist).
 ## [Unreleased]
 
 ### Added
+- Control Center can play a short tone on a new danger activity item. The Sound on danger checkbox is off by default and the choice is remembered in localStorage. Reduced motion and a mute media preference keep it silent (#1037).
 - Optional Control Center job captures one Overview smoke screenshot and uploads it as `dashboard-overview-screenshot` (`overview.png` of `#tab-overview`). It is not a pixel-diff gate and does not block the dashboard unit tests (#1044).
 - Cross-repo Delta schema registry (`docs/contracts/`) for `pages` (`stage2_page_analysis`), `extractions` (`metadata_queue`) and `jobs` (`stage2_queue`). A pull-request check fails if those writers drop a registered column (#1099).
 - Control Center System tab Settings panel lists each Prometheus series the page reads and the UI field it fills (`METRIC_UI_MAP`) (#1038).
