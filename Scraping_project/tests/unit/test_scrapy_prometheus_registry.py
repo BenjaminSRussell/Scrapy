@@ -9,25 +9,17 @@ from prometheus_client import REGISTRY
 
 from src import scrapy_prometheus as sp
 from src.scrapy_prometheus import bounded_label
+from src.utils.metric_labels import (
+    BASE_LABELS,
+    SCRAPY_FAMILIES,
+    SITE_ID_FAMILIES,
+    sample_labels,
+    scrapy_family_errors,
+)
 
-EXPECTED = {
-    # name: labels. site_id is the configured id only (#192).
-    "scrapy_items_scraped": ("spider", "site_id"),
-    "scrapy_items_dropped": ("spider", "site_id"),
-    "scrapy_requests": ("spider", "method", "site_id"),
-    "scrapy_responses": ("spider", "status_code", "site_id"),
-    "scrapy_spider_opened": ("spider",),
-    "scrapy_spider_errors": ("spider", "exception_type", "site_id"),
-    "scrapy_requests_dropped": ("spider", "reason"),
-    "scrapy_urls_skipped": ("spider", "skip_reason"),
-    "scrapy_hidden_urls_found": ("spider", "category"),
-    "scrapy_hidden_urls_routed": ("spider", "route"),
-    "scrapy_new_urls_found_per_minute": ("spider", "site_id"),
-    "delta_manager_shutdown": (),
-}
-
-# Label names that would carry per-URL / per-host values (unbounded cardinality).
-FORBIDDEN_LABELS = {"url", "uri", "path", "host", "domain", "netloc", "url_hash", "query", "item_id", "request_id"}
+# ``domain`` is the configured METRIC_DOMAIN token (#243), not a request host.
+# ``host`` stays forbidden.
+FORBIDDEN_LABELS = {"url", "uri", "path", "host", "netloc", "url_hash", "query", "item_id", "request_id"}
 
 
 def _metrics_by_name():
@@ -41,10 +33,13 @@ def _metrics_by_name():
 
 def test_expected_metrics_are_registered_with_expected_labels():
     metrics = _metrics_by_name()
-    for name, labels in EXPECTED.items():
-        assert name in metrics, f"{name} not defined in scrapy_prometheus"
-        assert tuple(metrics[name]._labelnames) == labels
+    errors = scrapy_family_errors({name: tuple(metric._labelnames) for name, metric in metrics.items()})
+    assert errors == [], "\n".join(errors)
+    for name in SCRAPY_FAMILIES:
+        assert set(BASE_LABELS) <= set(metrics[name]._labelnames)
         assert any(name in collector_name for collector_name in REGISTRY._names_to_collectors), name
+    for name in SITE_ID_FAMILIES:
+        assert "site_id" in metrics[name]._labelnames
 
 
 def test_no_metric_uses_a_url_like_label():
@@ -85,20 +80,21 @@ def test_item_scraped_skip_reason_label_is_bounded():
         if s.labels.get("spider") == "scout_card_test" and s.name.endswith("_total")
     }
     assert series == {"redirect_loop"}
-    value = REGISTRY.get_sample_value("scrapy_urls_skipped_total", {"spider": "scout_card_test", "skip_reason": "redirect_loop"})
+    value = REGISTRY.get_sample_value(
+        "scrapy_urls_skipped_total",
+        sample_labels("scrapy_urls_skipped", spider="scout_card_test", skip_reason="redirect_loop"),
+    )
     assert value == 50
 
 
 def test_status_code_label_is_the_numeric_status_only():
-    from src.utils.redis import metric_site_id
-
     ext = sp.PrometheusExtension.__new__(sp.PrometheusExtension)
     spider = SimpleNamespace(name="status_card_test")
     for status in (200, 404, 200):
         ext.response_received(SimpleNamespace(status=status, url="https://x/"), SimpleNamespace(meta={}), spider)
     assert REGISTRY.get_sample_value(
         "scrapy_responses_total",
-        {"spider": "status_card_test", "status_code": "200", "site_id": metric_site_id()},
+        sample_labels("scrapy_responses", spider="status_card_test", status_code="200"),
     ) == 2
 
 
@@ -118,15 +114,16 @@ def test_core_series_site_id_is_configured_not_a_url_or_job(monkeypatch):
         spider,
     )
     assert REGISTRY.get_sample_value(
-        "scrapy_items_scraped_total", {"spider": "site_label_test", "site_id": "tenant_a"}
+        "scrapy_items_scraped_total",
+        sample_labels("scrapy_items_scraped", spider="site_label_test"),
     ) == 1
     assert REGISTRY.get_sample_value(
         "scrapy_spider_errors_total",
-        {"spider": "site_label_test", "exception_type": "RuntimeError", "site_id": "tenant_a"},
+        sample_labels("scrapy_spider_errors", spider="site_label_test", exception_type="RuntimeError"),
     ) == 1
     assert REGISTRY.get_sample_value(
         "scrapy_requests_total",
-        {"spider": "site_label_test", "method": "GET", "site_id": "tenant_a"},
+        sample_labels("scrapy_requests", spider="site_label_test", method="GET"),
     ) == 1
     series = {
         s.labels.get("site_id")

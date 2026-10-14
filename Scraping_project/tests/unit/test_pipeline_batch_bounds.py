@@ -177,8 +177,10 @@ def test_noisy_rows_flush_on_bytes():
 
 
 def test_saved_metric_counts_only_accepted_rows():
+    from src.utils.metric_labels import sample_labels
+
     spider = SimpleNamespace(name="offsite_metric_test")
-    labels = {"spider": "offsite_metric_test"}
+    labels = sample_labels("scrapy_offsite_candidates_saved", spider="offsite_metric_test")
     before = _metric("scrapy_offsite_candidates_saved_total", **labels)
     ok = _offsite_pipeline(FakeDelta(), max_rows=10, max_age=0)
     for i in range(25):

@@ -22,6 +22,19 @@ import pytest
 from unittest.mock import MagicMock
 
 from monitoring import metrics_exporter as exporter_module
+from src.utils.metric_labels import metric_domain, metric_stage, metric_worker_id
+
+
+def _tags(site: str, **extra: str) -> tuple[tuple[str, str], ...]:
+    """Identity labels the exporter always sends, plus this family's own keys."""
+    labels = {
+        "domain": metric_domain(),
+        "site_id": site,
+        "worker_id": metric_worker_id(),
+        "stage": extra.pop("stage", metric_stage(default="exporter")),
+    }
+    labels.update(extra)
+    return tuple(sorted(labels.items()))
 
 class StatsDRecorder:
     """Records gauge()/counter() calls in place of real UDP sends."""
@@ -89,7 +102,7 @@ def test_update_queue_metrics_records_priority_queue_size(exporter):
     exporter._update_queue_metrics()
 
     site = exporter.site_id
-    assert exporter.statsd.gauges[("redis.queue.length", (("queue", "priority_queue"), ("site_id", site)))] == 7
+    assert exporter.statsd.gauges[("redis.queue.length", _tags(site, queue="priority_queue"))] == 7
 
 def test_update_delta_lake_metrics_tracks_counts(exporter):
     exporter.delta.tables = {
@@ -102,7 +115,7 @@ def test_update_delta_lake_metrics_tracks_counts(exporter):
     records = exporter.statsd.gauges
     assert records[("delta_lake.records", (("table", "stage1_discovery"),))] == 5
     assert records[("delta_lake.records", (("table", "stage2_page_analysis"),))] == 1
-    assert records[("urls.discovered.total", ())] == 5
+    assert records[("urls.discovered.total", _tags(exporter.site_id, stage="stage1"))] == 5
     assert records[("delta_lake.total_records", ())] == 6
 
 def test_update_throughput_metrics_increments_counters(exporter, monkeypatch):
@@ -128,10 +141,10 @@ def test_update_throughput_metrics_increments_counters(exporter, monkeypatch):
     gauges = exporter.statsd.gauges
 
     site = exporter.site_id
-    assert counters[("urls.processed.total", (("site_id", site), ("stage", "stage1")))] == 10
-    assert gauges[("urls.processed.per_second", (("site_id", site), ("stage", "stage1")))] == pytest.approx(1.0)
-    assert counters[("urls.processed.total", (("site_id", site), ("stage", "stage2")))] == 3
-    assert gauges[("urls.processed.per_second", (("site_id", site), ("stage", "stage2")))] == pytest.approx(0.3)
+    assert counters[("urls.processed.total", _tags(site, stage="stage1"))] == 10
+    assert gauges[("urls.processed.per_second", _tags(site, stage="stage1"))] == pytest.approx(1.0)
+    assert counters[("urls.processed.total", _tags(site, stage="stage2"))] == 3
+    assert gauges[("urls.processed.per_second", _tags(site, stage="stage2"))] == pytest.approx(0.3)
 
 def test_update_error_metrics_writes_summary(exporter):
     exporter.delta.tables = {
@@ -146,8 +159,8 @@ def test_update_error_metrics_writes_summary(exporter):
 
     counters = exporter.statsd.counters
     site = exporter.site_id
-    assert counters[("errors.total", (("error_type", "Timeout"), ("site_id", site), ("stage", "stage1")))] == 2
-    assert counters[("errors.total", (("error_type", "DNS"), ("site_id", site), ("stage", "stage1")))] == 1
+    assert counters[("errors.total", _tags(site, stage="stage1", error_type="Timeout"))] == 2
+    assert counters[("errors.total", _tags(site, stage="stage1", error_type="DNS"))] == 1
 
     summary_path = exporter.error_summary_path
     assert summary_path.exists()
@@ -255,19 +268,19 @@ def test_baseline_core_metrics_carry_configured_site_id(exporter):
     exporter.site_id = "tenant_a"
     exporter._initialize_metrics()
     assert exporter.statsd.gauges[
-        ("redis.queue.length", (("queue", "priority_queue"), ("site_id", "tenant_a")))
+        ("redis.queue.length", _tags("tenant_a", queue="priority_queue"))
     ] == 0
     assert exporter.statsd.gauges[
-        ("urls.processed.per_second", (("site_id", "tenant_a"), ("stage", "stage1")))
+        ("urls.processed.per_second", _tags("tenant_a", stage="stage1"))
     ] == 0.0
     assert exporter.statsd.counters[
-        ("errors.total", (("error_type", "none"), ("site_id", "tenant_a"), ("stage", "stage1")))
+        ("errors.total", _tags("tenant_a", stage="stage1", error_type="none"))
     ] == 0
     # A caller-supplied site_id cannot replace the configured one.
     exporter._update_queue_metrics()
     assert (
         "redis.queue.length",
-        (("queue", "priority_queue"), ("site_id", "tenant_a")),
+        _tags("tenant_a", queue="priority_queue"),
     ) in exporter.statsd.gauges
 
 

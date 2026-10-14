@@ -16,6 +16,8 @@ import logging
 import os
 import socket
 
+from src.utils.metric_labels import identity_labels
+
 logger = logging.getLogger(__name__)
 
 
@@ -37,15 +39,16 @@ class MetricsManager:
             logger.debug(f"Failed to send metric {metric}: {e}")
 
     def record_stage1_url_discovered(self, count: int = 1) -> None:
-        self._increment("urls.discovered.total", count)
+        # Same label set as metrics_exporter's urls.discovered.total (#243).
+        self._increment("urls.discovered.total", count, identity_labels(stage="stage1"))
 
     def record_stage2_page_analyzed(self, count: int = 1) -> None:
-        from src.utils.redis import metric_site_id
-
-        self._increment("urls.processed.total", count, {"site_id": metric_site_id()})
+        # stage is required: the exporter emits this family with stage, and a
+        # series that omits it breaks sum by (stage). site_id stays configured.
+        self._increment("urls.processed.total", count, identity_labels(stage="stage2"))
 
     def record_stage3_summary_created(self, count: int = 1) -> None:
-        self._increment("summaries.created.total", count)
+        self._increment("summaries.created.total", count, identity_labels(stage="stage3"))
 
     def close(self) -> None:
         self._sock.close()

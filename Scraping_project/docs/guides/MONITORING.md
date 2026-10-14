@@ -51,6 +51,27 @@ Cardinality guardrail: the label value is the configured site id only (`SITE_ID`
 
 `Stage2SuccessSLO` stays at 0.99 over 24h. `KafkaConsumerLagSLO` stays above 250000 messages. Those two rules are not split by `site_id`.
 
+## Label contract (#243)
+
+Grafana aggregates by label name. A metric family must use the same label names in every process. If one process emits `urls.processed.total` with `stage` and another emits it without `stage`, `sum by (stage)` splits or drops the second series. The same applies to `worker_id` and `domain`.
+
+The base labels are `stage`, `worker_id`, and `domain`. `site_id` stays on the series that already have it (#192). It is not removed, and it is not a substitute for `domain`.
+
+| Label | Value |
+|---|---|
+| `stage` | `PIPELINE_STAGE` if that is set, otherwise the call's stage (`stage1`–`stage4`) or `exporter` for the metrics process. A value that is not a short token (`[a-z][a-z0-9_]{0,31}`) is `rejected`. |
+| `worker_id` | `WORKER_ID`, otherwise `<hostname>-<pid>`. Same pattern as a site id. A URL or anything else is `rejected`. |
+| `domain` | `METRIC_DOMAIN`, otherwise `unknown`. Same pattern as a site id. This is not the request host. Callers cannot pass a domain, URL, job id, or host into the helper. |
+| `site_id` | Unchanged (#192): `SITE_ID`, else `TENANT_ID`, else `REDIS_SITE_ID`, else `default`. Callers cannot pass a URL, job id, or host. A value that fails the pattern is `rejected`. |
+
+Series are still recorded when a label is `rejected`. They are not dropped. There is no numeric site cap. No numeric cap was measured.
+
+Scrapy crawl metrics in `src/scrapy_prometheus.py` always include `stage`, `worker_id`, and `domain`, plus the labels they already had (`spider`, and `site_id` on the #192 series, plus `method`, `status_code`, and the other low-cardinality reasons). The Delta Lake manager lifecycle metrics (`delta_manager_*`) stay unlabeled, and they stay unlabeled in every process.
+
+`monitoring/metrics_exporter.py` and `src/common/metrics_manager.py` both emit `urls.processed.total` and `urls.discovered.total`. Both send `stage`, `worker_id`, `domain`, and `site_id`. Queue depth adds `queue`. Error counts add `error_type`. `stage4_http_requests_total` and `stage4_http_failures_total` use that same base set on the Stage 4 worker and on the exporter's zero baseline (`error_type` only on failures). Circuit-breaker series stay `{name, host}` or unlabeled. Delta table gauges stay `{table}`.
+
+The tuples are `SCRAPY_FAMILIES` and `STATSD_FAMILIES` in `src/utils/metric_labels.py`. A test fails if a family is registered or emitted with a different set. `redis_queue_length` is still the queue-depth series. `Stage2SuccessSLO` stays 0.99 over 24h, `QueueBacklog` still fires above 10000, and `KafkaConsumerLagSLO` still fires above 250000.
+
 ## Stage 4 speech-to-text (#1101)
 
 `STAGE4_ASR_ENABLED` defaults off. When it is on, Stage 4 reads local audio and text fixtures only. It does not download remote media (that stays on the crawl pipeline, `ASR_ENABLED`).

@@ -18,6 +18,8 @@ from scrapy.crawler import Crawler
 from scrapy.exceptions import DropItem, NotConfigured
 from scrapy.http import Request, Response
 
+from src.utils.metric_labels import SCRAPY_FAMILIES, labels_for
+
 logger = logging.getLogger(__name__)
 
 
@@ -61,114 +63,121 @@ class CrawlRunState:
 
 
 if PROMETHEUS_AVAILABLE:
+    # Every crawl family includes stage/worker_id/domain (#243). site_id stays
+    # on the #192 series. The tuples live in metric_labels.SCRAPY_FAMILIES so
+    # a second process cannot register a different label set.
     ITEMS_SCRAPED = Counter(
         "scrapy_items_scraped_total",
         "Total number of items scraped",
-        ["spider", "site_id"],
+        list(SCRAPY_FAMILIES["scrapy_items_scraped"]),
     )
 
     ITEMS_DROPPED = Counter(
         "scrapy_items_dropped_total",
         "Total number of items dropped",
-        ["spider", "site_id"],
+        list(SCRAPY_FAMILIES["scrapy_items_dropped"]),
     )
 
     REQUESTS_TOTAL = Counter(
         "scrapy_requests_total",
         "Total number of requests made",
-        ["spider", "method", "site_id"],
+        list(SCRAPY_FAMILIES["scrapy_requests"]),
     )
 
     RESPONSES_TOTAL = Counter(
         "scrapy_responses_total",
         "Total number of responses received",
-        ["spider", "status_code", "site_id"],
+        list(SCRAPY_FAMILIES["scrapy_responses"]),
     )
 
     RESPONSE_TIME = Histogram(
         "scrapy_response_time_seconds",
         "Response time in seconds",
-        ["spider"],
+        list(SCRAPY_FAMILIES["scrapy_response_time_seconds"]),
         buckets=(0.1, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0, float("inf")),
     )
 
-    SPIDER_OPENED = Gauge("scrapy_spider_opened", "Number of spiders currently running", ["spider"])
+    SPIDER_OPENED = Gauge(
+        "scrapy_spider_opened",
+        "Number of spiders currently running",
+        list(SCRAPY_FAMILIES["scrapy_spider_opened"]),
+    )
 
     SPIDER_CLOSED = Counter(
         "scrapy_spider_closed_total",
         "Total number of spiders closed",
-        ["spider", "reason"],
+        list(SCRAPY_FAMILIES["scrapy_spider_closed"]),
     )
 
     SPIDER_ERRORS = Counter(
         "scrapy_spider_errors_total",
         "Total number of spider errors",
-        ["spider", "exception_type", "site_id"],
+        list(SCRAPY_FAMILIES["scrapy_spider_errors"]),
     )
 
     REQUESTS_DROPPED = Counter(
         "scrapy_requests_dropped_total",
         "Total number of requests dropped",
-        ["spider", "reason"],
+        list(SCRAPY_FAMILIES["scrapy_requests_dropped"]),
     )
 
     DOWNLOADER_REQUEST_BYTES = Counter(
         "scrapy_downloader_request_bytes_total",
         "Total bytes sent in requests",
-        ["spider"],
+        list(SCRAPY_FAMILIES["scrapy_downloader_request_bytes"]),
     )
 
     DOWNLOADER_RESPONSE_BYTES = Counter(
         "scrapy_downloader_response_bytes_total",
         "Total bytes received in responses",
-        ["spider"],
+        list(SCRAPY_FAMILIES["scrapy_downloader_response_bytes"]),
     )
 
     CRAWL_DURATION = Gauge(
         "scrapy_crawl_duration_seconds",
         "Duration of the current crawl in seconds",
-        ["spider"],
+        list(SCRAPY_FAMILIES["scrapy_crawl_duration_seconds"]),
     )
 
     URLS_SKIPPED = Counter(
         "scrapy_urls_skipped_total",
         "Total number of URLs skipped by type",
-        ["spider", "skip_reason"],
+        list(SCRAPY_FAMILIES["scrapy_urls_skipped"]),
     )
 
     NEW_URLS_FOUND_PER_MINUTE = Gauge(
         "scrapy_new_urls_found_per_minute",
         "Rate of new URLs discovered per minute",
-        ["spider", "site_id"],
+        list(SCRAPY_FAMILIES["scrapy_new_urls_found_per_minute"]),
     )
 
     AVERAGE_FILE_SIZE_BYTES = Gauge(
         "scrapy_average_file_size_bytes",
         "Average file size of downloaded responses",
-        ["spider"],
+        list(SCRAPY_FAMILIES["scrapy_average_file_size_bytes"]),
     )
 
     OFFSITE_LINKS_FOUND = Counter(
         "scrapy_offsite_links_found_total",
         "Total number of offsite/external links discovered",
-        ["spider"],
+        list(SCRAPY_FAMILIES["scrapy_offsite_links_found"]),
     )
 
     OFFSITE_CANDIDATES_SAVED = Counter(
         "scrapy_offsite_candidates_saved_total",
         "Total number of offsite candidates saved to Delta Lake",
-        ["spider"],
+        list(SCRAPY_FAMILIES["scrapy_offsite_candidates_saved"]),
     )
 
     CRAWLER_CONTENT_SUMMARY = Gauge(
         "scrapy_crawler_content_summary",
         "Sample summary of scraped content for qualitative monitoring",
-        ["spider"],
+        list(SCRAPY_FAMILIES["scrapy_crawler_content_summary"]),
     )
     CRAWLER_SUMMARY_SKIPPED = Counter(
         "scrapy_crawler_summary_skipped_total",
         "GrafanaSummaryPipeline summary exports skipped instead of failing the crawl (#462)",
-        ["spider", "reason"],
+        list(SCRAPY_FAMILIES["scrapy_crawler_summary_skipped"]),
     )
 
     # Hidden-URL discovery quality, per extractor category (#392). Grafana:
@@ -177,12 +186,12 @@ if PROMETHEUS_AVAILABLE:
     HIDDEN_URLS_FOUND = Counter(
         "scrapy_hidden_urls_found_total",
         "URLs found by HiddenURLExtractor, by category (offsite = outside allowed_domains)",
-        ["spider", "category"],
+        list(SCRAPY_FAMILIES["scrapy_hidden_urls_found"]),
     )
     HIDDEN_URLS_ROUTED = Counter(
         "scrapy_hidden_urls_routed_total",
         "What happened to each hidden URL: depth_crawl, js, offsite, low_value or duplicate",
-        ["spider", "route"],
+        list(SCRAPY_FAMILIES["scrapy_hidden_urls_routed"]),
     )
 
     # --- Delta Lake Manager Metrics ---
@@ -218,13 +227,6 @@ else:
     HIDDEN_URLS_FOUND = HIDDEN_URLS_ROUTED = None
 
 _LABEL_CHARS = re.compile(r"[^a-z0-9_]+")
-
-
-def _metric_site_id() -> str:
-    """Configured site id for core series (#192). Never a URL, job id, or host."""
-    from src.utils.redis import metric_site_id
-
-    return metric_site_id()
 
 
 def bounded_label(value: Any, max_len: int = 40) -> str:
@@ -288,14 +290,14 @@ class PrometheusExtension:
 
         self.runs.open(spider)
 
-        SPIDER_OPENED.labels(spider=spider.name).set(1)
+        labels_for(SPIDER_OPENED, spider=spider.name).set(1)
         logger.info(f"Spider opened: {spider.name} at {time.strftime('%Y-%m-%d %H:%M:%S')}")
 
     def spider_closed(self, spider: Spider, reason: str):
         started, tallies = self.runs.close(spider)
         if started is not None:
             duration = time.time() - started
-            CRAWL_DURATION.labels(spider=spider.name).set(duration)
+            labels_for(CRAWL_DURATION, spider=spider.name).set(duration)
             logger.info(f"Spider {spider.name} crawl duration: {duration:.2f} seconds")
 
         if tallies:
@@ -305,16 +307,16 @@ class PrometheusExtension:
             )
             logger.info(f" FINAL SKIPPED URLs SUMMARY - Total: {total_skipped} | {tally_str}")
 
-        SPIDER_OPENED.labels(spider=spider.name).set(0)
-        SPIDER_CLOSED.labels(spider=spider.name, reason=reason).inc()
+        labels_for(SPIDER_OPENED, spider=spider.name).set(0)
+        labels_for(SPIDER_CLOSED, spider=spider.name, reason=reason).inc()
         logger.info(f"Spider closed: {spider.name}, reason: {reason}")
 
     def item_scraped(self, item: Any, spider: Spider):
-        ITEMS_SCRAPED.labels(spider=spider.name, site_id=_metric_site_id()).inc()
+        labels_for(ITEMS_SCRAPED, spider=spider.name).inc()
 
         if isinstance(item, dict) and item.get("skip_reason"):
             skip_reason = bounded_label(item["skip_reason"])
-            URLS_SKIPPED.labels(spider=spider.name, skip_reason=skip_reason).inc()
+            labels_for(URLS_SKIPPED, spider=spider.name, skip_reason=skip_reason).inc()
 
             self.runs.tally(spider, skip_reason)
 
@@ -327,19 +329,17 @@ class PrometheusExtension:
         elif exception:
             drop_reason = exception_type
 
-        ITEMS_DROPPED.labels(spider=spider.name, site_id=_metric_site_id()).inc()
+        labels_for(ITEMS_DROPPED, spider=spider.name).inc()
         logger.debug(f"Item dropped in {spider.name}: {drop_reason}")
 
     def spider_error(self, failure, response, spider):
         exception_type = failure.type.__name__ if hasattr(failure, "type") else "Unknown"
 
-        SPIDER_ERRORS.labels(
-            spider=spider.name, exception_type=exception_type, site_id=_metric_site_id()
-        ).inc()
+        labels_for(SPIDER_ERRORS, spider=spider.name, exception_type=exception_type).inc()
         logger.error(f"Spider error in {spider.name}: {exception_type} - {failure.getErrorMessage()}")
 
     def request_scheduled(self, request: Request, spider: Spider):
-        REQUESTS_TOTAL.labels(spider=spider.name, method=request.method, site_id=_metric_site_id()).inc()
+        labels_for(REQUESTS_TOTAL, spider=spider.name, method=request.method).inc()
 
     def request_dropped(self, request: Request, spider: Spider):
         drop_reason = "filtered"
@@ -349,8 +349,8 @@ class PrometheusExtension:
             elif request.meta.get("duplicate"):
                 drop_reason = "duplicate"
 
-        REQUESTS_DROPPED.labels(spider=spider.name, reason=drop_reason).inc()
-        URLS_SKIPPED.labels(spider=spider.name, skip_reason=drop_reason).inc()
+        labels_for(REQUESTS_DROPPED, spider=spider.name, reason=drop_reason).inc()
+        labels_for(URLS_SKIPPED, spider=spider.name, skip_reason=drop_reason).inc()
 
         total_skipped, tallies = self.runs.tally(spider, drop_reason)
         if total_skipped % 100 == 0:
@@ -362,13 +362,11 @@ class PrometheusExtension:
         logger.debug(f"Request dropped in {spider.name}: {drop_reason} - {request.url}")
 
     def response_received(self, response: Response, request: Request, spider: Spider):
-        RESPONSES_TOTAL.labels(
-            spider=spider.name, status_code=response.status, site_id=_metric_site_id()
-        ).inc()
+        labels_for(RESPONSES_TOTAL, spider=spider.name, status_code=response.status).inc()
 
         if hasattr(request, "meta") and "download_latency" in request.meta:
             latency = request.meta["download_latency"]
-            RESPONSE_TIME.labels(spider=spider.name).observe(latency)
+            labels_for(RESPONSE_TIME, spider=spider.name).observe(latency)
 
             if latency > 5.0:
                 logger.warning(f"Slow response in {spider.name}: {latency:.2f}s for {response.url}")
@@ -380,8 +378,8 @@ class PrometheusExtension:
 
     def request_reached_downloader(self, request: Request, spider: Spider):
         if hasattr(request, "body") and request.body:
-            DOWNLOADER_REQUEST_BYTES.labels(spider=spider.name).inc(len(request.body))
+            labels_for(DOWNLOADER_REQUEST_BYTES, spider=spider.name).inc(len(request.body))
 
     def response_downloaded(self, response: Response, request: Request, spider: Spider):
         if hasattr(response, "body") and response.body:
-            DOWNLOADER_RESPONSE_BYTES.labels(spider=spider.name).inc(len(response.body))
+            labels_for(DOWNLOADER_RESPONSE_BYTES, spider=spider.name).inc(len(response.body))

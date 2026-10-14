@@ -892,9 +892,10 @@ class OffsiteCandidatePipeline(_TimedFlushMixin):
             return
         try:
             from src.scrapy_prometheus import OFFSITE_CANDIDATES_SAVED
+            from src.utils.metric_labels import labels_for
 
             if OFFSITE_CANDIDATES_SAVED:
-                OFFSITE_CANDIDATES_SAVED.labels(spider=getattr(spider, "name", None) or "scout").inc(n)
+                labels_for(OFFSITE_CANDIDATES_SAVED, spider=getattr(spider, "name", None) or "scout").inc(n)
         except ImportError as metric_error:
             _record_pipeline_error("offsite", "metrics_import", metric_error)
 
@@ -974,9 +975,10 @@ class GrafanaSummaryPipeline:
             stats.inc_value(f"summary_skipped/{reason}")
         try:
             from src.scrapy_prometheus import CRAWLER_SUMMARY_SKIPPED
+            from src.utils.metric_labels import labels_for
 
             if CRAWLER_SUMMARY_SKIPPED is not None:
-                CRAWLER_SUMMARY_SKIPPED.labels(spider=spider.name, reason=reason).inc()
+                labels_for(CRAWLER_SUMMARY_SKIPPED, spider=spider.name, reason=reason).inc()
         except Exception as metric_error:  # metrics are best effort here (#219)
             _record_pipeline_error("summary", "metrics_emit", metric_error)
         if error is None:
@@ -1011,6 +1013,7 @@ class GrafanaSummaryPipeline:
 
         try:
             from src.scrapy_prometheus import CRAWLER_CONTENT_SUMMARY
+            from src.utils.metric_labels import labels_for
         except Exception as e:  # missing/broken optional metrics deps (#462)
             self._skip(spider, "deps_unavailable", e)
             return
@@ -1021,7 +1024,7 @@ class GrafanaSummaryPipeline:
 
         try:
             # Note: Prometheus Gauge doesn't accept string values directly
-            CRAWLER_CONTENT_SUMMARY.labels(spider=spider.name).set(len(self.sampled_content))
+            labels_for(CRAWLER_CONTENT_SUMMARY, spider=spider.name).set(len(self.sampled_content))
             logger.info(f" Content Summary ({len(self.sampled_content)} samples): {summary[:200]}...")
         except Exception as e:
             self._skip(spider, "export_error", e)

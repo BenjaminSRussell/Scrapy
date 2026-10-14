@@ -12,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.core.config import Config
 from src.lakehouse.lakehouse_manager import DeltaLakeManager
+from src.utils.metric_labels import core_tags
 from src.utils.redis import get_redis, metric_site_id
 from src.stage1.processors.js_priority_queue import JSPriorityQueue
 from src.core.timeutil import utc_now_iso
@@ -249,14 +250,16 @@ class MetricsExporter:
             time.sleep(self.update_interval)
 
     def _core_tags(self, tags: dict[str, str] | None = None) -> dict[str, str]:
-        """Tags for queue depth, throughput, and error series (#192).
+        """Tags for queue, throughput, error, and worker series (#192, #243).
 
-        ``site_id`` is the configured id from init. It is not taken from the
-        extra tags, so a URL, job id, or raw host cannot override it.
+        Always ``stage``, ``worker_id``, ``domain``, and ``site_id``, plus the
+        family's own keys (``queue``, ``error_type``). ``site_id`` is the id
+        captured at init, never a tag the caller passed. ``worker_id`` and
+        ``domain`` are not taken from ``tags`` either, so a URL, job id, or
+        host cannot land on the series. A missing ``stage`` is the process
+        stage (``PIPELINE_STAGE`` or ``exporter``), not omitted.
         """
-        merged = dict(tags or {})
-        merged["site_id"] = self.site_id
-        return merged
+        return core_tags(tags, default_stage="exporter", site_id=self.site_id)
 
     def _update_queue_metrics(self):
         """Update Redis queue depth metrics via UDP."""
@@ -346,7 +349,7 @@ class MetricsExporter:
 
                     # Update specific metrics for key tables
                     if table == "stage1_discovery":
-                        self.statsd.gauge("urls.discovered.total", count)
+                        self.statsd.gauge("urls.discovered.total", count, self._core_tags({"stage": "stage1"}))
                     elif table == "uconn_urls":
                         self.statsd.gauge("urls.uconn.total", count)
                     elif table == "seed_urls":
@@ -475,7 +478,7 @@ class MetricsExporter:
             self.statsd.gauge("delta_lake.total_records", 0)
             self.statsd.gauge("urls.seed.total", 0)
             self.statsd.gauge("urls.uconn.total", 0)
-            self.statsd.gauge("urls.discovered.total", 0)
+            self.statsd.gauge("urls.discovered.total", 0, self._core_tags({"stage": "stage1"}))
             self.statsd.gauge("circuit_breaker.open_count", 0)
 
             for stage in self._tracked_stages:
@@ -484,10 +487,15 @@ class MetricsExporter:
                 self.statsd.counter(
                     "errors.total", 0, self._core_tags({"stage": stage, "error_type": "none"})
                 )
-                self.statsd.gauge("workers.active", 0, {"stage": stage})
+                self.statsd.gauge("workers.active", 0, self._core_tags({"stage": stage}))
 
-            self.statsd.counter("stage4.http.requests.total", 0)
-            self.statsd.counter("stage4.http.failures.total", 0, {"error_type": "unknown"})
+            # Same label names as src/stage4/large_doc_processor.py (#243).
+            self.statsd.counter("stage4.http.requests.total", 0, self._core_tags({"stage": "stage4"}))
+            self.statsd.counter(
+                "stage4.http.failures.total",
+                0,
+                self._core_tags({"stage": "stage4", "error_type": "unknown"}),
+            )
 
         except Exception as e:
             logger.debug(f"Failed to initialize baseline metrics: {e}")

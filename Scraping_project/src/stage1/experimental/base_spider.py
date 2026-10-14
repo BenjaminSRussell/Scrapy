@@ -18,7 +18,7 @@ from twisted.internet.error import DNSLookupError, TCPTimedOutError, TimeoutErro
 from src.core.config import get_config
 from src.stage1.content_policy import classify_response, count_skipped
 from src.utils.delta import get_delta
-from src.utils.redis import get_redis, metric_site_id
+from src.utils.redis import get_redis
 from src.stage1.processors.url_processor import URLProcessor, should_follow_url
 from src.items import OffsiteCandidateItem
 from src.stage1.js_detection import JSDetector
@@ -29,12 +29,14 @@ try:
         NEW_URLS_FOUND_PER_MINUTE,
         OFFSITE_LINKS_FOUND,
     )
+    from src.utils.metric_labels import labels_for
 
     PROMETHEUS_AVAILABLE = True
 except ImportError:
     NEW_URLS_FOUND_PER_MINUTE = None
     AVERAGE_FILE_SIZE_BYTES = None
     OFFSITE_LINKS_FOUND = None
+    labels_for = None  # type: ignore[assignment]
     PROMETHEUS_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
@@ -388,8 +390,8 @@ class BaseSpider(scrapy.Spider):
         for url in offsite_urls:
             yield self._create_offsite_item(response, url)
 
-            if PROMETHEUS_AVAILABLE and OFFSITE_LINKS_FOUND:
-                OFFSITE_LINKS_FOUND.labels(spider=self.name).inc()
+            if PROMETHEUS_AVAILABLE and OFFSITE_LINKS_FOUND and labels_for is not None:
+                labels_for(OFFSITE_LINKS_FOUND, spider=self.name).inc()
 
             logger.debug(f"[K3 OFFSITE] External link found (not following): {url[:80]}")
 
@@ -551,11 +553,11 @@ class BaseSpider(scrapy.Spider):
         else:
             avg_file_size = 0
 
-        if NEW_URLS_FOUND_PER_MINUTE:
-            NEW_URLS_FOUND_PER_MINUTE.labels(spider=self.name, site_id=metric_site_id()).set(urls_per_minute)
+        if NEW_URLS_FOUND_PER_MINUTE and labels_for is not None:
+            labels_for(NEW_URLS_FOUND_PER_MINUTE, spider=self.name).set(urls_per_minute)
 
-        if AVERAGE_FILE_SIZE_BYTES:
-            AVERAGE_FILE_SIZE_BYTES.labels(spider=self.name).set(avg_file_size)
+        if AVERAGE_FILE_SIZE_BYTES and labels_for is not None:
+            labels_for(AVERAGE_FILE_SIZE_BYTES, spider=self.name).set(avg_file_size)
 
         self.last_metric_update = current_time
 
