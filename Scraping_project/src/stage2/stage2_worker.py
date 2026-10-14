@@ -170,6 +170,16 @@ try:
 except (ImportError, ValueError):
     STAGE2_OVERSIZED = None
 
+try:  # conditional content reuse (#478); flag default off
+    from prometheus_client import Counter as _CHitCounter
+
+    STAGE2_CACHE_HITS: Any = _CHitCounter(
+        "cache_hit_total",
+        "Stage 2 fetches skipped because the cached body for this url_hash and validator is unchanged (#478).",
+    )
+except Exception:
+    STAGE2_CACHE_HITS = None
+
 DEFAULT_STAGE2_MAX_BODY_BYTES = 20 * 1024 * 1024
 DEFAULT_STAGE4_PDF_MAX_BYTES = 50 * 1024 * 1024  # matches src/stage4/pdf_sandbox.py
 
@@ -776,6 +786,68 @@ class Stage2Worker:
         except Exception as e:
             logger.warning(f"[STAGE2] crawl guard charge failed: {e}")
 
+    def _content_cache_enabled(self) -> bool:
+        """``STAGE2_CONTENT_CACHE_ENABLED`` (#478). Default off: every URL is fetched live."""
+        from src.utils.feature_flags import get_bool
+
+        return get_bool("STAGE2_CONTENT_CACHE_ENABLED", False)
+
+    def _content_cache(self) -> Any | None:
+        """Injected cache, else the process SmartCache. None keeps the live fetch path."""
+        if not self._content_cache_enabled():
+            return None
+        if getattr(self, "_content_cache_failed", False):
+            return None
+        override = getattr(self, "content_cache", None)
+        if override is not None:
+            return override
+        cached = getattr(self, "_content_cache_obj", None)
+        if cached is not None:
+            return cached
+        try:
+            from src.utils.cache import get_cache
+
+            self._content_cache_obj = get_cache()
+        except Exception as exc:
+            self._content_cache_failed = True
+            logger.warning(f"[STAGE2] Content cache unavailable ({exc}); fetching live")
+            return None
+        return self._content_cache_obj
+
+    def _cached_html(self, url_hash: str) -> str | None:
+        """Body when the cache says it is unchanged. Never raises; a miss fetches live."""
+        cache = self._content_cache()
+        if cache is None:
+            return None
+        try:
+            from src.utils.cache import stage2_unchanged_body
+
+            body = stage2_unchanged_body(cache, url_hash)
+        except Exception as exc:
+            self._content_cache_failed = True
+            logger.warning(f"[STAGE2] Content cache read failed ({exc}); fetching live")
+            return None
+        return body if isinstance(body, str) and body else None
+
+    def _store_cached_html(self, url_hash: str, html: str, headers: Any) -> None:
+        """Remember HTML only when ETag or Last-Modified is present. Flag off is a no-op."""
+        cache = self._content_cache()
+        if cache is None or not html:
+            return
+        try:
+            etag = headers.get("ETag") if headers is not None else None
+            last_modified = headers.get("Last-Modified") if headers is not None else None
+            from src.utils.cache import stage2_store_body
+
+            stage2_store_body(cache, url_hash, html, etag, last_modified)
+        except Exception as exc:
+            logger.warning(f"[STAGE2] Content cache write failed ({exc})")
+
+    @staticmethod
+    def _count_cache_hit() -> None:
+        if STAGE2_CACHE_HITS is not None:
+            STAGE2_CACHE_HITS.inc()
+
     async def _analyze_url(self, record: dict[str, Any]) -> dict[str, Any]:
         url_value = record.get("url")
         url_hash_value = record.get("url_hash")
@@ -811,6 +883,11 @@ class Stage2Worker:
                 self._count_fetch("circuit_open")
                 return {"url": url, "url_hash": url_hash, "_deferred": True}
             try:
+                cached_html = self._cached_html(url_hash)
+                if cached_html is not None:
+                    # Stored ETag / Last-Modified still identify this body (#478).
+                    self._count_cache_hit()
+                    return await self._analyze_html(url, url_hash, cached_html, is_heavy)
                 session = self._session
                 owns_session = session is None  # direct callers outside run()
                 if session is None:
@@ -943,6 +1020,7 @@ class Stage2Worker:
             sig = self._detector().detect(response.status, html, response.headers)
             if sig:  # challenge page served as 200: never analysed as content
                 return self._soft_ban_record(url, url_hash, response.status, sig, domain)
+            self._store_cached_html(url_hash, html, response.headers)
             return await self._analyze_html(url, url_hash, html, is_heavy)
 
     def _max_body_bytes(self) -> int:

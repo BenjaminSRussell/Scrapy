@@ -1,4 +1,5 @@
 """Feature-flag helper (#304): defaults, parsing, env > config precedence, call sites."""
+
 from __future__ import annotations
 
 import importlib
@@ -50,8 +51,10 @@ def test_registry_experimental_defaults_off():
     assert ff.FLAGS["ENABLE_EXPERIMENTAL_SPIDERS"][0] is False
     assert ff.FLAGS["ASR_ENABLED"][0] is False
     assert ff.FLAGS["STAGE4_ASR_ENABLED"][0] is False
+    assert ff.FLAGS["STAGE2_CONTENT_CACHE_ENABLED"][0] is False
     snap = ff.snapshot(env={})
     assert snap["ENABLE_EXPERIMENTAL_SPIDERS"] is False
+    assert snap["STAGE2_CONTENT_CACHE_ENABLED"] is False
     assert snap["SSRF_GUARD_ENABLED"] is True and snap["KAFKA_DLQ_ENABLED"] is True
 
 
