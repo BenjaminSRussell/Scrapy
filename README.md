@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🕷️ Web Scraping Pipeline
+# Web Scraping Pipeline
 
 ### *Intelligent, scalable web crawling with real-time monitoring*
 
@@ -9,7 +9,7 @@
 [![Scrapy](https://img.shields.io/badge/scrapy-2.11+-green.svg)](https://scrapy.org/)
 [![License](https://img.shields.io/badge/license-MIT-purple.svg)](LICENSE)
 
-[Quick Start](#-quick-start) • [Canonical docs](Scraping_project/README.md) • [Guides](Scraping_project/docs/guides/README.md)
+[Quick Start](#quick-start) • [Canonical docs](Scraping_project/README.md) • [Guides](Scraping_project/docs/guides/README.md)
 
 </div>
 
@@ -23,7 +23,9 @@ This file is the entry point. The canonical project doc is [Scraping_project/REA
 
 ---
 
-## 🚀 Quick Start
+<a id="-quick-start"></a>
+
+## Quick Start
 
 From a fresh clone the repository directory is `Scrapy`. The first command below is from that directory.
 
@@ -163,7 +165,7 @@ python start.py --reset-delta
 
 ---
 
-## 🔒 Security
+## Security
 
 - Report vulnerabilities **privately**; see [SECURITY.md](SECURITY.md). Don't open a public issue.
 - Keep secrets in `Scraping_project/.env` (git-ignored). The [`.env.example`](Scraping_project/.env.example) template lists every variable.
