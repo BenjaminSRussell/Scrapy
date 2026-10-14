@@ -169,6 +169,8 @@ temp/
 # Node / JavaScript
 # ====================================
 node_modules/
+# Generated Overview smoke shots (#1044). CI uploads dashboard-overview-screenshot.
+Scraping_project/dashboard/visual/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*

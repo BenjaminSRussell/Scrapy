@@ -69,6 +69,19 @@ nginx/Traefik with OAuth2 Proxy, or a Kubernetes ingress with an auth annotation
 - Contributor styleguide: [`styleguide.html`](styleguide.html)
 - Accessibility checklist for PRs: [`A11Y_CHECKLIST.md`](A11Y_CHECKLIST.md)
 
+## Overview screenshot (#1044)
+
+One smoke capture of the Overview tab, for CSS refactors. It is not a pixel-diff
+gate (fonts and Chrome builds differ), and it is not part of `node --test`.
+
+| | |
+|---|---|
+| Artifact name | `dashboard-overview-screenshot` |
+| File inside the artifact | `overview.png` |
+| What it shows | `#tab-overview` (full page, Overview selected) after one frozen metrics sample. Viewport 1280×900, UTC, Chart.js CDN blocked, animations off, auto-refresh paused. The sticky top bar and refresh bar are captured in normal flow so a full-page shot does not pin them to the viewport. |
+| Where it is produced | Optional workflow [`.github/workflows/ci-dashboard-visual.yml`](../../.github/workflows/ci-dashboard-visual.yml): pull requests that touch this directory, or Actions → Run workflow. `continue-on-error: true`, so a capture failure does not fail the dashboard unit tests. The artifact is kept 14 days. It does not run on every push to `main`. |
+| Regenerate locally | `python Scraping_project/dashboard/overview_screenshot.py --channel chrome` (or bundled Chromium after `python -m playwright install chromium`). Default path: `Scraping_project/dashboard/visual/overview.png` (gitignored). Needs `playwright==1.55.0`, already pinned for the JS spider. |
+
 ## Connection state in the tab title (#945)
 
 The browser tab title is prefixed with the live state so a background tab still signals trouble:
