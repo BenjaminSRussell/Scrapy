@@ -16,7 +16,7 @@ The metadata hash and the enqueue-time index are trimmed together with the queue
 URL stays in the `:hashes` claim set, so the same crawl doesn't re-queue it. Clear the queue
 (`JSPriorityQueue.clear()`) to start fresh.
 
-Metrics: `js_priority_queue_size{queue}` and `js_priority_queue_evictions_total{queue,reason="overflow"|"ttl"}`.
+Metrics: `js_priority_queue_size{queue}` (set on enqueue and dequeue), `js_priority_queue_items_total{queue,op="enqueued"|"dequeued"}`, and `js_priority_queue_evictions_total{queue,reason="overflow"|"ttl"}`.
 
 ## Resource blocking (#390)
 
