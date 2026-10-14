@@ -93,6 +93,8 @@ The window is half-open on the local clock. `[22, 7)` is 22:00 through 06:59 and
 
 `STAGE4_ASR_ENABLED` defaults off. When it is on, Stage 4 reads local audio and text fixtures only. It does not download remote media (that stays on the crawl pipeline, `ASR_ENABLED`).
 
+`src/common/async_asr_processor.py` stays. Stage 4 already imports it only behind `STAGE4_ASR_ENABLED`, which stays off. No further call was added (#444).
+
 | Metric | Type | When it moves |
 |---|---|---|
 | `asr_jobs_total` | counter | One transcription attempt that called the speech backend |
