@@ -20,7 +20,23 @@ from src.utils.postgres import PostgresManager
 
 logger = logging.getLogger(__name__)
 
+try:
+    from prometheus_client import Counter
+
+    STAGE3_DOCUMENTS_DEDUPLICATED: Any = Counter(
+        "stage3_documents_deduplicated_total",
+        "Documents skipped by Stage 3 MinHash dedup, including matches from earlier batches (#222).",
+    )
+except Exception:  # prometheus_client missing or metric already registered
+    STAGE3_DOCUMENTS_DEDUPLICATED = None
+
 DEFAULT_SIMILARITY_THRESHOLD = 0.3
+_NUM_PERM = 128
+# Redis HASH: url_hash -> MinHash.hashvalues. No TTL, so volatile-lru will not
+# evict it and a later process can rebuild the LSH (#222).
+_FINGERPRINT_KEY = "stage3:minhash:fingerprints"
+_fingerprint_redis: Any = None
+_fingerprint_redis_warned = False
 # The extractive summary keeps the first N sentences, but text without sentence
 # punctuation would otherwise come back whole as its own "summary" (#223).
 MAX_SUMMARY_CHARS = 1000
@@ -41,6 +57,137 @@ def _similarity_threshold() -> float:
     return value
 
 
+def _note_deduplicated(count: int) -> None:
+    if count > 0 and STAGE3_DOCUMENTS_DEDUPLICATED is not None:
+        STAGE3_DOCUMENTS_DEDUPLICATED.inc(count)
+
+
+def _minhash_for_text(text: str) -> MinHash:
+    sketch = MinHash(num_perm=_NUM_PERM)
+    for word in text.lower().split()[:1000]:
+        sketch.update(word.encode("utf-8"))
+    return sketch
+
+
+def _encode_hashvalues(sketch: MinHash) -> str:
+    return ",".join(str(int(value)) for value in sketch.hashvalues)
+
+
+def _minhash_from_payload(payload: Any) -> MinHash:
+    if isinstance(payload, bytes):
+        payload = payload.decode("utf-8")
+    values = [int(part) for part in str(payload).split(",") if part]
+    if len(values) != _NUM_PERM:
+        raise ValueError(f"expected {_NUM_PERM} hash values, got {len(values)}")
+    return MinHash(num_perm=_NUM_PERM, hashvalues=values)
+
+
+def _as_key(value: Any) -> str:
+    if isinstance(value, bytes):
+        return value.decode("utf-8")
+    return str(value)
+
+
+def _fingerprint_redis_client() -> Any:
+    """Short-timeout Redis client, or None when Redis is down.
+
+    Not the shared RedisHelper: that helper waits 5s and then keeps the dead
+    client, which would stall every Stage 3 batch on a machine without Redis.
+    """
+    global _fingerprint_redis, _fingerprint_redis_warned
+    if _fingerprint_redis is not None:
+        try:
+            _fingerprint_redis.ping()
+            return _fingerprint_redis
+        except Exception:
+            _fingerprint_redis = None
+    try:
+        import socket
+
+        import redis
+
+        from src.utils.redis_env import redis_settings
+
+        env = redis_settings()
+        # redis-py retries a refused connection for several seconds. Probe first
+        # so a worker on a machine without Redis does not stall the batch.
+        with socket.create_connection((env.host, int(env.port)), timeout=0.25):
+            pass
+        client = redis.Redis(
+            host=env.host,
+            port=env.port,
+            db=env.db,
+            password=env.password or None,
+            decode_responses=True,
+            socket_connect_timeout=0.25,
+            socket_timeout=0.5,
+        )
+        client.ping()
+    except Exception as exc:
+        if not _fingerprint_redis_warned:
+            logger.warning("Stage 3 MinHash store is in-memory only (Redis unavailable): %s", exc)
+            _fingerprint_redis_warned = True
+        else:
+            logger.debug("Stage 3 MinHash Redis still unavailable: %s", exc)
+        return None
+    _fingerprint_redis = client
+    _fingerprint_redis_warned = False
+    return client
+
+
+class FingerprintStore:
+    """MinHash LSH plus an optional Redis hash (#222).
+
+    The LSH lives for the worker process, so a later batch sees earlier
+    fingerprints even when Redis is down. Redis is what makes them survive a
+    new process.
+    """
+
+    def __init__(self, threshold: float, redis_client: Any = None) -> None:
+        self._lsh = MinHashLSH(threshold=threshold, num_perm=_NUM_PERM)
+        self._redis = redis_client
+        self._load()
+
+    def is_similar(self, sketch: MinHash) -> bool:
+        return bool(self._lsh.query(sketch))
+
+    def add(self, key: Any, sketch: MinHash) -> bool:
+        """Insert ``key``. False when that key is already stored."""
+        try:
+            self._lsh.insert(key, sketch)
+        except ValueError:
+            return False
+        self._persist(key, sketch)
+        return True
+
+    def _load(self) -> None:
+        if self._redis is None:
+            return
+        try:
+            raw = self._redis.hgetall(_FINGERPRINT_KEY) or {}
+        except Exception as exc:
+            logger.warning("Stage 3 fingerprint load failed (%s); dedup is in-memory for this process", exc)
+            self._redis = None
+            return
+        bad = 0
+        for key, payload in raw.items():
+            try:
+                self._lsh.insert(_as_key(key), _minhash_from_payload(payload))
+            except (ValueError, TypeError):
+                bad += 1
+        if bad:
+            logger.warning("Stage 3 ignored %d unreadable MinHash fingerprints in Redis", bad)
+
+    def _persist(self, key: Any, sketch: MinHash) -> None:
+        if self._redis is None or not isinstance(key, str) or not key:
+            return
+        try:
+            self._redis.hset(_FINGERPRINT_KEY, mapping={key: _encode_hashvalues(sketch)})
+        except Exception as exc:
+            logger.warning("Stage 3 fingerprint persist failed for %s: %s", key, exc)
+            self._redis = None
+
+
 class Stage3Worker:
 
     def __init__(self, max_concurrent: int = 20, batch_size: int = 50):
@@ -51,6 +198,7 @@ class Stage3Worker:
         self.delta = get_delta()
         self.postgres = PostgresManager.get_instance()
         self.SIMILARITY_THRESHOLD = _similarity_threshold()
+        self._fingerprints: FingerprintStore | None = None
 
     def _processed_hashes(self) -> set:
         """url_hashes Stage 3 has already summarized (#316/#612).
@@ -147,42 +295,46 @@ class Stage3Worker:
         logger.info("Stage 3 Worker completed all batches")
         return written
 
+    def _fingerprint_store(self) -> FingerprintStore:
+        # __new__ test doubles never run Stage3Worker.__init__.
+        # getattr is Any; annotate so mypy's warn_return_any stays clean.
+        store: FingerprintStore | None = getattr(self, "_fingerprints", None)
+        if store is None:
+            store = FingerprintStore(self.SIMILARITY_THRESHOLD, redis_client=_fingerprint_redis_client())
+            self._fingerprints = store
+        return store
+
     async def _deduplicate_documents(self, documents: list[dict[str, Any]]) -> list[dict[str, Any]]:
         logger.info(f"Running similarity detection on {len(documents)} documents")
 
-        lsh = MinHashLSH(threshold=self.SIMILARITY_THRESHOLD, num_perm=128)
-
+        store = self._fingerprint_store()
         unique_docs = []
         seen_similar = set()
+        skipped = 0
 
         for doc in documents:
             url_hash = doc.get("url_hash")
             text = doc.get("text_content", "")
 
-            if not text or url_hash in seen_similar:
+            if not text:
+                continue
+            if url_hash in seen_similar:
+                skipped += 1
                 continue
 
-            minhash = MinHash(num_perm=128)
-
-            words = text.lower().split()
-            for word in words[:1000]:
-                minhash.update(word.encode("utf-8"))
-
-            similar = lsh.query(minhash)
-
-            if similar or url_hash in seen_similar:
+            minhash = _minhash_for_text(text)
+            # First copy wins. The store already holds fingerprints from earlier
+            # batches and, when Redis is up, from previous processes (#222).
+            if store.is_similar(minhash) or not store.add(url_hash, minhash):
                 logger.debug(f"Skipping duplicate: {doc.get('url', '')[:80]}")
                 seen_similar.add(url_hash)
+                skipped += 1
                 continue
 
-            try:
-                lsh.insert(url_hash, minhash)
-                seen_similar.add(url_hash)
-                unique_docs.append(doc)
-            except ValueError:
-                logger.debug(f"Key already exists in LSH: {doc.get('url', '')[:80]}")
-                continue
+            seen_similar.add(url_hash)
+            unique_docs.append(doc)
 
+        _note_deduplicated(skipped)
         logger.info(f"Deduplication: {len(unique_docs)} unique out of {len(documents)}")
         return unique_docs
 

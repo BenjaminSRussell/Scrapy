@@ -11,13 +11,14 @@ from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
+from prometheus_client import REGISTRY
 
 from src.core.constants import (
     LEGACY_TABLE_STAGE3_SUMMARIES,
     SUMMARY_LIMITS,
     TABLE_STAGE3_SUMMARIES,
 )
-from src.stage3.stage3_worker import Stage3Worker
+from src.stage3.stage3_worker import FingerprintStore, Stage3Worker, _FINGERPRINT_KEY
 from src.utils import graceful_shutdown as gs
 
 pytestmark = [pytest.mark.unit, pytest.mark.stage3]
@@ -58,6 +59,9 @@ def worker(monkeypatch):
     w = Stage3Worker(max_concurrent=2, batch_size=2)
     w.delta = FakeDelta()
     w.postgres = MagicMock(name="postgres")
+    # Private index: a developer Redis must not change within-batch results,
+    # and must not keep fingerprints written by an earlier test.
+    w._fingerprints = FingerprintStore(w.SIMILARITY_THRESHOLD, redis_client=None)
     monkeypatch.setattr("src.stage3.stage3_worker.init_tracing", lambda **k: None)
     monkeypatch.setattr("src.stage3.stage3_worker.ensure_crawl_job_id", lambda: "job-test")
     # start_span is a context manager; a no-op MagicMock works.
@@ -229,6 +233,61 @@ def test_real_shutdown_flag_stops_the_run_after_one_batch(worker):
     worker.delta.tables["stage2_page_analysis"] = [_doc(f"https://{i}/", _TEXTS[i]) for i in range(4)]
     worker.delta.tables[TABLE_STAGE3_SUMMARIES] = []
     assert asyncio.run(worker.run()) == 2
+
+
+def _dedup_total() -> float:
+    return float(REGISTRY.get_sample_value("stage3_documents_deduplicated_total") or 0.0)
+
+
+def test_later_batch_skips_duplicate_and_metric_accumulates(worker):
+    """Two batches: a near-dup in batch 2 is not summarized, and the counter keeps both skips (#222)."""
+    text = "research lab findings " * 40
+    other = "completely different content about sports " * 40
+    worker.batch_size = 2
+    worker.delta.tables["stage2_page_analysis"] = [
+        _doc("https://a/", text, url_hash="a"),
+        _doc("https://a2/", text, url_hash="a2"),  # same batch as a
+        _doc("https://b/", text, url_hash="b"),  # later batch, same text
+        _doc("https://c/", other, url_hash="c"),
+    ]
+    worker.delta.tables[TABLE_STAGE3_SUMMARIES] = []
+    before = _dedup_total()
+    written = asyncio.run(worker.run())
+    urls = [row["url"] for row in worker.delta.tables[TABLE_STAGE3_SUMMARIES]]
+    assert written == 2
+    assert urls == ["https://a/", "https://c/"]
+    # One skip in each batch. A per-batch gauge would end at 1; the counter is 2.
+    assert _dedup_total() == before + 2
+
+
+def test_fingerprint_survives_a_new_worker():
+    fakeredis = pytest.importorskip("fakeredis")
+    client = fakeredis.FakeRedis(decode_responses=True)
+    text = "research lab findings " * 40
+    other = "completely different content about sports " * 40
+
+    def make() -> Stage3Worker:
+        w = Stage3Worker(max_concurrent=1, batch_size=10)
+        w._fingerprints = FingerprintStore(w.SIMILARITY_THRESHOLD, redis_client=client)
+        return w
+
+    first = make()
+    kept = asyncio.run(first._deduplicate_documents([_doc("https://a/", text, url_hash="a")]))
+    assert [doc["url_hash"] for doc in kept] == ["a"]
+    assert client.hget(_FINGERPRINT_KEY, "a")
+
+    second = make()
+    before = _dedup_total()
+    again = asyncio.run(
+        second._deduplicate_documents(
+            [
+                _doc("https://b/", text, url_hash="b"),
+                _doc("https://c/", other, url_hash="c"),
+            ]
+        )
+    )
+    assert [doc["url_hash"] for doc in again] == ["c"]
+    assert _dedup_total() == before + 1
 
 
 def test_fallback_summary_truncates(worker):
