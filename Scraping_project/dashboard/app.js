@@ -13,6 +13,7 @@ const STORE_INTERVAL_KEY = 'cc.refreshInterval'; // #1015
 const STORE_DANGER_SOUND_KEY = 'cc.dangerSound'; // #1037
 let dangerSoundEnabled = false;
 let dangerAudioCtx = null;
+const STORE_COMPARE_KEY = 'cc.comparePrevHour'; // #1035
 let refreshPaused = false;
 let metricsFetcher = null;
 let metricsWasDown = false;
@@ -25,6 +26,8 @@ let chartsHaveSample = false;
 
 let refreshScheduler = null;
 let charts = {};
+let comparisonEnabled = false; // #1035
+let latestMetrics = {};
 let historicalData = {
     timestamps: [],
     urls: [],
@@ -448,6 +451,7 @@ function detectSignificantChanges(metrics) {
 }
 
 function updateHistoricalData(metrics) {
+    latestMetrics = metrics || {};
     const now = new Date();
     const timeLabel = now.toLocaleTimeString();
 
@@ -506,8 +510,80 @@ function updatePerformanceCharts() {
         charts.throughput.data.datasets[1].data = pagesRate;
         charts.throughput.update('none');
     }
+    applyComparisonBaselines();
     syncAllChartTables();
     updateOverviewSparklines();
+}
+
+// Line charts that can carry a previous-hour overlay (#1035). Bars and the
+// routing doughnut are snapshots, not time series, so they are left alone.
+const COMPARISON_CHARTS = {
+    urls: ['urls'],
+    pages: ['pages'],
+    summaries: ['summaries'],
+    throughput: ['urlsRate', 'pagesRate'],
+};
+
+function livePointCount(chart, live, index) {
+    const ds = live[index];
+    if (ds && Array.isArray(ds.data)) return ds.data.length;
+    if (index === 0 && chart.data && Array.isArray(chart.data.labels)) return chart.data.labels.length;
+    return 0;
+}
+
+function applyComparisonBaselines() {
+    let placeholderCount = 0;
+    let realCount = 0;
+    for (const [chartKey, seriesKeys] of Object.entries(COMPARISON_CHARTS)) {
+        const chart = charts[chartKey];
+        if (!chart || !chart.data || !chart.data.datasets) continue;
+        const live = chart.data.datasets.filter(ds => ds.ccBaseline !== COMPARISON_BASELINE_ROLE);
+        if (!comparisonEnabled) {
+            if (live.length !== chart.data.datasets.length) {
+                chart.data.datasets = live;
+                try { chart.update('none'); } catch (_) {}
+            }
+            continue;
+        }
+        const next = live.slice();
+        seriesKeys.forEach((seriesKey, i) => {
+            const series = comparisonBaselineSeries(
+                livePointCount(chart, live, i),
+                readPrevHourAverage(latestMetrics, seriesKey)
+            );
+            if (series.placeholder) placeholderCount += 1;
+            else realCount += 1;
+            next.push(series);
+        });
+        chart.data.datasets = next;
+        try { chart.update('none'); } catch (_) {}
+    }
+    const note = document.getElementById('comparison-baseline-note');
+    if (!note) return;
+    const text = comparisonNote(comparisonEnabled, placeholderCount, realCount);
+    if (!text) {
+        note.textContent = '';
+        note.hidden = true;
+        return;
+    }
+    if (note.hidden) note.hidden = false;
+    if (note.textContent !== text) note.textContent = text;
+}
+
+function setComparisonMode(on, persist) {
+    comparisonEnabled = !!on;
+    const btn = document.getElementById('compare-prev-hour');
+    if (btn) btn.setAttribute('aria-pressed', comparisonEnabled ? 'true' : 'false');
+    if (persist) storeSet(STORE_COMPARE_KEY, comparisonEnabled ? '1' : '0');
+    applyComparisonBaselines();
+    if (typeof syncAllChartTables === 'function') syncAllChartTables();
+}
+
+function setupComparisonToggle() {
+    const btn = document.getElementById('compare-prev-hour');
+    if (!btn) return;
+    btn.addEventListener('click', () => setComparisonMode(!comparisonEnabled, true));
+    if (storeGet(STORE_COMPARE_KEY) === '1') setComparisonMode(true, false);
 }
 
 // Highlight the Pipeline-tab stage cards that processed work in the last
@@ -1004,6 +1080,7 @@ function resetChartHistory() {
         (ch.data.datasets || []).forEach(ds => { ds.data = []; });
         try { ch.update('none'); } catch (_) {}
     });
+    applyComparisonBaselines();
     syncAllChartTables?.();
     document.querySelectorAll('[id^="spark-dir-"]').forEach(el => {
         el.textContent = 'Trend: waiting for samples';
@@ -1536,6 +1613,7 @@ function initialize() {
     markLoading();
     initializeCharts();
     ensureChartPlaceholders();
+    setupComparisonToggle();
     refreshScheduler = createRefreshScheduler({ interval: REFRESH_INTERVAL, fetch: fetchAndAnnounce });
     setupIntervalControl();
     setupVisibilityPause();

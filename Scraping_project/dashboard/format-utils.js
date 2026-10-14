@@ -158,6 +158,63 @@
         }
         return { position: 'bottom', labels: { boxWidth: 10, padding: 6, font: { size: 11 } } };
     }
+    // Comparison mode (#1035). The metrics feed does not publish previous-hour
+    // averages yet. A missing or non-finite gauge stays a dashed placeholder
+    // (flat zero); a finite gauge replaces that series with a horizontal line.
+    const COMPARISON_BASELINE_ROLE = 'prev-hour';
+    const PREV_HOUR_AVG_KEYS = {
+        urls: 'stage1_urls_discovered_prev_hour_avg',
+        pages: 'stage2_pages_analyzed_prev_hour_avg',
+        summaries: 'stage3_summaries_created_prev_hour_avg',
+        urlsRate: 'stage1_urls_per_min_prev_hour_avg',
+        pagesRate: 'stage2_pages_per_min_prev_hour_avg',
+    };
+    function finiteNumberOrNull(value) {
+        if (value == null || value === '') return null;
+        const n = Number(value);
+        return Number.isFinite(n) ? n : null;
+    }
+    function readPrevHourAverage(metrics, seriesKey) {
+        const name = PREV_HOUR_AVG_KEYS[seriesKey];
+        if (!name) return null;
+        return finiteNumberOrNull(metrics && metrics[name]);
+    }
+    function comparisonBaselineSeries(pointCount, average) {
+        const n = Math.max(0, Math.floor(Number(pointCount) || 0));
+        const value = finiteNumberOrNull(average);
+        const placeholder = value === null;
+        const data = [];
+        for (let i = 0; i < n; i++) data.push(placeholder ? 0 : value);
+        return {
+            ccBaseline: COMPARISON_BASELINE_ROLE,
+            label: placeholder ? 'Previous hour (placeholder)' : 'Previous hour avg',
+            data: data,
+            placeholder: placeholder,
+            borderDash: [6, 4],
+            borderWidth: 2,
+            pointRadius: 0,
+            pointHoverRadius: 0,
+            fill: false,
+            tension: 0,
+            borderColor: '#475569',
+            backgroundColor: 'transparent',
+        };
+    }
+    function comparisonNote(enabled, placeholderCount, realCount) {
+        if (!enabled) return '';
+        const placeholders = Number(placeholderCount) || 0;
+        const reals = Number(realCount) || 0;
+        if (reals > 0 && placeholders === 0) {
+            return 'Comparison on. Dashed lines are the previous hour average.';
+        }
+        if (reals > 0 && placeholders > 0) {
+            return 'Comparison on. Dashed lines use previous-hour averages where the metrics feed provides them; other series stay on the placeholder baseline.';
+        }
+        if (placeholders === 0) {
+            return 'Comparison on. Placeholder baseline is ready and will overlay the line charts when they are available.';
+        }
+        return 'Comparison on. Showing a dashed placeholder baseline until previous-hour averages are in the metrics feed.';
+    }
     // Single refresh scheduler (#986). Owns the only fetch timer and records
     // when the next fetch will start, so the visible countdown is derived from
     // `nextFetchAt` instead of a second, independently ticking counter that
@@ -720,5 +777,5 @@
             : `Metrics poll history, last ${n} outcomes. ${caption}. Oldest on the left.`;
         return { slots, ok: okCount, fail: failCount, total: windowed.length, limit: n, label, caption };
     }
-    return { tabKeyTarget, staleState, queueDepthRows, metricsFailureActivity, shortcutHintText, parseMetrics, ratePerMinute, resolveMetricsUrl, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler, stageActivity, stageDrilldown, stageDrilldownKey, doughnutLegendLayout, connectionState, documentTitle, createActivityAnnouncer, metricsUrlProblem, splitLinks, createMetricsFetcher, REFRESH_INTERVAL_CHOICES, parseRefreshInterval, shortcutAction, pickInitialTab, METRIC_UI_MAP, renderMetricNameMap, parseDangerSoundEnabled, dangerSoundDecision, HEALTH_HISTORY_LIMIT, pushPollOutcome, healthHistoryView };
+    return { tabKeyTarget, staleState, queueDepthRows, metricsFailureActivity, shortcutHintText, parseMetrics, ratePerMinute, resolveMetricsUrl, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler, stageActivity, stageDrilldown, stageDrilldownKey, doughnutLegendLayout, connectionState, documentTitle, createActivityAnnouncer, metricsUrlProblem, splitLinks, createMetricsFetcher, REFRESH_INTERVAL_CHOICES, parseRefreshInterval, shortcutAction, pickInitialTab, METRIC_UI_MAP, renderMetricNameMap, parseDangerSoundEnabled, dangerSoundDecision, HEALTH_HISTORY_LIMIT, pushPollOutcome, healthHistoryView, COMPARISON_BASELINE_ROLE, PREV_HOUR_AVG_KEYS, readPrevHourAverage, comparisonBaselineSeries, comparisonNote };
 });
