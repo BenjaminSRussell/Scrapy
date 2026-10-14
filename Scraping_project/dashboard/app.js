@@ -54,6 +54,13 @@ function formatHistoryLabel(d = new Date()) {
 // optional: degrade to a visible notice and keep the numeric metrics live.
 let chartsUnavailable = false;
 
+// #1006: t() when the catalog loaded; otherwise the English shipped in the page
+// (file:// and a failed fetch must not replace labels with key names).
+function i18n(key, fallback, vars) {
+    if (typeof t !== 'function' || (typeof hasCatalog === 'function' && !hasCatalog())) return fallback;
+    return t(key, vars);
+}
+
 function showChartsUnavailable() {
     chartsUnavailable = true;
     document.querySelectorAll('.chart-container').forEach(el => {
@@ -61,7 +68,7 @@ function showChartsUnavailable() {
         if (!el.querySelector('.chart-unavailable-note')) {
             const note = document.createElement('div');
             note.className = 'chart-unavailable-note';
-            note.textContent = 'Chart unavailable';
+            note.textContent = i18n('errors.chartUnavailable', 'Chart unavailable');
             el.appendChild(note);
         }
     });
@@ -70,7 +77,10 @@ function showChartsUnavailable() {
     banner.id = 'charts-unavailable';
     banner.className = 'charts-unavailable-banner';
     banner.setAttribute('role', 'status');
-    banner.textContent = 'Charts unavailable: Chart.js could not be loaded (offline or CDN blocked). Numeric metrics still update.';
+    banner.textContent = i18n(
+        'errors.chartsUnavailable',
+        'Charts unavailable: Chart.js could not be loaded (offline or CDN blocked). Numeric metrics still update.'
+    );
     const host = document.getElementById('main') || document.querySelector('.container') || document.body;
     host.insertBefore(banner, host.firstChild);
 }
@@ -1132,7 +1142,7 @@ function markLoading() {
         el.setAttribute('aria-busy', 'true');
     });
     const top = document.getElementById('topbar-status');
-    if (top) top.textContent = 'Loading…';
+    if (top) top.textContent = i18n('topbar.loading', 'Loading\u2026');
 }
 function finishLoading(failed) {
     document.querySelectorAll('.is-loading').forEach(el => {
@@ -1149,7 +1159,7 @@ function showFetchError(message) {
     const text = document.getElementById('fetch-error-text');
     // Unhide before writing so role=alert announces the new text.
     if (banner && banner.hidden) banner.hidden = false;
-    if (text) text.textContent = `Could not load metrics: ${message}`;
+    if (text) text.textContent = i18n('errors.fetchDetail', 'Could not load metrics: ' + message, { message: message });
 }
 function hideFetchError() {
     const banner = document.getElementById('fetch-error-banner');
@@ -1315,8 +1325,24 @@ function initialize() {
     console.log('Dashboard ready!');
 }
 
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initialize);
-} else {
+// #1006: load strings/en.json before initialize so tab labels and the error
+// banner go through t(). A failed fetch keeps the English already in the page.
+function startDashboard() {
+    if (typeof hasCatalog === 'function' && hasCatalog() && typeof applyI18n === 'function') applyI18n();
     initialize();
 }
+function bootDashboard() {
+    const start = () => {
+        if (typeof loadCatalog !== 'function') {
+            startDashboard();
+            return;
+        }
+        loadCatalog('strings/en.json', 'en').then(startDashboard, (err) => {
+            console.warn('String catalog failed to load', err);
+            startDashboard();
+        });
+    };
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
+    else start();
+}
+bootDashboard();

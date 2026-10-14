@@ -851,27 +851,27 @@
 
     <header class="topbar">
         <div class="topbar-content">
-            <div class="topbar-title" title="Pipeline Control Center">
+            <div class="topbar-title" title="Pipeline Control Center" data-i18n="topbar.title" data-i18n-attr="title">
                 <h1>
-                    <span class="title-full">🕷️ Pipeline Control Center</span>
-                    <span class="title-short">Control Center</span>
+                    <span class="title-full"><span aria-hidden="true">🕷️</span> <span data-i18n="topbar.title">Pipeline Control Center</span></span>
+                    <span class="title-short" data-i18n="topbar.titleShort">Control Center</span>
                     <span id="env-badge" class="env-badge env-local" title="Runtime environment">local</span>
                 </h1>
-                <p class="title-full">UConn Web Scraping Pipeline - Real-time Operations Dashboard</p>
-                <p class="title-short visually-hidden">Pipeline Control Center</p>
+                <p class="title-full" data-i18n="topbar.subtitle">UConn Web Scraping Pipeline - Real-time Operations Dashboard</p>
+                <p class="title-short visually-hidden" data-i18n="topbar.title">Pipeline Control Center</p>
             </div>
             <div class="topbar-stats">
                 <div class="topbar-stat">
-                    <div class="topbar-stat-label">Status</div>
-                    <div class="topbar-stat-value" id="topbar-status">Loading…</div>
-                    <span id="topbar-stale" class="stale-badge" hidden>Stale data</span>
+                    <div class="topbar-stat-label" data-i18n="topbar.status">Status</div>
+                    <div class="topbar-stat-value" data-i18n="topbar.loading" id="topbar-status">Loading…</div>
+                    <span id="topbar-stale" class="stale-badge" data-i18n="topbar.stale" hidden>Stale data</span>
                 </div>
                 <div class="topbar-stat">
-                    <div class="topbar-stat-label">Total URLs</div>
+                    <div class="topbar-stat-label" data-i18n="topbar.urls">Total URLs</div>
                     <div class="topbar-stat-value" id="topbar-urls">0</div>
                 </div>
                 <div class="topbar-stat">
-                    <div class="topbar-stat-label">Summaries</div>
+                    <div class="topbar-stat-label" data-i18n="topbar.summaries">Summaries</div>
                     <div class="topbar-stat-value" id="topbar-summaries">0</div>
                 </div>
             </div>
@@ -880,16 +880,16 @@
 
     <main class="container" id="main">
         <div id="fetch-error-banner" class="fetch-error-banner" role="alert" hidden>
-            <span id="fetch-error-text">Could not load metrics.</span>
-            <button type="button" id="retry-fetch" class="btn" aria-label="Retry loading metrics now">Retry</button>
+            <span id="fetch-error-text" data-i18n="errors.fetch">Could not load metrics.</span>
+            <button type="button" id="retry-fetch" class="btn" aria-label="Retry loading metrics now" data-i18n="errors.retry" data-i18n-aria="errors.retryAria">Retry</button>
         </div>
         <div class="tabs">
-            <nav class="tab-buttons-wrap" aria-label="Dashboard sections"><div class="tab-buttons" role="tablist" aria-label="Dashboard sections">
-                <button type="button" class="tab-button active" data-tab="overview" role="tab" id="tabbtn-overview" aria-controls="tab-overview" aria-selected="true" tabindex="0"><span aria-hidden="true">📊</span> Overview</button>
-                <button type="button" class="tab-button" data-tab="pipeline" role="tab" id="tabbtn-pipeline" aria-controls="tab-pipeline" aria-selected="false" tabindex="-1"><span aria-hidden="true">🔄</span> Pipeline Stages</button>
-                <button type="button" class="tab-button" data-tab="performance" role="tab" id="tabbtn-performance" aria-controls="tab-performance" aria-selected="false" tabindex="-1"><span aria-hidden="true">📈</span> Performance</button>
-                <button type="button" class="tab-button" data-tab="system" role="tab" id="tabbtn-system" aria-controls="tab-system" aria-selected="false" tabindex="-1"><span aria-hidden="true">⚙️</span> System Health</button>
-                <button type="button" class="tab-button" data-tab="activity" role="tab" id="tabbtn-activity" aria-controls="tab-activity" aria-selected="false" tabindex="-1"><span aria-hidden="true">📋</span> Activity Log</button>
+            <nav class="tab-buttons-wrap" aria-label="Dashboard sections"><div class="tab-buttons" role="tablist" aria-label="Dashboard sections" data-i18n="tabs.nav" data-i18n-attr="aria-label">
+                <button type="button" class="tab-button active" data-tab="overview" role="tab" id="tabbtn-overview" aria-controls="tab-overview" aria-selected="true" tabindex="0" data-i18n="tabs.overview"><span aria-hidden="true">📊</span> Overview</button>
+                <button type="button" class="tab-button" data-tab="pipeline" role="tab" id="tabbtn-pipeline" aria-controls="tab-pipeline" aria-selected="false" tabindex="-1" data-i18n="tabs.pipeline"><span aria-hidden="true">🔄</span> Pipeline Stages</button>
+                <button type="button" class="tab-button" data-tab="performance" role="tab" id="tabbtn-performance" aria-controls="tab-performance" aria-selected="false" tabindex="-1" data-i18n="tabs.performance"><span aria-hidden="true">📈</span> Performance</button>
+                <button type="button" class="tab-button" data-tab="system" role="tab" id="tabbtn-system" aria-controls="tab-system" aria-selected="false" tabindex="-1" data-i18n="tabs.system"><span aria-hidden="true">⚙️</span> System Health</button>
+                <button type="button" class="tab-button" data-tab="activity" role="tab" id="tabbtn-activity" aria-controls="tab-activity" aria-selected="false" tabindex="-1" data-i18n="tabs.activity"><span aria-hidden="true">📋</span> Activity Log</button>
             </div></nav>
             <p class="shortcut-hint" id="shortcut-hint">Shortcuts: 1–5 switch tabs · R refresh</p>
 
@@ -1367,6 +1367,7 @@
     </main>
 
     <script src="features.js"></script>
+    <script src="i18n.js"></script>
     <script src="format-utils.js"></script>
     <script src="version.js"></script>
     <script src="app.js"></script>

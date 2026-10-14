@@ -81,6 +81,17 @@ The browser tab title is prefixed with the live state so a background tab still 
 
 The topbar status is derived from the same state (`connectionState()` in `format-utils.js`).
 
+## Strings (#1006)
+
+Visible topbar chrome, tab labels, and the metrics error banner come from
+`strings/en.json` via `t(key)` in `i18n.js`. `{name}` placeholders are filled
+from the second argument (`t('errors.fetchDetail', { message })`). The page
+fetches the catalog before `initialize()`. A missing key renders as the key
+name when the runtime env is not production (`local` by default), and as an
+empty string when `__CC_ENV__` / `__CC_FEATURES__.env` matches `prod`. Add
+new copy to `strings/en.json` instead of hardcoding it in HTML or `app.js`.
+English stays the only shipped locale.
+
 ## Threat model notes (#1046)
 
 **Activity log XSS.** Activity messages may contain text derived from metrics,
