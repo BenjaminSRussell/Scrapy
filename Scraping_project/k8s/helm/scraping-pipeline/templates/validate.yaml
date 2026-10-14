@@ -1,5 +1,5 @@
 {{- /*
-Render-time guardrails (#176, #233, #451). Renders no objects.
+Render-time guardrails (#176, #233, #451, #190). Renders no objects.
 - configErrors fail in every profile (the chart could not work).
 - guardrailProblems fail only with profile: production; otherwise NOTES.txt
   prints them as warnings after install/upgrade.

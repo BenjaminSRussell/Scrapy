@@ -13,3 +13,7 @@ WARNING: not production-safe (fine for local clusters; profile=production would 
   - {{ . }}
 {{- end }}
 {{- end }}
+{{- if .Values.networkPolicy.breakGlass }}
+
+WARNING: networkPolicy.breakGlass is on (#190). No NetworkPolicies are rendered, so Redis, Kafka and Postgres accept traffic from any pod. Turn breakGlass off when debugging is done. kubectl port-forward does not need it.
+{{- end }}

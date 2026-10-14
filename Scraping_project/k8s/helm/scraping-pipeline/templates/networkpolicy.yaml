@@ -1,4 +1,4 @@
-{{- if .Values.networkPolicy.enabled }}
+{{- if and .Values.networkPolicy.enabled (not .Values.networkPolicy.breakGlass) }}
 {{- $fullname := include "scraping-pipeline.fullname" . }}
 {{- $metricsStart := int .Values.scrapyApp.service.ports.metricsStart }}
 {{- $metricsEnd := int (add (int .Values.scrapyApp.service.ports.metricsEnd) 1) }}  {{- /* int64 -> int for untilStep (#789) */}}
@@ -36,6 +36,8 @@ spec:
           k8s-app: kube-dns
     ports:
     - protocol: UDP
+      port: 53
+    - protocol: TCP
       port: 53
 ---
 apiVersion: networking.k8s.io/v1
@@ -249,8 +251,10 @@ spec:
           - stage2
           - stage3
           - stage4  # #504
+          - delta-ingestor  # ScrapyMetrics connects before Kafka consume (#190)
           - metrics-exporter
           - redis-exporter
+          - grafana  # redis datasource (#190)
     ports:
     - protocol: TCP
       port: {{ .Values.redis.service.port }}
@@ -280,6 +284,7 @@ spec:
           - stage4  # #504
           - metrics-exporter
           - grafana
+          - postgres-exporter  # #190
     ports:
     - protocol: TCP
       port: {{ .Values.postgresql.service.port }}
@@ -310,6 +315,7 @@ spec:
           - stage3
           - stage4  # #504
           - kafka-topics
+          - kafka-jmx-exporter  # #190
     ports:
     - protocol: TCP
       port: {{ .Values.kafka.service.internal }}
@@ -336,6 +342,13 @@ spec:
     ports:
     - protocol: TCP
       port: {{ .Values.zookeeper.service.port }}
+  - to:  # broker-to-broker on the internal listener (prod RF>1, #190)
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/component: kafka
+    ports:
+    - protocol: TCP
+      port: {{ .Values.kafka.service.internal }}
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -378,4 +391,216 @@ spec:
     ports:
     - protocol: TCP
       port: {{ .Values.alertmanager.service.port }}
+---
+# Public crawl only. Private and link-local CIDRs stay closed so this cannot
+# reach Redis/Kafka/Postgres or cloud metadata (#190).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $fullname }}-scrape-egress
+  labels:
+    {{- include "scraping-pipeline.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchExpressions:
+    - key: app.kubernetes.io/component
+      operator: In
+      values:
+      - scrapy
+      - stage2
+      - stage3
+      - stage4  # #504
+  policyTypes:
+  - Egress
+  egress:
+  - to:
+    - ipBlock:
+        cidr: 0.0.0.0/0
+        except:
+{{- range .Values.networkPolicy.scrapeExcept }}
+        - {{ . }}
+{{- end }}
+    ports:
+    - protocol: TCP
+      port: 80
+    - protocol: TCP
+      port: 443
+---
+# Grafana preinstalls redis-datasource (GF_PLUGINS_PREINSTALL on the stock
+# grafana/grafana image; the plugin is not baked in). HTTPS only, with the
+# same scrapeExcept CIDRs as public crawl egress. Not the whole internet.
+# Alertmanager external receivers stay closed (#190).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $fullname }}-grafana-plugin-egress
+  labels:
+    {{- include "scraping-pipeline.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: grafana
+  policyTypes:
+  - Egress
+  egress:
+  - to:
+    - ipBlock:
+        cidr: 0.0.0.0/0
+        except:
+{{- range .Values.networkPolicy.scrapeExcept }}
+        - {{ . }}
+{{- end }}
+    ports:
+    - protocol: TCP
+      port: 443
+---
+# Exporters dial the store they scrape; default-deny would drop that path (#190).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $fullname }}-exporter-egress
+  labels:
+    {{- include "scraping-pipeline.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchExpressions:
+    - key: app.kubernetes.io/component
+      operator: In
+      values:
+      - redis-exporter
+      - postgres-exporter
+      - kafka-jmx-exporter
+  policyTypes:
+  - Egress
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/component: redis
+    ports:
+    - protocol: TCP
+      port: {{ .Values.redis.service.port }}
+  - to:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/component: postgres
+    ports:
+    - protocol: TCP
+      port: {{ .Values.postgresql.service.port }}
+  - to:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/component: kafka
+    ports:
+    - protocol: TCP
+      port: {{ .Values.kafka.service.jmx }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $fullname }}-statsd-ingress
+  labels:
+    {{- include "scraping-pipeline.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: statsd-exporter
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector:
+        matchExpressions:
+        - key: app.kubernetes.io/component
+          operator: In
+          values:
+          - scrapy
+          - stage2
+          - stage3
+          - stage4  # #504
+          - delta-ingestor
+          - metrics-exporter
+    ports:
+    - protocol: UDP
+      port: {{ .Values.exporters.statsd.service.statsdPort }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $fullname }}-prometheus-query-ingress
+  labels:
+    {{- include "scraping-pipeline.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: prometheus
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/component: grafana
+    ports:
+    - protocol: TCP
+      port: {{ .Values.prometheus.service.port }}
+---
+# Alertmanager replicas gossip on the cluster port (TCP and UDP).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $fullname }}-alertmanager-cluster
+  labels:
+    {{- include "scraping-pipeline.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: alertmanager
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/component: alertmanager
+    ports:
+    - protocol: TCP
+      port: {{ .Values.alertmanager.service.clusterPort }}
+    - protocol: UDP
+      port: {{ .Values.alertmanager.service.clusterPort }}
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/component: alertmanager
+    ports:
+    - protocol: TCP
+      port: {{ .Values.alertmanager.service.clusterPort }}
+    - protocol: UDP
+      port: {{ .Values.alertmanager.service.clusterPort }}
+{{- if and .Values.ingress.enabled .Values.grafana.enabled .Values.networkPolicy.ingressNamespace }}
+---
+# Ingress controller to Grafana. port-forward does not use this (#190).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $fullname }}-grafana-ingress
+  labels:
+    {{- include "scraping-pipeline.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: grafana
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: {{ .Values.networkPolicy.ingressNamespace | quote }}
+    ports:
+    - protocol: TCP
+      port: {{ .Values.grafana.service.port }}
+{{- end }}
 {{- end }}
