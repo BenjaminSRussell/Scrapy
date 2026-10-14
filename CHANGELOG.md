@@ -37,6 +37,7 @@ renamed to the new version and date (see the release checklist).
 
 ### Fixed
 - CLI and orchestrator startup reject a config.yml whose redis or kafka fields have the wrong type or an unknown key, with the field path in the error, instead of failing later inside workers (#237).
+- Stage 3 keeps MinHash fingerprints for the rest of the run and in Redis, so a duplicate document in a later batch or after a restart is skipped and `stage3_documents_deduplicated_total` counts it (#222).
 - Docker HEALTHCHECK probes PID 1 and configured Redis/TCP dependencies instead of always succeeding, and the docs no longer point at a missing `/health` route (#542).
 - Delta writes and merges keep an existing table's partition layout when it differs from `delta_lake.partitions`, instead of failing every commit (#261).
 - Dashboard UI, accessibility and XSS fixes (#954 #957 #975 #976 #977 #978 #945 #962 #982 #983 #906 #910).
