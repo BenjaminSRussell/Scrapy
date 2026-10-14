@@ -17,3 +17,4 @@ Use for every dashboard PR:
 - [x] Landmarks (`header`, `nav`, `main`) and an h1 → h2 heading outline (#332)
 - [x] Decorative icons are inline SVG with `aria-hidden`; tabs, health tiles, and the title mark do not use emoji glyphs (#1049)
 - [x] Loading, stale and error states are text, not just colour or zeros (#351, #352, #362)
+- [x] First-visit tour (#1021) is keyboard operable (Next, Back, Skip, Done, Escape) and is not required to use the dashboard. The coach mark is a ring plus the checklist text, not colour alone.

@@ -15,6 +15,7 @@ renamed to the new version and date (see the release checklist).
 ## [Unreleased]
 
 ### Added
+- Control Center first-visit coach marks: a dismissible checklist for Overview, System Health, and the Grafana link. Skip, Done, or Finish stores `onboardingDone` in localStorage so it is shown once. The Grafana link stays in the top bar (#1021).
 - Optional Control Center job captures one Overview smoke screenshot and uploads it as `dashboard-overview-screenshot` (`overview.png` of `#tab-overview`). It is not a pixel-diff gate and does not block the dashboard unit tests (#1044).
 - Cross-repo Delta schema registry (`docs/contracts/`) for `pages` (`stage2_page_analysis`), `extractions` (`metadata_queue`) and `jobs` (`stage2_queue`). A pull-request check fails if those writers drop a registered column (#1099).
 - Kafka to Delta ingest poison policy: after `--max-deserialize-failures` (default 3) deserialize failures of one payload, the bytes are produced to the DLQ topic and the offset is committed, including when no Delta rows are buffered, so one malformed message cannot block the partition. `KafkaPoisonMessageRate` warns when the dead-letter rate exceeds 0.1/s for 5 minutes. This is not an SLO (#177).

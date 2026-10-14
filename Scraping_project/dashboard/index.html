@@ -552,6 +552,9 @@
 
         /* #953: >=44px touch targets wherever the pointer is coarse (phones/tablets). */
         @media (pointer: coarse) {
+            .onboarding-step,
+            .onboarding .btn,
+            .grafana-link,
             .tab-button,
             .refresh-bar .btn,
             .refresh-bar select {
@@ -745,9 +748,14 @@
             .tab-button.active .ui-icon { stroke: HighlightText; }
             .tab-button:focus-visible,
             .btn:focus-visible,
+            .onboarding-step:focus-visible,
             .skip-to-main:focus {
                 outline: 3px solid Highlight;
                 outline-offset: 2px;
+            }
+            .is-coach-target {
+                outline: 3px solid Highlight;
+                outline-offset: -3px;
             }
             .card-badge,
             .status-indicator {
@@ -779,6 +787,7 @@
         a:focus-visible,
         summary:focus-visible,
         .legend-toggles button:focus-visible,
+        .onboarding-step:focus-visible,
         [role="tabpanel"]:focus-visible {
             outline: 3px solid var(--primary-dark);
             outline-offset: 2px;
@@ -856,6 +865,61 @@
         }
         .fetch-error-banner[hidden] { display: none; }
         .btn[aria-busy="true"] { cursor: progress; }
+
+        /* #1021: first-visit checklist. The ring is the coach mark; the card
+           names Overview, System Health, and the Grafana link. */
+        .grafana-link {
+            color: #fff;
+            font-weight: 700;
+            font-size: 0.9rem;
+            text-decoration: underline;
+            text-underline-offset: 0.15em;
+            align-self: center;
+            padding: 0.35rem 0.6rem;
+            border-radius: 0.375rem;
+            white-space: nowrap;
+        }
+        .onboarding[hidden] { display: none; }
+        .onboarding { margin: 0 0 1rem; }
+        .onboarding-card {
+            background: #fff;
+            color: var(--gray-900);
+            border: 2px solid var(--primary);
+            border-radius: 0.5rem;
+            padding: 1rem 1.25rem;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        }
+        .onboarding-card h2 { font-size: 1.15rem; margin-bottom: 0.35rem; }
+        .onboarding-card p { color: var(--gray-700); font-size: 0.9rem; margin: 0.2rem 0 0.6rem; }
+        .onboarding-steps { list-style: none; display: flex; flex-wrap: wrap; gap: 0.75rem 1.25rem; margin: 0.5rem 0 0.75rem; }
+        .onboarding-step {
+            background: var(--gray-50);
+            color: var(--gray-900);
+            border: 2px solid var(--gray-300);
+            border-radius: 0.375rem;
+            font: inherit;
+            font-weight: 600;
+            padding: 0.4rem 0.75rem;
+            cursor: pointer;
+        }
+        .onboarding-step.is-current {
+            border-color: var(--primary);
+            background: #eff6ff;
+        }
+        .onboarding-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+        .onboarding .btn {
+            font: inherit;
+            font-weight: 600;
+            padding: 0.4rem 0.85rem;
+            border-radius: 0.375rem;
+            border: 1px solid var(--gray-300);
+            background: #fff;
+            color: var(--gray-900);
+            cursor: pointer;
+        }
+        #onboarding-skip { margin-right: auto; }
+        .is-coach-target { box-shadow: inset 0 0 0 3px #92400e; }
+        .topbar .is-coach-target { box-shadow: inset 0 0 0 3px #fde68a; }
     </style>
 </head>
 <body>
@@ -880,6 +944,7 @@
                 <p class="title-full">UConn Web Scraping Pipeline - Real-time Operations Dashboard</p>
                 <p class="title-short visually-hidden">Pipeline Control Center</p>
             </div>
+            <a id="grafana-link" class="grafana-link" href="http://localhost:3000/d/scraping-pipeline-health" target="_blank" rel="noopener noreferrer" title="Historical analytics in Grafana (Compose port 3000). Separate from these tabs.">Grafana<span class="visually-hidden">, opens in a new tab</span></a>
             <div class="topbar-stats">
                 <div class="topbar-stat">
                     <div class="topbar-stat-label">Status</div>
@@ -903,6 +968,33 @@
             <span id="fetch-error-text">Could not load metrics.</span>
             <button type="button" id="retry-fetch" class="btn" aria-label="Retry loading metrics now">Retry</button>
         </div>
+        <p id="onboarding-status" class="visually-hidden" role="status" aria-live="polite"></p>
+        <section id="onboarding" class="onboarding" aria-labelledby="onboarding-title" hidden>
+            <div class="onboarding-card">
+                <h2 id="onboarding-title">First visit</h2>
+                <p id="onboarding-desc">These tabs are live operations. Grafana is a separate analytics app. This checklist is shown once.</p>
+                <ol class="onboarding-steps">
+                    <li>
+                        <button type="button" class="onboarding-step" data-onboarding-step="overview" id="onboarding-step-overview">Overview</button>
+                        <p>Live totals and stage sparklines. Start here.</p>
+                    </li>
+                    <li>
+                        <button type="button" class="onboarding-step" data-onboarding-step="system" id="onboarding-step-system">System Health</button>
+                        <p>Queues, the metrics exporter, and host health.</p>
+                    </li>
+                    <li>
+                        <button type="button" class="onboarding-step" data-onboarding-step="grafana" id="onboarding-step-grafana">Grafana link</button>
+                        <p>Historical charts and alerts. Not these tabs.</p>
+                    </li>
+                </ol>
+                <div class="onboarding-actions">
+                    <button type="button" id="onboarding-skip" class="btn">Skip</button>
+                    <button type="button" id="onboarding-prev" class="btn">Back</button>
+                    <button type="button" id="onboarding-next" class="btn">Next</button>
+                    <button type="button" id="onboarding-done" class="btn">Done</button>
+                </div>
+            </div>
+        </section>
         <div class="tabs">
             <nav class="tab-buttons-wrap" aria-label="Dashboard sections"><div class="tab-buttons" role="tablist" aria-label="Dashboard sections">
                 <button type="button" class="tab-button active" data-tab="overview" role="tab" id="tabbtn-overview" aria-controls="tab-overview" aria-selected="true" tabindex="0"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18M7 16v-5M12 16V8M17 16v-3"/></svg> Overview</button>

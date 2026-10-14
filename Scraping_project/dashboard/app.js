@@ -10,6 +10,7 @@ const REFRESH_INTERVAL = 5000;
 const METRICS_TIMEOUT_MS = 4000; // #1032
 const STORE_TAB_KEY = 'cc.lastTab'; // #1034
 const STORE_INTERVAL_KEY = 'cc.refreshInterval'; // #1015
+// #1021: first-visit tour writes this exact localStorage key (format-utils.js).
 let refreshPaused = false;
 let metricsFetcher = null;
 let metricsWasDown = false;
@@ -1070,6 +1071,73 @@ function setupIntervalControl() {
     });
 }
 
+// #1021: coach-mark checklist. Shows until Skip, Done, or Finish writes
+// localStorage onboardingDone, then stays hidden.
+function setupOnboarding() {
+    const root = document.getElementById('onboarding');
+    if (!root || typeof onboardingShouldShow !== 'function') return;
+    let index = 0;
+    if (!onboardingShouldShow(storeGet(ONBOARDING_STORAGE_KEY))) {
+        root.hidden = true;
+        return;
+    }
+    const paint = (view) => {
+        root.hidden = !view.show;
+        const status = document.getElementById('onboarding-status');
+        const nextBtn = document.getElementById('onboarding-next');
+        const prevBtn = document.getElementById('onboarding-prev');
+        document.querySelectorAll('.is-coach-target').forEach(el => el.classList.remove('is-coach-target'));
+        root.querySelectorAll('[data-onboarding-step]').forEach(el => {
+            const on = view.show && el.getAttribute('data-onboarding-step') === view.stepId;
+            el.classList.toggle('is-current', on);
+            el.setAttribute('aria-current', on ? 'step' : 'false');
+        });
+        if (!view.show) {
+            if (view.persist) storeSet(ONBOARDING_STORAGE_KEY, '1');
+            if (status) status.textContent = 'First-visit tour dismissed';
+            const active = document.activeElement;
+            if (active && root.contains(active)) {
+                const back = document.getElementById('tabbtn-overview');
+                if (back && typeof back.focus === 'function') back.focus();
+            }
+            return;
+        }
+        const target = view.targetId ? document.getElementById(view.targetId) : null;
+        if (target) target.classList.add('is-coach-target');
+        if (prevBtn) prevBtn.disabled = view.index === 0;
+        if (nextBtn) nextBtn.textContent = view.index >= view.total - 1 ? 'Finish' : 'Next';
+        if (status && view.title) status.textContent = `Step ${view.index + 1} of ${view.total}: ${view.title}`;
+    };
+    const run = (action) => {
+        const view = onboardingReduce({ index }, action);
+        index = view.index;
+        paint(view);
+    };
+    run({ type: 'show' });
+    root.addEventListener('click', (event) => {
+        const t = event.target;
+        if (!t || typeof t.closest !== 'function') return;
+        if (t.closest('#onboarding-skip')) { event.preventDefault(); run({ type: 'skip' }); return; }
+        if (t.closest('#onboarding-done')) { event.preventDefault(); run({ type: 'done' }); return; }
+        if (t.closest('#onboarding-next')) { event.preventDefault(); run({ type: 'next' }); return; }
+        if (t.closest('#onboarding-prev')) { event.preventDefault(); run({ type: 'prev' }); return; }
+        const step = t.closest('[data-onboarding-step]');
+        if (!step) return;
+        event.preventDefault();
+        const id = step.getAttribute('data-onboarding-step');
+        run({ type: 'goto', id });
+        const spec = (typeof ONBOARDING_STEPS !== 'undefined' ? ONBOARDING_STEPS : []).find(s => s.id === id);
+        if (spec && spec.tab) activateTab(spec.tab, true);
+        const mark = spec && document.getElementById(spec.targetId);
+        if (mark && typeof mark.focus === 'function') mark.focus();
+    });
+    root.addEventListener('keydown', (event) => {
+        if (event.key !== 'Escape' || root.hidden) return;
+        event.preventDefault();
+        run({ type: 'skip' });
+    });
+}
+
 function tabFromLocation() {
     const params = new URLSearchParams(window.location.search);
     const q = params.get('tab');
@@ -1266,6 +1334,7 @@ function initialize() {
     setupShortcuts();
     const initialTab = pickInitialTab(tabFromLocation(), storeGet(STORE_TAB_KEY), visibleTabNames());
     if (initialTab) activateTab(initialTab, false);
+    setupOnboarding();
     markLoading();
     initializeCharts();
     ensureChartPlaceholders();
