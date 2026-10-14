@@ -60,10 +60,38 @@ test('tab panels use the tab-content class the switcher queries', () => {
     assert.match(app, /querySelectorAll\('\.tab-content'\)/);
 });
 
-test('tab emoji are decorative', () => {
-    for (const t of body.matchAll(/<button[^>]*role="tab"[^>]*>(.*?)<\/button>/g)) {
-        assert.match(t[1], /^<span aria-hidden="true">[^<]+<\/span> \w/);
+test('tab icons are decorative SVGs, not emoji glyphs (#1049)', () => {
+    const emoji = /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}\u{200D}]/u;
+    const tabs = [...body.matchAll(/<button[^>]*role="tab"[^>]*>(.*?)<\/button>/g)];
+    assert.strictEqual(tabs.length, 5);
+    for (const t of tabs) {
+        const inner = t[1];
+        assert.match(inner, /^<svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"[^>]*stroke="currentColor"[^>]*>/);
+        assert.match(inner, /<\/svg> [A-Z]/);
+        assert.ok(!emoji.test(inner), inner);
+        assert.ok(!/<span\b/.test(inner));
     }
+});
+
+test('health tiles and the title mark use the same decorative SVG set (#1049)', () => {
+    const emoji = /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}\u{200D}]/u;
+    const health = [...body.matchAll(/<div class="health-icon"[^>]*>.*?<\/div>/g)];
+    assert.strictEqual(health.length, 6);
+    for (const h of health) {
+        assert.match(h[0], /aria-hidden="true"/);
+        assert.match(h[0], /<svg class="ui-icon"[^>]*aria-hidden="true"[^>]*stroke="currentColor"/);
+        assert.ok(!emoji.test(h[0]), h[0]);
+    }
+    const title = body.match(/<span class="title-full">([\s\S]*?)<\/span>/);
+    assert.ok(title, 'title mark present');
+    assert.match(title[1], /<svg class="ui-icon"[^>]*aria-hidden="true"[^>]*stroke="currentColor"/);
+    assert.match(title[1], /Pipeline Control Center/);
+    assert.ok(!emoji.test(title[1]));
+    assert.match(css, /\.ui-icon\s*\{[^}]*width:\s*1\.05em/);
+    assert.match(css, /\.health-icon \.ui-icon\s*\{[^}]*width:\s*2rem/);
+    const forced = mediaBlock('forced-colors: active') || '';
+    assert.match(forced, /\.ui-icon\s*\{[^}]*stroke:\s*CanvasText/);
+    assert.match(forced, /\.tab-button\.active \.ui-icon\s*\{[^}]*stroke:\s*HighlightText/);
 });
 
 test('app.js handles arrow keys on the tablist and keeps tabindex roving', () => {
