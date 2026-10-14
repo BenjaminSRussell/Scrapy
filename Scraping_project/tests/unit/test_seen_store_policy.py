@@ -63,11 +63,17 @@ def test_claim_urls_partitions_between_clients():
     assert not set(got_a) & set(got_b)
 
 
-def test_key_naming_is_prefix_scoped():
+def test_key_naming_is_prefix_scoped(monkeypatch):
+    for name in ("SITE_ID", "TENANT_ID", "REDIS_SITE_ID"):
+        monkeypatch.delenv(name, raising=False)
     h = _helper()
     assert h.claim_url("https://x.edu/", key_prefix="siteA:scout")
     assert h.claim_url("https://x.edu/", key_prefix="siteB:scout")  # separate tenant
-    assert h.client.sismember("siteA:scout:urls", "https://x.edu/")
+    # #191: the site segment is always present; the prefix still isolates purpose.
+    assert h.client.sismember("site:default:siteA:scout:urls", "https://x.edu/")
+    assert h.client.sismember("site:default:siteB:scout:urls", "https://x.edu/")
+    assert not h.client.exists("siteA:scout:urls")
+    assert not h.client.exists("seen:urls")
 
 
 def test_js_queue_batch_enqueues_each_url_once_across_queues():

@@ -67,7 +67,9 @@ def test_queue_row_canonical_before_lake_write():
     assert item["url"] == VARIANTS[4]  # original item untouched
 
 
-def test_redis_seen_set_dedupes_variants():
+def test_redis_seen_set_dedupes_variants(monkeypatch):
+    for name in ("SITE_ID", "TENANT_ID", "REDIS_SITE_ID"):
+        monkeypatch.delenv(name, raising=False)
     fakeredis = pytest.importorskip("fakeredis")
     from src.utils.redis import RedisHelper
 
@@ -79,4 +81,4 @@ def test_redis_seen_set_dedupes_variants():
     assert mgr.claim_urls([VARIANTS[1], "https://uconn.edu/other/", "https://UCONN.edu/other"], "t") == [
         "https://uconn.edu/other/"
     ]
-    assert mgr.client.smembers("t:urls") == {CANON, "https://uconn.edu/other"}
+    assert mgr.client.smembers("site:default:t:urls") == {CANON, "https://uconn.edu/other"}

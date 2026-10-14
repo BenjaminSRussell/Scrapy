@@ -549,7 +549,7 @@ Redis holds durable crawl state, and losing it is not a cache miss:
 
 | Keys | TTL | If lost |
 |---|---|---|
-| `seen:urls` and other `seen:*` sets (dedup/claims) | none | every URL looks new, so the crawl starts over |
+| `site:{site_id}:{prefix}:urls` seen-sets (dedup/claims), e.g. `site:uconn:seen:urls` | none | every URL looks new, so the crawl starts over |
 | Stage queues and the priority queue | none | queued work disappears |
 | `depth_spider:last_crawl:*` and other cache-like keys | yes (`ex=`) | recomputed |
 
@@ -558,6 +558,8 @@ Compose, `k8s/deployment.yaml` and Helm (`redis.config.maxmemoryPolicy`) run `--
 - **Never use an `allkeys-*` policy.** `RedisHelper` logs an ERROR at connect time if the server runs one.
 - **New cache-like keys must set a TTL.** Durable keys must not.
 - **Memory SLO.** Stay under 80% of `maxmemory`. The `RedisHighMemory` alert fires above that for 5 minutes. Raise `maxmemory` or drain the queues before writes start failing.
+
+Seen-sets are namespaced by site or tenant (#191). `RedisHelper` writes only `site:{site_id}:{prefix}:urls` (for example `site:uconn:seen:urls`). The id is the `site_id` argument, else `SITE_ID`, else `TENANT_ID`, else `REDIS_SITE_ID`, else `default`. Two crawl profiles must not share an id. Unscoped keys from older releases (`seen:urls`, `scout:urls`, `{prefix}:urls`) are not read. There is no automatic migration: before deploying, `RENAME seen:urls site:default:seen:urls` (and the same for every other prefix) only when the new key is absent. Details are in `SEEN_KEY_MIGRATION` in `src/utils/redis.py`. These variables are not part of the Redis connection contract and Compose/Helm do not set `REDIS_URL`.
 
 ### TLS certificate verification (#584)
 

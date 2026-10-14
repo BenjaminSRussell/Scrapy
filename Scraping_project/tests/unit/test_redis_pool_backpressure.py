@@ -56,11 +56,13 @@ def redis_endpoint():
 @pytest.fixture
 def helper(redis_endpoint, monkeypatch):
     monkeypatch.delenv(r.SEEN_FAIL_MODE_ENV, raising=False)
+    for name in ("SITE_ID", "TENANT_ID", "REDIS_SITE_ID"):
+        monkeypatch.delenv(name, raising=False)
     host, port = redis_endpoint
     h = RedisHelper(host=host, port=port, db=15, max_connections=2, pool_timeout=0.2)
     prefix = f"t533:{uuid.uuid4().hex}"
     yield h, prefix
-    h.client.delete(f"{prefix}:urls")
+    h.client.delete(f"site:default:{prefix}:urls")
 
 
 def _exhausted(op):
@@ -115,7 +117,7 @@ def test_exhausted_pool_fails_closed_and_is_counted(helper):
     if before is not None:
         assert _exhausted("claim") == before + 2
     # Nothing was claimed while the pool was exhausted.
-    assert h.client.scard(f"{prefix}:urls") == 0
+    assert h.client.scard(f"site:default:{prefix}:urls") == 0
 
 
 def test_burst_under_exhaustion_produces_no_duplicate_storm(helper):
@@ -154,7 +156,7 @@ def test_burst_under_exhaustion_produces_no_duplicate_storm(helper):
     assert len(flat) == len(set(flat)), "a URL was handed to two workers"
     assert paused, "the burst never hit pool exhaustion; the test isn't exercising #533"
     # Whatever was admitted is exactly what Redis recorded; nothing was "owned" without a claim.
-    assert set(flat) == set(h.client.smembers(f"{prefix}:urls"))
+    assert set(flat) == set(h.client.smembers(f"site:default:{prefix}:urls"))
 
 
 def test_fail_open_mode_shows_the_hazard_this_guards_against(helper, monkeypatch):
