@@ -12,10 +12,14 @@
     // exporter also emits an unlabelled series of that name, which then wins.
     // So `errors_total{stage="s1"} 3` + `errors_total{stage="s2"} 4` gives
     // metrics.errors_total === 7 for the flat names updateDashboard reads.
+    // #690: one exposition sample line is one series. The count is a
+    // non-enumerable symbol so Object.keys / spread stay the flat map.
+    const METRIC_SERIES_COUNT = Symbol('metricSeriesCount');
     function parseMetrics(text) {
         const metrics = {};
         const sums = Object.create(null);
         const unlabelled = new Set();
+        let seriesCount = 0;
         for (const raw of String(text || '').split('\n')) {
             const line = raw.trim();
             if (line === '' || line.startsWith('#')) continue;
@@ -23,6 +27,7 @@
             if (!m) continue;
             const value = parseFloat(m[3]);
             if (isNaN(value)) continue;
+            seriesCount += 1;
             const name = m[1];
             const labels = m[2] || '';
             metrics[name + labels] = value;
@@ -32,7 +37,107 @@
         for (const name of Object.keys(sums)) {
             if (!unlabelled.has(name)) metrics[name] = sums[name];
         }
+        Object.defineProperty(metrics, METRIC_SERIES_COUNT, { value: seriesCount, enumerable: false });
         return metrics;
+    }
+    function metricSeriesCount(metrics) {
+        if (!metrics) return 0;
+        const n = metrics[METRIC_SERIES_COUNT];
+        return Number.isFinite(n) ? n : 0;
+    }
+    // #690: chart history is noise (and CPU) once a scrape is too wide or too
+    // slow to parse. Defaults are the documented Control Center knobs.
+    // Query params override window.CC_METRICS_FLOOD; bad values keep the default.
+    // A sample trips flood only when it is strictly over a limit.
+    const METRICS_FLOOD_DEFAULTS = Object.freeze({
+        maxSeries: 2000,
+        maxParseMs: 50,
+        recoverIntervals: 3,
+    });
+    function finiteAtLeast(raw, min, fallback) {
+        const n = Number(raw);
+        if (!Number.isFinite(n) || n < min) return fallback;
+        return n;
+    }
+    function metricsFloodLimits(source) {
+        const src = source || {};
+        const cfg = (src.CC_METRICS_FLOOD && typeof src.CC_METRICS_FLOOD === 'object') ? src.CC_METRICS_FLOOD : {};
+        let search = '';
+        if (typeof src.search === 'string') search = src.search;
+        else if (src.location && typeof src.location.search === 'string') search = src.location.search;
+        const params = new URLSearchParams(search);
+        function pick(key, queryName, fallback, min, integer) {
+            const q = params.get(queryName);
+            const raw = (q != null && q !== '') ? q : cfg[key];
+            let n = finiteAtLeast(raw, min, fallback);
+            if (integer) n = Math.floor(n);
+            if (!Number.isFinite(n) || n < min) return fallback;
+            return n;
+        }
+        return {
+            maxSeries: pick('maxSeries', 'floodMaxSeries', METRICS_FLOOD_DEFAULTS.maxSeries, 0, true),
+            maxParseMs: pick('maxParseMs', 'floodMaxParseMs', METRICS_FLOOD_DEFAULTS.maxParseMs, 0, false),
+            recoverIntervals: pick('recoverIntervals', 'floodRecover', METRICS_FLOOD_DEFAULTS.recoverIntervals, 1, true),
+        };
+    }
+    // state: { degraded, calm }. Calm counts consecutive under-limit samples
+    // while already degraded; one over-limit sample zeros the streak.
+    function advanceMetricsFlood(state, sample, limits) {
+        const limIn = limits || METRICS_FLOOD_DEFAULTS;
+        const maxSeries = finiteAtLeast(limIn.maxSeries, 0, METRICS_FLOOD_DEFAULTS.maxSeries);
+        const maxParseMs = finiteAtLeast(limIn.maxParseMs, 0, METRICS_FLOOD_DEFAULTS.maxParseMs);
+        const recoverIntervals = Math.floor(finiteAtLeast(limIn.recoverIntervals, 1, METRICS_FLOOD_DEFAULTS.recoverIntervals));
+        const prevDegraded = !!(state && state.degraded);
+        const prevCalm = (state && Number.isFinite(Number(state.calm))) ? Number(state.calm) : 0;
+        const seriesCount = Math.max(0, Number(sample && sample.seriesCount) || 0);
+        const parseMs = Math.max(0, Number(sample && sample.parseMs) || 0);
+        const overSeries = seriesCount > maxSeries;
+        const overParse = parseMs > maxParseMs;
+        const flooded = overSeries || overParse;
+        let degraded = prevDegraded;
+        let calm = prevCalm;
+        let recovered = false;
+        if (flooded) {
+            degraded = true;
+            calm = 0;
+        } else if (prevDegraded) {
+            calm = prevCalm + 1;
+            if (calm >= recoverIntervals) {
+                degraded = false;
+                calm = 0;
+                recovered = true;
+            }
+        } else {
+            calm = 0;
+        }
+        return {
+            degraded,
+            calm,
+            recovered,
+            flooded,
+            overSeries,
+            overParse,
+            entered: degraded && !prevDegraded,
+            seriesCount,
+            parseMs,
+            limits: { maxSeries, maxParseMs, recoverIntervals },
+        };
+    }
+    function metricsFloodBannerText(decision) {
+        const d = decision || {};
+        if (!d.degraded) return '';
+        const lim = d.limits || METRICS_FLOOD_DEFAULTS;
+        const series = Math.round(Number(d.seriesCount) || 0);
+        const parseMs = Math.round((Number(d.parseMs) || 0) * 10) / 10;
+        if (d.flooded) {
+            const bits = [];
+            if (d.overSeries) bits.push('series count ' + series + ' exceeds ' + lim.maxSeries);
+            if (d.overParse) bits.push('parse time ' + parseMs + 'ms exceeds ' + lim.maxParseMs + 'ms');
+            const why = bits.length ? bits.join(' and ') : 'the scrape is over the flood threshold';
+            return 'Metrics flood: charts paused. Showing summary counters only because ' + why + '. Charts return after ' + lim.recoverIntervals + ' calm intervals.';
+        }
+        const left = Math.max(1, lim.recoverIntervals - (Number(d.calm) || 0));
+        return 'Metrics flood: charts still paused. Showing summary counters only. Last sample is under the limit (' + series + ' series, ' + parseMs + 'ms). Charts return after ' + left + ' more calm interval' + (left === 1 ? '' : 's') + '.';
     }
     // #141: every throughput figure is items per MINUTE, computed from the real
     // time between samples (refreshes can be paused or late). Counter resets
@@ -989,5 +1094,5 @@
         if (!rows.length) return { missing: true, rows: [], empty: SCRAPE_TARGET_EMPTY };
         return { missing: false, rows: rows.slice(0, cap), empty: SCRAPE_TARGET_EMPTY };
     }
-    return { tabKeyTarget, staleState, queueDepthRows, metricsFailureActivity, shortcutHintText, parseMetrics, ratePerMinute, resolveMetricsUrl, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler, stageActivity, stageDrilldown, stageDrilldownKey, doughnutLegendLayout, connectionState, documentTitle, createActivityAnnouncer, metricsUrlProblem, splitLinks, createMetricsFetcher, REFRESH_INTERVAL_CHOICES, parseRefreshInterval, shortcutAction, pickInitialTab, METRIC_UI_MAP, renderMetricNameMap, parseDangerSoundEnabled, dangerSoundDecision, HEALTH_HISTORY_LIMIT, pushPollOutcome, healthHistoryView, COMPARISON_BASELINE_ROLE, PREV_HOUR_AVG_KEYS, readPrevHourAverage, comparisonBaselineSeries, comparisonNote, ACTIVITY_LOG_CAP, capActivityLog, activityStaleNote, restoreActivityLog, topScrapeTargets, SCRAPE_TARGET_EMPTY, ACTIVITY_LEVELS, activityLevelCounts, filterActivityItems, toggleActivityLevel, HISTORY_MAX_POINTS, assertHistoryBound, boundHistoryBuffer, pushHistorySample, enforceHistoryCap };
+    return { tabKeyTarget, staleState, queueDepthRows, metricsFailureActivity, shortcutHintText, parseMetrics, metricSeriesCount, METRICS_FLOOD_DEFAULTS, metricsFloodLimits, advanceMetricsFlood, metricsFloodBannerText, ratePerMinute, resolveMetricsUrl, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler, stageActivity, stageDrilldown, stageDrilldownKey, doughnutLegendLayout, connectionState, documentTitle, createActivityAnnouncer, metricsUrlProblem, splitLinks, createMetricsFetcher, REFRESH_INTERVAL_CHOICES, parseRefreshInterval, shortcutAction, pickInitialTab, METRIC_UI_MAP, renderMetricNameMap, parseDangerSoundEnabled, dangerSoundDecision, HEALTH_HISTORY_LIMIT, pushPollOutcome, healthHistoryView, COMPARISON_BASELINE_ROLE, PREV_HOUR_AVG_KEYS, readPrevHourAverage, comparisonBaselineSeries, comparisonNote, ACTIVITY_LOG_CAP, capActivityLog, activityStaleNote, restoreActivityLog, topScrapeTargets, SCRAPE_TARGET_EMPTY, ACTIVITY_LEVELS, activityLevelCounts, filterActivityItems, toggleActivityLevel, HISTORY_MAX_POINTS, assertHistoryBound, boundHistoryBuffer, pushHistorySample, enforceHistoryCap };
 });

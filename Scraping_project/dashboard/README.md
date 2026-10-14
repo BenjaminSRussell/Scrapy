@@ -20,6 +20,26 @@ Labelled series such as `errors_total{stage="stage1"}` are kept under their full
 also summed under the bare name (`errors_total`) unless an unlabelled series of that name
 exists (#365).
 
+## Metrics flood (#690)
+
+A high-cardinality scrape makes full chart history noise and burns CPU on a modest
+NOC browser. After each scrape the dashboard counts exposition series (one sample
+line each; the summed bare name is not an extra series) and times `parseMetrics`.
+If either value is strictly over its threshold, charts, sparklines, and chart data
+tables are hidden and only the numeric KPI counters keep updating. A banner names
+the degraded mode. Charts come back after N consecutive samples under both limits.
+One sample over either limit resets that streak.
+
+| Knob | Default | Meaning |
+|---|---|---|
+| `window.CC_METRICS_FLOOD.maxSeries` or `?floodMaxSeries=` | `2000` | Series count that trips flood |
+| `window.CC_METRICS_FLOOD.maxParseMs` or `?floodMaxParseMs=` | `50` | Parse time (ms) that trips flood |
+| `window.CC_METRICS_FLOOD.recoverIntervals` or `?floodRecover=` | `3` | Calm intervals before charts return |
+
+Query parameters override `window.CC_METRICS_FLOOD`. Non-numeric or negative values
+fall back to the defaults. `floodRecover` must be at least 1. Example:
+`window.CC_METRICS_FLOOD = { maxSeries: 500, maxParseMs: 30, recoverIntervals: 5 }`.
+
 ```bash
 python Scraping_project/dashboard/serve.py
 # open http://localhost:8080  (styleguide: /styleguide.html)

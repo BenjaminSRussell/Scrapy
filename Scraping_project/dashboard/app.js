@@ -24,6 +24,8 @@ let pollHistory = [];
 // Static <title> captured once; connection state is prefixed onto it (#945).
 const BASE_TITLE = (typeof document !== 'undefined' && document.title) || 'Pipeline Control Center';
 let chartsHaveSample = false;
+// #690: charts stay paused while a scrape is over the series or parse-time limit.
+let metricsFlood = { degraded: false, calm: 0 };
 
 let refreshScheduler = null;
 let charts = {};
@@ -862,35 +864,51 @@ function updateDashboard(metrics) {
     const metricsOk = Boolean(metrics) && Object.keys(metrics).length > 0;
     setHealthTile('metrics-health', 'Metrics', metricsOk, metricsOk ? 'Collecting' : 'Stale');
 
-    document.getElementById('last-update').textContent = formatEpochTime(metrics['pipeline_last_update_timestamp']);
+    const lastUpdateEl = document.getElementById('last-update');
+    if (lastUpdateEl) lastUpdateEl.textContent = formatEpochTime(metrics['pipeline_last_update_timestamp']);
 
     // #389/#393: these tiles used to be hardcoded (12 tables, 8 scouts). Show
     // a real value when the exporter reports one, otherwise an explicit dash.
     setReportedValue('delta-table-count', countLabelValues(metrics, 'delta_lake_records', 'table'));
     setReportedValue('scout-instances',
         'pipeline_scout_instances' in metrics ? metrics['pipeline_scout_instances'] : null);
-    document.getElementById('last-refresh-time').textContent = new Date().toLocaleTimeString();
-    document.getElementById('uptime').textContent = getUptime();
+    const lastRefreshEl = document.getElementById('last-refresh-time');
+    if (lastRefreshEl) lastRefreshEl.textContent = new Date().toLocaleTimeString();
+    const uptimeEl = document.getElementById('uptime');
+    if (uptimeEl) uptimeEl.textContent = getUptime();
 
-    if (charts.stageProgression) {
-        charts.stageProgression.data.datasets[0].data = [s1Discovered, s2Analyzed, s3Summaries, s4Summaries];
-        charts.stageProgression.update('none');
-    }
+    // #690: summary counters above stay live. Chart history does not.
+    if (!metricsFlood.degraded) {
+        if (charts.stageProgression) {
+            charts.stageProgression.data.datasets[0].data = [s1Discovered, s2Analyzed, s3Summaries, s4Summaries];
+            charts.stageProgression.update('none');
+        }
 
-    if (charts.routing) {
-        charts.routing.data.datasets[0].data = [s2Quality, s2Massive];
-        charts.routing.update('none');
-        syncAllChartTables();
+        if (charts.routing) {
+            charts.routing.data.datasets[0].data = [s2Quality, s2Massive];
+            charts.routing.update('none');
+            syncAllChartTables();
+        }
     }
 
     if (Object.keys(previousMetrics).length > 0) {
         detectSignificantChanges(metrics);
     }
 
-    updateHistoricalData(metrics);
+    if (!metricsFlood.degraded) updateHistoricalData(metrics);
     renderScrapeTargets(metrics);
 
-    previousMetrics = { ...metrics };
+    if (metricsFlood.degraded) {
+        previousMetrics = {
+            stage1_urls_discovered_total: metrics['stage1_urls_discovered_total'],
+            stage2_pages_analyzed_total: metrics['stage2_pages_analyzed_total'],
+            stage3_summaries_created_total: metrics['stage3_summaries_created_total'],
+            stage4_large_doc_summaries_total: metrics['stage4_large_doc_summaries_total'],
+            stage3_documents_deduplicated_total: metrics['stage3_documents_deduplicated_total'],
+        };
+    } else {
+        previousMetrics = { ...metrics };
+    }
     previousMetricsAt = Date.now();
     syncStageDrilldownValues();
 }
@@ -921,6 +939,43 @@ function renderScrapeTargets(metrics) {
         tr.appendChild(host);
         tr.appendChild(value);
         list.appendChild(tr);
+    }
+}
+
+function readMetricsFloodLimits() {
+    const loc = typeof location !== 'undefined' ? location : null;
+    const win = typeof window !== 'undefined' ? window : {};
+    return metricsFloodLimits({
+        CC_METRICS_FLOOD: win.CC_METRICS_FLOOD,
+        search: loc ? loc.search : '',
+    });
+}
+
+function clockMs() {
+    return (typeof performance !== 'undefined' && typeof performance.now === 'function')
+        ? performance.now()
+        : Date.now();
+}
+
+function applyMetricsFlood(decision) {
+    const was = !!metricsFlood.degraded;
+    metricsFlood = { degraded: !!decision.degraded, calm: decision.calm || 0 };
+    const banner = document.getElementById('metrics-flood-banner');
+    const text = document.getElementById('metrics-flood-text');
+    const host = document.getElementById('main');
+    if (host && host.classList) host.classList.toggle('metrics-flood', !!decision.degraded);
+    if (banner) {
+        if (decision.degraded) {
+            if (text) text.textContent = metricsFloodBannerText(decision);
+            banner.hidden = false;
+        } else {
+            banner.hidden = true;
+        }
+    }
+    if (decision.entered && !was) {
+        addActivityLogItem('warning', 'Metrics flood: charts paused, showing summary counters only');
+    } else if (decision.recovered) {
+        addActivityLogItem('success', 'Metrics flood cleared: charts resumed');
     }
 }
 
@@ -1027,7 +1082,13 @@ async function fetchMetrics() {
             metricsFetcher = createMetricsFetcher({ fetch: (u, init) => fetch(u, init), timeoutMs: METRICS_TIMEOUT_MS });
         }
         const text = await metricsFetcher.fetchText(METRICS_URL);
+        const parseStarted = clockMs();
         const metrics = parseMetrics(text);
+        const decision = advanceMetricsFlood(metricsFlood, {
+            seriesCount: metricSeriesCount(metrics),
+            parseMs: clockMs() - parseStarted,
+        }, readMetricsFloodLimits());
+        applyMetricsFlood(decision);
         updateDashboard(metrics);
         hasEverSucceeded = true;
         lastMetricsAt = Date.now();
