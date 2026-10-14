@@ -13,3 +13,20 @@ area/nlp:
   - "Scraping_project/src/stage3/**"
 area/ci:
   - ".github/**"
+area/stage4:
+  - "Scraping_project/src/stage4/**"
+area/lakehouse:
+  - "Scraping_project/src/lakehouse/**"
+area/monitoring:
+  - "Scraping_project/monitoring/**"
+area/k8s:
+  - "Scraping_project/k8s/**"
+area/dx:
+  - "CONTRIBUTING.md"
+  - ".devcontainer/**"
+  - ".vscode/**"
+  - "Scraping_project/.pre-commit-config.yaml"
+  - "Scraping_project/Makefile"
+  - "Scraping_project/noxfile.py"
+  - "Scraping_project/docs/tooling.md"
+  - "Scraping_project/scripts/smoke_local.sh"
