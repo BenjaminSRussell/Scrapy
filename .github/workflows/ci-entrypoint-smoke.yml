@@ -1,0 +1,41 @@
+name: Entrypoint smoke
+
+# Compose and entrypoint PRs must prove the shell entrypoints reach ready (#685).
+# Pulls redis:7-alpine and python:3.11-slim only. Does not build the app image,
+# start the application stack, scrape, or use production credentials.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "Scraping_project/docker-compose*.yml"
+      - "Scraping_project/docker/**"
+      - "Scraping_project/Dockerfile"
+      - "Scraping_project/scripts/entrypoint_smoke_compose.sh"
+      - "Scraping_project/scripts/entrypoint_smoke_inside.sh"
+      - ".github/workflows/ci-entrypoint-smoke.yml"
+  push:
+    branches: [main]
+    paths:
+      - "Scraping_project/docker-compose*.yml"
+      - "Scraping_project/docker/**"
+      - "Scraping_project/Dockerfile"
+      - "Scraping_project/scripts/entrypoint_smoke_compose.sh"
+      - "Scraping_project/scripts/entrypoint_smoke_inside.sh"
+      - ".github/workflows/ci-entrypoint-smoke.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  entrypoint-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Pull test images and smoke entrypoints
+        working-directory: Scraping_project
+        run: |
+          set -euo pipefail
+          bash scripts/entrypoint_smoke_compose.sh

@@ -128,6 +128,10 @@ These do not publish release artifacts:
 
 - [`ci-compose.yml`](../../.github/workflows/ci-compose.yml) renders Compose
   config. It does not start the stack.
+- [`ci-entrypoint-smoke.yml`](../../.github/workflows/ci-entrypoint-smoke.yml)
+  pulls `redis:7-alpine` and `python:3.11-slim` and runs the shell entrypoints
+  with mock commands when compose or entrypoint files change. It does not
+  publish images or start the application stack.
 - [`ci-dashboard.yml`](../../.github/workflows/ci-dashboard.yml) runs the
   dashboard's node tests.
 - [`ci-kafka-alerts.yml`](../../.github/workflows/ci-kafka-alerts.yml) runs
