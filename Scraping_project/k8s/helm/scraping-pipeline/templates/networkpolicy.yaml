@@ -251,6 +251,7 @@ spec:
           - stage2
           - stage3
           - stage4  # #504
+          - delta-ingestor  # ScrapyMetrics connects before Kafka consume (#190)
           - metrics-exporter
           - redis-exporter
           - grafana  # redis datasource (#190)
@@ -422,6 +423,34 @@ spec:
     ports:
     - protocol: TCP
       port: 80
+    - protocol: TCP
+      port: 443
+---
+# Grafana preinstalls redis-datasource (GF_PLUGINS_PREINSTALL on the stock
+# grafana/grafana image; the plugin is not baked in). HTTPS only, with the
+# same scrapeExcept CIDRs as public crawl egress. Not the whole internet.
+# Alertmanager external receivers stay closed (#190).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $fullname }}-grafana-plugin-egress
+  labels:
+    {{- include "scraping-pipeline.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: grafana
+  policyTypes:
+  - Egress
+  egress:
+  - to:
+    - ipBlock:
+        cidr: 0.0.0.0/0
+        except:
+{{- range .Values.networkPolicy.scrapeExcept }}
+        - {{ . }}
+{{- end }}
+    ports:
     - protocol: TCP
       port: 443
 ---

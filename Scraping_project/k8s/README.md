@@ -272,6 +272,11 @@ kubectl delete namespace scraping-pipeline
   in this chart. Turn it off on the next upgrade; do not commit it.
   Alertmanager Slack/PagerDuty receivers are not given egress; add a rule before
   enabling them.
+  Grafana may egress public HTTPS (TCP 443) with the same `networkPolicy.scrapeExcept`
+  CIDRs (10/8, 172.16/12, 192.168/16, 169.254/16) so the stock `grafana/grafana`
+  image can install `redis-datasource` from grafana.com. The plugin is not baked
+  into the image. That allow does not open RFC1918 or link-local, and it does not
+  give Alertmanager receivers egress.
 - **Secrets:** never put credentials in values committed to git; use
   `existingSecret` (Grafana) and Kubernetes Secrets. See the root `SECURITY.md`.
 

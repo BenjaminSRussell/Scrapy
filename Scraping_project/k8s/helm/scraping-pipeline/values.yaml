@@ -663,7 +663,8 @@ networkPolicy:
   # kubernetes.io/metadata.name of the ingress controller namespace. Empty
   # skips that allow. values-prod.yaml sets ingress-nginx.
   ingressNamespace: ""
-  # Public crawl egress cannot use these CIDRs (cluster-internal and metadata).
+  # Public crawl egress and Grafana plugin HTTPS (TCP 443) cannot use these
+  # CIDRs (cluster-internal and metadata). Alertmanager receivers are not included.
   scrapeExcept:
     - 10.0.0.0/8
     - 172.16.0.0/12

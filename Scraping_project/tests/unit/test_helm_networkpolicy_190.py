@@ -47,6 +47,7 @@ def test_policies_cover_redis_kafka_postgres_and_the_app():
         "-postgres-ingress",
         "-core-egress",
         "-scrape-egress",
+        "-grafana-plugin-egress",
         "-exporter-egress",
         "-prometheus-scrape",
     ):
@@ -65,6 +66,17 @@ def test_policies_cover_redis_kafka_postgres_and_the_app():
     assert "zookeeper" in kafka_eg
     assert "postgres-exporter" in postgres
     assert "redis-exporter" in redis
+    # delta-ingestor dials Redis before it consumes Kafka. core-egress and
+    # kafka-ingress already list it; redis-ingress must too or default-deny drops it.
+    assert re.search(r"(?m)^\s*- delta-ingestor\b", redis)
+    assert re.search(r"(?m)^\s*- delta-ingestor\b", core)
+    assert re.search(r"(?m)^\s*- delta-ingestor\b", kafka_in)
+    grafana_plug = NETPOL.split("-grafana-plugin-egress")[1].split("---")[0]
+    assert "app.kubernetes.io/component: grafana" in grafana_plug
+    assert "ipBlock" in grafana_plug and "scrapeExcept" in grafana_plug
+    assert "cidr: 0.0.0.0/0" in grafana_plug and "except:" in grafana_plug
+    assert "port: 443" in grafana_plug
+    assert "port: 80" not in grafana_plug
     assert "kafka-jmx-exporter" in kafka_in
     assert "kafka-topics" in core and "kafka-topics" in kafka_in
     scrape = NETPOL.split("-scrape-egress")[1].split("---")[0]
@@ -83,6 +95,9 @@ def test_break_glass_is_documented():
     assert "networkPolicy.breakGlass" in readme
     assert "port-forward" in readme
     assert "values-prod.yaml" in readme
+    assert "Alertmanager Slack/PagerDuty" in readme
+    assert "redis-datasource" in readme
+    assert "169.254" in readme
     changelog = (ROOT.parent / "CHANGELOG.md").read_text(encoding="utf-8")
     assert "#190" in changelog
 
