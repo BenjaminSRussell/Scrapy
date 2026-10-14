@@ -1,6 +1,7 @@
 import pytest
 from scrapy.http import Request
 
+from src.stage1.discovery_handoff import DiscoveryHandoff
 from src.stage1.experimental.deep_dive_spider import DeepDiveSpider
 from src.stage1.scout_spider import ScoutSpider
 
@@ -20,7 +21,10 @@ class TestScoutSpiderComponents:
         # fixture (get_delta() otherwise returns the global ./data instance),
         # and keep sitemap discovery off the network.
         monkeypatch.setattr("src.stage1.experimental.base_spider.get_delta", lambda: delta_with_seed_urls)
-        monkeypatch.setattr("src.stage1.scout_spider.discover_sitemaps_sync", lambda *a, **k: [])
+        monkeypatch.setattr(
+            "src.stage1.scout_spider.discover_sitemaps_handoff_sync",
+            lambda *a, **k: DiscoveryHandoff.empty(discovery_source="sitemap_parser"),
+        )
         monkeypatch.setattr("src.stage1.experimental.base_spider.get_redis", lambda: redis_clean)
 
         spider = ScoutSpider()

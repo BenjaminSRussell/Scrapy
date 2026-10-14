@@ -17,6 +17,8 @@ from urllib.parse import urljoin, urlparse
 
 import httpx
 
+from src.stage1.discovery_handoff import DiscoveryHandoff
+
 logger = logging.getLogger(__name__)
 
 try:
@@ -280,6 +282,8 @@ class SitemapParser:
         self.watermarks = watermarks
         self._lastmods: dict[str, float | None] = {}
         self._limit_events = 0
+        self._hard_errors: list[str] = []
+        self._any_success = False
 
     async def discover_all_urls(self) -> list[str]:
         parsed = urlparse(self.base_url)
@@ -304,6 +308,49 @@ class SitemapParser:
         if self.watermarks is not None:
             self.watermarks.flush()
         return list(self.discovered_urls)
+
+    async def discover_with_handoff(
+        self,
+        *,
+        discovery_source: str = "sitemap_parser",
+        job_id: str | None = None,
+    ) -> DiscoveryHandoff:
+        """Discover sitemap URLs and return success, empty, or failed (#647).
+
+        ``discover_all_urls`` stays the walk (caps, gzip, lastmod watermarks).
+        A walk that never received HTTP 200 and recorded transport errors is
+        failed, not an empty site.
+        """
+        site = urlparse(self.base_url).netloc.lower() or None
+        try:
+            urls = await self.discover_all_urls()
+        except Exception as e:
+            logger.error(f"Sitemap discovery hard failure: {e}")
+            return DiscoveryHandoff.failed(
+                str(e),
+                discovery_source=discovery_source,
+                job_id=job_id,
+                site=site,
+            )
+        if urls:
+            return DiscoveryHandoff.success(
+                urls,
+                discovery_source=discovery_source,
+                job_id=job_id,
+                site=site,
+            )
+        if self._hard_errors and not self._any_success:
+            return DiscoveryHandoff.failed(
+                "; ".join(self._hard_errors[:5]),
+                discovery_source=discovery_source,
+                job_id=job_id,
+                site=site,
+            )
+        return DiscoveryHandoff.empty(
+            discovery_source=discovery_source,
+            job_id=job_id,
+            site=site,
+        )
 
     async def _parse_sitemap_recursive(
         self,
@@ -342,6 +389,7 @@ class SitemapParser:
                 logger.warning(f"Sitemap returned {response.status_code}: {sitemap_url}")
                 return False
 
+            self._any_success = True
             if content is None:
                 self._limit_hit("bytes", f"Sitemap larger than {self.max_bytes} bytes skipped: {sitemap_url}")
                 return False
@@ -423,6 +471,7 @@ class SitemapParser:
         except Exception as e:
             _count(SITEMAP_FETCHES, kind="error")
             logger.warning(f"Error processing sitemap: {sitemap_url} - {e}")
+            self._hard_errors.append(f"{sitemap_url}: {e}")
         return False
 
     async def _fetch(self, client: httpx.AsyncClient, url: str) -> tuple[httpx.Response, bytes | None]:
@@ -567,13 +616,20 @@ class SitemapIntegration:
         self.parser = SitemapParser(spider.start_urls[0] if spider.start_urls else "")
 
     async def discover_sitemap_urls(self) -> list[str]:
+        handoff = await self.discover_sitemap_handoff()
+        return list(handoff.discovered)
+
+    async def discover_sitemap_handoff(self) -> DiscoveryHandoff:
         try:
-            urls = await self.parser.discover_all_urls()
-            logger.info(f"Sitemap discovery: found {len(urls)} URLs")
-            return urls
+            handoff = await self.parser.discover_with_handoff(discovery_source="sitemap_parser")
+            logger.info(
+                f"Sitemap discovery handoff: status={handoff.status.value} "
+                f"discovered={len(handoff.discovered)}"
+            )
+            return handoff
         except Exception as e:
             logger.error(f"Sitemap discovery failed: {e}")
-            return []
+            return DiscoveryHandoff.failed(str(e), discovery_source="sitemap_parser")
 
     def generate_scrapy_requests(self, urls: list[str]) -> Iterator:
         import scrapy
@@ -583,7 +639,7 @@ class SitemapIntegration:
                 url,
                 callback=self.spider.parse,
                 errback=self.spider.handle_error,
-                meta={"depth": 0, "source": "sitemap"},
+                meta={"depth": 0, "source": "sitemap", "discovery_source": "sitemap_parser"},
                 priority=5,
                 dont_filter=True,
             )
@@ -611,34 +667,83 @@ _DEFAULT = object()
 
 def discover_sitemaps_sync(base_url: str, timeout: int = 30, watermarks: Any = _DEFAULT) -> list[str]:
     """Walk ``base_url``'s sitemaps. Incremental (#394) unless ``watermarks=None``."""
+    return list(discover_sitemaps_handoff_sync(base_url, timeout=timeout, watermarks=watermarks).discovered)
+
+
+def discover_sitemaps_handoff_sync(
+    base_url: str,
+    timeout: int = 30,
+    watermarks: Any = _DEFAULT,
+    *,
+    discovery_source: str = "sitemap_parser",
+    job_id: str | None = None,
+) -> DiscoveryHandoff:
+    """Sync walk returning success|empty|failed (#647).
+
+    A running loop (Scrapy's reactor during spider setup) is driven on a
+    worker thread, same as before. Exceptions and timeouts yield failed, not
+    empty, and the list helper still returns ``[]`` for those.
+    """
     if watermarks is _DEFAULT:
         watermarks = default_watermarks(base_url)
     parser = SitemapParser(base_url, timeout=timeout, watermarks=watermarks)
+    site = urlparse(base_url).netloc.lower() or None
+    found: list[str] = []
+    error: BaseException | None = None
+
+    def _run() -> None:
+        nonlocal found, error
+        try:
+            found = asyncio.run(parser.discover_all_urls())
+        except Exception as e:
+            error = e
+            logger.error(f"Sitemap discovery failed: {e}")
+
+    def _classify(timed_out: bool = False) -> DiscoveryHandoff:
+        if timed_out:
+            return DiscoveryHandoff.failed(
+                "sitemap discovery timed out",
+                discovery_source=discovery_source,
+                job_id=job_id,
+                site=site,
+            )
+        if error is not None:
+            return DiscoveryHandoff.failed(
+                str(error),
+                discovery_source=discovery_source,
+                job_id=job_id,
+                site=site,
+            )
+        if found:
+            return DiscoveryHandoff.success(
+                found,
+                discovery_source=discovery_source,
+                job_id=job_id,
+                site=site,
+            )
+        if parser._hard_errors and not parser._any_success:
+            return DiscoveryHandoff.failed(
+                "; ".join(parser._hard_errors[:5]),
+                discovery_source=discovery_source,
+                job_id=job_id,
+                site=site,
+            )
+        return DiscoveryHandoff.empty(
+            discovery_source=discovery_source,
+            job_id=job_id,
+            site=site,
+        )
 
     try:
         asyncio.get_running_loop()
     except RuntimeError:
-        # No event loop running on this thread - safe to drive one directly.
-        try:
-            return asyncio.run(parser.discover_all_urls())
-        except Exception as e:
-            logger.error(f"Sitemap discovery failed: {e}")
-            return []
+        _run()
+        return _classify()
 
-    # A loop is already running on this thread (e.g. Scrapy's own Twisted
-    # asyncio reactor calling this during spider construction) - asyncio
-    # forbids nesting event loops, so run the coroutine on a dedicated
-    # thread with its own loop instead.
-    result: list[str] = []
-
-    def _worker():
-        nonlocal result
-        try:
-            result = asyncio.run(parser.discover_all_urls())
-        except Exception as e:
-            logger.error(f"Sitemap discovery failed: {e}")
-
-    thread = threading.Thread(target=_worker)
+    thread = threading.Thread(target=_run)
     thread.start()
     thread.join(timeout=timeout + 5)
-    return result
+    if thread.is_alive():
+        logger.error(f"Sitemap discovery timed out for {base_url}")
+        return _classify(timed_out=True)
+    return _classify()
