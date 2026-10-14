@@ -50,6 +50,15 @@ rule) takes the 1-based failure count for the payload being deserialized:
 One malformed message therefore cannot sit uncommitted at the end of a
 partition, and it cannot stop the following offset from being read.
 
+`consume_poison_path` in `src/utils/kafka_poison_policy.py` applies this rule
+to a mocked broker: malformed bytes, invalid JSON, and schema-invalid
+payloads are classified up to the limit, then published to the configured
+DLQ topic with the headers above, and the offset is committed so a following
+valid message is processed. A failed DLQ publish does not commit. The mirror
+has no Delta buffer, so it commits an accepted offset as soon as the payload
+classifies. `async fn ingest` still commits accepted rows only after their
+Delta batch. This function is for tests. It is not a second production consumer.
+
 If the DLQ produce still fails after `--max-write-attempts`, the process exits
 **without** committing (#544). The payload is not dropped on the floor. That
 outage is the DLQ being unreachable, not an unbounded deserialize retry.
