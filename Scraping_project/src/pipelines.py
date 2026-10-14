@@ -203,6 +203,38 @@ try:  # Bronze schema outcomes (#302, #227)
 except Exception:  # prometheus_client missing or metric already registered
     SCHEMA_DROPS = MISSING_PUBLICATION_DATE = None
 
+try:  # handled pipeline errors must not disappear (#219)
+    from prometheus_client import Counter as _PErrCounter
+
+    PIPELINE_ERRORS = _PErrCounter(
+        "pipeline_errors_total",
+        "Handled item-pipeline errors, by stage and reason. Optional-metric failures are counted, not re-raised.",
+        ["stage", "reason"],
+    )
+except Exception:  # prometheus_client missing or metric already registered
+    PIPELINE_ERRORS = None
+
+
+def _record_pipeline_error(stage: str, reason: str, error: BaseException | None = None) -> None:
+    """Structured log plus ``pipeline_errors_total{stage,reason}``. Never raises.
+
+    These handlers cover optional telemetry (the old bare ``pass`` on metric
+    import/emit). The row was not lost, so this does not re-raise or dead-letter:
+    failing the crawl would turn a metrics miss into dropped data (#219).
+    """
+    logger.warning("pipeline error stage=%s reason=%s error=%s", stage, reason, error)
+    if PIPELINE_ERRORS is None:
+        return
+    try:
+        PIPELINE_ERRORS.labels(stage=stage, reason=reason).inc()
+    except Exception as metric_error:
+        logger.warning(
+            "pipeline_errors_total increment failed stage=%s reason=%s error=%s",
+            stage,
+            reason,
+            metric_error,
+        )
+
 
 class KafkaPipeline:
     """Publish items to Kafka without silently losing them (#175, #249).
@@ -861,8 +893,8 @@ class OffsiteCandidatePipeline(_TimedFlushMixin):
 
             if OFFSITE_CANDIDATES_SAVED:
                 OFFSITE_CANDIDATES_SAVED.labels(spider=getattr(spider, "name", None) or "scout").inc(n)
-        except ImportError:
-            pass
+        except ImportError as metric_error:
+            _record_pipeline_error("offsite", "metrics_import", metric_error)
 
     def _save_batch(self, spider: Spider | None = None, trigger: str = "manual"):
         before = self.batch.rows_written
@@ -943,8 +975,8 @@ class GrafanaSummaryPipeline:
 
             if CRAWLER_SUMMARY_SKIPPED is not None:
                 CRAWLER_SUMMARY_SKIPPED.labels(spider=spider.name, reason=reason).inc()
-        except Exception:  # metrics are best effort here
-            pass
+        except Exception as metric_error:  # metrics are best effort here (#219)
+            _record_pipeline_error("summary", "metrics_emit", metric_error)
         if error is None:
             logger.debug(f"GrafanaSummaryPipeline skipped summary export ({reason})")
         else:
