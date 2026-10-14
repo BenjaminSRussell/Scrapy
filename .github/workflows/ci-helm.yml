@@ -1,0 +1,53 @@
+name: Helm chart
+
+on:
+  pull_request:
+    paths:
+      - "Scraping_project/k8s/helm/**"
+      - "Scraping_project/DEPLOYMENT.md"
+      - "Scraping_project/k8s/README.md"
+      - "Scraping_project/tests/unit/test_helm_resources_1104.py"
+      - ".github/workflows/ci-helm.yml"
+  push:
+    branches: [main]
+    paths:
+      - "Scraping_project/k8s/helm/**"
+      - "Scraping_project/DEPLOYMENT.md"
+      - "Scraping_project/k8s/README.md"
+      - "Scraping_project/tests/unit/test_helm_resources_1104.py"
+      - ".github/workflows/ci-helm.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  helm-template:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.16.4
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+
+      - name: Install checker dependencies
+        run: pip install pyyaml pytest
+
+      # HELM_REQUIRED fails the job if helm is missing, so the render checks
+      # cannot skip. --noconftest keeps this on pyyaml+pytest only.
+      - name: Lint and template resource profiles
+        working-directory: Scraping_project
+        env:
+          HELM_REQUIRED: "1"
+        run: |
+          helm version
+          python3 -m pytest tests/unit/test_helm_resources_1104.py \
+            -o addopts= -p no:cacheprovider --noconftest -q --tb=short

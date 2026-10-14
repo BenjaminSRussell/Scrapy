@@ -33,6 +33,13 @@ spec:
           done
           echo "Kafka bootstrap brokers unavailable" >&2
           exit 1
+        resources:
+          requests:
+            cpu: 50m
+            memory: 32Mi
+          limits:
+            cpu: 200m
+            memory: 64Mi
       containers:
       - name: kafka-delta-ingestor
         image: "{{ .Values.kafkaDeltaIngestor.image.repository }}:{{ .Values.kafkaDeltaIngestor.image.tag }}"

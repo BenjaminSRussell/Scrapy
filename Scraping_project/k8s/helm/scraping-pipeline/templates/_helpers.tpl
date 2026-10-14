@@ -123,8 +123,55 @@ Hard errors in any profile: configurations that cannot work.
 {{- if and .Values.redis.external .Values.redis.external.egressCIDRs (not (kindIs "slice" .Values.redis.external.egressCIDRs)) -}}
 {{- $errors = append $errors "redis.external.egressCIDRs must be a list of CIDRs (#216)" -}}
 {{- end -}}
+{{- $resErr := include "scraping-pipeline.resourceErrors" . -}}
+{{- if $resErr -}}
+{{- $errors = append $errors $resErr -}}
+{{- end -}}
 {{- join "\n" $errors -}}
 {{- end }}
+
+{{/*
+#1104: every enabled workload must set cpu and memory requests and limits.
+Returns one line, or empty when the chart is complete. PVCs are storage only
+and are not checked here. The kafka-topics Job hardcodes its own resources.
+*/}}
+{{- define "scraping-pipeline.resourceErrors" -}}
+{{- $missing := list -}}
+{{- $workloads := list
+  (dict "name" "redis" "enabled" .Values.redis.enabled "resources" .Values.redis.resources)
+  (dict "name" "postgresql" "enabled" .Values.postgresql.enabled "resources" .Values.postgresql.resources)
+  (dict "name" "zookeeper" "enabled" .Values.zookeeper.enabled "resources" .Values.zookeeper.resources)
+  (dict "name" "kafka" "enabled" .Values.kafka.enabled "resources" .Values.kafka.resources)
+  (dict "name" "prometheus" "enabled" .Values.prometheus.enabled "resources" .Values.prometheus.resources)
+  (dict "name" "alertmanager" "enabled" .Values.alertmanager.enabled "resources" .Values.alertmanager.resources)
+  (dict "name" "grafana" "enabled" .Values.grafana.enabled "resources" .Values.grafana.resources)
+  (dict "name" "scrapyApp" "enabled" .Values.scrapyApp.enabled "resources" .Values.scrapyApp.resources)
+  (dict "name" "stage2Worker" "enabled" .Values.stage2Worker.enabled "resources" .Values.stage2Worker.resources)
+  (dict "name" "stage3Worker" "enabled" .Values.stage3Worker.enabled "resources" .Values.stage3Worker.resources)
+  (dict "name" "stage4Worker" "enabled" .Values.stage4Worker.enabled "resources" .Values.stage4Worker.resources)
+  (dict "name" "kafkaDeltaIngestor" "enabled" .Values.kafkaDeltaIngestor.enabled "resources" .Values.kafkaDeltaIngestor.resources)
+  (dict "name" "metricsExporter" "enabled" .Values.metricsExporter.enabled "resources" .Values.metricsExporter.resources)
+  (dict "name" "exporters.redis" "enabled" .Values.exporters.redis.enabled "resources" .Values.exporters.redis.resources)
+  (dict "name" "exporters.postgres" "enabled" .Values.exporters.postgres.enabled "resources" .Values.exporters.postgres.resources)
+  (dict "name" "exporters.kafkaJmx" "enabled" .Values.exporters.kafkaJmx.enabled "resources" .Values.exporters.kafkaJmx.resources)
+  (dict "name" "exporters.statsd" "enabled" .Values.exporters.statsd.enabled "resources" .Values.exporters.statsd.resources)
+-}}
+{{- range $workloads -}}
+{{- if .enabled -}}
+{{- $res := .resources | default dict -}}
+{{- $cpuReq := dig "requests" "cpu" "" $res -}}
+{{- $memReq := dig "requests" "memory" "" $res -}}
+{{- $cpuLim := dig "limits" "cpu" "" $res -}}
+{{- $memLim := dig "limits" "memory" "" $res -}}
+{{- if or (not $cpuReq) (not $memReq) (not $cpuLim) (not $memLim) -}}
+{{- $missing = append $missing .name -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- if $missing -}}
+enabled workloads missing cpu and memory requests and limits: {{ join ", " $missing }} (#1104)
+{{- end -}}
+{{- end -}}
 
 {{/*
 #216: external Redis hostname, or empty when the chart replica is in use.

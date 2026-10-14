@@ -291,12 +291,18 @@ For issues or questions:
 ## Development vs Production
 
 ### Development
+
+Stage 1–4 sizing (dev / small / prod) is the table in [DEPLOYMENT.md](../DEPLOYMENT.md#helm-resource-profiles). `values.yaml` is dev, `values-small.yaml` is one replica with HPA off, and `values-prod.yaml` raises worker memory so a Kafka lag spike does not OOM the pod. Every enabled workload sets requests and limits; the chart fails the render otherwise.
+
 ```yaml
-# Minimal resources, no persistence
+# Example only: smaller Redis for a local cluster. Not a stage-worker profile.
 redis:
   persistence:
     enabled: false
   resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
     limits:
       cpu: 500m
       memory: 512Mi

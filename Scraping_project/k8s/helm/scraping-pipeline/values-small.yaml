@@ -1,0 +1,60 @@
+# Small-cluster overlay (#1104). Merge on top of values.yaml:
+#
+#   helm template scraping-pipeline . -f values.yaml -f values-small.yaml
+#
+# One replica of each stage worker and no HPA, so a shared namespace can
+# schedule them. Memory limits stay above the request so a short Kafka lag
+# spike has headroom before the kubelet OOM-kills the pod. Stage 4 stays
+# off (chart default) until --set stage4Worker.enabled=true. Do not set
+# REDIS_URL. Sizes are tabulated in Scraping_project/DEPLOYMENT.md.
+scrapyApp:
+  replicaCount: 1
+  autoscaling:
+    enabled: false
+    minReplicas: 1
+    maxReplicas: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
+
+stage2Worker:
+  replicaCount: 1
+  autoscaling:
+    enabled: false
+    minReplicas: 1
+    maxReplicas: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 2Gi
+
+stage3Worker:
+  replicaCount: 1
+  autoscaling:
+    enabled: false
+    minReplicas: 1
+    maxReplicas: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 2Gi
+
+stage4Worker:
+  replicaCount: 1
+  resources:
+    requests:
+      cpu: 250m
+      memory: 1Gi
+    limits:
+      cpu: 1000m
+      memory: 4Gi
