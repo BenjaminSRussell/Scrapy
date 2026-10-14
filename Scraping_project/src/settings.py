@@ -53,7 +53,6 @@ def derive_scrapy_config(config: Optional[Config] = None) -> dict[str, Any]:
         ),
         "download_delay": cfg.get("stage1.spiders.scout.download_delay"),
         "download_timeout": cfg.get("stage1.spiders.scout.download_timeout"),
-        "retry_times": cfg.get("stage1.spiders.scout.retry_times"),
         "dns_timeout": cfg.get("stage1.spiders.scout.dns_timeout"),
         "autothrottle_enabled": cfg.get("stage1.spiders.scout.autothrottle_enabled"),
         "autothrottle_start_delay": cfg.get(
@@ -76,6 +75,22 @@ def derive_scrapy_config(config: Optional[Config] = None) -> dict[str, Any]:
     for key, value in bridges.items():
         if key not in scrapy and value is not None:
             scrapy[key] = value
+
+    # Shared retry policy (#215). Explicit scrapy.retry_times wins over the
+    # profile, but not over retry.attempts. 429 and 503 always stay retryable.
+    from src.utils.retry import ensure_retryable_statuses, load_retry_policy
+
+    policy = load_retry_policy(cfg)
+    if policy.attempts_from_config or (policy.profile == "production" and "retry_times" not in scrapy):
+        scrapy["retry_times"] = policy.scrapy_retry_times
+    elif "retry_times" not in scrapy:
+        scout_retries = cfg.get("stage1.spiders.scout.retry_times")
+        scrapy["retry_times"] = policy.scrapy_retry_times if scout_retries is None else scout_retries
+    configured_codes = scrapy.get("retry_http_codes")
+    if configured_codes is None:
+        scrapy["retry_http_codes"] = policy.retry_http_codes
+    else:
+        scrapy["retry_http_codes"] = sorted(ensure_retryable_statuses(configured_codes))
     return scrapy
 
 
@@ -178,7 +193,12 @@ DOWNLOADER_MIDDLEWARES.setdefault(
 DNS_TIMEOUT = _scrapy_config.get("dns_timeout", 5)
 
 RETRY_ENABLED = _scrapy_config.get("retry_enabled", True)
-RETRY_TIMES = _scrapy_config.get("retry_times", 2)
+# Shared with Stage 2 via src.utils.retry.load_retry_policy (#215).
+# Development keeps the scout bridge (2). Production (ENV=production) uses 4.
+RETRY_TIMES = int(_scrapy_config.get("retry_times", 2))
+RETRY_HTTP_CODES = list(_scrapy_config.get(
+    "retry_http_codes", [500, 502, 503, 504, 522, 524, 408, 429]
+))
 
 LOG_LEVEL = os.getenv("LOG_LEVEL", _scrapy_config.get("log_level", "INFO"))
 

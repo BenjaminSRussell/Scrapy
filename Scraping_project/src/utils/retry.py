@@ -9,9 +9,10 @@ import logging
 import os
 import random
 import time
+from dataclasses import dataclass
 from datetime import datetime
 from functools import wraps
-from typing import Any, TypeVar, Callable, Optional, Type, Tuple, cast
+from typing import Any, TypeVar, Callable, Mapping, Optional, Type, Tuple, cast
 
 from src.core.exceptions import (
     PipelineException,
@@ -446,3 +447,186 @@ def get_circuit_breaker(service: str) -> CircuitBreaker:
         "redis": REDIS_CIRCUIT_BREAKER,
     }
     return breakers.get(service, CircuitBreaker(name=service))
+
+
+# Shared by Scrapy (RETRY_TIMES / RETRY_HTTP_CODES) and Stage 2 aiohttp fetches (#215).
+# ``attempts`` counts the first try. Scrapy RETRY_TIMES is attempts - 1.
+# Profiles match destructive_guard: ENV/APP_ENV of production or prod.
+DEV_RETRY_ATTEMPTS = 3
+PROD_RETRY_ATTEMPTS = 5
+DEV_RETRY_BACKOFF_BASE = 0.5
+DEV_RETRY_BACKOFF_MAX = 8.0
+PROD_RETRY_BACKOFF_BASE = 1.0
+PROD_RETRY_BACKOFF_MAX = 30.0
+# Scrapy's default RETRY_HTTP_CODES, which already includes 429 and 503.
+DEFAULT_RETRY_STATUSES = frozenset({500, 502, 503, 504, 522, 524, 408, 429})
+REQUIRED_RETRY_STATUSES = frozenset({429, 503})
+
+
+def _as_positive_int(value: Any) -> Optional[int]:
+    if isinstance(value, bool) or value is None:
+        return None
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        return None
+    if number < 1:
+        return None
+    return number
+
+
+def _as_non_negative_float(value: Any) -> Optional[float]:
+    if isinstance(value, bool) or value is None:
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if number < 0:
+        return None
+    return number
+
+
+def _as_statuses(value: Any) -> Optional[frozenset[int]]:
+    if isinstance(value, (str, bytes)) or not isinstance(value, (list, tuple, set, frozenset)):
+        return None
+    codes = []
+    for item in value:
+        if isinstance(item, bool):
+            return None
+        try:
+            codes.append(int(item))
+        except (TypeError, ValueError):
+            return None
+    if not codes:
+        return None
+    return frozenset(codes)
+
+
+def ensure_retryable_statuses(codes: Any, *, fallback: Optional[frozenset[int]] = None) -> frozenset[int]:
+    """Status set that always includes 429 and 503 (#215)."""
+    parsed = _as_statuses(codes)
+    if parsed is None:
+        parsed = DEFAULT_RETRY_STATUSES if fallback is None else fallback
+    return frozenset(parsed) | REQUIRED_RETRY_STATUSES
+
+
+@dataclass(frozen=True)
+class RetryPolicy:
+    """One retry policy for Scrapy middleware and Stage 2 (#215).
+
+    Profiles, when ``retry`` in config.yml omits a key:
+
+    * development (``ENV`` unset or anything other than production/prod):
+      3 total attempts (Scrapy ``RETRY_TIMES`` 2), backoff 0.5s–8s.
+    * production (``ENV`` or ``APP_ENV`` is ``production`` or ``prod``; Helm
+      sets this): 5 total attempts (Scrapy ``RETRY_TIMES`` 4), backoff 1s–30s.
+
+    ``attempts`` includes the first try. ``queue_attempts`` is the Stage 2
+    queue cap (``STAGE2_MAX_RETRIES``) and defaults to ``attempts``.
+    429 and 503 are always retryable. Stage 2 still does not retry 429 inside
+    one fetch (soft ban, #582); the queue retries it.
+    """
+
+    profile: str
+    attempts: int
+    queue_attempts: int
+    backoff_base: float
+    backoff_max: float
+    retryable_statuses: frozenset[int]
+    attempts_from_config: bool = False
+
+    @property
+    def scrapy_retry_times(self) -> int:
+        """Additional Scrapy retries, not counting the first download."""
+        return max(0, self.attempts - 1)
+
+    @property
+    def retry_http_codes(self) -> list[int]:
+        return sorted(self.retryable_statuses)
+
+    def in_request_statuses(self) -> frozenset[int]:
+        """Stage 2 in-request retries. 429 is queue-retried, not in-request (#582)."""
+        return frozenset(code for code in self.retryable_statuses if code != 429)
+
+
+def _retry_section(config: Any) -> dict[str, Any]:
+    if config is None:
+        return {}
+    section: Any = None
+    getter = getattr(config, "get_section", None)
+    if callable(getter):
+        try:
+            section = getter("retry")
+        except Exception:
+            section = None
+    if not isinstance(section, dict):
+        dotted = getattr(config, "get", None)
+        if callable(dotted):
+            try:
+                section = dotted("retry")
+            except Exception:
+                section = None
+    return dict(section) if isinstance(section, dict) else {}
+
+
+def load_retry_policy(
+    config: Any = None,
+    *,
+    environ: Optional[Mapping[str, str]] = None,
+) -> RetryPolicy:
+    """Load the shared ``retry`` config section, or the profile defaults (#215).
+
+    ``config`` is a ``src.core.config.Config`` (or anything with ``get_section``).
+    When it is omitted, the process config is used. A missing or invalid key
+    falls back to the profile default; it does not fail the crawl.
+    """
+    from src.utils.destructive_guard import is_production
+
+    profile = "production" if is_production(environ) else "development"
+    if profile == "production":
+        default_attempts = PROD_RETRY_ATTEMPTS
+        default_base = PROD_RETRY_BACKOFF_BASE
+        default_max = PROD_RETRY_BACKOFF_MAX
+    else:
+        default_attempts = DEV_RETRY_ATTEMPTS
+        default_base = DEV_RETRY_BACKOFF_BASE
+        default_max = DEV_RETRY_BACKOFF_MAX
+
+    if config is None:
+        try:
+            from src.core.config import get_config
+
+            config = get_config()
+        except Exception:
+            logger.warning("retry policy: config unavailable; using %s defaults", profile)
+            config = None
+    section = _retry_section(config)
+
+    configured_attempts = _as_positive_int(section.get("attempts"))
+    attempts_from_config = configured_attempts is not None
+    attempts = default_attempts if configured_attempts is None else configured_attempts
+    queue = _as_positive_int(section.get("queue_attempts"))
+    if queue is None:
+        queue = attempts
+    backoff_base = _as_non_negative_float(section.get("backoff_base"))
+    if backoff_base is None:
+        backoff_base = default_base
+    backoff_max = _as_non_negative_float(section.get("backoff_max"))
+    if backoff_max is None:
+        backoff_max = default_max
+    if backoff_max < backoff_base:
+        backoff_max = backoff_base
+    if "retryable_statuses" in section:
+        statuses = ensure_retryable_statuses(section.get("retryable_statuses"))
+    else:
+        statuses = ensure_retryable_statuses(None)
+    return RetryPolicy(
+        profile=profile,
+        attempts=attempts,
+        queue_attempts=queue,
+        backoff_base=backoff_base,
+        backoff_max=backoff_max,
+        retryable_statuses=statuses,
+        attempts_from_config=attempts_from_config,
+    )

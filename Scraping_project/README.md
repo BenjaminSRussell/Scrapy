@@ -414,10 +414,39 @@ Alert: `ScrapySoftBanSpike`. Fixture pages live in `tests/fixtures/soft_ban/`.
 - **Idempotent producer** (#174, #464). The defaults are `acks=all`, `enable.idempotence=true`, and at most 5 in-flight requests, so librdkafka retries never duplicate or reorder messages within a partition. With `KAFKA_REQUIRE_IDEMPOTENCE=true` (`kafka.require_idempotence`), the producer **refuses to start** if any override (env `KAFKA_PRODUCER_ACKS`, `config.yml kafka.producer`, `KAFKA_PRODUCER_CONFIG`) would break that guarantee. The Helm application configmap sets it to `true`. Locally it is off, so `KAFKA_PRODUCER_ACKS=1` still works.
 - **What is exactly-once and what isn't.** The producer is exactly-once and in-order per partition within one producer session. End to end, delivery is **at-least-once**: a restarted producer or a crash between kafka-delta-ingest's Delta commit and its offset commit can replay messages. Lake tables dedupe by `url_hash`.
 
+### Shared retry policy
+
+Scrapy and Stage 2 use one policy (#215): `load_retry_policy()` in
+`src/utils/retry.py`. Put a `retry:` section in `config.yml` to override the
+profile defaults (every key is optional):
+
+| Key | Meaning |
+|---|---|
+| `attempts` | Total tries, including the first request. Scrapy `RETRY_TIMES` is `attempts - 1`. Stage 2 in-request attempts use the same number. |
+| `queue_attempts` | Stage 2 queue cap (`STAGE2_MAX_RETRIES`). Defaults to `attempts`. |
+| `backoff_base` / `backoff_max` | Stage 2 exponential backoff, in seconds. |
+| `retryable_statuses` | HTTP statuses worth retrying. 429 and 503 are always added back if omitted. |
+
+When a key is absent:
+
+| Profile | How `ENV` is set | Total attempts | Scrapy `RETRY_TIMES` | Stage 2 backoff |
+|---|---|---|---|---|
+| development | unset, `development`, or anything else | 3 | 2, or the spider's own `retry_times` | 0.5s base, 8s cap |
+| production | `production` or `prod` (`APP_ENV` counts; Helm sets `ENV=production`) | 5 | at least 4; a lower per-spider `retry_times` is raised | 1s base, 30s cap |
+
+`retry.attempts` replaces the per-spider `retry_times` in both profiles. In
+development, with no `retry` section, an explicit `scrapy.retry_times` or
+`stage1.spiders.<name>.retry_times` still wins. 429 is retryable on the Scrapy
+side and on the Stage 2 queue; Stage 2 does not retry it inside the same fetch
+(it is a soft ban, #582). A plain 503 is retried in-request. `STAGE2_HTTP_ATTEMPTS`,
+`STAGE2_MAX_RETRIES`, `STAGE2_HTTP_BACKOFF_BASE` and `STAGE2_HTTP_BACKOFF_MAX`
+still override Stage 2.
+
 ### Stage 2 HTTP retries and circuit breaker
 
 Stage 2 retries transient fetch failures inside the same run (#158), so a
-single blip doesn't cost a whole queue cycle:
+single blip doesn't cost a whole queue cycle. The numbers below are the
+development defaults; production uses the shared policy above:
 
 | Failure | Behaviour |
 |---|---|

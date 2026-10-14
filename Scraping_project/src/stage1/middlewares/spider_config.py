@@ -56,6 +56,22 @@ def get_spider_settings(spider_name: str) -> dict:
     if not spider_config:
         raise ValueError(f"No configuration found for spider '{spider_name}' in config.yml")
 
+    # Shared retry policy (#215). Development keeps this spider's retry_times
+    # (default 3). Production floors it. retry.attempts replaces it in either profile.
+    from src.utils.retry import load_retry_policy
+
+    policy = load_retry_policy()
+    configured_retries = spider_config.get("retry_times", 3)
+    if policy.attempts_from_config:
+        retry_times = policy.scrapy_retry_times
+    elif policy.profile == "production":
+        try:
+            retry_times = max(int(configured_retries), policy.scrapy_retry_times)
+        except (TypeError, ValueError):
+            retry_times = policy.scrapy_retry_times
+    else:
+        retry_times = configured_retries
+
     settings = {
         "CONCURRENT_REQUESTS": spider_config.get("concurrent_requests", 32),
         "CONCURRENT_REQUESTS_PER_DOMAIN": spider_config.get("concurrent_requests_per_domain", 8),
@@ -65,7 +81,8 @@ def get_spider_settings(spider_name: str) -> dict:
         "COOKIES_ENABLED": as_bool(spider_config.get("cookies_enabled"), default=False),
         "HTTPCACHE_ENABLED": False,
         "RETRY_ENABLED": True,
-        "RETRY_TIMES": spider_config.get("retry_times", 3),
+        "RETRY_TIMES": retry_times,
+        "RETRY_HTTP_CODES": policy.retry_http_codes,
         "AUTOTHROTTLE_ENABLED": spider_config.get("autothrottle_enabled", True),
         "AUTOTHROTTLE_START_DELAY": spider_config.get("autothrottle_start_delay", 0.25),
         "AUTOTHROTTLE_MAX_DELAY": polite_autothrottle_max_delay(spider_config.get("autothrottle_max_delay", 60)),
