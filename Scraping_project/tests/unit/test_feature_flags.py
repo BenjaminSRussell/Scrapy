@@ -49,6 +49,7 @@ def test_config_section_used_when_env_unset(monkeypatch):
 def test_registry_experimental_defaults_off():
     assert ff.FLAGS["ENABLE_EXPERIMENTAL_SPIDERS"][0] is False
     assert ff.FLAGS["ASR_ENABLED"][0] is False
+    assert ff.FLAGS["STAGE4_ASR_ENABLED"][0] is False
     snap = ff.snapshot(env={})
     assert snap["ENABLE_EXPERIMENTAL_SPIDERS"] is False
     assert snap["SSRF_GUARD_ENABLED"] is True and snap["KAFKA_DLQ_ENABLED"] is True
