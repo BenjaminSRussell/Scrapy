@@ -3,7 +3,7 @@
 Pipeline Control Center - Dashboard Server
 
 Serves the custom monitoring dashboard on port 8080.
-This is completely separate from Grafana (port 3001).
+This is completely separate from Grafana (CC_GRAFANA_URL, default http://localhost:3000/).
 
 Purpose:
 - Real-time operational monitoring
@@ -33,7 +33,7 @@ import time
 import urllib.error
 import urllib.request
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, urlunsplit
 
 # #735: loopback by default. Containers/LAN must opt in explicitly
 # (CC_HOST=0.0.0.0 or --host 0.0.0.0), which prints a warning.
@@ -75,11 +75,46 @@ SECURITY_HEADERS = {
 # #400: Prometheus-format metrics are fetched server-side, so the browser only
 # talks to this origin.
 DEFAULT_METRICS_UPSTREAM = "http://127.0.0.1:9090/metrics"
+# Grafana home, not a dashboard UID. /d/<uid> is trimmed so a missing JSON
+# still opens the root (#1040, #157).
+DEFAULT_GRAFANA_URL = "http://localhost:3000/"
 UPSTREAM_MAX_BYTES = 8 * 1024 * 1024
 # #401: Redis keys whose depth is shown on the System tab. js_spider:priority_queue
 # is the only Redis-backed work queue (stage 2-4 queues are Delta tables / Kafka).
 DEFAULT_QUEUE_KEYS = ("js_spider:priority_queue",)
 _LENGTH_OPS = {"list": "llen", "zset": "zcard", "set": "scard", "stream": "xlen", "hash": "hlen"}
+
+
+def grafana_base_url(env=None) -> str:
+    """CC_GRAFANA_URL, else Grafana home. http(s) only; no userinfo, query, or fragment.
+
+    A ``/d/<uid>`` path is cut back to the base (subpath installs keep the
+    prefix) so the System Health card does not depend on dashboard JSON.
+    """
+    env = os.environ if env is None else env
+    raw = (env.get("CC_GRAFANA_URL") or "").strip()
+    return _clean_grafana_url(raw) or DEFAULT_GRAFANA_URL
+
+
+def _clean_grafana_url(raw: str) -> str:
+    if not raw or any(c.isspace() or ord(c) < 32 or c == "\\" for c in raw):
+        return ""
+    try:
+        parts = urlsplit(raw)
+        port = parts.port
+    except ValueError:
+        return ""
+    if parts.scheme not in ("http", "https") or not parts.hostname:
+        return ""
+    if parts.username is not None or parts.password is not None or port == 0:
+        return ""
+    segments = [s for s in parts.path.split("/") if s and s not in (".", "..")]
+    if "d" in segments:
+        dash = segments.index("d")
+        if dash + 1 < len(segments):
+            segments = segments[:dash]
+    path = ("/" + "/".join(segments) + "/") if segments else "/"
+    return urlunsplit((parts.scheme, parts.netloc, path, "", ""))
 
 
 def build_csp(env=None) -> str:
@@ -259,6 +294,7 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
     upstream_timeout: float = 4.0
     redis_factory = staticmethod(_redis_from_env)
     queue_keys: tuple[str, ...] | None = None
+    grafana_url: str | None = None
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(self.root), **kwargs)
@@ -274,6 +310,7 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         cls.metrics_upstream = env.get("METRICS_UPSTREAM", DEFAULT_METRICS_UPSTREAM)
         cls.upstream_timeout = _env_float(env, "CC_UPSTREAM_TIMEOUT", 4.0) or 4.0
         cls.queue_keys = queue_keys(env)
+        cls.grafana_url = grafana_base_url(env)
 
     def _cfg(self):
         if self.auth is None:
@@ -420,7 +457,11 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             self.path = '/index.html'
         if route == '/version.js':
             version = _cc_version()
-            body = f"window.__CC_VERSION__ = {version!r};\n".encode()
+            grafana = self.grafana_url or grafana_base_url()
+            body = (
+                f"window.__CC_VERSION__ = {version!r};\n"
+                f"window.__CC_GRAFANA_URL__ = {json.dumps(grafana)};\n"
+            ).encode()
             self._send_bytes(200, body, 'application/javascript; charset=utf-8')
             return
         return super().do_GET()
@@ -494,7 +535,7 @@ def main(argv=None):
     print(f"📊 Dashboard:  http://{shown}:{port}")
     print(f"📈 Metrics:    /api/metrics -> {DashboardHandler.metrics_upstream}  (METRICS_UPSTREAM)")
     print(f"🔐 Auth:       {'on' if DashboardHandler.auth and DashboardHandler.auth.enabled else 'off (CC_AUTH_TOKEN / CC_BASIC_AUTH)'}")
-    print("📉 Grafana:    http://localhost:3001 (separate analytics)")
+    print(f"📉 Grafana:    {DashboardHandler.grafana_url or grafana_base_url()} (separate analytics)")
     print()
     print("Purpose:")
     print("  - Real-time pipeline monitoring")

@@ -78,6 +78,7 @@ def test_existing_assets_still_served(server):
     assert get(base + "/style.css")[0] == 200
     status, _, body = get(base + "/version.js?x=1")
     assert status == 200 and body.startswith("window.__CC_VERSION__")
+    assert "window.__CC_GRAFANA_URL__" in body
 
 
 def test_default_bind_is_loopback(serve):

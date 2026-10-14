@@ -59,7 +59,9 @@ node --test Scraping_project/dashboard/tests/   # helper unit tests
   Connection: `REDIS_URL`, else `REDIS_HOST`/`REDIS_PORT`/`REDIS_DB`/`REDIS_PASSWORD`.
   If Redis is down the API returns 503 and the panel says "unavailable"; it never
   shows made-up zeros. Stage 2–4 backlogs are Delta tables / Kafka topics, not Redis
-  keys; see the Grafana pipeline-health dashboard for those.
+  keys; see Grafana for those. System Health links to Grafana home
+  (`CC_GRAFANA_URL`, default `http://localhost:3000/`), not a `/d/<uid>` dashboard,
+  so the card still works when that JSON is absent (#1040).
 
 ## Server settings
 
@@ -73,6 +75,7 @@ node --test Scraping_project/dashboard/tests/   # helper unit tests
 | `CC_BASIC_AUTH` | unset (auth off) | `user:password` for the browser login prompt (HTTP Basic) |
 | `CC_CORS_ORIGINS` | unset (no CORS headers) | Comma list of exact origins allowed to read responses cross-origin; `*` is for local development only and prints a warning (#189) |
 | `CC_CONNECT_SRC` | unset | Extra http(s) origins allowed in CSP `connect-src` (only for a cross-origin `?metrics=`) (#245) |
+| `CC_GRAFANA_URL` | `http://localhost:3000/` | Grafana home linked from System Health. Injected on `/version.js`. A `/d/<uid>` path is trimmed back to the base (#1040) |
 | `CC_RATE_LIMIT` / `CC_RATE_BURST` | `600` / `120` | Per-client token bucket: requests per minute and burst. Excess requests get `429` with `Retry-After`. `CC_RATE_LIMIT=0` disables it (#257) |
 
 ## Exposing the dashboard (#189/#455)
