@@ -32,6 +32,7 @@ renamed to the new version and date (see the release checklist).
 
 ### Changed
 - Seen-URL Redis keys are `site:{site_id}:{prefix}:urls` (for example `site:uconn:seen:urls`). Unscoped `seen:urls` and `scout:urls` are not read; rename them before deploy. `SITE_ID`, else `TENANT_ID`, else `REDIS_SITE_ID`, else `default` (#191).
+- Scrapy and Stage 2 share one retry policy (`retry` in config.yml, otherwise dev vs production defaults). Production uses more attempts; 429 and 503 stay retryable (#215).
 - `start.py` and `shutdown.py` use `docker-compose` when it is installed, otherwise the `docker compose` plugin (`COMPOSE_CMD` overrides). Dry runs do not probe the plugin (#342).
 - Redis is one env contract: `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD` and `REDIS_DB`, with `REDIS_URL` only a fallback for values those leave unset (#511).
 - Bronze contract requires only `url`, `scraped_at_utc` and `spider_name`, shared with the Rust ingestor (#531).

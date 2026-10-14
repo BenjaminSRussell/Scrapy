@@ -211,6 +211,7 @@ DEFAULT_STAGE2_MAX_RETRIES = 3
 SOFT_BAN_PREFIX = "soft_ban:"
 # In-request retry policy (#158). 429 is deliberately absent: it is a soft-ban
 # signal (#582) handled by quarantine + DomainBackoff, and retried by the queue.
+# The shared policy (#215) includes 429; _fetch_once still skips it in-request.
 TRANSIENT_HTTP_STATUSES = frozenset({408, 500, 502, 503, 504})
 DEFAULT_STAGE2_HTTP_ATTEMPTS = 3
 DEFAULT_STAGE2_HTTP_BACKOFF_BASE = 0.5
@@ -312,10 +313,21 @@ class Stage2Worker:
         self.perf_start_time = None
         self.perf_urls_processed = 0
 
-        try:
-            self.max_retries = max(1, int(os.getenv("STAGE2_MAX_RETRIES", DEFAULT_STAGE2_MAX_RETRIES)))
-        except ValueError:
-            self.max_retries = DEFAULT_STAGE2_MAX_RETRIES
+        # Shared retry policy (#215). STAGE2_* env still wins; a bad value keeps
+        # the historical constant so STAGE2_MAX_RETRIES=junk stays 3.
+        from src.utils.retry import load_retry_policy
+
+        policy = load_retry_policy()
+        self.retryable_statuses = policy.retryable_statuses
+        self._in_request_statuses = policy.in_request_statuses()
+        raw_queue = os.getenv("STAGE2_MAX_RETRIES")
+        if raw_queue is None or not raw_queue.strip():
+            self.max_retries = policy.queue_attempts
+        else:
+            try:
+                self.max_retries = max(1, int(raw_queue))
+            except ValueError:
+                self.max_retries = DEFAULT_STAGE2_MAX_RETRIES
         self._dlq: Any = None
         # One pooled HTTP session per run (#200); created in _run_traced.
         self._session: aiohttp.ClientSession | None = None
@@ -323,9 +335,9 @@ class Stage2Worker:
         self.soft_ban = SoftBanDetector()
         self.domain_backoff = DomainBackoff(stage="stage2")
         # In-request retries + per-host circuit breaker (#158).
-        self.http_attempts = _env_number("STAGE2_HTTP_ATTEMPTS", DEFAULT_STAGE2_HTTP_ATTEMPTS, 1, int)
-        self.http_backoff_base = _env_number("STAGE2_HTTP_BACKOFF_BASE", DEFAULT_STAGE2_HTTP_BACKOFF_BASE, 0.0)
-        self.http_backoff_max = _env_number("STAGE2_HTTP_BACKOFF_MAX", DEFAULT_STAGE2_HTTP_BACKOFF_MAX, 0.0)
+        self.http_attempts = _env_number("STAGE2_HTTP_ATTEMPTS", policy.attempts, 1, int)
+        self.http_backoff_base = _env_number("STAGE2_HTTP_BACKOFF_BASE", policy.backoff_base, 0.0)
+        self.http_backoff_max = _env_number("STAGE2_HTTP_BACKOFF_MAX", policy.backoff_max, 0.0)
         self.breaker_failures = _env_number("STAGE2_BREAKER_FAILURES", DEFAULT_STAGE2_BREAKER_FAILURES, 1, int)
         self.breaker_recovery = _env_number("STAGE2_BREAKER_RECOVERY", DEFAULT_STAGE2_BREAKER_RECOVERY, 0, int)
         self._host_breakers: dict[str, CircuitBreaker] = {}
@@ -823,7 +835,8 @@ class Stage2Worker:
                 sig = self._detector().detect(response.status, body, response.headers)
                 if sig:  # soft bans are never retried in-request (#582)
                     return self._soft_ban_record(url, url_hash, response.status, sig, domain)
-                if response.status in TRANSIENT_HTTP_STATUSES:
+                retryable = getattr(self, "_in_request_statuses", TRANSIENT_HTTP_STATUSES)
+                if response.status in retryable:
                     raise TransientHTTPError(response.status, _parse_retry_after(response.headers.get("Retry-After")))
                 return self._error_record(url, url_hash, response.status, "http_error")
 
