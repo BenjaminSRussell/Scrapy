@@ -82,6 +82,20 @@ gate (fonts and Chrome builds differ), and it is not part of `node --test`.
 | Where it is produced | Optional workflow [`.github/workflows/ci-dashboard-visual.yml`](../../.github/workflows/ci-dashboard-visual.yml): pull requests that touch this directory, or Actions → Run workflow. `continue-on-error: true`, so a capture failure does not fail the dashboard unit tests. The artifact is kept 14 days. It does not run on every push to `main`. |
 | Regenerate locally | `python Scraping_project/dashboard/overview_screenshot.py --channel chrome` (or bundled Chromium after `python -m playwright install chromium`). Default path: `Scraping_project/dashboard/visual/overview.png` (gitignored). Needs `playwright==1.55.0`, already pinned for the JS spider. |
 
+## Comparison mode (#1035)
+
+The refresh-bar toggle **Compare to previous hour** overlays a dashed baseline on the throughput, URLs, pages, and summaries line charts (not the stage bar or routing doughnut). The choice is remembered in `localStorage` (`cc.comparePrevHour`).
+
+The metrics feed does not publish hour averages yet, so the overlay is a labeled placeholder: a flat zero dashed line, not a computed average. A finite gauge replaces that one series:
+
+| Series | Gauge |
+|---|---|
+| URLs discovered | `stage1_urls_discovered_prev_hour_avg` |
+| Pages analyzed | `stage2_pages_analyzed_prev_hour_avg` |
+| Summaries created | `stage3_summaries_created_prev_hour_avg` |
+| URLs/min | `stage1_urls_per_min_prev_hour_avg` |
+| Pages/min | `stage2_pages_per_min_prev_hour_avg` |
+
 ## Connection state in the tab title (#945)
 
 The browser tab title is prefixed with the live state so a background tab still signals trouble:
