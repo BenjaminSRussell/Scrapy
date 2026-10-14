@@ -35,7 +35,7 @@ let historicalData = {
     pages: [],
     summaries: [],
     sampleTimes: [],  // ms, parallel to the arrays above (#141)
-    maxDataPoints: 50
+    // Length is HISTORY_MAX_POINTS (format-utils.js), not a chart axis max (#691).
 };
 let previousMetrics = {};
 let previousMetricsAt = 0;  // ms timestamp of previousMetrics (#141)
@@ -282,7 +282,7 @@ function escapeHtml(s) {
 function addActivityLogItem(type, message) {
     const timestamp = new Date().toLocaleTimeString();
     activityLog.unshift({ type, message, timestamp });
-
+    boundHistoryBuffer(activityLog, 'end');
     if (activityLog.length > ACTIVITY_LOG_CAP) {
         activityLog.length = ACTIVITY_LOG_CAP;
     }
@@ -391,7 +391,7 @@ function renderActivityMessage(el, message) {
     }
 }
 
-function renderActivityList(container, { maxItems = ACTIVITY_LOG_CAP, levels = null } = {}) {
+function renderActivityList(container, { maxItems = HISTORY_MAX_POINTS, levels = null } = {}) {
     if (!container) return;
     // null = unfiltered (overview). A selection, including an empty one, is the Activity tab.
     const source = levels == null ? activityLog : filterActivityItems(activityLog, levels);
@@ -431,7 +431,7 @@ function updateActivityLog() {
     logContainers.forEach(container => {
         if (!container) return;
         if (activityPinned && container.id === "activity-log") return;
-        const maxItems = container.id === 'overview-activity' ? 8 : ACTIVITY_LOG_CAP;
+        const maxItems = container.id === 'overview-activity' ? 8 : HISTORY_MAX_POINTS;
         // #1027: chips filter the Activity tab only. Overview stays the latest mix.
         const levels = container.id === 'activity-log' ? activityLevelFilter : null;
         renderActivityList(container, { maxItems, levels });
@@ -560,19 +560,14 @@ function updateHistoricalData(metrics) {
     const now = new Date();
     const timeLabel = now.toLocaleTimeString();
 
-    historicalData.timestamps.push(timeLabel);
-    historicalData.urls.push(metrics['stage1_urls_discovered_total'] || 0);
-    historicalData.pages.push(metrics['stage2_pages_analyzed_total'] || 0);
-    historicalData.summaries.push(metrics['stage3_summaries_created_total'] || 0);
-    historicalData.sampleTimes.push(now.getTime());
-
-    if (historicalData.timestamps.length > historicalData.maxDataPoints) {
-        historicalData.timestamps.shift();
-        historicalData.urls.shift();
-        historicalData.pages.shift();
-        historicalData.summaries.shift();
-        historicalData.sampleTimes.shift();
-    }
+    // Each series is capped on its own. A short chart-label series must not
+    // leave urls, pages, summaries, or sampleTimes free to grow (#691).
+    pushHistorySample(historicalData.timestamps, timeLabel);
+    pushHistorySample(historicalData.urls, metrics['stage1_urls_discovered_total'] || 0);
+    pushHistorySample(historicalData.pages, metrics['stage2_pages_analyzed_total'] || 0);
+    pushHistorySample(historicalData.summaries, metrics['stage3_summaries_created_total'] || 0);
+    pushHistorySample(historicalData.sampleTimes, now.getTime());
+    enforceHistoryCap(historicalData, 'start');
 
     updatePerformanceCharts();
     // Leave the cold-chart state (#1076) on the first real sample. The helper
@@ -1204,10 +1199,9 @@ function syncAllChartTables() {
 
 
 function resetChartHistory() {
-    historicalData.timestamps.length = 0;
-    historicalData.urls.length = 0;
-    historicalData.pages.length = 0;
-    historicalData.summaries.length = 0;
+    for (const key of Object.keys(historicalData)) {
+        if (Array.isArray(historicalData[key])) historicalData[key].length = 0;
+    }
     lastHistoryDayKey = null;
     Object.values(charts || {}).forEach(ch => {
         if (!ch?.data) return;
