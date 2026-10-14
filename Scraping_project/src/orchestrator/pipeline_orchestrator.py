@@ -72,6 +72,10 @@ class PipelineStats:
 class PipelineOrchestrator:
 
     def __init__(self, config: dict | None = None):
+        # Reject a bad config.yml before stage workers or the lake are touched (#237).
+        from src.utils.validation import validate_startup_config
+
+        validate_startup_config()
         self.config = config or {}
         self.delta = get_delta()
         self.stats = PipelineStats()

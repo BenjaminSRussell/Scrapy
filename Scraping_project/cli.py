@@ -835,6 +835,16 @@ def main():
         subparsers.choices[args.command].print_help(sys.stderr)
         sys.exit(2)
 
+    # Schema-check config.yml before any command. --help already exited in argparse.
+    # --profile stays opt-in and is unchanged (#465); model lock checks stay in setup (#486).
+    try:
+        from src.utils.validation import ConfigValidationError, validate_startup_config
+
+        validate_startup_config()
+    except ConfigValidationError as exc:
+        print(str(exc), file=sys.stderr)
+        sys.exit(1)
+
     try:
         if args.profile:
             from src.utils.profiler import run_profiled
