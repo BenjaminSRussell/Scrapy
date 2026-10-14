@@ -6,14 +6,23 @@ Provides input validation functions used throughout the pipeline.
 orchestrator startup (#237).
 """
 
+import logging
+import re
 from pathlib import Path
 from typing import Optional
 from urllib.parse import urlparse
-import re
-import logging
 
 import yaml
-from pydantic import BaseModel, ConfigDict, StrictBool, StrictInt, StrictStr, ValidationError, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    StrictBool,
+    StrictInt,
+    StrictStr,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -366,13 +375,46 @@ class KafkaSection(BaseModel):
     require_idempotence: StrictBool
 
 
+def _non_negative_or_null(value: object) -> object:
+    """Budget caps are null (uncapped) or a finite number >= 0. Booleans are rejected."""
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError("must be a number or null")
+    if value != value or value == float("inf") or value == float("-inf"):
+        raise ValueError("must be a finite number or null")
+    if value < 0:
+        raise ValueError("must be >= 0")
+    return value
+
+
+class CostControlsSection(BaseModel):
+    """Daily Stage 3/4 budgets (#528). Null fields, or a null block, are uncapped."""
+
+    model_config = _STRICT
+    stage3_max_gpu_minutes_per_day: float | None = None
+    stage4_max_gpu_minutes_per_day: float | None = None
+    stage4_max_ocr_pages_per_day: float | None = None
+
+    @field_validator(
+        "stage3_max_gpu_minutes_per_day",
+        "stage4_max_gpu_minutes_per_day",
+        "stage4_max_ocr_pages_per_day",
+        mode="before",
+    )
+    @classmethod
+    def _cap_is_number_or_null(cls, value: object) -> object:
+        return _non_negative_or_null(value)
+
+
 class PipelineConfig(BaseModel):
-    """Top-level config.yml. Unknown sections are ignored; redis and kafka are not."""
+    """Top-level config.yml. Unknown sections are ignored; redis, kafka, and cost_controls are not."""
 
     model_config = ConfigDict(extra="allow")
     redis: RedisSection
     kafka: KafkaSection
     postgres: PostgresSection | None = None
+    cost_controls: CostControlsSection | None = None
 
 
 def default_config_path() -> Path:
