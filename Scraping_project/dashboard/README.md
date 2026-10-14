@@ -101,6 +101,20 @@ The metrics feed does not publish hour averages yet, so the overlay is a labeled
 | URLs/min | `stage1_urls_per_min_prev_hour_avg` |
 | Pages/min | `stage2_pages_per_min_prev_hour_avg` |
 
+## Grafana deep links (#1097)
+
+Control Center does not embed Grafana. The page is served from this origin (`:8080`) and Grafana is another origin (`:3000` for the monitoring profile, `:3001` for the observability pack), so an iframe would fight the CSP and would not be a supported embed. Open the pack in the browser instead:
+
+| Panel | URL |
+|---|---|
+| Lag, Redis depth, crawl rate, Delta commits | http://127.0.0.1:3001/d/ops-lag-depth-commits |
+| Kafka consumer lag | http://127.0.0.1:3001/d/ops-lag-depth-commits?viewPanel=2 |
+| Redis frontier depth | http://127.0.0.1:3001/d/ops-lag-depth-commits?viewPanel=3 |
+| Crawl rate | http://127.0.0.1:3001/d/ops-lag-depth-commits?viewPanel=4 |
+| Delta commits | http://127.0.0.1:3001/d/ops-lag-depth-commits?viewPanel=5 |
+
+The same uid is provisioned on the monitoring-profile Grafana at http://localhost:3000/d/ops-lag-depth-commits. Redis depth on the System tab (`/api/queues`) is the live key length. The Grafana panel is `redis_queue_length` from StatsD. They are the same frontier, two views.
+
 ## Connection state in the tab title (#945)
 
 The browser tab title is prefixed with the live state so a background tab still signals trouble:

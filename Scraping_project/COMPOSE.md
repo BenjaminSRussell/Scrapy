@@ -10,7 +10,7 @@ One Compose file (`docker-compose.yml`) plus an observability overlay. The obsol
 | `monitoring` | Prometheus, Grafana, redis-exporter, postgres-exporter, ops dashboard (`dashboard/serve.py` on `127.0.0.1:8080`). Redis and Postgres are on this profile too, because the exporters depend on them |
 | `streaming` | Kafka (KRaft, no ZooKeeper). Postgres is also on `core` |
 | `ml`, `full` | `stage4-worker` only (torch / OCR image). Redis is on these profiles too so the worker can start |
-| `observability` | Loki, Jaeger, OpenTelemetry collector in `docker-compose.observability.yml` |
+| `observability` | Loki, Jaeger, OpenTelemetry collector in `docker-compose.observability.yml`. Prometheus, Grafana, and StatsD in that file have no profile and start on a bare `up` |
 
 All services share `scraper-network`. The overlay is not a second copy of those services inside `docker-compose.yml`.
 
@@ -51,7 +51,11 @@ curl -sf -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8080/
 # Kafka. In-network bootstrap is kafka:9092. Host clients use localhost:9092.
 docker compose --profile core --profile streaming up -d
 
+# Packaged Prometheus + Grafana + StatsD (no app stack). Loopback 9095 / 3001.
+docker compose -f docker-compose.observability.yml up -d
+
 # Loki / Jaeger / OTEL (overlay). Do not expect these from docker-compose.yml alone.
+# The command also starts the pack containers (different host ports).
 docker compose -f docker-compose.yml -f docker-compose.observability.yml \
   --profile core --profile monitoring --profile observability up -d
 
@@ -76,3 +80,6 @@ docker compose --profile ml up -d stage4-worker
 | Loki | 3100 |
 | Jaeger UI | 16686 |
 | OTLP gRPC/HTTP | 4317 / 4318 |
+| Pack Prometheus | `127.0.0.1:9095` |
+| Pack Grafana | `127.0.0.1:3001` |
+| Pack StatsD metrics / UDP | `127.0.0.1:9102` / `127.0.0.1:9125` |

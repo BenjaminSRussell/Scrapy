@@ -1,17 +1,24 @@
-# Observability add-on: Loki, Jaeger, OpenTelemetry Collector (#476).
+# Observability: packaged Prometheus + Grafana (#1097) and the Loki / Jaeger /
+# OpenTelemetry overlay (#476).
 #
-# This is an overlay on the main stack, not a standalone file. Run it from
-# Scraping_project/ together with docker-compose.yml so the services share the
-# app's `scraper-network` and the ./monitoring mounts resolve:
+# Standalone, from Scraping_project/ (no app stack required). Unprofiled
+# services start; Loki / Jaeger / OTEL stay behind the `observability` profile:
+#
+#   docker compose -f docker-compose.observability.yml up -d
+#
+# Grafana: http://127.0.0.1:3001 (admin / GRAFANA_ADMIN_PASSWORD, default
+# admin for local dev only). Prometheus: http://127.0.0.1:9095.
+# Dashboard: http://127.0.0.1:3001/d/ops-lag-depth-commits
+#
+# Overlay on the app stack (shared scraper-network). Pack containers use
+# different service names and host ports than docker-compose.yml (#476):
 #
 #   docker compose -f docker-compose.yml -f docker-compose.observability.yml \
 #     --profile core --profile monitoring --profile observability up -d
 #
-# The services below are on the `observability` profile (#145), so a bare
-# `up` does not start them.
-#
-# Then point the app at the collector: OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+# Point the app at the collector: OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
 # (from containers) or http://localhost:4317 (from the host). See ../MONITORING.md.
+# StatsD from a container: statsd-exporter:9125. From the host: 127.0.0.1:9125.
 
 services:
   # ============================================
@@ -86,8 +93,76 @@ services:
       - jaeger
       - loki
 
+  # ============================================
+  # Packaged Prometheus + Grafana (#1097)
+  #
+  # No profile, so a bare `up` of this file starts them on a clean host.
+  # Names and published ports differ from docker-compose.yml (prometheus:9090,
+  # grafana:3000) so an overlay merge does not collide (#476). Loopback only.
+  # ============================================
+  statsd-exporter:
+    image: prom/statsd-exporter:v0.28.0
+    container_name: ops-statsd-exporter
+    restart: unless-stopped
+    command:
+      - --statsd.mapping-config=/etc/statsd/statsd_mapping.yml
+    ports:
+      - "127.0.0.1:9102:9102"
+      - "127.0.0.1:9125:9125/udp"
+    volumes:
+      - ./k8s/helm/scraping-pipeline/files/monitoring/statsd_mapping.yml:/etc/statsd/statsd_mapping.yml:ro
+    networks:
+      - scraper-network
+
+  ops-prometheus:
+    image: prom/prometheus:v3.2.1
+    container_name: ops-prometheus
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:9095:9090"
+    volumes:
+      - ./monitoring/prometheus-pack.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/recording_rules.yml:/etc/prometheus/recording_rules.yml:ro
+      - ./monitoring/alerting_rules_pack.yml:/etc/prometheus/alerting_rules.yml:ro
+      - ops-prometheus-data:/prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+    networks:
+      - scraper-network
+    depends_on:
+      - statsd-exporter
+
+  ops-grafana:
+    image: grafana/grafana:11.6.1
+    container_name: ops-grafana
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_SERVER_ROOT_URL=http://localhost:3001
+    volumes:
+      - ops-grafana-data:/var/lib/grafana
+      - ./monitoring/grafana_datasource_pack.yml:/etc/grafana/provisioning/datasources/datasource.yml:ro
+      - ./monitoring/grafana_dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml:ro
+      - ./monitoring/dashboards:/var/lib/grafana/dashboards:ro
+    networks:
+      - scraper-network
+    depends_on:
+      - ops-prometheus
+
 volumes:
   loki_data:
     driver: local
+  ops-prometheus-data:
+    driver: local
+  ops-grafana-data:
+    driver: local
 
-# `scraper-network` is defined by docker-compose.yml (merged via -f).
+# Defined here so this file starts alone. The same bridge name in
+# docker-compose.yml merges when both files are passed to compose.
+networks:
+  scraper-network:
+    driver: bridge

@@ -709,6 +709,29 @@ groups:
           impact: "Medium - Crawl latency grows while workers fall behind"
           action: "Scale the consuming stage or check it for stalls"
 
+      # URL frontier still climbing (#1097). Does not replace QueueBacklog
+      # and does not change the > 10000 comparison. Fires only when depth is
+      # already above 1000 and the 15m delta is above 5000.
+      - alert: FrontierGrowth
+        expr: |
+          (
+            max by (queue, site_id) (redis_queue_length) > 1000
+          )
+          and
+          (
+            max by (queue, site_id) (delta(redis_queue_length[15m])) > 5000
+          )
+        for: 15m
+        labels:
+          severity: warning
+          component: pipeline
+        annotations:
+          summary: "URL frontier growing on {{ $labels.queue }} (site {{ $labels.site_id }})"
+          description: "{{ $labels.queue }} on site {{ $labels.site_id }} is still above 1000 and gained more than 5000 items over 15 minutes (current depth {{ $value }})."
+          site: "{{ $labels.site_id }}"
+          impact: "Medium - Discovery is outrunning consumers"
+          action: "Compare crawl rate with Redis depth on the ops-lag-depth-commits dashboard. QueueBacklog (> 10000) is a separate alert and is unchanged."
+
   # ============================================
   # Pipeline SLOs (#179)
   # ============================================
