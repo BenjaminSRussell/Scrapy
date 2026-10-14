@@ -1,5 +1,5 @@
 # Every recipe is phony (none produce a file named after the target) (#796).
-.PHONY: help cli-help install install-dev lock update-deps test test-unit test-integration test-fast \
+.PHONY: help cli-help install install-dev install-stage4 lock update-deps test test-unit test-integration test-fast \
 	test-ci test-perf test-coverage test-coverage-min test-watch lint lint-fix format typecheck security \
 	security-full docker-build docker-up docker-down docker-down-clean docker-logs docker-ps \
 	docker-shell docker-test pre-commit pre-commit-update ci ci-docker clean clean-all dev \
@@ -49,6 +49,13 @@ install-dev: install ## Install development dependencies
 	@# The git hook runs from the repo root, so point it at this directory's config (#358).
 	pre-commit install --config "$$(git rev-parse --show-prefix).pre-commit-config.yaml"
 	@echo "$(GREEN)✓ Development environment ready!$(NC)"
+
+# Optional and heavy (~2 GB of torch/transformers). Not a dependency of install
+# or install-dev, and not an image build (#820). requirements-stage4.txt already
+# exists and includes requirements-ml.txt; this target does not compile locks.
+install-stage4: ## Optional, heavy Stage 4 NLP install (torch/transformers; not for CI)
+	@echo "$(BLUE)Installing optional Stage 4 NLP dependencies (heavy; not required for CI)...$(NC)"
+	pip install -r requirements-stage4.txt
 
 # Lockfiles are compiled from this directory with relative paths so the generated
 # header never embeds a machine-local path (#397). See ../CONTRIBUTING.md.

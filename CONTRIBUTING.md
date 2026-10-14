@@ -22,6 +22,19 @@ pip install -r requirements.txt -r dev-requirements.txt -r ci-tools.txt
 `make install-dev` does the same and also installs the git hook (step 3).
 JS-spider work also needs a browser: `playwright install chromium`.
 
+Stage 4 NLP (`transformers`, `torch`, `sentence-transformers`) is **optional and
+heavy** (on the order of 2 GB). It is not in `requirements.txt`, and CI and the
+core pipeline do not need it. From `Scraping_project/`:
+
+```bash
+make install-stage4
+# or: pip install -r requirements-stage4.txt
+```
+
+That installs the existing `requirements-stage4.txt` (it includes
+`requirements-ml.txt`) into the current environment. It does not install OCR
+(`requirements-ocr.txt`), change pins, or build a Docker image.
+
 ## 3. Pre-commit hook
 
 ```bash

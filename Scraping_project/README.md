@@ -72,6 +72,11 @@ cd Scraping_project
 ```bash
 pip install -r requirements.txt
 pip install -r dev-requirements.txt  # For development
+
+# Optional and heavy (~2 GB): Stage 4 NLP (transformers, torch).
+# Not required for tests or the core pipeline. Does not build an image.
+make install-stage4
+# or: pip install -r requirements-stage4.txt
 ```
 
 3. Start infrastructure with Docker Compose:
