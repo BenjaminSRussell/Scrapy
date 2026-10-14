@@ -320,6 +320,12 @@ def test_real_dashboard_assets_smoke(serve):
             assert body.strip(), src
         status, headers, _ = get(base + "/styleguide.html")
         assert status == 200 and headers["content-type"].startswith("text/html")
+        status, headers, body = get(base + "/plans.html")
+        assert status == 200 and headers["content-type"].startswith("text/html")
+        page = body.decode()
+        assert 'id="current-plan-badge"' in page and ">Free</span>" in page
+        assert 'href="mailto:ops@example.com?' in page
+        assert "Team" in page and "Enterprise" in page
     finally:
         httpd.shutdown()
         httpd.server_close()

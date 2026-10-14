@@ -17,7 +17,7 @@ exists (#365).
 
 ```bash
 python Scraping_project/dashboard/serve.py
-# open http://localhost:8080  (styleguide: /styleguide.html)
+# open http://localhost:8080  (styleguide: /styleguide.html, plans: /plans.html)
 node --test Scraping_project/dashboard/tests/   # helper unit tests
 ```
 
@@ -67,6 +67,7 @@ through a reverse proxy or ingress that terminates TLS and authenticates users (
 nginx/Traefik with OAuth2 Proxy, or a Kubernetes ingress with an auth annotation). Set
 `CC_CORS_ORIGINS` only if another site really needs to read the API.
 - Contributor styleguide: [`styleguide.html`](styleguide.html)
+- Plan catalog (#674): [`plans.html`](plans.html). Static Free / Team / Enterprise matrix, a Free current-plan badge, and a `mailto:` upgrade stub. It does not enforce a plan or fill null `cost_controls` caps.
 - Accessibility checklist for PRs: [`A11Y_CHECKLIST.md`](A11Y_CHECKLIST.md)
 
 ## Connection state in the tab title (#945)

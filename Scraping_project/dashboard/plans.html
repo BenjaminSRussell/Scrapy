@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Plan catalog — Pipeline Control Center</title>
+    <style>
+        :root {
+            --primary: #1e40af;
+            --primary-bright: #2563eb;
+            --secondary: #7c3aed;
+            --gray-50: #f9fafb;
+            --gray-100: #f3f4f6;
+            --gray-200: #e5e7eb;
+            --gray-700: #374151;
+            --gray-900: #111827;
+            --muted-text: #475569;
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: var(--gray-100);
+            color: var(--gray-900);
+            line-height: 1.5;
+        }
+        .skip {
+            position: absolute;
+            left: -9999px;
+            top: 0;
+            z-index: 2;
+            padding: 0.75rem 1rem;
+            background: #111827;
+            color: #fff;
+            text-decoration: none;
+        }
+        .skip:focus { left: 0; }
+        .topbar {
+            background: linear-gradient(135deg, var(--primary-bright) 0%, var(--secondary) 100%);
+            color: #fff;
+            padding: 1.5rem 1.25rem;
+        }
+        .topbar-inner, main { max-width: 960px; margin: 0 auto; }
+        .kicker { margin: 0 0 0.25rem; font-size: 0.8rem; letter-spacing: 0.04em; text-transform: uppercase; }
+        h1 { margin: 0 0 0.35rem; font-size: 1.75rem; }
+        .topbar p { margin: 0; }
+        .topbar a { color: #fff; }
+        main { padding: 1.25rem 1.25rem 3rem; }
+        h2 { margin: 1.75rem 0 0.5rem; font-size: 1.25rem; }
+        .note, .stub { color: var(--muted-text); }
+        .plan-line { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; font-size: 1.05rem; }
+        .plan-badge {
+            display: inline-block;
+            padding: 0.15rem 0.65rem;
+            border-radius: 999px;
+            background: var(--primary);
+            color: #fff;
+            font-size: 0.85rem;
+            font-weight: 700;
+            letter-spacing: 0.02em;
+        }
+        .upgrade-cta {
+            display: inline-block;
+            margin-top: 0.75rem;
+            min-height: 44px;
+            padding: 0.6rem 1rem;
+            background: var(--primary);
+            color: #fff;
+            font-weight: 650;
+            text-decoration: underline;
+            border-radius: 0.375rem;
+        }
+        a:focus-visible, .upgrade-cta:focus-visible {
+            outline: 2px solid var(--primary-bright);
+            outline-offset: 3px;
+        }
+        .matrix-wrap { overflow-x: auto; max-width: 100%; margin-top: 0.75rem; }
+        table { border-collapse: collapse; width: 100%; min-width: 40rem; background: #fff; }
+        caption { text-align: left; caption-side: bottom; padding: 0.75rem 0 0; color: var(--muted-text); font-size: 0.9rem; }
+        th, td { border: 1px solid var(--gray-200); padding: 0.6rem 0.75rem; text-align: left; vertical-align: top; }
+        th { background: var(--gray-50); }
+        th[aria-current="true"] { box-shadow: inset 0 -3px 0 var(--primary); }
+        .meters { padding-left: 1.2rem; }
+        .meters li { margin: 0.35rem 0; }
+        code { background: #fff; padding: 0.05rem 0.3rem; border-radius: 0.25rem; }
+        @media (prefers-reduced-motion: reduce) {
+            * { animation: none !important; transition: none !important; }
+        }
+        @media (forced-colors: active) {
+            .plan-badge, .upgrade-cta, th, td {
+                background: Canvas;
+                color: CanvasText;
+                border: 1px solid CanvasText;
+            }
+            .topbar { background: Canvas; color: CanvasText; }
+            .topbar a, .upgrade-cta { color: LinkText; }
+        }
+        @media (max-width: 640px) {
+            h1 { font-size: 1.4rem; }
+            .topbar, main { padding-left: 1rem; padding-right: 1rem; }
+        }
+    </style>
+</head>
+<body>
+    <a class="skip" href="#main">Skip to main content</a>
+    <header class="topbar">
+        <div class="topbar-inner">
+            <p class="kicker">Pipeline Control Center</p>
+            <h1>Plan catalog</h1>
+            <p>Free, Team, and Enterprise. A catalog of this build, not a billing gate.</p>
+        </div>
+    </header>
+    <main id="main">
+        <p class="plan-line">Current plan
+            <span id="current-plan-badge" class="plan-badge" data-plan="free">Free</span>
+        </p>
+        <p class="note">This deployment has no commercial plan record, so the badge stays Free. The badge is a label. It does not authorize features, and it does not read a metering API.</p>
+        <p>
+            <a class="upgrade-cta" href="mailto:ops@example.com?subject=Upgrade%20pipeline%20plan&amp;body=Current%20plan%3A%20Free.%0ARequested%20plan%3A%20Team%20or%20Enterprise.%0A%0AThis%20note%20does%20not%20change%20quotas.">Request a Team or Enterprise upgrade</a>
+        </p>
+        <p id="upgrade-stub" class="stub">No mail client? The upgrade is a stub. Nothing is billed. Quotas stay as configured. An operator still edits config themselves.</p>
+
+        <h2>Feature matrix</h2>
+        <div class="matrix-wrap">
+            <table>
+                <caption>Cells are the catalog story. Limits named below are the numbers shipped in this build. Picking a column does not write config.</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">Capability</th>
+                        <th scope="col" aria-current="true">Free</th>
+                        <th scope="col">Team</th>
+                        <th scope="col">Enterprise</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <th scope="row">Who it is for</th>
+                        <td>One operator on loopback. You are here.</td>
+                        <td>Several operators sharing this cockpit on a trusted LAN.</td>
+                        <td>The same pipeline, plus the production Helm network-policy overlay you apply yourself.</td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Control Center</th>
+                        <td>Included. Same ops page.</td>
+                        <td>Included. Same ops page.</td>
+                        <td>Included. Same ops page.</td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Grafana</th>
+                        <td>Included, and kept separate.</td>
+                        <td>Included, and kept separate.</td>
+                        <td>Included, and kept separate.</td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Daily Stage 3 / Stage 4 budgets</th>
+                        <td>Shipped null. Uncapped.</td>
+                        <td>Same three keys. A number is a UTC-day ceiling you set. Null stays uncapped.</td>
+                        <td>Same as Team. This page does not fill a null cap.</td>
+                    </tr>
+                    <tr>
+                        <th scope="row">HTTP cache disk quota</th>
+                        <td>Included. Default 2 GiB.</td>
+                        <td>Same mechanism. Not a larger quota.</td>
+                        <td>Same mechanism. Not a larger quota.</td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Redis queue watermark</th>
+                        <td>10000. Matches QueueBacklog.</td>
+                        <td>10000. Not raised.</td>
+                        <td>10000. Not raised.</td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Published SLOs</th>
+                        <td>Three. Unchanged.</td>
+                        <td>Three. Unchanged.</td>
+                        <td>Three. Unchanged.</td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Site id</th>
+                        <td><code>default</code> unless you set one. A named id is accepted.</td>
+                        <td>Named id via <code>SITE_ID</code>, <code>TENANT_ID</code>, or <code>REDIS_SITE_ID</code>.</td>
+                        <td>Same as Team. Not an extra tenant product.</td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Poison Kafka ingest</th>
+                        <td>Included. Dead-letter after the configured failures.</td>
+                        <td>Included. Not a plan extra.</td>
+                        <td>Included. Not an SLO.</td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Dashboard auth</th>
+                        <td>Off while bound to loopback.</td>
+                        <td>Shared secret (<code>CC_BASIC_AUTH</code> or <code>CC_AUTH_TOKEN</code>) if you bind beyond loopback.</td>
+                        <td>Same shared secret, or your own ingress. Not an identity provider.</td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Upgrade</th>
+                        <td>Current plan.</td>
+                        <td>Mailto stub only.</td>
+                        <td>Mailto stub only.</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <h2>What this build meters</h2>
+        <ul class="meters">
+            <li>Daily budgets live in <code>cost_controls</code>: <code>stage3_max_gpu_minutes_per_day</code>, <code>stage4_max_gpu_minutes_per_day</code>, and <code>stage4_max_ocr_pages_per_day</code>. Null, or a missing block, does not stop the worker. A number stops that UTC day with <code>budget_exhausted</code>. The gauge is <code>budget_remaining{stage,resource}</code>.</li>
+            <li>HTTP cache quota is <code>httpcache_max_bytes</code> (default 2 GiB). <code>0</code> still reports size and does not prune.</li>
+            <li>The Redis high watermark is 10000, the same line as <code>QueueBacklog</code> (<code>redis_queue_length</code> above 10000). Connection settings stay <code>REDIS_HOST</code>, <code>REDIS_PORT</code>, <code>REDIS_PASSWORD</code>, and <code>REDIS_DB</code>.</li>
+            <li>Published objectives stay three: Stage 2 success at least 99% over 24h (<code>Stage2SuccessSLO</code>, no bool modifier), <code>QueueBacklog</code> above 10000, and <code>KafkaConsumerLagSLO</code> above 250000 messages. No fourth SLO.</li>
+        </ul>
+        <p><a href="index.html">Back to Control Center</a></p>
+    </main>
+</body>
+</html>
