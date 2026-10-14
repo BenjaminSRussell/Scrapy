@@ -15,6 +15,7 @@ renamed to the new version and date (see the release checklist).
 ## [Unreleased]
 
 ### Added
+- Python consumers can sample group lag (`pipeline_kafka_consumer_lag{topic,partition,group}`) from committed offsets against the log end. The gauge rises while consumption is paused and the producer offset advances, returns to zero when commits catch up, stays zero on an empty or idle partition, and one group's sample does not change another's (#698).
 - Kafka to Delta ingest poison policy: after `--max-deserialize-failures` (default 3) deserialize failures of one payload, the bytes are produced to the DLQ topic and the offset is committed, including when no Delta rows are buffered, so one malformed message cannot block the partition. `KafkaPoisonMessageRate` warns when the dead-letter rate exceeds 0.1/s for 5 minutes. This is not an SLO (#177).
 - Stage 2 can reuse an unchanged HTML body from `src/utils/cache.py` when `STAGE2_CONTENT_CACHE_ENABLED` is set (default off). The entry is keyed by url_hash plus ETag or Last-Modified; a hit skips the network fetch and increments `cache_hit_total`. Responses with neither header are not cached (#478).
 - SeedManager reads Redis depth (`ZCARD` of `js_spider:priority_queue`) before enqueueing and skips the write when depth is above the shipped high watermark (10000, `stage1.seed_enqueue_depth_threshold` / `REDIS_QUEUE_HIGH_WATERMARK`) or the depth cannot be read. `seed_enqueue_throttled_total` counts the skipped URLs. The low watermark stays 8000 and `REDIS_QUEUE_BACKPRESSURE_MODE` stays `block` (#1105).
