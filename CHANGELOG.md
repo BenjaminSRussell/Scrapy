@@ -16,6 +16,9 @@ renamed to the new version and date (see the release checklist).
 
 ### Added
 - Pipeline SLOs: Stage 2 success >= 99% over 24h (`Stage2SuccessSLO`), Redis queue depth via the existing `QueueBacklog` line (`redis_queue_length` > 10000), and Kafka consume lag via the existing `KafkaConsumerLagSLO` line (250000 messages). Each has a Prometheus query and a panel on the `pipeline-slos` Grafana dashboard (#179).
+- `cli.py lake-vacuum` lists the files and bytes a Delta vacuum would delete and removes nothing unless `--apply` is passed (#602).
+- Per-table vacuum retention tiers (`delta_lake.table_retention_hours`: default 168h, `stage1_errors` and `stage2_errors` 720h) and file-DLQ cleanup after `dlq_retention_days` (0 keeps everything). Vacuum scheduling stays #266 (#632).
+- Offsite candidate review (`cli.py offsite list|accept|reject|promote|gc`) records a decision, promotes accepted URLs to seeds once, and drops stale pending and rejected sightings (#878).
 - Redis queue producers block, or shed low-priority URLs, when depth passes a configurable high watermark and resume at the low watermark. `redis_queue_backpressure_total{queue,action}` counts those events. Defaults match the existing `QueueBacklog` alert (`redis_queue_length` > 10000) (#196).
 - Stage 4 summarization folds local audio and text fixtures through `async_asr_processor` when `STAGE4_ASR_ENABLED` is set (default off), and records `asr_jobs_total`, `asr_latency` and `asr_failures_total` (#1101).
 - Stage 1 can rotate egress proxies and temporarily quarantine ones that return 407/429 or time out. Off unless `PROXY_LIST` or `stage1.proxy.urls` is set (#198).
