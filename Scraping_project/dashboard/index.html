@@ -536,7 +536,8 @@
         @media (pointer: coarse) {
             .tab-button,
             .refresh-bar .btn,
-            .refresh-bar select {
+            .refresh-bar select,
+            .chart-png-btn {
                 min-height: 44px;
                 min-width: 44px;
             }
@@ -692,6 +693,8 @@
         @media (max-width: 640px) { :root { --chart-height: var(--chart-h-sm); } }
         @media (min-width: 641px) and (max-width: 1024px) { :root { --chart-height: var(--chart-h-md); } }
         .chart-container { height: var(--chart-height); min-height: var(--chart-height); }
+        .chart-card-header { flex-wrap: wrap; gap: 0.5rem; }
+        .chart-png-btn { font: inherit; font-size: 0.8rem; white-space: nowrap; }
         .env-badge { font-size: 0.7rem; padding: 0.15rem 0.5rem; border-radius: 999px; margin-left: 0.5rem; vertical-align: middle; }
         .env-badge.env-local { background: #334155; color: #e2e8f0; }
         .env-badge.env-staging { background: #ca8a04; color: #111; }
@@ -975,8 +978,9 @@
 
                 <div class="grid grid-2" style="margin-top: 1.5rem;">
                     <div class="card">
-                        <div class="card-header">
+                        <div class="card-header chart-card-header">
                             <h2 class="card-title">Pipeline Throughput</h2>
+                            <button type="button" class="btn chart-png-btn" data-chart-export="throughput-chart" aria-label="Download Pipeline Throughput chart as PNG">Download PNG</button>
                         </div>
                         <div class="chart-container">
                             <figure class="chart-figure"><figcaption class="visually-hidden">Pipeline throughput over time</figcaption><canvas id="throughput-chart" role="img" aria-label="Pipeline throughput over time"></canvas></figure>
@@ -1090,8 +1094,9 @@
 
                 <div class="grid grid-2" style="margin-top: 2rem;">
                     <div class="card">
-                        <div class="card-header">
+                        <div class="card-header chart-card-header">
                             <h2 class="card-title">Stage Progression</h2>
+                            <button type="button" class="btn chart-png-btn" data-chart-export="stage-progression-chart" aria-label="Download Stage Progression chart as PNG">Download PNG</button>
                         </div>
                         <div class="chart-container">
                             <figure class="chart-figure"><figcaption class="visually-hidden">Stage progression over time</figcaption><canvas id="stage-progression-chart" role="img" aria-label="Stage progression over time"></canvas></figure>
@@ -1110,8 +1115,9 @@
                     </div>
 
                     <div class="card">
-                        <div class="card-header">
+                        <div class="card-header chart-card-header">
                             <h2 class="card-title">Document Routing</h2>
+                            <button type="button" class="btn chart-png-btn" data-chart-export="routing-chart" aria-label="Download Document Routing chart as PNG">Download PNG</button>
                         </div>
                         <div class="chart-container">
                             <figure class="chart-figure"><figcaption class="visually-hidden">Traffic routing breakdown</figcaption><canvas id="routing-chart" role="img" aria-label="Traffic routing breakdown"></canvas></figure>
@@ -1140,8 +1146,9 @@
 
                 <div class="grid grid-2">
                     <div class="card">
-                        <div class="card-header">
+                        <div class="card-header chart-card-header">
                             <h2 class="card-title">URLs Discovered Over Time</h2>
+                            <button type="button" class="btn chart-png-btn" data-chart-export="urls-chart" aria-label="Download URLs Discovered Over Time chart as PNG">Download PNG</button>
                         </div>
                         <div class="chart-container">
                             <figure class="chart-figure"><figcaption class="visually-hidden">URLs discovered over time</figcaption><canvas id="urls-chart" role="img" aria-label="URLs discovered over time"></canvas></figure>
@@ -1160,8 +1167,9 @@
                     </div>
 
                     <div class="card">
-                        <div class="card-header">
+                        <div class="card-header chart-card-header">
                             <h2 class="card-title">Pages Analyzed Over Time</h2>
+                            <button type="button" class="btn chart-png-btn" data-chart-export="pages-chart" aria-label="Download Pages Analyzed Over Time chart as PNG">Download PNG</button>
                         </div>
                         <div class="chart-container">
                             <figure class="chart-figure"><figcaption class="visually-hidden">Pages analyzed over time</figcaption><canvas id="pages-chart" role="img" aria-label="Pages analyzed over time"></canvas></figure>
@@ -1180,8 +1188,9 @@
                     </div>
 
                     <div class="card">
-                        <div class="card-header">
+                        <div class="card-header chart-card-header">
                             <h2 class="card-title">Summaries Created Over Time</h2>
+                            <button type="button" class="btn chart-png-btn" data-chart-export="summaries-chart" aria-label="Download Summaries Created Over Time chart as PNG">Download PNG</button>
                         </div>
                         <div class="chart-container">
                             <figure class="chart-figure"><figcaption class="visually-hidden">Summaries produced over time</figcaption><canvas id="summaries-chart" role="img" aria-label="Summaries produced over time"></canvas></figure>

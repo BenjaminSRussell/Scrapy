@@ -797,6 +797,55 @@ function downloadBlob(filename, mime, text) {
     if (live) live.textContent = `Downloaded ${filename}`;
 }
 
+// #1018: one PNG per chart for incident notes. Stamp is UTC so two uploads
+// of the same second sort together; canvas id is the filename prefix.
+function chartPngStamp(when) {
+    const d = when instanceof Date && !Number.isNaN(when.getTime()) ? when : new Date();
+    const p = (n) => String(n).padStart(2, '0');
+    return `${d.getUTCFullYear()}${p(d.getUTCMonth() + 1)}${p(d.getUTCDate())}T${p(d.getUTCHours())}${p(d.getUTCMinutes())}${p(d.getUTCSeconds())}Z`;
+}
+
+function chartPngFilename(canvasId, when) {
+    const slug = String(canvasId || 'chart').replace(/[^A-Za-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '') || 'chart';
+    return `${slug}-${chartPngStamp(when)}.png`;
+}
+
+function downloadChartPng(canvas, when) {
+    const live = document.getElementById('refresh-status');
+    const fail = () => {
+        if (live) live.textContent = 'Chart PNG unavailable';
+        return null;
+    };
+    if (!canvas || typeof canvas.toDataURL !== 'function') return fail();
+    let href;
+    try {
+        href = canvas.toDataURL('image/png');
+    } catch (_) {
+        return fail();
+    }
+    if (typeof href !== 'string' || href.indexOf('data:image/png') !== 0) return fail();
+    const canvasId = canvas.id || (typeof canvas.getAttribute === 'function' ? canvas.getAttribute('id') : '');
+    const filename = chartPngFilename(canvasId, when);
+    const a = document.createElement('a');
+    a.href = href;
+    a.download = filename;
+    a.rel = 'noopener';
+    if (document.body) document.body.appendChild(a);
+    a.click();
+    if (typeof a.remove === 'function') a.remove();
+    if (live) live.textContent = `Downloaded ${filename}`;
+    return filename;
+}
+
+function setupChartPngExports() {
+    document.querySelectorAll('[data-chart-export]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const id = btn.getAttribute('data-chart-export');
+            downloadChartPng(id ? document.getElementById(id) : null);
+        });
+    });
+}
+
 function exportActivityLog(format) {
     const rows = activityLog.map(item => ({
         timestamp: item.timestamp || '',
@@ -1079,6 +1128,7 @@ function tabFromLocation() {
 }
 
 function setupTabs() {
+    setupChartPngExports();
     const resetHist = document.getElementById('reset-chart-history');
     if (resetHist) resetHist.addEventListener('click', resetChartHistory);
 
