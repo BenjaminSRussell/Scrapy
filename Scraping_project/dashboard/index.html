@@ -615,6 +615,42 @@
             font-weight: 700;
         }
 
+        /* #1030: last 20 metrics polls. Success is a full bar, failure a short
+           bar, and an unused slot a dashed outline — not colour alone. */
+        .health-history-wrap {
+            margin-top: 1.25rem;
+        }
+        .health-history {
+            display: flex;
+            align-items: stretch;
+            gap: 3px;
+            height: 1.25rem;
+            margin-top: 0.35rem;
+        }
+        .health-seg {
+            flex: 1 1 0;
+            min-width: 0;
+            border-radius: 2px;
+            box-sizing: border-box;
+        }
+        .health-seg-empty {
+            background: transparent;
+            border: 1px dashed var(--gray-300, #d1d5db);
+        }
+        .health-seg-ok {
+            background: var(--success);
+        }
+        .health-seg-fail {
+            background: var(--danger);
+            align-self: flex-end;
+            height: 55%;
+        }
+        .health-history-caption {
+            margin: 0.35rem 0 0;
+            font-size: 0.8rem;
+            color: var(--gray-700);
+        }
+
         /* Sticky to the viewport bottom so the countdown / last-updated /
            pause controls stay visible while scrolling long tabs such as the
            Activity log (#975). Opaque background + shadow keep it legible over
@@ -869,6 +905,21 @@
             .data-fallback-table th,
             .data-fallback-table td {
                 border: 1px solid CanvasText;
+            }
+            .health-seg-ok {
+                forced-color-adjust: none;
+                background: Highlight;
+                border: 1px solid Highlight;
+            }
+            .health-seg-fail {
+                forced-color-adjust: none;
+                background: CanvasText;
+                border: 2px dashed CanvasText;
+            }
+            .health-seg-empty {
+                forced-color-adjust: none;
+                background: Canvas;
+                border: 1px dashed GrayText;
             }
             /* Chart.js paints fixed colours on canvas; keep its light backdrop
                so axis text and series stay legible under a dark system theme. */
@@ -1401,6 +1452,12 @@
                             <div class="health-label">Stage 4</div>
                             <div class="health-value">Standby</div>
                         </div>
+                    </div>
+                    <!-- #1030: last 20 poll outcomes; segments are painted by app.js. -->
+                    <div class="health-history-wrap">
+                        <p class="health-label" id="health-history-heading">Poll history</p>
+                        <div class="health-history" id="health-history" role="img" aria-label="Metrics poll history, last 20 outcomes. No polls yet. Oldest on the left."></div>
+                        <p class="health-history-caption" id="health-history-caption" aria-hidden="true">No polls yet</p>
                     </div>
                 </div>
 
