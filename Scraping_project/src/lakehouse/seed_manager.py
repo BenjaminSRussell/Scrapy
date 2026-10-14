@@ -21,6 +21,7 @@ All writes are idempotent via merge_into using url_hash as merge key.
 """
 
 import logging
+import os
 import warnings
 from collections.abc import Callable, Iterable
 from typing import Any
@@ -31,6 +32,104 @@ from src.utils.url_canon import canonical_or_raw, url_hash
 from src.core.timeutil import utc_now_iso
 
 logger = logging.getLogger(__name__)
+
+# Redis depth gate (#1105). Depth is ZCARD of the JS priority queue, the same
+# key `redis_queue_length` / QueueBacklog watch. The cutoff is that queue's
+# high watermark (10000), not a second limit. Low watermark stays 8000 and
+# REDIS_QUEUE_BACKPRESSURE_MODE stays block for admit_enqueue; this gate
+# skips the seed write instead of sleeping.
+SEED_REDIS_DEPTH_KEY = "js_spider:priority_queue"
+SEED_DEPTH_CONFIG_KEY = "seed_enqueue_depth_threshold"
+
+try:
+    from prometheus_client import Counter as _SeedCounter
+
+    SEED_ENQUEUE_THROTTLED: Any = _SeedCounter(
+        "seed_enqueue_throttled_total",
+        "Seed URLs skipped because Redis queue depth was above the high watermark or could not be read.",
+    )
+except Exception:  # prometheus_client missing or metric already registered
+    SEED_ENQUEUE_THROTTLED = None
+
+
+def _config_get(config: Any, key: str) -> Any:
+    if config is None:
+        return None
+    try:
+        return config.get(key)
+    except Exception:
+        return None
+
+
+def seed_enqueue_threshold(config: Any = None) -> int:
+    """High watermark for the seed gate. Default 10000, same as REDIS_QUEUE_HIGH_WATERMARK.
+
+    ``stage1.seed_enqueue_depth_threshold`` may set that same number. A missing,
+    unparsable, or non-positive value uses the watermark. A value that disagrees
+    with ``REDIS_QUEUE_HIGH_WATERMARK`` is ignored so the process does not grow
+    a second depth limit. The low watermark (8000) and backpressure mode
+    (``block``) are not read here.
+    """
+    from src.utils.redis import queue_watermark_settings
+
+    watermark = int(queue_watermark_settings()["high"])
+    if config is None:
+        try:
+            from src.core.config import get_config
+
+            config = get_config()
+        except Exception:
+            return watermark
+    raw = None
+    for prefix in ("stage1", "stages.stage1"):
+        raw = _config_get(config, f"{prefix}.{SEED_DEPTH_CONFIG_KEY}")
+        if raw is not None:
+            break
+    if raw is None:
+        return watermark
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        logger.warning(
+            "Ignoring stage1.%s=%r; using Redis high watermark %s",
+            SEED_DEPTH_CONFIG_KEY, raw, watermark,
+        )
+        return watermark
+    if value < 1 or value != watermark:
+        logger.warning(
+            "Ignoring stage1.%s=%r; seed gate uses the Redis high watermark %s",
+            SEED_DEPTH_CONFIG_KEY, raw, watermark,
+        )
+        return watermark
+    return value
+
+
+def _offline_suite() -> bool:
+    """pytest.ini sets OBS_OFFLINE=1 so the suite does not dial Redis."""
+    return os.getenv("OBS_OFFLINE", "").strip() == "1"
+
+
+def _connect_depth_client() -> Any | None:
+    """Open Redis with REDIS_HOST/PORT/PASSWORD/DB. None when it cannot be read."""
+    try:
+        import redis
+        from src.utils.redis_env import redis_settings
+
+        settings = redis_settings()
+        client = redis.Redis(
+            host=settings.host,
+            port=settings.port,
+            db=settings.db,
+            password=settings.password or None,
+            socket_connect_timeout=0.5,
+            socket_timeout=0.5,
+            decode_responses=True,
+        )
+        client.ping()
+        return client
+    except Exception as exc:
+        logger.warning("[SeedManager] Redis depth unavailable (%s); skipping enqueue", exc)
+        return None
 
 
 def default_url_hasher(url: str) -> str:
@@ -127,6 +226,7 @@ class SeedManager:
         allowed_domains: Iterable[str] | None = None,
         domain_urls_table: str | None = None,
         config: Any = None,
+        redis_client: Any = None,
     ):
         """
         Initialize SeedManager.
@@ -141,6 +241,9 @@ class SeedManager:
                 subdomains, never by substring.
             domain_urls_table: Side-table name (config
                 ``stage1.domain_urls_table``; legacy default ``uconn_urls``).
+            redis_client: Client used to read queue depth before enqueue.
+                When omitted, production connects with REDIS_HOST / REDIS_PORT /
+                REDIS_PASSWORD / REDIS_DB. Tests pass a fake client.
         """
         # Scout / get_delta() pass DeltaHelper; historic API took LakehouseManager.
         if hasattr(lakehouse, "merge_into"):
@@ -158,6 +261,40 @@ class SeedManager:
             policy["allowed_domains"] if allowed_domains is None else allowed_domains
         )
         self.domain_urls_table = domain_urls_table or policy["domain_urls_table"]
+        self.redis_client = redis_client
+        self._config = config
+        self._depth_client: Any = None
+        self._depth_probed = False
+
+    def _redis_depth(self) -> int | None:
+        """ZCARD of the JS priority queue, or None when depth cannot be read."""
+        client = self.redis_client
+        if client is None:
+            if _offline_suite():
+                return None
+            if not self._depth_probed:
+                self._depth_probed = True
+                self._depth_client = _connect_depth_client()
+            client = self._depth_client
+        if client is None:
+            return None
+        try:
+            return int(client.zcard(SEED_REDIS_DEPTH_KEY))
+        except Exception as exc:
+            logger.warning("[SeedManager] Redis depth read failed (%s); skipping enqueue", exc)
+            return None
+
+    def _depth_blocks_enqueue(self) -> bool:
+        # Unit tests that do not inject a client run under OBS_OFFLINE and never
+        # read Redis. That is not a depth of 0. A missing or failed client in
+        # any other case is unknown depth and must not enqueue.
+        if self.redis_client is None and _offline_suite():
+            return False
+        depth = self._redis_depth()
+        if depth is None:
+            return True
+        # Strictly above the high watermark, matching admit_enqueue (depth > high).
+        return depth > seed_enqueue_threshold(self._config)
 
     def in_allowed_domains(self, url: str) -> bool:
         """True if ``url``'s host is an allowed domain or a subdomain of one."""
@@ -187,6 +324,12 @@ class SeedManager:
                 table (default: this manager's config-driven ``write_domain_urls``).
             write_uconn_urls: Deprecated alias of ``write_domain_urls``.
             enqueue_stage2: If True, also enqueue to stage2_queue with status=pending (default: False)
+
+        When Redis depth is above the high watermark, or the depth cannot be
+        read, no seed, domain, or stage2 row is written and
+        ``seed_enqueue_throttled_total`` increments by the number of URLs
+        skipped. At or under the watermark, writes proceed. A missing client
+        is not treated as depth 0.
 
         Returns:
             Dictionary with counts:
@@ -240,6 +383,25 @@ class SeedManager:
         if not by_hash:
             return {"seed_inserted": 0, "domain_inserted": 0, "uconn_inserted": 0, "stage2_enqueued": 0,
                     "rejected": n_rejected}
+
+        # Before enqueue: read Redis depth. Above the high watermark, or unknown, skip.
+        if self._depth_blocks_enqueue():
+            skipped = len(by_hash)
+            if SEED_ENQUEUE_THROTTLED is not None:
+                SEED_ENQUEUE_THROTTLED.inc(skipped)
+            logger.warning(
+                "[SeedManager] Skipping enqueue of %s URL(s) from %s; Redis depth unavailable or above %s",
+                skipped,
+                source_spider,
+                seed_enqueue_threshold(self._config),
+            )
+            return {
+                "seed_inserted": 0,
+                "domain_inserted": 0,
+                "uconn_inserted": 0,
+                "stage2_enqueued": 0,
+                "rejected": n_rejected,
+            }
 
         now = utc_now_iso()
 
