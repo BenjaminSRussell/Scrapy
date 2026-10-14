@@ -1172,7 +1172,8 @@ function visibleTabNames() {
         .map(b => b.getAttribute('data-tab'));
 }
 
-// #952/#1010: 1-5 switch tabs, R refreshes (see shortcutAction in format-utils.js).
+// #952/#1010: digits switch visible tabs (1-6 with Jobs), R refreshes
+// (see shortcutAction in format-utils.js).
 function setupShortcuts() {
     visibleTabNames().forEach((name, i) => {
         const btn = document.querySelector(`.tab-button[data-tab="${name}"]`);
