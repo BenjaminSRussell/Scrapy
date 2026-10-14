@@ -16,6 +16,7 @@ renamed to the new version and date (see the release checklist).
 
 ### Added
 - Stage 4 summarization folds local audio and text fixtures through `async_asr_processor` when `STAGE4_ASR_ENABLED` is set (default off), and records `asr_jobs_total`, `asr_latency` and `asr_failures_total` (#1101).
+- Stage 1 can rotate egress proxies and temporarily quarantine ones that return 407/429 or time out. Off unless `PROXY_LIST` or `stage1.proxy.urls` is set (#198).
 - Ops CLI is listed in CONTRIBUTING, `.env.example` marks required and optional variables, and `access_grafana.sh` opens local Compose Grafana when Kubernetes is not running (#239 #345 #379 #382).
 - Config-driven Delta partitions (`domain` or `date`) on newly created tables, a declared `metadata_queue` with a schema and day partition, and warn/reject for writes to undeclared tables (#261 #236 #268 #433).
 - `cli.py --profile` writes a cProfile `.json` and `.pstats` for one command (`make profile CMD="..."`); nothing is recorded unless the flag is passed (#465).

@@ -373,6 +373,16 @@ These are the production politeness defaults (#194). Scrapy's "domain" slot is t
 - **Active waits survive AutoThrottle.** AutoThrottle recomputes the delay on every 200 response. While a Retry-After wait or a backoff is active, the enforced delay is re-applied on every request and response for that host.
 - All of these can be overridden per spider under `stage1.spiders.<name>` in `config.yml` (`rate_limit_backoff_min`, `rate_limit_backoff_max`, `rate_limit_cooldown_factor`) or project-wide under `scrapy.*`.
 
+### Egress proxy rotation
+
+Stage 1 does not use a proxy unless you configure one (#198). `ProxyRotationMiddleware` (priority 745, just before Scrapy's `HttpProxyMiddleware`) is installed on the project and on every spider from `get_spider_settings()`, and it does nothing until a list is set. A non-empty list turns it on; you do not edit code.
+
+- **Config.** `stage1.proxy.urls` (list of `http://` or `https://` proxies, or `host:port`) or `scrapy.proxy_list`. The `scrapy:` section wins when both are set. `stage1.proxy.enabled: false` or `scrapy.proxy_rotation_enabled: false` is a kill switch.
+- **Environment.** `PROXY_LIST` (comma-separated) overrides the file. `PROXY_ROTATION_ENABLED=0` forces rotation off. `PROXY_QUARANTINE_SECONDS` (default 300) and `PROXY_MAX_ROTATIONS` (default 3 extra attempts per request) override `stage1.proxy.quarantine_seconds` and `stage1.proxy.max_rotations`.
+- **Rotation.** Requests round-robin through healthy proxies. HTTP 407, HTTP 429, or a download timeout quarantines that proxy and retries on the next healthy one. Credentials in the proxy URL are sent to the proxy but never logged or used as a metric label.
+- **No healthy proxy.** The download is dropped (`IgnoreRequest`) instead of going out from the crawler's own IP. It resumes when a quarantine expires.
+- **Metrics.** `scrapy_proxy_failures_total{spider,reason}` and crawl stats `proxy_rotation/failures`. `scrapy_proxy_quarantined{spider}` is how many proxies are in quarantine.
+
 ### Soft-ban / captcha guard
 
 Challenge and captcha pages are not content (#582). `src/utils/soft_ban.py`
