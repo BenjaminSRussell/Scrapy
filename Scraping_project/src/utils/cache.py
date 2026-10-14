@@ -224,3 +224,87 @@ def get_cache() -> SmartCache:
         redis_helper = get_redis()
         _global_cache = SmartCache(redis_helper)
     return _global_cache
+
+
+# Stage 2 conditional reuse (#478). A body is cacheable only when the response
+# carried an ETag or Last-Modified. The body key is url_hash + those validators.
+# The index key remembers which validators were stored so a later call can
+# decide "unchanged" without contacting the origin.
+DEFAULT_STAGE2_CONTENT_TTL = 3600
+_BAD_CACHE_CHARS = frozenset("\r\n\x00")
+
+
+def _cache_token(value: Any) -> str:
+    """Validator or hash text safe to mix into a key. Empty when unusable."""
+    if value is None:
+        return ""
+    if isinstance(value, bytes):
+        value = value.decode("utf-8", errors="replace")
+    text = str(value).strip()
+    if not text or any(ch in text for ch in _BAD_CACHE_CHARS):
+        return ""
+    return text
+
+
+def stage2_content_cache_key(
+    url_hash: str, etag: str | None = None, last_modified: str | None = None
+) -> str | None:
+    """Key for one validated body. None when url_hash or both validators are missing."""
+    token = _cache_token(url_hash)
+    etag_s = _cache_token(etag)
+    lm_s = _cache_token(last_modified)
+    if not token or not (etag_s or lm_s):
+        return None
+    identity = f"{token}\n{etag_s}\n{lm_s}".encode("utf-8", errors="replace")
+    digest = hashlib.sha256(identity).hexdigest()
+    return f"stage2:http:{token}:{digest}"
+
+
+def stage2_content_index_key(url_hash: str) -> str | None:
+    """Points a url_hash at the validators stored with its body."""
+    token = _cache_token(url_hash)
+    if not token:
+        return None
+    return f"stage2:http-index:{token}"
+
+
+def stage2_unchanged_body(cache: Any, url_hash: str) -> str | None:
+    """HTML the cache still holds for this url_hash's validators, else None.
+
+    A return value means the body is unchanged, so the caller skips the network.
+    """
+    index_key = stage2_content_index_key(url_hash)
+    if cache is None or index_key is None:
+        return None
+    meta = cache.get(index_key)
+    if not isinstance(meta, dict):
+        return None
+    body_key = stage2_content_cache_key(url_hash, meta.get("etag"), meta.get("last_modified"))
+    if body_key is None:
+        return None
+    body = cache.get(body_key)
+    if not isinstance(body, str) or body == "":
+        return None
+    return body
+
+
+def stage2_store_body(
+    cache: Any,
+    url_hash: str,
+    body: str,
+    etag: str | None = None,
+    last_modified: str | None = None,
+    ttl: int = DEFAULT_STAGE2_CONTENT_TTL,
+) -> bool:
+    """Store HTML only when an ETag or Last-Modified was present. No validator, no write."""
+    if cache is None or not isinstance(body, str) or body == "":
+        return False
+    etag_s = _cache_token(etag)
+    lm_s = _cache_token(last_modified)
+    body_key = stage2_content_cache_key(url_hash, etag_s, lm_s)
+    index_key = stage2_content_index_key(url_hash)
+    if body_key is None or index_key is None:
+        return False
+    stored = cache.set(body_key, body, ttl=ttl)
+    indexed = cache.set(index_key, {"etag": etag_s, "last_modified": lm_s}, ttl=ttl)
+    return bool(stored and indexed)

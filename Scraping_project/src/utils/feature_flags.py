@@ -116,6 +116,10 @@ FLAGS: dict[str, tuple[Any, str]] = {
     "ASR_ENABLED": (False, "Register the speech-to-text pipeline (#470)."),
     "STAGE4_ASR_ENABLED": (False, "Fold local audio/text fixtures into Stage 4 summaries (#1101)."),
     "KAFKA_DLQ_ENABLED": (True, "Write undeliverable Kafka items to the file DLQ (#162)."),
+    "STAGE2_CONTENT_CACHE_ENABLED": (
+        False,
+        "Reuse a cached Stage 2 HTML body (url_hash + ETag/Last-Modified) and skip the fetch (#478).",
+    ),
 }
 
 
