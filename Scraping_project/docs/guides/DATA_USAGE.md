@@ -8,7 +8,7 @@ The lake root is `DELTA_LAKE_PATH` if that is set, otherwise `delta_lake.base_pa
 
 | Table | Written by | Contents |
 |---|---|---|
-| `seed_urls` | `cli.py seeds`, `reseed.py`, scout seed expansion | Seeds and their active flag |
+| `seed_urls` | `cli.py seeds`, `scripts/reseed.py` (`python reseed.py` is deprecated), scout seed expansion | Seeds and their active flag |
 | `uconn_urls` (= `stage1.domain_urls_table`) | Stage 1 | URLs on the allowed domains |
 | `stage1_discovery` | Stage 1 | Every discovered URL. Partitioned by `domain` |
 | `stage1_errors`, `stage1_offsite_candidates`, `js_spider_queue` | Stage 1 | Fetch errors, off-site links, JS render candidates |

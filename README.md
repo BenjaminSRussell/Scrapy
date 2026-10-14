@@ -523,8 +523,9 @@ pre-commit run --all-files
 
 ```bash
 # from Scraping_project/
-# Reseed from the bundled CSV (or --csv path/to/urls.csv)
-python reseed.py
+# Reseed from the bundled CSV (or --csv path/to/urls.csv).
+# `python reseed.py` is deprecated; this is the redirect.
+python scripts/reseed.py
 
 # Add one seed URL
 python cli.py seeds add https://www.example.org/ --note "why" --actor me

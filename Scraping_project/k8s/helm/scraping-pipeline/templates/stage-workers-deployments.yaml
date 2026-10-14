@@ -86,7 +86,7 @@ spec:
               command:
               - /bin/sh
               - -c
-              - python -c "import sys; sys.path.insert(0, '/app'); from drain_lake import LakeDrainer; LakeDrainer().drain_transient_queues()" || true; sleep 10
+              - python -c "import sys; sys.path.insert(0, '/app/scripts'); sys.path.insert(0, '/app'); from drain_lake import LakeDrainer; LakeDrainer().drain_transient_queues()" || true; sleep 10
         resources:
           {{- toYaml .Values.stage2Worker.resources | nindent 10 }}
         volumeMounts:
@@ -186,7 +186,7 @@ spec:
               command:
               - /bin/sh
               - -c
-              - python -c "import sys; sys.path.insert(0, '/app'); from drain_lake import LakeDrainer; LakeDrainer().drain_transient_queues()" || true; sleep 10
+              - python -c "import sys; sys.path.insert(0, '/app/scripts'); sys.path.insert(0, '/app'); from drain_lake import LakeDrainer; LakeDrainer().drain_transient_queues()" || true; sleep 10
         resources:
           {{- toYaml .Values.stage3Worker.resources | nindent 10 }}
         volumeMounts:
@@ -287,7 +287,7 @@ spec:
               command:
               - /bin/sh
               - -c
-              - python -c "import sys; sys.path.insert(0, '/app'); from drain_lake import LakeDrainer; LakeDrainer().drain_transient_queues()" || true; sleep 10
+              - python -c "import sys; sys.path.insert(0, '/app/scripts'); sys.path.insert(0, '/app'); from drain_lake import LakeDrainer; LakeDrainer().drain_transient_queues()" || true; sleep 10
         resources:
           {{- toYaml .Values.stage4Worker.resources | nindent 10 }}
         volumeMounts:

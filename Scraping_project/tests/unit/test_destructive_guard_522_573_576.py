@@ -173,7 +173,7 @@ def test_cli_reset_and_reseed_clear_are_guarded(tmp_path, audit_log, monkeypatch
         cli.cmd_reset(argparse.Namespace(force=False, confirm=False, yes=False, break_glass=False, backup_dir=None))
     assert exc.value.code == 2 and lake.exists()
 
-    reseed = _load("reseed.py")
+    reseed = _load("scripts/reseed.py")
     monkeypatch.setattr(reseed, "DELTA_LAKE", lake)
     monkeypatch.setattr(reseed, "get_delta_manager", lambda **k: pytest.fail("must not seed"))
     csv = tmp_path / "seeds.csv"
@@ -189,7 +189,7 @@ def drain(monkeypatch):
     """Real LakeDrainer + config.yml queues on fakeredis (the old import of the removed
     src.common.config/redis_manager made the script and the preStop hook a silent no-op)."""
     fakeredis = pytest.importorskip("fakeredis")
-    mod = _load("drain_lake.py")
+    mod = _load("scripts/drain_lake.py")
     client = fakeredis.FakeRedis()
     client.rpush("stage1_discovered_urls", "a", "b", "c", "d", "e")  # transient (list)
     client.rpush("stage2_large_docs", *"1234567")  # persistent (list)

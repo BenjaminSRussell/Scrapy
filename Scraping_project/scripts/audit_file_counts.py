@@ -2,6 +2,9 @@
 """
 Phase 1: File Count Audit
 Scan all directories and count Python files to identify directories with >4 files.
+
+Run from Scraping_project/: ``python scripts/audit_file_counts.py``.
+``python audit_file_counts.py`` at the project root is deprecated.
 """
 
 from pathlib import Path

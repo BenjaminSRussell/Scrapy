@@ -63,7 +63,9 @@ def test_scrapy_list_is_documented():
 
 
 PROJECT_CMD = re.compile(
-    r"^\s*(python3? (start|cli|reseed|shutdown)\.py|pip install -r|pytest|docker-compose|docker compose|"
+    r"^\s*(python3? (start|cli|reseed|shutdown)\.py|"
+    r"python3? scripts/(reseed|drain_lake|audit_file_counts|monitor_and_trigger_depth)\.py|"
+    r"pip install -r|pytest|docker-compose|docker compose|"
     r"ruff check|mypy src|scrapy |pre-commit|make )",
     re.M,
 )

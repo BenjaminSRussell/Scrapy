@@ -11,10 +11,25 @@ This directory contains scripts for managing, debugging, and resetting the scrap
 | `reset_grafana_complete.sh` | Reset Grafana only (Docker/K8s) | Grafana login or dashboard issues |
 | `k8s_reset_and_deploy.sh` | Remove "coco" prefix and redeploy K8s | Fix Kubernetes naming issues |
 | `reset_lake.py` | Wipe the Delta lake and re-seed `seed_urls` | Local dev only; guarded (see below) |
+| `reseed.py` | Bulk-load a CSV into `seed_urls` | `python scripts/reseed.py --csv …` |
+| `drain_lake.py` | Selective Redis queue drain | `python scripts/drain_lake.py --list` |
+| `audit_file_counts.py` | Count Python files per directory | One-shot layout audit |
+| `monitor_and_trigger_depth.py` | Launch the depth spider when queues are idle | Long-running; needs Redis |
 
 > **Destructive operations** (`complete_reset.sh`, `reset_lake.py`, `../cli.py reset`,
-> `../reseed.py --clear`, `../drain_lake.py` drains) follow one safety policy; see
+> `reseed.py --clear`, `drain_lake.py` drains) follow one safety policy; see
 > [Destructive operations: safety policy](#destructive-operations-safety-policy).
+
+## Deprecated root paths (#568)
+
+`cli.py` is the supported Python entrypoint in the project root. These four utilities moved here. The old paths are deprecated redirects:
+
+| Deprecated (do not use) | Run instead (from `Scraping_project/`) |
+|---|---|
+| `python reseed.py` | `python scripts/reseed.py` |
+| `python drain_lake.py` | `python scripts/drain_lake.py` |
+| `python audit_file_counts.py` | `python scripts/audit_file_counts.py` |
+| `python monitor_and_trigger_depth.py` | `python scripts/monitor_and_trigger_depth.py` |
 
 ---
 
@@ -427,7 +442,8 @@ open http://localhost:3000
 ## Destructive operations: safety policy
 
 Applies to `scripts/complete_reset.sh`, `scripts/reset_lake.py`, `cli.py reset`,
-`reseed.py --clear` and the drain modes of `drain_lake.py` (#522, #573, #576).
+`scripts/reseed.py --clear` and the drain modes of `scripts/drain_lake.py` (#522, #573, #576).
+`python reseed.py` and `python drain_lake.py` at the project root are deprecated.
 Implementation: `src/utils/destructive_guard.py` (the shell script mirrors it).
 
 | Step | Rule |
@@ -442,10 +458,10 @@ Implementation: `src/utils/destructive_guard.py` (the shell script mirrors it).
 python scripts/reset_lake.py                                  # plan only
 python scripts/reset_lake.py --confirm --backup-dir /backups  # snapshot, then wipe + re-seed
 python cli.py reset --confirm
-python reseed.py --clear --confirm
-python drain_lake.py --drain-transient                        # plan only
-python drain_lake.py --drain-transient --confirm
-ENV=production ALLOW_LAKE_RESET=1 python drain_lake.py --drain-all --confirm --i-know-what-im-doing
+python scripts/reseed.py --clear --confirm
+python scripts/drain_lake.py --drain-transient                        # plan only
+python scripts/drain_lake.py --drain-transient --confirm
+ENV=production ALLOW_LAKE_RESET=1 python scripts/drain_lake.py --drain-all --confirm --i-know-what-im-doing
 ```
 
 **Recovery.** A wiped lake directory cannot be restored with Delta time travel. Before
@@ -457,7 +473,8 @@ before `lake-vacuum --apply` removes the old files. `complete_reset.sh` deletes 
 so snapshot them first (e.g. `docker run --rm -v <volume>:/v -v "$PWD":/b alpine tar czf /b/<volume>.tgz -C /v .`).
 
 The Helm preStop hooks call `LakeDrainer().drain_transient_queues()` as a library and are not
-gated. Before this change they were a silent no-op: `drain_lake.py` imported the removed
+gated. They import it from `scripts/drain_lake.py` (`sys.path` includes `/app/scripts`). Before
+the guard landed they were a silent no-op: `drain_lake.py` imported the removed
 `src.common.config`, and the hook's `|| true` swallowed the ImportError.
 
 ---

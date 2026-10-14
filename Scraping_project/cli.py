@@ -270,6 +270,8 @@ def cmd_pipeline(args):
 
 def cmd_drain(args):
     """Drain Delta Lake tables."""
+    # drain_lake.py moved under scripts/ (#568). Import name is unchanged.
+    sys.path.insert(0, str(Path(__file__).resolve().parent / "scripts"))
     from drain_lake import drain_tables
 
     logger.info("Draining Delta Lake...")

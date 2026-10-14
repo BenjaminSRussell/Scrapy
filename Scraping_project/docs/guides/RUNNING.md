@@ -36,7 +36,7 @@ python cli.py health                          # row and file counts for every De
 python cli.py seeds list --active-only
 python cli.py seeds add https://www.example.org/ --note "new site" --actor me
 python cli.py seeds disable https://old.example.org/ --actor me
-python reseed.py --csv data/raw/uconn_urls.csv    # bulk-load a CSV into seed_urls
+python scripts/reseed.py --csv data/raw/uconn_urls.csv    # bulk-load a CSV into seed_urls (`python reseed.py` is deprecated)
 ```
 
 ## Crawling a different domain
@@ -59,7 +59,7 @@ stage1:
   domain_urls_table: example_urls   # or write_domain_urls: false
 ```
 
-Then add seeds with `cli.py seeds add` or `reseed.py --csv`. Every Stage 1 spider applies the same precedence: `-a allowed_domains` first, then `stage1.allowed_domains`, then `uconn.edu`. Without `-a start_urls`, the spider starts from the active rows in `seed_urls`.
+Then add seeds with `cli.py seeds add` or `scripts/reseed.py --csv` (`python reseed.py` is deprecated). Every Stage 1 spider applies the same precedence: `-a allowed_domains` first, then `stage1.allowed_domains`, then `uconn.edu`. Without `-a start_urls`, the spider starts from the active rows in `seed_urls`.
 
 ## Resuming after a crash
 

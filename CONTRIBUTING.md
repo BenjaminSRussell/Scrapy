@@ -137,7 +137,7 @@ machine-local absolute path.
 | `python cli.py deep_dive --experimental` | Run the experimental deep-dive spider (refuses without the flag) |
 | `python cli.py pipeline [--skip-stage1 ...]` | Run stages 1–3 once, in order |
 | `python cli.py export --table T --format csv\|json\|parquet` | Stream Delta tables to files |
-| `python cli.py drain` | Clear the transient Redis queues (`drain_lake.py`); persistent queues such as Stage 4 are kept |
+| `python cli.py drain` | Clear the transient Redis queues (`scripts/drain_lake.py`); persistent queues such as Stage 4 are kept |
 | `python cli.py queue-gc [--dry-run]` | Delete expired completed or failed rows from the stage queue tables |
 | `python cli.py data gc --ttl-days 14` | TTL cleanup of logs, cache and temp artifacts |
 | `python cli.py reset` | Reset Delta Lake and re-seed (guarded; asks for confirmation) |
@@ -146,7 +146,7 @@ machine-local absolute path.
 | `python cli.py ml review-export` | Export low-confidence ZSC records for review |
 | `python cli.py setup` | Model setup placeholder |
 
-Seeds can also be bulk-loaded with `python reseed.py --csv <file>`, which validates them. `scripts/load_seeds.py` is an older one-shot loader for `data/raw/uconn_urls.csv` that is kept for existing automation. It does not canonicalize URLs, so prefer `reseed.py` or `cli.py seeds add`. There is no `cli.py load_seeds`.
+Seeds can also be bulk-loaded with `python scripts/reseed.py --csv <file>`, which validates them. `python reseed.py` at the project root is a deprecated redirect to that script. `scripts/load_seeds.py` is an older one-shot loader for `data/raw/uconn_urls.csv` that is kept for existing automation. It does not canonicalize URLs, so prefer `scripts/reseed.py` or `cli.py seeds add`. There is no `cli.py load_seeds`.
 
 ### Docker Compose v1 and v2
 

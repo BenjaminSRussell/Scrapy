@@ -10,8 +10,8 @@ import logging
 import sys
 from pathlib import Path
 
-# Add project root to path
-sys.path.insert(0, str(Path(__file__).parent))
+# Project root (this file lives in scripts/). Deprecated: `python drain_lake.py`.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import os
 
@@ -283,22 +283,22 @@ def main():
         epilog="""
 Examples:
   # List all queues
-  python drain_lake.py --list
+  python scripts/drain_lake.py --list
 
   # Drain transient queues (dry run)
-  python drain_lake.py --drain-transient --dry-run
+  python scripts/drain_lake.py --drain-transient --dry-run
 
   # Drain transient queues (for real: typed confirmation, audited)
-  python drain_lake.py --drain-transient --confirm
+  python scripts/drain_lake.py --drain-transient --confirm
 
   # Without --confirm a drain only prints the plan and exits 2.
   # ENV=production also needs --i-know-what-im-doing and ALLOW_LAKE_RESET=1.
 
   # Drain specific queue
-  python drain_lake.py --queue stage1_discovered_urls --confirm
+  python scripts/drain_lake.py --queue stage1_discovered_urls --confirm
 
   # Drain ALL queues including persistent (DANGEROUS!)
-  python drain_lake.py --drain-all --include-persistent --confirm
+  python scripts/drain_lake.py --drain-all --include-persistent --confirm
         """,
     )
 

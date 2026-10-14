@@ -6,8 +6,10 @@ This script monitors the Redis priority queue and Stage 2 queue depths.
 When both fall below a threshold, it automatically launches the depth spider
 to perform intensive URL discovery and re-scraping.
 
-Usage:
-    python monitor_and_trigger_depth.py [--check-interval SECONDS]
+Usage (from Scraping_project/):
+    python scripts/monitor_and_trigger_depth.py [--check-interval SECONDS]
+
+`python monitor_and_trigger_depth.py` at the project root is deprecated.
 """
 
 import argparse

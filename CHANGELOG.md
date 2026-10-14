@@ -37,6 +37,9 @@ renamed to the new version and date (see the release checklist).
 - Undomainable rows are quarantined instead of landing in a hot `domain=unknown` partition.
 - ASR no longer sends audio to Google by default (`ASR_PROVIDER` opt-in; local whisper).
 
+### Deprecated
+- `python reseed.py`, `python drain_lake.py`, `python audit_file_counts.py`, and `python monitor_and_trigger_depth.py` at the Scraping_project root. Run `python scripts/<name>.py` from `Scraping_project/` instead. `cli.py` stays the root Python entrypoint (#568).
+
 ### Fixed
 - Circuit breakers share open state and the consecutive-failure count through Redis, keyed by name and host, so one worker's trip is visible to the others on their next check and still open after a restart. The metrics exporter emits `circuit_breaker_state{name,host}` (0 closed, 1 open, 2 half-open). Set `CIRCUIT_BREAKER_SHARED=0` to keep the old process-local breakers (#171).
 - CLI and orchestrator startup reject a config.yml whose redis or kafka fields have the wrong type or an unknown key, with the field path in the error, instead of failing later inside workers (#237).
