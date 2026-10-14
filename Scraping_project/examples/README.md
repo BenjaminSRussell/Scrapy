@@ -6,11 +6,14 @@ Run them from `Scraping_project/` with the project venv active (see
 
 ## Extra dependencies
 
-Both examples need the Stage 4 NLP stack, which is **not** in `requirements.txt`:
+Both examples need the Stage 4 NLP stack. That install is **optional** and
+**heavy** (~2 GB of sentence-transformers, transformers, and torch) and is
+**not** in `requirements.txt` or the CI install:
 
 ```bash
 # from Scraping_project/
-pip install -r requirements-stage4.txt     # sentence-transformers, transformers, torch (~2 GB)
+make install-stage4
+# or: pip install -r requirements-stage4.txt
 ```
 
 The first run downloads two Hugging Face models (`sentence-transformers/all-MiniLM-L6-v2`
