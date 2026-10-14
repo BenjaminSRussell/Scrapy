@@ -200,6 +200,8 @@ yarn-error.log*
 !.devcontainer/devcontainer.json
 # Pinned ML model revisions + checksums (#486); verified by `cli.py setup`.
 !Scraping_project/models.lock.json
+# Offline anomaly-scan metric fixtures (#501). Hand-written, not generated data.
+!Scraping_project/scripts/fixtures/anomaly/*.json
 
 # ====================================
 # Jupyter Notebook

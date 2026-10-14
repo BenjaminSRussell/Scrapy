@@ -5,7 +5,7 @@
 	docker-shell docker-test pre-commit pre-commit-update ci ci-docker clean clean-all dev \
 	serve stop restart shell notebook db-migrate db-reset logs metrics prometheus docs \
 	docs-coverage benchmark quick-test quick-check quick-commit show-config tree size \
-	profile models backup restore
+	profile models backup restore anomaly-scan
 
 # Default target
 .DEFAULT_GOAL := help
@@ -28,6 +28,7 @@ OPEN := $(shell command -v xdg-open 2>/dev/null || command -v open 2>/dev/null |
 
 # Groups that already exist: core (lint/test/docker path), optional (heavy extras),
 # k8s (helm/kubectl targets). Help lists a name only when the target is real (#840).
+# anomaly-scan is optional: offline fixture only, not the core lint/test path (#501).
 help: ## Display this help message
 	@echo "$(BLUE)Scraping Pipeline - Development Commands$(NC)"
 	@echo ""
@@ -36,7 +37,7 @@ help: ## Display this help message
 			name = $$1; desc = $$2; gsub(/^[ \t]+/, "", desc); \
 			g = "core"; \
 			if (index(name, "k8s") || index(name, "helm") || index(name, "kubectl")) g = "k8s"; \
-			else if (name == "install-stage4" || name == "models" || name == "test-perf" || name == "benchmark" || name == "security-full" || index(name, "playwright") || index(name, "kafka") || index(name, "stage4")) g = "optional"; \
+			else if (name == "install-stage4" || name == "models" || name == "test-perf" || name == "benchmark" || name == "security-full" || name == "anomaly-scan" || index(name, "playwright") || index(name, "kafka") || index(name, "stage4")) g = "optional"; \
 			n[g]++; keys[g, n[g]] = name; text[g, n[g]] = desc; \
 		} \
 		END { \
@@ -319,6 +320,16 @@ restore: ## Dry-run restore plan (no database). DRY_RUN=0 extracts; ROUNDTRIP=1 
 		RESTORE_SQL_DEST="$(RESTORE_SQL_DEST)" \
 		ROUNDTRIP="$(ROUNDTRIP)" \
 		./scripts/restore_backup.sh
+
+##@ Anomaly
+
+# Offline metrics fixture (#501). Stdlib z-score. Does not read data/delta_lake,
+# train on the live lake, install packages, or POST to Alertmanager.
+# FIXTURE defaults to the clean series (exit 0). A series past the threshold exits 1.
+# Missing scikit-learn (see scripts/kmeans_anomaly_detector.py) does not fail this target.
+FIXTURE ?= scripts/fixtures/anomaly/clean_metrics.json
+anomaly-scan: ## Offline anomaly scan of a metrics fixture (no lake, no HTTP)
+	@python3 scripts/anomaly_scan.py --fixture "$(FIXTURE)"
 
 ##@ Database
 

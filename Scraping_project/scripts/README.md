@@ -17,6 +17,7 @@ This directory contains scripts for managing, debugging, and resetting the scrap
 | `monitor_and_trigger_depth.py` | Launch the depth spider when queues are idle | Long-running; needs Redis |
 | `automated_backup.sh` | Dry-run archive of a lake directory and an optional SQL file | `make backup`. Does not run `pg_dump` or start services |
 | `restore_backup.sh` | Dry-run restore, or a `/tmp` sample round-trip | `make restore`. `ROUNDTRIP=1` checks a sample. SQL is not loaded |
+| `anomaly_scan.py` | Offline z-score of a metrics fixture | `make anomaly-scan`. Prints an Alertmanager payload and does not POST |
 
 > **Destructive operations** (`complete_reset.sh`, `reset_lake.py`, `../cli.py reset`,
 > `reseed.py --clear`, `drain_lake.py` drains) follow one safety policy; see
@@ -36,6 +37,36 @@ Retention is applied by `automated_backup.sh` only. A dry-run lists what would b
 | `RETENTION_COUNT` | `0` | Keep at most this many newest `delta_lake_*.tar.gz` archives, plus the `postgres_*.sql` with the same id. `0` means no count cap. |
 
 `ROUNDTRIP=1 ./scripts/restore_backup.sh` builds a sample lake and SQL file under `/tmp`, backs them up, restores them, and compares the bytes. It does not use the project lake.
+
+## Anomaly scan (#501)
+
+`make anomaly-scan` scores one local metrics fixture and exits. It does not read `data/delta_lake`, does not train on the live lake, does not install packages, and does not start Docker, Prometheus, or Alertmanager.
+
+The score is a sample z-score of the latest point against the earlier points. A score strictly above `threshold` is an anomaly and the target exits non-zero. The default fixture is clean and exits 0.
+
+```bash
+make anomaly-scan
+make anomaly-scan FIXTURE=scripts/fixtures/anomaly/clean_metrics.json
+make anomaly-scan FIXTURE=scripts/fixtures/anomaly/anomaly_metrics.json
+```
+
+`scripts/kmeans_anomaly_detector.py` is loaded only when `numpy`, `scikit-learn`, `pandas`, and `duckdb` already import. If any of those are missing, the stdlib checker still decides the exit code. This target does not run that script's training path and does not run `ml_error_analyzer.py`.
+
+### Input metrics
+
+JSON object, one series:
+
+| Field | Meaning |
+|---|---|
+| `metric` | Name copied into the stub alert. Default `metric`. |
+| `threshold` | Z-score limit. The latest point exits 1 when its score is strictly above this. Default `3`. |
+| `points` | Time-ordered objects `{"timestamp", "value"}`. At least three. Every point except the last is the baseline. |
+
+Fixtures live in `scripts/fixtures/anomaly/clean_metrics.json` and `scripts/fixtures/anomaly/anomaly_metrics.json`.
+
+### Alertmanager stub
+
+When the threshold is crossed, the target prints an Alertmanager webhook payload and does not POST it. There is no HTTP client. `ALERTMANAGER_URL`, if set, is not called.
 
 ## Deprecated root paths (#568)
 
