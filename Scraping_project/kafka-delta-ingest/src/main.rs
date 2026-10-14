@@ -220,6 +220,28 @@ fn classify(
     })
 }
 
+/// What to do with one offset that failed to deserialize (#177).
+///
+/// `Retry` does not commit and does not publish. `DlqAndCommit` copies the
+/// payload to the DLQ topic and commits the offset so the partition advances.
+/// The decision is pure; the consumer entrypoint that applies it is [`ingest`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PoisonAction {
+    Retry,
+    DlqAndCommit,
+}
+
+/// `failures` counts this attempt (1-based). At `max_failures` (at least 1)
+/// the payload is skipped to the DLQ and the offset is committed.
+fn poison_action(failures: u32, max_failures: u32) -> PoisonAction {
+    let limit = max_failures.max(1);
+    if failures >= limit {
+        PoisonAction::DlqAndCommit
+    } else {
+        PoisonAction::Retry
+    }
+}
+
 const DLQ_DETAIL_MAX: usize = 4000;
 
 /// Headers on every dead-lettered message: why it was rejected and where it came from,
@@ -401,6 +423,13 @@ enum Commands {
         /// Dead-letter topic for rejected (unparseable / schema-invalid) messages (#544)
         #[arg(long, default_value = "scraped-items-dlq")]
         dlq_topic: String,
+
+        /// Deserialize failures of one offset before it is copied to `--dlq-topic`
+        /// and the offset is committed (#177). Below this the offset is not
+        /// committed and the same payload is retried. Minimum effective value is 1,
+        /// so a malformed payload cannot block the partition with no bound.
+        #[arg(long, default_value_t = 3)]
+        max_deserialize_failures: u32,
     },
 }
 
@@ -430,6 +459,7 @@ async fn main() -> Result<()> {
             transform,
             max_write_attempts,
             dlq_topic,
+            max_deserialize_failures,
         } => {
             ingest(
                 &topic,
@@ -442,6 +472,7 @@ async fn main() -> Result<()> {
                 transform,
                 max_write_attempts,
                 &dlq_topic,
+                max_deserialize_failures,
             )
             .await?;
         }
@@ -461,6 +492,7 @@ async fn ingest(
     transform: Option<String>,
     max_write_attempts: u32,
     dlq_topic: &str,
+    max_deserialize_failures: u32,
 ) -> Result<()> {
     info!("Starting Kafka to Delta Lake ingestor");
     info!("Topic: {}", topic);
@@ -495,12 +527,18 @@ async fn ingest(
 
     // Create Kafka consumer.
     //
-    // Delivery semantics (#282): AT-LEAST-ONCE. Offsets are committed manually,
-    // only after the batch containing those messages has been committed to
-    // Delta. A failed write is retried with backoff; if it still fails the
-    // process exits WITHOUT committing, so the batch is re-consumed after
-    // restart. A crash between the Delta commit and the offset commit can
-    // re-deliver (duplicate) a batch, but never skips one.
+    // Delivery semantics (#282): AT-LEAST-ONCE for rows that parse. Offsets of
+    // accepted messages are committed manually, only after the batch containing
+    // them has been committed to Delta. A failed write is retried with backoff;
+    // if it still fails the process exits WITHOUT committing, so the batch is
+    // re-consumed after restart. A crash between the Delta commit and the offset
+    // commit can re-deliver (duplicate) a batch, but never skips a valid row.
+    //
+    // Poison payloads (#177) are different: after `poison_limit` deserialize
+    // failures the payload is produced to the DLQ and that offset is committed
+    // even when the Delta buffer is empty, so one bad message cannot sit
+    // uncommitted until another record arrives. See
+    // Scraping_project/docs/kafka_poison_message_policy.md.
     let consumer: StreamConsumer = ClientConfig::new()
         .set("bootstrap.servers", kafka_brokers)
         .set("group.id", app_id)
@@ -515,7 +553,12 @@ async fn ingest(
 
     // Rejected messages are produced here before their offsets can be committed (#544).
     let dlq = DeadLetterQueue::new(kafka_brokers, dlq_topic, max_write_attempts)?;
+    let poison_limit = max_deserialize_failures.max(1);
     info!("Dead-letter topic: {}", dlq_topic);
+    info!(
+        "Poison policy (#177): after {} deserialize failures, copy the payload to {} and commit the offset",
+        poison_limit, dlq_topic
+    );
 
     info!("Successfully connected to Kafka and subscribed to topic: {}", topic);
 
@@ -545,108 +588,149 @@ async fn ingest(
 
     let mut buffer: Vec<IngestRow> = Vec::new();
     let mut last_write = std::time::Instant::now();
-    // Next offset to commit per (topic, partition): every message seen so far,
-    // including deliberately dropped invalid ones, but only committed once the
-    // buffered batch has reached Delta.
+    // Next offset to commit per (topic, partition). Accepted rows are recorded
+    // when parsed and committed only after their Delta batch. A poison offset
+    // is recorded only when it is dead-lettered (#177), then committed on the
+    // flush below (no Delta write when the buffer is empty).
     let mut pending_offsets = PendingOffsets::default();
 
     loop {
         match consumer.recv().await {
             Ok(message) => {
-                pending_offsets.record(message.topic(), message.partition(), message.offset());
-                match classify(message.payload(), &schema_validator) {
-                    Ok(row) => {
-                        // Signal: response_received - Track HTTP status (default 200 for successful parse)
-                        scrapy_metrics.response_received(200).await.ok();
-                        buffer.push(row);
-                        metrics.incr("messages.received").ok();
-                    }
-                    Err(rejection) => {
-                        warn!(
-                            "Rejected message {}/{}@{} ({}): {}",
-                            message.topic(),
-                            message.partition(),
-                            message.offset(),
-                            rejection.reason,
-                            rejection.detail
-                        );
-                        metrics.incr(&format!("errors.{}", rejection.reason)).ok();
-                        scrapy_metrics.item_dropped(rejection.reason).await.ok();
-                        scrapy_metrics.spider_error(rejection.reason, &rejection.detail).await.ok();
-
-                        // #544: never drop silently. The offset is already recorded, so it is
-                        // committed with the next batch; produce to the DLQ first and fail
-                        // closed (exit without committing) if that is impossible.
-                        let rejected_at_ms = SystemTime::now()
-                            .duration_since(UNIX_EPOCH)
-                            .map(|d| d.as_millis())
-                            .unwrap_or(0);
-                        let headers = dlq_headers(
-                            &rejection,
-                            message.topic(),
-                            message.partition(),
-                            message.offset(),
-                            rejected_at_ms,
-                        );
-                        if let Err(e) = dlq.send(message.payload().unwrap_or(&[]), message.key(), &headers).await {
-                            metrics.incr("errors.dlq_produce_failed").ok();
-                            return Err(e.context(
-                                "Dead-letter produce failed; exiting without committing offsets",
-                            ));
+                let topic_name = message.topic().to_string();
+                let partition = message.partition();
+                let offset = message.offset();
+                let mut force_flush = false;
+                // One delivery. Count deserialize attempts here so a bad payload
+                // is bounded by poison_limit even if the process is not restarted.
+                // Do not seek: a failed rewind could commit a later offset past
+                // a payload that was never dead-lettered.
+                let mut failures: u32 = 0;
+                let mut pending_rejection: Option<Rejection> = None;
+                loop {
+                    match classify(message.payload(), &schema_validator) {
+                        Ok(row) => {
+                            pending_offsets.record(&topic_name, partition, offset);
+                            scrapy_metrics.response_received(200).await.ok();
+                            buffer.push(row);
+                            metrics.incr("messages.received").ok();
+                            pending_rejection = None;
+                            break;
                         }
-                        metrics.incr("messages.dead_lettered").ok();
+                        Err(rejection) => {
+                            failures = failures.saturating_add(1);
+                            warn!(
+                                "Rejected message {}/{}@{} ({} attempt {}/{}): {}",
+                                topic_name,
+                                partition,
+                                offset,
+                                rejection.reason,
+                                failures,
+                                poison_limit,
+                                rejection.detail
+                            );
+                            if poison_action(failures, poison_limit) == PoisonAction::Retry {
+                                metrics.incr("errors.deserialize_retry").ok();
+                                continue;
+                            }
+                            pending_rejection = Some(rejection);
+                            break;
+                        }
                     }
                 }
+                if let Some(rejection) = pending_rejection {
+                    metrics.incr(&format!("errors.{}", rejection.reason)).ok();
+                    scrapy_metrics.item_dropped(rejection.reason).await.ok();
+                    scrapy_metrics.spider_error(rejection.reason, &rejection.detail).await.ok();
 
-                            // Check if we should write the batch
-                            let should_write = buffer.len() >= max_messages_per_batch
-                                || last_write.elapsed() >= Duration::from_secs(allowed_latency);
+                    // #544: never drop silently. Produce to the DLQ first and fail
+                    // closed (exit without committing) if that is impossible.
+                    // #177: on success, commit this offset even if nothing is buffered
+                    // for Delta, so the partition cannot sit on the bad payload.
+                    let rejected_at_ms = SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .map(|d| d.as_millis())
+                        .unwrap_or(0);
+                    let headers = dlq_headers(
+                        &rejection,
+                        &topic_name,
+                        partition,
+                        offset,
+                        rejected_at_ms,
+                    );
+                    if let Err(e) = dlq.send(message.payload().unwrap_or(&[]), message.key(), &headers).await {
+                        metrics.incr("errors.dlq_produce_failed").ok();
+                        return Err(e.context(
+                            "Dead-letter produce failed; exiting without committing offsets",
+                        ));
+                    }
+                    metrics.incr("messages.dead_lettered").ok();
+                    pending_offsets.record(&topic_name, partition, offset);
+                    force_flush = true;
+                }
 
-                            if should_write {
-                                // The `date` partition value is derived in parse_ingest_row.
-                                info!("Writing batch of {} messages to Delta Lake", buffer.len());
+                // Check if we should write the batch. A poison skip flushes even
+                // when the buffer is empty so its offset is committed now.
+                let should_write = force_flush
+                    || buffer.len() >= max_messages_per_batch
+                    || last_write.elapsed() >= Duration::from_secs(allowed_latency);
 
-                                let mut attempt: u32 = 0;
-                                loop {
-                                    attempt += 1;
-                                    match write_batch(&mut delta_table, &schema, &buffer, &metrics, &mut scrapy_metrics).await {
-                                        Ok(()) => {
-                                            info!("Successfully wrote {} records", buffer.len());
-                                            metrics.count("records.written", buffer.len() as i64).ok();
-                                            buffer.clear();
-                                            last_write = std::time::Instant::now();
-                                            // Only now is it safe to advance the group's offsets.
-                                            match pending_offsets.commit(&consumer) {
-                                                Ok(()) => metrics.incr("offsets.committed").ok(),
-                                                Err(e) => {
-                                                    // Data is in Delta; keep the offsets and retry
-                                                    // the commit next batch (worst case: duplicates).
-                                                    warn!("Offset commit failed after Delta write: {}", e);
-                                                    metrics.incr("errors.offset_commit_failed").ok()
-                                                }
-                                            };
-                                            break;
-                                        }
-                                        Err(e) => {
-                                            error!("Failed to write batch (attempt {}/{}): {}", attempt, max_write_attempts, e);
-                                            metrics.incr("errors.write_failed").ok();
+                if should_write && buffer.is_empty() {
+                    // Nothing unwritten for Delta (poison skip, or a later
+                    // offset-commit retry). Commit so the partition advances.
+                    match pending_offsets.commit(&consumer) {
+                        Ok(()) => metrics.incr("offsets.committed").ok(),
+                        Err(e) => {
+                            warn!("Offset commit failed: {}", e);
+                            metrics.incr("errors.offset_commit_failed").ok();
+                        }
+                    }
+                    last_write = std::time::Instant::now();
+                } else if should_write {
+                    // The `date` partition value is derived in parse_ingest_row.
+                    info!("Writing batch of {} messages to Delta Lake", buffer.len());
 
-                                            // Signal: spider_error
-                                            scrapy_metrics.spider_error("write_failed", &e.to_string()).await.ok();
-
-                                            if attempt >= max_write_attempts {
-                                                // Do NOT commit: exit so the uncommitted batch is
-                                                // re-consumed after restart instead of being skipped.
-                                                return Err(e.context(format!(
-                                                    "Delta write failed {} times; exiting without committing offsets",
-                                                    attempt
-                                                )));
-                                            }
-                                            tokio::time::sleep(write_retry_backoff(attempt)).await;
-                                        }
+                    let mut attempt: u32 = 0;
+                    loop {
+                        attempt += 1;
+                        match write_batch(&mut delta_table, &schema, &buffer, &metrics, &mut scrapy_metrics).await {
+                            Ok(()) => {
+                                info!("Successfully wrote {} records", buffer.len());
+                                metrics.count("records.written", buffer.len() as i64).ok();
+                                buffer.clear();
+                                last_write = std::time::Instant::now();
+                                // Only now is it safe to advance the group's offsets.
+                                match pending_offsets.commit(&consumer) {
+                                    Ok(()) => metrics.incr("offsets.committed").ok(),
+                                    Err(e) => {
+                                        // Data is in Delta; keep the offsets and retry
+                                        // the commit next batch (worst case: duplicates).
+                                        warn!("Offset commit failed after Delta write: {}", e);
+                                        metrics.incr("errors.offset_commit_failed").ok()
                                     }
-                                }
+                                };
+                                break;
                             }
+                            Err(e) => {
+                                error!("Failed to write batch (attempt {}/{}): {}", attempt, max_write_attempts, e);
+                                metrics.incr("errors.write_failed").ok();
+
+                                // Signal: spider_error
+                                scrapy_metrics.spider_error("write_failed", &e.to_string()).await.ok();
+
+                                if attempt >= max_write_attempts {
+                                    // Do NOT commit: exit so the uncommitted batch is
+                                    // re-consumed after restart instead of being skipped.
+                                    return Err(e.context(format!(
+                                        "Delta write failed {} times; exiting without committing offsets",
+                                        attempt
+                                    )));
+                                }
+                                tokio::time::sleep(write_retry_backoff(attempt)).await;
+                            }
+                        }
+                    }
+                }
             }
             Err(e) => {
                 warn!("Kafka error: {}", e);
@@ -938,6 +1022,17 @@ mod tests {
         assert_eq!(write_retry_backoff(2), Duration::from_secs(2));
         assert_eq!(write_retry_backoff(4), Duration::from_secs(8));
         assert_eq!(write_retry_backoff(50), Duration::from_secs(30));
+    }
+
+    #[test]
+    fn poison_action_retries_then_dead_letters_and_commits() {
+        assert_eq!(poison_action(1, 3), PoisonAction::Retry);
+        assert_eq!(poison_action(2, 3), PoisonAction::Retry);
+        assert_eq!(poison_action(3, 3), PoisonAction::DlqAndCommit);
+        assert_eq!(poison_action(9, 3), PoisonAction::DlqAndCommit);
+        // A zero limit still skips on the first failure: no unbounded retry.
+        assert_eq!(poison_action(1, 0), PoisonAction::DlqAndCommit);
+        assert_eq!(poison_action(1, 1), PoisonAction::DlqAndCommit);
     }
 
     // ------------------------------------------------------------ #544 DLQ

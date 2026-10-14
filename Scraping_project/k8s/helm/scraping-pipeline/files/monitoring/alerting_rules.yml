@@ -287,6 +287,23 @@ groups:
           impact: "High - Data loss occurring"
           action: "Check ingestor logs for errors and Delta Lake connectivity"
 
+      # Warning: poison / DLQ rate (#177). Not an SLO. messages.dead_lettered
+      # is incremented only after a payload is produced to the DLQ and before
+      # its offset is committed. Threshold is a rate, not a fourth objective.
+      # Stage2SuccessSLO, QueueBacklog and KafkaConsumerLagSLO are unchanged.
+      - alert: KafkaPoisonMessageRate
+        expr: |
+          sum(rate(kafka_delta_ingest_messages_dead_lettered_total[5m])) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          component: ingestor
+        annotations:
+          summary: "Kafka ingest poison / DLQ rate is elevated"
+          description: "{{ $value }} messages/sec are being dead-lettered after repeated deserialize failures."
+          impact: "Medium - Malformed payloads are on the DLQ and their offsets are committed so the partition can advance; they are not in Delta"
+          action: "Inspect scraped-items-dlq headers dlq.reason and dlq.source.offset. Fix the producer or replay after a schema fix. See Scraping_project/docs/kafka_poison_message_policy.md."
+
       # Warning: Slow Delta Lake writes
       # main.rs times write+commit as the StatsD timer batch.write; statsd-exporter
       # turns it into the kafka_delta_ingest_batch_write_seconds histogram (#178).

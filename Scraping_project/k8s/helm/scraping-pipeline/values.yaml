@@ -487,6 +487,13 @@ kafkaDeltaIngestor:
     autoOffsetReset: "earliest"
     allowedLatency: 60
     maxMessagesPerBatch: 1000
+    # Poison-message policy (#177). After this many deserialize failures of one
+    # offset, the payload is produced to dlqTopic and the offset is committed,
+    # including when no Delta rows are buffered. One bad message cannot block
+    # the partition. Not a config.yml key. See
+    # Scraping_project/docs/kafka_poison_message_policy.md.
+    dlqTopic: "scraped-items-dlq"
+    maxDeserializeFailures: 3
 
   env:
     RUST_LOG: "info"
