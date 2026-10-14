@@ -30,3 +30,5 @@ area/dx:
   - "Scraping_project/noxfile.py"
   - "Scraping_project/docs/tooling.md"
   - "Scraping_project/scripts/smoke_local.sh"
+area/kafka-delta-ingest:
+  - "Scraping_project/kafka-delta-ingest/**"
