@@ -48,10 +48,10 @@ function formatHistoryLabel(d = new Date()) {
 }
 
 
-// Chart.js comes from a CDN. When it is blocked (offline / corporate proxy)
-// `Chart` is undefined; constructing charts used to throw inside initialize()
-// and abort everything after it, including the metrics poll (#983). Charts are
-// optional: degrade to a visible notice and keep the numeric metrics live.
+// Chart.js is vendored at vendor/chart.umd.js (#1039). When that file fails to
+// load, `Chart` is undefined; constructing charts used to throw inside
+// initialize() and abort everything after it, including the metrics poll (#983).
+// Charts are optional: degrade to a visible notice and keep the numeric metrics live.
 let chartsUnavailable = false;
 
 function showChartsUnavailable() {
@@ -70,7 +70,7 @@ function showChartsUnavailable() {
     banner.id = 'charts-unavailable';
     banner.className = 'charts-unavailable-banner';
     banner.setAttribute('role', 'status');
-    banner.textContent = 'Charts unavailable: Chart.js could not be loaded (offline or CDN blocked). Numeric metrics still update.';
+    banner.textContent = 'Charts unavailable: Chart.js could not be loaded. Numeric metrics still update.';
     const host = document.getElementById('main') || document.querySelector('.container') || document.body;
     host.insertBefore(banner, host.firstChild);
 }
