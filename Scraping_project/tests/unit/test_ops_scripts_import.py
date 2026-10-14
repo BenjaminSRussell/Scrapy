@@ -13,6 +13,7 @@ SCRIPTS = [
     "scripts/vacuum_delta_tables.py",
     "scripts/reseed.py",
     "scripts/drain_lake.py",
+    "scripts/gdpr_erase.py",
     "scripts/audit_file_counts.py",
     "scripts/monitor_and_trigger_depth.py",
     "cli.py",

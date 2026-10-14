@@ -18,6 +18,7 @@ This directory contains scripts for managing, debugging, and resetting the scrap
 | `automated_backup.sh` | Dry-run archive of a lake directory and an optional SQL file | `make backup`. Does not run `pg_dump` or start services |
 | `restore_backup.sh` | Dry-run restore, or a `/tmp` sample round-trip | `make restore`. `ROUNDTRIP=1` checks a sample. SQL is not loaded |
 | `anomaly_scan.py` | Offline z-score of a metrics fixture | `make anomaly-scan`. Prints an Alertmanager payload and does not POST |
+| `gdpr_erase.py` | Delete stage rows by `url_hash` and tombstone re-ingest | Dry-run by default. `--execute` deletes, audits, and blocks that hash until the TTL. Legal review is still required (#688) |
 
 > **Destructive operations** (`complete_reset.sh`, `reset_lake.py`, `../cli.py reset`,
 > `reseed.py --clear`, `drain_lake.py` drains) follow one safety policy; see
@@ -67,6 +68,17 @@ Fixtures live in `scripts/fixtures/anomaly/clean_metrics.json` and `scripts/fixt
 ### Alertmanager stub
 
 When the threshold is crossed, the target prints an Alertmanager webhook payload and does not POST it. There is no HTTP client. `ALERTMANAGER_URL`, if set, is not called.
+
+## GDPR erasure stub (#688)
+
+`scripts/gdpr_erase.py` deletes rows with a given `url_hash` from the stage tables and writes a tombstone. `LakehouseManager.write` and `merge_into` then drop that hash until the tombstone TTL (default 30 days). Dry-run is the default and writes nothing. `--execute` deletes, appends `gdpr_tombstones`, and appends one JSON line to `<lake>/_audit/gdpr_erasure.jsonl`.
+
+Legal review is still required. This is an operational stub, not a determination that erasure satisfies GDPR or university policy. Delta commits that bypass `LakehouseManager` do not consult the tombstone.
+
+```bash
+python scripts/gdpr_erase.py --url-hash <hash>            # dry-run
+python scripts/gdpr_erase.py --url-hash <hash> --execute  # delete and tombstone
+```
 
 ## Deprecated root paths (#568)
 

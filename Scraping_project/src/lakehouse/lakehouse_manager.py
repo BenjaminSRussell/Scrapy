@@ -977,7 +977,16 @@ class LakehouseManager:
         mode: Literal["append", "overwrite", "error", "ignore"] = "append",
         schema_overwrite: bool = False,
     ) -> bool:
-        """Write synchronously. Returns False if the write failed (logged, not raised)."""
+        """Write synchronously. Returns False if the write failed (logged, not raised).
+
+        Rows whose ``url_hash`` is under an active GDPR tombstone are dropped
+        (#688). A tombstone read error fails open so a bad log cannot halt writes.
+        """
+        if not data:
+            return True
+        from src.lakehouse.gdpr_erasure import suppress_reingest
+
+        data = suppress_reingest(self.base_path, table_name, data)
         if not data:
             return True
         with self._table_lock(table_name):
@@ -2267,6 +2276,11 @@ class LakehouseManager:
         rows = _dedupe_by_key(updates_data, merge_keys)
         if not self._undeclared_table_allowed(table_name):
             return -1
+        from src.lakehouse.gdpr_erasure import suppress_reingest
+
+        rows = suppress_reingest(self.base_path, table_name, rows)
+        if not rows:
+            return 0
         try:
             table_path = self.get_table_path(table_name)
         except ValueError:  # unregistered table: create it, as write() does
