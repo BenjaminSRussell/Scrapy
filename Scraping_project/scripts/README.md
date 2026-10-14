@@ -15,10 +15,27 @@ This directory contains scripts for managing, debugging, and resetting the scrap
 | `drain_lake.py` | Selective Redis queue drain | `python scripts/drain_lake.py --list` |
 | `audit_file_counts.py` | Count Python files per directory | One-shot layout audit |
 | `monitor_and_trigger_depth.py` | Launch the depth spider when queues are idle | Long-running; needs Redis |
+| `automated_backup.sh` | Dry-run archive of a lake directory and an optional SQL file | `make backup`. Does not run `pg_dump` or start services |
+| `restore_backup.sh` | Dry-run restore, or a `/tmp` sample round-trip | `make restore`. `ROUNDTRIP=1` checks a sample. SQL is not loaded |
 
 > **Destructive operations** (`complete_reset.sh`, `reset_lake.py`, `../cli.py reset`,
 > `reseed.py --clear`, `drain_lake.py` drains) follow one safety policy; see
 > [Destructive operations: safety policy](#destructive-operations-safety-policy).
+
+## Backup and restore (#300)
+
+`make backup` and `make restore` default to a dry-run. A dry-run does not read `data/delta_lake`, does not write archives, and does not run `pg_dump`, `psql`, Docker, Postgres, Redis, or Kafka.
+
+Set `DRY_RUN=0` to write. `LAKE_SRC` is the lake directory (real runs default to `./data/delta_lake`) and `BACKUP_DIR` is the archive directory (default `./backups`). `POSTGRES_DUMP_FILE` copies an existing `.sql` into the backup. The scripts never create a dump and never load one.
+
+Retention is applied by `automated_backup.sh` only. A dry-run lists what would be removed and deletes nothing.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `RETENTION_DAYS` | `7` | Delete `delta_lake_*.tar.gz` and `postgres_*.sql` in `BACKUP_DIR` older than this many days. `0` disables the age cutoff. |
+| `RETENTION_COUNT` | `0` | Keep at most this many newest `delta_lake_*.tar.gz` archives, plus the `postgres_*.sql` with the same id. `0` means no count cap. |
+
+`ROUNDTRIP=1 ./scripts/restore_backup.sh` builds a sample lake and SQL file under `/tmp`, backs them up, restores them, and compares the bytes. It does not use the project lake.
 
 ## Deprecated root paths (#568)
 
