@@ -25,8 +25,13 @@ try:
         "JS render candidates dropped from the priority queue, by reason (overflow, ttl).",
         ["queue", "reason"],
     )
+    JS_QUEUE_ITEMS: Any = Counter(
+        "js_priority_queue_items_total",
+        "JS render queue items accepted onto the queue or returned by dequeue.",
+        ["queue", "op"],
+    )
 except Exception:  # prometheus_client missing or metric already registered
-    JS_QUEUE_SIZE = JS_QUEUE_EVICTIONS = None
+    JS_QUEUE_SIZE = JS_QUEUE_EVICTIONS = JS_QUEUE_ITEMS = None
 
 
 def _config_value(key: str, default: Any) -> Any:
@@ -122,9 +127,17 @@ class JSPriorityQueue:
             evicted.update(self._evict_overflow())
         except Exception as e:
             logger.error(f"[JS_QUEUE] Bound enforcement failed for {self.queue_key}: {e}")
+        self._publish_depth()
+        return evicted
+
+    def _publish_depth(self) -> None:
+        """Set js_priority_queue_size to the current depth."""
         if JS_QUEUE_SIZE is not None:
             JS_QUEUE_SIZE.labels(queue=self.queue_key).set(self.size())
-        return evicted
+
+    def _count_items(self, op: str, n: int) -> None:
+        if n > 0 and JS_QUEUE_ITEMS is not None:
+            JS_QUEUE_ITEMS.labels(queue=self.queue_key, op=op).inc(n)
 
     def enqueue(
         self,
@@ -187,6 +200,7 @@ class JSPriorityQueue:
                 logger.debug(f"[JS_QUEUE] URL evicted on arrival (queue full of higher priority): {url[:80]}")
                 return False
 
+            self._count_items("enqueued", 1)
             logger.debug(f"[JS_QUEUE] Enqueued URL (priority={priority}): {url[:80]}")
             return True
 
@@ -243,6 +257,7 @@ class JSPriorityQueue:
                 evicted = self.enforce_bounds()
                 enqueued_count -= sum(1 for (url, _p, _m), added in zip(allowed, claimed, strict=False)
                                       if int(added or 0) == 1 and url in evicted)
+            self._count_items("enqueued", enqueued_count)
             logger.info(f"[JS_QUEUE] Batch enqueued {enqueued_count}/{len(urls)} URLs")
             return enqueued_count
 
@@ -256,6 +271,7 @@ class JSPriorityQueue:
             urls = cast(list[Any], self.redis.zrange(self.queue_key, 0, count - 1))
 
             if not urls:
+                self._publish_depth()
                 return []
 
             pipeline = self.redis.pipeline()
@@ -282,6 +298,8 @@ class JSPriorityQueue:
                 )
 
             logger.debug(f"[JS_QUEUE] Dequeued {len(url_dicts)} URLs")
+            self._count_items("dequeued", len(url_dicts))
+            self._publish_depth()
             return url_dicts
 
         except Exception as e:
