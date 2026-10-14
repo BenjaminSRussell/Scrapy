@@ -7,7 +7,16 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
-SCRIPTS = ["scripts/load_seeds.py", "scripts/reset_lake.py", "scripts/vacuum_delta_tables.py", "reseed.py", "cli.py"]
+SCRIPTS = [
+    "scripts/load_seeds.py",
+    "scripts/reset_lake.py",
+    "scripts/vacuum_delta_tables.py",
+    "scripts/reseed.py",
+    "scripts/drain_lake.py",
+    "scripts/audit_file_counts.py",
+    "scripts/monitor_and_trigger_depth.py",
+    "cli.py",
+]
 REMOVED = ("src.common.delta_lake", "src.common.constants")
 
 

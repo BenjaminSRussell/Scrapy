@@ -54,7 +54,10 @@ def test_stage_packages_are_regular_packages(pkg):  # 367
     assert (PROJECT / "src" / pkg / "__init__.py").is_file()
 
 
-@pytest.mark.parametrize("name", ["cli.py", "start.py", "shutdown.py", "reseed.py", "drain_lake.py"])
+@pytest.mark.parametrize(
+    "name",
+    ["cli.py", "start.py", "shutdown.py", "scripts/reseed.py", "scripts/drain_lake.py"],
+)
 def test_entrypoints_are_executable(name):  # 471
     path = PROJECT / name
     assert path.read_text().startswith("#!/usr/bin/env python3")

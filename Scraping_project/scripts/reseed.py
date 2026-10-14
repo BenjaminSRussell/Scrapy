@@ -15,8 +15,8 @@ from pathlib import Path
 
 import pandas as pd
 
-# Add src to path
-sys.path.insert(0, str(Path(__file__).parent))
+# Project root (this file lives in scripts/). Deprecated: `python reseed.py`.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.core.constants import DELTA_LAKE
 from src.lakehouse.lakehouse_manager import get_delta_manager
@@ -161,10 +161,10 @@ def main():
 
     args = parser.parse_args()
 
-    # Resolve CSV path
+    # Resolve CSV path against the project root, not scripts/.
     csv_path = Path(args.csv)
     if not csv_path.is_absolute():
-        csv_path = Path(__file__).parent / csv_path
+        csv_path = Path(__file__).resolve().parent.parent / csv_path
 
     logger.info("🚀 Delta Lake Reseed Script Starting...")
     logger.info(f"CSV file: {csv_path}")
