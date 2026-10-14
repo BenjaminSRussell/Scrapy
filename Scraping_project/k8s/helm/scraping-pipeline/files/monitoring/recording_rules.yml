@@ -223,3 +223,16 @@ groups:
           )
           /
           sum(increase(stage2_rows_total[24h]))
+
+  # ============================================
+  # FinOps cost-allocation proxy (#545)
+  # ============================================
+  # pipeline_estimated_cost_usd is scheduled request count times
+  # COST_USD_PER_REQUEST (default 0.0001 USD). Not a measured cloud bill.
+  # Keep crawl_job_id and site_id. A value that failed the site-id pattern
+  # is already labeled rejected by the exporter; this sum does not drop it.
+  - name: finops_cost_proxy
+    interval: 60s
+    rules:
+      - record: pipeline:estimated_cost_usd
+        expr: sum by (crawl_job_id, site_id) (pipeline_estimated_cost_usd)

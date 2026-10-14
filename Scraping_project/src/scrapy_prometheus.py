@@ -1,4 +1,6 @@
 import logging
+import math
+import os
 import re
 import threading
 import time
@@ -18,7 +20,14 @@ from scrapy.crawler import Crawler
 from scrapy.exceptions import DropItem, NotConfigured
 from scrapy.http import Request, Response
 
-from src.utils.metric_labels import SCRAPY_FAMILIES, labels_for
+from src.utils.metric_labels import SCRAPY_FAMILIES, cost_proxy_labels, labels_for
+
+# FinOps proxy (#545). Not a measured cloud bill: scheduled request count
+# times this many USD. Override with COST_USD_PER_REQUEST (non-negative).
+DEFAULT_COST_USD_PER_REQUEST = 0.0001
+COST_USD_PER_REQUEST_ENV = "COST_USD_PER_REQUEST"
+_COST_LOCK = threading.Lock()
+_COST_REQUESTS: dict[tuple[str, ...], int] = {}
 
 logger = logging.getLogger(__name__)
 
@@ -194,6 +203,13 @@ if PROMETHEUS_AVAILABLE:
         list(SCRAPY_FAMILIES["scrapy_hidden_urls_routed"]),
     )
 
+    # Request count * COST_USD_PER_REQUEST. Proxy only; not a cloud bill (#545).
+    ESTIMATED_COST_USD = Gauge(
+        "pipeline_estimated_cost_usd",
+        "FinOps proxy: scheduled requests times COST_USD_PER_REQUEST (USD). Not a measured cloud bill.",
+        list(SCRAPY_FAMILIES["pipeline_estimated_cost_usd"]),
+    )
+
     # --- Delta Lake Manager Metrics ---
     DELTA_MANAGER_CONTEXT_ENTER_TOTAL = Counter(
         "delta_manager_context_enter_total", "Total number of times a DeltaLakeManager context has been entered."
@@ -225,8 +241,23 @@ else:
     CRAWLER_CONTENT_SUMMARY = None
     CRAWLER_SUMMARY_SKIPPED = None
     HIDDEN_URLS_FOUND = HIDDEN_URLS_ROUTED = None
+    ESTIMATED_COST_USD = None
 
 _LABEL_CHARS = re.compile(r"[^a-z0-9_]+")
+
+
+def unit_cost_usd() -> float:
+    """Stated USD per scheduled request. Invalid or negative values use the default."""
+    raw = os.environ.get(COST_USD_PER_REQUEST_ENV, "").strip()
+    if not raw:
+        return DEFAULT_COST_USD_PER_REQUEST
+    try:
+        value = float(raw)
+    except ValueError:
+        return DEFAULT_COST_USD_PER_REQUEST
+    if not math.isfinite(value) or value < 0:
+        return DEFAULT_COST_USD_PER_REQUEST
+    return value
 
 
 def bounded_label(value: Any, max_len: int = 40) -> str:
@@ -338,8 +369,21 @@ class PrometheusExtension:
         labels_for(SPIDER_ERRORS, spider=spider.name, exception_type=exception_type).inc()
         logger.error(f"Spider error in {spider.name}: {exception_type} - {failure.getErrorMessage()}")
 
+    def _note_request_cost(self, spider: Spider) -> None:
+        """Record request-count times the stated unit cost. Does not drop the series."""
+        if not PROMETHEUS_AVAILABLE or ESTIMATED_COST_USD is None:
+            return
+        labels = cost_proxy_labels(spider)
+        key = tuple(labels[name] for name in SCRAPY_FAMILIES["pipeline_estimated_cost_usd"])
+        # Set inside the lock so an older count cannot overwrite a newer one.
+        with _COST_LOCK:
+            count = _COST_REQUESTS.get(key, 0) + 1
+            _COST_REQUESTS[key] = count
+            ESTIMATED_COST_USD.labels(**labels).set(count * unit_cost_usd())
+
     def request_scheduled(self, request: Request, spider: Spider):
         labels_for(REQUESTS_TOTAL, spider=spider.name, method=request.method).inc()
+        self._note_request_cost(spider)
 
     def request_dropped(self, request: Request, spider: Spider):
         drop_reason = "filtered"

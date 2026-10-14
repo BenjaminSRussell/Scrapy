@@ -21,6 +21,13 @@ Base labels on every crawl series and every shared StatsD family:
 take a site id, URL, job id, or host. A value that fails the site-id pattern
 is ``rejected``. The series is still recorded. There is no numeric site cap.
 
+``pipeline_estimated_cost_usd`` (#545) is a FinOps proxy, not a cloud bill.
+Its labels are the base set plus ``site_id`` and ``crawl_job_id``. The job
+label is the spider attribute, else the OpenTelemetry context or
+``CRAWL_JOB_ID``, else ``unknown``. The same pattern check applies: a bad
+value is ``rejected`` and the series is still recorded. ``site_id`` is never
+that job id.
+
 Delta Lake manager lifecycle metrics stay unlabeled in every process. They
 are not part of ``SCRAPY_FAMILIES``. Circuit-breaker and Delta table gauges
 keep the label sets in ``STATSD_FAMILIES`` and do not gain the base set.
@@ -65,9 +72,12 @@ SCRAPY_FAMILIES: dict[str, tuple[str, ...]] = {
     "scrapy_crawler_summary_skipped": BASE_LABELS + ("spider", "reason"),
     "scrapy_hidden_urls_found": BASE_LABELS + ("spider", "category"),
     "scrapy_hidden_urls_routed": BASE_LABELS + ("spider", "route"),
+    # Request count times COST_USD_PER_REQUEST. Not a measured cloud bill.
+    "pipeline_estimated_cost_usd": BASE_LABELS + ("site_id", "crawl_job_id"),
 }
 
 # #192 series. site_id stays on these and is not a substitute for domain.
+# The FinOps proxy keeps site_id as well (#545).
 SITE_ID_FAMILIES = frozenset(
     {
         "scrapy_items_scraped",
@@ -76,6 +86,7 @@ SITE_ID_FAMILIES = frozenset(
         "scrapy_responses",
         "scrapy_spider_errors",
         "scrapy_new_urls_found_per_minute",
+        "pipeline_estimated_cost_usd",
     }
 )
 
@@ -154,6 +165,41 @@ def _metric_site_id() -> str:
     from src.utils.redis import metric_site_id
 
     return metric_site_id()
+
+
+def metric_crawl_job_id(spider: Any = None) -> str:
+    """Job label for the cost proxy (#545). Not used as ``site_id``.
+
+    Spider ``crawl_job_id``, else the OpenTelemetry context / ``CRAWL_JOB_ID``.
+    Empty is ``unknown``. A value that fails the site-id pattern is
+    ``rejected``. The series is still recorded. This does not mint a new id.
+    """
+    raw = ""
+    if spider is not None:
+        candidate = getattr(spider, "crawl_job_id", None)
+        if candidate is not None and str(candidate).strip():
+            raw = str(candidate).strip()
+    if not raw:
+        try:
+            from src.otel_tracing import get_crawl_job_id
+
+            raw = str(get_crawl_job_id() or "").strip()
+        except Exception:
+            raw = os.environ.get("CRAWL_JOB_ID", "").strip()
+    if not raw:
+        return "unknown"
+    return bounded_site_token(raw)
+
+
+def cost_proxy_labels(spider: Any = None) -> dict[str, str]:
+    """Labels for ``pipeline_estimated_cost_usd``.
+
+    ``site_id`` comes only from ``metric_site_id()``. Callers cannot pass a
+    URL, a job id, or a raw host. ``crawl_job_id`` is ``metric_crawl_job_id``.
+    """
+    labels = identity_labels()
+    labels["crawl_job_id"] = metric_crawl_job_id(spider)
+    return {name: labels[name] for name in SCRAPY_FAMILIES["pipeline_estimated_cost_usd"]}
 
 
 def identity_labels(*, stage: str | None = None, default_stage: str = "stage1") -> dict[str, str]:
