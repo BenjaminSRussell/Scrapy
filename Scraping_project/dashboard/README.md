@@ -13,7 +13,9 @@ console (#910). Opened as a `file://` page (no server), it falls back to
 All throughput figures are per minute, computed from the real time between samples (#141).
 Labelled series such as `errors_total{stage="stage1"}` are kept under their full key and
 also summed under the bare name (`errors_total`) unless an unlabelled series of that name
-exists (#365).
+exists (#365). The Overview **Error rate** card uses that sum of `pipeline_errors_total`
+as errors per second between polls, with a sparkline (#1003). When the counter is absent
+the card shows an em dash, not zero.
 
 ```bash
 python Scraping_project/dashboard/serve.py

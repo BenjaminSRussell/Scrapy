@@ -637,6 +637,7 @@
             .title-short { display: inline; }
         }
         .overview-spark { height: 28px; width: 100%; margin-top: 0.35rem; }
+        .overview-spark-error { color: var(--danger); }
         .overview-spark-dir { font-size: 0.75rem; color: var(--muted-text); }
         
         .tab-buttons-wrap {
@@ -969,6 +970,21 @@
                         <div class="metric-row">
                             <span class="metric-label" title="Stage 4 compression = compressed output size ÷ input size; values under 1.0x mean more compact storage">Compression (out÷in)</span>
                             <span class="metric-value" id="overview-s4-compression">0x</span>
+                        </div>
+                    </div>
+
+                    <div class="card" id="overview-error-card">
+                        <div class="card-header">
+                            <h2 class="card-title">Error rate</h2>
+                            <span class="card-badge badge-info" id="overview-error-badge">&mdash;</span>
+                        </div>
+                        <div class="metric-row">
+                            <span class="metric-label" title="Sum of pipeline_errors_total, including labelled series, per second since the previous poll">Errors / sec</span>
+                            <span class="metric-value" id="overview-error-rate">&mdash;</span>
+                        </div>
+                        <div class="overview-spark-wrap">
+                            <svg class="overview-spark overview-spark-error" id="spark-overview-error-rate" role="img" aria-label="Error rate trend, errors per second" viewBox="0 0 100 28" preserveAspectRatio="none"></svg>
+                            <div class="overview-spark-dir" id="spark-dir-overview-error-rate" aria-live="polite">Trend: waiting for samples</div>
                         </div>
                     </div>
                 </div>

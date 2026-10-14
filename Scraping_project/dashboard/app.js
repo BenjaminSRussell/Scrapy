@@ -25,9 +25,13 @@ let historicalData = {
     urls: [],
     pages: [],
     summaries: [],
+    errorRates: [],  // errors/sec samples (#1003); only when the counter is present
+    errorMetricPresent: null,  // null unknown, false absent, true reported
     sampleTimes: [],  // ms, parallel to the arrays above (#141)
     maxDataPoints: 50
 };
+// Bare name. parseMetrics sums labelled series onto it (#365, #1003).
+const ERROR_COUNTER = 'pipeline_errors_total';
 let previousMetrics = {};
 let previousMetricsAt = 0;  // ms timestamp of previousMetrics (#141)
 let startTime = Date.now();
@@ -388,8 +392,7 @@ function detectSignificantChanges(metrics) {
     }
 }
 
-function updateHistoricalData(metrics) {
-    const now = new Date();
+function updateHistoricalData(metrics, now = new Date()) {
     const timeLabel = now.toLocaleTimeString();
 
     historicalData.timestamps.push(timeLabel);
@@ -397,6 +400,7 @@ function updateHistoricalData(metrics) {
     historicalData.pages.push(metrics['stage2_pages_analyzed_total'] || 0);
     historicalData.summaries.push(metrics['stage3_summaries_created_total'] || 0);
     historicalData.sampleTimes.push(now.getTime());
+    recordOverviewErrorRate(metrics, now.getTime());
 
     if (historicalData.timestamps.length > historicalData.maxDataPoints) {
         historicalData.timestamps.shift();
@@ -855,6 +859,43 @@ function syncChartDataTable(chart, tableId) {
 }
 
 
+// #1003: Overview error/sec. A missing counter stays an em dash and does not
+// append a zero (that would look like a quiet pipeline). The first sample
+// has no previous counter, so the rate stays unknown until the next poll.
+function recordOverviewErrorRate(metrics, nowMs) {
+    const present = !!metrics && Object.prototype.hasOwnProperty.call(metrics, ERROR_COUNTER);
+    historicalData.errorMetricPresent = present;
+    if (!present) {
+        setMetricText('overview-error-rate', '\u2014');
+        setErrorRateBadge(null);
+        return;
+    }
+    const elapsed = previousMetricsAt ? nowMs - previousMetricsAt : 0;
+    const previous = Object.prototype.hasOwnProperty.call(previousMetrics, ERROR_COUNTER)
+        ? previousMetrics[ERROR_COUNTER]
+        : undefined;
+    const rate = errorPerSecond(metrics[ERROR_COUNTER], previous, elapsed);
+    if (rate == null) {
+        setMetricText('overview-error-rate', '\u2014');
+        setErrorRateBadge(null);
+        return;
+    }
+    historicalData.errorRates.push(rate);
+    if (historicalData.errorRates.length > historicalData.maxDataPoints) {
+        historicalData.errorRates.shift();
+    }
+    setMetricText('overview-error-rate', formatErrorRate(rate));
+    setErrorRateBadge(rate);
+}
+
+function setErrorRateBadge(rate) {
+    const badge = document.getElementById('overview-error-badge');
+    if (!badge) return;
+    const state = errorRateBadge(rate);
+    badge.textContent = state.text;
+    badge.className = 'card-badge badge-' + state.level;
+}
+
 function sparkPath(values, w = 100, h = 28) {
     if (!values || values.length < 2) return '';
     const min = Math.min(...values);
@@ -873,11 +914,17 @@ function updateOverviewSparklines() {
         ['overview-s2-analyzed', historicalData.pages],
         ['overview-s3-summaries', historicalData.summaries],
         ['overview-s4-summaries', historicalData.summaries],
+        ['overview-error-rate', historicalData.errorRates],
     ];
     for (const [id, values] of series) {
         const svg = document.getElementById(`spark-${id}`);
         const dir = document.getElementById(`spark-dir-${id}`);
         if (!svg) continue;
+        if (id === 'overview-error-rate' && historicalData.errorMetricPresent === false) {
+            if (dir) dir.textContent = 'Trend: metric not reported';
+            if (!values || values.length < 2) svg.innerHTML = '';
+            continue;
+        }
         if (!values || values.length < 2) {
             svg.innerHTML = '';
             if (dir) dir.textContent = 'Trend: waiting for samples';
@@ -888,8 +935,9 @@ function updateOverviewSparklines() {
         const last = values[values.length - 1];
         const delta = last - first;
         const arrow = delta > 0 ? '▲ rising' : delta < 0 ? '▼ falling' : '● flat';
+        const shown = Number.isInteger(delta) ? String(delta) : delta.toFixed(2);
         svg.innerHTML = `<path d="${d}" fill="none" stroke="currentColor" stroke-width="1.5" />`;
-        if (dir) dir.textContent = `Trend: ${arrow} (${delta >= 0 ? '+' : ''}${delta})`;
+        if (dir) dir.textContent = `Trend: ${arrow} (${delta >= 0 ? '+' : ''}${shown})`;
     }
 }
 
@@ -914,6 +962,8 @@ function resetChartHistory() {
     historicalData.urls.length = 0;
     historicalData.pages.length = 0;
     historicalData.summaries.length = 0;
+    historicalData.errorRates.length = 0;
+    historicalData.errorMetricPresent = null;
     lastHistoryDayKey = null;
     Object.values(charts || {}).forEach(ch => {
         if (!ch?.data) return;

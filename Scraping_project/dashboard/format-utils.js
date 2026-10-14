@@ -379,5 +379,35 @@
         const limit = Math.max(1, Number(intervalMs) || 5000) * Math.max(1, Number(factor) || 3);
         return { stale: ageMs > limit, ageMs, limitMs: limit };
     }
-    return { tabKeyTarget, staleState, queueDepthRows, metricsFailureActivity, shortcutHintText, parseMetrics, ratePerMinute, resolveMetricsUrl, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler, stageActivity, doughnutLegendLayout, connectionState, documentTitle, createActivityAnnouncer, metricsUrlProblem, splitLinks, createMetricsFetcher, REFRESH_INTERVAL_CHOICES, parseRefreshInterval, shortcutAction, pickInitialTab };
+    // #1003: errors/sec from a counter between polls. null when this sample has
+    // no finite value, or there is no previous sample yet — the card shows an
+    // em dash, not a fake zero. A flat counter or a reset is a real 0/s.
+    function errorPerSecond(current, previous, elapsedMs) {
+        if (current === undefined || current === null || current === '') return null;
+        const c = Number(current);
+        if (!Number.isFinite(c)) return null;
+        const p = Number(previous);
+        const ms = Number(elapsedMs);
+        if (!Number.isFinite(p) || !Number.isFinite(ms) || ms <= 0) return null;
+        const delta = c - p;
+        if (delta <= 0) return 0;
+        return delta / (ms / 1000);
+    }
+    function formatErrorRate(rate) {
+        // Number(null) is 0; a missing rate must stay an em dash, not 0/s.
+        if (rate == null || rate === '') return '\u2014';
+        const n = Number(rate);
+        if (!Number.isFinite(n)) return '\u2014';
+        const abs = Math.abs(n);
+        const body = abs >= 100 ? n.toFixed(0) : abs >= 10 ? n.toFixed(1) : n.toFixed(2);
+        return body + '/s';
+    }
+    // > 0.1/s matches PipelineHighErrorRate, on the summed counter rather than
+    // one stage+site series.
+    function errorRateBadge(rate) {
+        if (rate == null || !Number.isFinite(Number(rate))) return { text: '\u2014', level: 'info' };
+        if (Number(rate) > 0.1) return { text: 'High', level: 'danger' };
+        return { text: 'OK', level: 'success' };
+    }
+    return { tabKeyTarget, staleState, queueDepthRows, metricsFailureActivity, shortcutHintText, parseMetrics, ratePerMinute, resolveMetricsUrl, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler, stageActivity, doughnutLegendLayout, connectionState, documentTitle, createActivityAnnouncer, metricsUrlProblem, splitLinks, createMetricsFetcher, REFRESH_INTERVAL_CHOICES, parseRefreshInterval, shortcutAction, pickInitialTab, errorPerSecond, formatErrorRate, errorRateBadge };
 });
