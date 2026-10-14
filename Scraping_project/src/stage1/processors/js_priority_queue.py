@@ -8,6 +8,8 @@ from typing import Any, cast
 
 import redis
 
+from src.utils.redis import admit_enqueue
+
 logger = logging.getLogger(__name__)
 
 # #377: bounds for long crawls. 0 disables a bound.
@@ -146,9 +148,14 @@ class JSPriorityQueue:
             js_confidence: JS detection confidence (0.0-1.0)
 
         Returns:
-            True if URL was added, False if already in queue
+            True if URL was added, False if already in queue or shed by the
+            high-watermark gate (#196)
         """
         try:
+            # #196: check depth before the claim, so a shed URL can be retried.
+            if not admit_enqueue(self.queue_key, self.size(), priority=priority, depth_probe=self.size):
+                logger.info("[JS_QUEUE] Backpressure shed %s (priority=%s)", url[:80], priority)
+                return False
             # SADD is the atomic "first to queue" claim (#159).
             if not self.redis.sadd(self.hash_key, url):
                 logger.debug(f"[JS_QUEUE] URL already queued: {url[:80]}")
@@ -190,11 +197,25 @@ class JSPriorityQueue:
     def enqueue_batch(self, urls: list[tuple[str, int, dict[str, Any] | None]]) -> int:
         if not urls:
             return 0
+        # #196: shed or block before claiming, so a refused URL is not stuck in the hash set.
+        # Depth includes items this batch already accepted but has not pushed yet,
+        # otherwise a batch would all see the pre-batch depth and blow past the watermark.
+        allowed: list[tuple[str, int, dict[str, Any] | None]] = []
+        for url, priority, metadata in urls:
+            pending = len(allowed)
+
+            def _projected(pending: int = pending) -> int:
+                return self.size() + pending
+
+            if admit_enqueue(self.queue_key, _projected(), priority=priority, depth_probe=_projected):
+                allowed.append((url, priority, metadata))
+        if not allowed:
+            return 0
 
         try:
             # Phase 1: atomic per-URL claims (#159); phase 2: queue only the winners.
             claim = self.redis.pipeline()
-            for url, _priority, _metadata in urls:
+            for url, _priority, _metadata in allowed:
                 claim.sadd(self.hash_key, url)
             claimed = claim.execute()
 
@@ -202,7 +223,7 @@ class JSPriorityQueue:
             enqueued_count = 0
             now = time.time()
 
-            for (url, priority, metadata), added in zip(urls, claimed, strict=False):
+            for (url, priority, metadata), added in zip(allowed, claimed, strict=False):
                 if int(added or 0) == 1:
                     pipeline.zadd(self.queue_key, {url: -priority})
                     pipeline.zadd(self.enqueued_key, {url: now})
@@ -220,7 +241,7 @@ class JSPriorityQueue:
             pipeline.execute()
             if enqueued_count:
                 evicted = self.enforce_bounds()
-                enqueued_count -= sum(1 for (url, _p, _m), added in zip(urls, claimed, strict=False)
+                enqueued_count -= sum(1 for (url, _p, _m), added in zip(allowed, claimed, strict=False)
                                       if int(added or 0) == 1 and url in evicted)
             logger.info(f"[JS_QUEUE] Batch enqueued {enqueued_count}/{len(urls)} URLs")
             return enqueued_count
