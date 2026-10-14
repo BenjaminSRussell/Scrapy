@@ -848,7 +848,7 @@
         }
         
         .chart-empty-placeholder {
-            position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+            position: absolute; inset: 0; z-index: 2; display: flex; align-items: center; justify-content: center;
             color: var(--muted-text); font-size: 0.85rem; pointer-events: none;
         }
         .chart-container { position: relative; }
@@ -1001,8 +1001,14 @@
             .status-dot,
             .metric-value.flash,
             .stage-metric-value.flash,
-            .is-loading {
+            .is-loading,
+            .skeleton {
                 animation: none !important;
+            }
+            /* #1025: no pulse. A frozen mid-fade would look like a failed paint. */
+            .skeleton {
+                background-color: var(--gray-200) !important;
+                opacity: 1 !important;
             }
         }
 
@@ -1022,6 +1028,32 @@
         @keyframes skeletonShimmer {
             0% { background-position: 200% 0; }
             100% { background-position: -200% 0; }
+        }
+
+        /* #1025: one skeleton primitive. An empty .skeleton inside a .card is a
+           content bar; inside a .chart-container it fills the plot. Pulse reuses
+           the status-dot keyframes. Reduced motion (above) is a flat gray. */
+        .skeleton {
+            display: block;
+            width: 100%;
+            height: 0.875rem;
+            border-radius: 0.375rem;
+            background: var(--gray-200);
+            animation: pulse 1.4s ease-in-out infinite;
+            pointer-events: none;
+        }
+        .card .skeleton + .skeleton {
+            margin-top: 0.5rem;
+        }
+        .chart-container .skeleton {
+            position: absolute;
+            inset: 0;
+            z-index: 1;
+            height: auto;
+            border-radius: 0.5rem;
+        }
+        .chart-container.is-unavailable .skeleton {
+            display: none;
         }
 
         /* #351: stale-data badge. */
