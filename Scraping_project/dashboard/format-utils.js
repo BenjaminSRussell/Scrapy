@@ -342,6 +342,25 @@
         if (stored && valid.has(stored)) return stored;
         return null;
     }
+    // #1037: danger chime is opt-in. Missing or unrecognised storage stays off.
+    function parseDangerSoundEnabled(stored) {
+        if (stored === true || stored === 1) return true;
+        if (stored == null || stored === false || stored === 0) return false;
+        const s = String(stored).trim().toLowerCase();
+        return s === '1' || s === 'true' || s === 'on' || s === 'yes';
+    }
+    // Play only for a new danger row, and only when the operator turned sound
+    // on. reducedMotion and prefersMuted win over the toggle. announced false
+    // is a repeat the activity announcer already suppressed.
+    function dangerSoundDecision(opts) {
+        const o = opts || {};
+        if (String(o.type || '') !== 'danger') return { play: false, reason: 'not-danger' };
+        if (!parseDangerSoundEnabled(o.enabled)) return { play: false, reason: 'off' };
+        if (o.reducedMotion) return { play: false, reason: 'reduced-motion' };
+        if (o.prefersMuted) return { play: false, reason: 'prefers-muted' };
+        if (o.announced === false) return { play: false, reason: 'repeat' };
+        return { play: true, reason: 'danger' };
+    }
     // #767: a timed-out metrics request is its own activity type, not a generic error.
     function metricsFailureActivity(error, timeoutMs) {
         if (error && error.timedOut) {
@@ -597,5 +616,5 @@
         table.appendChild(tbody);
         root.appendChild(table);
     }
-    return { tabKeyTarget, staleState, queueDepthRows, metricsFailureActivity, shortcutHintText, parseMetrics, ratePerMinute, resolveMetricsUrl, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler, stageActivity, doughnutLegendLayout, connectionState, documentTitle, createActivityAnnouncer, metricsUrlProblem, splitLinks, createMetricsFetcher, REFRESH_INTERVAL_CHOICES, parseRefreshInterval, shortcutAction, pickInitialTab, METRIC_UI_MAP, renderMetricNameMap };
+    return { tabKeyTarget, staleState, queueDepthRows, metricsFailureActivity, shortcutHintText, parseMetrics, ratePerMinute, resolveMetricsUrl, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler, stageActivity, doughnutLegendLayout, connectionState, documentTitle, createActivityAnnouncer, metricsUrlProblem, splitLinks, createMetricsFetcher, REFRESH_INTERVAL_CHOICES, parseRefreshInterval, shortcutAction, pickInitialTab, METRIC_UI_MAP, renderMetricNameMap, parseDangerSoundEnabled, dangerSoundDecision };
 });

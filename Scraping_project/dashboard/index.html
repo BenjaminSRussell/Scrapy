@@ -437,6 +437,17 @@
             color: var(--gray-900);
         }
 
+        /* #1037: opt-in danger chime. Unchecked in markup (silent by default). */
+        .danger-sound-label {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: var(--gray-700);
+            cursor: pointer;
+        }
+
         .status-indicator {
             display: inline-flex;
             align-items: center;
@@ -554,7 +565,8 @@
         @media (pointer: coarse) {
             .tab-button,
             .refresh-bar .btn,
-            .refresh-bar select {
+            .refresh-bar select,
+            .danger-sound-label {
                 min-height: 44px;
                 min-width: 44px;
             }
@@ -786,6 +798,7 @@
         }
         .btn:focus-visible,
         select:focus-visible,
+        input:focus-visible,
         a:focus-visible,
         summary:focus-visible,
         .legend-toggles button:focus-visible,
@@ -1373,7 +1386,12 @@
                     <div class="card-header" style="flex-wrap:wrap;gap:0.5rem">
                         <h2 class="card-title">Pipeline Activity Log</h2>
                         <span class="card-badge badge-info">Live</span>
-                        <div style="margin-left:auto;display:flex;gap:0.5rem;flex-wrap:wrap">
+                        <div style="margin-left:auto;display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center">
+                            <label class="danger-sound-label" for="danger-sound-toggle">
+                                <input type="checkbox" id="danger-sound-toggle" aria-describedby="danger-sound-hint">
+                                Sound on danger
+                            </label>
+                            <span id="danger-sound-hint" class="visually-hidden">Off by default. Plays a short tone for a new error. Stays silent when reduced motion or a mute preference is set.</span>
                             <button type="button" id="export-activity-json" class="btn" aria-label="Export activity log as JSON">Export JSON</button>
                             <button type="button" id="export-activity-csv" class="btn" aria-label="Export activity log as CSV">Export CSV</button>
                             <button type="button" id="clear-activity" class="btn" aria-label="Clear activity log">Clear</button>
