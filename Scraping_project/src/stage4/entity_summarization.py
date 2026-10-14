@@ -34,8 +34,7 @@ def _json_safe(value: Any) -> Any:
 
 def serialize_fact(fact: dict[str, Any]) -> dict[str, Any]:
     """Fact payload stored beside a summary. Cluster source refs are derived later."""
-    stored = {key: value for key, value in fact.items() if key != "source_references"}
-    return _json_safe(stored)
+    return {str(key): _json_safe(value) for key, value in fact.items() if key != "source_references"}
 
 
 def deserialize_fact(payload: dict[str, Any]) -> dict[str, Any]:
