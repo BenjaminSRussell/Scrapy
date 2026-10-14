@@ -6,4 +6,7 @@
 # Matches Scraping_project/PHASE_*_STRATEGY.md.
 PHASE_*.md linguist-documentation
 
+# Vendored Chart.js UMD. License header is in the file; not project source.
+Scraping_project/dashboard/vendor/chart.umd.js linguist-generated
+
 # CSV stays ordinary Git text. No LFS filter: that would rewrite history.

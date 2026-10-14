@@ -47,14 +47,18 @@ ALLOWED_SUFFIXES = frozenset({".html", ".js", ".css", ".map", ".png", ".svg", ".
                               ".gif", ".webp", ".woff", ".woff2", ".json", ".txt"})
 DENIED_DIRS = frozenset({"tests", "__pycache__", "node_modules"})
 
-# #245: enforcing CSP. index.html has no inline <script> (feature flags live in
+# #245 / #1039: enforcing CSP is this response header, not a full <meta> policy.
+# index.html also sends `script-src 'self'` as a meta tag (local Chart.js). A meta
+# policy is ANDed with the header, so the meta tag must not set connect-src or it
+# would ignore CC_CONNECT_SRC. No inline <script> (feature flags live in
 # features.js); inline style attributes remain, hence style-src 'unsafe-inline'.
-# Chart.js is the only third-party script. connect-src is same-origin: metrics go
-# through /api/metrics (#400). Extra origins (e.g. a cross-origin ?metrics= URL)
-# must be allowed explicitly with CC_CONNECT_SRC.
+# Chart.js 4.4.0 is vendor/chart.umd.js, so script-src is 'self' only. A CDN
+# script tag would not run until that https origin is added here. connect-src is
+# same-origin: metrics go through /api/metrics (#400). Extra origins (e.g. a
+# cross-origin ?metrics= URL) must be allowed explicitly with CC_CONNECT_SRC.
 CSP_BASE = {
     "default-src": "'self'",
-    "script-src": "'self' https://cdn.jsdelivr.net",
+    "script-src": "'self'",
     "style-src": "'self' 'unsafe-inline'",
     "img-src": "'self' data:",
     "font-src": "'self'",

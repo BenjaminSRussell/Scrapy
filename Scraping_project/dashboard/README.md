@@ -90,12 +90,22 @@ text. Only `http(s)://` URLs become links (`splitLinks`), with
 `rel="noopener noreferrer"`; `javascript:` and other schemes are never linked.
 Do not introduce `innerHTML` writes of unescaped data.
 
-**CSP and headers (#245).** `serve.py` sends an enforcing
-`Content-Security-Policy`: `default-src 'self'`, scripts only from this origin and
-jsDelivr (Chart.js, pinned with an SRI `integrity` hash), `connect-src 'self'`,
-`object-src 'none'`, `base-uri 'none'`, `frame-ancestors 'none'`. Inline `<script>` is
-not allowed (feature flags live in `features.js`). Inline style attributes are, via
-`style-src 'unsafe-inline'`, until they move to CSS classes. It also sends
+**CSP and headers (#245, #1039).** `serve.py` sends an enforcing
+`Content-Security-Policy` header. Chart.js 4.4.0 is the local file
+`vendor/chart.umd.js` (MIT; SRI `integrity` hash, no `crossorigin` so same-origin
+auth is still sent). The sample policy that keeps those charts working is:
+
+```
+default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
+```
+
+`index.html` repeats `script-src 'self'` in a `<meta http-equiv="Content-Security-Policy">`
+tag. The meta tag is not a full policy: browsers AND it with the header, and a
+meta `connect-src` would drop origins added by `CC_CONNECT_SRC`. A CDN `<script>`
+does not run under this policy; keep the vendored file, or add that https origin
+to `script-src` in `serve.py`. Inline `<script>` is not allowed (feature flags
+live in `features.js`). Inline style attributes are, via `style-src
+'unsafe-inline'`, until they move to CSS classes. The server also sends
 `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`,
 `Permissions-Policy` and `Cross-Origin-Opener-Policy: same-origin`. Check with:
 

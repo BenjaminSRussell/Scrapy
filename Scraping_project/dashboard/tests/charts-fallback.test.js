@@ -1,5 +1,5 @@
 // Run: node --test Scraping_project/dashboard/tests/
-// Chart.js is loaded from a CDN; when it is blocked, initializeCharts must not
+// Chart.js is vendored locally; when it fails to load, initializeCharts must not
 // throw (which aborted initialize() and the metrics poll) and must show a
 // visible notice instead (#983). Loads the real app.js in a vm sandbox with a
 // tiny DOM stub.

@@ -3,6 +3,7 @@ metrics proxy (#400) and Redis queue depths (#401)."""
 from __future__ import annotations
 
 import base64
+import hashlib
 import importlib.util
 import json
 import threading
@@ -78,9 +79,11 @@ def test_enforcing_csp_and_security_headers(make_server):
     status, headers, _ = get(base + "/")
     assert status == 200
     csp = headers["content-security-policy"]
-    assert "default-src 'self'" in csp
-    assert "frame-ancestors 'none'" in csp
-    assert "cdn.jsdelivr.net" in csp
+    directives = dict(part.strip().split(" ", 1) for part in csp.split(";"))
+    assert directives["default-src"] == "'self'"
+    assert directives["script-src"] == "'self'"  # local Chart.js only (#1039)
+    assert directives["frame-ancestors"] == "'none'"
+    assert "cdn.jsdelivr.net" not in csp
     assert "Report-Only" not in headers
     assert headers["x-content-type-options"] == "nosniff"
     assert headers["x-frame-options"] == "DENY"
@@ -289,7 +292,14 @@ def test_features_js_exists_and_index_has_no_inline_script():
     assert 'src="features.js"' in html
     assert "<script>" not in html.replace("<script ", "<X ")  # no bare <script> blocks
     assert (DASH / "features.js").is_file()
-    assert "integrity=" in html and "chart.js@4.4.0" in html
+    assert 'src="vendor/chart.umd.js"' in html
+    assert 'http-equiv="Content-Security-Policy"' in html
+    assert "script-src 'self'" in html
+    assert "cdn.jsdelivr.net" not in html
+    assert 'integrity="sha384-FcQlsUOd0TJjROrBxhJdUhXTUgNJQxTMcxZe6nHbaEfFL1zjQ+bq/uRoBQxb0KMo"' in html
+    chart = (DASH / "vendor" / "chart.umd.js").read_bytes()
+    digest = base64.b64encode(hashlib.sha384(chart).digest()).decode()
+    assert digest == "FcQlsUOd0TJjROrBxhJdUhXTUgNJQxTMcxZe6nHbaEfFL1zjQ+bq/uRoBQxb0KMo"
 
 
 def test_auth_gate_rejects_malformed_basic_env(serve):
@@ -312,7 +322,7 @@ def test_real_dashboard_assets_smoke(serve):
         html = body.decode()
         assert "<title>" in html
         local_scripts = [s for s in re.findall(r'<script src="([^"]+)"', html) if "://" not in s]
-        assert {"features.js", "format-utils.js", "version.js", "app.js"} <= set(local_scripts)
+        assert {"features.js", "format-utils.js", "version.js", "app.js", "vendor/chart.umd.js"} <= set(local_scripts)
         for src in local_scripts:
             status, headers, body = get(f"{base}/{src}")
             assert status == 200, src
