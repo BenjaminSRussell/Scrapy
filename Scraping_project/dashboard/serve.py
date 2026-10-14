@@ -55,6 +55,8 @@ DENIED_DIRS = frozenset({"tests", "__pycache__", "node_modules"})
 CSP_BASE = {
     "default-src": "'self'",
     "script-src": "'self' https://cdn.jsdelivr.net",
+    # #1005: optional shell service worker (dashboard/sw.js) is same-origin only.
+    "worker-src": "'self'",
     "style-src": "'self' 'unsafe-inline'",
     "img-src": "'self' data:",
     "font-src": "'self'",
