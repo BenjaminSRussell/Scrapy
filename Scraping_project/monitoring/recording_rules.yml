@@ -205,3 +205,21 @@ groups:
             sum(rate(kafka_delta_ingest_records_written_total[5m])) /
             (sum(rate(kafka_delta_ingest_messages_received_total[5m])) + 0.01)
           ) * 0.5
+
+  # ============================================
+  # Pipeline SLOs (#179)
+  # ============================================
+  # Stage 2 success is accepted rows / all rows over 24h (issue #179: >= 99%).
+  # outcome=accepted is written to stage2_page_analysis; other outcomes
+  # (quarantined, and any later label) are the error budget. No series when
+  # Stage 2 recorded no rows in the window, so an idle worker is not 0%.
+  - name: pipeline_slos
+    interval: 60s
+    rules:
+      - record: stage2:success_ratio:24h
+        expr: |
+          (
+            sum(increase(stage2_rows_total{outcome="accepted"}[24h])) or vector(0)
+          )
+          /
+          sum(increase(stage2_rows_total[24h]))
