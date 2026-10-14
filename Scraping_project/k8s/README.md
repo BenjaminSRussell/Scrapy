@@ -61,7 +61,7 @@ Detailed deployment steps: [../DEPLOYMENT.md](../DEPLOYMENT.md#kubernetes-deploy
 ## Architecture
 
 ### Stateful Services (StatefulSets)
-- **Redis**: Message queue and caching (1 replica)
+- **Redis**: Message queue and seen-sets. Non-prod is 1 replica with AOF (not HA). Production uses an external endpoint (`values-prod.yaml`, #216).
 - **PostgreSQL**: Metrics database (1 replica)
 - **Zookeeper**: Kafka coordination (1 replica)
 - **Kafka**: Event streaming (1+ replicas)
@@ -334,18 +334,52 @@ durability and network-policy checks into hard render failures (#176 / #233 / #4
 | Ingress TLS | empty (plain HTTP ok locally) | non-empty `ingress.tls` + cert-manager annotation example |
 | Kafka RF / ISR | 1 / 1 | RF ≥ 2 (3 recommended), `minInsyncReplicas` = RF − 1, `kafka.replicas` ≥ RF |
 | NetworkPolicy | off | default-deny (`networkPolicy.enabled=true`); `breakGlass=true` only while debugging |
+| Redis | in-chart StatefulSet, 1 replica | `redis.enabled=false` and `redis.external.host` (#216) |
+
+### Redis availability (#216)
+
+The chart Redis (`templates/redis-statefulset.yaml`) is a single replica with AOF (`appendonly yes`). Non-prod keeps that StatefulSet. **AOF can recover data after the node returns, and it does not keep the queue available during node loss.**
+
+| | Single-replica chart Redis | Production external endpoint |
+|---|---|---|
+| RPO | After the node returns, AOF replay restores writes Redis had already fsynced. This chart does not set `appendfsync`, so Redis's default `everysec` applies: about one second of writes can be missing. | Whatever the external service promises. |
+| RTO | The queue and seen-sets are unavailable until that same node and its volume are back. There is no failover. | Failover time of the managed Redis or Sentinel deployment you run outside this chart. |
+
+`profile: production` refuses to render when `redis.external.host` is empty or `redis.enabled` is still true. The overlay writes `redis.external.host` to `REDIS_HOST` and `redis.external.port` to `REDIS_PORT`. `REDIS_PASSWORD` still comes from the `redis-credentials` Secret. `REDIS_DB` stays the process default (`0`) unless you set it on the process. Do not set `REDIS_URL`. This chart does not speak the Sentinel wire protocol; point `REDIS_HOST` at a hostname that already reaches the primary (managed Redis, or a name you keep on the current primary).
+
+NetworkPolicy is on in `values-prod.yaml` and cannot match a DNS name. Set `redis.external.egressCIDRs` to the endpoint's CIDRs or default-deny drops the Redis port. Replace `redis.example.edu` and the documentation range `203.0.113.0/24` (TEST-NET-3) before you install.
 
 ```yaml
-# HA, persistence, proper resources
 redis:
-  persistence:
-    enabled: true
-    size: 20Gi
-    storageClass: "fast-ssd"
-  resources:
-    limits:
-      cpu: 2000m
-      memory: 4Gi
+  enabled: false
+  external:
+    host: redis.prod.example.edu   # hostname only
+    port: 6379
+    egressCIDRs:
+      - 10.1.2.0/24                # CIDR of that endpoint
+```
+
+Sentinel (or any other HA Redis) stays outside this chart. Clients keep using `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`, and `REDIS_DB`.
+
+```mermaid
+flowchart LR
+  subgraph nonprod [Non-prod chart Redis]
+    devApps[Workers]
+    sts["StatefulSet replicas 1 with AOF"]
+    devApps -->|REDIS_HOST REDIS_PORT| sts
+  end
+  subgraph production [Production external HA]
+    apps[Workers exporter Grafana]
+    endpoint["redis.external.host"]
+    sentinel[Sentinel]
+    primary[Primary]
+    replica[Replica]
+    apps -->|REDIS_HOST REDIS_PORT REDIS_PASSWORD REDIS_DB| endpoint
+    endpoint --> primary
+    sentinel --> primary
+    sentinel --> replica
+    primary -->|replication| replica
+  end
 ```
 
 ## Requirements

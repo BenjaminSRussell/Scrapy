@@ -87,6 +87,20 @@ list of problems. validate.yaml fails the render on them when
 {{- $problems = append $problems "networkPolicy.enabled=false leaves Redis, Kafka and Postgres open to the namespace; set networkPolicy.enabled=true (values-prod.yaml) or networkPolicy.breakGlass=true for a short debug session (#190)" -}}
 {{- end -}}
 {{- end -}}
+{{- $extHost := include "scraping-pipeline.redisExternalHost" . -}}
+{{- $extCIDRs := list -}}
+{{- if .Values.redis.external -}}
+{{- $extCIDRs = .Values.redis.external.egressCIDRs | default (list) -}}
+{{- end -}}
+{{- if not $extHost -}}
+{{- $problems = append $problems "redis.external.host is empty: production must point REDIS_HOST at an external Redis or Sentinel/HA endpoint (redis.external.host) and set redis.enabled=false. The chart replica is a single node; AOF can recover data after the node returns, and it does not keep the queue available during node loss (#216)" -}}
+{{- end -}}
+{{- if .Values.redis.enabled -}}
+{{- $problems = append $problems "redis.enabled=true still deploys the single-replica StatefulSet; set redis.enabled=false and redis.external.host for production (#216)" -}}
+{{- end -}}
+{{- if and $extHost .Values.networkPolicy.enabled (not .Values.networkPolicy.breakGlass) (not $extCIDRs) -}}
+{{- $problems = append $problems "redis.external.egressCIDRs is empty while networkPolicy is on: default-deny drops traffic to the external Redis endpoint; set the endpoint CIDR(s) (#216)" -}}
+{{- end -}}
 {{- join "\n" $problems -}}
 {{- end }}
 
@@ -102,6 +116,67 @@ Hard errors in any profile: configurations that cannot work.
 {{- $errors = append $errors (printf "kafka.config.defaultReplicationFactor=%d is greater than kafka.replicas=%d; topic creation would fail" $rf $brokers) -}}
 {{- end -}}
 {{- end -}}
+{{- $redisHost := include "scraping-pipeline.redisExternalHost" . -}}
+{{- if or (contains "://" $redisHost) (contains ":" $redisHost) (contains "/" $redisHost) -}}
+{{- $errors = append $errors "redis.external.host must be a hostname only; set the port on redis.external.port. Do not use a redis:// URL or REDIS_URL (#216)" -}}
+{{- end -}}
+{{- if and .Values.redis.external .Values.redis.external.egressCIDRs (not (kindIs "slice" .Values.redis.external.egressCIDRs)) -}}
+{{- $errors = append $errors "redis.external.egressCIDRs must be a list of CIDRs (#216)" -}}
+{{- end -}}
 {{- join "\n" $errors -}}
 {{- end }}
+
+{{/*
+#216: external Redis hostname, or empty when the chart replica is in use.
+Hostname only. Callers map it to REDIS_HOST. Never a redis:// URL.
+*/}}
+{{- define "scraping-pipeline.redisExternalHost" -}}
+{{- if .Values.redis.external }}{{ .Values.redis.external.host | default "" }}{{ end -}}
+{{- end -}}
+
+{{/*
+REDIS_HOST: external hostname when set, otherwise the in-cluster Service.
+*/}}
+{{- define "scraping-pipeline.redisHost" -}}
+{{- $ext := include "scraping-pipeline.redisExternalHost" . -}}
+{{- if $ext -}}
+{{- $ext -}}
+{{- else -}}
+{{- printf "%s-redis" (include "scraping-pipeline.fullname" .) -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+REDIS_PORT: redis.external.port when an external host is set, else the Service port.
+*/}}
+{{- define "scraping-pipeline.redisPort" -}}
+{{- if include "scraping-pipeline.redisExternalHost" . -}}
+{{- if .Values.redis.external }}{{ .Values.redis.external.port | default .Values.redis.service.port }}{{ else }}{{ .Values.redis.service.port }}{{ end -}}
+{{- else -}}
+{{- .Values.redis.service.port -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Extra egress to redis.external.egressCIDRs. Empty when no CIDRs are set.
+NetworkPolicy cannot select a DNS name (#216).
+*/}}
+{{- define "scraping-pipeline.redisExternalEgress" -}}
+{{- $cidrs := list -}}
+{{- $port := .Values.redis.service.port -}}
+{{- if .Values.redis.external -}}
+{{- $cidrs = .Values.redis.external.egressCIDRs | default (list) -}}
+{{- $port = .Values.redis.external.port | default .Values.redis.service.port -}}
+{{- end -}}
+{{- if $cidrs -}}
+- to:
+{{- range $cidrs }}
+  - ipBlock:
+      cidr: {{ . | quote }}
+{{- end }}
+  ports:
+  - protocol: TCP
+    port: {{ $port }}
+{{- end -}}
+{{- end -}}
 

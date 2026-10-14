@@ -313,7 +313,7 @@ Every process reads the same variables (#511):
 
 | Env | Default | Meaning |
 |---|---|---|
-| `REDIS_HOST` | `localhost` | Redis hostname (Compose: `redis`; Helm: `<release>-redis`) |
+| `REDIS_HOST` | `localhost` | Redis hostname (Compose: `redis`; Helm non-prod: `<release>-redis`; Helm production: `redis.external.host`, see `k8s/README.md`) |
 | `REDIS_PORT` | `6379` | Redis port |
 | `REDIS_PASSWORD` | unset | AUTH password (#184); Helm injects it from the `redis-credentials` Secret |
 | `REDIS_DB` | `0` | Database index |
@@ -324,7 +324,10 @@ Compose, Helm, the container entrypoints, the Python services
 (`redis://[:password@]host:port/db`) is accepted only as a fallback for
 whatever the variables above leave unset. If `REDIS_HOST`/`REDIS_PORT` and
 `REDIS_URL` name different servers, `REDIS_HOST`/`REDIS_PORT` win and a
-warning is logged. Set only the four variables.
+warning is logged. Set only the four variables. Helm production sets
+`REDIS_HOST` from `redis.external.host` (`k8s/README.md`, #216). The chart's
+single replica is not HA: AOF can recover data after the node returns, and it
+does not keep the queue available during node loss.
 
 ### Redis connection pool sizing (capacity model)
 

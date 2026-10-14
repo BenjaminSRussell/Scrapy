@@ -1,4 +1,4 @@
-{{- $redisService := printf "%s-redis" (include "scraping-pipeline.fullname" .) }}
+{{- $redisService := include "scraping-pipeline.redisHost" . }}
 {{- $postgresService := printf "%s-postgresql" (include "scraping-pipeline.fullname" .) }}
 {{- $kafkaService := printf "%s-kafka" (include "scraping-pipeline.fullname" .) }}
 
@@ -32,7 +32,7 @@ spec:
           protocol: TCP
         env:
         - name: REDIS_ADDR
-          value: "redis://{{ $redisService }}:{{ .Values.redis.service.port }}"
+          value: "redis://{{ $redisService }}:{{ include "scraping-pipeline.redisPort" . }}"
         {{- if .Values.redis.auth.enabled }}
         - name: REDIS_PASSWORD  # redis_exporter authenticates with this (#184)
           valueFrom:
