@@ -143,6 +143,7 @@ machine-local absolute path.
 
 | Command | What it does |
 |---|---|
+| `python scripts/ops/scrapy-ops lake compact\|vacuum\|doctor` | Compact Delta tables, preview or apply vacuum, or run doctor (Redis ping, Kafka topics, Delta `_delta_log`) |
 | `python cli.py health` | Row and file counts for every Delta table |
 | `python cli.py validate` | Validate the Delta tables |
 | `python cli.py seeds list\|add\|disable\|audit` | Manage seed URLs, with an audit log |
@@ -169,11 +170,21 @@ Seeds can also be bulk-loaded with `python scripts/reseed.py --csv <file>`, whic
 - **Shell scripts** source `scripts/compose_lib.sh`, which prefers the plugin.
 - **The Makefile** defaults to `COMPOSE ?= docker compose`. Override it with `make COMPOSE=docker-compose …`.
 
-## Unsupported scripts
+## Lake ops (`scrapy-ops`)
 
-`temp_scripts/` (repo root) and `Scraping_project/temp_scripts/` hold one-off experiments
-and are **not** supported entry points. Use `cli.py`, `start.py`, `shutdown.py` and
-`scripts/` instead.
+`scrapy-ops` is the lake maintenance entrypoint (#1098). From `Scraping_project/`:
+
+| Command | What it does |
+|---|---|
+| `python scripts/ops/scrapy-ops lake compact` | Compact each Delta table that has a `_delta_log` |
+| `python scripts/ops/scrapy-ops lake vacuum` | Preview files a vacuum would delete; add `--apply` to delete |
+| `python scripts/ops/scrapy-ops lake doctor` | Redis ping, Kafka topics, and Delta table health |
+
+`lake doctor` pings Redis with `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD` and `REDIS_DB` (do not set `REDIS_URL`). It lists the Kafka topics `config.yml` declares and fails if one is missing. It fails when the lake path is missing, or when a table directory has data files but no `_delta_log`.
+
+An installed package also exposes the `scrapy-ops` console script. `cli.py lake-vacuum` remains for the same preview/apply vacuum.
+
+`temp_scripts/` (repo root and `Scraping_project/temp_scripts/`) is retired. CI fails if any file is added there. Do not recreate those scripts.
 
 ## Pull requests
 

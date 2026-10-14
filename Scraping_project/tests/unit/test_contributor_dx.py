@@ -65,7 +65,13 @@ def test_contributing_covers_the_onboarding_checklist():  # #335 / #397
         assert needle in text, needle
 
 
-@pytest.mark.parametrize("readme", ["temp_scripts/README.md", "Scraping_project/temp_scripts/README.md"])
-def test_temp_scripts_marked_unsupported(readme):  # #398
-    text = (REPO / readme).read_text(encoding="utf-8").lower()
-    assert "unsupported" in text and "not" in text
+def test_temp_scripts_are_retired():  # #1098 (replaces the #398 unsupported-readme marker)
+    text = (REPO / "CONTRIBUTING.md").read_text(encoding="utf-8").lower()
+    assert "scrapy-ops" in text
+    assert "temp_scripts" in text and "retired" in text
+    found = []
+    for rel in ("temp_scripts", "Scraping_project/temp_scripts"):
+        root = REPO / rel
+        if root.exists():
+            found.extend(p for p in root.rglob("*") if p.is_file())
+    assert found == []

@@ -93,6 +93,9 @@ stage3-4 = [
 Repository = "https://github.com/BenjaminSRussell/Scrapy"
 Issues = "https://github.com/BenjaminSRussell/Scrapy/issues"
 
+[project.scripts]
+scrapy-ops = "src.ops.scrapy_ops:cli"
+
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["src*"]

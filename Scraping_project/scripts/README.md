@@ -68,6 +68,18 @@ Fixtures live in `scripts/fixtures/anomaly/clean_metrics.json` and `scripts/fixt
 
 When the threshold is crossed, the target prints an Alertmanager webhook payload and does not POST it. There is no HTTP client. `ALERTMANAGER_URL`, if set, is not called.
 
+## Lake ops (`scrapy-ops`, #1098)
+
+From `Scraping_project/`:
+
+```bash
+python scripts/ops/scrapy-ops lake compact
+python scripts/ops/scrapy-ops lake vacuum          # preview; add --apply to delete
+python scripts/ops/scrapy-ops lake doctor          # Redis ping, Kafka topics, Delta/_delta_log
+```
+
+`doctor` uses `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD` and `REDIS_DB`. It fails when a table directory has data files but no `_delta_log`. `temp_scripts/` is retired; CI rejects new files there.
+
 ## Deprecated root paths (#568)
 
 `cli.py` is the supported Python entrypoint in the project root. These four utilities moved here. The old paths are deprecated redirects:

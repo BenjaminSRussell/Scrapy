@@ -280,8 +280,13 @@ docker cp uconn-redis:/data/dump.rdb ./backup/
 ### Database Cleanup
 
 ```bash
-# Compact Delta tables
-python -m src.utils.maintenance compact
+# From Scraping_project/. Compact skips tables that have not been written yet.
+python scripts/ops/scrapy-ops lake compact
+
+# Preview vacuum, then delete. doctor checks Redis, Kafka topics, and _delta_log.
+python scripts/ops/scrapy-ops lake vacuum
+python scripts/ops/scrapy-ops lake vacuum --apply
+python scripts/ops/scrapy-ops lake doctor
 
 # Remove old logs
 find /app/logs -name "*.log" -mtime +30 -delete

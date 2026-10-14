@@ -59,6 +59,16 @@ jobs:
     steps:
     - uses: actions/checkout@v7
 
+    - name: Reject temp_scripts (#1098)
+      run: |
+        set -euo pipefail
+        found=$(find temp_scripts Scraping_project/temp_scripts -type f 2>/dev/null || true)
+        if [ -n "$found" ]; then
+          echo "temp_scripts is retired; remove these files:"
+          printf '%s\n' "$found"
+          exit 1
+        fi
+
     - name: Set up Python ${{ matrix.python-version }}
       uses: actions/setup-python@v7
       with:

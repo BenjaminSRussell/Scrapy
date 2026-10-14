@@ -1,6 +1,6 @@
 # Shell script standard (#822)
 
-Applies to every tracked `*.sh` under `Scraping_project/` except `temp_scripts/`.
+Applies to every tracked `*.sh` under `Scraping_project/`. `temp_scripts/` is retired (#1098); the strict-mode test still ignores that path so a stray file is not a second failure mode.
 `tests/unit/test_shell_strict_mode_822.py` enforces it.
 
 ## Header

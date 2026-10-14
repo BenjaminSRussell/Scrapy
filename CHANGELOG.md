@@ -15,6 +15,7 @@ renamed to the new version and date (see the release checklist).
 ## [Unreleased]
 
 ### Added
+- `scrapy-ops lake compact|vacuum|doctor` is the lake ops CLI (`python scripts/ops/scrapy-ops` from `Scraping_project/`, or the `scrapy-ops` console script when the package is installed). `doctor` pings Redis with `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD` and `REDIS_DB`, checks the Kafka topics declared in config, and fails when the lake path is missing or a table has data but no `_delta_log`. `vacuum` previews unless `--apply` is passed. CI rejects any new file under `temp_scripts/` (#1098).
 - Kafka to Delta ingest poison policy: after `--max-deserialize-failures` (default 3) deserialize failures of one payload, the bytes are produced to the DLQ topic and the offset is committed, including when no Delta rows are buffered, so one malformed message cannot block the partition. `KafkaPoisonMessageRate` warns when the dead-letter rate exceeds 0.1/s for 5 minutes. This is not an SLO (#177).
 - Stage 2 can reuse an unchanged HTML body from `src/utils/cache.py` when `STAGE2_CONTENT_CACHE_ENABLED` is set (default off). The entry is keyed by url_hash plus ETag or Last-Modified; a hit skips the network fetch and increments `cache_hit_total`. Responses with neither header are not cached (#478).
 - SeedManager reads Redis depth (`ZCARD` of `js_spider:priority_queue`) before enqueueing and skips the write when depth is above the shipped high watermark (10000, `stage1.seed_enqueue_depth_threshold` / `REDIS_QUEUE_HIGH_WATERMARK`) or the depth cannot be read. `seed_enqueue_throttled_total` counts the skipped URLs. The low watermark stays 8000 and `REDIS_QUEUE_BACKPRESSURE_MODE` stays `block` (#1105).
@@ -52,6 +53,9 @@ renamed to the new version and date (see the release checklist).
 
 ### Deprecated
 - `python reseed.py`, `python drain_lake.py`, `python audit_file_counts.py`, and `python monitor_and_trigger_depth.py` at the Scraping_project root. Run `python scripts/<name>.py` from `Scraping_project/` instead. `cli.py` stays the root Python entrypoint (#568).
+
+### Removed
+- `temp_scripts/` at the repo root and `Scraping_project/temp_scripts/`. Those one-off scripts are retired; each already had a supported replacement (`start.py`, `shutdown.py`, `cli.py`, `diagnose.sh`, `scripts/`, `dashboard/serve.py`, `tests/`). CI fails if a file is added back (#1098).
 
 ### Fixed
 - Stage 2 replicas jitter the 30s poll (`STAGE2_POLL_JITTER_SECONDS`, default ±15s) and take an exclusive Redis lease (`SET stage2:claim:{url_hash} NX EX`) on each pending URL so two workers do not analyze the same batch. If the lease cannot be acquired, including when Redis is down, the URL is not analyzed (#235).

@@ -46,7 +46,7 @@ In scope: code under `Scraping_project/`, the container images built by
 `.github/workflows/cd-release.yml`, the Helm chart and Kubernetes manifests under
 `Scraping_project/k8s/`, and the GitHub workflows.
 
-Out of scope: `temp_scripts/` (unsupported one-off experiments), third-party
+Out of scope: retired `temp_scripts/` paths (CI rejects new files there; #1098), third-party
 services (Kafka, Redis, Postgres, Grafana) beyond how this project configures them,
 and findings that need an already-compromised host or cluster-admin access.
 

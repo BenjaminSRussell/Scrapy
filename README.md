@@ -165,6 +165,28 @@ python start.py --reset-delta
 
 ---
 
+## Ops
+
+Lake maintenance is `scrapy-ops` (#1098). Run it from `Scraping_project/`. `temp_scripts/` is retired; CI fails if a file is added there.
+
+```bash
+cd Scraping_project
+python scripts/ops/scrapy-ops lake doctor
+python scripts/ops/scrapy-ops lake compact
+python scripts/ops/scrapy-ops lake vacuum
+python scripts/ops/scrapy-ops lake vacuum --apply
+```
+
+`lake doctor` prints three checks and exits non-zero if any fail:
+
+| Check | What it catches |
+|---|---|
+| Redis ping | `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`, `REDIS_DB` do not answer `PING` (do not set `REDIS_URL`) |
+| Kafka topics | A topic declared in `config.yml` is missing on the broker |
+| Delta table health | The lake path is missing, or a table has data files but no `_delta_log` |
+
+`lake vacuum` only lists files unless `--apply` is passed. An installed package also provides the `scrapy-ops` console script. `python cli.py lake-vacuum` still previews the same vacuum.
+
 ## Security
 
 - Report vulnerabilities **privately**; see [SECURITY.md](SECURITY.md). Don't open a public issue.

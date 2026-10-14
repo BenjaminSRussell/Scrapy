@@ -24,3 +24,4 @@ a storage or messaging technology, cross-stage delivery semantics.
 |-----|-------|--------|
 | [0001](0001-config-yml-is-canonical.md) | `Scraping_project/config.yml` is the canonical configuration | Accepted |
 | [0002](0002-edge-fetch-workers-post-to-kafka.md) | Edge fetch workers post to Kafka | Proposed |
+| [0003](0003-scrapy-ops-replaces-temp-scripts.md) | `scrapy-ops` is the lake ops entrypoint; `temp_scripts/` is retired | Proposed |

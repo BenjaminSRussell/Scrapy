@@ -816,7 +816,8 @@ validated_data = delta.read_typed("stage2_queue", Stage2Analysis)
 | File DLQ (`data/dlq/*.json`) | Deleted after 30 days by the idle maintenance worker (#632) | `dlq_retention_days` (0 = keep) |
 | `stage1_offsite_candidates` | Pending sightings dropped after 30 days, rejected ones 7 days after review; accepted kept (#878) | `offsite_pending_retention_days`, `offsite_rejected_retention_days` |
 
-- **Preview before reclaiming (#602):** `python cli.py lake-vacuum [--table T] [--verbose]` lists what a vacuum would delete (files and bytes per table) and deletes nothing. Add `--apply` to reclaim. Tiers below 168h turn off the delta-rs retention safety check for that table, so set them deliberately.
+- **Preview before reclaiming (#602):** `python cli.py lake-vacuum [--table T] [--verbose]` lists what a vacuum would delete (files and bytes per table) and deletes nothing. Add `--apply` to reclaim. Tiers below 168h turn off the delta-rs retention safety check for that table, so set them deliberately. The same preview/apply path is `python scripts/ops/scrapy-ops lake vacuum` (#1098).
+- **Ops CLI (#1098):** `python scripts/ops/scrapy-ops lake compact` compacts tables that have a `_delta_log`. `lake doctor` pings Redis (`REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`, `REDIS_DB`), checks Kafka topics from config, and fails when the lake path is missing or a table has data but no `_delta_log`. `temp_scripts/` is retired.
 - **Forensic hold:** to keep error evidence longer, raise that table's tier (e.g. `stage1_errors: 2160`) or set `dlq_retention_days: 0`. Nothing older than the tier can be restored by time travel once vacuumed.
 - **Offsite review (#878):** run `python cli.py offsite list [--status pending]`, then `offsite accept URL…` or `offsite reject URL…`. `offsite promote` seeds accepted URLs once (idempotent MERGE; `promoted_at` stamped). `offsite gc [--dry-run]` applies the retention above, which the maintenance worker also runs. Gauge: `delta_offsite_candidate_urls{status}`.
 
@@ -831,6 +832,7 @@ Scraping_project/
 │   ├── core/                    # config.py, models.py, schemas.py, exceptions.py
 │   ├── common/                  # legacy managers (config, crawl data, seeds)
 │   ├── lakehouse/               # lakehouse_manager.py, seed_manager.py
+│   ├── ops/                     # scrapy_ops.py (scrapy-ops lake compact|vacuum|doctor)
 │   ├── utils/                   # delta.py, redis.py, retry.py, dead_letter_queue.py, cache.py
 │   ├── stage1/                  # discovery
 │   │   ├── scout_spider.py      # scrapy name: scout
