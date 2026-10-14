@@ -82,6 +82,10 @@ gate (fonts and Chrome builds differ), and it is not part of `node --test`.
 | Where it is produced | Optional workflow [`.github/workflows/ci-dashboard-visual.yml`](../../.github/workflows/ci-dashboard-visual.yml): pull requests that touch this directory, or Actions → Run workflow. `continue-on-error: true`, so a capture failure does not fail the dashboard unit tests. The artifact is kept 14 days. It does not run on every push to `main`. |
 | Regenerate locally | `python Scraping_project/dashboard/overview_screenshot.py --channel chrome` (or bundled Chromium after `python -m playwright install chromium`). Default path: `Scraping_project/dashboard/visual/overview.png` (gitignored). Needs `playwright==1.55.0`, already pinned for the JS spider. |
 
+## First visit (#1021)
+
+On the first load, a checklist coach-marks the Overview tab, the System Health tab, and the Grafana link in the top bar. Compose publishes that dashboard at `http://localhost:3000/d/scraping-pipeline-health` (separate from this page). Skip, Done, Finish, or Escape writes `onboardingDone` in `localStorage` so the tour does not show again. The Grafana link stays after the tour.
+
 ## Connection state in the tab title (#945)
 
 The browser tab title is prefixed with the live state so a background tab still signals trouble:

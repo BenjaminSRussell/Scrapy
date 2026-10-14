@@ -379,5 +379,60 @@
         const limit = Math.max(1, Number(intervalMs) || 5000) * Math.max(1, Number(factor) || 3);
         return { stale: ageMs > limit, ageMs, limitMs: limit };
     }
-    return { tabKeyTarget, staleState, queueDepthRows, metricsFailureActivity, shortcutHintText, parseMetrics, ratePerMinute, resolveMetricsUrl, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler, stageActivity, doughnutLegendLayout, connectionState, documentTitle, createActivityAnnouncer, metricsUrlProblem, splitLinks, createMetricsFetcher, REFRESH_INTERVAL_CHOICES, parseRefreshInterval, shortcutAction, pickInitialTab };
+    // #1021: first-visit coach marks. `onboardingDone` in localStorage hides the
+    // checklist after Skip, Done, or Finish. Steps point at Overview, System
+    // Health, and the Grafana link.
+    const ONBOARDING_STORAGE_KEY = 'onboardingDone';
+    const ONBOARDING_STEPS = Object.freeze([
+        { id: 'overview', targetId: 'tabbtn-overview', tab: 'overview', title: 'Overview' },
+        { id: 'system', targetId: 'tabbtn-system', tab: 'system', title: 'System Health' },
+        { id: 'grafana', targetId: 'grafana-link', tab: null, title: 'Grafana' },
+    ]);
+    function onboardingIsDone(stored) {
+        if (stored == null) return false;
+        const s = String(stored).trim().toLowerCase();
+        return s !== '' && s !== '0' && s !== 'false';
+    }
+    function onboardingShouldShow(stored) {
+        return !onboardingIsDone(stored);
+    }
+    function onboardingClamp(index) {
+        const n = ONBOARDING_STEPS.length;
+        const i = Math.floor(Number(index));
+        if (!Number.isFinite(i) || i < 0) return 0;
+        if (i >= n) return n - 1;
+        return i;
+    }
+    function onboardingView(index, show, persist) {
+        const i = onboardingClamp(index);
+        const step = ONBOARDING_STEPS[i];
+        return {
+            show: !!show,
+            persist: !!persist,
+            index: i,
+            stepId: show ? step.id : null,
+            targetId: show ? step.targetId : null,
+            tab: show ? step.tab : null,
+            title: show ? step.title : null,
+            total: ONBOARDING_STEPS.length,
+        };
+    }
+    // action.type: show | next | prev | goto | skip | done.
+    // Skip, Done, and Next on the last step persist so the tour shows once.
+    function onboardingReduce(state, action) {
+        const index = onboardingClamp(state && state.index);
+        const kind = action && action.type;
+        if (kind === 'skip' || kind === 'done') return onboardingView(index, false, true);
+        if (kind === 'next') {
+            if (index >= ONBOARDING_STEPS.length - 1) return onboardingView(index, false, true);
+            return onboardingView(index + 1, true, false);
+        }
+        if (kind === 'prev') return onboardingView(index - 1, true, false);
+        if (kind === 'goto') {
+            const found = ONBOARDING_STEPS.findIndex(s => s.id === (action && action.id));
+            return onboardingView(found < 0 ? index : found, true, false);
+        }
+        return onboardingView(index, true, false);
+    }
+    return { tabKeyTarget, staleState, queueDepthRows, metricsFailureActivity, shortcutHintText, parseMetrics, ratePerMinute, resolveMetricsUrl, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler, stageActivity, doughnutLegendLayout, connectionState, documentTitle, createActivityAnnouncer, metricsUrlProblem, splitLinks, createMetricsFetcher, REFRESH_INTERVAL_CHOICES, parseRefreshInterval, shortcutAction, pickInitialTab, ONBOARDING_STORAGE_KEY, ONBOARDING_STEPS, onboardingShouldShow, onboardingReduce };
 });
