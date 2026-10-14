@@ -1,0 +1,31 @@
+# Fixture corpus for incremental entity summaries (#474). Not a live scrape.
+documents:
+  - entity_id: person-jane-doe
+    entity_name: Jane Doe
+    entity_type: person
+    content: >-
+      Professor Jane Doe joined the university in 2020 as a faculty member.
+      Jane Doe received the NSF CAREER Award for machine learning research.
+    source_url: https://fixture.example/jane-2020
+    publication_date: "2020-09-01"
+  - entity_id: person-jane-doe
+    entity_name: Jane Doe
+    entity_type: person
+    content: Professor Jane Doe was promoted to Full Professor during the 2024 academic year.
+    source_url: https://fixture.example/jane-2024
+    publication_date: "2024-06-01"
+  - entity_id: org-ai-lab
+    entity_name: UConn AI Lab
+    entity_type: organization
+    content: >-
+      The UConn AI Lab was established in 2022 as a campus research group.
+      UConn AI Lab publishes work in computer vision and robotics venues.
+    source_url: https://fixture.example/lab-2022
+    publication_date: "2022-03-10"
+incremental_document:
+  entity_id: person-jane-doe
+  entity_name: Jane Doe
+  entity_type: person
+  content: Professor Jane Doe now directs a research group with fifteen doctoral students.
+  source_url: https://fixture.example/jane-2025
+  publication_date: "2025-01-15"
