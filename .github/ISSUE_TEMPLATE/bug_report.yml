@@ -30,3 +30,8 @@ body:
         - area/integration
         - area/nlp
         - area/ci
+        - area/stage4
+        - area/lakehouse
+        - area/monitoring
+        - area/dx
+        - area/k8s
