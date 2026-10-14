@@ -26,7 +26,7 @@ This directory contains scripts for managing, debugging, and resetting the scrap
 
 `make backup` and `make restore` default to a dry-run. A dry-run does not read `data/delta_lake`, does not write archives, and does not run `pg_dump`, `psql`, Docker, Postgres, Redis, or Kafka.
 
-Set `DRY_RUN=0` to write. `LAKE_SRC` is the lake directory (real runs default to `./data/delta_lake`) and `BACKUP_DIR` is the archive directory (default `./backups`). `POSTGRES_DUMP_FILE` copies an existing `.sql` into the backup. The scripts never create a dump and never load one.
+Set `DRY_RUN=0` to write. `LAKE_SRC` and `BACKUP_DIR` are required and must be directories under `/tmp` or this worktree. `data/delta_lake` and any other path are refused. `RESTORE_DEST` has the same rule. `POSTGRES_DUMP_FILE`, when set, must already be a `.sql` file in one of those places. The scripts never create a dump and never load one.
 
 Retention is applied by `automated_backup.sh` only. A dry-run lists what would be removed and deletes nothing.
 

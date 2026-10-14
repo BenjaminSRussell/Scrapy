@@ -9,10 +9,11 @@
 # RESTORE_DEST, does not read data/delta_lake, and does not contact a database.
 #
 # DRY_RUN=0 extracts delta_lake_<BACKUP_ID>.tar.gz (default: newest) into
-# RESTORE_DEST. RESTORE_DEST is required on a real run so the project lake is
-# not overwritten by accident. A matching postgres_<id>.sql is copied to
-# RESTORE_SQL_DEST (default: sibling of RESTORE_DEST). The SQL file is never
-# loaded with psql, and pg_dump is never run.
+# RESTORE_DEST. RESTORE_DEST is required on a real run and must be a directory
+# under /tmp or this worktree. data/delta_lake and any other path are refused.
+# A matching postgres_<id>.sql is copied to RESTORE_SQL_DEST (default: sibling
+# of RESTORE_DEST). The SQL file is never loaded with psql, and pg_dump is never
+# run.
 #
 # ROUNDTRIP=1 ignores BACKUP_DIR and the project tree. It builds a sample lake
 # and SQL file under /tmp, backs them up, restores them, and compares bytes.
@@ -28,6 +29,8 @@ fi
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
+# shellcheck source=backup_guard.sh
+source "$ROOT/scripts/backup_guard.sh"
 
 DRY_RUN="${DRY_RUN:-1}"
 BACKUP_DIR="${BACKUP_DIR:-./backups}"
@@ -143,6 +146,10 @@ if [ "$ROUNDTRIP" = "1" ]; then
 fi
 
 BACKUP_DIR="$(anchor "$BACKUP_DIR")"
+reject_lake BACKUP_DIR "$BACKUP_DIR"
+if ! is_dry || [ -L "$BACKUP_DIR" ] || [ -e "$BACKUP_DIR" ]; then
+  guard_path BACKUP_DIR "$BACKUP_DIR"
+fi
 
 archive=""
 sql=""
@@ -177,9 +184,10 @@ if is_dry; then
     echo "done"
     exit 0
   fi
-  dest_display="${RESTORE_DEST:-$ROOT/data/delta_lake}"
   if [ -n "$RESTORE_DEST" ]; then
-    dest_display="$(anchor "$RESTORE_DEST")"
+    echo "restore_dest: $(anchor "$RESTORE_DEST") (not written)"
+  else
+    echo "restore_dest: required when DRY_RUN=0 (not written)"
   fi
   echo "archive: $archive (not extracted)"
   if [ -f "$sql" ]; then
@@ -187,7 +195,6 @@ if is_dry; then
   else
     echo "postgres: no matching sql (psql is not run)"
   fi
-  echo "restore_dest: $dest_display (not written)"
   echo "done"
   exit 0
 fi
@@ -197,12 +204,7 @@ if [ -z "$RESTORE_DEST" ]; then
   exit 2
 fi
 RESTORE_DEST="$(anchor "$RESTORE_DEST")"
-case "$RESTORE_DEST" in
-  /|"$ROOT"|"$ROOT/")
-    echo "refusing to restore into $RESTORE_DEST" >&2
-    exit 2
-    ;;
-esac
+guard_path RESTORE_DEST "$RESTORE_DEST"
 if [ -z "$archive" ] || [ ! -f "$archive" ]; then
   echo "archive not found: ${archive:-$BACKUP_DIR/delta_lake_*.tar.gz}" >&2
   exit 1
@@ -219,6 +221,7 @@ if [ -f "$sql" ]; then
   else
     RESTORE_SQL_DEST="$(anchor "$RESTORE_SQL_DEST")"
   fi
+  guard_path RESTORE_SQL_DEST "$RESTORE_SQL_DEST"
   mkdir -p "$(dirname "$RESTORE_SQL_DEST")"
   cp "$sql" "$RESTORE_SQL_DEST"
   echo "copied_sql: $sql -> $RESTORE_SQL_DEST (not loaded)"

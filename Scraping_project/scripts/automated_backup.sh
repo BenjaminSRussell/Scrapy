@@ -9,11 +9,13 @@
 # write archives, does not run pg_dump or psql, and does not start Postgres,
 # Redis, Kafka, or Docker.
 #
-# DRY_RUN=0 writes archives under BACKUP_DIR:
-#   delta_lake_<BACKUP_ID>.tar.gz   contents of LAKE_SRC (default ./data/delta_lake)
+# DRY_RUN=0 writes archives under BACKUP_DIR (required):
+#   delta_lake_<BACKUP_ID>.tar.gz   contents of LAKE_SRC (required)
 #   postgres_<BACKUP_ID>.sql        copy of POSTGRES_DUMP_FILE, when that is set
-# This script never shells out to pg_dump. Pass an existing SQL file if the
-# backup should include a database dump.
+# LAKE_SRC, BACKUP_DIR, and POSTGRES_DUMP_FILE must sit under /tmp or this
+# worktree. data/delta_lake and any other path are refused. This script never
+# shells out to pg_dump. Pass an existing SQL file if the backup should
+# include a database dump.
 #
 # Retention (applied only when BACKUP_DIR already contains our archives;
 # a dry-run lists matches and deletes nothing):
@@ -25,10 +27,10 @@
 #                    Default 0 means no count cap.
 #
 # Other environment variables:
-#   BACKUP_DIR           Archive directory. Default ./backups (under this
-#                        project root). Relative paths are anchored there.
-#   LAKE_SRC             Lake directory to archive. Real runs default to
-#                        ./data/delta_lake. Dry-run never opens it.
+#   BACKUP_DIR           Archive directory. Dry-run defaults to ./backups.
+#                        A real run requires a directory under /tmp or the worktree.
+#   LAKE_SRC             Lake directory to archive. Required when DRY_RUN=0.
+#                        Dry-run never opens the default data/delta_lake path.
 #   POSTGRES_DUMP_FILE   Existing .sql file to copy. Unset skips SQL.
 #   BACKUP_ID            Filename token. Default UTC YYYYMMDD_HHMMSS.
 #                        Letters, digits, dot, underscore, and hyphen only.
@@ -41,9 +43,11 @@ fi
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
+# shellcheck source=backup_guard.sh
+source "$ROOT/scripts/backup_guard.sh"
 
 DRY_RUN="${DRY_RUN:-1}"
-BACKUP_DIR="${BACKUP_DIR:-./backups}"
+BACKUP_DIR="${BACKUP_DIR:-}"
 RETENTION_DAYS="${RETENTION_DAYS:-7}"
 RETENTION_COUNT="${RETENTION_COUNT:-0}"
 LAKE_SRC="${LAKE_SRC:-}"
@@ -88,12 +92,34 @@ case "$BACKUP_ID" in
     ;;
 esac
 
+if [ -z "$BACKUP_DIR" ]; then
+  if is_dry; then
+    BACKUP_DIR="./backups"
+  else
+    echo "BACKUP_DIR is required when DRY_RUN=0" >&2
+    exit 2
+  fi
+fi
+if [ -z "$LAKE_SRC" ] && ! is_dry; then
+  echo "LAKE_SRC is required when DRY_RUN=0" >&2
+  exit 2
+fi
 BACKUP_DIR="$(anchor "$BACKUP_DIR")"
 if [ -n "$LAKE_SRC" ]; then
   LAKE_SRC="$(anchor "$LAKE_SRC")"
 fi
 if [ -n "$POSTGRES_DUMP_FILE" ]; then
   POSTGRES_DUMP_FILE="$(anchor "$POSTGRES_DUMP_FILE")"
+fi
+reject_lake BACKUP_DIR "$BACKUP_DIR"
+if ! is_dry || [ -L "$BACKUP_DIR" ] || [ -e "$BACKUP_DIR" ]; then
+  guard_path BACKUP_DIR "$BACKUP_DIR"
+fi
+if ! is_dry; then
+  guard_path LAKE_SRC "$LAKE_SRC"
+  if [ -n "$POSTGRES_DUMP_FILE" ]; then
+    guard_path POSTGRES_DUMP_FILE "$POSTGRES_DUMP_FILE"
+  fi
 fi
 
 default_lake="$ROOT/data/delta_lake"
@@ -116,7 +142,7 @@ if is_dry; then
     echo "postgres: skipped (POSTGRES_DUMP_FILE unset; pg_dump is not run)"
   fi
 else
-  src="${LAKE_SRC:-$default_lake}"
+  src="$LAKE_SRC"
   if [ ! -d "$src" ]; then
     echo "lake source not found: $src" >&2
     exit 1
@@ -136,6 +162,33 @@ else
     echo "postgres: skipped (POSTGRES_DUMP_FILE unset; pg_dump is not run)"
   fi
 fi
+
+rm_in_backup_dir() {
+  local p="$1" real dest base
+  [ -e "$p" ] || return 0
+  if [ -L "$p" ]; then
+    echo "refusing to delete symlink: $p" >&2
+    exit 2
+  fi
+  dest="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$BACKUP_DIR")" || exit 2
+  real="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$p")" || exit 2
+  base="$(basename "$real")"
+  case "$real" in
+    "$dest"/*) ;;
+    *)
+      echo "refusing to delete outside backup dir: $real" >&2
+      exit 2
+      ;;
+  esac
+  case "$base" in
+    delta_lake_*.tar.gz|postgres_*.sql) ;;
+    *)
+      echo "refusing to delete unexpected file: $real" >&2
+      exit 2
+      ;;
+  esac
+  rm -f "$real"
+}
 
 list_tars() {
   local f
@@ -164,7 +217,7 @@ apply_age_retention() {
     if is_dry; then
       echo "would_delete_age: $p"
     else
-      rm -f "$p"
+      rm_in_backup_dir "$p"
       echo "deleted_age: $p"
     fi
   done <<EOF
@@ -193,10 +246,10 @@ apply_count_retention() {
           echo "would_delete_count: $sql"
         fi
       else
-        rm -f "$f"
+        rm_in_backup_dir "$f"
         echo "deleted_count: $f"
-        if [ -f "$sql" ]; then
-          rm -f "$sql"
+        if [ -f "$sql" ] || [ -L "$sql" ]; then
+          rm_in_backup_dir "$sql"
           echo "deleted_count: $sql"
         fi
       fi

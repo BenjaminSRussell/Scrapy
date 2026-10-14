@@ -298,6 +298,7 @@ notebook: ## Start Jupyter notebook
 
 # Local dry-runs (#300). Core help group: they do not start services.
 # DRY_RUN defaults to 1 inside the scripts when this is empty.
+# DRY_RUN=0 requires LAKE_SRC and BACKUP_DIR under /tmp or this worktree.
 backup: ## Dry-run local backup plan (no pg_dump or services). DRY_RUN=0 writes archives
 	@env \
 		DRY_RUN="$(DRY_RUN)" \
