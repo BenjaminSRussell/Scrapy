@@ -118,6 +118,16 @@ stage1:
 
   # Priority Queue Settings
   use_redis_queue: true  # Use Redis priority queue instead of Scrapy's queue
+  # Seed backpressure (#1105). Before SeedManager writes, it reads Redis depth
+  # (ZCARD of js_spider:priority_queue, the redis_queue_length series). Above
+  # this depth, or when that read fails, the write is skipped and
+  # seed_enqueue_throttled_total increments. A missing client is not depth 0.
+  # This is the shipped high watermark, the same number as
+  # REDIS_QUEUE_HIGH_WATERMARK and QueueBacklog (redis_queue_length > 10000).
+  # A different value is ignored so the process does not grow a second limit.
+  # Low watermark stays 8000. REDIS_QUEUE_BACKPRESSURE_MODE stays block for
+  # admit_enqueue; this gate skips instead of sleeping.
+  seed_enqueue_depth_threshold: 10000
   priority_boost_keywords:
     - research
     - faculty
