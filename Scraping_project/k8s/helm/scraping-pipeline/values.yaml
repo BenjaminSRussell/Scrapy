@@ -1,8 +1,8 @@
 # Default values for scraping-pipeline
 
 # "development" (default) or "production". The production profile turns the
-# exposure/durability warnings below into render failures (#176/#233/#451); see
-# values-prod.yaml and templates/validate.yaml.
+# exposure/durability/network-policy warnings below into render failures
+# (#176/#233/#451/#190); see values-prod.yaml and templates/validate.yaml.
 profile: development
 
 global:
@@ -647,11 +647,28 @@ ingress:
 # ============================================
 # Network Policies
 # ============================================
+# Off in development. values-prod.yaml sets enabled=true (#190). When on, the
+# namespace is default-deny: scrapers and workers may reach Redis, Kafka and
+# Postgres; Prometheus may open metrics ports; scrapers may egress to public
+# TCP/80 and TCP/443 (scrapeExcept, not RFC1918 or link-local).
+# Break-glass: --set networkPolicy.breakGlass=true renders no NetworkPolicy.
+# profile=production refuses enabled=false unless breakGlass is true.
+# kubectl port-forward does not go through NetworkPolicy; try it first.
 networkPolicy:
   enabled: false
+  breakGlass: false
   policyTypes:
     - Ingress
     - Egress
+  # kubernetes.io/metadata.name of the ingress controller namespace. Empty
+  # skips that allow. values-prod.yaml sets ingress-nginx.
+  ingressNamespace: ""
+  # Public crawl egress cannot use these CIDRs (cluster-internal and metadata).
+  scrapeExcept:
+    - 10.0.0.0/8
+    - 172.16.0.0/12
+    - 192.168.0.0/16
+    - 169.254.0.0/16
 
 # ============================================
 # Pod Disruption Budgets

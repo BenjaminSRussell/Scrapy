@@ -82,6 +82,11 @@ list of problems. validate.yaml fails the render on them when
 {{- if and .Values.ingress.enabled (not .Values.ingress.tls) -}}
 {{- $problems = append $problems "ingress.enabled without ingress.tls serves Grafana logins over plain HTTP; add a TLS secret (see values-prod.yaml)" -}}
 {{- end -}}
+{{- if not .Values.networkPolicy.breakGlass -}}
+{{- if not .Values.networkPolicy.enabled -}}
+{{- $problems = append $problems "networkPolicy.enabled=false leaves Redis, Kafka and Postgres open to the namespace; set networkPolicy.enabled=true (values-prod.yaml) or networkPolicy.breakGlass=true for a short debug session (#190)" -}}
+{{- end -}}
+{{- end -}}
 {{- join "\n" $problems -}}
 {{- end }}
 

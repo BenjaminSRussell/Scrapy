@@ -1,4 +1,4 @@
-# Production overrides (#176, #233, #451). Use together with values.yaml:
+# Production overrides (#176, #233, #451, #190). Use together with values.yaml:
 #
 #   helm upgrade --install scraping-pipeline . -f values.yaml -f values-prod.yaml \
 #     --set ingress.hosts[0].host=grafana.example.edu \
@@ -8,7 +8,8 @@
 #   - Kafka replication factor < 2, or min.insync.replicas >= replication factor
 #     would block writes on a single broker loss (needs RF >= minISR + 1);
 #   - Grafana is a LoadBalancer without grafana.service.allowPublicLoadBalancer;
-#   - the ingress is enabled without TLS.
+#   - the ingress is enabled without TLS;
+#   - networkPolicy is off without networkPolicy.breakGlass (#190).
 profile: production
 
 kafka:
@@ -41,3 +42,12 @@ ingress:
     - secretName: grafana-tls
       hosts:
         - grafana.example.edu
+
+# Default-deny for Redis, Kafka, Postgres and the scrapers (#190).
+# Break-glass (debug only; do not leave on): --set networkPolicy.breakGlass=true
+# kubectl port-forward is not blocked by NetworkPolicy.
+networkPolicy:
+  enabled: true
+  breakGlass: false
+  # Ingress controller namespace (className nginx above). Change if yours differs.
+  ingressNamespace: ingress-nginx

@@ -259,6 +259,19 @@ kubectl delete namespace scraping-pipeline
 - **Kafka durability:** the chart ships RF=1 for a single local broker. Production
   must use `values-prod.yaml` (3 brokers, RF=3, minISR=2). Producers already use
   `acks=all` (#174); with RF=1 that only waits for the leader (#176).
+- **NetworkPolicy (#190):** `values-prod.yaml` sets `networkPolicy.enabled=true`
+  (default-deny ingress and egress). Scrapers and stage workers may reach Redis,
+  Kafka and Postgres, and may open public TCP 80/443 only (not RFC1918 or
+  link-local — see `networkPolicy.scrapeExcept`). Prometheus may scrape metrics
+  ports. Exporters may dial the store they scrape. Grafana's ingress is limited
+  to `networkPolicy.ingressNamespace` (the overlay uses `ingress-nginx`).
+  `kubectl port-forward` does not traverse NetworkPolicy.
+  **Break-glass:** if a flow is denied and port-forward is not enough, upgrade
+  with `--set networkPolicy.breakGlass=true`. That is the only way
+  `profile=production` renders with policies off. It drops every NetworkPolicy
+  in this chart. Turn it off on the next upgrade; do not commit it.
+  Alertmanager Slack/PagerDuty receivers are not given egress; add a rule before
+  enabling them.
 - **Secrets:** never put credentials in values committed to git; use
   `existingSecret` (Grafana) and Kubernetes Secrets. See the root `SECURITY.md`.
 
@@ -297,14 +310,25 @@ helm upgrade --install scraping-pipeline ./k8s/helm/scraping-pipeline \
   -n scraping-pipeline
 ```
 
-`values-prod.yaml` also sets `profile: production`, which turns the exposure and
-durability checks into hard render failures (#176 / #233 / #451):
+Break-glass while debugging a denied flow (revert on the next upgrade; `kubectl port-forward` does not need this):
+
+```bash
+helm upgrade --install scraping-pipeline ./k8s/helm/scraping-pipeline \
+  -f ./k8s/helm/scraping-pipeline/values.yaml \
+  -f ./k8s/helm/scraping-pipeline/values-prod.yaml \
+  --set networkPolicy.breakGlass=true \
+  -n scraping-pipeline
+```
+
+`values-prod.yaml` also sets `profile: production`, which turns the exposure,
+durability and network-policy checks into hard render failures (#176 / #233 / #451 / #190):
 
 | Guardrail | Development default | Production requirement |
 |---|---|---|
 | Grafana Service | ClusterIP | ClusterIP (or LoadBalancer only with `allowPublicLoadBalancer`) |
 | Ingress TLS | empty (plain HTTP ok locally) | non-empty `ingress.tls` + cert-manager annotation example |
 | Kafka RF / ISR | 1 / 1 | RF ≥ 2 (3 recommended), `minInsyncReplicas` = RF − 1, `kafka.replicas` ≥ RF |
+| NetworkPolicy | off | default-deny (`networkPolicy.enabled=true`); `breakGlass=true` only while debugging |
 
 ```yaml
 # HA, persistence, proper resources
