@@ -69,7 +69,8 @@ Do not tell the operator to raise 99%, 10000, or 250000.
 redis_queue_length is the JS priority queue, not stage2_queue.
 stage2_queue_pending is the pending Delta rows at the last Stage 2 run, not a live depth and not an SLO.
 If stage2:success_ratio:24h has no series, say the 24h window had no Stage 2 rows. Do not call that 0% or a breach.
-If any other tool has no series, say "no series". Do not substitute 0.
+Tool 10 has no bool modifier. Empty means not breaching or no series. A present value is the ratio under 0.99, not 1. Do not invent a 0/1 measurement.
+If any tool other than tool 10 has no series, say "no series". Do not substitute 0.
 
 Fill only these lines. Skip a cause you cannot point at a tool result.
 
@@ -163,7 +164,7 @@ stage2:success_ratio:24h
 
 ### 10. `stage2_success_slo_breach`
 
-The shipped `Stage2SuccessSLO` expression ([`alerting_rules.yml`](../../Scraping_project/monitoring/alerting_rules.yml)). `1` means the 24h ratio is under 99% and the window had rows. This is the same SLO as tool 9, not a second objective.
+The shipped `Stage2SuccessSLO` expression ([`alerting_rules.yml`](../../Scraping_project/monitoring/alerting_rules.yml)). It has no `bool` modifier. Empty means not breaching or no series. A present value is the left-hand ratio (`stage2:success_ratio:24h`). `alerting_rules.yml` uses `$value` as that ratio. `1` cannot be a breach, because `1 < 0.99` is false. Do not invent a 0/1 measurement. This is the same SLO as tool 9, not a second objective.
 
 ```promql
 (
@@ -211,7 +212,7 @@ sum by (outcome) (increase(stage2_http_fetches_total[30m]))
 
 ### 15. `stage2_http_retries_30m`
 
-Retry attempts by the `reason` label (`timeout`, `connection`, `http_5xx/408`). Not an SLO.
+Retry attempts by the `reason` label. The worker emits `timeout`, `connection`, and `http_<status>` (408, 500, 502, 503, 504). The counter help text uses the shorthand `http_5xx/408`; that string is not a reason value. Not an SLO.
 
 ```promql
 sum by (reason) (increase(stage2_http_retries_total[30m]))
@@ -254,7 +255,7 @@ sum by (error_type) (increase(scrapy_stage_errors_total{stage="stage2"}[30m]))
 Lag is not one gauge. Read the tools in three groups:
 
 1. **Work is waiting or stuck.** `stage2_queue_pending` is high, or read failures, analysis upsert failures, or status-merge failures are non-zero. The queue is Delta. Redis depth does not measure it.
-2. **Work is failing the success objective.** Tool 10 is 1. Tool 11 shows which `outcome` is non-accepted. Tool 9 with no series is idle, not a failure.
+2. **Work is failing the success objective.** Tool 10 has a present value: the left-hand ratio under 0.99, not 1. Empty means not breaching or no series. Tool 11 shows which `outcome` is non-accepted. Tool 9 with no series is idle, not a failure.
 3. **An upstream SLO is also breached.** Tool 12 above 10000 is the JS queue. Tool 13 above 250000 is Kafka consume lag. Either can sit in front of later stages. Neither is `stage2_queue` depth.
 
 If the worker is up, pending is not stuck behind the failure counters, the success series is absent or at least 99%, and the other two SLOs are within their lines, the summary says these series do not explain the lag. It stops there.
@@ -263,11 +264,13 @@ If the worker is up, pending is not stuck behind the failure counters, the succe
 
 The tools return aggregates and the labels named on each template: `job`, `queue`, `status`, `outcome`, `topic`, `group`, `reason`, `kind`, `exception`, `error_type`, `stage`. That is the whole result the summary may quote.
 
+Unaggregated templates (`up`, `stage2_queue_pending`, `stage2_queue_empty`, `stage2_queue_read_failures_total`, `stage2_analysis_write_failures_total`, `stage2_host_throttled_total`) come back from the `stage2_worker` scrape with `instance` (the scrape target) and the [`prometheus.yml`](../../Scraping_project/monitoring/prometheus.yml) relabel labels `service`, `component`, and `environment`. Keep the sample and the value. Drop only those extra labels. Dropping the sample throws away the lag gauges. Do not add `site_id` or a site cap.
+
 - Do not interpolate the question, a hostname, a URL, or any other operator text into PromQL.
 - Do not add matchers. In particular do not group or filter by `url`, `url_hash`, `host`, `error_message`, `cookie`, or `authorization`.
 - Do not read Delta (`stage2_queue`, `stage2_page_analysis`, `stage2_errors`), Postgres `error_logs` or `performance_metrics`, Redis members, or worker logs. Those hold page URLs, and error text can quote a URL. Do not read the metrics-sink fallback log either. Its payload can contain a URL.
 - `exception` is a class name. `error_type` is the existing counter label, already truncated in the sink. Quote it as a count key, not as a message, and do not look up the matching row.
-- If a sample arrives with a label outside the list above, drop the sample. Do not put it in the summary.
+- If a sample arrives with a label outside the quote list above, keep the value and drop only that extra label. Do not drop the sample. `instance`, `service`, `component`, and `environment` are scrape labels, not a reason to discard the lag gauges.
 - The summary stays in the operator session that asked. It is not written to a table, not attached to crawl output, and not sent off the operator network.
 - This design calls no model API and stores no prompt. Control Center's existing access check, if enabled, is unchanged. No new credential is created.
 - A later model, if any, may see only the prompt in this file and the tool results that survived the label rule. It may not see lake rows, logs, or Redis. No such model is approved here.
