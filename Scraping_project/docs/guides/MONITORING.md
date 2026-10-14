@@ -41,7 +41,15 @@ The "Unified Dashboard" (`monitoring/dashboards/unified_dashboard.json`) adds Ka
 
 Every rule carries `summary`, `description`, `impact` and `action` annotations, so the alert itself tells on-call what to check. Runbooks for operator actions are in [docs/runbooks/](../runbooks/).
 
-`QueueBacklog` (`redis_queue_length` > 10000 for 10 minutes) is the alert for Redis queue growth and the Redis depth SLO. Producers apply the same default as a high watermark (#196): `REDIS_QUEUE_HIGH_WATERMARK` / `REDIS_QUEUE_LOW_WATERMARK` / `REDIS_QUEUE_BACKPRESSURE_MODE` (`block` or `shed`). `redis_queue_backpressure_total{queue,action}` counts block and shed events on the Scrapy process registry. `monitoring/alerts.yml` is not a Prometheus rule file and is not recreated. The published objectives and the panel for each are in [PIPELINE_SLOS.md](PIPELINE_SLOS.md). The main dashboard stays http://localhost:3000/d/scraping-pipeline-health; the SLO panels are http://localhost:3000/d/pipeline-slos.
+`QueueBacklog` (`redis_queue_length` > 10000 for 10 minutes) is the alert for Redis queue growth and the Redis depth SLO. The comparison stays `> 10000`. The alert is grouped by `queue` and `site_id`, and the `site` annotation is `{{ $labels.site_id }}`. Producers apply the same default as a high watermark (#196): `REDIS_QUEUE_HIGH_WATERMARK` / `REDIS_QUEUE_LOW_WATERMARK` / `REDIS_QUEUE_BACKPRESSURE_MODE` (`block` or `shed`). `redis_queue_backpressure_total{queue,action}` counts block and shed events on the Scrapy process registry. `monitoring/alerts.yml` is not a Prometheus rule file and is not recreated. The published objectives and the panel for each are in [PIPELINE_SLOS.md](PIPELINE_SLOS.md). The main dashboard stays http://localhost:3000/d/scraping-pipeline-health; the SLO panels are http://localhost:3000/d/pipeline-slos.
+
+## Site label (#192)
+
+Queue depth (`redis_queue_length`), throughput (`pipeline_urls_processed_total`, `pipeline_urls_processed_per_second`, `scrapy_items_scraped_total`, `scrapy_requests_total`, `scrapy_new_urls_found_per_minute`, `scrapy_stage_urls_processed_total`), and error counts (`pipeline_errors_total`, `scrapy_spider_errors_total`, `scrapy_items_dropped_total`, `scrapy_responses_total`, `scrapy_stage_errors_total`) include a `site_id` label. `QueueBacklog`, `PipelineHighErrorRate`, the Scrapy error-rate alerts, and `ScrapingThroughputDropped` name that site in their annotations.
+
+Cardinality guardrail: the label value is the configured site id only (`SITE_ID`, else `TENANT_ID`, else `REDIS_SITE_ID`, else `default`), the same id `resolve_site_id` uses for seen-sets. It is never a URL, job id, or raw host. Those are not read off the request. An id that fails the site-id pattern is recorded as `rejected`, and the raw string is not copied onto the series. Shipped `config.yml` does not list a site count. No numeric cap was measured, and metrics are not dropped to enforce one.
+
+`Stage2SuccessSLO` stays at 0.99 over 24h. `KafkaConsumerLagSLO` stays above 250000 messages. Those two rules are not split by `site_id`.
 
 ## Stage 4 speech-to-text (#1101)
 

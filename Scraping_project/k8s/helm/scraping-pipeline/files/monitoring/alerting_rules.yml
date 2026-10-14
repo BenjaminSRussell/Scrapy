@@ -160,39 +160,43 @@ groups:
           component: scrapy
         annotations:
           summary: "Scrapy is not scraping any items"
-          description: "Spider {{ $labels.spider }} has not scraped any items in 10 minutes."
+          description: "Spider {{ $labels.spider }} on site {{ $labels.site_id }} has not scraped any items in 10 minutes."
+          site: "{{ $labels.site_id }}"
           impact: "Medium - Data collection stalled"
           action: "Check spider logs and website availability"
 
-      # Critical: High error rate
+      # Critical: High error rate. Threshold stays 0.2. site_id is kept so one
+      # site does not hide another (#192).
       - alert: ScrapyHighErrorRate
         expr: |
-          sum(rate(scrapy_responses_total{status_code=~"[45].."}[5m])) by (spider)
+          sum(rate(scrapy_responses_total{status_code=~"[45].."}[5m])) by (spider, site_id)
           /
-          sum(rate(scrapy_responses_total[5m])) by (spider) > 0.2
+          sum(rate(scrapy_responses_total[5m])) by (spider, site_id) > 0.2
         for: 5m
         labels:
           severity: critical
           component: scrapy
         annotations:
           summary: "High error rate in Scrapy spider"
-          description: "Spider {{ $labels.spider }} has {{ $value | humanizePercentage }} error rate."
+          description: "Spider {{ $labels.spider }} on site {{ $labels.site_id }} has {{ $value | humanizePercentage }} error rate."
+          site: "{{ $labels.site_id }}"
           impact: "High - Most requests are failing"
           action: "Check for IP blocks, website changes, or network issues"
 
-      # Warning: Elevated error rate
+      # Warning: Elevated error rate. Threshold stays 0.1 (#192).
       - alert: ScrapyElevatedErrorRate
         expr: |
-          sum(rate(scrapy_responses_total{status_code=~"[45].."}[5m])) by (spider)
+          sum(rate(scrapy_responses_total{status_code=~"[45].."}[5m])) by (spider, site_id)
           /
-          sum(rate(scrapy_responses_total[5m])) by (spider) > 0.1
+          sum(rate(scrapy_responses_total[5m])) by (spider, site_id) > 0.1
         for: 5m
         labels:
           severity: warning
           component: scrapy
         annotations:
           summary: "Elevated error rate in Scrapy spider"
-          description: "Spider {{ $labels.spider }} has {{ $value | humanizePercentage }} error rate."
+          description: "Spider {{ $labels.spider }} on site {{ $labels.site_id }} has {{ $value | humanizePercentage }} error rate."
+          site: "{{ $labels.site_id }}"
           impact: "Medium - Significant number of failed requests"
           action: "Monitor spider behavior and investigate errors"
 
@@ -208,7 +212,8 @@ groups:
           component: scrapy
         annotations:
           summary: "High item drop rate"
-          description: "Spider {{ $labels.spider }} is dropping {{ $value | humanizePercentage }} of items."
+          description: "Spider {{ $labels.spider }} on site {{ $labels.site_id }} is dropping {{ $value | humanizePercentage }} of items."
+          site: "{{ $labels.site_id }}"
           impact: "Medium - Data quality issues"
           action: "Check validation pipeline and data quality"
 
@@ -234,7 +239,8 @@ groups:
           component: scrapy
         annotations:
           summary: "Scrapy spider appears to be blocked"
-          description: "Spider {{ $labels.spider }} receiving {{ $value }} 403 responses/sec."
+          description: "Spider {{ $labels.spider }} on site {{ $labels.site_id }} receiving {{ $value }} 403 responses/sec."
+          site: "{{ $labels.site_id }}"
           impact: "High - IP address may be blocked"
           action: "Rotate proxies, adjust user-agent, or reduce request rate"
 
@@ -602,13 +608,14 @@ groups:
   - name: data_quality
     interval: 1m
     rules:
-      # Warning: Scraping throughput significantly decreased
+      # Warning: Scraping throughput significantly decreased. Threshold stays
+      # 0.5. Grouped by site_id so one site's drop is visible (#192).
       - alert: ScrapingThroughputDropped
         expr: |
           (
-            sum(rate(scrapy_items_scraped_total[5m]))
+            sum by (site_id) (rate(scrapy_items_scraped_total[5m]))
             /
-            sum(rate(scrapy_items_scraped_total[5m] offset 1h))
+            sum by (site_id) (rate(scrapy_items_scraped_total[5m] offset 1h))
           ) < 0.5
         for: 15m
         labels:
@@ -616,7 +623,8 @@ groups:
           component: pipeline
         annotations:
           summary: "Scraping throughput has dropped significantly"
-          description: "Current throughput is {{ $value | humanizePercentage }} of 1 hour ago."
+          description: "Site {{ $labels.site_id }} throughput is {{ $value | humanizePercentage }} of 1 hour ago."
+          site: "{{ $labels.site_id }}"
           impact: "Medium - Reduced data collection rate"
           action: "Investigate spider performance and target site availability"
 
@@ -651,34 +659,36 @@ groups:
       # Moved from the old monitoring/alerts.yml, which Prometheus never loaded
       # (rule_files lists only recording_rules.yml and alerting_rules.yml) and
       # which used names nothing emitted (#178). metrics_exporter.py sends
-      # errors.total{stage,error_type}; statsd_mapping.yml names it
-      # pipeline_errors_total.
+      # errors.total{stage,error_type,site_id}; statsd_mapping.yml names it
+      # pipeline_errors_total. Threshold stays 0.1. site_id is kept (#192).
       - alert: PipelineHighErrorRate
-        expr: sum by (stage) (rate(pipeline_errors_total[5m])) > 0.1
+        expr: sum by (stage, site_id) (rate(pipeline_errors_total[5m])) > 0.1
         for: 5m
         labels:
           severity: warning
           component: pipeline
         annotations:
-          summary: "High pipeline error rate in {{ $labels.stage }}"
-          description: "{{ $value }} errors/sec recorded for {{ $labels.stage }} over 5 minutes."
+          summary: "High pipeline error rate in {{ $labels.stage }} (site {{ $labels.site_id }})"
+          description: "{{ $value }} errors/sec recorded for {{ $labels.stage }} on site {{ $labels.site_id }} over 5 minutes."
+          site: "{{ $labels.site_id }}"
           impact: "Medium - URLs in this stage are failing"
           action: "Check the stage worker logs and the error_type label of pipeline_errors_total"
 
-      # metrics_exporter.py sends redis.queue.length{queue}; statsd_mapping.yml
-      # names it redis_queue_length.
-      # SLO (#179): depth stays at or below 10000. This rule is unchanged
-      # (watermarks stay high 10000, low 8000, mode block). See
-      # docs/guides/PIPELINE_SLOS.md.
+      # metrics_exporter.py sends redis.queue.length{queue,site_id};
+      # statsd_mapping.yml names it redis_queue_length.
+      # SLO (#179): the comparison stays > 10000. #192 keeps site_id so the
+      # annotation names the site. Watermarks stay high 10000, low 8000,
+      # mode block. See docs/guides/PIPELINE_SLOS.md.
       - alert: QueueBacklog
-        expr: max by (queue) (redis_queue_length) > 10000
+        expr: max by (queue, site_id) (redis_queue_length) > 10000
         for: 10m
         labels:
           severity: warning
           component: pipeline
         annotations:
-          summary: "Large backlog in {{ $labels.queue }}"
-          description: "{{ $labels.queue }} has {{ $value }} items pending for 10 minutes."
+          summary: "Large backlog in {{ $labels.queue }} (site {{ $labels.site_id }})"
+          description: "{{ $labels.queue }} on site {{ $labels.site_id }} has {{ $value }} items pending for 10 minutes."
+          site: "{{ $labels.site_id }}"
           impact: "Medium - Crawl latency grows while workers fall behind"
           action: "Scale the consuming stage or check it for stalls"
 

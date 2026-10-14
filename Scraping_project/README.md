@@ -677,8 +677,8 @@ Current test status:
 
 Available at `http://localhost:9090`:
 
-- `pipeline_errors_total`: Total pipeline errors (metrics_exporter.py `errors.total`, named by `statsd_mapping.yml`)
-- `redis_queue_length{queue}`: Pending items per queue (metrics_exporter.py `redis.queue.length`)
+- `pipeline_errors_total{stage,error_type,site_id}`: Total pipeline errors (metrics_exporter.py `errors.total`, named by `statsd_mapping.yml`). `site_id` is the configured site id (#192).
+- `redis_queue_length{queue,site_id}`: Pending items per queue (metrics_exporter.py `redis.queue.length`)
 - `redis_queue_backpressure_total{queue,action}`: Producer block or shed events when a Redis queue is over its high watermark (`REDIS_QUEUE_HIGH_WATERMARK`, default 10000, the same line `QueueBacklog` uses)
 - `cache_hits_total`: Cache hit count
 - `cache_misses_total`: Cache miss count

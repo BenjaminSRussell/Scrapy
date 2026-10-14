@@ -209,14 +209,14 @@ try:  # handled pipeline errors must not disappear (#219)
     PIPELINE_ERRORS = _PErrCounter(
         "pipeline_errors_total",
         "Handled item-pipeline errors, by stage and reason. Optional-metric failures are counted, not re-raised.",
-        ["stage", "reason"],
+        ["stage", "reason", "site_id"],
     )
 except Exception:  # prometheus_client missing or metric already registered
     PIPELINE_ERRORS = None
 
 
 def _record_pipeline_error(stage: str, reason: str, error: BaseException | None = None) -> None:
-    """Structured log plus ``pipeline_errors_total{stage,reason}``. Never raises.
+    """Structured log plus ``pipeline_errors_total{stage,reason,site_id}``. Never raises.
 
     These handlers cover optional telemetry (the old bare ``pass`` on metric
     import/emit). The row was not lost, so this does not re-raise or dead-letter:
@@ -226,7 +226,9 @@ def _record_pipeline_error(stage: str, reason: str, error: BaseException | None 
     if PIPELINE_ERRORS is None:
         return
     try:
-        PIPELINE_ERRORS.labels(stage=stage, reason=reason).inc()
+        from src.utils.redis import metric_site_id
+
+        PIPELINE_ERRORS.labels(stage=stage, reason=reason, site_id=metric_site_id()).inc()
     except Exception as metric_error:
         logger.warning(
             "pipeline_errors_total increment failed stage=%s reason=%s error=%s",

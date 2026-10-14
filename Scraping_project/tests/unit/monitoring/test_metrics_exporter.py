@@ -88,7 +88,8 @@ def test_update_queue_metrics_records_priority_queue_size(exporter):
 
     exporter._update_queue_metrics()
 
-    assert exporter.statsd.gauges[("redis.queue.length", (("queue", "priority_queue"),))] == 7
+    site = exporter.site_id
+    assert exporter.statsd.gauges[("redis.queue.length", (("queue", "priority_queue"), ("site_id", site)))] == 7
 
 def test_update_delta_lake_metrics_tracks_counts(exporter):
     exporter.delta.tables = {
@@ -126,10 +127,11 @@ def test_update_throughput_metrics_increments_counters(exporter, monkeypatch):
     counters = exporter.statsd.counters
     gauges = exporter.statsd.gauges
 
-    assert counters[("urls.processed.total", (("stage", "stage1"),))] == 10
-    assert gauges[("urls.processed.per_second", (("stage", "stage1"),))] == pytest.approx(1.0)
-    assert counters[("urls.processed.total", (("stage", "stage2"),))] == 3
-    assert gauges[("urls.processed.per_second", (("stage", "stage2"),))] == pytest.approx(0.3)
+    site = exporter.site_id
+    assert counters[("urls.processed.total", (("site_id", site), ("stage", "stage1")))] == 10
+    assert gauges[("urls.processed.per_second", (("site_id", site), ("stage", "stage1")))] == pytest.approx(1.0)
+    assert counters[("urls.processed.total", (("site_id", site), ("stage", "stage2")))] == 3
+    assert gauges[("urls.processed.per_second", (("site_id", site), ("stage", "stage2")))] == pytest.approx(0.3)
 
 def test_update_error_metrics_writes_summary(exporter):
     exporter.delta.tables = {
@@ -143,8 +145,9 @@ def test_update_error_metrics_writes_summary(exporter):
     exporter._update_error_metrics()
 
     counters = exporter.statsd.counters
-    assert counters[("errors.total", (("error_type", "Timeout"), ("stage", "stage1")))] == 2
-    assert counters[("errors.total", (("error_type", "DNS"), ("stage", "stage1")))] == 1
+    site = exporter.site_id
+    assert counters[("errors.total", (("error_type", "Timeout"), ("site_id", site), ("stage", "stage1")))] == 2
+    assert counters[("errors.total", (("error_type", "DNS"), ("site_id", site), ("stage", "stage1")))] == 1
 
     summary_path = exporter.error_summary_path
     assert summary_path.exists()
@@ -245,6 +248,42 @@ def test_update_cycle_records_progress(exporter, monkeypatch):
         exporter._update_loop()
     assert exporter.updates_total == 1 and exporter.last_update_ts > 0
     assert exporter.is_healthy()
+
+
+def test_baseline_core_metrics_carry_configured_site_id(exporter):
+    exporter.statsd = StatsDRecorder()
+    exporter.site_id = "tenant_a"
+    exporter._initialize_metrics()
+    assert exporter.statsd.gauges[
+        ("redis.queue.length", (("queue", "priority_queue"), ("site_id", "tenant_a")))
+    ] == 0
+    assert exporter.statsd.gauges[
+        ("urls.processed.per_second", (("site_id", "tenant_a"), ("stage", "stage1")))
+    ] == 0.0
+    assert exporter.statsd.counters[
+        ("errors.total", (("error_type", "none"), ("site_id", "tenant_a"), ("stage", "stage1")))
+    ] == 0
+    # A caller-supplied site_id cannot replace the configured one.
+    exporter._update_queue_metrics()
+    assert (
+        "redis.queue.length",
+        (("queue", "priority_queue"), ("site_id", "tenant_a")),
+    ) in exporter.statsd.gauges
+
+
+def test_metric_site_id_is_configured_id_never_a_url_or_job(monkeypatch):
+    from src.utils.redis import metric_site_id
+
+    for name in ("SITE_ID", "TENANT_ID", "REDIS_SITE_ID"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("CRAWL_JOB_ID", "job-12345")
+    assert metric_site_id() == "default"
+    monkeypatch.setenv("SITE_ID", "tenant_a")
+    assert metric_site_id() == "tenant_a"
+    monkeypatch.setenv("SITE_ID", "https://uconn.edu/jobs/1")
+    assert metric_site_id() == "rejected"
+    monkeypatch.setenv("SITE_ID", "not a host")
+    assert metric_site_id() == "rejected"
 
 
 def test_cli_accepts_port_flag_used_by_helm(monkeypatch):

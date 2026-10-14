@@ -192,6 +192,35 @@ def test_helm_rule_files_match_monitoring():
             f"k8s/helm/.../files/monitoring/{name} drifted from monitoring/{name}")
 
 
+def test_site_alerts_name_the_site_and_slos_keep_their_thresholds():
+    """#192: annotations show site_id. The three SLO numbers are not retuned."""
+    rules = yaml.safe_load((MON / "alerting_rules.yml").read_text())
+    alerts = {r["alert"]: r for g in rules["groups"] for r in g["rules"] if "alert" in r}
+    backlog = alerts["QueueBacklog"]
+    assert "> 10000" in backlog["expr"]
+    assert "site_id" in backlog["expr"]
+    assert backlog["for"] == "10m"
+    assert backlog["annotations"]["site"] == "{{ $labels.site_id }}"
+    errors = alerts["PipelineHighErrorRate"]
+    assert "> 0.1" in errors["expr"]
+    assert "site_id" in errors["expr"]
+    assert errors["annotations"]["site"] == "{{ $labels.site_id }}"
+    dropped = alerts["ScrapingThroughputDropped"]
+    assert "< 0.5" in dropped["expr"]
+    assert "site_id" in dropped["expr"]
+    assert dropped["annotations"]["site"] == "{{ $labels.site_id }}"
+    stage2 = alerts["Stage2SuccessSLO"]
+    assert "0.99" in stage2["expr"]
+    assert "site_id" not in stage2["expr"]
+    lag = alerts["KafkaConsumerLagSLO"]
+    assert "> 250000" in lag["expr"]
+    assert "site_id" not in lag["expr"]
+    guide = (ROOT / "docs" / "guides" / "MONITORING.md").read_text()
+    assert "never a URL, job id, or raw host" in guide
+    assert "No numeric cap was measured" in guide
+    assert not (MON / "alerts.yml").exists()
+
+
 def test_exporter_statsd_names_are_mapped():
     src = EXPORTER.read_text()
     by_match = {m["match"]: m["name"] for m in _mappings()}

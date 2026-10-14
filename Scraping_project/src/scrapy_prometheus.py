@@ -61,16 +61,28 @@ class CrawlRunState:
 
 
 if PROMETHEUS_AVAILABLE:
-    ITEMS_SCRAPED = Counter("scrapy_items_scraped_total", "Total number of items scraped", ["spider"])
+    ITEMS_SCRAPED = Counter(
+        "scrapy_items_scraped_total",
+        "Total number of items scraped",
+        ["spider", "site_id"],
+    )
 
-    ITEMS_DROPPED = Counter("scrapy_items_dropped_total", "Total number of items dropped", ["spider"])
+    ITEMS_DROPPED = Counter(
+        "scrapy_items_dropped_total",
+        "Total number of items dropped",
+        ["spider", "site_id"],
+    )
 
-    REQUESTS_TOTAL = Counter("scrapy_requests_total", "Total number of requests made", ["spider", "method"])
+    REQUESTS_TOTAL = Counter(
+        "scrapy_requests_total",
+        "Total number of requests made",
+        ["spider", "method", "site_id"],
+    )
 
     RESPONSES_TOTAL = Counter(
         "scrapy_responses_total",
         "Total number of responses received",
-        ["spider", "status_code"],
+        ["spider", "status_code", "site_id"],
     )
 
     RESPONSE_TIME = Histogram(
@@ -91,7 +103,7 @@ if PROMETHEUS_AVAILABLE:
     SPIDER_ERRORS = Counter(
         "scrapy_spider_errors_total",
         "Total number of spider errors",
-        ["spider", "exception_type"],
+        ["spider", "exception_type", "site_id"],
     )
 
     REQUESTS_DROPPED = Counter(
@@ -127,7 +139,7 @@ if PROMETHEUS_AVAILABLE:
     NEW_URLS_FOUND_PER_MINUTE = Gauge(
         "scrapy_new_urls_found_per_minute",
         "Rate of new URLs discovered per minute",
-        ["spider"],
+        ["spider", "site_id"],
     )
 
     AVERAGE_FILE_SIZE_BYTES = Gauge(
@@ -206,6 +218,13 @@ else:
     HIDDEN_URLS_FOUND = HIDDEN_URLS_ROUTED = None
 
 _LABEL_CHARS = re.compile(r"[^a-z0-9_]+")
+
+
+def _metric_site_id() -> str:
+    """Configured site id for core series (#192). Never a URL, job id, or host."""
+    from src.utils.redis import metric_site_id
+
+    return metric_site_id()
 
 
 def bounded_label(value: Any, max_len: int = 40) -> str:
@@ -291,7 +310,7 @@ class PrometheusExtension:
         logger.info(f"Spider closed: {spider.name}, reason: {reason}")
 
     def item_scraped(self, item: Any, spider: Spider):
-        ITEMS_SCRAPED.labels(spider=spider.name).inc()
+        ITEMS_SCRAPED.labels(spider=spider.name, site_id=_metric_site_id()).inc()
 
         if isinstance(item, dict) and item.get("skip_reason"):
             skip_reason = bounded_label(item["skip_reason"])
@@ -308,17 +327,19 @@ class PrometheusExtension:
         elif exception:
             drop_reason = exception_type
 
-        ITEMS_DROPPED.labels(spider=spider.name).inc()
+        ITEMS_DROPPED.labels(spider=spider.name, site_id=_metric_site_id()).inc()
         logger.debug(f"Item dropped in {spider.name}: {drop_reason}")
 
     def spider_error(self, failure, response, spider):
         exception_type = failure.type.__name__ if hasattr(failure, "type") else "Unknown"
 
-        SPIDER_ERRORS.labels(spider=spider.name, exception_type=exception_type).inc()
+        SPIDER_ERRORS.labels(
+            spider=spider.name, exception_type=exception_type, site_id=_metric_site_id()
+        ).inc()
         logger.error(f"Spider error in {spider.name}: {exception_type} - {failure.getErrorMessage()}")
 
     def request_scheduled(self, request: Request, spider: Spider):
-        REQUESTS_TOTAL.labels(spider=spider.name, method=request.method).inc()
+        REQUESTS_TOTAL.labels(spider=spider.name, method=request.method, site_id=_metric_site_id()).inc()
 
     def request_dropped(self, request: Request, spider: Spider):
         drop_reason = "filtered"
@@ -341,7 +362,9 @@ class PrometheusExtension:
         logger.debug(f"Request dropped in {spider.name}: {drop_reason} - {request.url}")
 
     def response_received(self, response: Response, request: Request, spider: Spider):
-        RESPONSES_TOTAL.labels(spider=spider.name, status_code=response.status).inc()
+        RESPONSES_TOTAL.labels(
+            spider=spider.name, status_code=response.status, site_id=_metric_site_id()
+        ).inc()
 
         if hasattr(request, "meta") and "download_latency" in request.meta:
             latency = request.meta["download_latency"]

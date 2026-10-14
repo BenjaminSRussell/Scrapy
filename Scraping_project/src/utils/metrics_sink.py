@@ -43,7 +43,7 @@ try:
     STAGE_URLS_PROCESSED = Counter(
         "scrapy_stage_urls_processed_total",
         "URLs processed per stage (dual-exported; independent of the Postgres sink)",
-        ["stage"],
+        ["stage", "site_id"],
     )
     STAGE_BATCH_SECONDS = Counter(
         "scrapy_stage_batch_seconds_total",
@@ -53,7 +53,7 @@ try:
     STAGE_ERRORS = Counter(
         "scrapy_stage_errors_total",
         "Per-URL processing errors per stage and error type (dual-exported)",
-        ["stage", "error_type"],
+        ["stage", "error_type", "site_id"],
     )
 except Exception:  # prometheus_client missing or metric already registered
     PG_METRICS_WRITES = None
@@ -65,6 +65,16 @@ except Exception:  # prometheus_client missing or metric already registered
 def _label(value: Any) -> str:
     text = str(value) if value is not None else "unknown"
     return text[:MAX_LABEL_CHARS] or "unknown"
+
+
+def _site_id() -> str:
+    """Configured site id (#192). Not the URL passed to record_error."""
+    try:
+        from src.utils.redis import metric_site_id
+
+        return metric_site_id()
+    except Exception:
+        return "default"
 
 
 def _count_write(kind: str, outcome: str) -> None:
@@ -92,7 +102,7 @@ def record_performance(
     """Export a batch's throughput. Returns True if Postgres stored it."""
     try:
         if STAGE_URLS_PROCESSED is not None:
-            STAGE_URLS_PROCESSED.labels(stage=_label(stage)).inc(max(0, int(urls_processed)))
+            STAGE_URLS_PROCESSED.labels(stage=_label(stage), site_id=_site_id()).inc(max(0, int(urls_processed)))
         if STAGE_BATCH_SECONDS is not None:
             STAGE_BATCH_SECONDS.labels(stage=_label(stage)).inc(max(0.0, float(processing_time_seconds)))
     except Exception as exc:  # metrics must never break the crawl
@@ -136,7 +146,7 @@ def record_error(
     """Export a per-URL processing error. Returns True if Postgres stored it."""
     try:
         if STAGE_ERRORS is not None:
-            STAGE_ERRORS.labels(stage=_label(stage), error_type=_label(error_type)).inc()
+            STAGE_ERRORS.labels(stage=_label(stage), error_type=_label(error_type), site_id=_site_id()).inc()
     except Exception as exc:
         logger.debug("prometheus export failed: %s", exc)
 

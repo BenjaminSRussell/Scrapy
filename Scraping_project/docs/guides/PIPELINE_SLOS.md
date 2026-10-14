@@ -11,7 +11,7 @@ Crawl freshness is not an SLO. The issue names it, but the issue text, `monitori
 | SLO | Target | Query | Alert | Panel |
 |---|---|---|---|---|
 | Stage 2 success | >= 99% of rows over 24h | `stage2:success_ratio:24h` | `Stage2SuccessSLO` | Pipeline SLOs → Stage 2 success (24h) |
-| Redis queue depth | max depth stays <= 10000 | `max by (queue) (redis_queue_length)` | `QueueBacklog` (unchanged) | Pipeline SLOs → Redis queue depth |
+| Redis queue depth | max depth stays <= 10000 | `max by (queue) (redis_queue_length)` | `QueueBacklog` (> 10000, also grouped by `site_id`) | Pipeline SLOs → Redis queue depth |
 | Kafka consume lag | max lag stays <= 250000 messages | `max_over_time(kafka_consumergroup_lag_max[5m])` | `KafkaConsumerLagSLO` (unchanged) | Pipeline SLOs → Kafka consumer lag |
 
 The dashboard is `monitoring/dashboards/pipeline_slos.json` (uid `pipeline-slos`), provisioned with the other JSON files in that directory. Helm carries the same copy.
@@ -47,17 +47,21 @@ and
 
 ## Redis queue depth
 
-**Target:** a queue is over its objective when `max by (queue) (redis_queue_length) > 10000`. That is the existing `QueueBacklog` expression (`monitoring/alerting_rules.yml`). The issue's "p99 < X" is not used: no p99 and no other depth number are published, and this rule is not changed.
+**Target:** a queue is over its objective when depth is greater than 10000. The comparison is still `redis_queue_length > 10000`. The issue's "p99 < X" is not used: no p99 and no other depth number are published. #192 does not retune 10000. It keeps `site_id` on the alert so the annotation names the site:
+
+```promql
+max by (queue, site_id) (redis_queue_length) > 10000
+```
 
 The same 10000 is the producer high watermark (`DEFAULT_QUEUE_HIGH_WATERMARK` in `src/utils/redis.py`). The low watermark stays 8000 and the mode stays `block`. `redis_queue_backpressure_total{queue,action}` already counts block and shed events. Those knobs are not part of this change.
 
-**Query:**
+**Query** (panel; the SLO line, not split by site):
 
 ```promql
 max by (queue) (redis_queue_length)
 ```
 
-**Alert:** `QueueBacklog`, `for: 10m`, severity warning. Grafana colors the panel red at 10000, the same threshold.
+**Alert:** `QueueBacklog`, `for: 10m`, severity warning. The annotation `site` is `{{ $labels.site_id }}`. Grafana colors the panel red at 10000, the same threshold.
 
 ## Kafka consume lag
 
@@ -85,14 +89,15 @@ max_over_time(kafka_consumergroup_lag_max[5m])
 |---|---|
 | Stage 2 >= 99% over 24h | Issue #179, proposed standard ("Stage2 success >= 99% over 24h"). Not an older alert. |
 | 1% error budget | The same 99% target (1 - 0.99). No other budget percentage is published. |
-| Redis depth > 10000 | `monitoring/alerting_rules.yml` `QueueBacklog` (`max by (queue) (redis_queue_length) > 10000`). On origin/main before this change that expression was line 669; it is unchanged. |
+| Redis depth > 10000 | `monitoring/alerting_rules.yml` `QueueBacklog`. The comparison stays `> 10000` (the pre-#179 line). #192 groups by `queue` and `site_id` and puts that id in the annotation. The number is not retuned. |
 | High 10000, low 8000, mode block | `src/utils/redis.py` `DEFAULT_QUEUE_HIGH_WATERMARK` (line 213), `DEFAULT_QUEUE_LOW_WATERMARK` (line 214), `DEFAULT_BACKPRESSURE_MODE` (line 215). Not changed. |
 | Kafka lag > 250000 messages | `monitoring/alerting_rules.yml` `KafkaConsumerLagSLO` (`max_over_time(kafka_consumergroup_lag_max[5m]) > 250000`). On origin/main before this change that expression was line 121; it is unchanged. There is no minute threshold to copy. |
 
 ## What this does not change
 
-- `QueueBacklog` expression, `for`, labels, and annotations.
+- `QueueBacklog` comparison (`> 10000`), `for: 10m`, and severity. #192 adds `site_id` to the grouping and annotations only.
+- `Stage2SuccessSLO` expression and the 0.99 / 24h target.
 - Redis watermarks: high 10000, low 8000, mode `block`. `admit_enqueue` is untouched.
-- `KafkaConsumerLagSLO` expression and threshold.
-- Seen-set key shape, `cbstate:` / `cbfail:`, and `CIRCUIT_BREAKER_SHARED=0`.
-- `monitoring/alerts.yml` stays absent.
+- `KafkaConsumerLagSLO` expression and the 250000-message threshold.
+- Seen-set key shape (`site:{site_id}:{prefix}:urls`), `cbstate:` / `cbfail:`, and `CIRCUIT_BREAKER_SHARED=0`. No `REDIS_URL` contract change.
+- `monitoring/alerts.yml` stays absent. It is not a Prometheus rule file and is not recreated.

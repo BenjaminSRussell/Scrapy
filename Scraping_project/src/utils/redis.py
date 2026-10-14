@@ -105,6 +105,26 @@ def resolve_site_id(site_id: Optional[str] = None) -> str:
     return candidate
 
 
+# Prometheus/StatsD label (#192). Same configured id as seen-set keys.
+# Not a URL, job id, or raw host. A value that fails the site-id pattern
+# is not copied onto a series. No numeric cap is applied: none was measured.
+METRIC_SITE_REJECTED = "rejected"
+
+
+def metric_site_id() -> str:
+    """Configured site id for a low-cardinality metric label (#192).
+
+    ``resolve_site_id()`` only (explicit argument is not accepted here, so a
+    caller cannot pass a URL or host). ``SITE_ID``, else ``TENANT_ID``, else
+    ``REDIS_SITE_ID``, else ``default``. An id that fails the pattern becomes
+    ``rejected``. Series are not dropped to enforce a site cap.
+    """
+    try:
+        return resolve_site_id()
+    except ValueError:
+        return METRIC_SITE_REJECTED
+
+
 def seen_set_key(key_prefix: str = "seen", site_id: Optional[str] = None) -> str:
     """The only seen-set key RedisHelper writes: ``site:{id}:{prefix}:urls``."""
     site = resolve_site_id(site_id)

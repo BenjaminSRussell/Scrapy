@@ -85,6 +85,7 @@ groups:
           component: scrapy
         annotations:
           summary: No items scraped in 10 minutes
+          site: "{{ $labels.site_id }}"
 
   - orgId: 1
     name: infrastructure

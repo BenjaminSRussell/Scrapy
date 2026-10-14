@@ -18,7 +18,12 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
 def _errors(stage: str, reason: str) -> float:
-    return REGISTRY.get_sample_value("pipeline_errors_total", {"stage": stage, "reason": reason}) or 0.0
+    from src.utils.redis import metric_site_id
+
+    return REGISTRY.get_sample_value(
+        "pipeline_errors_total",
+        {"stage": stage, "reason": reason, "site_id": metric_site_id()},
+    ) or 0.0
 
 
 def test_no_bare_pass_in_pipeline_exception_handlers():
