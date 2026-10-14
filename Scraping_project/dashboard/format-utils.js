@@ -426,6 +426,37 @@
         }
         return { type: 'danger', message: `Failed to fetch metrics: ${error && error.message ? error.message : String(error)}` };
     }
+    // #1027: Activity-tab chips. An empty selection shows every level; otherwise
+    // only the pressed levels. Counts cover the whole log, not the filtered slice.
+    const ACTIVITY_LEVELS = ['success', 'warning', 'danger', 'timeout', 'info'];
+    function activityLevelCounts(items) {
+        const counts = {};
+        for (const level of ACTIVITY_LEVELS) counts[level] = 0;
+        for (const item of items || []) {
+            const type = item && item.type;
+            if (Object.prototype.hasOwnProperty.call(counts, type)) counts[type] += 1;
+        }
+        return counts;
+    }
+    function activityLevelSelection(selected) {
+        if (selected == null) return [];
+        if (typeof selected === 'string') return selected ? [selected] : [];
+        return Array.from(selected).filter(level => level);
+    }
+    function filterActivityItems(items, selected) {
+        const list = Array.isArray(items) ? items : [];
+        const levels = activityLevelSelection(selected);
+        if (levels.length === 0) return list.slice();
+        const on = new Set(levels);
+        return list.filter(item => item && on.has(item.type));
+    }
+    function toggleActivityLevel(selected, level) {
+        const next = new Set(activityLevelSelection(selected));
+        if (!level) return next;
+        if (next.has(level)) next.delete(level);
+        else next.add(level);
+        return next;
+    }
     // #503: on-screen hint text for the digit shortcuts.
     function shortcutHintText(tabCount) {
         const n = Math.min(Math.max(0, Number(tabCount) || 0), 9);
@@ -912,5 +943,5 @@
         if (!rows.length) return { missing: true, rows: [], empty: SCRAPE_TARGET_EMPTY };
         return { missing: false, rows: rows.slice(0, cap), empty: SCRAPE_TARGET_EMPTY };
     }
-    return { tabKeyTarget, staleState, queueDepthRows, metricsFailureActivity, shortcutHintText, parseMetrics, ratePerMinute, resolveMetricsUrl, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler, stageActivity, stageDrilldown, stageDrilldownKey, doughnutLegendLayout, connectionState, documentTitle, createActivityAnnouncer, metricsUrlProblem, splitLinks, createMetricsFetcher, REFRESH_INTERVAL_CHOICES, parseRefreshInterval, shortcutAction, pickInitialTab, METRIC_UI_MAP, renderMetricNameMap, parseDangerSoundEnabled, dangerSoundDecision, HEALTH_HISTORY_LIMIT, pushPollOutcome, healthHistoryView, COMPARISON_BASELINE_ROLE, PREV_HOUR_AVG_KEYS, readPrevHourAverage, comparisonBaselineSeries, comparisonNote, ACTIVITY_LOG_CAP, capActivityLog, activityStaleNote, restoreActivityLog, topScrapeTargets, SCRAPE_TARGET_EMPTY };
+    return { tabKeyTarget, staleState, queueDepthRows, metricsFailureActivity, shortcutHintText, parseMetrics, ratePerMinute, resolveMetricsUrl, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler, stageActivity, stageDrilldown, stageDrilldownKey, doughnutLegendLayout, connectionState, documentTitle, createActivityAnnouncer, metricsUrlProblem, splitLinks, createMetricsFetcher, REFRESH_INTERVAL_CHOICES, parseRefreshInterval, shortcutAction, pickInitialTab, METRIC_UI_MAP, renderMetricNameMap, parseDangerSoundEnabled, dangerSoundDecision, HEALTH_HISTORY_LIMIT, pushPollOutcome, healthHistoryView, COMPARISON_BASELINE_ROLE, PREV_HOUR_AVG_KEYS, readPrevHourAverage, comparisonBaselineSeries, comparisonNote, ACTIVITY_LOG_CAP, capActivityLog, activityStaleNote, restoreActivityLog, topScrapeTargets, SCRAPE_TARGET_EMPTY, ACTIVITY_LEVELS, activityLevelCounts, filterActivityItems, toggleActivityLevel };
 });

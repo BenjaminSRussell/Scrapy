@@ -42,6 +42,8 @@ let previousMetricsAt = 0;  // ms timestamp of previousMetrics (#141)
 let startTime = Date.now();
 let activityLog = [];
 let activityStaleText = null; // #1029 note for entries restored after a reload
+// #1027: empty set shows every level. Pressed chips are the only levels on the Activity tab.
+let activityLevelFilter = new Set();
 let lastHistoryDayKey = null;
 
 function formatHistoryLabel(d = new Date()) {
@@ -389,10 +391,12 @@ function renderActivityMessage(el, message) {
     }
 }
 
-function renderActivityList(container, { maxItems = ACTIVITY_LOG_CAP } = {}) {
+function renderActivityList(container, { maxItems = ACTIVITY_LOG_CAP, levels = null } = {}) {
     if (!container) return;
+    // null = unfiltered (overview). A selection, including an empty one, is the Activity tab.
+    const source = levels == null ? activityLog : filterActivityItems(activityLog, levels);
     const frag = document.createDocumentFragment();
-    for (const item of activityLog.slice(0, maxItems)) {
+    for (const item of source.slice(0, maxItems)) {
         const li = document.createElement('li');
         li.className = 'activity-item';
         const type = String(item.type || '');
@@ -428,8 +432,26 @@ function updateActivityLog() {
         if (!container) return;
         if (activityPinned && container.id === "activity-log") return;
         const maxItems = container.id === 'overview-activity' ? 8 : ACTIVITY_LOG_CAP;
-        renderActivityList(container, { maxItems });
+        // #1027: chips filter the Activity tab only. Overview stays the latest mix.
+        const levels = container.id === 'activity-log' ? activityLevelFilter : null;
+        renderActivityList(container, { maxItems, levels });
     });
+    syncActivityLevelChips();
+}
+
+function syncActivityLevelChips() {
+    const counts = activityLevelCounts(activityLog);
+    document.querySelectorAll('#tab-activity .activity-chip[data-level]').forEach(btn => {
+        const level = btn.getAttribute('data-level');
+        const countEl = btn.querySelector('[data-level-count]');
+        if (countEl) countEl.textContent = String(counts[level] || 0);
+        btn.setAttribute('aria-pressed', activityLevelFilter.has(level) ? 'true' : 'false');
+    });
+    const empty = document.getElementById('activity-filter-empty');
+    if (!empty) return;
+    const filtering = activityLevelFilter.size > 0;
+    const matches = filtering ? filterActivityItems(activityLog, activityLevelFilter).length : activityLog.length;
+    empty.hidden = !filtering || matches > 0;
 }
 
 // #1029: sessionStorage can be missing or throw (privacy mode, quota). Never fatal.
@@ -1402,6 +1424,18 @@ function setupTabs() {
     if (exportJson) exportJson.addEventListener('click', () => exportActivityLog('json'));
     const exportCsv = document.getElementById('export-activity-csv');
     if (exportCsv) exportCsv.addEventListener('click', () => exportActivityLog('csv'));
+
+    // #1027: toggle chips. No chip pressed shows every level; Danger alone is danger-only.
+    const filterGroup = document.querySelector('#tab-activity .activity-filters');
+    if (filterGroup) {
+        filterGroup.addEventListener('click', (event) => {
+            const btn = event.target.closest('button[data-level]');
+            if (!btn || !filterGroup.contains(btn)) return;
+            activityLevelFilter = toggleActivityLevel(activityLevelFilter, btn.getAttribute('data-level'));
+            activityPinned = false;
+            updateActivityLog();
+        });
+    }
 
     const tabButtons = document.querySelectorAll('.tab-button');
     const tabContents = document.querySelectorAll('.tab-content');
