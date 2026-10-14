@@ -60,7 +60,7 @@ With a `date` partition, retention can delete whole days without scanning the ta
 DeltaTable(path).delete("date < '2026-07-01'")   # drops whole partitions (file removes only)
 ```
 
-Then run `VACUUM` (`vacuum_all_tables`, honouring `delta.deletedFileRetentionDuration`) to reclaim the files. `metadata_queue` is now a declared table, so vacuum and compaction cover it.
+Then run `VACUUM` (`vacuum_all_tables`, honouring `delta.deletedFileRetentionDuration`) to reclaim the files. `metadata_queue` is now a declared table, so vacuum and compaction cover it. Its column contract is `METADATA_QUEUE_SCHEMA` in `src/core/schemas.py` (`entities` is stored as JSON text, the same shape `MetadataExtractionPipeline` writes).
 
 ## Declared tables (#433)
 

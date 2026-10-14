@@ -100,6 +100,17 @@ ERROR_LOG_SCHEMA: Final[pa.Schema] = pa.schema([
     ("timestamp", pa.timestamp("ms")),
 ])
 
+# Metadata extraction output (#433). `entities` is JSON text: Parquet cannot
+# write a struct with zero fields, and the pipeline JSON-encodes that column.
+METADATA_QUEUE_SCHEMA: Final[pa.Schema] = pa.schema([
+    ("url", pa.string()),
+    ("title", pa.string()),
+    ("keywords", pa.list_(pa.string())),
+    ("entities", pa.string()),
+    ("extraction_timestamp", pa.string()),
+    ("spider_name", pa.string()),
+])
+
 # Performance Metrics Schema
 METRICS_SCHEMA: Final[pa.Schema] = pa.schema([
     ("stage", pa.string()),
@@ -128,6 +139,7 @@ SCHEMA_REGISTRY: Final[Dict[str, pa.Schema]] = {
     "seed_urls": SEED_URLS_SCHEMA,
     "error_log": ERROR_LOG_SCHEMA,
     "metrics": METRICS_SCHEMA,
+    "metadata_queue": METADATA_QUEUE_SCHEMA,
 }
 
 

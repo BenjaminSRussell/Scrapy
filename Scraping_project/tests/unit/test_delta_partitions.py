@@ -10,6 +10,7 @@ import pytest
 from deltalake import DeltaTable, write_deltalake
 from prometheus_client import REGISTRY
 
+from src.core.schemas import get_schema
 from src.lakehouse import lakehouse_manager as lm
 from src.lakehouse.lakehouse_manager import (
     DEFAULT_PARTITIONS,
@@ -209,6 +210,10 @@ def test_metadata_queue_is_declared_partitioned_and_vacuumed(manager):
     assert "metadata_queue" in manager.declared_tables
     manager.write("metadata_queue", [{"url": "https://a/1", "title": "t"}], async_write=False)
     assert partitions_of(manager.get_table_path("metadata_queue")) == ["date"]
+    # Column contract matches MetadataExtractionPipeline's written row (#433).
+    assert set(get_schema("metadata_queue").names) == {
+        "url", "title", "keywords", "entities", "extraction_timestamp", "spider_name",
+    }
 
 
 def test_undeclared_table_warns_once_but_writes(manager, caplog):
