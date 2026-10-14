@@ -1,0 +1,40 @@
+NOTICE
+
+This repository's own source is under the MIT License in LICENSE. That
+license does not cover third-party container images this repository
+documents.
+
+Compose files and the in-repo Helm chart name upstream images. They do
+not vendor those projects, their charts, or their license texts. When
+you pull or redistribute an image, that upstream project's license
+obligations travel with the upstream project (the image and the notices
+it ships), not with this repository's MIT LICENSE.
+
+Names below are taken from images already referenced in
+Scraping_project/docker-compose.yml,
+Scraping_project/docker-compose.observability.yml, and
+Scraping_project/k8s/helm/scraping-pipeline (values.yaml and templates).
+Tags differ between those files. This notice does not pin a version.
+
+- Redis (image redis)
+- PostgreSQL (image postgres)
+- Apache Kafka (image apache/kafka, Compose)
+- Confluent Platform Kafka and ZooKeeper (images confluentinc/cp-kafka
+  and confluentinc/cp-zookeeper, Helm)
+- Grafana (image grafana/grafana)
+- Grafana Loki (image grafana/loki)
+- Prometheus (image prom/prometheus)
+- Prometheus Alertmanager (image prom/alertmanager)
+- Prometheus StatsD exporter (image prom/statsd-exporter)
+- Redis exporter (image oliver006/redis_exporter)
+- PostgreSQL exporter (images prometheuscommunity/postgres-exporter and
+  quay.io/prometheuscommunity/postgres-exporter)
+- Prometheus JMX exporter, Bitnami image (image bitnami/jmx-exporter)
+- Jaeger (image jaegertracing/all-in-one)
+- OpenTelemetry Collector (image otel/opentelemetry-collector)
+- BusyBox (image busybox, Helm init container)
+
+The Helm chart in this repository is this project's chart. It has no
+vendored third-party chart dependency. Empty application image
+repositories in values.yaml are operator-supplied and are not third
+parties listed here.
