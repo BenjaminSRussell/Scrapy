@@ -40,6 +40,7 @@ renamed to the new version and date (see the release checklist).
 - Repository policies: SECURITY.md, CODE_OF_CONDUCT.md, this changelog, ADRs, devcontainer (#669 #746 #747 #715 #694).
 
 ### Changed
+- Control Center tabs, health tiles, and the title mark use inline SVG icons (`aria-hidden`) instead of emoji glyphs (#1049).
 - Production Helm no longer runs the single-replica Redis. `redis.external.host` and `redis.external.port` become `REDIS_HOST` and `REDIS_PORT` (password stays `REDIS_PASSWORD`; do not set `REDIS_URL`). AOF can recover data after the node returns, and it does not keep the queue available during node loss (#216).
 - Seen-URL Redis keys are `site:{site_id}:{prefix}:urls` (for example `site:uconn:seen:urls`). Unscoped `seen:urls` and `scout:urls` are not read; rename them before deploy. `SITE_ID`, else `TENANT_ID`, else `REDIS_SITE_ID`, else `default` (#191).
 - Scrapy and Stage 2 share one retry policy (`retry` in config.yml, otherwise dev vs production defaults). Production uses more attempts; 429 and 503 stay retryable (#215).
