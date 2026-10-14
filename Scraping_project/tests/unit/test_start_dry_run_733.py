@@ -116,11 +116,36 @@ def test_unreadable_compose_file_fails(start, tools_present, nothing_external, c
 
 
 def test_missing_tools_reported_not_exited(start, nothing_external, capsys, monkeypatch):
+    import compose_cli
+
     monkeypatch.setattr(start.shutil, "which", lambda tool: None)
+    # compose_available uses compose_cli.shutil, not start.shutil (#342).
+    monkeypatch.setattr(compose_cli.shutil, "which", lambda tool: None)
     assert start.main(["--dry-run"]) == 1
     out, err = capsys.readouterr()
     assert "missing required tooling for 'local': docker, docker-compose" in err
+    assert compose_cli.MISSING_HINT in err
     assert "docker-compose up -d" in out  # the plan is still shown
+
+
+def test_dry_run_preflight_does_not_probe_the_plugin(start, monkeypatch, capsys):
+    """#733: validation runs before the plan and must not execute `docker compose version`."""
+    import compose_cli
+
+    monkeypatch.delenv("COMPOSE_CMD", raising=False)
+
+    def which(tool):
+        return "/usr/bin/docker" if tool == "docker" else None
+
+    monkeypatch.setattr(start.shutil, "which", which)
+    monkeypatch.setattr(compose_cli.shutil, "which", which)
+
+    def boom(*a, **k):
+        raise AssertionError(f"dry run probed: {a!r}")
+
+    monkeypatch.setattr(compose_cli.subprocess, "run", boom)
+    assert start.main(["--dry-run"]) == 0
+    assert "docker compose up -d" in capsys.readouterr().out
 
 
 def test_dry_run_flag_does_not_leak_into_a_normal_run(start, tools_present, monkeypatch, capsys):

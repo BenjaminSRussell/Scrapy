@@ -622,9 +622,11 @@ def main(argv: Sequence[str] | None = None) -> int:
 def dry_run(args: argparse.Namespace) -> int:
     """Validate and print the plan (#733). Returns the exit code; never executes anything."""
     print(f"[dry-run] start.py --env {args.env}: validating configuration; nothing will be executed.")
-    problems = preflight_problems(args)
+    # Preflight calls compose_available. Set the flag first so that check does not
+    # execute `docker compose version` (#733). Probe stays on for a real run.
     set_dry_run(True)
     try:
+        problems = preflight_problems(args)
         if args.env == "local":
             start_local(args)
         else:

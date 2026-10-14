@@ -134,7 +134,7 @@ machine-local absolute path.
 | `python cli.py validate` | Validate the Delta tables |
 | `python cli.py seeds list\|add\|disable\|audit` | Manage seed URLs, with an audit log |
 | `python cli.py scrapy --spiders scout` | Run Scrapy spiders |
-| `python cli.py deep_dive` | Run the conservative deep-dive spider |
+| `python cli.py deep_dive --experimental` | Run the experimental deep-dive spider (refuses without the flag) |
 | `python cli.py pipeline [--skip-stage1 ...]` | Run stages 1–3 once, in order |
 | `python cli.py export --table T --format csv\|json\|parquet` | Stream Delta tables to files |
 | `python cli.py drain` | Clear the transient Redis queues (`drain_lake.py`); persistent queues such as Stage 4 are kept |
