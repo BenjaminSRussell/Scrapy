@@ -69,6 +69,13 @@ nginx/Traefik with OAuth2 Proxy, or a Kubernetes ingress with an auth annotation
 - Contributor styleguide: [`styleguide.html`](styleguide.html)
 - Accessibility checklist for PRs: [`A11Y_CHECKLIST.md`](A11Y_CHECKLIST.md)
 
+## Chart PNG export (#1018)
+
+Each chart card has a **Download PNG** button. The click reads that canvas with
+`canvas.toDataURL('image/png')` and saves a file named
+`<canvas-id>-YYYYMMDDTHHMMSSZ.png` (UTC). The refresh status region announces
+the filename. If the canvas cannot be read, nothing is downloaded.
+
 ## Connection state in the tab title (#945)
 
 The browser tab title is prefixed with the live state so a background tab still signals trouble:
