@@ -53,6 +53,10 @@ spec:
         - {{ .Values.kafkaDeltaIngestor.config.allowedLatency | quote }}
         - --max-messages-per-batch
         - {{ .Values.kafkaDeltaIngestor.config.maxMessagesPerBatch | quote }}
+        - --dlq-topic
+        - {{ .Values.kafkaDeltaIngestor.config.dlqTopic | quote }}
+        - --max-deserialize-failures
+        - {{ .Values.kafkaDeltaIngestor.config.maxDeserializeFailures | quote }}
         - --transform
         - "date: substr(scraped_at_utc, `0`, `10`)"
         envFrom:

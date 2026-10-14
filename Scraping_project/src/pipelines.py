@@ -1047,6 +1047,14 @@ class GrafanaSummaryPipeline:
 # ============================================================================
 
 class SchemaValidationPipeline:
+    """Producer-side schema gate. Failures are published to ``validation_failures``.
+
+    That publish does not commit the Kafka-to-Delta consumer offset. A payload
+    that still reaches the ingest topic is handled by ``async fn ingest`` in
+    ``kafka-delta-ingest``: after N deserialize failures the bytes are copied
+    to the DLQ topic and the offset is committed (#177). See
+    ``docs/kafka_poison_message_policy.md``.
+    """
 
     PIPELINE_VERSION = "1.0.0"
 

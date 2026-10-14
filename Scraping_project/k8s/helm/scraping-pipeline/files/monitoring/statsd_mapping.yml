@@ -38,6 +38,13 @@ mappings:
     labels:
       job: "kafka-delta-ingest"
 
+  # Dead-lettered poison payloads (#177). main.rs increments
+  # messages.dead_lettered only after the DLQ produce is acked.
+  - match: "kafka_delta_ingest.messages.dead_lettered"
+    name: "kafka_delta_ingest_messages_dead_lettered_total"
+    labels:
+      job: "kafka-delta-ingest"
+
   # write_batch() times write+commit as a StatsD timer (ms); statsd-exporter
   # observes timers in seconds. SlowDeltaLakeWrites reads the buckets (#178).
   - match: "kafka_delta_ingest.batch.write"
