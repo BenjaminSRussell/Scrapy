@@ -1262,6 +1262,10 @@ function initialize() {
 
     applyFeatureFlags();
     applyVersionWatermark();
+    // #1038: Settings panel. A missing helper must not block the metrics poll.
+    if (typeof renderMetricNameMap === 'function') {
+        renderMetricNameMap(document.getElementById('metric-name-map-body'), document);
+    }
     setupTabs();
     setupShortcuts();
     const initialTab = pickInitialTab(tabFromLocation(), storeGet(STORE_TAB_KEY), visibleTabNames());

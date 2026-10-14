@@ -644,7 +644,12 @@
         .chart-data-table summary { cursor: pointer; color: var(--muted-text); }
         .table-scroll { overflow-x: auto; max-width: 100%; }
         .data-fallback-table { width: 100%; border-collapse: collapse; margin-top: 0.5rem; }
-        .data-fallback-table th, .data-fallback-table td { border: 1px solid #334155; padding: 0.25rem 0.5rem; text-align: left; }
+        .data-fallback-table th, .data-fallback-table td { border: 1px solid #334155; padding: 0.25rem 0.5rem; text-align: left; vertical-align: top; }
+        .metric-map-card { margin-top: 2rem; }
+        .metric-map-card summary { cursor: pointer; font-weight: 600; color: var(--gray-800); }
+        .metric-map-help { font-size: 0.9rem; color: var(--gray-700); margin: 0.75rem 0; }
+        #metric-name-map-table td:first-child { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.85em; }
+        #metric-name-map-table ul { margin: 0; padding-left: 1.1rem; }
         .legend-toggles { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.5rem; }
         .legend-toggles button { font-size: 0.8rem; }
         
@@ -759,6 +764,11 @@
             }
             .health-item.unhealthy {
                 border: 3px dashed CanvasText;  /* state without colour */
+            }
+            .data-fallback-table,
+            .data-fallback-table th,
+            .data-fallback-table td {
+                border: 1px solid CanvasText;
             }
             /* Chart.js paints fixed colours on canvas; keep its light backdrop
                so axis text and series stay legible under a dark system theme. */
@@ -1342,6 +1352,18 @@
                             <span class="metric-value" id="uptime">0s</span>
                         </div>
                     </div>
+                </div>
+
+                <!-- #1038: series names the page reads, filled by renderMetricNameMap. -->
+                <div class="card metric-map-card" id="metric-name-map">
+                    <div class="card-header">
+                        <h2 class="card-title" id="metric-name-map-title">Settings</h2>
+                    </div>
+                    <details id="metric-name-map-panel" open>
+                        <summary>Prometheus metric name map</summary>
+                        <p class="metric-map-help" id="metric-name-map-help">Expected exporter series and the UI fields that read them. Session uptime and last refresh are client clocks, not series. An exporter rename moves a field only when that series is listed here.</p>
+                        <div class="table-scroll" id="metric-name-map-body"></div>
+                    </details>
                 </div>
             </div>
 
