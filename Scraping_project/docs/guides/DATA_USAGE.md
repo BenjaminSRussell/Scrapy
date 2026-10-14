@@ -4,7 +4,7 @@ All pipeline data lives in Delta Lake tables, which are Parquet files plus a `_d
 
 ## Where the data is
 
-The lake root is `DELTA_LAKE_PATH` if that is set, otherwise `delta_lake.base_path` (default `./data/delta_lake`). Compose sets it to `/data/delta` inside the containers, which is `./data/delta` on the host. Each table is a directory under the root:
+The lake root is `DELTA_LAKE_PATH` if that is set, otherwise `delta_lake.base_path` (default `./data/delta_lake`). Compose sets it to `/data/delta` inside the containers, which is `./data/delta` on the host. Each table is a directory under the root. Column contracts for `pages`, `extractions` and `jobs` are in the [Delta schema registry](../../../docs/contracts/README.md).
 
 | Table | Written by | Contents |
 |---|---|---|

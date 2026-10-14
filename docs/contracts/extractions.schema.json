@@ -1,0 +1,63 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/BenjaminSRussell/Scrapy/blob/main/docs/contracts/extractions.schema.json",
+  "title": "extractions",
+  "description": "Consumer contract for Delta table metadata_queue, written by MetadataExtractionPipeline. Not a medallion gold table. The physical name stays metadata_queue. Consumers must ignore unknown properties.",
+  "type": "object",
+  "x-contract-version": "1.0.0",
+  "x-delta-table": "metadata_queue",
+  "x-partition-columns": ["date"],
+  "x-writers": [
+    {
+      "path": "Scraping_project/src/pipelines.py",
+      "qualname": "MetadataExtractionPipeline.process_item"
+    }
+  ],
+  "additionalProperties": true,
+  "required": [
+    "url",
+    "title",
+    "keywords",
+    "entities",
+    "extraction_timestamp",
+    "spider_name"
+  ],
+  "properties": {
+    "url": {
+      "type": "string",
+      "x-arrow": "string",
+      "description": "Page URL the metadata was extracted from."
+    },
+    "title": {
+      "type": "string",
+      "x-arrow": "string",
+      "description": "Item title. The pipeline writes an empty string when the item has none."
+    },
+    "keywords": {
+      "type": "array",
+      "items": {"type": "string"},
+      "x-arrow": "list<string>"
+    },
+    "entities": {
+      "type": "string",
+      "x-arrow": "string",
+      "description": "JSON object encoded as text. The pipeline holds a dict in memory and json.dumps it before the Delta write, because an empty struct cannot be written as Parquet. Consumers parse the string. An empty extraction is \"{}\"."
+    },
+    "extraction_timestamp": {
+      "type": "string",
+      "x-arrow": "string",
+      "description": "UTC ISO-8601 time from utc_now_iso()."
+    },
+    "spider_name": {
+      "type": "string",
+      "minLength": 1,
+      "x-arrow": "string"
+    },
+    "date": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+      "x-derived": true,
+      "description": "Partition column YYYY-MM-DD added by LakehouseManager. Not a writer field. metadata_queue rows do not carry the default date source fields, so this is the UTC day of the write unless a row already has a valid date."
+    }
+  }
+}

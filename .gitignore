@@ -204,6 +204,8 @@ yarn-error.log*
 !Scraping_project/models.lock.json
 # Offline anomaly-scan metric fixtures (#501). Hand-written, not generated data.
 !Scraping_project/scripts/fixtures/anomaly/*.json
+# Cross-repo Delta contracts (#1099). Hand-written schemas, not generated data.
+!docs/contracts/*.json
 
 # ====================================
 # Jupyter Notebook

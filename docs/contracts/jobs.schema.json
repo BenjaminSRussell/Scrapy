@@ -1,0 +1,73 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/BenjaminSRussell/Scrapy/blob/main/docs/contracts/jobs.schema.json",
+  "title": "jobs",
+  "description": "Consumer contract for Delta table stage2_queue, the Stage 2 work items (crawl jobs). Not a medallion gold table. Scout rows gain url_hash in QueueItemPipeline via _canonical_queue_row before the write. SeedManager writes url_hash itself. Consumers must ignore unknown properties such as parent_url, content_hint, priority, queued_by, discovery_source, target_stage, and enqueued_at.",
+  "type": "object",
+  "x-contract-version": "1.0.0",
+  "x-delta-table": "stage2_queue",
+  "x-partition-columns": [],
+  "x-writers": [
+    {
+      "path": "Scraping_project/src/lakehouse/seed_manager.py",
+      "qualname": "SeedManager.add_urls_to_seeds",
+      "covers": ["url", "url_hash", "status"]
+    },
+    {
+      "path": "Scraping_project/src/stage1/scout_spider.py",
+      "qualname": "ScoutSpider._queue_for_stage2",
+      "covers": ["url", "status"]
+    },
+    {
+      "path": "Scraping_project/src/pipelines.py",
+      "qualname": "_canonical_queue_row",
+      "covers": ["url", "url_hash"]
+    }
+  ],
+  "additionalProperties": true,
+  "required": ["url", "url_hash", "status"],
+  "properties": {
+    "url": {
+      "type": "string",
+      "minLength": 1,
+      "x-arrow": "string",
+      "description": "Canonical URL when the row passed through _canonical_queue_row. Seed rows store the URL SeedManager already hashed."
+    },
+    "url_hash": {
+      "type": "string",
+      "minLength": 1,
+      "x-arrow": "string",
+      "description": "Merge key. Set by SeedManager, or by _canonical_queue_row before a scout handoff is written."
+    },
+    "status": {
+      "type": "string",
+      "x-arrow": "string",
+      "description": "Enqueue writes pending. Stage 2 later sets completed or failed. The table is unpartitioned so status can change in place."
+    },
+    "is_heavy": {
+      "type": "boolean",
+      "x-arrow": "bool",
+      "description": "Declared on the PyArrow registry. Not set by the scout or seed enqueue writers."
+    },
+    "queued_at": {
+      "type": "string",
+      "x-arrow": "timestamp[ms]",
+      "description": "ISO-8601 time on the scout handoff. SeedManager writes enqueued_at instead, which is not part of this contract. The PyArrow registry declares timestamp(ms); writes infer the column from the batch."
+    },
+    "started_at": {
+      "type": "string",
+      "x-arrow": "timestamp[ms]",
+      "description": "Declared on the PyArrow registry. Not set by the enqueue writers."
+    },
+    "completed_at": {
+      "type": "string",
+      "x-arrow": "timestamp[ms]",
+      "description": "Declared on the PyArrow registry. Not set by the enqueue writers."
+    },
+    "retry_count": {
+      "type": "integer",
+      "x-arrow": "int32",
+      "description": "Declared on the PyArrow registry. Not set by the enqueue writers."
+    }
+  }
+}

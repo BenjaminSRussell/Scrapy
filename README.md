@@ -91,7 +91,7 @@ batch_size = config.get("stage1.batch_size", 50)
 
 ## Storage
 
-Pipeline tables live in Delta Lake under `DELTA_LAKE_PATH` (default `./data/delta_lake`), via `LakehouseManager` (`src/lakehouse/lakehouse_manager.py`). Redis holds seen-URL sets and queues. Postgres is an optional metrics sink. Table list and export options: [Data usage guide](Scraping_project/docs/guides/DATA_USAGE.md).
+Pipeline tables live in Delta Lake under `DELTA_LAKE_PATH` (default `./data/delta_lake`), via `LakehouseManager` (`src/lakehouse/lakehouse_manager.py`). Redis holds seen-URL sets and queues. Postgres is an optional metrics sink. Table list and export options: [Data usage guide](Scraping_project/docs/guides/DATA_USAGE.md). Column contracts for the core tables other repositories read (`pages`, `extractions`, `jobs`): [Delta schema registry](docs/contracts/README.md).
 
 ```python
 from src.lakehouse.lakehouse_manager import LakehouseManager

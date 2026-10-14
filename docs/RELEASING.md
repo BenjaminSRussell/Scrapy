@@ -12,7 +12,7 @@ version prefixed with `v` (`v0.2.0`).
 
 | Change | Bump |
 |--------|------|
-| Incompatible change to something operators or consumers depend on: Delta table schema (column removed, renamed or retyped), Kafka message fields or topic names, `config.yml` key removed or renamed, CLI flag removed, Helm values renamed | **MAJOR** |
+| Incompatible change to something operators or consumers depend on: Delta table schema (column removed, renamed or retyped), a `docs/contracts` MAJOR bump, Kafka message fields or topic names, `config.yml` key removed or renamed, CLI flag removed, Helm values renamed | **MAJOR** |
 | Backwards-compatible feature: new optional config key, new table column, new CLI command or metric | **MINOR** |
 | Bug fix, performance or docs change with no interface change | **PATCH** |
 
@@ -20,6 +20,10 @@ While the version is `0.y.z`, breaking changes bump **MINOR** and everything els
 bumps **PATCH**, as SemVer allows for initial development. Breaking changes always get
 a `### Changed` or `### Removed` entry in [CHANGELOG.md](../CHANGELOG.md) that says
 what operators must do.
+
+Per-table JSON Schemas and their own version bumps are in
+[docs/contracts](contracts/README.md). A contract MAJOR is a breaking change in
+the table above.
 
 ## Release checklist
 
