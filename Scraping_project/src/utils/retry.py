@@ -6,6 +6,7 @@ Phase 7: Resilience utilities for handling transient failures.
 
 import asyncio
 import logging
+import os
 import random
 import time
 from datetime import datetime
@@ -25,6 +26,97 @@ T = TypeVar('T')
 # Signature-preserving decorator type (sync and async callables).
 F = TypeVar('F', bound=Callable[..., Any])
 
+# Default on. Tests set CIRCUIT_BREAKER_SHARED=0 so cases stay process-local.
+_SHARING_OFF = frozenset({"0", "false", "no", "off"})
+# A down Redis must not add a connect timeout to every request.
+_STORE_COOLDOWN_SECONDS = 5.0
+
+
+def circuit_breaker_sharing_enabled() -> bool:
+    return os.getenv("CIRCUIT_BREAKER_SHARED", "1").strip().lower() not in _SHARING_OFF
+
+
+class RedisCircuitStore:
+    """Open/half-open state and the shared failure count in Redis (#171).
+
+    Successful reads are not cached, so a peer's trip shows up on the next
+    ``can_execute``. Connection failures stick for a few seconds and the
+    caller keeps using its own memory.
+    """
+
+    def __init__(self, helper: Any = None) -> None:
+        self._helper = helper
+        self._down_until = 0.0
+
+    def _redis(self) -> Any:
+        if self._helper is None:
+            from src.utils.redis import get_redis
+
+            self._helper = get_redis()
+        _ = self._helper.client  # connect now so outages hit the cooldown
+        return self._helper
+
+    def _guard(self, op: Callable[[Any], Any]) -> Any:
+        if time.time() < self._down_until:
+            return None
+        try:
+            return op(self._redis())
+        except Exception as exc:
+            self._down_until = time.time() + _STORE_COOLDOWN_SECONDS
+            logger.warning("Shared circuit breaker store unavailable: %s", exc)
+            return None
+
+    def incr_failures(self, name: str, host: str, ttl_seconds: int) -> Optional[int]:
+        count = self._guard(lambda helper: helper.incr_shared_circuit_failures(name, host, ttl_seconds))
+        return count if isinstance(count, int) else None
+
+    def load(self, name: str, host: str) -> tuple[bool, Optional[dict[str, Any]]]:
+        """(ok, state). ``ok`` is False when Redis could not be read."""
+        if time.time() < self._down_until:
+            return False, None
+        try:
+            data = self._redis().read_shared_circuit(name, host)
+        except Exception as exc:
+            self._down_until = time.time() + _STORE_COOLDOWN_SECONDS
+            logger.warning("Shared circuit breaker store unavailable: %s", exc)
+            return False, None
+        if isinstance(data, dict):
+            return True, cast(dict[str, Any], data)
+        return True, None
+
+    def write(
+        self,
+        name: str,
+        host: str,
+        state: str,
+        failure_count: int,
+        opened_at: Optional[float],
+        ttl_seconds: int,
+    ) -> None:
+        self._guard(
+            lambda helper: helper.write_shared_circuit(
+                name, host, state, failure_count, opened_at, ttl_seconds
+            )
+        )
+
+    def clear(self, name: str, host: str) -> None:
+        self._guard(lambda helper: helper.clear_shared_circuit(name, host))
+
+    def reset_failures(self, name: str, host: str) -> None:
+        self._guard(lambda helper: helper.reset_shared_circuit_failures(name, host))
+
+
+_shared_store: Optional[RedisCircuitStore] = None
+
+
+def get_shared_circuit_store() -> Optional[RedisCircuitStore]:
+    global _shared_store
+    if not circuit_breaker_sharing_enabled():
+        return None
+    if _shared_store is None:
+        _shared_store = RedisCircuitStore()
+    return _shared_store
+
 
 class CircuitBreaker:
     """
@@ -36,6 +128,12 @@ class CircuitBreaker:
     - CLOSED: Normal operation, all calls go through
     - OPEN: Too many failures, block all calls
     - HALF_OPEN: Testing if service recovered, allow limited calls
+
+    When sharing is enabled (the default), open and half-open state for
+    ``(name, host)`` is stored in Redis with a TTL of ``recovery_timeout``.
+    Another worker sees the trip on its next check, and a new process after
+    a restart reads the same key. ``CIRCUIT_BREAKER_SHARED=0`` keeps the
+    breaker in this process only.
     """
 
     def __init__(
@@ -43,20 +141,76 @@ class CircuitBreaker:
         failure_threshold: int = 5,
         recovery_timeout: int = 60,
         expected_exception: Type[Exception] = Exception,
-        name: str = "default"
+        name: str = "default",
+        host: str = "",
+        store: Any = None,
     ):
         self.failure_threshold = failure_threshold
         self.recovery_timeout = recovery_timeout
         self.expected_exception = expected_exception
         self.name = name
+        self.host = host or ""
 
         self.failure_count = 0
         self.success_count = 0
         self.last_failure_time: Optional[datetime] = None
         self.state = "closed"  # closed, open, half-open
+        # An explicit store (including tests) wins. None means "use the default".
+        self._store: Any = store if store is not None else get_shared_circuit_store()
+
+    def _incr_shared(self) -> Optional[int]:
+        store = self._store
+        if store is None:
+            return None
+        counted = store.incr_failures(self.name, self.host, int(self.recovery_timeout))
+        return counted if isinstance(counted, int) else None
+
+    def _publish(self) -> None:
+        store = self._store
+        if store is None or self.state == "closed":
+            return
+        opened_at = self.last_failure_time.timestamp() if self.last_failure_time else None
+        store.write(self.name, self.host, self.state, self.failure_count, opened_at, int(self.recovery_timeout))
+
+    def _clear_shared(self) -> None:
+        store = self._store
+        if store is not None:
+            store.clear(self.name, self.host)
+
+    def _reset_shared_failures(self) -> None:
+        store = self._store
+        if store is not None:
+            store.reset_failures(self.name, self.host)
+
+    def _adopt_remote(self) -> None:
+        """Copy a peer's open or half-open trip. Missing keys leave local state alone."""
+        store = self._store
+        if store is None:
+            return
+        ok, remote = store.load(self.name, self.host)
+        if not ok or not remote:
+            return
+        remote_state = str(remote.get("state") or "")
+        # Already-open local state keeps its clock (recovery / half-open). A
+        # closed breaker adopts the peer's opened_at even if it has an older
+        # timestamp left over from a previous, local failure.
+        if remote_state == "open" and (self.state != "open" or self.last_failure_time is None):
+            adopt_clock = self.state != "open" or self.last_failure_time is None
+            self.state = "open"
+            try:
+                self.failure_count = int(remote.get("failure_count") or self.failure_count)
+            except (TypeError, ValueError):
+                pass
+            if adopt_clock:
+                opened = remote.get("opened_at")
+                self.last_failure_time = datetime.now() if opened is None else datetime.fromtimestamp(float(opened))
+        elif remote_state == "half-open" and self.state == "closed":
+            self.state = "half-open"
+            self.failure_count = 0
 
     def can_execute(self) -> bool:
         """Check if circuit allows execution."""
+        self._adopt_remote()
         if self.state == "closed":
             return True
 
@@ -68,6 +222,7 @@ class CircuitBreaker:
                     logger.info(f"Circuit breaker '{self.name}' entering half-open state")
                     self.state = "half-open"
                     self.failure_count = 0
+                    self._publish()
                     return True
             return False
 
@@ -76,6 +231,7 @@ class CircuitBreaker:
 
     def record_success(self):
         """Record successful execution."""
+        previous = self.state
         if self.state == "half-open":
             self.success_count += 1
             # After a few successes in half-open, close the circuit
@@ -86,11 +242,25 @@ class CircuitBreaker:
                 self.success_count = 0
         else:
             self.failure_count = 0
+        if self._store is None:
+            return
+        # Any replica's success resets the shared consecutive-failure count.
+        # Deleting the state key only when this replica leaves open/half-open
+        # keeps a peer's trip if a request was already in flight.
+        if self.state == "closed" and previous != "closed":
+            self._clear_shared()
+        elif self.state == "closed":
+            self._reset_shared_failures()
+        else:
+            self._publish()
 
     def record_failure(self):
         """Record failed execution."""
         self.failure_count += 1
         self.last_failure_time = datetime.now()
+        shared = self._incr_shared()
+        if shared is not None:
+            self.failure_count = shared
 
         if self.state == "half-open":
             # Failure in half-open goes back to open
@@ -102,11 +272,14 @@ class CircuitBreaker:
                 f"Circuit breaker '{self.name}' opened after {self.failure_count} failures"
             )
             self.state = "open"
+        if self.state != "closed":
+            self._publish()
 
     def get_state(self) -> dict:
         """Get current circuit breaker state for monitoring."""
         return {
             "name": self.name,
+            "host": self.host,
             "state": self.state,
             "failure_count": self.failure_count,
             "success_count": self.success_count,

@@ -120,6 +120,10 @@ mappings:
   - match: "circuit_breaker.open_count"
     name: "circuit_breaker_open_count"
 
+  # DogStatsD tags name and host become the Prometheus labels (#171).
+  - match: "circuit_breaker.state"
+    name: "circuit_breaker_state"
+
   - match: "urls.processed.total"
     name: "pipeline_urls_processed_total"
 

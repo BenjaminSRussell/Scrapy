@@ -635,7 +635,7 @@ Available at `http://localhost:9090`:
 - `cache_hits_total`: Cache hit count
 - `cache_misses_total`: Cache miss count
 - `retry_attempts_total`: Retry attempts
-- `circuit_breaker_state`: Circuit breaker state (0=closed, 1=open, 2=half-open)
+- `circuit_breaker_state{name,host}`: Circuit breaker state (0=closed, 1=open, 2=half-open). `metrics_exporter.py` sends `circuit_breaker.state`; statsd-exporter maps the name. Shared across replicas via Redis unless `CIRCUIT_BREAKER_SHARED=0`.
 
 Every queue worker (Stage 2/3/4) serves its own registry on
 `WORKER_METRICS_PORT` (default 9430, `WORKER_METRICS_ENABLED=0` to disable),

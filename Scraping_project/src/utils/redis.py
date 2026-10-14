@@ -7,6 +7,7 @@ Replaces src/common/redis_manager.py with a simpler, more consistent API.
 
 from src.utils.url_canon import canonical_or_raw
 from typing import Any, Optional, Set, List, cast
+import hashlib
 import json
 import os
 import re
@@ -203,6 +204,16 @@ def check_eviction_policy(client: Any) -> Optional[str]:
             "Use volatile-lru or noeviction (#161)."
         )
     return policy
+
+
+def _shared_circuit_keys(name: str, host: str) -> tuple[str, str]:
+    """State key and failure-counter key for one ``(name, host)`` breaker.
+
+    A digest keeps stage2 names and IPv6 hosts (both contain colons) from
+    colliding. The state JSON carries the labels the exporter emits.
+    """
+    digest = hashlib.sha256(f"{name}\0{host}".encode("utf-8")).hexdigest()
+    return f"cbstate:{digest}", f"cbfail:{digest}"
 
 
 class RedisHelper:
@@ -614,6 +625,79 @@ class RedisHelper:
         except Exception as e:
             logger.error(f"Failed to list open circuits: {e}")
             return []
+
+    def incr_shared_circuit_failures(self, name: str, host: str, ttl_seconds: int) -> int:
+        """Add one cluster-wide consecutive failure. The key expires with the breaker window."""
+        _, fail_key = _shared_circuit_keys(name, host)
+        count = int(cast(int, self.client.incr(fail_key)))
+        self.client.expire(fail_key, max(int(ttl_seconds), 1))
+        return count
+
+    def read_shared_circuit(self, name: str, host: str) -> Optional[dict[str, Any]]:
+        """Return the shared open/half-open record, or None if this breaker has none."""
+        state_key, _ = _shared_circuit_keys(name, host)
+        raw = self.client.get(state_key)
+        if not raw:
+            return None
+        if isinstance(raw, bytes):
+            raw = raw.decode("utf-8")
+        try:
+            data = json.loads(str(raw))
+        except json.JSONDecodeError:
+            logger.error(f"Ignoring corrupt shared circuit state at {state_key}")
+            return None
+        if not isinstance(data, dict):
+            return None
+        return cast(dict[str, Any], data)
+
+    def write_shared_circuit(
+        self,
+        name: str,
+        host: str,
+        state: str,
+        failure_count: int,
+        opened_at: Optional[float],
+        ttl_seconds: int,
+    ) -> None:
+        """Publish open or half-open state. TTL matches the recovery window so a dead worker cannot stick."""
+        state_key, _ = _shared_circuit_keys(name, host)
+        payload = json.dumps(
+            {
+                "name": name,
+                "host": host,
+                "state": state,
+                "failure_count": int(failure_count),
+                "opened_at": opened_at,
+            }
+        )
+        self.client.set(state_key, payload, ex=max(int(ttl_seconds), 1))
+
+    def clear_shared_circuit(self, name: str, host: str) -> None:
+        state_key, fail_key = _shared_circuit_keys(name, host)
+        self.client.delete(state_key, fail_key)
+
+    def reset_shared_circuit_failures(self, name: str, host: str) -> None:
+        """Drop the shared consecutive-failure count without touching an open state key."""
+        _, fail_key = _shared_circuit_keys(name, host)
+        self.client.delete(fail_key)
+
+    def list_shared_circuits(self) -> List[dict[str, Any]]:
+        """Open and half-open breakers published by ``CircuitBreaker`` (#171)."""
+        keys = cast(List[Any], self.client.keys("cbstate:*"))
+        rows: List[dict[str, Any]] = []
+        for key in keys:
+            raw = self.client.get(key)
+            if not raw:
+                continue
+            if isinstance(raw, bytes):
+                raw = raw.decode("utf-8")
+            try:
+                data = json.loads(str(raw))
+            except json.JSONDecodeError:
+                continue
+            if isinstance(data, dict) and "state" in data:
+                rows.append(cast(dict[str, Any], data))
+        return rows
 
 
 # Global instance

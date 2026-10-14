@@ -263,13 +263,49 @@ class MetricsExporter:
             logger.error(f"Error updating queue metrics: {e}")
 
     def _update_circuit_breaker_metrics(self):
-        """Update circuit breaker metrics via UDP."""
-        try:
-            open_circuits = self.redis.get_open_circuits()
-            self.statsd.gauge("circuit_breaker.open_count", len(open_circuits))
+        """Update circuit breaker metrics via UDP.
 
+        ``circuit_breaker.open_count`` is the legacy domain blocklist
+        (``get_open_circuits``). ``circuit_breaker.state`` is the per
+        name/host gauge from shared breaker state (0 closed, 1 open,
+        2 half-open), plus one open series for each legacy domain.
+        """
+        try:
+            open_circuits = self.redis.get_open_circuits() or []
+            self.statsd.gauge("circuit_breaker.open_count", len(open_circuits))
+            self._export_circuit_breaker_states(list(open_circuits))
         except Exception as e:
             logger.error(f"Error updating circuit breaker metrics: {e}")
+
+    def _export_circuit_breaker_states(self, open_circuits: list) -> None:
+        rows: list = []
+        try:
+            listed = self.redis.list_shared_circuits()
+        except Exception as exc:
+            logger.error(f"Error reading shared circuit breaker state: {exc}")
+            listed = []
+        if isinstance(listed, list):
+            rows.extend(item for item in listed if isinstance(item, dict))
+
+        current: set[tuple[str, str]] = set()
+
+        def emit(name: str, host: str, state: str) -> None:
+            labels = {"name": name or "-", "host": host or "-"}
+            value = {"closed": 0, "open": 1, "half-open": 2}.get(state, 0)
+            self.statsd.gauge("circuit_breaker.state", value, labels)
+            current.add((labels["name"], labels["host"]))
+
+        for row in rows:
+            emit(str(row.get("name") or ""), str(row.get("host") or ""), str(row.get("state") or "closed"))
+        for host in open_circuits:
+            host_label = str(host or "-")
+            if ("redis", host_label) not in current:
+                emit("redis", host_label, "open")
+
+        previous: set[tuple[str, str]] = getattr(self, "_circuit_state_series", set())
+        for name, host in previous - current:
+            self.statsd.gauge("circuit_breaker.state", 0, {"name": name, "host": host})
+        self._circuit_state_series = current
 
     def _update_delta_lake_metrics(self):
         """Update Delta Lake table metrics via UDP."""

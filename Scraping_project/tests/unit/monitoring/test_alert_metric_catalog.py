@@ -197,7 +197,8 @@ def test_exporter_statsd_names_are_mapped():
     by_match = {m["match"]: m["name"] for m in _mappings()}
     for statsd_name, prom_name in (("redis.queue.length", "redis_queue_length"),
                                    ("errors.total", "pipeline_errors_total"),
-                                   ("circuit_breaker.open_count", "circuit_breaker_open_count")):
+                                   ("circuit_breaker.open_count", "circuit_breaker_open_count"),
+                                   ("circuit_breaker.state", "circuit_breaker_state")):
         assert f'"{statsd_name}"' in src, f"metrics_exporter.py no longer sends {statsd_name}"
         assert by_match.get(statsd_name) == prom_name
 
