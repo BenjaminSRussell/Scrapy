@@ -92,7 +92,7 @@ def test_every_root_readme_command_block_names_its_working_directory():
 
 
 def test_quick_start_cds_into_the_project():
-    quick = ROOT_README[ROOT_README.index("## 🚀 Quick Start"):]
+    quick = ROOT_README[ROOT_README.index("## Quick Start"):]
     first = _bash_blocks(quick)[0]
     assert first.strip().splitlines()[0] == "cd Scraping_project"
     assert (PROJECT / "start.py").exists() and not (REPO / "start.py").exists()
