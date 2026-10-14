@@ -7,6 +7,7 @@ from typing import Any
 from scrapy.http import Request, Response
 
 from src.scrapy_prometheus import HIDDEN_URLS_FOUND, HIDDEN_URLS_ROUTED
+from src.utils.metric_labels import labels_for
 from src.stage1.processors.hidden_url_extractor import HiddenURLExtractor
 from src.stage1.middlewares.spider_config import get_spider_settings
 from src.stage1.base_spider import BaseSpider
@@ -58,7 +59,7 @@ class DeepDiveSpider(ExperimentalSpiderMixin, BaseSpider):
         for category, urls in hidden_urls.items():
             self.depth_stats[category] = self.depth_stats.get(category, 0) + len(urls)
             if urls and HIDDEN_URLS_FOUND is not None:
-                HIDDEN_URLS_FOUND.labels(spider=self.name, category=category).inc(len(urls))
+                labels_for(HIDDEN_URLS_FOUND, spider=self.name, category=category).inc(len(urls))
 
         for url in hidden_urls.pop("offsite", []):
             self._route("offsite")
@@ -117,7 +118,7 @@ class DeepDiveSpider(ExperimentalSpiderMixin, BaseSpider):
 
     def _route(self, route: str) -> None:
         if HIDDEN_URLS_ROUTED is not None:
-            HIDDEN_URLS_ROUTED.labels(spider=self.name, route=route).inc()
+            labels_for(HIDDEN_URLS_ROUTED, spider=self.name, route=route).inc()
 
     def _queue_for_js_spider(self, url: str, parent_url: str, assessment: Any) -> dict:
         return {

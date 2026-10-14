@@ -27,8 +27,10 @@ from src.stage1.section_noise import SectionNoiseTracker, section_of
 
 try:
     from src.scrapy_prometheus import URLS_SKIPPED
+    from src.utils.metric_labels import labels_for
 except Exception:  # prometheus_client missing
     URLS_SKIPPED = None
+    labels_for = None  # type: ignore[assignment]
 
 def _stage1_flag(config, key: str, default: bool) -> bool:
     """Read a boolean ``stage1.<key>`` (falling back to ``stages.stage1.<key>``) (#27)."""
@@ -283,8 +285,8 @@ class ScoutSpider(BaseSpider):
 
     def _skip_response(self, response: Response, reason: str) -> None:
         self._track_skip(response.url, reason)
-        if URLS_SKIPPED is not None:
-            URLS_SKIPPED.labels(spider=self.name, skip_reason=reason).inc()
+        if URLS_SKIPPED is not None and labels_for is not None:
+            labels_for(URLS_SKIPPED, spider=self.name, skip_reason=reason).inc()
         logger.info(f"[SCOUT] Skipping {reason} response ({len(response.body)} bytes): {response.url[:80]}")
 
     def _initialize_discovery(self, response: Response) -> None:

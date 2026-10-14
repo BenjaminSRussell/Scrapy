@@ -36,8 +36,11 @@ def _pipeline(sample_rate=1, batch=2):
 
 
 def _skipped(spider, reason):
+    from src.utils.metric_labels import sample_labels
+
     return REGISTRY.get_sample_value(
-        "scrapy_crawler_summary_skipped_total", {"spider": spider.name, "reason": reason}
+        "scrapy_crawler_summary_skipped_total",
+        sample_labels("scrapy_crawler_summary_skipped", spider=spider.name, reason=reason),
     ) or 0.0
 
 
@@ -46,7 +49,12 @@ def test_summary_still_exports_when_metrics_available():
     p = _pipeline(batch=2)
     for i in range(2):
         assert p.process_item({"url": f"https://uconn.edu/{i}", "title": f"Page {i}"}, spider)["title"] == f"Page {i}"
-    assert REGISTRY.get_sample_value("scrapy_crawler_content_summary", {"spider": "summary_ok"}) == 2
+    from src.utils.metric_labels import sample_labels
+
+    assert REGISTRY.get_sample_value(
+        "scrapy_crawler_content_summary",
+        sample_labels("scrapy_crawler_content_summary", spider="summary_ok"),
+    ) == 2
     assert p.sampled_content == []
     assert spider.crawler.stats.get_value("summary_skipped") is None
 
@@ -118,7 +126,12 @@ def test_spider_close_flushes_remaining_samples():
     for i in range(3):
         p.process_item({"url": f"https://uconn.edu/f{i}", "title": "F"}, spider)
     p.spider_closed(spider)
-    assert REGISTRY.get_sample_value("scrapy_crawler_content_summary", {"spider": "summary_flush"}) == 3
+    from src.utils.metric_labels import sample_labels
+
+    assert REGISTRY.get_sample_value(
+        "scrapy_crawler_content_summary",
+        sample_labels("scrapy_crawler_content_summary", spider="summary_flush"),
+    ) == 3
 
 
 CRAWL_SCRIPT = textwrap.dedent(

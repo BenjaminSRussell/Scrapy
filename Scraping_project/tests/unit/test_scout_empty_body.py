@@ -25,7 +25,12 @@ def _resp(body: bytes, url="https://www.uconn.edu/page"):
 
 
 def _skipped(spider_name="scout"):
-    return REGISTRY.get_sample_value("scrapy_urls_skipped_total", {"spider": spider_name, "skip_reason": "empty_body"}) or 0.0
+    from src.utils.metric_labels import sample_labels
+
+    return REGISTRY.get_sample_value(
+        "scrapy_urls_skipped_total",
+        sample_labels("scrapy_urls_skipped", spider=spider_name, skip_reason="empty_body"),
+    ) or 0.0
 
 
 @pytest.mark.parametrize(

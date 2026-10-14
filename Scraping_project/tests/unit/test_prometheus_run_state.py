@@ -88,8 +88,16 @@ def test_extension_end_to_end_with_overlapping_same_name_runs(monkeypatch):
     ext.spider_opened(b)      # t=20
     ext.item_scraped({"skip_reason": "too_old"}, a)
     ext.spider_closed(a, "finished")  # t=25 -> A ran 15s
-    assert REGISTRY.get_sample_value("scrapy_crawl_duration_seconds", {"spider": name}) == 15.0
+    from src.utils.metric_labels import sample_labels
+
+    assert REGISTRY.get_sample_value(
+        "scrapy_crawl_duration_seconds",
+        sample_labels("scrapy_crawl_duration_seconds", spider=name),
+    ) == 15.0
     assert ext.runs.active_runs() == 1, "closing A dropped B's run"
     ext.spider_closed(b, "finished")  # t=50 -> B ran 30s from its own start
-    assert REGISTRY.get_sample_value("scrapy_crawl_duration_seconds", {"spider": name}) == 30.0
+    assert REGISTRY.get_sample_value(
+        "scrapy_crawl_duration_seconds",
+        sample_labels("scrapy_crawl_duration_seconds", spider=name),
+    ) == 30.0
     assert ext.runs.active_runs() == 0

@@ -109,10 +109,12 @@ mappings:
   # ============================================
   # monitoring/metrics_exporter.py (#178)
   # ============================================
-  # The exporter sends DogStatsD tags (queue, stage, error_type, site_id),
-  # which statsd-exporter turns into labels. alerting_rules.yml reads these
-  # names. site_id is the configured site id only (#192), never a URL, job
-  # id, or raw host. No numeric cap is set here; none was measured.
+  # The exporter sends DogStatsD tags, which statsd-exporter turns into
+  # labels. Core families always include stage, worker_id, domain, and
+  # site_id (#243), plus queue or error_type when that family has them.
+  # alerting_rules.yml reads these names. site_id is the configured site id
+  # only (#192), never a URL, job id, or raw host. No numeric cap is set
+  # here; none was measured. The label set for a name does not change.
   - match: "redis.queue.length"
     name: "redis_queue_length"
 

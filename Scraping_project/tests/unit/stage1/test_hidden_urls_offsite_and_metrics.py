@@ -95,7 +95,10 @@ def _parse(spider):
 
 
 def _sample(name, **labels):
-    return REGISTRY.get_sample_value(name, labels) or 0.0
+    from src.utils.metric_labels import sample_labels
+
+    family = name[:-6] if name.endswith("_total") else name
+    return REGISTRY.get_sample_value(name, sample_labels(family, **labels)) or 0.0
 
 
 def test_deep_dive_never_queues_offsite_hidden_urls(spider):
