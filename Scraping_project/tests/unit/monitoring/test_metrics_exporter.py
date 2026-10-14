@@ -160,6 +160,35 @@ def test_update_circuit_breaker_metrics_counts_open_circuits(exporter, monkeypat
     exporter._update_circuit_breaker_metrics()
 
     assert exporter.statsd.gauges[("circuit_breaker.open_count", ())] == 2
+    assert exporter.statsd.gauges[("circuit_breaker.state", (("host", "a.example.com"), ("name", "redis")))] == 1
+    assert exporter.statsd.gauges[("circuit_breaker.state", (("host", "b.example.com"), ("name", "redis")))] == 1
+
+
+def test_circuit_breaker_state_exports_shared_rows_and_clears_stale_series(exporter, monkeypatch):
+    monkeypatch.setattr(exporter.redis, "get_open_circuits", lambda: ["legacy.example"])
+    monkeypatch.setattr(
+        exporter.redis,
+        "list_shared_circuits",
+        lambda: [
+            {"name": "stage2:down.example", "host": "down.example", "state": "open"},
+            {"name": "http", "host": "", "state": "half-open"},
+        ],
+    )
+
+    exporter._update_circuit_breaker_metrics()
+
+    gauges = exporter.statsd.gauges
+    assert gauges[("circuit_breaker.state", (("host", "down.example"), ("name", "stage2:down.example")))] == 1
+    assert gauges[("circuit_breaker.state", (("host", "-"), ("name", "http")))] == 2
+    assert gauges[("circuit_breaker.state", (("host", "legacy.example"), ("name", "redis")))] == 1
+
+    monkeypatch.setattr(exporter.redis, "get_open_circuits", lambda: [])
+    monkeypatch.setattr(exporter.redis, "list_shared_circuits", lambda: [])
+    exporter._update_circuit_breaker_metrics()
+
+    assert gauges[("circuit_breaker.state", (("host", "down.example"), ("name", "stage2:down.example")))] == 0
+    assert gauges[("circuit_breaker.state", (("host", "-"), ("name", "http")))] == 0
+    assert gauges[("circuit_breaker.state", (("host", "legacy.example"), ("name", "redis")))] == 0
 
 
 # ---- #208: no blocking wait; HTTP health for k8s probes --------------------

@@ -13,6 +13,11 @@ from unittest.mock import Mock
 import tempfile
 import shutil
 
+# Production shares circuit-breaker trips through Redis (#171). The suite
+# forces process-local breakers so cases stay isolated and do not need a server.
+# Sharing tests pass an explicit store instead of flipping this back on.
+os.environ["CIRCUIT_BREAKER_SHARED"] = "0"
+
 
 # ---------------------------------------------------------------------------
 # Filesystem isolation (#683): no test writes to the project's data/ lake.

@@ -930,6 +930,8 @@ class Stage2Worker:
                 failure_threshold=int(getattr(self, "breaker_failures", DEFAULT_STAGE2_BREAKER_FAILURES)),
                 recovery_timeout=int(getattr(self, "breaker_recovery", DEFAULT_STAGE2_BREAKER_RECOVERY)),
                 name=f"stage2:{domain}",
+                # Same (name, host) on every replica, so one trip is shared (#171).
+                host=domain,
             )
         return breaker
 
