@@ -13,6 +13,13 @@ from src.core.constants import (
     TABLE_STAGE3_SUMMARIES,
 )
 from src.otel_tracing import ensure_crawl_job_id, init_tracing, start_span
+from src.utils.cost_controls import (
+    GPU_MINUTES,
+    STATUS_BUDGET_EXHAUSTED,
+    ensure_budget,
+    has_numeric_cap,
+    stop_for_budget,
+)
 from src.utils.delta import get_delta
 from src.utils.metrics_sink import record_error, record_performance
 from src.utils.optional_deps import require_stage3_deps
@@ -199,6 +206,7 @@ class Stage3Worker:
         self.postgres = PostgresManager.get_instance()
         self.SIMILARITY_THRESHOLD = _similarity_threshold()
         self._fingerprints: FingerprintStore | None = None
+        self.budget_status: str | None = None
 
     def _processed_hashes(self) -> set:
         """url_hashes Stage 3 has already summarized (#316/#612).
@@ -225,6 +233,7 @@ class Stage3Worker:
             return await self._run_traced()
 
     async def _run_traced(self) -> int:
+        self.budget_status = None
         written = 0
         logger.info(f"Stage 3 Worker starting with {self.max_concurrent} concurrent workers")
 
@@ -260,16 +269,35 @@ class Stage3Worker:
         logger.info(f"Processing {len(pending)} pending documents")
 
         for i in range(0, len(pending), self.batch_size):
+            # #528: missing/null caps fall through. A spent numeric cap stops here,
+            # before dedup (Redis) and before summarization (GPU-shaped work).
+            if stop_for_budget(self, "stage3"):
+                break
             batch = pending[i : i + self.batch_size]
             logger.info(f"Processing batch {i // self.batch_size + 1}: {len(batch)} documents")
 
             batch_start = time.time()
+            # Gather may return BaseException; the capped path returns dict | None.
+            results: list[dict[str, Any] | BaseException | None] = []
 
-            unique_batch = await self._deduplicate_documents(batch)
-            logger.info(f"After deduplication: {len(unique_batch)} unique documents")
-
-            tasks = [self._summarize_document(doc) for doc in unique_batch]
-            results = await asyncio.gather(*tasks, return_exceptions=True)
+            if has_numeric_cap(ensure_budget(self), "stage3"):
+                # One document at a time. Dedup runs only after the cap check so a
+                # document we cannot afford is not stored as a fingerprint (#222).
+                for doc in batch:
+                    if stop_for_budget(self, "stage3"):
+                        break
+                    unique = await self._deduplicate_documents([doc])
+                    if not unique:
+                        continue
+                    started = ensure_budget(self).now()
+                    results.append(await self._summarize_document(unique[0]))
+                    elapsed_min = (ensure_budget(self).now() - started).total_seconds() / 60.0
+                    ensure_budget(self).charge("stage3", GPU_MINUTES, elapsed_min)
+            else:
+                unique_batch = await self._deduplicate_documents(batch)
+                logger.info(f"After deduplication: {len(unique_batch)} unique documents")
+                tasks = [self._summarize_document(doc) for doc in unique_batch]
+                results = await asyncio.gather(*tasks, return_exceptions=True)
 
             batch_time = time.time() - batch_start
 
@@ -290,6 +318,8 @@ class Stage3Worker:
                 )
 
             if _drain_requested(min(i + self.batch_size, len(pending)), len(pending)):
+                break
+            if self.budget_status == STATUS_BUDGET_EXHAUSTED:
                 break
 
         logger.info("Stage 3 Worker completed all batches")

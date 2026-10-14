@@ -173,6 +173,49 @@ def test_orchestrator_startup_rejects_bad_redis_port(tmp_path, monkeypatch):
         po.PipelineOrchestrator()
 
 
+def test_cost_controls_null_block_and_numeric_caps():
+    data = copy.deepcopy(_shipped())
+    assert data["cost_controls"]["stage3_max_gpu_minutes_per_day"] is None
+    assert data["cost_controls"]["stage4_max_gpu_minutes_per_day"] is None
+    assert data["cost_controls"]["stage4_max_ocr_pages_per_day"] is None
+    validate_config_document(data)
+
+    missing = copy.deepcopy(data)
+    del missing["cost_controls"]
+    validate_config_document(missing)
+
+    null_block = copy.deepcopy(data)
+    null_block["cost_controls"] = None
+    validate_config_document(null_block)
+
+    zero = copy.deepcopy(data)
+    zero["cost_controls"]["stage4_max_ocr_pages_per_day"] = 0
+    zero["cost_controls"]["stage3_max_gpu_minutes_per_day"] = 0.5
+    validate_config_document(zero)
+
+
+def test_cost_controls_reject_bool_string_negative_and_unknown_key():
+    data = copy.deepcopy(_shipped())
+    data["cost_controls"]["stage3_max_gpu_minutes_per_day"] = True
+    with pytest.raises(ConfigValidationError, match=r"cost_controls\.stage3_max_gpu_minutes_per_day"):
+        validate_config_document(data)
+
+    data = copy.deepcopy(_shipped())
+    data["cost_controls"]["stage4_max_ocr_pages_per_day"] = "10"
+    with pytest.raises(ConfigValidationError, match=r"stage4_max_ocr_pages_per_day"):
+        validate_config_document(data)
+
+    data = copy.deepcopy(_shipped())
+    data["cost_controls"]["stage4_max_gpu_minutes_per_day"] = -1
+    with pytest.raises(ConfigValidationError, match=r"stage4_max_gpu_minutes_per_day"):
+        validate_config_document(data)
+
+    data = copy.deepcopy(_shipped())
+    data["cost_controls"]["stage3_max_gpu_minute"] = 1
+    with pytest.raises(ConfigValidationError, match=r"stage3_max_gpu_minute"):
+        validate_config_document(data)
+
+
 def test_profile_flag_stays_off_by_default():
     import cli
 

@@ -288,6 +288,19 @@ carbon_scheduling:
   delay_window_minutes: null
 
 # ============================================
+# Cost controls (#528)
+# ============================================
+# Daily Stage 3 / Stage 4 budgets. null, or a missing cost_controls block, is
+# uncapped: those workers do not stop. A number is a hard cap for the UTC day.
+# When remaining budget is exhausted the worker stops that batch with status
+# budget_exhausted and does not call a GPU, OCR, network, or paid API.
+# Gauge: budget_remaining{stage,resource} (gpu_minutes or ocr_pages).
+cost_controls:
+  stage3_max_gpu_minutes_per_day: null  # Stage 3 GPU minutes
+  stage4_max_gpu_minutes_per_day: null  # Stage 4 GPU minutes
+  stage4_max_ocr_pages_per_day: null    # Stage 4 OCR pages
+
+# ============================================
 # Kafka Configuration
 # ============================================
 kafka:

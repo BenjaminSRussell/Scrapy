@@ -4,11 +4,12 @@ from datetime import datetime
 from typing import Any
 
 from src.core.config import get_config
-from src.utils.delta import get_delta
-from src.utils.optional_deps import require_stage4_deps
+from src.otel_tracing import ensure_crawl_job_id, init_tracing, start_span
 from src.stage4.large_doc_processor import LargeDocProcessor
 from src.stage4.pdf_sandbox import PdfQuarantined
-from src.otel_tracing import ensure_crawl_job_id, init_tracing, start_span
+from src.utils.cost_controls import GPU_MINUTES, OCR_PAGES, ensure_budget, ocr_pages_for, stop_for_budget
+from src.utils.delta import get_delta
+from src.utils.optional_deps import require_stage4_deps
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +64,7 @@ class Stage4Worker:
             except Exception:
                 analysis_fallback = True
         self.analysis_fallback = analysis_fallback
+        self.budget_status: str | None = None
 
     async def run(self) -> int:
         """Process pending large docs; returns summaries written this run."""
@@ -144,6 +146,7 @@ class Stage4Worker:
 
     # -------------------------------------------------------------------- run
     async def _run_traced(self) -> int:
+        self.budget_status = None
         written = 0
         logger.info("[STAGE4] Worker starting for large document processing")
 
@@ -170,8 +173,13 @@ class Stage4Worker:
         for i, (doc, from_queue) in enumerate(work):
             if _drain_requested(i, len(work)):
                 break  # #325: results so far are still saved and acked below
+            # #528: stop before fetch/model/OCR when today's numeric cap is spent.
+            # Missing or null caps do not stop the document.
+            if stop_for_budget(self, "stage4", upcoming={OCR_PAGES: ocr_pages_for(doc)}):
+                break
             url = doc.get("url", "")
             logger.info(f"[STAGE4] Processing {i+1}/{len(work)}: {url[:80]}")
+            started = ensure_budget(self).now()
             try:
                 result, skip_reason = await self._process_large_document(doc)
             except PdfQuarantined as e:  # #445: OOM/timeout/oversized PDF never stays pending
@@ -182,12 +190,15 @@ class Stage4Worker:
             except Exception as e:  # transient: stays pending, retried next run
                 logger.error(f"[STAGE4] Failed to process {url}: {e}")
                 continue
-            if result:
-                results.append(result)
-                if from_queue:
-                    completed.append(url)
-            elif skip_reason and from_queue:
-                skipped[url] = skip_reason
+            else:
+                if result:
+                    results.append(result)
+                    if from_queue:
+                        completed.append(url)
+                elif skip_reason and from_queue:
+                    skipped[url] = skip_reason
+            finally:
+                _charge_stage4(self, doc, started)
 
         if results:
             try:
@@ -292,6 +303,14 @@ class Stage4Worker:
             "is_pdf": is_pdf,
             "processed_at": datetime.now().isoformat(),
         }, None
+
+
+def _charge_stage4(worker: Stage4Worker, doc: dict[str, Any], started: datetime) -> None:
+    """Count GPU minutes (clock delta) and OCR pages against today's caps (#528)."""
+    budget = ensure_budget(worker)
+    elapsed_min = (budget.now() - started).total_seconds() / 60.0
+    budget.charge("stage4", GPU_MINUTES, elapsed_min)
+    budget.charge("stage4", OCR_PAGES, ocr_pages_for(doc))
 
 
 def _fold_asr_text(doc: dict[str, Any], text: str) -> str:
