@@ -1,0 +1,9 @@
+# Shell and Python sources always use LF, on every platform.
+*.sh text eol=lf
+*.py text eol=lf
+
+# Strategy notes are documentation for language stats, not code.
+# Matches Scraping_project/PHASE_*_STRATEGY.md.
+PHASE_*.md linguist-documentation
+
+# CSV stays ordinary Git text. No LFS filter: that would rewrite history.
