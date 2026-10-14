@@ -462,6 +462,51 @@ function applyStageActivity(rates) {
     });
 }
 
+// #1024: overview and pipeline stage chips share one variant set.
+const STAGE_BADGE_VARIANTS = ['info', 'success', 'warning', 'danger', 'unknown'];
+const STAGE_TOTAL_KEYS = [
+    'stage1_urls_discovered_total',
+    'stage2_pages_analyzed_total',
+    'stage3_summaries_created_total',
+    'stage4_large_doc_summaries_total',
+];
+const STAGE_RATE_KEYS = ['urls', 'pages', 'summaries', 'largeDocs'];
+let previousStageErrors = [0, 0, 0, 0];
+let stageErrorsPrimed = false;
+
+function stageErrorTotal(metrics, stageNum) {
+    if (!metrics) return 0;
+    const markers = ['stage="stage' + stageNum + '"', 'stage="' + stageNum + '"'];
+    let sum = 0;
+    for (const key of Object.keys(metrics)) {
+        if (key.indexOf('error') === -1) continue;
+        if (!markers.some(m => key.indexOf(m) !== -1)) continue;
+        const v = Number(metrics[key]);
+        if (Number.isFinite(v) && v > 0) sum += v;
+    }
+    return sum;
+}
+
+function applyStageBadges(rates, metrics, unknown) {
+    for (let i = 0; i < 4; i++) {
+        const errorsNow = unknown ? 0 : stageErrorTotal(metrics, i + 1);
+        // Lifetime counters are not a current fault; only the increase is.
+        const errors = !unknown && stageErrorsPrimed ? Math.max(0, errorsNow - previousStageErrors[i]) : 0;
+        const state = stageBadge({
+            unknown: !!unknown,
+            rate: rates ? rates[STAGE_RATE_KEYS[i]] : 0,
+            total: metrics ? metrics[STAGE_TOTAL_KEYS[i]] : 0,
+            errors: errors,
+        });
+        document.querySelectorAll('[data-stage-badge="' + (i + 1) + '"]').forEach(el => {
+            STAGE_BADGE_VARIANTS.forEach(v => el.classList.toggle('badge-' + v, v === state.variant));
+            if (el.textContent !== state.label) el.textContent = state.label;
+        });
+        if (!unknown) previousStageErrors[i] = errorsNow;
+    }
+    if (!unknown) stageErrorsPrimed = true;
+}
+
 function calculateRates(metrics, now = Date.now()) {
     // #141: all rates are per minute, from the actual time since the last sample.
     const prev = previousMetrics;
@@ -610,6 +655,7 @@ function updateDashboard(metrics) {
     if (s4RateElem) { const __n = rates.largeDocs.toFixed(1) + '/min'; if (s4RateElem.textContent !== String(__n)) { s4RateElem.textContent = __n; s4RateElem.classList.remove('flash'); void s4RateElem.offsetWidth; s4RateElem.classList.add('flash'); } else { s4RateElem.textContent = __n; } }
 
     applyStageActivity(rates);
+    applyStageBadges(rates, metrics, false);
 
     setMetricText('perf-s1-rate', rates.urls.toFixed(1) + ' URLs/min');
     setMetricText('perf-s2-rate', rates.pages.toFixed(1) + ' pages/min');
@@ -759,11 +805,8 @@ async function fetchMetrics() {
         showFetchError(failure.message);
         consecutiveFetchFailures += 1;
         setConnectionStatus(hasEverSucceeded ? 'offline' : 'never');
-        document.querySelectorAll('.card-badge.badge-info, .card-badge.badge-success').forEach(b => {
-            b.textContent = 'Unknown';
-            b.classList.remove('badge-info', 'badge-success');
-            b.classList.add('badge-danger');
-        });
+        // #1024: a failed fetch is unknown, not danger. Stage badges only.
+        applyStageBadges(null, null, true);
         document.querySelectorAll('.health-item.healthy').forEach(el => {
             el.classList.remove('healthy');
             el.classList.add('unhealthy');

@@ -256,6 +256,12 @@
             color: #1e40af;
         }
 
+        /* #1024: neutral unknown. Not danger, and not a guessed Pending/Running. */
+        .badge-unknown {
+            background: #e5e7eb;
+            color: #1f2937;
+        }
+
         .metric-row {
             display: flex;
             justify-content: space-between;
@@ -349,7 +355,11 @@
             font-size: 1rem;
             font-weight: 700;
             color: var(--gray-800);
-            margin-bottom: 1rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .stage-card > .card-badge {
+            margin-bottom: 0.75rem;
         }
 
         .stage-metrics {
@@ -919,7 +929,7 @@
                     <div class="card">
                         <div class="card-header">
                             <h2 class="card-title">Stage 1: Discovery</h2>
-                            <span class="card-badge badge-info">Pending</span>
+                            <span class="card-badge badge-unknown" data-stage-badge="1">Unknown</span>
                         </div>
                         <div class="metric-row">
                             <span class="metric-label">URLs Found</span>
@@ -938,7 +948,7 @@
                     <div class="card">
                         <div class="card-header">
                             <h2 class="card-title">Stage 2: Analysis</h2>
-                            <span class="card-badge badge-info">Pending</span>
+                            <span class="card-badge badge-unknown" data-stage-badge="2">Unknown</span>
                         </div>
                         <div class="metric-row">
                             <span class="metric-label">Pages Analyzed</span>
@@ -957,7 +967,7 @@
                     <div class="card">
                         <div class="card-header">
                             <h2 class="card-title">Stage 3: Summarization</h2>
-                            <span class="card-badge badge-success">Running</span>
+                            <span class="card-badge badge-unknown" data-stage-badge="3">Unknown</span>
                         </div>
                         <div class="metric-row">
                             <span class="metric-label">Summaries</span>
@@ -976,7 +986,7 @@
                     <div class="card">
                         <div class="card-header">
                             <h2 class="card-title">Stage 4: Large Docs</h2>
-                            <span class="card-badge badge-info">Standby</span>
+                            <span class="card-badge badge-unknown" data-stage-badge="4">Unknown</span>
                         </div>
                         <div class="metric-row">
                             <span class="metric-label">Processed</span>
@@ -1030,6 +1040,7 @@
                     <div class="stage-card">
                         <div class="stage-number">1</div>
                         <div class="stage-title">URL Discovery</div>
+                        <span class="card-badge badge-unknown" data-stage-badge="1">Unknown</span>
                         <div class="stage-metrics">
                             <div class="stage-metric">
                                 <span class="stage-metric-label">URLs Discovered</span>
@@ -1049,6 +1060,7 @@
                     <div class="stage-card">
                         <div class="stage-number">2</div>
                         <div class="stage-title">Page Analysis</div>
+                        <span class="card-badge badge-unknown" data-stage-badge="2">Unknown</span>
                         <div class="stage-metrics">
                             <div class="stage-metric">
                                 <span class="stage-metric-label">Pages Analyzed</span>
@@ -1072,6 +1084,7 @@
                     <div class="stage-card">
                         <div class="stage-number">3</div>
                         <div class="stage-title">Summarization</div>
+                        <span class="card-badge badge-unknown" data-stage-badge="3">Unknown</span>
                         <div class="stage-metrics">
                             <div class="stage-metric">
                                 <span class="stage-metric-label">Summaries Created</span>
@@ -1091,6 +1104,7 @@
                     <div class="stage-card">
                         <div class="stage-number">4</div>
                         <div class="stage-title">Large Documents</div>
+                        <span class="card-badge badge-unknown" data-stage-badge="4">Unknown</span>
                         <div class="stage-metrics">
                             <div class="stage-metric">
                                 <span class="stage-metric-label">Large Summaries</span>
