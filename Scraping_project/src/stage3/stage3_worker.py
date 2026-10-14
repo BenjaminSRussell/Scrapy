@@ -297,7 +297,8 @@ class Stage3Worker:
 
     def _fingerprint_store(self) -> FingerprintStore:
         # __new__ test doubles never run Stage3Worker.__init__.
-        store = getattr(self, "_fingerprints", None)
+        # getattr is Any; annotate so mypy's warn_return_any stays clean.
+        store: FingerprintStore | None = getattr(self, "_fingerprints", None)
         if store is None:
             store = FingerprintStore(self.SIMILARITY_THRESHOLD, redis_client=_fingerprint_redis_client())
             self._fingerprints = store

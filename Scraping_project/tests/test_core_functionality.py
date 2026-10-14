@@ -209,13 +209,16 @@ class TestStage3Worker:
     def test_deduplication(self, mock_delta_manager):
         import asyncio
 
-        from src.stage3.stage3_worker import Stage3Worker
+        from src.stage3.stage3_worker import FingerprintStore, Stage3Worker
 
         with patch(
             "src.stage3.stage3_worker.get_delta",
             return_value=mock_delta_manager,
         ):
             worker = Stage3Worker()
+            # In-memory only. CI Redis is up, and this key has no TTL, so a
+            # second run would treat every document as already fingerprinted.
+            worker._fingerprints = FingerprintStore(worker.SIMILARITY_THRESHOLD, redis_client=None)
 
             docs = [
                 {
