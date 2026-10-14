@@ -72,6 +72,23 @@ Scrapy crawl metrics in `src/scrapy_prometheus.py` always include `stage`, `work
 
 The tuples are `SCRAPY_FAMILIES` and `STATSD_FAMILIES` in `src/utils/metric_labels.py`. A test fails if a family is registered or emitted with a different set. `redis_queue_length` is still the queue-depth series. `Stage2SuccessSLO` stays 0.99 over 24h, `QueueBacklog` still fires above 10000, and `KafkaConsumerLagSLO` still fires above 250000.
 
+## Per-job notice preferences (#487)
+
+Prometheus expressions are unchanged. `monitoring/alerts.yml` is not a rule file and is not recreated. `Stage2SuccessSLO` has no `bool` modifier: a breach value is the ratio under 0.99, not 1. `QueueBacklog` stays `redis_queue_length > 10000`. `KafkaConsumerLagSLO` stays above 250000. There is no fourth SLO, and `redis_queue_length` is not renamed.
+
+This tree has no job model and no job-metadata column, so nothing is migrated. Operators keep the preference on the job's metadata dict. `src/utils/job_notice_prefs.py` is the shape and the filter. It does not send a webhook.
+
+| Field | Default | Meaning |
+|---|---|---|
+| `notify_fail` | `true` | Deliver a fail notice |
+| `notify_success` | `false` | Deliver a success notice |
+| `notify_stall` | `true` | Deliver a stall notice |
+| `quiet_hours` | empty (`null`) | Optional pair of local hours, `[start, end)` |
+
+Missing keys keep those defaults, which is today's notices: fail on, success off, stall on, quiet hours empty. The filter drops a success event when `notify_success` is off. It drops any event whose local hour falls inside a set window, including fail and stall. It does not drop fail or stall when those toggles are on and the hour is outside the window.
+
+The window is half-open on the local clock. `[22, 7)` is 22:00 through 06:59 and wraps midnight. `[9, 17)` is 09:00 through 16:59. `null`, an empty list, or `start == end` is no window. A naive datetime is already local. An aware datetime is converted to the machine's local zone before the hour is read.
+
 ## Stage 4 speech-to-text (#1101)
 
 `STAGE4_ASR_ENABLED` defaults off. When it is on, Stage 4 reads local audio and text fixtures only. It does not download remote media (that stays on the crawl pipeline, `ASR_ENABLED`).
