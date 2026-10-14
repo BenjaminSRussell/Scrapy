@@ -356,5 +356,28 @@
         if (n === 0) return 'Shortcut: R refresh';
         return `Shortcuts: ${n === 1 ? '1' : '1\u2013' + n} switch tabs \u00b7 R refresh`;
     }
-    return { queueDepthRows, metricsFailureActivity, shortcutHintText, parseMetrics, ratePerMinute, resolveMetricsUrl, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler, stageActivity, doughnutLegendLayout, connectionState, documentTitle, createActivityAnnouncer, metricsUrlProblem, splitLinks, createMetricsFetcher, REFRESH_INTERVAL_CHOICES, parseRefreshInterval, shortcutAction, pickInitialTab };
+    // #153: WAI-ARIA tabs keyboard model. Index of the tab to focus/select for
+    // `key` from `index` among `count` tabs (wrapping), or null if not a tab key.
+    function tabKeyTarget(key, index, count) {
+        const n = Math.floor(Number(count) || 0);
+        if (n <= 0) return null;
+        const i = Math.min(Math.max(Math.floor(Number(index) || 0), 0), n - 1);
+        switch (key) {
+            case 'ArrowRight': case 'Right': return (i + 1) % n;
+            case 'ArrowLeft': case 'Left': return (i - 1 + n) % n;
+            case 'Home': return 0;
+            case 'End': return n - 1;
+            default: return null;
+        }
+    }
+    // #351: data is stale once the last successful fetch is older than
+    // `factor` refresh intervals (default 3; never before the first success,
+    // which is "loading", not "stale"). Paused refresh is reported separately.
+    function staleState(lastSuccessAt, now, intervalMs, factor = 3) {
+        if (!lastSuccessAt) return { stale: false, ageMs: null };
+        const ageMs = Math.max(0, Number(now) - Number(lastSuccessAt));
+        const limit = Math.max(1, Number(intervalMs) || 5000) * Math.max(1, Number(factor) || 3);
+        return { stale: ageMs > limit, ageMs, limitMs: limit };
+    }
+    return { tabKeyTarget, staleState, queueDepthRows, metricsFailureActivity, shortcutHintText, parseMetrics, ratePerMinute, resolveMetricsUrl, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler, stageActivity, doughnutLegendLayout, connectionState, documentTitle, createActivityAnnouncer, metricsUrlProblem, splitLinks, createMetricsFetcher, REFRESH_INTERVAL_CHOICES, parseRefreshInterval, shortcutAction, pickInitialTab };
 });
