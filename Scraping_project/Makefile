@@ -26,10 +26,32 @@ OPEN := $(shell command -v xdg-open 2>/dev/null || command -v open 2>/dev/null |
 
 ##@ General
 
+# Groups that already exist: core (lint/test/docker path), optional (heavy extras),
+# k8s (helm/kubectl targets). Help lists a name only when the target is real (#840).
 help: ## Display this help message
 	@echo "$(BLUE)Scraping Pipeline - Development Commands$(NC)"
 	@echo ""
-	@awk 'BEGIN {FS = ":.*##"; printf "Usage:\n  make $(YELLOW)<target>$(NC)\n"} /^[a-zA-Z_0-9-]+:.*?##/ { printf "  $(GREEN)%-20s$(NC) %s\n", $$1, $$2 } /^##@/ { printf "\n$(BLUE)%s$(NC)\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
+	@awk 'BEGIN { FS = ":.*##"; split("core optional k8s", order, " ") } \
+		/^[a-zA-Z_0-9-]+:.*?##/ { \
+			name = $$1; desc = $$2; gsub(/^[ \t]+/, "", desc); \
+			g = "core"; \
+			if (index(name, "k8s") || index(name, "helm") || index(name, "kubectl")) g = "k8s"; \
+			else if (name == "install-stage4" || name == "models" || name == "test-perf" || name == "benchmark" || name == "security-full" || index(name, "playwright") || index(name, "kafka") || index(name, "stage4")) g = "optional"; \
+			n[g]++; keys[g, n[g]] = name; text[g, n[g]] = desc; \
+		} \
+		END { \
+			printf "Usage:\n  make $(YELLOW)<target>$(NC)\n"; \
+			for (i = 1; i <= 3; i++) { \
+				g = order[i]; \
+				printf "\n$(BLUE)%s$(NC)\n", g; \
+				if (!(g in n) || n[g] == 0) { \
+					if (g == "k8s") printf "  (no Make target in this file)\n"; \
+					else printf "  (none)\n"; \
+					continue; \
+				} \
+				for (j = 1; j <= n[g]; j++) printf "  $(GREEN)%-20s$(NC) %s\n", keys[g, j], text[g, j]; \
+			} \
+		}' $(MAKEFILE_LIST)
 	@echo ""
 	@echo "Ops CLI: python cli.py --help   (health, validate, seeds, export, queue-gc, killswitch, reset, ...; see make cli-help)"
 
