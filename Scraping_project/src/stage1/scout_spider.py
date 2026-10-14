@@ -153,16 +153,23 @@ class ScoutSpider(BaseSpider):
 
         new_urls, _ = self._deduplicate_urls(discovered_urls)
 
-        # Cross-engine shared claim before Stage2 enqueue
-        claimed, claim_results = self.discovery_dedup.claim_urls(
+        # One Stage2 row per URL. Another engine's claim drops the URL.
+        # A repeat scout claim does not: #191 dedup and noisy-section scoring
+        # still see every URL this spider was handed.
+        _claimed, claim_results = self.discovery_dedup.claim_urls(
             new_urls,
             discovery_source="scout",
             site=urlparse(response.url).netloc,
         )
-        skipped = len(claim_results) - len(claimed)
+        claimed_urls = {result.url for result in claim_results if result.claimed}
+        owned_elsewhere = {
+            result.url
+            for result in claim_results
+            if not result.claimed and result.prior_source not in (None, "scout")
+        }
+        skipped = len(claim_results) - len(claimed_urls)
         if skipped:
             self.scout_stats["discovery_dedup_skipped"] += skipped
-        new_urls = claimed
 
         depth = response.meta.get("depth", 0)
 
@@ -175,6 +182,8 @@ class ScoutSpider(BaseSpider):
         html_links = low_links = followed = 0
 
         for url in new_urls:
+            if url in owned_elsewhere:
+                continue
             if self._is_external_url(url):
                 yield self._create_offsite_item(response, url)
 
@@ -203,10 +212,10 @@ class ScoutSpider(BaseSpider):
                     followed += 1
 
                     yield self._queue_for_javascript_spider(url, response.url)
-                    yield self._queue_for_stage2(url, response.url, content_hint)
-
                     self.scout_stats["html_queued_js"] += 1
-                    self.scout_stats["pages_queued_stage2"] += 1
+                    if url in claimed_urls:
+                        yield self._queue_for_stage2(url, response.url, content_hint)
+                        self.scout_stats["pages_queued_stage2"] += 1
 
                     yield scrapy.Request(
                         url,
@@ -220,8 +229,9 @@ class ScoutSpider(BaseSpider):
                     urls_to_add_to_seeds.append(url)
 
                 else:
-                    yield self._queue_for_stage2(url, response.url, content_hint)
-                    self.scout_stats["pages_queued_stage2"] += 1
+                    if url in claimed_urls:
+                        yield self._queue_for_stage2(url, response.url, content_hint)
+                        self.scout_stats["pages_queued_stage2"] += 1
 
                     urls_to_add_to_seeds.append(url)
 
