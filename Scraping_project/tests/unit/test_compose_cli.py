@@ -202,4 +202,4 @@ def test_security_policy_covers_secret_handling_and_rotation():
     assert "## Handling secrets" in sec and "Rotating a leaked or default password" in sec
     assert "ALTER ROLE" in sec
     readme = (ROOT.parent / "README.md").read_text(encoding="utf-8")
-    assert "## 🔒 Security" in readme and "(SECURITY.md)" in readme
+    assert "## Security" in readme and "(SECURITY.md)" in readme
