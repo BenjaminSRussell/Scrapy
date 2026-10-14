@@ -10,6 +10,7 @@ Use for every dashboard PR:
 - [ ] Text contrast ≥ 4.5:1 (3:1 for large text / UI chrome)
 - [ ] Status changes announced via `role="status"` / `aria-live="polite"` (not spammy)
   - Activity items: only the new item is spoken, via the always-present `#activity-announce` region (additions only, identical repeats at most once per 5 min). The visual feeds are `aria-live="off"` because they re-render wholesale (#962).
+  - Activity search (#1028): `#activity-filter-status` (polite) announces the match count only. The log itself stays `aria-live="off"`. Clear search is a button, and Escape in the field also clears it.
 - [ ] Charts have a text alternative (data table / caption)
 - [ ] No information conveyed by color alone
 - [x] Respects `prefers-reduced-motion` — hover lift, pulse, flash, loading shimmer, and the shared `.skeleton` block (static gray, no pulse) off (#341, #1025). The optional danger chime stays silent under reduced motion and under a mute preference, and is off until opted in (#1037).

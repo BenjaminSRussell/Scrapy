@@ -619,6 +619,43 @@
 
         .activity-filter-empty[hidden] { display: none; }
 
+        /* #1028: substring filter for the 50-item activity buffer. */
+        .activity-search-row {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 0.5rem;
+            margin-bottom: 0.75rem;
+        }
+
+        .activity-search-label {
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: var(--gray-900);
+        }
+
+        .activity-search {
+            font: inherit;
+            flex: 1 1 12rem;
+            min-width: 0;
+            padding: 0.35rem 0.6rem;
+            border: 1px solid var(--gray-300);
+            border-radius: 6px;
+            background: white;
+            color: var(--gray-900);
+        }
+
+        .activity-filter-status {
+            margin: 0 0 0.75rem;
+            font-size: 0.85rem;
+            color: var(--gray-700);
+        }
+
+        #clear-activity-search:disabled {
+            opacity: 0.55;
+            cursor: not-allowed;
+        }
+
         .status-indicator {
             display: inline-flex;
             align-items: center;
@@ -774,7 +811,9 @@
             .refresh-bar .btn,
             .refresh-bar select,
             .danger-sound-label,
-            .activity-chip {
+            .activity-chip,
+            .activity-search,
+            #clear-activity-search {
                 min-height: 44px;
                 min-width: 44px;
             }
@@ -998,6 +1037,7 @@
             .btn:focus-visible,
             .stage-card:focus-visible,
             .activity-chip:focus-visible,
+            input:focus-visible,
             .skip-to-main:focus {
                 outline: 3px solid Highlight;
                 outline-offset: 2px;
@@ -1729,6 +1769,11 @@
                             <button type="button" id="clear-activity" class="btn" aria-label="Clear activity log">Clear</button>
                         </div>
                     </div>
+                    <div class="activity-search-row">
+                        <label class="activity-search-label" for="activity-search">Search activity</label>
+                        <input type="search" id="activity-search" class="activity-search" placeholder="Filter messages" autocomplete="off" spellcheck="false" aria-controls="activity-log">
+                        <button type="button" id="clear-activity-search" class="btn" disabled aria-label="Clear activity search">Clear search</button>
+                    </div>
                     <div class="activity-filters" role="group" aria-label="Filter activity by level">
                         <button type="button" class="activity-chip" data-level="success" aria-pressed="false">Success <span class="activity-chip-count" data-level-count="success">0</span></button>
                         <button type="button" class="activity-chip" data-level="warning" aria-pressed="false">Warning <span class="activity-chip-count" data-level-count="warning">0</span></button>
@@ -1737,6 +1782,7 @@
                         <button type="button" class="activity-chip" data-level="info" aria-pressed="false">Info <span class="activity-chip-count" data-level-count="info">0</span></button>
                     </div>
                     <p id="activity-filter-empty" class="activity-filter-empty" hidden>No activity at the selected levels.</p>
+                    <p id="activity-filter-status" class="activity-filter-status" role="status" aria-live="polite" hidden></p>
                     <p id="activity-log-cap" class="refresh-info" style="margin:-0.25rem 0 0.75rem">Activity log keeps the last 50 events (same cap as chart history).</p>
                     <!-- Rendered by app.js on init; no static seed (#978). -->
                     <div class="activity-feed" id="activity-log" role="log" aria-live="off" aria-describedby="activity-log-cap"></div>

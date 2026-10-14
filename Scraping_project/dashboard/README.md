@@ -172,6 +172,15 @@ Sentinels (`unknown`, `rejected`, `-`) are dropped. When no usable series is
 present the card stays on **No scrape-target metric reported.** and does not
 invent seeds. Host text is rendered with `textContent`.
 
+## Activity log search (#1028)
+
+The Activity tab filters its 50-message buffer by a case-insensitive substring of
+the message text (not a regular expression, and not the level or timestamp).
+Clear search, or Escape in the field, restores that list. Level chips (#1027)
+still apply on the same tab. The Overview feed is not filtered. Export JSON
+and Export CSV still download every buffered row, including ones the filter hides.
+The match count is text in `#activity-filter-status`, not HTML.
+
 ## Threat model notes (#1046)
 
 **Activity log XSS.** Activity messages may contain text derived from metrics,
