@@ -149,6 +149,26 @@
             return Number.isFinite(v) && v > threshold;
         });
     }
+    // Stage status chip (#1024). Exactly these variants:
+    // unknown — no sample yet, or the metrics fetch failed (not a stage fault);
+    // success — rate above threshold (Running);
+    // danger  — new errors while idle (Error); a running stage stays Running;
+    // warning — idle after it has produced work (Standby);
+    // info    — connected, nothing produced yet (Pending).
+    function stageBadge(input) {
+        const src = input || {};
+        if (src.unknown) return { variant: 'unknown', label: 'Unknown' };
+        const threshold = Number(src.threshold);
+        const limit = Number.isFinite(threshold) ? threshold : 0;
+        const rate = Number(src.rate);
+        const total = Number(src.total);
+        const errors = Number(src.errors);
+        const active = Number.isFinite(rate) && rate > limit;
+        if (active) return { variant: 'success', label: 'Running' };
+        if (Number.isFinite(errors) && errors > 0) return { variant: 'danger', label: 'Error' };
+        if (Number.isFinite(total) && total > 0) return { variant: 'warning', label: 'Standby' };
+        return { variant: 'info', label: 'Pending' };
+    }
     // Doughnut legend layout by canvas width (#977): beside the ring when the
     // card is wide (a doughnut leaves horizontal space unused), compact labels
     // underneath when narrow so the legend never clips or eats the ring.
@@ -379,5 +399,5 @@
         const limit = Math.max(1, Number(intervalMs) || 5000) * Math.max(1, Number(factor) || 3);
         return { stale: ageMs > limit, ageMs, limitMs: limit };
     }
-    return { tabKeyTarget, staleState, queueDepthRows, metricsFailureActivity, shortcutHintText, parseMetrics, ratePerMinute, resolveMetricsUrl, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler, stageActivity, doughnutLegendLayout, connectionState, documentTitle, createActivityAnnouncer, metricsUrlProblem, splitLinks, createMetricsFetcher, REFRESH_INTERVAL_CHOICES, parseRefreshInterval, shortcutAction, pickInitialTab };
+    return { tabKeyTarget, staleState, queueDepthRows, metricsFailureActivity, shortcutHintText, parseMetrics, ratePerMinute, resolveMetricsUrl, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler, stageActivity, stageBadge, doughnutLegendLayout, connectionState, documentTitle, createActivityAnnouncer, metricsUrlProblem, splitLinks, createMetricsFetcher, REFRESH_INTERVAL_CHOICES, parseRefreshInterval, shortcutAction, pickInitialTab };
 });
