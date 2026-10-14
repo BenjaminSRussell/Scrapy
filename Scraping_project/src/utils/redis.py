@@ -9,6 +9,7 @@ from src.utils.url_canon import canonical_or_raw
 from typing import Any, Optional, Set, List, cast
 import json
 import os
+import re
 import redis
 import logging
 from functools import wraps
@@ -17,11 +18,14 @@ import time
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Seen-URL store policy (#159, #163)
+# Seen-URL store policy (#159, #163, #191)
 #
-# Keys: ``{key_prefix}:urls`` (a Redis SET). Namespace a site or tenant by
-# putting it in the prefix, e.g. ``key_prefix=f"{site_id}:scout"`` gives
-# ``uconn:scout:urls``. Never share a prefix between sites.
+# Keys: ``site:{site_id}:{key_prefix}:urls`` (a Redis SET). ``site_id`` is the
+# explicit argument, else the id pinned on the helper, else SITE_ID, else
+# TENANT_ID, else REDIS_SITE_ID, else ``default``. Two crawl profiles that
+# share an id share a seen-set. The old unscoped keys (``seen:urls``,
+# ``scout:urls``, ``{prefix}:urls``) are not read or written. See
+# ``SEEN_KEY_MIGRATION``.
 #
 # Ownership: ``claim_url`` / ``claim_urls`` use one ``SADD`` per URL, which
 # returns 1 only for the caller that inserted it. That single atomic op
@@ -38,6 +42,76 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 SEEN_FAIL_MODE_ENV = "REDIS_SEEN_FAIL_MODE"
+
+# Site/tenant segment on every seen-set key (#191). Not part of the Redis
+# connection contract (REDIS_HOST / REDIS_PORT / REDIS_PASSWORD / REDIS_DB);
+# REDIS_URL stays a connection fallback only and is never a key namespace.
+SITE_ID_ENV = "SITE_ID"
+TENANT_ID_ENV = "TENANT_ID"
+REDIS_SITE_ID_ENV = "REDIS_SITE_ID"
+DEFAULT_SITE_ID = "default"
+_SITE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+_BAD_PREFIX_CHARS = frozenset("\r\n\x00")
+
+SEEN_KEY_MIGRATION = """
+Migration from single-site seen keys (#191)
+--------------------------------------------
+Older releases stored dedupe sets at ``{prefix}:urls`` with no site segment
+(``seen:urls``, ``scout:urls``, and whatever string callers passed as
+key_prefix). RedisHelper no longer reads or writes those keys. Every seen-set
+key is ``site:{site_id}:{prefix}:urls`` (the acceptance form ``site:{id}:seen:urls``
+when the prefix is ``seen``; for example ``site:uconn:seen:urls``).
+
+There is no automatic copy. Reading the old key when the new one is missing
+would hide two sites that forgot to set an id and put them back on one set.
+Before deploying this build, rename each existing set. RENAME replaces the
+destination if it already exists, so rename only when the new key is absent
+(EXISTS returns 0):
+
+    RENAME seen:urls site:default:seen:urls
+    RENAME scout:urls site:default:scout:urls
+    # any other prefix P, with ":" in P left as-is:
+    RENAME P:urls site:{SITE_ID}:P:urls
+
+``default`` is the site id used when SITE_ID, TENANT_ID and REDIS_SITE_ID are
+all unset, which is the single-site install. A second crawl profile must set
+a different SITE_ID or TENANT_ID (or pass site_id= to RedisHelper). Two
+profiles left on ``default`` still share one set. SITE_ID wins over TENANT_ID,
+which wins over REDIS_SITE_ID. An explicit site_id argument or constructor
+value wins over all three.
+"""
+
+
+def resolve_site_id(site_id: Optional[str] = None) -> str:
+    """Explicit id, else SITE_ID, else TENANT_ID, else REDIS_SITE_ID, else ``default``."""
+    if site_id is not None and str(site_id).strip():
+        candidate = str(site_id).strip()
+    else:
+        candidate = ""
+        for name in (SITE_ID_ENV, TENANT_ID_ENV, REDIS_SITE_ID_ENV):
+            raw = os.getenv(name)
+            if raw and raw.strip():
+                candidate = raw.strip()
+                break
+        if not candidate:
+            candidate = DEFAULT_SITE_ID
+    if _SITE_ID_RE.fullmatch(candidate) is None:
+        raise ValueError(
+            f"site/tenant id {candidate!r} must match [A-Za-z0-9][A-Za-z0-9._-]{{0,127}} "
+            "(no colon or whitespace). Seen-set keys are site:{id}:{prefix}:urls (#191)."
+        )
+    return candidate
+
+
+def seen_set_key(key_prefix: str = "seen", site_id: Optional[str] = None) -> str:
+    """The only seen-set key RedisHelper writes: ``site:{id}:{prefix}:urls``."""
+    site = resolve_site_id(site_id)
+    prefix = key_prefix.strip() if isinstance(key_prefix, str) else ""
+    if not prefix:
+        prefix = "seen"
+    if any(ch in prefix for ch in _BAD_PREFIX_CHARS):
+        raise ValueError("key_prefix must not contain control characters")
+    return f"site:{site}:{prefix}:urls"
 
 # ---------------------------------------------------------------------------
 # Connection pool backpressure (#533)
@@ -142,6 +216,7 @@ class RedisHelper:
         password: Optional[str] = None,
         max_connections: Optional[int] = None,
         pool_timeout: Optional[float] = None,
+        site_id: Optional[str] = None,
     ):
         """
         Initialize Redis helper.
@@ -151,6 +226,9 @@ class RedisHelper:
             port: Redis port number (default: REDIS_PORT env var, then 6379)
             db: Redis database number
             password: Optional Redis AUTH password
+            site_id: Pinned site/tenant id for seen-set keys (#191). None
+                resolves SITE_ID / TENANT_ID / REDIS_SITE_ID / ``default``
+                on each call. See ``SEEN_KEY_MIGRATION``.
         """
         # #511: REDIS_HOST/REDIS_PORT/REDIS_PASSWORD/REDIS_DB (REDIS_URL as fallback),
         # resolved in one place; explicit arguments still win.
@@ -169,6 +247,17 @@ class RedisHelper:
             MAX_CONNECTIONS_ENV, DEFAULT_MAX_CONNECTIONS, int)
         self.pool_timeout = float(pool_timeout) if pool_timeout else _env_positive(
             POOL_TIMEOUT_ENV, DEFAULT_POOL_TIMEOUT, float)
+        # None: resolve from the environment at each seen-set call (#191).
+        pinned = str(site_id).strip() if site_id is not None else ""
+        self.site_id: Optional[str] = pinned or None
+
+    def seen_key(self, key_prefix: str = "seen", site_id: Optional[str] = None) -> str:
+        """Seen-set key for this helper: ``site:{id}:{prefix}:urls`` (#191)."""
+        if site_id is not None and str(site_id).strip():
+            return seen_set_key(key_prefix, site_id=site_id)
+        if self.site_id:
+            return seen_set_key(key_prefix, site_id=self.site_id)
+        return seen_set_key(key_prefix)
 
     @property
     def client(self) -> redis.Redis:
@@ -205,71 +294,85 @@ class RedisHelper:
                 raise
         return self._client
 
-    def check_url_seen(self, url: str, key_prefix: str = "seen") -> bool:
+    def check_url_seen(self, url: str, key_prefix: str = "seen", *, site_id: Optional[str] = None) -> bool:
         """
-        Check if URL has been seen before.
+        Check if URL has been seen before for this site.
 
         Args:
             url: URL to check
-            key_prefix: Prefix for Redis key
+            key_prefix: Purpose segment of the key (default ``seen``)
+            site_id: Overrides the helper/env site id for this call
 
         Returns:
             True if URL was seen before, False otherwise
 
+        The Redis key is ``site:{id}:{key_prefix}:urls`` (#191).
+
         Example:
             redis = get_redis()
-            if redis.check_url_seen("https://uconn.edu", "scout"):
+            if redis.check_url_seen("https://uconn.edu", "scout", site_id="uconn"):
                 print("Already seen")
         """
+        key = self.seen_key(key_prefix, site_id=site_id)
         try:
-            key = f"{key_prefix}:urls"
             return bool(self.client.sismember(key, canonical_or_raw(url)))  # #728
         except Exception as e:
             return bool(self._seen_store_error("check", e, fallback=False))
 
-    def mark_url_seen(self, url: str, key_prefix: str = "seen") -> bool:
+    def mark_url_seen(self, url: str, key_prefix: str = "seen", *, site_id: Optional[str] = None) -> bool:
         """
-        Mark URL as seen.
+        Mark URL as seen for this site.
 
         Args:
             url: URL to mark
-            key_prefix: Prefix for Redis key
+            key_prefix: Purpose segment of the key (default ``seen``)
+            site_id: Overrides the helper/env site id for this call
 
         Returns:
             True if successful, False otherwise
 
+        The Redis key is ``site:{id}:{key_prefix}:urls`` (#191).
+
         Example:
             redis = get_redis()
-            redis.mark_url_seen("https://uconn.edu", "scout")
+            redis.mark_url_seen("https://uconn.edu", "scout", site_id="uconn")
         """
+        key = self.seen_key(key_prefix, site_id=site_id)
         try:
-            key = f"{key_prefix}:urls"
             self.client.sadd(key, canonical_or_raw(url))  # #728
             return True
         except Exception as e:
             return bool(self._seen_store_error("mark", e, fallback=False))
 
-    def claim_url(self, url: str, key_prefix: str = "seen") -> bool:
-        """Atomically claim first-seen ownership of ``url`` (#159).
+    def claim_url(self, url: str, key_prefix: str = "seen", *, site_id: Optional[str] = None) -> bool:
+        """Atomically claim first-seen ownership of ``url`` for this site (#159, #191).
 
         Returns True for exactly one caller across all processes (the one whose
-        SADD inserted the member); False if it was already seen. Raises
-        ``SeenStoreUnavailable`` on Redis errors unless fail mode is ``open``.
+        SADD inserted the member); False if it was already seen. A different
+        ``site_id`` is a different set. Raises ``SeenStoreUnavailable`` on Redis
+        errors unless fail mode is ``open``. The key is ``site:{id}:{prefix}:urls``.
         """
+        key = self.seen_key(key_prefix, site_id=site_id)
         try:
-            return int(cast(int, self.client.sadd(f"{key_prefix}:urls", canonical_or_raw(url)))) == 1
+            return int(cast(int, self.client.sadd(key, canonical_or_raw(url)))) == 1
         except Exception as e:
             # Fail-open treats the URL as unseen, i.e. claimed (old behaviour).
             return bool(self._seen_store_error("claim", e, fallback=True))
 
-    def claim_urls(self, urls: list[str], key_prefix: str = "seen") -> list[str]:
-        """Claim many URLs in one round trip; returns those this caller now owns."""
+    def claim_urls(
+        self, urls: list[str], key_prefix: str = "seen", *, site_id: Optional[str] = None
+    ) -> list[str]:
+        """Claim many URLs in one round trip; returns those this caller now owns.
+
+        Every URL in the batch is claimed in ``site:{id}:{prefix}:urls`` (#191).
+        """
         if not urls:
             return []
+        key = self.seen_key(key_prefix, site_id=site_id)
         try:
             pipe = self.client.pipeline(transaction=False)
             for url in urls:
-                pipe.sadd(f"{key_prefix}:urls", canonical_or_raw(url))  # #728: variants collide
+                pipe.sadd(key, canonical_or_raw(url))  # #728: variants collide
             results = pipe.execute()
             return [u for u, added in zip(urls, results, strict=False) if int(added) == 1]
         except Exception as e:
@@ -538,8 +641,8 @@ def get_redis(
         from src.utils.redis import get_redis
 
         redis = get_redis()
-        if not redis.check_url_seen(url, "scout"):
-            redis.mark_url_seen(url, "scout")
+        if not redis.check_url_seen(url, "scout", site_id="uconn"):
+            redis.mark_url_seen(url, "scout", site_id="uconn")
             # Process URL...
     """
     global _redis_helper

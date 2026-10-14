@@ -28,7 +28,9 @@ class TestRedisIntegration:
         helper._client = redis_clean
         return helper
 
-    def test_url_dedup_end_to_end(self, redis_clean):
+    def test_url_dedup_end_to_end(self, redis_clean, monkeypatch):
+        for name in ("SITE_ID", "TENANT_ID", "REDIS_SITE_ID"):
+            monkeypatch.delenv(name, raising=False)
         helper = self._helper(redis_clean)
 
         urls = [f"https://example.com/{i}" for i in range(10)]
@@ -39,7 +41,7 @@ class TestRedisIntegration:
         for url in urls:
             assert helper.check_url_seen(url, "scout")
 
-        assert helper.get_set_size("scout:urls") == 10
+        assert helper.get_set_size("site:default:scout:urls") == 10
 
     def test_circuit_breaker_end_to_end(self, redis_clean):
         helper = self._helper(redis_clean)
@@ -52,7 +54,9 @@ class TestRedisIntegration:
         assert "flaky.example.com" in helper.get_open_circuits()
         assert not helper.is_circuit_open("healthy.example.com")
 
-    def test_concurrent_set_access(self, redis_clean):
+    def test_concurrent_set_access(self, redis_clean, monkeypatch):
+        for name in ("SITE_ID", "TENANT_ID", "REDIS_SITE_ID"):
+            monkeypatch.delenv(name, raising=False)
         helper = self._helper(redis_clean)
         results = []
         lock = threading.Lock()
@@ -73,7 +77,7 @@ class TestRedisIntegration:
             t.join()
 
         assert len(results) == 15
-        assert helper.get_set_size("concurrent:urls") == 15
+        assert helper.get_set_size("site:default:concurrent:urls") == 15
 
     def test_counter_increment_and_read(self, redis_clean):
         helper = self._helper(redis_clean)
@@ -85,13 +89,15 @@ class TestRedisIntegration:
 
         assert helper.get_counter("pages_scraped") == 5
 
-    def test_delete_key_and_clear_all(self, redis_clean):
+    def test_delete_key_and_clear_all(self, redis_clean, monkeypatch):
+        for name in ("SITE_ID", "TENANT_ID", "REDIS_SITE_ID"):
+            monkeypatch.delenv(name, raising=False)
         helper = self._helper(redis_clean)
 
         helper.mark_url_seen("https://example.com/x", "cleanup")
         assert helper.get_key_count() > 0
 
-        helper.delete_key("cleanup:urls")
+        helper.delete_key("site:default:cleanup:urls")
         assert not helper.check_url_seen("https://example.com/x", "cleanup")
 
         helper.increment_counter("some_counter")

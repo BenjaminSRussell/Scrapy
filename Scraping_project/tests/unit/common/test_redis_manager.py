@@ -133,12 +133,14 @@ class TestRedisHelperMaintenance:
 
     @pytest.mark.unit
     @pytest.mark.redis
-    def test_delete_key(self, redis_clean):
+    def test_delete_key(self, redis_clean, monkeypatch):
+        for name in ("SITE_ID", "TENANT_ID", "REDIS_SITE_ID"):
+            monkeypatch.delenv(name, raising=False)
         helper = RedisHelper()
         helper._client = redis_clean
 
         helper.mark_url_seen("https://example.com", "x")
-        assert helper.delete_key("x:urls") is True
+        assert helper.delete_key("site:default:x:urls") is True
         assert not helper.check_url_seen("https://example.com", "x")
 
     @pytest.mark.unit

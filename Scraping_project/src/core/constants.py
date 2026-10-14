@@ -46,8 +46,11 @@ MASSIVE_DOC_THRESHOLD = 50000
 MIN_TEXT_HTML_RATIO = 0.3
 MAX_URL_LENGTH = 2048
 
-# Redis key prefixes
-REDIS_KEY_SEEN_URLS = "seen:urls"
+# Redis key prefixes.
+# Seen-URL membership is site-scoped (#191): ``site:{site_id}:seen:urls``.
+# ``default`` is the id used when SITE_ID / TENANT_ID / REDIS_SITE_ID are unset.
+# Build keys with RedisHelper.seen_key / seen_set_key; do not write ``seen:urls``.
+REDIS_KEY_SEEN_URLS = "site:default:seen:urls"
 REDIS_KEY_COUNTER = "counter"
 
 # Default timeouts (seconds)
