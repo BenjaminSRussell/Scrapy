@@ -169,6 +169,8 @@ temp/
 # Node / JavaScript
 # ====================================
 node_modules/
+# Generated Overview smoke shots (#1044). CI uploads dashboard-overview-screenshot.
+Scraping_project/dashboard/visual/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
@@ -204,6 +206,8 @@ yarn-error.log*
 !Scraping_project/scripts/fixtures/anomaly/*.json
 # Dashboard string catalog (#1006). Hand-written copy, not generated data.
 !Scraping_project/dashboard/strings/*.json
+# Cross-repo Delta contracts (#1099). Hand-written schemas, not generated data.
+!docs/contracts/*.json
 
 # ====================================
 # Jupyter Notebook

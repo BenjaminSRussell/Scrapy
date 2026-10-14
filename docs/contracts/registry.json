@@ -1,0 +1,21 @@
+{
+  "registry_version": "1.0.0",
+  "description": "Index of cross-repo Delta consumer contracts. Every *.schema.json in this directory is listed here.",
+  "contracts": [
+    {
+      "name": "pages",
+      "schema": "pages.schema.json",
+      "delta_table": "stage2_page_analysis"
+    },
+    {
+      "name": "extractions",
+      "schema": "extractions.schema.json",
+      "delta_table": "metadata_queue"
+    },
+    {
+      "name": "jobs",
+      "schema": "jobs.schema.json",
+      "delta_table": "stage2_queue"
+    }
+  ]
+}

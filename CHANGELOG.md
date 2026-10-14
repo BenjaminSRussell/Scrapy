@@ -16,6 +16,10 @@ renamed to the new version and date (see the release checklist).
 
 ### Added
 - Dashboard string catalog (`Scraping_project/dashboard/strings/en.json`) and `t(key)`. Topbar chrome, tab labels, and the metrics error banner read from it. A missing key shows the key name outside production (#1006).
+- Control Center can play a short tone on a new danger activity item. The Sound on danger checkbox is off by default and the choice is remembered in localStorage. Reduced motion and a mute media preference keep it silent (#1037).
+- Optional Control Center job captures one Overview smoke screenshot and uploads it as `dashboard-overview-screenshot` (`overview.png` of `#tab-overview`). It is not a pixel-diff gate and does not block the dashboard unit tests (#1044).
+- Cross-repo Delta schema registry (`docs/contracts/`) for `pages` (`stage2_page_analysis`), `extractions` (`metadata_queue`) and `jobs` (`stage2_queue`). A pull-request check fails if those writers drop a registered column (#1099).
+- Control Center System tab Settings panel lists each Prometheus series the page reads and the UI field it fills (`METRIC_UI_MAP`) (#1038).
 - Kafka to Delta ingest poison policy: after `--max-deserialize-failures` (default 3) deserialize failures of one payload, the bytes are produced to the DLQ topic and the offset is committed, including when no Delta rows are buffered, so one malformed message cannot block the partition. `KafkaPoisonMessageRate` warns when the dead-letter rate exceeds 0.1/s for 5 minutes. This is not an SLO (#177).
 - Stage 2 can reuse an unchanged HTML body from `src/utils/cache.py` when `STAGE2_CONTENT_CACHE_ENABLED` is set (default off). The entry is keyed by url_hash plus ETag or Last-Modified; a hit skips the network fetch and increments `cache_hit_total`. Responses with neither header are not cached (#478).
 - SeedManager reads Redis depth (`ZCARD` of `js_spider:priority_queue`) before enqueueing and skips the write when depth is above the shipped high watermark (10000, `stage1.seed_enqueue_depth_threshold` / `REDIS_QUEUE_HIGH_WATERMARK`) or the depth cannot be read. `seed_enqueue_throttled_total` counts the skipped URLs. The low watermark stays 8000 and `REDIS_QUEUE_BACKPRESSURE_MODE` stays `block` (#1105).
@@ -41,6 +45,7 @@ renamed to the new version and date (see the release checklist).
 - Repository policies: SECURITY.md, CODE_OF_CONDUCT.md, this changelog, ADRs, devcontainer (#669 #746 #747 #715 #694).
 
 ### Changed
+- Control Center tabs, health tiles, and the title mark use inline SVG icons (`aria-hidden`) instead of emoji glyphs (#1049).
 - Production Helm no longer runs the single-replica Redis. `redis.external.host` and `redis.external.port` become `REDIS_HOST` and `REDIS_PORT` (password stays `REDIS_PASSWORD`; do not set `REDIS_URL`). AOF can recover data after the node returns, and it does not keep the queue available during node loss (#216).
 - Seen-URL Redis keys are `site:{site_id}:{prefix}:urls` (for example `site:uconn:seen:urls`). Unscoped `seen:urls` and `scout:urls` are not read; rename them before deploy. `SITE_ID`, else `TENANT_ID`, else `REDIS_SITE_ID`, else `default` (#191).
 - Scrapy and Stage 2 share one retry policy (`retry` in config.yml, otherwise dev vs production defaults). Production uses more attempts; 429 and 503 stay retryable (#215).

@@ -160,6 +160,17 @@
             background: var(--gray-50);
         }
 
+        /* #1049: one inline SVG set. Stroke follows currentColor so tabs,
+           the title, and health tiles stay visible without emoji glyphs. */
+        .ui-icon {
+            display: inline-block;
+            width: 1.05em;
+            height: 1.05em;
+            vertical-align: -0.2em;
+            margin-right: 0.3em;
+            overflow: visible;
+        }
+
         .tab-content {
             display: none;
             padding: 2rem;
@@ -426,6 +437,17 @@
             color: var(--gray-900);
         }
 
+        /* #1037: opt-in danger chime. Unchecked in markup (silent by default). */
+        .danger-sound-label {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: var(--gray-700);
+            cursor: pointer;
+        }
+
         .status-indicator {
             display: inline-flex;
             align-items: center;
@@ -492,8 +514,15 @@
         }
 
         .health-icon {
-            font-size: 2rem;
+            display: flex;
+            justify-content: center;
             margin-bottom: 0.5rem;
+        }
+
+        .health-icon .ui-icon {
+            width: 2rem;
+            height: 2rem;
+            margin-right: 0;
         }
 
         .health-label {
@@ -536,7 +565,8 @@
         @media (pointer: coarse) {
             .tab-button,
             .refresh-bar .btn,
-            .refresh-bar select {
+            .refresh-bar select,
+            .danger-sound-label {
                 min-height: 44px;
                 min-width: 44px;
             }
@@ -626,7 +656,12 @@
         .chart-data-table summary { cursor: pointer; color: var(--muted-text); }
         .table-scroll { overflow-x: auto; max-width: 100%; }
         .data-fallback-table { width: 100%; border-collapse: collapse; margin-top: 0.5rem; }
-        .data-fallback-table th, .data-fallback-table td { border: 1px solid #334155; padding: 0.25rem 0.5rem; text-align: left; }
+        .data-fallback-table th, .data-fallback-table td { border: 1px solid #334155; padding: 0.25rem 0.5rem; text-align: left; vertical-align: top; }
+        .metric-map-card { margin-top: 2rem; }
+        .metric-map-card summary { cursor: pointer; font-weight: 600; color: var(--gray-800); }
+        .metric-map-help { font-size: 0.9rem; color: var(--gray-700); margin: 0.75rem 0; }
+        #metric-name-map-table td:first-child { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.85em; }
+        #metric-name-map-table ul { margin: 0; padding-left: 1.1rem; }
         .legend-toggles { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.5rem; }
         .legend-toggles button { font-size: 0.8rem; }
         
@@ -723,6 +758,8 @@
                 color: HighlightText;
                 border-bottom-color: HighlightText;
             }
+            .ui-icon { stroke: CanvasText; }
+            .tab-button.active .ui-icon { stroke: HighlightText; }
             .tab-button:focus-visible,
             .btn:focus-visible,
             .skip-to-main:focus {
@@ -740,6 +777,11 @@
             .health-item.unhealthy {
                 border: 3px dashed CanvasText;  /* state without colour */
             }
+            .data-fallback-table,
+            .data-fallback-table th,
+            .data-fallback-table td {
+                border: 1px solid CanvasText;
+            }
             /* Chart.js paints fixed colours on canvas; keep its light backdrop
                so axis text and series stay legible under a dark system theme. */
             .chart-container canvas {
@@ -756,6 +798,7 @@
         }
         .btn:focus-visible,
         select:focus-visible,
+        input:focus-visible,
         a:focus-visible,
         summary:focus-visible,
         .legend-toggles button:focus-visible,
@@ -853,7 +896,7 @@
         <div class="topbar-content">
             <div class="topbar-title" title="Pipeline Control Center" data-i18n="topbar.title" data-i18n-attr="title">
                 <h1>
-                    <span class="title-full"><span aria-hidden="true">🕷️</span> <span data-i18n="topbar.title">Pipeline Control Center</span></span>
+                    <span class="title-full"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8.5" r="2"/><ellipse cx="12" cy="15" rx="3" ry="3.4"/><path d="M10 9.5 5 6M9.2 12H4M10 14.5 5 19M14 9.5 19 6M14.8 12H20M14 14.5 19 19"/></svg> <span data-i18n="topbar.title">Pipeline Control Center</span></span>
                     <span class="title-short" data-i18n="topbar.titleShort">Control Center</span>
                     <span id="env-badge" class="env-badge env-local" title="Runtime environment">local</span>
                 </h1>
@@ -885,11 +928,11 @@
         </div>
         <div class="tabs">
             <nav class="tab-buttons-wrap" aria-label="Dashboard sections"><div class="tab-buttons" role="tablist" aria-label="Dashboard sections" data-i18n="tabs.nav" data-i18n-attr="aria-label">
-                <button type="button" class="tab-button active" data-tab="overview" role="tab" id="tabbtn-overview" aria-controls="tab-overview" aria-selected="true" tabindex="0" data-i18n="tabs.overview"><span aria-hidden="true">📊</span> Overview</button>
-                <button type="button" class="tab-button" data-tab="pipeline" role="tab" id="tabbtn-pipeline" aria-controls="tab-pipeline" aria-selected="false" tabindex="-1" data-i18n="tabs.pipeline"><span aria-hidden="true">🔄</span> Pipeline Stages</button>
-                <button type="button" class="tab-button" data-tab="performance" role="tab" id="tabbtn-performance" aria-controls="tab-performance" aria-selected="false" tabindex="-1" data-i18n="tabs.performance"><span aria-hidden="true">📈</span> Performance</button>
-                <button type="button" class="tab-button" data-tab="system" role="tab" id="tabbtn-system" aria-controls="tab-system" aria-selected="false" tabindex="-1" data-i18n="tabs.system"><span aria-hidden="true">⚙️</span> System Health</button>
-                <button type="button" class="tab-button" data-tab="activity" role="tab" id="tabbtn-activity" aria-controls="tab-activity" aria-selected="false" tabindex="-1" data-i18n="tabs.activity"><span aria-hidden="true">📋</span> Activity Log</button>
+                <button type="button" class="tab-button active" data-tab="overview" role="tab" id="tabbtn-overview" aria-controls="tab-overview" aria-selected="true" tabindex="0" data-i18n="tabs.overview"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18M7 16v-5M12 16V8M17 16v-3"/></svg> Overview</button>
+                <button type="button" class="tab-button" data-tab="pipeline" role="tab" id="tabbtn-pipeline" aria-controls="tab-pipeline" aria-selected="false" tabindex="-1" data-i18n="tabs.pipeline"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36M21 3v6h-6"/></svg> Pipeline Stages</button>
+                <button type="button" class="tab-button" data-tab="performance" role="tab" id="tabbtn-performance" aria-controls="tab-performance" aria-selected="false" tabindex="-1" data-i18n="tabs.performance"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l6-6 4 4 8-8M14 7h7v7"/></svg> Performance</button>
+                <button type="button" class="tab-button" data-tab="system" role="tab" id="tabbtn-system" aria-controls="tab-system" aria-selected="false" tabindex="-1" data-i18n="tabs.system"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 0 0-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 0 0-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 0 0-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 0 0-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 0 0 1.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><circle cx="12" cy="12" r="3"/></svg> System Health</button>
+                <button type="button" class="tab-button" data-tab="activity" role="tab" id="tabbtn-activity" aria-controls="tab-activity" aria-selected="false" tabindex="-1" data-i18n="tabs.activity"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg> Activity Log</button>
             </div></nav>
             <p class="shortcut-hint" id="shortcut-hint">Shortcuts: 1–5 switch tabs · R refresh</p>
 
@@ -1236,32 +1279,32 @@
                     <div id="health-announce" class="visually-hidden" role="status" aria-live="polite" aria-atomic="true"></div>
                     <div class="system-health">
                         <div class="health-item" id="redis-health">
-                            <div class="health-icon" aria-hidden="true">🗄️</div>
+                            <div class="health-icon" aria-hidden="true"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6c0-1.66 3.58-3 8-3s8 1.34 8 3-3.58 3-8 3-8-1.34-8-3zM4 6v12c0 1.66 3.58 3 8 3s8-1.34 8-3V6M4 12c0 1.66 3.58 3 8 3s8-1.34 8-3"/></svg></div>
                             <div class="health-label">Redis</div>
                             <div class="health-value">Healthy</div>
                         </div>
                         <div class="health-item" id="metrics-health">
-                            <div class="health-icon" aria-hidden="true">📊</div>
+                            <div class="health-icon" aria-hidden="true"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18M7 16v-5M12 16V8M17 16v-3"/></svg></div>
                             <div class="health-label">Metrics</div>
                             <div class="health-value">Collecting</div>
                         </div>
                         <div class="health-item" id="stage1-health">
-                            <div class="health-icon" aria-hidden="true">🔍</div>
+                            <div class="health-icon" aria-hidden="true"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16zM21 21l-4.35-4.35"/></svg></div>
                             <div class="health-label">Stage 1</div>
                             <div class="health-value">Running</div>
                         </div>
                         <div class="health-item" id="stage2-health">
-                            <div class="health-icon" aria-hidden="true">📄</div>
+                            <div class="health-icon" aria-hidden="true"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6"/></svg></div>
                             <div class="health-label">Stage 2</div>
                             <div class="health-value">Running</div>
                         </div>
                         <div class="health-item" id="stage3-health">
-                            <div class="health-icon" aria-hidden="true">📝</div>
+                            <div class="health-icon" aria-hidden="true"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/></svg></div>
                             <div class="health-label">Stage 3</div>
                             <div class="health-value">Running</div>
                         </div>
                         <div class="health-item healthy" id="stage4-health">
-                            <div class="health-icon" aria-hidden="true">📚</div>
+                            <div class="health-icon" aria-hidden="true"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></div>
                             <div class="health-label">Stage 4</div>
                             <div class="health-value">Standby</div>
                         </div>
@@ -1323,6 +1366,18 @@
                         </div>
                     </div>
                 </div>
+
+                <!-- #1038: series names the page reads, filled by renderMetricNameMap. -->
+                <div class="card metric-map-card" id="metric-name-map">
+                    <div class="card-header">
+                        <h2 class="card-title" id="metric-name-map-title">Settings</h2>
+                    </div>
+                    <details id="metric-name-map-panel" open>
+                        <summary>Prometheus metric name map</summary>
+                        <p class="metric-map-help" id="metric-name-map-help">Expected exporter series and the UI fields that read them. Session uptime and last refresh are client clocks, not series. An exporter rename moves a field only when that series is listed here.</p>
+                        <div class="table-scroll" id="metric-name-map-body"></div>
+                    </details>
+                </div>
             </div>
 
             <!-- Activity Log Tab -->
@@ -1331,7 +1386,12 @@
                     <div class="card-header" style="flex-wrap:wrap;gap:0.5rem">
                         <h2 class="card-title">Pipeline Activity Log</h2>
                         <span class="card-badge badge-info">Live</span>
-                        <div style="margin-left:auto;display:flex;gap:0.5rem;flex-wrap:wrap">
+                        <div style="margin-left:auto;display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center">
+                            <label class="danger-sound-label" for="danger-sound-toggle">
+                                <input type="checkbox" id="danger-sound-toggle" aria-describedby="danger-sound-hint">
+                                Sound on danger
+                            </label>
+                            <span id="danger-sound-hint" class="visually-hidden">Off by default. Plays a short tone for a new error. Stays silent when reduced motion or a mute preference is set.</span>
                             <button type="button" id="export-activity-json" class="btn" aria-label="Export activity log as JSON">Export JSON</button>
                             <button type="button" id="export-activity-csv" class="btn" aria-label="Export activity log as CSV">Export CSV</button>
                             <button type="button" id="clear-activity" class="btn" aria-label="Clear activity log">Clear</button>
