@@ -2,8 +2,12 @@
 """
 Pipeline Control Center - Dashboard Server
 
-Serves the custom monitoring dashboard on port 8080.
-This is completely separate from Grafana (port 3001).
+Serves the ops Control Center on port 8080. It is not Grafana.
+
+Documented Grafana origins (COMPOSE.md / root README), one pair for both
+this banner and the page chrome (#947):
+- Monitoring profile (python start.py): http://localhost:3000
+- Observability pack: http://127.0.0.1:3001
 
 Purpose:
 - Real-time operational monitoring
@@ -11,11 +15,7 @@ Purpose:
 - System health checks
 - Activity logging
 
-Grafana Purpose (Different):
-- Historical analytics
-- Custom queries
-- Advanced visualizations
-- Alert management
+Grafana is analytics (history, queries, alerts), on the URLs above.
 """
 
 import argparse
@@ -40,6 +40,10 @@ from urllib.parse import urlsplit
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8080
 PORT = DEFAULT_PORT  # kept for backwards compatibility
+# #947: same strings as the Control Center chrome. Monitoring-profile Grafana
+# is the product URL (root README, start.py, COMPOSE.md). The pack is the other.
+GRAFANA_MONITORING_URL = "http://localhost:3000"
+GRAFANA_PACK_URL = "http://127.0.0.1:3001"
 WILDCARD_HOSTS = frozenset({"", "0.0.0.0", "::", "[::]"})
 DASHBOARD_DIR = Path(__file__).parent
 # #721: only dashboard assets are served; source, tests, docs and dotfiles are 404.
@@ -491,10 +495,11 @@ def main(argv=None):
     print("🎛️  PIPELINE CONTROL CENTER")
     print("=" * 80)
     print()
-    print(f"📊 Dashboard:  http://{shown}:{port}")
+    print(f"📊 Dashboard:  http://{shown}:{port}  (ops Control Center, not Grafana)")
     print(f"📈 Metrics:    /api/metrics -> {DashboardHandler.metrics_upstream}  (METRICS_UPSTREAM)")
     print(f"🔐 Auth:       {'on' if DashboardHandler.auth and DashboardHandler.auth.enabled else 'off (CC_AUTH_TOKEN / CC_BASIC_AUTH)'}")
-    print("📉 Grafana:    http://localhost:3001 (separate analytics)")
+    print(f"📉 Analytics:  Grafana {GRAFANA_MONITORING_URL} (monitoring profile)")
+    print(f"📉 Pack:       Grafana {GRAFANA_PACK_URL} (observability pack; not {GRAFANA_MONITORING_URL})")
     print()
     print("Purpose:")
     print("  - Real-time pipeline monitoring")
@@ -502,7 +507,7 @@ def main(argv=None):
     print("  - System health indicators")
     print("  - Activity logging")
     print()
-    print("Note: This dashboard is for OPERATIONS, Grafana is for ANALYTICS")
+    print("Note: This dashboard is for OPERATIONS. Grafana is for ANALYTICS.")
     print()
     print("Press Ctrl+C to stop the server")
     print("=" * 80)

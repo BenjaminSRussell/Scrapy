@@ -123,7 +123,7 @@ The metrics feed does not publish hour averages yet, so the overlay is a labeled
 
 ## Grafana deep links (#1097)
 
-Control Center does not embed Grafana. The page is served from this origin (`:8080`) and Grafana is another origin (`:3000` for the monitoring profile, `:3001` for the observability pack), so an iframe would fight the CSP and would not be a supported embed. Open the pack in the browser instead:
+Control Center does not embed Grafana. The page is served from this origin (`:8080`) and Grafana is another origin (`:3000` for the monitoring profile, `:3001` for the observability pack), so an iframe would fight the CSP and would not be a supported embed. The topbar link **Analytics: Grafana** is http://localhost:3000, the same URL as the root README and `python start.py`. The links below are the observability pack at http://127.0.0.1:3001, a second Grafana, not a substitute for port 3000 and not this page (#947):
 
 | Panel | URL |
 |---|---|
