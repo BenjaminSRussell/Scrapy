@@ -15,6 +15,7 @@ Use for every dashboard PR:
 - [x] Respects `prefers-reduced-motion` — hover lift, pulse, flash, loading shimmer, and the shared `.skeleton` block (static gray, no pulse) off (#341, #1025). The optional danger chime stays silent under reduced motion and under a mute preference, and is off until opted in (#1037).
 - [x] Works at 360px width without horizontal page scroll — checked at 360/375/768/1024 on every tab; topbar stats wrap instead of hiding (#155)
 - [x] Forced-colors / Windows High Contrast: cards, tabs, active stage and status stay distinguishable via borders and system colours (`@media (forced-colors: active)`, #982)
+- [x] Print / PDF snapshot drops the purple top bar and tab chrome, expands every section in black text, and keeps charts at a fixed height (`@media print`, #974)
 - [x] Landmarks (`header`, `nav`, `main`) and an h1 → h2 heading outline (#332)
 - [x] Decorative icons are inline SVG with `aria-hidden`; tabs, health tiles, and the title mark do not use emoji glyphs (#1049)
 - [x] Loading, stale and error states are text, not just colour or zeros (#351, #352, #362)

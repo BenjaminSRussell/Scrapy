@@ -15,6 +15,11 @@ tab (#1029). A reload restores them and shows a note that they came from before
 the reload and may be stale. Closing the tab drops them; Clear drops them
 immediately.
 
+Printing or saving a PDF (#974) uses the print stylesheet: the purple top bar and
+tab buttons are left off the page, every section is expanded with black text, and
+charts keep a fixed height instead of being clipped. Use the browser print dialog.
+The server does not send anything to a printer.
+
 All throughput figures are per minute, computed from the real time between samples (#141).
 Labelled series such as `errors_total{stage="stage1"}` are kept under their full key and
 also summed under the bare name (`errors_total`) unless an unlabelled series of that name

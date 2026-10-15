@@ -1184,6 +1184,178 @@
         }
         .fetch-error-banner[hidden] { display: none; }
         .btn[aria-busy="true"] { cursor: progress; }
+
+        /* #974: beforeprint adds html.cc-print so Chart.js can measure tabs
+           that are display:none on screen. Print media itself is below. */
+        html.cc-print .tab-content {
+            display: block !important;
+        }
+        html.cc-print .chart-container {
+            height: 2.25in;
+            min-height: 2.25in;
+        }
+
+        /* #974: incident-report print. White-on-purple topbar text disappears
+           when the browser drops backgrounds, and the gradient dominates when
+           it keeps them. Show every section, black ink, charts at a fixed height. */
+        @media print {
+            @page { margin: 12mm; }
+
+            *, *::before, *::after {
+                box-shadow: none !important;
+                text-shadow: none !important;
+                animation: none !important;
+                transition: none !important;
+            }
+            html, body {
+                background: #fff !important;
+                color: #000 !important;
+            }
+            .container {
+                max-width: none;
+                padding: 0 0 0.5rem;
+            }
+            .topbar {
+                position: static;
+                background: #fff !important;
+                background-image: none !important;
+                color: #000 !important;
+                box-shadow: none;
+                border-bottom: 2px solid #000;
+                padding: 0 0 0.75rem;
+            }
+            .topbar,
+            .topbar-title h1,
+            .topbar-title p,
+            .topbar-stat-label,
+            .topbar-stat-value,
+            .metric-label,
+            .metric-value,
+            .card-title,
+            .stage-title,
+            .stage-metric-label,
+            .stage-metric-value,
+            .refresh-countdown,
+            a {
+                color: #000 !important;
+            }
+            .skip-to-main,
+            .tab-buttons-wrap,
+            .shortcut-hint,
+            .stage-drilldown,
+            .stage-card-hint,
+            .btn,
+            .danger-sound-label,
+            .activity-filters,
+            .legend-toggles,
+            .refresh-interval-label,
+            #compare-prev-hour,
+            #comparison-baseline-note,
+            .skeleton {
+                display: none !important;
+            }
+            .tabs {
+                overflow: visible;
+                background: #fff;
+                box-shadow: none;
+                border-radius: 0;
+            }
+            .tab-content {
+                display: block !important;
+                padding: 0.75rem 0 1rem;
+                break-before: page;
+                page-break-before: always;
+            }
+            #tab-overview {
+                break-before: auto;
+                page-break-before: auto;
+            }
+            #tab-overview::before { content: "Overview"; }
+            #tab-pipeline::before { content: "Pipeline stages"; }
+            #tab-performance::before { content: "Performance"; }
+            #tab-system::before { content: "System health"; }
+            #tab-activity::before { content: "Activity log"; }
+            .tab-content::before {
+                display: block;
+                font-size: 1.25rem;
+                font-weight: 700;
+                color: #000;
+                margin: 0 0 0.75rem;
+                border-bottom: 1px solid #000;
+            }
+            .card,
+            .stage-card,
+            .activity-item,
+            .metric-row {
+                break-inside: avoid;
+                page-break-inside: avoid;
+                background: #fff !important;
+                color: #000 !important;
+            }
+            .card,
+            .stage-card {
+                border: 1px solid #000;
+            }
+            .stage-number {
+                background: #fff !important;
+                background-image: none !important;
+                color: #000 !important;
+                border: 2px solid #000;
+            }
+            .stage-pipeline {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+            .stage-pipeline::before {
+                display: none;
+            }
+            .env-badge,
+            .milestone-badge,
+            .card-badge {
+                background: #fff !important;
+                color: #000 !important;
+                border: 1px solid #000;
+            }
+            .activity-feed {
+                max-height: none;
+                overflow: visible;
+            }
+            .is-loading {
+                color: #000 !important;
+                background: none !important;
+            }
+            .chart-container {
+                height: 2.25in;
+                min-height: 2.25in;
+                max-height: 2.25in;
+                overflow: visible;
+                break-inside: avoid;
+                page-break-inside: avoid;
+            }
+            .chart-container canvas,
+            .overview-spark,
+            .health-seg-ok,
+            .health-seg-fail,
+            .status-dot {
+                opacity: 1 !important;
+                max-width: 100%;
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+            }
+            .chart-container.is-unavailable canvas {
+                display: none !important;
+            }
+            /* Children only: the details element itself stays hidden in metrics-flood. */
+            .chart-data-table > *:not(summary) {
+                display: block !important;
+            }
+            .refresh-bar {
+                position: static;
+                background: #fff !important;
+                color: #000 !important;
+                border-top: 1px solid #000;
+                margin-top: 1rem;
+            }
+        }
     </style>
 </head>
 <body>

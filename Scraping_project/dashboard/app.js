@@ -1802,6 +1802,35 @@ function applyVersionWatermark() {
     if (el) el.textContent = 'v' + (window.__CC_VERSION__ || 'dev');
 }
 
+// #974: hidden tabs have a 0-size canvas until shown, and print media is
+// applied too late for Chart.js to measure. Expand on screen, resize, restore.
+function resizeChartsNow() {
+    Object.values(charts || {}).forEach(ch => { try { ch.resize(); } catch (_) {} });
+}
+
+function setupPrintLayout() {
+    if (typeof window === 'undefined' || typeof window.addEventListener !== 'function') return;
+    const root = document.documentElement;
+    if (!root || !root.classList) return;
+    const onBefore = () => {
+        root.classList.add('cc-print');
+        resizeChartsNow();
+        // A second pass after layout, in case print media applies on the next frame.
+        if (typeof requestAnimationFrame === 'function') requestAnimationFrame(resizeChartsNow);
+    };
+    const onAfter = () => {
+        root.classList.remove('cc-print');
+        resizeChartsNow();
+    };
+    window.addEventListener('beforeprint', onBefore);
+    window.addEventListener('afterprint', onAfter);
+    if (typeof window.matchMedia !== 'function') return;
+    const mql = window.matchMedia('print');
+    const onChange = (e) => { if (e.matches) onBefore(); else onAfter(); };
+    if (mql.addEventListener) mql.addEventListener('change', onChange);
+    else if (mql.addListener) mql.addListener(onChange);
+}
+
 function initialize() {
     console.log('Initializing Pipeline Control Center...');
 
@@ -1820,6 +1849,7 @@ function initialize() {
     markLoading();
     initializeCharts();
     ensureChartPlaceholders();
+    setupPrintLayout();
     setupComparisonToggle();
     refreshScheduler = createRefreshScheduler({ interval: REFRESH_INTERVAL, fetch: fetchAndAnnounce });
     setupIntervalControl();
