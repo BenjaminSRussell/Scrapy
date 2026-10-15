@@ -1867,6 +1867,16 @@ function applyVersionWatermark() {
     if (el) el.textContent = 'v' + (window.__CC_VERSION__ || 'dev');
 }
 
+/** System Health card: Grafana home from CC_GRAFANA_URL (#1040). */
+function applyGrafanaLink() {
+    const link = document.getElementById('grafana-analytics-link');
+    if (!link) return;
+    const home = grafanaHomeUrl(window.__CC_GRAFANA_URL__, link.getAttribute('href') || undefined);
+    link.href = home;
+    const shown = document.getElementById('grafana-analytics-base');
+    if (shown) shown.textContent = home;
+}
+
 function initialize() {
     console.log('Initializing Pipeline Control Center...');
 
@@ -1877,6 +1887,7 @@ function initialize() {
         renderMetricNameMap(document.getElementById('metric-name-map-body'), document);
     }
     renderHealthHistory();
+    applyGrafanaLink();
     setupTabs();
     setupActivitySearch();
     setupStageDrilldown();

@@ -273,6 +273,18 @@
             color: var(--gray-700);
         }
 
+        /* #1040: Grafana home link. primary-dark on white is > 4.5:1. */
+        a.grafana-link {
+            color: var(--primary-dark);
+            font-weight: 700;
+            text-decoration: underline;
+            overflow-wrap: anywhere;
+        }
+        #grafana-analytics-base {
+            overflow-wrap: anywhere;
+            margin-top: 0.75rem;
+        }
+
         .metric-value {
             font-variant-numeric: tabular-nums;
             overflow: hidden;
@@ -1749,6 +1761,18 @@
                         <p class="metric-map-help" id="metric-name-map-help">Expected exporter series and the UI fields that read them. Session uptime and last refresh are client clocks, not series. An exporter rename moves a field only when that series is listed here.</p>
                         <div class="table-scroll" id="metric-name-map-body"></div>
                     </details>
+                </div>
+
+                <!-- #1040: Grafana home, not a dashboard UID (JSON may be absent). -->
+                <div class="card" id="grafana-link-card" style="margin-top: 2rem;">
+                    <div class="card-header">
+                        <h2 class="card-title">Open Grafana analytics</h2>
+                    </div>
+                    <p class="metric-label">Historical charts are in Grafana. This opens Grafana home, so the link still works when a dashboard file is missing.</p>
+                    <p>
+                        <a id="grafana-analytics-link" class="grafana-link" href="http://localhost:3000/" target="_blank" rel="noopener noreferrer">Open Grafana analytics<span class="visually-hidden"> (opens in a new tab)</span></a>
+                    </p>
+                    <p class="metric-label" id="grafana-analytics-base">http://localhost:3000/</p>
                 </div>
             </div>
 

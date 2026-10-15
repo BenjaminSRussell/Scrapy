@@ -1118,5 +1118,28 @@
         if (!rows.length) return { missing: true, rows: [], empty: SCRAPE_TARGET_EMPTY };
         return { missing: false, rows: rows.slice(0, cap), empty: SCRAPE_TARGET_EMPTY };
     }
-    return { tabKeyTarget, staleState, queueDepthRows, metricsFailureActivity, shortcutHintText, parseMetrics, metricSeriesCount, METRICS_FLOOD_DEFAULTS, metricsFloodLimits, advanceMetricsFlood, metricsFloodBannerText, ratePerMinute, resolveMetricsUrl, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler, stageActivity, stageDrilldown, stageDrilldownKey, doughnutLegendLayout, connectionState, documentTitle, createActivityAnnouncer, metricsUrlProblem, splitLinks, createMetricsFetcher, REFRESH_INTERVAL_CHOICES, parseRefreshInterval, shortcutAction, pickInitialTab, METRIC_UI_MAP, renderMetricNameMap, parseDangerSoundEnabled, dangerSoundDecision, HEALTH_HISTORY_LIMIT, pushPollOutcome, healthHistoryView, COMPARISON_BASELINE_ROLE, PREV_HOUR_AVG_KEYS, readPrevHourAverage, comparisonBaselineSeries, comparisonNote, ACTIVITY_LOG_CAP, capActivityLog, activityStaleNote, restoreActivityLog, topScrapeTargets, SCRAPE_TARGET_EMPTY, ACTIVITY_LEVELS, activityLevelCounts, filterActivityItems, filterActivityMessages, activityFilterStatus, toggleActivityLevel, HISTORY_MAX_POINTS, assertHistoryBound, boundHistoryBuffer, pushHistorySample, enforceHistoryCap };
+    // #1040: Grafana home for the System Health card. http(s) only, no userinfo,
+    // query, or fragment. A /d/<uid> path is cut back to the base so a missing
+    // dashboard JSON still opens Grafana home. Rejected values use fallback.
+    const DEFAULT_GRAFANA_HOME = 'http://localhost:3000/';
+    function grafanaHomeUrl(raw, fallback) {
+        const fb = (typeof fallback === 'string' && fallback) ? fallback : DEFAULT_GRAFANA_HOME;
+        if (typeof raw !== 'string') return fb;
+        const text = raw.trim();
+        if (!text || /[\s\\]/.test(text) || /[\u0000-\u001f]/.test(text)) return fb;
+        let url;
+        try { url = new URL(text); } catch (e) { return fb; }
+        if (url.protocol !== 'http:' && url.protocol !== 'https:') return fb;
+        if (url.username || url.password || url.port === '0') return fb;
+        const segments = url.pathname.split('/').filter(function (s) {
+            return s && s !== '.' && s !== '..';
+        });
+        const dash = segments.indexOf('d');
+        if (dash >= 0 && dash + 1 < segments.length) segments.splice(dash);
+        url.pathname = segments.length ? '/' + segments.join('/') + '/' : '/';
+        url.search = '';
+        url.hash = '';
+        return url.href;
+    }
+    return { tabKeyTarget, staleState, queueDepthRows, metricsFailureActivity, shortcutHintText, parseMetrics, metricSeriesCount, METRICS_FLOOD_DEFAULTS, metricsFloodLimits, advanceMetricsFlood, metricsFloodBannerText, ratePerMinute, resolveMetricsUrl, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler, stageActivity, stageDrilldown, stageDrilldownKey, doughnutLegendLayout, connectionState, documentTitle, createActivityAnnouncer, metricsUrlProblem, splitLinks, createMetricsFetcher, REFRESH_INTERVAL_CHOICES, parseRefreshInterval, shortcutAction, pickInitialTab, METRIC_UI_MAP, renderMetricNameMap, parseDangerSoundEnabled, dangerSoundDecision, HEALTH_HISTORY_LIMIT, pushPollOutcome, healthHistoryView, COMPARISON_BASELINE_ROLE, PREV_HOUR_AVG_KEYS, readPrevHourAverage, comparisonBaselineSeries, comparisonNote, ACTIVITY_LOG_CAP, capActivityLog, activityStaleNote, restoreActivityLog, topScrapeTargets, SCRAPE_TARGET_EMPTY, ACTIVITY_LEVELS, activityLevelCounts, filterActivityItems, filterActivityMessages, activityFilterStatus, toggleActivityLevel, HISTORY_MAX_POINTS, assertHistoryBound, boundHistoryBuffer, pushHistorySample, enforceHistoryCap, grafanaHomeUrl };
 });

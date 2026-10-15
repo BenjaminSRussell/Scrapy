@@ -37,6 +37,7 @@ def _handler(serve, root, env):
             "metrics_upstream": env.get("METRICS_UPSTREAM", serve.DEFAULT_METRICS_UPSTREAM),
             "upstream_timeout": float(env.get("CC_UPSTREAM_TIMEOUT", 4)),
             "queue_keys": serve.queue_keys(env),
+            "grafana_url": serve.grafana_base_url(env),
         },
     )
 
@@ -313,6 +314,8 @@ def test_real_dashboard_assets_smoke(serve):
         assert "<title>" in html
         local_scripts = [s for s in re.findall(r'<script src="([^"]+)"', html) if "://" not in s]
         assert {"features.js", "format-utils.js", "version.js", "app.js"} <= set(local_scripts)
+        assert 'id="grafana-analytics-link"' in html
+        assert 'href="http://localhost:3000/"' in html
         for src in local_scripts:
             status, headers, body = get(f"{base}/{src}")
             assert status == 200, src
@@ -323,3 +326,35 @@ def test_real_dashboard_assets_smoke(serve):
     finally:
         httpd.shutdown()
         httpd.server_close()
+
+
+def test_grafana_base_url_is_home_not_a_dashboard(serve):
+    assert serve.grafana_base_url({}) == "http://localhost:3000/"
+    assert serve.grafana_base_url({"CC_GRAFANA_URL": "http://localhost:3000"}) == "http://localhost:3000/"
+    assert serve.grafana_base_url({"CC_GRAFANA_URL": "https://graf.example/grafana"}) == "https://graf.example/grafana/"
+    assert serve.grafana_base_url({
+        "CC_GRAFANA_URL": "http://localhost:3000/d/scraping-pipeline-health?orgId=1#top",
+    }) == "http://localhost:3000/"
+    assert serve.grafana_base_url({
+        "CC_GRAFANA_URL": "https://graf.example/grafana/d/pipeline-slos",
+    }) == "https://graf.example/grafana/"
+    assert serve.grafana_base_url({"CC_GRAFANA_URL": "http://[::1]:3000/"}) == "http://[::1]:3000/"
+    for bad in ("javascript:alert(1)", "http://user:pw@localhost:3000/", "file:///tmp",
+                "not a url", "http://localhost:0/", ""):
+        assert serve.grafana_base_url({"CC_GRAFANA_URL": bad}) == "http://localhost:3000/", bad
+
+
+def test_version_js_embeds_configured_grafana_home(make_server):
+    base, _ = make_server({
+        "CC_GRAFANA_URL": "https://graf.example/grafana/d/scraping-pipeline-health?orgId=1",
+        "CC_RATE_LIMIT": "0",
+    })
+    status, headers, body = get(base + "/version.js")
+    assert status == 200 and "javascript" in headers["content-type"]
+    text = body.decode()
+    assert text.startswith("window.__CC_VERSION__")
+    assert 'window.__CC_GRAFANA_URL__ = "https://graf.example/grafana/";' in text
+    base, _ = make_server({"CC_GRAFANA_URL": "javascript:alert(1)", "CC_RATE_LIMIT": "0"})
+    text = get(base + "/version.js")[2].decode()
+    assert 'window.__CC_GRAFANA_URL__ = "http://localhost:3000/";' in text
+    assert "javascript:" not in text
