@@ -1,0 +1,15 @@
+{
+  "name": "Pipeline Control Center",
+  "short_name": "Control Center",
+  "description": "Live view of the scraping pipeline.",
+  "start_url": "./#/pipeline",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#F2F2F7",
+  "theme_color": "#F2F2F7",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}
