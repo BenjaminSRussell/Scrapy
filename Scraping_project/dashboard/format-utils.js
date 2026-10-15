@@ -562,6 +562,30 @@
         else next.add(level);
         return next;
     }
+    // #1028: case-insensitive substring over activity message text. A blank
+    // query matches every item. Not a regex: "." and "(" are literal. Order
+    // is preserved and the input array is not mutated. Non-arrays yield [].
+    function filterActivityMessages(items, query) {
+        const list = Array.isArray(items) ? items : [];
+        const q = String(query == null ? '' : query).trim().toLowerCase();
+        if (!q) return list.slice();
+        const out = [];
+        for (const item of list) {
+            const msg = String(item && item.message != null ? item.message : '').toLowerCase();
+            if (msg.includes(q)) out.push(item);
+        }
+        return out;
+    }
+    // Empty string when the query is blank (the status stays hidden). Counts
+    // are of the capped Activity-tab buffer, not the overview feed.
+    function activityFilterStatus(shown, total, query) {
+        const q = String(query == null ? '' : query).trim();
+        if (!q) return '';
+        const n = Math.max(0, Math.floor(Number(shown) || 0));
+        const t = Math.max(0, Math.floor(Number(total) || 0));
+        if (n === 0) return `No activity matches "${q}".`;
+        return `Showing ${n} of ${t}`;
+    }
     // #503: on-screen hint text for the digit shortcuts.
     function shortcutHintText(tabCount) {
         const n = Math.min(Math.max(0, Number(tabCount) || 0), 9);
@@ -1094,5 +1118,5 @@
         if (!rows.length) return { missing: true, rows: [], empty: SCRAPE_TARGET_EMPTY };
         return { missing: false, rows: rows.slice(0, cap), empty: SCRAPE_TARGET_EMPTY };
     }
-    return { tabKeyTarget, staleState, queueDepthRows, metricsFailureActivity, shortcutHintText, parseMetrics, metricSeriesCount, METRICS_FLOOD_DEFAULTS, metricsFloodLimits, advanceMetricsFlood, metricsFloodBannerText, ratePerMinute, resolveMetricsUrl, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler, stageActivity, stageDrilldown, stageDrilldownKey, doughnutLegendLayout, connectionState, documentTitle, createActivityAnnouncer, metricsUrlProblem, splitLinks, createMetricsFetcher, REFRESH_INTERVAL_CHOICES, parseRefreshInterval, shortcutAction, pickInitialTab, METRIC_UI_MAP, renderMetricNameMap, parseDangerSoundEnabled, dangerSoundDecision, HEALTH_HISTORY_LIMIT, pushPollOutcome, healthHistoryView, COMPARISON_BASELINE_ROLE, PREV_HOUR_AVG_KEYS, readPrevHourAverage, comparisonBaselineSeries, comparisonNote, ACTIVITY_LOG_CAP, capActivityLog, activityStaleNote, restoreActivityLog, topScrapeTargets, SCRAPE_TARGET_EMPTY, ACTIVITY_LEVELS, activityLevelCounts, filterActivityItems, toggleActivityLevel, HISTORY_MAX_POINTS, assertHistoryBound, boundHistoryBuffer, pushHistorySample, enforceHistoryCap };
+    return { tabKeyTarget, staleState, queueDepthRows, metricsFailureActivity, shortcutHintText, parseMetrics, metricSeriesCount, METRICS_FLOOD_DEFAULTS, metricsFloodLimits, advanceMetricsFlood, metricsFloodBannerText, ratePerMinute, resolveMetricsUrl, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler, stageActivity, stageDrilldown, stageDrilldownKey, doughnutLegendLayout, connectionState, documentTitle, createActivityAnnouncer, metricsUrlProblem, splitLinks, createMetricsFetcher, REFRESH_INTERVAL_CHOICES, parseRefreshInterval, shortcutAction, pickInitialTab, METRIC_UI_MAP, renderMetricNameMap, parseDangerSoundEnabled, dangerSoundDecision, HEALTH_HISTORY_LIMIT, pushPollOutcome, healthHistoryView, COMPARISON_BASELINE_ROLE, PREV_HOUR_AVG_KEYS, readPrevHourAverage, comparisonBaselineSeries, comparisonNote, ACTIVITY_LOG_CAP, capActivityLog, activityStaleNote, restoreActivityLog, topScrapeTargets, SCRAPE_TARGET_EMPTY, ACTIVITY_LEVELS, activityLevelCounts, filterActivityItems, filterActivityMessages, activityFilterStatus, toggleActivityLevel, HISTORY_MAX_POINTS, assertHistoryBound, boundHistoryBuffer, pushHistorySample, enforceHistoryCap };
 });

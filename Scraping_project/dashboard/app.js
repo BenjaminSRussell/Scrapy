@@ -393,12 +393,15 @@ function renderActivityMessage(el, message) {
     }
 }
 
-function renderActivityList(container, { maxItems = HISTORY_MAX_POINTS, levels = null } = {}) {
-    if (!container) return;
-    // null = unfiltered (overview). A selection, including an empty one, is the Activity tab.
+function renderActivityList(container, { maxItems = HISTORY_MAX_POINTS, levels = null, query = '' } = {}) {
+    if (!container) return 0;
+    // null levels = unfiltered (overview). A selection, including an empty one, is the Activity tab.
     const source = levels == null ? activityLog : filterActivityItems(activityLog, levels);
+    const capped = source.slice(0, maxItems);
+    // #1028: case-insensitive message substring. Overview passes query ''.
+    const items = filterActivityMessages(capped, query);
     const frag = document.createDocumentFragment();
-    for (const item of source.slice(0, maxItems)) {
+    for (const item of items) {
         const li = document.createElement('li');
         li.className = 'activity-item';
         const type = String(item.type || '');
@@ -421,6 +424,65 @@ function renderActivityList(container, { maxItems = HISTORY_MAX_POINTS, levels =
         frag.appendChild(li);
     }
     container.replaceChildren(frag);
+    return items.length;
+}
+
+function currentActivityQuery() {
+    const input = document.getElementById('activity-search');
+    return input ? input.value : '';
+}
+
+function syncActivitySearchStatus() {
+    const capped = filterActivityItems(activityLog, activityLevelFilter).slice(0, HISTORY_MAX_POINTS);
+    const query = currentActivityQuery();
+    const shown = filterActivityMessages(capped, query).length;
+    const status = document.getElementById('activity-filter-status');
+    const clearBtn = document.getElementById('clear-activity-search');
+    const text = activityFilterStatus(shown, capped.length, query);
+    if (clearBtn) clearBtn.disabled = text === '';
+    if (status) {
+        status.textContent = text;
+        status.hidden = text === '';
+    }
+}
+
+// Search and Clear bypass the scroll pin so the visible rows match the field.
+function renderActivitySearch() {
+    const log = document.getElementById('activity-log');
+    if (log) {
+        renderActivityList(log, {
+            maxItems: HISTORY_MAX_POINTS,
+            levels: activityLevelFilter,
+            query: currentActivityQuery()
+        });
+    }
+    syncActivityLevelChips();
+    syncActivitySearchStatus();
+}
+
+function setupActivitySearch() {
+    const input = document.getElementById('activity-search');
+    const clearBtn = document.getElementById('clear-activity-search');
+    if (input) {
+        const apply = () => renderActivitySearch();
+        input.addEventListener('input', apply);
+        input.addEventListener('search', apply);
+        input.addEventListener('keydown', (event) => {
+            if (event.key !== 'Escape' || !input.value) return;
+            event.preventDefault();
+            input.value = '';
+            apply();
+        });
+    }
+    if (clearBtn) {
+        clearBtn.addEventListener('click', () => {
+            if (input) {
+                input.value = '';
+                input.focus();
+            }
+            renderActivitySearch();
+        });
+    }
 }
 
 function updateActivityLog() {
@@ -432,13 +494,16 @@ function updateActivityLog() {
 
     logContainers.forEach(container => {
         if (!container) return;
-        if (activityPinned && container.id === "activity-log") return;
+        if (activityPinned && container.id === "activity-log" && currentActivityQuery().trim() === '') return;
         const maxItems = container.id === 'overview-activity' ? 8 : HISTORY_MAX_POINTS;
         // #1027: chips filter the Activity tab only. Overview stays the latest mix.
         const levels = container.id === 'activity-log' ? activityLevelFilter : null;
-        renderActivityList(container, { maxItems, levels });
+        // #1028: search filters the Activity tab only. Overview stays unfiltered.
+        const query = container.id === 'activity-log' ? currentActivityQuery() : '';
+        renderActivityList(container, { maxItems, levels, query });
     });
     syncActivityLevelChips();
+    syncActivitySearchStatus();
 }
 
 function syncActivityLevelChips() {
@@ -1813,6 +1878,7 @@ function initialize() {
     }
     renderHealthHistory();
     setupTabs();
+    setupActivitySearch();
     setupStageDrilldown();
     setupShortcuts();
     const initialTab = pickInitialTab(tabFromLocation(), storeGet(STORE_TAB_KEY), visibleTabNames());
