@@ -27,5 +27,6 @@ New experimental features must **default to off**. Add each new flag to `FLAGS` 
 | `STAGE4_ASR_ENABLED` | off | `src/stage4/summarization.py`, `src/stage4/stage4_worker.py` | Fold local audio/text fixtures into Stage 4 summaries (#1101). Does not download remote media |
 | `KAFKA_DLQ_ENABLED` | on | `src/pipelines.py` (`KafkaPipeline`) | Write undeliverable Kafka items to the file DLQ (#162) |
 | `STAGE2_CONTENT_CACHE_ENABLED` | off | `src/stage2/stage2_worker.py`, `src/utils/cache.py` | Reuse a Stage 2 HTML body keyed by url_hash plus ETag or Last-Modified. A hit skips the network fetch and increments `cache_hit_total` (#478). No validator means the response is not cached |
+| `SEARCH_EXPORT_ENABLED` | off | `scripts/export_gold_summaries.py` | Bulk-index Stage 3 and Stage 4 summaries into OpenSearch or Elasticsearch. A run with the flag unset does not read the lake or open a socket (#687) |
 
 `feature_flags.snapshot()` returns the effective value of every registered flag, which is useful when debugging a deployment.

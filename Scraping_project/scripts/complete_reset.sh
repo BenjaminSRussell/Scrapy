@@ -66,7 +66,7 @@ if [ "$DRY_RUN" != "1" ] && [ "$CONFIRM_FLAG" != "1" ] && [ "$ASSUME_YES" = "1" 
 fi
 
 # Startup order. Names outside the current Compose file are filtered out.
-INFRA=(redis postgres zookeeper kafka)
+INFRA=(redis postgres zookeeper kafka opensearch)
 MONITORING=(prometheus prometheus-a prometheus-b alertmanager alertmanager-1 alertmanager-2 alertmanager-3 grafana dashboard)
 EXPORTERS=(redis-exporter postgres-exporter kafka-jmx-exporter statsd-exporter metrics-exporter)
 APPS=(scraper scrapy-app stage1-worker stage2-worker stage3-worker stage4-worker kafka-delta-ingestor)

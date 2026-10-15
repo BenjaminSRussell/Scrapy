@@ -355,7 +355,8 @@ def start_local(args: argparse.Namespace) -> None:
     if services:
         print(f"Compose services: {', '.join(services)}")
     # core + monitoring (#145). Does not start Stage 4 (ml/full), Kafka
-    # (streaming) or the OTEL overlay. An explicit COMPOSE_PROFILES wins.
+    # (streaming), OpenSearch (search) or the OTEL overlay. An explicit
+    # COMPOSE_PROFILES wins.
     os.environ.setdefault("COMPOSE_PROFILES", "core,monitoring")
     run_command((*compose(), "up", "-d"))
 

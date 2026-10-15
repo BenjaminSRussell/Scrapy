@@ -1,5 +1,6 @@
 # Docker Compose configuration for UConn Scraping Pipeline
 # Profiles (#145): core | monitoring | streaming, plus ml | full for Stage 4 (#144).
+# Profile `search` (#687) is OpenSearch only. It is not part of core/monitoring.
 # Observability (Loki / Jaeger / OTEL) is the overlay docker-compose.observability.yml.
 # One command for the lean stack + monitoring (no torch, no Kafka):
 #   docker compose --profile core --profile monitoring up -d
@@ -334,11 +335,42 @@ services:
     networks:
       - scraper-network
 
+  # Optional OpenSearch (profile `search`, #687). Not started by core or
+  # monitoring. Loopback only, security plugin off: local dev, not a
+  # production cluster. The summary exporter stays off until
+  # SEARCH_EXPORT_ENABLED=1 or --enable. Point that script at Elasticsearch
+  # with SEARCH_URL if you are not using this service.
+  opensearch:
+    profiles: ["search"]
+    image: opensearchproject/opensearch:2.19.6
+    container_name: uconn-opensearch
+    restart: unless-stopped
+    environment:
+      - discovery.type=single-node
+      - DISABLE_SECURITY_PLUGIN=true
+      - DISABLE_INSTALL_DEMO_CONFIG=true
+      - bootstrap.memory_lock=true
+      - "OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m"
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    ports:
+      - "127.0.0.1:9200:9200"
+    volumes:
+      - opensearch-data:/usr/share/opensearch/data
+    networks:
+      - scraper-network
+
 volumes:
   redis-data:
   postgres-data:
   prometheus-data:
   grafana-data:
+  opensearch-data:
 
 networks:
   scraper-network:

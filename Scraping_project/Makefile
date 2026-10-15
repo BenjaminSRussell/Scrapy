@@ -204,12 +204,12 @@ docker-up: ## Start core + monitoring Compose profiles (#145)
 
 docker-down: ## Stop Docker services (every profile)
 	@echo "$(BLUE)Stopping Docker services...$(NC)"
-	COMPOSE_PROFILES=core,monitoring,streaming,observability,ml,full $(COMPOSE) down
+	COMPOSE_PROFILES=core,monitoring,streaming,observability,ml,full,search $(COMPOSE) down
 	@echo "$(GREEN)✓ Services stopped$(NC)"
 
 docker-down-clean: ## Stop and remove volumes
 	@echo "$(YELLOW)Stopping services and removing volumes...$(NC)"
-	COMPOSE_PROFILES=core,monitoring,streaming,observability,ml,full $(COMPOSE) down -v
+	COMPOSE_PROFILES=core,monitoring,streaming,observability,ml,full,search $(COMPOSE) down -v
 	@echo "$(GREEN)✓ Services and volumes removed$(NC)"
 
 docker-logs: ## View Docker logs
