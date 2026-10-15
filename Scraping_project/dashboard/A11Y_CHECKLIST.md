@@ -12,7 +12,7 @@ Use for every dashboard PR:
   - Activity items: only the new item is spoken, via the always-present `#activity-announce` region (additions only, identical repeats at most once per 5 min). The visual feeds are `aria-live="off"` because they re-render wholesale (#962).
 - [ ] Charts have a text alternative (data table / caption)
 - [ ] No information conveyed by color alone
-- [x] Respects `prefers-reduced-motion` — hover lift, pulse, flash, loading shimmer, and the shared `.skeleton` block (static gray, no pulse) off (#341, #1025). The optional danger chime stays silent under reduced motion and under a mute preference, and is off until opted in (#1037).
+- [x] Respects `prefers-reduced-motion` — hover lift, pulse, flash, loading shimmer, and the shared `.skeleton` block (static gray, no pulse) off (#341, #1025). The sticky topbar uses a solid fill instead of the gradient, with no shadow animation (#985). The optional danger chime stays silent under reduced motion and under a mute preference, and is off until opted in (#1037).
 - [x] Works at 360px width without horizontal page scroll — checked at 360/375/768/1024 on every tab; topbar stats wrap instead of hiding (#155)
 - [x] Forced-colors / Windows High Contrast: cards, tabs, active stage and status stay distinguishable via borders and system colours (`@media (forced-colors: active)`, #982)
 - [x] Landmarks (`header`, `nav`, `main`) and an h1 → h2 heading outline (#332)
