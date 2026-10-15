@@ -305,6 +305,26 @@ cost_controls:
   stage4_max_ocr_pages_per_day: null    # Stage 4 OCR pages
 
 # ============================================
+# Crawl profile quotas (#672)
+# ============================================
+# Per-profile fairness so one crawl profile cannot starve another. A missing
+# crawl_profiles block, a null block, a null profile, or a null cap is
+# uncapped. A number is a hard ceiling. max_concurrent_jobs is how many
+# orchestrator runs may overlap. max_urls_per_day is how many URLs those runs
+# may reserve on the UTC day (the stage 1 URL limit is reserved up front; a
+# run with no URL limit cannot be admitted while this cap is set). The
+# orchestrator raises QuotaExceededError before any stage starts and
+# increments quota_exceeded_total{profile,reason}. A rejection does not take
+# a slot or spend the day's URLs, and it is not an authorization decision.
+# With no SITE_ID / TENANT_ID / REDIS_SITE_ID, the only profile listed here
+# is the one enforced. A set id selects that profile, or an uncapped profile
+# when the id is not listed.
+crawl_profiles:
+  uconn:
+    max_concurrent_jobs: null
+    max_urls_per_day: null
+
+# ============================================
 # Kafka Configuration
 # ============================================
 kafka:

@@ -15,6 +15,7 @@ renamed to the new version and date (see the release checklist).
 ## [Unreleased]
 
 ### Added
+- Crawl profiles can set `max_concurrent_jobs` and `max_urls_per_day`. The orchestrator rejects a run that would pass either cap, before any stage starts, with `QuotaExceededError`, and increments `quota_exceeded_total`. A null cap is uncapped. A rejection does not reserve a slot or spend that day's URL budget, and it is not an authorization decision (#672).
 - Control Center confirms a job start with one CSS check on Start. `prefers-reduced-motion: reduce` skips the stroke animation and shows the finished check. There is no confetti (#1022).
 - Control Center accent picker (refresh bar) stores a `#rrggbb` choice in `localStorage` (`cc.accent`) and writes `--accent`, `--accent-ink`, and `--accent-border`. Buttons use the accent fill; the active tab underline uses the accent, darkened when it would be under 3:1 on the tab bar (#1017).
 - Stage 1 to stage 2 handoff (`StageQueueHandoff`) keeps the in-memory queue at the Redis high watermark (default 10000, same gate as `QueueBacklog`). Producers block until stage 2 drains to the low watermark instead of buffering an unbounded backlog, and each key is delivered once after the consumer catches up (#703).
