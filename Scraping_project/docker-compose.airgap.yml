@@ -1,0 +1,48 @@
+# Air-gapped overlay (#956).
+# Merge onto docker-compose.yml. This file does not start containers.
+# Every service sets pull_policy: never so Compose will not contact a registry.
+# Stage 4 is omitted: the ml/stage4 image installs torch and is not in the pack.
+# Built services use local tags from scripts/airgap_images.txt. They are not
+# registry names. Redis stays on REDIS_HOST / REDIS_PORT / REDIS_PASSWORD /
+# REDIS_DB. This file does not set a single Redis URL variable.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.airgap.yml \
+#     --profile core --profile monitoring up -d --pull never --no-build
+
+services:
+  scraper:
+    image: scraping-pipeline/crawler:airgap
+    pull_policy: never
+  stage1-worker:
+    image: scraping-pipeline/crawler:airgap
+    pull_policy: never
+  stage2-worker:
+    image: scraping-pipeline/crawler:airgap
+    pull_policy: never
+  stage3-worker:
+    image: scraping-pipeline/stage3:airgap
+    pull_policy: never
+  dashboard:
+    image: scraping-pipeline/crawler:airgap
+    pull_policy: never
+  redis:
+    image: redis:7-alpine
+    pull_policy: never
+  postgres:
+    image: postgres:16-alpine
+    pull_policy: never
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.62.0
+    pull_policy: never
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.15.0
+    pull_policy: never
+  prometheus:
+    image: prom/prometheus:v3.2.1
+    pull_policy: never
+  grafana:
+    image: grafana/grafana:11.6.1
+    pull_policy: never
+  kafka:
+    image: apache/kafka:3.9.1
+    pull_policy: never

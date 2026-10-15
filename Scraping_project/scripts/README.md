@@ -18,10 +18,15 @@ This directory contains scripts for managing, debugging, and resetting the scrap
 | `automated_backup.sh` | Dry-run archive of a lake directory and an optional SQL file | `make backup`. Does not run `pg_dump` or start services |
 | `restore_backup.sh` | Dry-run restore, or a `/tmp` sample round-trip | `make restore`. `ROUNDTRIP=1` checks a sample. SQL is not loaded |
 | `anomaly_scan.py` | Offline z-score of a metrics fixture | `make anomaly-scan`. Prints an Alertmanager payload and does not POST |
+| `airgap_install_pack.sh` | Checklist, `docker save`, and `docker load` for an air-gapped install | `./scripts/airgap_install_pack.sh`. Does not fetch images or start Compose (#956) |
 
 > **Destructive operations** (`complete_reset.sh`, `reset_lake.py`, `../cli.py reset`,
 > `reseed.py --clear`, `drain_lake.py` drains) follow one safety policy; see
 > [Destructive operations: safety policy](#destructive-operations-safety-policy).
+
+## Air-gapped install (#956)
+
+`./scripts/airgap_install_pack.sh` prints the checklist and does not call Docker. `bundle --out` saves images that are already local (`docker save` only). `load --tar` imports that tar. Neither command fetches images or starts Compose. The image list is `scripts/airgap_images.txt`. The Compose overlay is `docker-compose.airgap.yml` (`pull_policy: never`). Stage 4 is excluded. See [the guide](../docs/guides/AIRGAP_INSTALL.md).
 
 ## Backup and restore (#300)
 

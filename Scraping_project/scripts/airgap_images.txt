@@ -1,0 +1,30 @@
+# Image manifest for the offline install pack (#956).
+# The script prints this list and will not fetch anything that is missing.
+# Blank lines and comments are ignored. Section markers are exact.
+
+# section: required
+# Third-party images pinned on the core and monitoring profiles
+# (docker-compose.yml). Stage 4 is not listed: that target installs torch.
+redis:7-alpine
+postgres:16-alpine
+oliver006/redis_exporter:v1.62.0
+prometheuscommunity/postgres-exporter:v0.15.0
+prom/prometheus:v3.2.1
+grafana/grafana:11.6.1
+# Local tags built on the connected host. Not registry names.
+scraping-pipeline/crawler:airgap
+scraping-pipeline/stage3:airgap
+
+# section: optional
+# Streaming profile, observability overlay, release extras, and Dockerfile
+# bases. `bundle --extras` saves these too. The default pack does not.
+apache/kafka:3.9.1
+grafana/loki:2.9.3
+jaegertracing/all-in-one:1.52
+otel/opentelemetry-collector:0.91.0
+prom/statsd-exporter:v0.28.0
+python:3.11-slim
+debian:bookworm-slim
+rust:1-slim-bookworm
+scraping-pipeline/metrics:airgap
+scraping-pipeline/kafka-delta-ingest:airgap

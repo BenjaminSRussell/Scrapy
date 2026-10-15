@@ -10,5 +10,6 @@ These guides cover the current Delta Lake pipeline. The old SQLite storage is go
 | [Monitoring](MONITORING.md) | Grafana dashboards, Prometheus metrics and alerts, logs, the Delta transaction log |
 | [Pipeline SLOs](PIPELINE_SLOS.md) | Stage 2 success, Redis queue depth, and Kafka lag targets, with the query, alert, and panel for each (#179) |
 | [Data usage](DATA_USAGE.md) | Querying the Delta tables from Python and exporting to CSV, JSON lines or Parquet |
+| [Air-gapped install](AIRGAP_INSTALL.md) | Image bundle steps, the script checklist, and a Compose path that does not contact a registry (#956) |
 
 Run every command from `Scraping_project/`.

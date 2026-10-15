@@ -701,6 +701,10 @@ python start.py
 
 Same as Quick Start: profiles `core` and `monitoring`. See [COMPOSE.md](COMPOSE.md) and [docs/guides/RUNNING.md](docs/guides/RUNNING.md). A bare `docker compose up -d` starts no services.
 
+### Air-gapped install
+
+A host that cannot reach a registry uses [docs/guides/AIRGAP_INSTALL.md](docs/guides/AIRGAP_INSTALL.md). Save images on a connected machine, carry the tar, and load it. `docker-compose.airgap.yml` sets `pull_policy: never`. Stage 4 is not in the pack.
+
 ### Observability
 
 `docker-compose.observability.yml` is two things. A bare `up` starts the packaged Prometheus, Grafana, and StatsD exporter (loopback `9095`, `3001`, `9102`/`9125`) with the lag / Redis depth / crawl rate / Delta commits dashboard. Loki, Jaeger, and the OpenTelemetry collector stay on the `observability` profile and still overlay `docker-compose.yml` (same `scraper-network`). There is no separate production compose file.
