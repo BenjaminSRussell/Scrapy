@@ -16,6 +16,44 @@ test('formatNumber thresholds', () => {
     assert.strictEqual(formatNumber(2500000), '2.5M');
 });
 
+test('formatNumber and formatTime share an explicit locale and never print NaN or Invalid (#960)', () => {
+    const { formatTime, formatRate, formatUptime, formatRelative, formatHistoryStamp, formatCompression, UNIT_STRINGS } = require('../format-utils.js');
+    const loc = 'de-DE';
+    const coef = (n, div) => (n / div).toLocaleString(loc, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+    assert.strictEqual(formatNumber(1500, loc), coef(1500, 1000) + 'K');
+    assert.strictEqual(formatNumber(2500000, loc), coef(2500000, 1000000) + 'M');
+    assert.strictEqual(formatNumber(999, loc), (999).toLocaleString(loc));
+    for (const v of [undefined, NaN, Infinity, 'nope']) {
+        assert.strictEqual(formatNumber(v), '\u2014');
+        assert.strictEqual(formatRate(v, 'urlsPerMin'), '\u2014');
+    }
+    assert.strictEqual(formatRate(0, 'perMin'), '0.0/min');
+    assert.strictEqual(formatRate(12, 'urlsPerMin'), '12.0 URLs/min');
+    assert.strictEqual(formatRate(1.5, 'pagesPerMin', loc), (1.5).toLocaleString(loc, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + ' ' + UNIT_STRINGS.pagesPerMin);
+    assert.strictEqual(formatCompression(0), '0x');
+    assert.strictEqual(formatCompression(0.5), '2x');
+    assert.strictEqual(formatUptime(0), '0s');
+    assert.strictEqual(formatUptime(65 * 1000), '1m 5s');
+    assert.strictEqual(formatUptime(3700 * 1000), '1h 1m');
+    assert.strictEqual(formatUptime(-1), '\u2014');
+    const now = 1_700_000_000_000;
+    assert.strictEqual(formatRelative(null, now), 'never');
+    assert.strictEqual(formatRelative(now - 5000, now), '5s ago');
+    assert.strictEqual(formatRelative(now - 120000, now), '2m ago');
+    assert.strictEqual(formatRelative('nope', now), 'never');
+    const bad = formatTime(new Date(NaN));
+    assert.strictEqual(bad, '\u2014');
+    assert.ok(!/Invalid|NaN/.test(bad));
+    const noon = new Date(2020, 0, 2, 15, 4, 5);
+    const nextDay = new Date(2020, 0, 3, 1, 2, 3);
+    const first = formatHistoryStamp(noon, null, 'en-US');
+    assert.strictEqual(first.dayKey, '2020-0-2');
+    assert.ok(!first.label.includes('/'));
+    const rolled = formatHistoryStamp(nextDay, first.dayKey, 'en-US');
+    assert.ok(rolled.label.startsWith('01/03 ') || rolled.label.includes('01/03'));
+    assert.ok(!/Invalid|NaN/.test(rolled.label + formatTime(noon, 'en-US')));
+});
+
 test('formatBytes thresholds', () => {
     assert.strictEqual(formatBytes(512), '512 B');
     assert.strictEqual(formatBytes(2048), '2.00 KB');
@@ -141,6 +179,20 @@ test('metricsUrlProblem: reports a rejected ?metrics=, silent otherwise', () => 
     assert.match(msg, /only http\(s\)/);
     assert.match(msg, /javascript:alert\(1\)/);
     assert.match(metricsUrlProblem({ search: '?metrics=' }), /Ignored/);
+});
+
+test('app.js clocks and rates go through format-utils, not toLocaleString (#960)', () => {
+    const fs = require('node:fs');
+    const path = require('node:path');
+    const app = fs.readFileSync(path.join(__dirname, '..', 'app.js'), 'utf8');
+    const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+    assert.ok(!/toLocale(?:Time|Date)?String/.test(app));
+    assert.match(app, /formatTime\(/);
+    assert.match(app, /formatRate\(/);
+    assert.match(app, /formatHistoryStamp\(/);
+    assert.ok(!/>\s*Just now\s*</.test(html));
+    assert.match(html, /0\.0\/min/);
+    assert.match(html, /0\.0 URLs\/min/);
 });
 
 test('queueDepthRows: Redis down is an error, not zeros (#401)', () => {

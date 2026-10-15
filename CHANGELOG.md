@@ -58,6 +58,7 @@ renamed to the new version and date (see the release checklist).
 - Repository policies: SECURITY.md, CODE_OF_CONDUCT.md, this changelog, ADRs, devcontainer (#669 #746 #747 #715 #694).
 
 ### Changed
+- Control Center numbers and clocks share one locale formatter. Compact counts, rates, byte sizes, uptime, and relative times follow the browser language (`en-US` in tests). Rate unit words live in one map. Non-finite values show an em dash instead of `NaN` or `Invalid Date` (#960).
 - Control Center tabs, health tiles, and the title mark use inline SVG icons (`aria-hidden`) instead of emoji glyphs (#1049).
 - Helm Stage 1–4 sizing: dev stays `values.yaml`, `values-small.yaml` is one replica with HPA off, and `values-prod.yaml` raises worker memory limits so a Kafka lag spike does not OOM the pod. `helm template` fails when an enabled workload omits cpu and memory requests or limits. The delta-ingestor `wait-for-kafka` init container sets both. The sizes are in DEPLOYMENT.md (#1104).
 - Production Helm no longer runs the single-replica Redis. `redis.external.host` and `redis.external.port` become `REDIS_HOST` and `REDIS_PORT` (password stays `REDIS_PASSWORD`; do not set `REDIS_URL`). AOF can recover data after the node returns, and it does not keep the queue available during node loss (#216).

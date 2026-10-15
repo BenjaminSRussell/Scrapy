@@ -131,13 +131,13 @@
         const parseMs = Math.round((Number(d.parseMs) || 0) * 10) / 10;
         if (d.flooded) {
             const bits = [];
-            if (d.overSeries) bits.push('series count ' + series + ' exceeds ' + lim.maxSeries);
-            if (d.overParse) bits.push('parse time ' + parseMs + 'ms exceeds ' + lim.maxParseMs + 'ms');
+            if (d.overSeries) bits.push('series count ' + formatNumber(series, undefined, 0) + ' exceeds ' + formatNumber(lim.maxSeries, undefined, 0));
+            if (d.overParse) bits.push('parse time ' + formatNumber(parseMs, undefined, Number.isInteger(parseMs) ? 0 : 1) + 'ms exceeds ' + formatNumber(lim.maxParseMs, undefined, 0) + 'ms');
             const why = bits.length ? bits.join(' and ') : 'the scrape is over the flood threshold';
-            return 'Metrics flood: charts paused. Showing summary counters only because ' + why + '. Charts return after ' + lim.recoverIntervals + ' calm intervals.';
+            return 'Metrics flood: charts paused. Showing summary counters only because ' + why + '. Charts return after ' + formatNumber(lim.recoverIntervals, undefined, 0) + ' calm intervals.';
         }
         const left = Math.max(1, lim.recoverIntervals - (Number(d.calm) || 0));
-        return 'Metrics flood: charts still paused. Showing summary counters only. Last sample is under the limit (' + series + ' series, ' + parseMs + 'ms). Charts return after ' + left + ' more calm interval' + (left === 1 ? '' : 's') + '.';
+        return 'Metrics flood: charts still paused. Showing summary counters only. Last sample is under the limit (' + formatNumber(series, undefined, 0) + ' series, ' + formatNumber(parseMs, undefined, Number.isInteger(parseMs) ? 0 : 1) + 'ms). Charts return after ' + formatNumber(left, undefined, 0) + ' more calm interval' + (left === 1 ? '' : 's') + '.';
     }
     // #141: every throughput figure is items per MINUTE, computed from the real
     // time between samples (refreshes can be paused or late). Counter resets
@@ -208,26 +208,174 @@
         if (last < s.length) out.push({ text: s.slice(last) });
         return out;
     }
-    function formatNumber(num) {
-        num = Number(num) || 0;
-        if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
-        if (num >= 1000) return (num / 1000).toFixed(1) + 'K';
-        return Math.round(num).toLocaleString('en-US');
+    // #960: one locale for every user-visible number and clock. An explicit
+    // argument wins. The browser page follows navigator.language so a non-en-US
+    // operator does not see en-US counts next to a local clock. Node tests and
+    // the vm sandboxes have no document, so they stay en-US.
+    const DEFAULT_LOCALE = 'en-US';
+    // Unit words live here so a later translation can replace them without
+    // hunting string literals. The words stay English until that pass.
+    const UNIT_STRINGS = {
+        perMin: '/min',
+        urlsPerMin: 'URLs/min',
+        pagesPerMin: 'pages/min',
+        summariesPerMin: 'summaries/min',
+        docsPerMin: 'docs/min',
+        compression: 'x',
+        byte: 'B',
+        kilobyte: 'KB',
+        megabyte: 'MB',
+        gigabyte: 'GB',
+        agoSecond: 's ago',
+        agoMinute: 'm ago',
+        agoHour: 'h ago',
+        never: 'never',
+        neverClock: 'Never',
+        uptimeHour: 'h',
+        uptimeMinute: 'm',
+        uptimeSecond: 's',
+        thousand: 'K',
+        million: 'M',
+    };
+    function dashboardLocale(explicit) {
+        if (explicit != null && String(explicit).trim() !== '') return String(explicit);
+        try {
+            const inBrowser = typeof window !== 'undefined' && window.document;
+            const language = inBrowser && typeof navigator !== 'undefined' && navigator.language;
+            if (language) return String(language);
+        } catch (_) { /* keep the default */ }
+        return DEFAULT_LOCALE;
     }
-    function formatBytes(bytes) {
-        bytes = Number(bytes) || 0;
-        if (bytes >= 1073741824) return (bytes / 1073741824).toFixed(2) + ' GB';
-        if (bytes >= 1048576) return (bytes / 1048576).toFixed(2) + ' MB';
-        if (bytes >= 1024) return (bytes / 1024).toFixed(2) + ' KB';
-        return bytes + ' B';
+    function formatDecimal(num, digits, locale) {
+        const loc = dashboardLocale(locale);
+        const opts = {};
+        if (digits != null) {
+            opts.minimumFractionDigits = digits;
+            opts.maximumFractionDigits = digits;
+        }
+        try {
+            return num.toLocaleString(loc, opts);
+        } catch (_) {
+            return num.toLocaleString(DEFAULT_LOCALE, opts);
+        }
+    }
+    // Compact counts (K/M) when `digits` is omitted, so existing callers keep
+    // 1.5K / 2.5M. Pass digits to force a fixed fraction and skip the suffix
+    // (rates, exact table cells). Non-finite values are an em dash, never "NaN".
+    function formatNumber(num, locale, digits) {
+        const n = Number(num);
+        if (!Number.isFinite(n)) return '\u2014';
+        if (digits == null) {
+            if (n >= 1000000) return formatDecimal(n / 1000000, 1, locale) + UNIT_STRINGS.million;
+            if (n >= 1000) return formatDecimal(n / 1000, 1, locale) + UNIT_STRINGS.thousand;
+            return formatDecimal(Math.round(n), null, locale);
+        }
+        const places = Math.floor(Number(digits));
+        return formatDecimal(n, Number.isFinite(places) && places >= 0 ? places : 0, locale);
+    }
+    function formatBytes(bytes, locale) {
+        const n = Number(bytes);
+        if (!Number.isFinite(n)) return '\u2014';
+        if (n >= 1073741824) return formatDecimal(n / 1073741824, 2, locale) + ' ' + UNIT_STRINGS.gigabyte;
+        if (n >= 1048576) return formatDecimal(n / 1048576, 2, locale) + ' ' + UNIT_STRINGS.megabyte;
+        if (n >= 1024) return formatDecimal(n / 1024, 2, locale) + ' ' + UNIT_STRINGS.kilobyte;
+        return formatNumber(n, locale, 0) + ' ' + UNIT_STRINGS.byte;
+    }
+    // Accepts a Date (including a Date from another realm) or anything Date
+    // can parse. Invalid input is an em dash, never "Invalid Date".
+    function asDate(value) {
+        if (value == null || value === '') return null;
+        if (typeof value === 'object' && typeof value.getTime === 'function') {
+            const t = value.getTime();
+            return Number.isFinite(t) ? new Date(t) : null;
+        }
+        const d = new Date(value);
+        return Number.isFinite(d.getTime()) ? d : null;
+    }
+    function formatTime(value, locale, options) {
+        const d = asDate(value);
+        if (!d) return '\u2014';
+        const loc = dashboardLocale(locale);
+        try {
+            return d.toLocaleTimeString(loc, options);
+        } catch (_) {
+            try { return d.toLocaleTimeString(DEFAULT_LOCALE, options); }
+            catch (__) { return '\u2014'; }
+        }
+    }
+    function formatDate(value, locale, options) {
+        const d = asDate(value);
+        if (!d) return '\u2014';
+        const loc = dashboardLocale(locale);
+        try {
+            return d.toLocaleDateString(loc, options);
+        } catch (_) {
+            try { return d.toLocaleDateString(DEFAULT_LOCALE, options); }
+            catch (__) { return '\u2014'; }
+        }
     }
     // #364: a missing or zero epoch rendered "Invalid Date" (or 1970). Show a
     // dash instead so "never updated" reads as that, not as a bug.
-    function formatEpochTime(seconds) {
+    function formatEpochTime(seconds, locale) {
         const n = Number(seconds);
         if (!Number.isFinite(n) || n <= 0) return '\u2014';
-        const d = new Date(n * 1000);
-        return isNaN(d.getTime()) ? '\u2014' : d.toLocaleTimeString();
+        return formatTime(new Date(n * 1000), locale);
+    }
+    // `unitKey` is a UNIT_STRINGS name. A leading slash stays glued ("1.0/min");
+    // other units get a space ("1.0 URLs/min"). Non-finite rates are a dash.
+    function formatRate(value, unitKey, locale) {
+        const n = Number(value);
+        if (!Number.isFinite(n)) return '\u2014';
+        const unit = Object.prototype.hasOwnProperty.call(UNIT_STRINGS, unitKey) ? UNIT_STRINGS[unitKey] : '';
+        const body = formatNumber(n, locale, 1);
+        if (!unit) return body;
+        return unit.charAt(0) === '/' ? body + unit : body + ' ' + unit;
+    }
+    // Stage 4 shows (1/ratio)x. A missing or non-positive ratio is 0x, not NaN.
+    function formatCompression(ratio, locale) {
+        const n = Number(ratio);
+        if (!Number.isFinite(n) || n <= 0) return formatNumber(0, locale, 0) + UNIT_STRINGS.compression;
+        const shown = 1 / n;
+        if (!Number.isFinite(shown)) return '\u2014';
+        return formatNumber(shown, locale, 0) + UNIT_STRINGS.compression;
+    }
+    function formatUptime(elapsedMs, locale) {
+        const ms = Number(elapsedMs);
+        if (!Number.isFinite(ms) || ms < 0) return '\u2014';
+        const seconds = Math.floor(ms / 1000);
+        const hours = Math.floor(seconds / 3600);
+        const minutes = Math.floor((seconds % 3600) / 60);
+        const secs = seconds % 60;
+        const u = UNIT_STRINGS;
+        const part = (v) => formatNumber(v, locale, 0);
+        if (hours > 0) return part(hours) + u.uptimeHour + ' ' + part(minutes) + u.uptimeMinute;
+        if (minutes > 0) return part(minutes) + u.uptimeMinute + ' ' + part(secs) + u.uptimeSecond;
+        return part(secs) + u.uptimeSecond;
+    }
+    function formatRelative(ts, now, locale) {
+        if (ts == null || ts === '') return UNIT_STRINGS.never;
+        const then = Number(ts);
+        const clock = now == null ? Date.now() : Number(now);
+        if (!Number.isFinite(then) || !Number.isFinite(clock)) return UNIT_STRINGS.never;
+        const sec = Math.max(0, Math.floor((clock - then) / 1000));
+        const part = (v) => formatNumber(v, locale, 0);
+        if (sec < 60) return part(sec) + UNIT_STRINGS.agoSecond;
+        if (sec < 3600) return part(Math.floor(sec / 60)) + UNIT_STRINGS.agoMinute;
+        return part(Math.floor(sec / 3600)) + UNIT_STRINGS.agoHour;
+    }
+    // Chart axis label. Include a short date only when the day key changes
+    // (midnight). `previousDayKey` null means this is the first sample.
+    function formatHistoryStamp(date, previousDayKey, locale) {
+        const d = asDate(date);
+        if (!d) return { label: '\u2014', dayKey: previousDayKey == null ? null : previousDayKey };
+        const dayKey = d.getFullYear() + '-' + d.getMonth() + '-' + d.getDate();
+        const time = formatTime(d, locale);
+        if (time === '\u2014') return { label: '\u2014', dayKey: previousDayKey == null ? null : previousDayKey };
+        if (previousDayKey != null && previousDayKey !== dayKey) {
+            const day = formatDate(d, locale, { month: '2-digit', day: '2-digit' });
+            if (day !== '\u2014') return { label: day + ' ' + time, dayKey: dayKey };
+        }
+        return { label: time, dayKey: dayKey };
     }
     // #389: count distinct values of `label` across series whose name contains
     // `nameFragment` (e.g. tables reporting delta_lake_records). null when no
@@ -399,7 +547,7 @@
             return { key: 'online', title: 'ONLINE', glyph: '\u25CF', top: '\u25CF Online' };
         }
         const n = Math.max(0, Math.floor(Number(failures) || 0));
-        const suffix = n > 1 ? ' (' + n + ' failed)' : '';
+        const suffix = n > 1 ? ' (' + formatNumber(n, undefined, 0) + ' failed)' : '';
         if (kind === 'never') {
             return { key: 'never', title: 'ERROR' + suffix, glyph: '\u26A0', top: '\u25CB Not connected' };
         }
@@ -461,7 +609,8 @@
                 .catch(err => {
                     let e = err;
                     if (req.timedOut) {
-                        e = new Error(`Timed out after ${Math.round(timeoutMs / 100) / 10}s`);
+                        const secs = Math.round(timeoutMs / 100) / 10;
+                        e = new Error('Timed out after ' + formatNumber(secs, undefined, Number.isInteger(secs) ? 0 : 1) + 's');
                         e.timedOut = true;
                     } else if (req.superseded) {
                         e = new Error('Superseded by a newer request');
@@ -527,7 +676,8 @@
     function metricsFailureActivity(error, timeoutMs) {
         if (error && error.timedOut) {
             const secs = Math.round((Number(timeoutMs) || 0) / 100) / 10;
-            return { type: 'timeout', message: `Metrics request timed out after ${secs}s and was aborted` };
+            const shown = formatNumber(secs, undefined, Number.isInteger(secs) ? 0 : 1);
+            return { type: 'timeout', message: `Metrics request timed out after ${shown}s and was aborted` };
         }
         return { type: 'danger', message: `Failed to fetch metrics: ${error && error.message ? error.message : String(error)}` };
     }
@@ -584,13 +734,15 @@
         const n = Math.max(0, Math.floor(Number(shown) || 0));
         const t = Math.max(0, Math.floor(Number(total) || 0));
         if (n === 0) return `No activity matches "${q}".`;
-        return `Showing ${n} of ${t}`;
+        return `Showing ${formatNumber(n, undefined, 0)} of ${formatNumber(t, undefined, 0)}`;
     }
     // #503: on-screen hint text for the digit shortcuts.
     function shortcutHintText(tabCount) {
         const n = Math.min(Math.max(0, Number(tabCount) || 0), 9);
         if (n === 0) return 'Shortcut: R refresh';
-        return `Shortcuts: ${n === 1 ? '1' : '1\u2013' + n} switch tabs \u00b7 R refresh`;
+        const shown = formatNumber(n, undefined, 0);
+        const one = formatNumber(1, undefined, 0);
+        return `Shortcuts: ${n === 1 ? shown : one + '\u2013' + shown} switch tabs \u00b7 R refresh`;
     }
     // #153: WAI-ARIA tabs keyboard model. Index of the tab to focus/select for
     // `key` from `index` among `count` tabs (wrapping), or null if not a tab key.
@@ -930,11 +1082,12 @@
         if (windowed.length === 0) caption = 'No polls yet';
         else {
             const newest = windowed[windowed.length - 1] ? 'newest succeeded' : 'newest failed';
-            caption = `${okCount}/${windowed.length} succeeded, ${failCount} failed \u00b7 ${newest}`;
+            caption = `${formatNumber(okCount, undefined, 0)}/${formatNumber(windowed.length, undefined, 0)} succeeded, ${formatNumber(failCount, undefined, 0)} failed \u00b7 ${newest}`;
         }
+        const limitLabel = formatNumber(n, undefined, 0);
         const label = windowed.length === 0
-            ? `Metrics poll history, last ${n} outcomes. No polls yet. Oldest on the left.`
-            : `Metrics poll history, last ${n} outcomes. ${caption}. Oldest on the left.`;
+            ? `Metrics poll history, last ${limitLabel} outcomes. No polls yet. Oldest on the left.`
+            : `Metrics poll history, last ${limitLabel} outcomes. ${caption}. Oldest on the left.`;
         return { slots, ok: okCount, fail: failCount, total: windowed.length, limit: n, label, caption };
     }
 
@@ -1018,7 +1171,7 @@
         if (n === 1) {
             return 'Restored 1 earlier entry from this tab. It is from before the reload and may be stale.';
         }
-        return `Restored ${n} earlier entries from this tab. They are from before the reload and may be stale.`;
+        return `Restored ${formatNumber(n, undefined, 0)} earlier entries from this tab. They are from before the reload and may be stale.`;
     }
     function restoreActivityLog(raw, cap) {
         let parsed = null;
@@ -1216,5 +1369,5 @@
         };
     }
 
-    return { tabKeyTarget, staleState, queueDepthRows, metricsFailureActivity, shortcutHintText, parseMetrics, metricSeriesCount, METRICS_FLOOD_DEFAULTS, metricsFloodLimits, advanceMetricsFlood, metricsFloodBannerText, ratePerMinute, resolveMetricsUrl, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler, stageActivity, stageDrilldown, stageDrilldownKey, doughnutLegendLayout, connectionState, documentTitle, createActivityAnnouncer, metricsUrlProblem, splitLinks, createMetricsFetcher, REFRESH_INTERVAL_CHOICES, parseRefreshInterval, shortcutAction, pickInitialTab, METRIC_UI_MAP, renderMetricNameMap, parseDangerSoundEnabled, dangerSoundDecision, HEALTH_HISTORY_LIMIT, pushPollOutcome, healthHistoryView, COMPARISON_BASELINE_ROLE, PREV_HOUR_AVG_KEYS, readPrevHourAverage, comparisonBaselineSeries, comparisonNote, ACTIVITY_LOG_CAP, capActivityLog, activityStaleNote, restoreActivityLog, topScrapeTargets, SCRAPE_TARGET_EMPTY, ACTIVITY_LEVELS, activityLevelCounts, filterActivityItems, filterActivityMessages, activityFilterStatus, toggleActivityLevel, HISTORY_MAX_POINTS, assertHistoryBound, boundHistoryBuffer, pushHistorySample, enforceHistoryCap, grafanaHomeUrl, jobStartedPresentation, DEFAULT_ACCENT, parseAccentColor, accentInk, accentBorder, accentCssVars };
+    return { tabKeyTarget, staleState, queueDepthRows, metricsFailureActivity, shortcutHintText, parseMetrics, metricSeriesCount, METRICS_FLOOD_DEFAULTS, metricsFloodLimits, advanceMetricsFlood, metricsFloodBannerText, ratePerMinute, resolveMetricsUrl, dashboardLocale, UNIT_STRINGS, formatNumber, formatBytes, formatTime, formatDate, formatEpochTime, formatRate, formatCompression, formatUptime, formatRelative, formatHistoryStamp, countLabelValues, createRefreshScheduler, stageActivity, stageDrilldown, stageDrilldownKey, doughnutLegendLayout, connectionState, documentTitle, createActivityAnnouncer, metricsUrlProblem, splitLinks, createMetricsFetcher, REFRESH_INTERVAL_CHOICES, parseRefreshInterval, shortcutAction, pickInitialTab, METRIC_UI_MAP, renderMetricNameMap, parseDangerSoundEnabled, dangerSoundDecision, HEALTH_HISTORY_LIMIT, pushPollOutcome, healthHistoryView, COMPARISON_BASELINE_ROLE, PREV_HOUR_AVG_KEYS, readPrevHourAverage, comparisonBaselineSeries, comparisonNote, ACTIVITY_LOG_CAP, capActivityLog, activityStaleNote, restoreActivityLog, topScrapeTargets, SCRAPE_TARGET_EMPTY, ACTIVITY_LEVELS, activityLevelCounts, filterActivityItems, filterActivityMessages, activityFilterStatus, toggleActivityLevel, HISTORY_MAX_POINTS, assertHistoryBound, boundHistoryBuffer, pushHistorySample, enforceHistoryCap, grafanaHomeUrl, jobStartedPresentation, DEFAULT_ACCENT, parseAccentColor, accentInk, accentBorder, accentCssVars };
 });
