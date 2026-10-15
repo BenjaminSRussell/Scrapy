@@ -871,3 +871,51 @@ button.row { width: 100%; border: 0; background: none; text-align: left; cursor:
 .empty-chart { cursor: default; }
 .empty-chart p { padding: 44px 8px; text-align: center; color: var(--label-2); font-size: var(--fs-subhead); }
 .card > .segmented { max-width: 420px; }
+
+/* ---------- bars ---------- */
+.bars { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.bar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: "label value" "track track";
+  gap: 5px 12px;
+  font-size: var(--fs-subhead);
+}
+.bar-label { grid-area: label; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bar-value { grid-area: value; font-weight: 600; }
+.bar-track { grid-area: track; height: 8px; border-radius: 4px; background: var(--fill); overflow: hidden; }
+.bar-fill { display: block; height: 100%; border-radius: 4px; background: var(--t); min-width: 4px; }
+
+/* ---------- URL journey ---------- */
+.url-path { font-family: var(--font-mono); font-size: var(--fs-footnote); letter-spacing: 0; }
+.actions { align-items: center; margin: 0 0 6px; }
+.toast { font-size: var(--fs-footnote); color: var(--label-2); }
+
+.timeline { list-style: none; margin: 0; padding: 4px 0; }
+.step { position: relative; display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 12px; padding-bottom: 20px; }
+.step:last-child { padding-bottom: 2px; }
+.step::before {
+  content: "";
+  position: absolute;
+  left: 13px;
+  top: 30px;
+  bottom: 2px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--fill-2);
+}
+.step:last-child::before { display: none; }
+.step.done::before { background: color-mix(in srgb, var(--t) 45%, transparent); }
+.step-marker { width: 28px; height: 28px; display: grid; place-items: center; color: var(--label-3); }
+.step-marker svg { width: 26px; height: 26px; }
+.step.done .step-marker { color: var(--t); }
+.step-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; min-height: 28px; padding-top: 3px; }
+.step-title { font-weight: 600; }
+.step:not(.done) .step-title { color: var(--label-2); font-weight: 500; }
+.step-head time, .step-status { font-size: var(--fs-footnote); color: var(--label-2); white-space: nowrap; }
+.fields { margin: 6px 0 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 118px), 1fr)); gap: 8px 16px; }
+.field { min-width: 0; }
+.field.block { grid-column: 1 / -1; }
+.field dt { font-size: var(--fs-caption); color: var(--label-2); }
+.field dd { margin: 1px 0 0; font-size: var(--fs-subhead); overflow-wrap: anywhere; }
+.field.block dd { line-height: 1.38; }

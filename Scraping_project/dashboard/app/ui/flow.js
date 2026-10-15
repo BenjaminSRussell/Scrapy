@@ -2,7 +2,8 @@
 import { html, useEffect, useLayoutEffect, useRef, useState } from '../lib.js';
 import { STAGES, STAGE_BY_ID } from '../meta.js';
 import { edgeFor } from '../state.js';
-import { compact, full, rate, relativeTime, freshnessLabel } from '../format.js';
+import { compact } from '../format.js';
+import { stageCard, stageLabel } from '../describe.js';
 import { format, push } from '../router.js';
 import { edgePath } from '../layout/geometry.js';
 import { createBudget } from '../layout/budget.js';
@@ -14,26 +15,6 @@ const SVG_NS = 'http://www.w3.org/2000/svg';
 const EDGES = [['seeds', 'discovery'], ['discovery', 'analysis'], ['analysis', 'summaries'], ['analysis', 'large_docs']];
 const TRAVEL_MS = 1150;
 const ease = (t) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2);
-
-function nodeText(s, now) {
-  if (!s || s.status === 'missing') return { count: '—', sub: 'No data yet', tone: 'muted' };
-  if (s.status === 'error') return { count: '—', sub: 'Can’t read table', tone: 'bad' };
-  const active = s.freshness === 'active';
-  const sub = active
-    ? rate(s.rate_per_min)
-    : `${freshnessLabel(s.freshness)} · ${relativeTime(s.last_write, now)}`;
-  return { count: compact(s.count), sub, tone: active ? 'good' : 'muted' };
-}
-
-function nodeLabel(meta, s, now) {
-  if (!s || s.status === 'missing') return `${meta.title}: no data yet. Open details.`;
-  if (s.status === 'error') return `${meta.title}: the table can’t be read. Open details.`;
-  const parts = [`${meta.title}: ${full(s.count)} URLs`];
-  if (s.freshness === 'active') parts.push(`${rate(s.rate_per_min).replace('/min', ' per minute')}`);
-  else parts.push(`${freshnessLabel(s.freshness)}, last write ${relativeTime(s.last_write, now)}`);
-  if (s.errors) parts.push(`${full(s.errors)} errors`);
-  return `${parts.join(', ')}. Open details.`;
-}
 
 export function FlowDiagram({ stages, store, route, now }) {
   const wrap = useRef(null);
@@ -137,10 +118,10 @@ export function FlowDiagram({ stages, store, route, now }) {
     </svg>
     ${STAGES.map((meta) => {
       const s = byId[meta.id];
-      const t = nodeText(s, now);
+      const t = stageCard(s, now);
       return html`<a class=${`flow-node tint-${meta.tint}`} data-stage=${meta.id}
           href=${format(push(route, { kind: 'stage', value: meta.id }))}
-          ref=${(el) => { nodes.current[meta.id] = el; }} aria-label=${nodeLabel(meta, s, now)}>
+          ref=${(el) => { nodes.current[meta.id] = el; }} aria-label=${stageLabel(meta, s, now)}>
         <span class="flow-head"><${StageTile} stageId=${meta.id} /><span class="flow-title">${meta.title}</span>${icons.chevronRight({ cls: 'chev' })}</span>
         <span class="flow-count num">${t.count}</span>
         <span class=${`flow-sub ${t.tone}`}>${t.sub}${s && s.errors ? html` · <span class="bad">${compact(s.errors)} errors</span>` : ''}</span>
