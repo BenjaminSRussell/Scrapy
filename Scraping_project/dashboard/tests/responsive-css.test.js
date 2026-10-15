@@ -1,5 +1,5 @@
 // Run: node --test Scraping_project/dashboard/tests/
-// Static guards for responsive layout regressions in index.html (#954, #957).
+// Static guards for responsive layout regressions in index.html (#954, #957, #981).
 // Verified in headless Chrome at 360/375/768/1280px when written; these checks
 // keep the CSS from drifting back.
 const test = require('node:test');
@@ -35,4 +35,72 @@ test('stage-pipeline connector hidden once cards wrap (#957)', () => {
     assert.match(body, /display:\s*none/);
     // Desktop (4 columns) still draws it.
     assert.match(rule('.stage-pipeline::before'), /content:/);
+});
+
+// Preferred size of `clamp(min, a + b*vw, max)` at a viewport width, in px.
+// Lengths are rem or a bare 0. Root font is 16px, matching the dashboard.
+function clampPx(clampValue, viewportPx, rootPx = 16) {
+    const m = clampValue.match(/clamp\(\s*([^,]+)\s*,\s*([^,]+)\s*,\s*([^)]+)\s*\)/);
+    assert.ok(m, `clamp() value, got: ${clampValue}`);
+    const length = (token) => {
+        const t = token.trim();
+        if (t.endsWith('rem')) return parseFloat(t) * rootPx;
+        if (t.endsWith('px')) return parseFloat(t);
+        if (t === '0') return 0;
+        throw new Error(`unsupported length ${t}`);
+    };
+    const preferred = m[2].split('+').reduce((sum, part) => {
+        const t = part.trim();
+        const vw = t.match(/^([\d.]+)vw$/);
+        if (vw) return sum + (parseFloat(vw[1]) / 100) * viewportPx;
+        return sum + length(t);
+    }, 0);
+    return Math.min(length(m[3]), Math.max(length(m[1]), preferred));
+}
+
+test('title and metric values use a fluid clamp scale (#981)', () => {
+    const root = rule(':root');
+    assert.match(root, /--type-title:\s*clamp\(\s*1\.125rem\s*,/);
+    assert.match(root, /--type-metric:\s*clamp\(\s*1rem\s*,/);
+    assert.match(root, /--type-stat:\s*clamp\(\s*1rem\s*,/);
+    assert.match(root, /--type-stage-metric:\s*clamp\(\s*0\.85rem\s*,/);
+
+    const title = rule('.topbar-title h1');
+    assert.match(title, /font-size:\s*var\(--type-title\)/);
+    assert.match(title, /white-space:\s*nowrap/);
+    assert.match(rule('.metric-value'), /font-size:\s*var\(--type-metric\)/);
+    assert.match(rule('.topbar-stat-value'), /font-size:\s*var\(--type-stat\)/);
+    assert.match(rule('.stage-metric-value'), /font-size:\s*var\(--type-stage-metric\)/);
+    assert.match(rule('.health-value'), /font-size:\s*var\(--type-metric\)/);
+
+    const varValue = (name) => {
+        const m = root.match(new RegExp(`${name}:\\s*(clamp\\([^)]*\\))`));
+        assert.ok(m, name);
+        return m[1];
+    };
+    // 375px content box is 375 - 4rem of topbar padding. 1.21rem title
+    // ("Control Center" + badge) fits; the old fixed 1.75rem did not.
+    const titleAt375 = clampPx(varValue('--type-title'), 375);
+    assert.ok(titleAt375 <= 1.25 * 16, `title at 375px should be <= 1.25rem, got ${titleAt375}px`);
+    assert.ok(titleAt375 >= 1.125 * 16, `title floor is 1.125rem, got ${titleAt375}px`);
+    assert.strictEqual(clampPx(varValue('--type-title'), 1280), 1.75 * 16);
+
+    const metricAt375 = clampPx(varValue('--type-metric'), 375);
+    assert.ok(metricAt375 >= 16, `metric values stay >= 1rem, got ${metricAt375}px`);
+    assert.ok(metricAt375 <= 20, `metric values shrink on a phone, got ${metricAt375}px`);
+    assert.strictEqual(clampPx(varValue('--type-metric'), 1280), 1.25 * 16);
+
+    const statAt375 = clampPx(varValue('--type-stat'), 375);
+    assert.ok(statAt375 >= 16, `topbar stats stay >= 1rem, got ${statAt375}px`);
+    assert.strictEqual(clampPx(varValue('--type-stat'), 1600), 1.5 * 16);
+
+    const stageAt375 = clampPx(varValue('--type-stage-metric'), 375);
+    assert.ok(stageAt375 >= 0.85 * 16, `stage metrics stay >= 0.85rem, got ${stageAt375}px`);
+
+    // #155 compact row must not pin stats back to a fixed size.
+    const start = html.indexOf('@media (max-width: 1024px)');
+    const end = html.indexOf('@media', start + 1);
+    const narrow = rule('.topbar-stat-value', html.slice(start, end));
+    assert.ok(narrow, 'topbar-stat-value still tuned inside 1024px');
+    assert.ok(!/font-size:\s*1rem/.test(narrow), 'narrow stats stay on the fluid scale');
 });

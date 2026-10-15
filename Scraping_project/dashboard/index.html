@@ -30,6 +30,15 @@
             --gray-900: #111827;
             /* #340: muted text on white / gray-100 cards: 7.2:1 (was #94a3b8, 2.6:1). */
             --muted-text: #475569;
+            /* #981: fluid type. Caps are the previous fixed sizes. Floors stay
+               legible (title >= 1.125rem, metrics >= 1rem, stage metrics
+               >= 0.85rem). At 375px the title is about 1.21rem, so
+               "Control Center" plus the env badge stay on one line inside
+               the 2rem topbar padding instead of wrapping or clipping. */
+            --type-title: clamp(1.125rem, 0.95rem + 1.1vw, 1.75rem);
+            --type-metric: clamp(1rem, 0.9rem + 0.6vw, 1.25rem);
+            --type-stat: clamp(1rem, 0.85rem + 0.9vw, 1.5rem);
+            --type-stage-metric: clamp(0.85rem, 0.8rem + 0.3vw, 1rem);
         }
 
         .skip-to-main {
@@ -84,9 +93,15 @@
         }
 
         .topbar-title h1 {
-            font-size: 1.75rem;
+            font-size: var(--type-title);
             font-weight: 700;
             margin-bottom: 0.25rem;
+            line-height: 1.2;
+            /* #981: one line at 375px. Ellipsis beats a mid-word wrap. */
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 100%;
         }
 
         /* #340: solid white (no opacity) keeps >= 4.5:1 on both gradient ends
@@ -111,7 +126,7 @@
         }
 
         .topbar-stat-value {
-            font-size: 1.5rem;
+            font-size: var(--type-stat);
             font-weight: 700;
             margin-top: 0.25rem;
         }
@@ -279,7 +294,7 @@
             text-overflow: ellipsis;
             white-space: nowrap;
             max-width: 100%;
-            font-size: 1.25rem;
+            font-size: var(--type-metric);
             font-weight: 700;
             color: var(--gray-900);
         }
@@ -373,6 +388,7 @@
         }
 
         .stage-metric-value {
+            font-size: var(--type-stage-metric);
             font-weight: 700;
             color: var(--gray-900);
         }
@@ -703,7 +719,7 @@
         }
 
         .health-value {
-            font-size: 1.25rem;
+            font-size: var(--type-metric);
             font-weight: 700;
         }
 
@@ -832,7 +848,7 @@
                 gap: 0.35rem;
             }
             .topbar-stat-value {
-                font-size: 1rem;
+                /* #981: size stays on --type-stat (floor 1rem), not a fixed 1rem. */
                 margin-top: 0;
             }
         }
