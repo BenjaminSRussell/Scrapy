@@ -697,6 +697,8 @@ ingress:
 # TCP/80 and TCP/443 (scrapeExcept, not RFC1918 or link-local).
 # Break-glass: --set networkPolicy.breakGlass=true renders no NetworkPolicy.
 # profile=production refuses enabled=false unless breakGlass is true.
+# A rendered break-glass policy (annotation scraping-pipeline/break-glass=true)
+# matches only pods labeled scraping-pipeline/network-break-glass=true (#677).
 # kubectl port-forward does not go through NetworkPolicy; try it first.
 networkPolicy:
   enabled: false
@@ -714,6 +716,23 @@ networkPolicy:
     - 172.16.0.0/12
     - 192.168.0.0/16
     - 169.254.0.0/16
+  # #677: when true, scraper and stage-worker public egress is only the IPv4
+  # CIDRs in crawlProfiles[].egressCIDRs (TCP 80 and 443). When false, the
+  # coarse public rule above stays. NetworkPolicy cannot match a DNS name:
+  # allowedDomains are annotations, not selectors. Resolve every name the
+  # crawl will contact, including CDN edges, before turning this on. Empty
+  # CIDRs with profileAllowlist=true fail the render. UDP/TCP 53 to kube-dns
+  # stays a separate rule and is still required after the allowlist is on.
+  profileAllowlist: false
+  # Bundled UConn profile (config.yml stage1.allowed_domains). egressCIDRs
+  # stay empty until an operator resolves uconn.edu. Do not put a hostname
+  # here. The documentation range 203.0.113.0/24 is only in
+  # k8s/examples/networkpolicy-crawl-profile-egress.yaml.
+  crawlProfiles:
+    - name: uconn
+      allowedDomains:
+        - uconn.edu
+      egressCIDRs: []
 
 # ============================================
 # Pod Disruption Budgets

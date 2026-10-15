@@ -277,6 +277,30 @@ kubectl delete namespace scraping-pipeline
   image can install `redis-datasource` from grafana.com. The plugin is not baked
   into the image. That allow does not open RFC1918 or link-local, and it does not
   give Alertmanager receivers egress.
+- **Crawl profile egress (#677):** with `networkPolicy.enabled=true`, scrapers
+  still have the coarse public TCP 80/443 allow unless
+  `networkPolicy.profileAllowlist=true`. That flag replaces the allow with the
+  IPv4 `egressCIDRs` on `networkPolicy.crawlProfiles` (the bundled profile is
+  `uconn` / `uconn.edu`, and its CIDR list ships empty). `allowedDomains` are
+  copied onto the policy as `scraping-pipeline/profile-<name>-domains`. They
+  are not selectors. **DNS:** a NetworkPolicy cannot match a hostname. Pods
+  resolve names through the `allow-dns` rule (UDP and TCP 53 to `kube-dns` in
+  `kube-system` only). The address that comes back must sit in `egressCIDRs`
+  or the TCP connection is dropped. External resolvers such as `8.8.8.8` are
+  not allowed. AAAA answers are not covered (this chart's exceptions and
+  profile CIDRs are IPv4). CDN answers change, so a tight list goes stale.
+  `uconn.edu` in the app also matches subdomains; the CIDRs must cover every
+  address those names return, and any egress proxy in `stage1.proxy.urls`.
+  An empty CIDR list with `profileAllowlist=true` fails the render, because
+  default-deny would drop every crawl. Port 53 does not open port 80 or 443.
+  The example (documentation range `203.0.113.0/24`, TEST-NET-3, not for
+  install) is `k8s/examples/networkpolicy-crawl-profile-egress.yaml`.
+  **Break-glass annotation:** the chart renders
+  `scraping-pipeline/break-glass: "true"` on `*-break-glass-egress`. That
+  policy matches only pods labeled `scraping-pipeline/network-break-glass=true`.
+  No Deployment sets the label. Add it to one pod, then remove it.
+  `networkPolicy.breakGlass=true` is wider: it renders no policy at all.
+  `kubectl port-forward` needs neither.
 - **Secrets:** never put credentials in values committed to git; use
   `existingSecret` (Grafana) and Kubernetes Secrets. See the root `SECURITY.md`.
 
