@@ -30,6 +30,9 @@ let metricsFlood = { degraded: false, calm: 0 };
 let refreshScheduler = null;
 let charts = {};
 let comparisonEnabled = false; // #1035
+let a11yAuditOn = false; // #950
+let a11yReport = null;
+let a11yAuditToken = 0;
 let latestMetrics = {};
 let historicalData = {
     timestamps: [],
@@ -1840,6 +1843,141 @@ function setupStageDrilldown() {
     });
 }
 
+// #950: point-in-time accessibility audit. Off until toggled. axe-core is optional.
+function a11yHelpLink(url) {
+    if (typeof a11yHelpUrl === 'function') return a11yHelpUrl(url);
+    const value = String(url || '');
+    return /^https:\/\//i.test(value) && !/[\s"'<>]/.test(value) ? value : '';
+}
+
+function focusA11yTarget(selector) {
+    if (!selector || selector === 'html' || selector === 'body') return;
+    let node = null;
+    try { node = document.querySelector(selector); } catch (_) { node = null; }
+    if (!node) return;
+    if (typeof node.scrollIntoView === 'function') {
+        try { node.scrollIntoView({ block: 'nearest', inline: 'nearest' }); } catch (_) { /* ignore */ }
+    }
+    if (typeof node.focus === 'function') {
+        try { node.focus({ preventScroll: true }); } catch (_) {
+            try { node.focus(); } catch (__) { /* not focusable */ }
+        }
+    }
+}
+
+function renderA11yAudit(report) {
+    const status = document.getElementById('a11y-audit-status');
+    const list = document.getElementById('a11y-audit-list');
+    if (status) {
+        status.hidden = !report;
+        status.textContent = report && typeof a11yStatusText === 'function' ? a11yStatusText(report) : '';
+    }
+    if (!list) return;
+    list.replaceChildren();
+    const issues = report && Array.isArray(report.issues) ? report.issues : [];
+    if (!issues.length) {
+        list.hidden = true;
+        return;
+    }
+    list.hidden = false;
+    for (const issue of issues) {
+        const li = document.createElement('li');
+        li.className = 'a11y-audit-item';
+        const impact = document.createElement('span');
+        impact.className = 'a11y-audit-impact';
+        impact.textContent = `${issue.impact || 'minor'}:`;
+        const jump = document.createElement('button');
+        jump.type = 'button';
+        jump.className = 'a11y-audit-jump';
+        const where = issue.selector ? ` (${issue.selector})` : '';
+        jump.textContent = `${issue.message || issue.id || 'Issue'}${where}`;
+        jump.addEventListener('click', () => focusA11yTarget(issue.selector));
+        li.append(impact, document.createTextNode(' '), jump);
+        const help = a11yHelpLink(issue.helpUrl);
+        if (help) {
+            const link = document.createElement('a');
+            link.href = help;
+            link.target = '_blank';
+            link.rel = 'noopener noreferrer';
+            link.textContent = 'Help';
+            li.append(document.createTextNode(' '), link);
+        }
+        list.append(li);
+    }
+}
+
+async function setA11yAuditMode(on) {
+    const token = ++a11yAuditToken;
+    a11yAuditOn = !!on;
+    const btn = document.getElementById('a11y-audit-toggle');
+    const exportBtn = document.getElementById('a11y-audit-export');
+    const status = document.getElementById('a11y-audit-status');
+    if (btn) {
+        btn.setAttribute('aria-pressed', a11yAuditOn ? 'true' : 'false');
+        btn.setAttribute('aria-busy', a11yAuditOn ? 'true' : 'false');
+    }
+    if (!a11yAuditOn) {
+        if (typeof clearA11yHighlights === 'function') clearA11yHighlights(document);
+        a11yReport = null;
+        if (exportBtn) exportBtn.disabled = true;
+        renderA11yAudit(null);
+        if (btn) btn.setAttribute('aria-busy', 'false');
+        return;
+    }
+    if (typeof runA11yAudit !== 'function' || typeof highlightA11yIssues !== 'function') {
+        a11yAuditOn = false;
+        if (btn) {
+            btn.setAttribute('aria-pressed', 'false');
+            btn.setAttribute('aria-busy', 'false');
+        }
+        if (status) {
+            status.hidden = false;
+            status.textContent = 'Accessibility audit is unavailable.';
+        }
+        return;
+    }
+    if (status) {
+        status.hidden = false;
+        status.textContent = 'Scanning for accessibility issues…';
+    }
+    try {
+        let axe = null;
+        if (typeof loadOptionalAxe === 'function') axe = await loadOptionalAxe(document);
+        if (token !== a11yAuditToken || !a11yAuditOn) return;
+        const report = await runA11yAudit(document, { axe: axe || null, now: Date.now() });
+        if (token !== a11yAuditToken || !a11yAuditOn) return;
+        a11yReport = report;
+        highlightA11yIssues(document, report.issues);
+        if (exportBtn) exportBtn.disabled = false;
+        renderA11yAudit(report);
+    } catch (_) {
+        if (token !== a11yAuditToken || !a11yAuditOn) return;
+        a11yReport = null;
+        if (exportBtn) exportBtn.disabled = true;
+        if (status) {
+            status.hidden = false;
+            status.textContent = 'Accessibility audit failed.';
+        }
+    } finally {
+        if (btn && token === a11yAuditToken) btn.setAttribute('aria-busy', 'false');
+    }
+}
+
+function exportA11yReport() {
+    if (!a11yReport || typeof a11yReportJson !== 'function') return;
+    downloadBlob('a11y-audit.json', 'application/json', a11yReportJson(a11yReport));
+}
+
+function setupA11yAudit() {
+    const btn = document.getElementById('a11y-audit-toggle');
+    if (btn) btn.addEventListener('click', () => { setA11yAuditMode(!a11yAuditOn); });
+    const exportBtn = document.getElementById('a11y-audit-export');
+    if (exportBtn) {
+        exportBtn.disabled = true;
+        exportBtn.addEventListener('click', exportA11yReport);
+    }
+}
+
 function applyEnvBadge() {
     const env = (window.__CC_FEATURES__ && window.__CC_FEATURES__.env) || window.__CC_ENV__ || 'local';
     const el = document.getElementById('env-badge');
@@ -1887,6 +2025,7 @@ function initialize() {
     initializeCharts();
     ensureChartPlaceholders();
     setupComparisonToggle();
+    setupA11yAudit();
     refreshScheduler = createRefreshScheduler({ interval: REFRESH_INTERVAL, fetch: fetchAndAnnounce });
     setupIntervalControl();
     setupVisibilityPause();

@@ -49,9 +49,11 @@ DENIED_DIRS = frozenset({"tests", "__pycache__", "node_modules"})
 
 # #245: enforcing CSP. index.html has no inline <script> (feature flags live in
 # features.js); inline style attributes remain, hence style-src 'unsafe-inline'.
-# Chart.js is the only third-party script. connect-src is same-origin: metrics go
-# through /api/metrics (#400). Extra origins (e.g. a cross-origin ?metrics= URL)
-# must be allowed explicitly with CC_CONNECT_SRC.
+# Chart.js loads from jsDelivr. Accessibility audit mode (#950) may also load
+# axe-core from that host when an operator turns it on; the page still audits
+# with built-in checks if that script is blocked. connect-src is same-origin:
+# metrics go through /api/metrics (#400). Extra origins (e.g. a cross-origin
+# ?metrics= URL) must be allowed explicitly with CC_CONNECT_SRC.
 CSP_BASE = {
     "default-src": "'self'",
     "script-src": "'self' https://cdn.jsdelivr.net",

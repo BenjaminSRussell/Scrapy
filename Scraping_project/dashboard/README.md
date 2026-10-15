@@ -121,6 +121,16 @@ The metrics feed does not publish hour averages yet, so the overlay is a labeled
 | URLs/min | `stage1_urls_per_min_prev_hour_avg` |
 | Pages/min | `stage2_pages_per_min_prev_hour_avg` |
 
+## Accessibility audit (#950)
+
+The refresh-bar toggle **Accessibility audit** is off until an operator turns it on. It does not run on a timer and it does not scrape.
+
+Turning it on scans the current page once and outlines each flagged node (`.cc-a11y-hit`). Serious and critical findings use a red outline; other findings use an amber outline. The impact word is also text in the list under the bar, so the result is not colour alone. `#a11y-audit-status` (polite) announces the count. Choose a row to scroll that node into view. Turn the toggle off to clear the outlines. The scan is a snapshot: turn it off and on to run it again.
+
+**axe-core is optional.** The first scan tries to load `axe-core@4.14.0` from jsDelivr (`axe.min.js`, pinned with SRI). That host is already allowed by `script-src`. If the script is missing, blocked, or `axe.run` throws, the outline and the list still show the built-in checks (missing alt, unnamed buttons and links, unlabelled fields, empty headings, `tabindex` greater than 0, duplicate ids, focusable `aria-hidden`, untitled documents and frames). The status line says whether axe-core was included.
+
+**Export audit report** stays disabled until a scan finishes, then downloads `a11y-audit.json` (count, axe-core state, and one object per finding). Nothing is stored in `localStorage`.
+
 ## Grafana deep links (#1097)
 
 Control Center does not embed Grafana. The page is served from this origin (`:8080`) and Grafana is another origin (`:3000` for the monitoring profile, `:3001` for the observability pack), so an iframe would fight the CSP and would not be a supported embed. Open the pack in the browser instead:
@@ -192,7 +202,7 @@ Do not introduce `innerHTML` writes of unescaped data.
 
 **CSP and headers (#245).** `serve.py` sends an enforcing
 `Content-Security-Policy`: `default-src 'self'`, scripts only from this origin and
-jsDelivr (Chart.js, pinned with an SRI `integrity` hash), `connect-src 'self'`,
+jsDelivr (Chart.js on load, and axe-core only if Accessibility audit is turned on; both pinned with an SRI `integrity` hash), `connect-src 'self'`,
 `object-src 'none'`, `base-uri 'none'`, `frame-ancestors 'none'`. Inline `<script>` is
 not allowed (feature flags live in `features.js`). Inline style attributes are, via
 `style-src 'unsafe-inline'`, until they move to CSS classes. It also sends

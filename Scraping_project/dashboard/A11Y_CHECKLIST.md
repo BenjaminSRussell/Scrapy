@@ -9,6 +9,7 @@ Use for every dashboard PR:
   - Activity level chips are toggle buttons (`aria-pressed`). The count is in the button name, and a pressed chip uses a thicker border as well as colour (#1027).
 - [ ] Text contrast ≥ 4.5:1 (3:1 for large text / UI chrome)
 - [ ] Status changes announced via `role="status"` / `aria-live="polite"` (not spammy)
+  - Accessibility audit (#950) is off until the refresh-bar toggle is pressed. The count is announced in `#a11y-audit-status`. Findings are text plus an outline, not colour alone. Export downloads JSON. axe-core is optional.
   - Activity items: only the new item is spoken, via the always-present `#activity-announce` region (additions only, identical repeats at most once per 5 min). The visual feeds are `aria-live="off"` because they re-render wholesale (#962).
   - Activity search (#1028): `#activity-filter-status` (polite) announces the match count only. The log itself stays `aria-live="off"`. Clear search is a button, and Escape in the field also clears it.
 - [ ] Charts have a text alternative (data table / caption)

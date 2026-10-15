@@ -813,7 +813,8 @@
             .danger-sound-label,
             .activity-chip,
             .activity-search,
-            #clear-activity-search {
+            #clear-activity-search,
+            .a11y-audit-jump {
                 min-height: 44px;
                 min-width: 44px;
             }
@@ -842,6 +843,51 @@
         #compare-prev-hour[aria-pressed="true"] {
             background: #eff6ff;
             border-color: var(--primary-dark);
+        }
+
+        /* #950: audit outlines sit under the focus ring (focus-visible comes later). */
+        #a11y-audit-toggle[aria-pressed="true"] {
+            background: #fff7ed;
+            border-color: #b45309;
+        }
+        .cc-a11y-hit {
+            outline: 3px solid #b45309;
+            outline-offset: 2px;
+        }
+        .cc-a11y-hit[data-a11y-impact="critical"],
+        .cc-a11y-hit[data-a11y-impact="serious"] {
+            outline-color: #b91c1c;
+        }
+        .a11y-audit-status,
+        .a11y-audit-list {
+            flex-basis: 100%;
+            margin: 0;
+            font-size: 0.85rem;
+            color: var(--gray-700);
+        }
+        .a11y-audit-list {
+            padding-left: 1.25rem;
+            max-height: 12rem;
+            overflow: auto;
+        }
+        .a11y-audit-item {
+            margin: 0.2rem 0;
+        }
+        .a11y-audit-impact {
+            font-weight: 700;
+            text-transform: uppercase;
+            font-size: 0.75rem;
+        }
+        .a11y-audit-jump {
+            font: inherit;
+            color: inherit;
+            background: transparent;
+            border: 0;
+            padding: 0;
+            text-align: left;
+            cursor: pointer;
+            text-decoration: underline;
+            text-underline-offset: 2px;
         }
 
         @media (max-width: 1024px) {
@@ -1058,6 +1104,15 @@
                 background: Highlight;
                 color: HighlightText;
                 border-color: HighlightText;
+            }
+            #a11y-audit-toggle[aria-pressed="true"] {
+                forced-color-adjust: none;
+                background: Highlight;
+                color: HighlightText;
+                border-color: HighlightText;
+            }
+            .cc-a11y-hit {
+                outline: 3px solid Highlight;
             }
             .card-badge,
             .status-indicator {
@@ -1809,6 +1864,11 @@
             </label>
             <button type="button" id="compare-prev-hour" class="btn" aria-pressed="false" aria-describedby="comparison-baseline-note">Compare to previous hour</button>
             <p id="comparison-baseline-note" class="comparison-note" role="status" hidden></p>
+            <button type="button" id="a11y-audit-toggle" class="btn" aria-pressed="false" aria-describedby="a11y-audit-hint">Accessibility audit</button>
+            <button type="button" id="a11y-audit-export" class="btn" disabled aria-describedby="a11y-audit-hint">Export audit report</button>
+            <span id="a11y-audit-hint" class="visually-hidden">Highlights accessibility issues on this page. axe-core runs when it loads; otherwise built-in checks run. Export downloads a JSON report of this snapshot.</span>
+            <p id="a11y-audit-status" class="a11y-audit-status" role="status" aria-live="polite" hidden></p>
+            <ul id="a11y-audit-list" class="a11y-audit-list" aria-label="Accessibility audit results" hidden></ul>
             <button type="button" id="pause-refresh" class="btn" aria-pressed="false" aria-label="Pause auto-refresh">Pause</button>
             <span class="refresh-info" id="cc-version" title="Control Center build">v—</span>
             <button type="button" id="manual-refresh" class="btn" aria-label="Refresh metrics now">Refresh now</button>
@@ -1832,6 +1892,7 @@
 
     <script src="features.js"></script>
     <script src="format-utils.js"></script>
+    <script src="a11y-audit.js"></script>
     <script src="version.js"></script>
     <script src="app.js"></script>
 </body>
