@@ -150,6 +150,13 @@ Control Center does not embed Grafana. The page is served from this origin (`:80
 
 The same uid is provisioned on the monitoring-profile Grafana at http://localhost:3000/d/ops-lag-depth-commits. Redis depth on the System tab (`/api/queues`) is the live key length. The Grafana panel is `redis_queue_length` from StatsD. They are the same frontier, two views.
 
+## Card density (#1016)
+
+The topbar **Density** control switches `.card` and `.stage-card` between comfortable
+(default, `1.5rem` padding) and compact (30% less padding, `calc(1.5rem * 0.7)`).
+Compact sets the `compact` class on `<html>`. The choice is stored as `cc.density`
+in `localStorage` and restored on the next visit. A missing or unknown value stays comfortable.
+
 ## Connection state in the tab title (#945)
 
 The browser tab title is prefixed with the live state so a background tab still signals trouble:

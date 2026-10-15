@@ -16,6 +16,7 @@ let dangerAudioCtx = null;
 const STORE_COMPARE_KEY = 'cc.comparePrevHour'; // #1035
 const ACTIVITY_STORE_KEY = 'cc.activityLog'; // #1029 sessionStorage ring
 const STORE_ACCENT_KEY = 'cc.accent'; // #1017
+const STORE_DENSITY_KEY = 'cc.density'; // #1016
 let refreshPaused = false;
 let metricsFetcher = null;
 let metricsWasDown = false;
@@ -1610,6 +1611,33 @@ function setupDangerSound() {
     });
 }
 
+// #1016: comfortable (default) or compact. Compact is the `compact` class on <html>,
+// which cuts card padding 30%. Remembered in localStorage.
+function applyDensityMode(mode) {
+    const next = parseDensity(mode);
+    document.documentElement.classList.toggle('compact', next === 'compact');
+    const btn = document.getElementById('density-toggle');
+    if (btn) {
+        btn.setAttribute('aria-pressed', next === 'compact' ? 'true' : 'false');
+        btn.textContent = next === 'compact' ? 'Compact' : 'Comfortable';
+    }
+    return next;
+}
+
+function setupDensityControl() {
+    applyDensityMode(storeGet(STORE_DENSITY_KEY));
+    const btn = document.getElementById('density-toggle');
+    if (!btn) return;
+    btn.addEventListener('click', () => {
+        const current = btn.getAttribute('aria-pressed') === 'true' ? 'compact' : 'comfortable';
+        const next = nextDensity(current);
+        applyDensityMode(next);
+        storeSet(STORE_DENSITY_KEY, next);
+        const live = document.getElementById('refresh-status');
+        if (live) live.textContent = next === 'compact' ? 'Card density set to compact' : 'Card density set to comfortable';
+    });
+}
+
 // #1015: 5/10/30s interval picker, remembered in localStorage.
 function setupIntervalControl() {
     const select = document.getElementById('refresh-interval');
@@ -2016,6 +2044,7 @@ function initialize() {
     applyFeatureFlags();
     setupAccentControl();
     applyVersionWatermark();
+    setupDensityControl();
     // #1038: Settings panel. A missing helper must not block the metrics poll.
     if (typeof renderMetricNameMap === 'function') {
         renderMetricNameMap(document.getElementById('metric-name-map-body'), document);
