@@ -36,7 +36,7 @@ test('tabKeyTarget implements the WAI-ARIA tabs keyboard model', () => {
 test('tablist / tab / tabpanel roles are wired with ids', () => {
     assert.match(body, /role="tablist"/);
     const tabs = [...body.matchAll(/<button[^>]*class="tab-button[^"]*"[^>]*>/g)].map(m => m[0]);
-    assert.strictEqual(tabs.length, 5);
+    assert.strictEqual(tabs.length, 6);
     for (const t of tabs) {
         const name = t.match(/data-tab="([a-z]+)"/)[1];
         assert.match(t, /role="tab"/);
@@ -51,7 +51,7 @@ test('tablist / tab / tabpanel roles are wired with ids', () => {
 
 test('tab panels use the tab-content class the switcher queries', () => {
     const panels = [...body.matchAll(/<div\b[^>]*id="tab-[a-z]+"[^>]*>/g)];
-    assert.strictEqual(panels.length, 5);
+    assert.strictEqual(panels.length, 6);
     for (const p of panels) {
         const cls = (p[0].match(/class="([^"]*)"/) || [])[1] || '';
         assert.ok(cls.split(/\s+/).includes('tab-content'), p[0]);
@@ -63,7 +63,7 @@ test('tab panels use the tab-content class the switcher queries', () => {
 test('tab icons are decorative SVGs, not emoji glyphs (#1049)', () => {
     const emoji = /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}\u{200D}]/u;
     const tabs = [...body.matchAll(/<button[^>]*role="tab"[^>]*>(.*?)<\/button>/g)];
-    assert.strictEqual(tabs.length, 5);
+    assert.strictEqual(tabs.length, 6);
     for (const t of tabs) {
         const inner = t[1];
         assert.match(inner, /^<svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"[^>]*stroke="currentColor"[^>]*>/);

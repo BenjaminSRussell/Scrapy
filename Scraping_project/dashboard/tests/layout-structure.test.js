@@ -25,10 +25,10 @@ function tabDepths() {
     return { out, final: depth };
 }
 
-test('all five tab panels are siblings (same nesting depth)', () => {
+test('all six tab panels are siblings (same nesting depth)', () => {
     const { out, final } = tabDepths();
     assert.deepStrictEqual(Object.keys(out).sort(),
-        ['tab-activity', 'tab-overview', 'tab-performance', 'tab-pipeline', 'tab-system']);
+        ['tab-activity', 'tab-overview', 'tab-performance', 'tab-pipeline', 'tab-sso', 'tab-system']);
     const depths = new Set(Object.values(out));
     assert.strictEqual(depths.size, 1, `tab depths differ: ${JSON.stringify(out)}`);
     assert.strictEqual(final, 0, 'div tags balanced');

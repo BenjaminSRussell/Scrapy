@@ -681,7 +681,9 @@
             .tab-button,
             .refresh-bar .btn,
             .refresh-bar select,
-            .danger-sound-label {
+            .danger-sound-label,
+            .settings-actions .btn,
+            .settings-field input {
                 min-height: 44px;
                 min-width: 44px;
             }
@@ -954,6 +956,7 @@
         a:focus-visible,
         summary:focus-visible,
         .legend-toggles button:focus-visible,
+        .settings-field input:focus-visible,
         [role="tabpanel"]:focus-visible {
             outline: 3px solid var(--primary-dark);
             outline-offset: 2px;
@@ -1031,6 +1034,22 @@
         }
         .fetch-error-banner[hidden] { display: none; }
         .btn[aria-busy="true"] { cursor: progress; }
+
+        /* #673: OIDC settings. The enabled box stays disabled. */
+        .settings-form { display: flex; flex-direction: column; gap: 0.75rem; max-width: 40rem; }
+        .settings-field { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.9rem; color: var(--gray-800); }
+        .settings-field input[type="text"],
+        .settings-field input[type="password"] {
+            font: inherit;
+            padding: 0.45rem 0.6rem;
+            border: 1px solid var(--gray-300);
+            border-radius: 6px;
+            color: var(--gray-900);
+            background: #fff;
+            min-height: 44px;
+        }
+        .settings-note { color: var(--muted-text); font-size: 0.9rem; }
+        .settings-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
     </style>
 </head>
 <body>
@@ -1085,8 +1104,9 @@
                 <button type="button" class="tab-button" data-tab="performance" role="tab" id="tabbtn-performance" aria-controls="tab-performance" aria-selected="false" tabindex="-1"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l6-6 4 4 8-8M14 7h7v7"/></svg> Performance</button>
                 <button type="button" class="tab-button" data-tab="system" role="tab" id="tabbtn-system" aria-controls="tab-system" aria-selected="false" tabindex="-1"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 0 0-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 0 0-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 0 0-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 0 0-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 0 0 1.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><circle cx="12" cy="12" r="3"/></svg> System Health</button>
                 <button type="button" class="tab-button" data-tab="activity" role="tab" id="tabbtn-activity" aria-controls="tab-activity" aria-selected="false" tabindex="-1"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg> Activity Log</button>
+                <button type="button" class="tab-button" data-tab="sso" role="tab" id="tabbtn-sso" aria-controls="tab-sso" aria-selected="false" tabindex="-1"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg> SSO</button>
             </div></nav>
-            <p class="shortcut-hint" id="shortcut-hint">Shortcuts: 1–5 switch tabs · R refresh</p>
+            <p class="shortcut-hint" id="shortcut-hint">Shortcuts: 1–6 switch tabs · R refresh</p>
 
             <!-- Overview Tab -->
             <div class="tab-content active" id="tab-overview" role="tabpanel" aria-labelledby="tabbtn-overview" tabindex="0">
@@ -1561,6 +1581,48 @@
                     </div>
                     <!-- Rendered by app.js on init; no static seed (#978). -->
                     <div class="activity-feed" id="activity-log" role="log" aria-live="off"></div>
+                </div>
+            </div>
+
+            <!-- SSO settings (#673). Fields can be saved. Login stays not_implemented. -->
+            <div class="tab-content" id="tab-sso" role="tabpanel" aria-labelledby="tabbtn-sso" tabindex="0">
+                <div class="card">
+                    <div class="card-header">
+                        <h2 class="card-title">OIDC single sign-on</h2>
+                        <span class="card-badge badge-info">Disabled</span>
+                    </div>
+                    <p class="settings-note" id="oidc-help">Save issuer, client, and redirect fields for a later enablement. SSO login is not implemented and stays off.</p>
+                    <div class="settings-form">
+                        <div class="settings-field">
+                            <label for="oidc-issuer">Issuer URL</label>
+                            <input id="oidc-issuer" name="issuer" type="text" autocomplete="off" spellcheck="false" maxlength="512">
+                        </div>
+                        <div class="settings-field">
+                            <label for="oidc-client-id">Client ID</label>
+                            <input id="oidc-client-id" name="client_id" type="text" autocomplete="off" maxlength="256">
+                        </div>
+                        <div class="settings-field">
+                            <label for="oidc-client-secret">Client secret</label>
+                            <input id="oidc-client-secret" name="client_secret" type="password" autocomplete="new-password" maxlength="512">
+                        </div>
+                        <div class="settings-field">
+                            <label for="oidc-redirect-uri">Redirect URI</label>
+                            <input id="oidc-redirect-uri" name="redirect_uri" type="text" autocomplete="off" spellcheck="false" maxlength="512">
+                        </div>
+                        <div class="settings-field">
+                            <label for="oidc-scopes">Scopes</label>
+                            <input id="oidc-scopes" name="scopes" type="text" autocomplete="off" maxlength="256" value="openid profile email">
+                        </div>
+                        <div class="settings-field">
+                            <label for="oidc-enabled"><input id="oidc-enabled" name="enabled" type="checkbox" disabled aria-describedby="oidc-enabled-note"> Enabled</label>
+                            <p class="settings-note" id="oidc-enabled-note">This switch cannot be turned on. Login returns not_implemented.</p>
+                        </div>
+                        <div class="settings-actions">
+                            <button type="button" id="oidc-save" class="btn">Save OIDC config</button>
+                            <button type="button" id="oidc-login" class="btn">Try SSO login</button>
+                        </div>
+                        <p id="oidc-status" class="settings-note" role="status" aria-live="polite"></p>
+                    </div>
                 </div>
             </div>
         </div>

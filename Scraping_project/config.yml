@@ -512,3 +512,18 @@ export:
   batch_size: 65536          # rows per scanned batch (bounds peak memory)
   max_rows_per_file: 0       # 0 = unlimited; else roll over to <stem>.part-NNNNN<ext>
   max_bytes_per_file: 0      # 0 = unlimited; soft limit checked per batch
+
+# ============================================
+# OIDC SSO placeholder (#673)
+# ============================================
+# Control Center SSO tab can save these fields. enabled is ignored: only a
+# future change that replaces oidc_login may turn SSO on. Login returns
+# not_implemented. Do not put client_secret here; the dashboard stores it
+# only in CC_OIDC_CONFIG_PATH (default dashboard/.oidc-sso.json, mode 0600).
+# Workers do not read this section and do not call an identity provider.
+oidc:
+  enabled: false
+  issuer: ""
+  client_id: ""
+  redirect_uri: ""
+  scopes: "openid profile email"

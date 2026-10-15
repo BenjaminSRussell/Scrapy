@@ -41,6 +41,7 @@ The YAML file comments every key in detail. A few keys are documented in the fil
 | `logging` | Python logging | `level`, which feeds Scrapy's `LOG_LEVEL`; the `LOG_LEVEL` env var takes precedence. `format`, `file`, `max_bytes` and `backup_count` are **not read by the code today**: logs go to stdout, and the shape is chosen with `LOG_FORMAT=text\|json` |
 | `monitoring` | Reference values only | `enabled`, `prometheus_port`, `grafana_port` and `metrics.*` are **not read by the code**. The ports really come from `docker-compose.yml` and `monitoring/prometheus.yml` |
 | `export` | `cli.py export` and `LakehouseManager.export()` | `batch_size` (rows per scanned batch, which bounds memory), `max_rows_per_file` and `max_bytes_per_file` (0 = no limit; larger exports roll over to `<stem>.part-NNNNN<ext>`). `default_format`, `output_directory` and `compression` are **not read**: pass `--format` and `--output` to `cli.py export` instead |
+| `oidc` | Disabled SSO placeholder on the Control Center SSO tab (#673) | `issuer`, `client_id`, `redirect_uri`, `scopes`. `enabled` is ignored and stays off. Workers do not read this section. Do not put `client_secret` in this file. See [OIDC placeholder](../../../docs/product/673-oidc-sso.md) |
 
 Some optional features keep their own example files. For instance, `config/entity_summarization.example.yml` is used by the entity summarizer.
 
