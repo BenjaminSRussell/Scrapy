@@ -12,7 +12,7 @@ The growth path is a team plan: a second person watches and operates the Control
 
 - The only auth is `AuthGate` in [serve.py](../../Scraping_project/dashboard/serve.py) (line 141). It is off unless `CC_AUTH_TOKEN` or `CC_BASIC_AUTH` is set, and each setting is a single shared credential. Every caller who presents it is the same caller: there is no user name to tell two operators apart, no account record, and no operator role. Its docstring calls it "a shared-secret gate for LAN demos, not an identity provider" (lines 147-148). The [dashboard README](../../Scraping_project/dashboard/README.md) documents both settings (lines 82-83).
 - The dashboard server has no route that changes state. `do_OPTIONS`, `do_HEAD`, and `do_GET` are its only handlers (`serve.py` lines 425, 444, 449), and the `/api/` routes are GET routes (`API_ROUTES`, line 423). So today an operator role could only gate reads of the Control Center.
-- The tree has no invite, seat, or multi-user code. The words `invite`, `seat`, and `multi-user` do not appear in any file. The issue lists a "multi-user stub" as existing code. The nearest thing is `AuthGate`, which is why it is the starting point above.
+- The tree has no invite, seat, or multi-user code. Before this stub, a search of the tree found no file containing `invite`, `seat`, or `multi-user`. The issue lists a "multi-user stub" as existing code. The nearest thing is `AuthGate`, which is why it is the starting point above.
 - [federated-tenant-gold-query.md](federated-tenant-gold-query.md) (#770) already defines principals, per-tenant grants, and roles. This stub follows that model and changes none of its rules.
 
 ## Scope
