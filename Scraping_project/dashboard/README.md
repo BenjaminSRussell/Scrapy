@@ -67,6 +67,7 @@ through a reverse proxy or ingress that terminates TLS and authenticates users (
 nginx/Traefik with OAuth2 Proxy, or a Kubernetes ingress with an auth annotation). Set
 `CC_CORS_ORIGINS` only if another site really needs to read the API.
 - Contributor styleguide: [`styleguide.html`](styleguide.html)
+- Design tokens (color, space, radius, type): [`tokens.css`](tokens.css) and [`TOKENS.md`](TOKENS.md) (#991)
 - Accessibility checklist for PRs: [`A11Y_CHECKLIST.md`](A11Y_CHECKLIST.md)
 
 ## Overview screenshot (#1044)

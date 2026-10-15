@@ -8,7 +8,8 @@ const { tabKeyTarget, staleState } = require('../format-utils.js');
 
 const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
 const app = fs.readFileSync(path.join(__dirname, '..', 'app.js'), 'utf8');
-const css = html.slice(html.indexOf('<style>'), html.indexOf('</style>'));
+const tokensCss = fs.readFileSync(path.join(__dirname, '..', 'tokens.css'), 'utf8');
+const css = tokensCss + '\n' + html.slice(html.indexOf('<style>'), html.indexOf('</style>'));
 const body = html.slice(html.indexOf('<body'));
 
 function mediaBlock(query) {
@@ -119,7 +120,7 @@ function lum(hex) {
 function ratio(a, b) { const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p); return (x + 0.05) / (y + 0.05); }
 
 test('muted text and topbar text meet WCAG AA', () => {
-    const muted = css.match(/--muted-text:\s*(#[0-9a-fA-F]{6})/)[1];
+    const muted = css.match(/--color-text-muted:\s*(#[0-9a-fA-F]{6})/)[1];
     for (const bg of ['#ffffff', '#f3f4f6', '#f9fafb']) assert.ok(ratio(muted, bg) >= 4.5, `${muted} on ${bg}`);
     for (const end of ['#2563eb', '#7c3aed']) assert.ok(ratio('#ffffff', end) >= 4.5, `white on ${end}`);
     assert.ok(!/color:\s*#94a3b8/.test(css), 'no #94a3b8 text (2.6:1)');

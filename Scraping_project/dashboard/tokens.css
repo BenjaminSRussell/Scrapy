@@ -1,0 +1,129 @@
+/* Pipeline Control Center design tokens (#991).
+   Raw values live only in this file. Components use the semantic names.
+   Legacy aliases (--primary, --gray-*, --muted-text) keep existing rules working.
+   See TOKENS.md. */
+
+:root {
+    /* Color — semantic. Hex here is the current value, not the API. */
+    --color-primary: #2563eb;
+    --color-primary-dark: #1e40af;
+    --color-accent: #7c3aed;
+    --color-success: #10b981;
+    --color-warning: #f59e0b;
+    --color-danger: #ef4444;
+
+    --color-white: #ffffff;
+    --color-surface: var(--color-white);
+    --color-on-primary: var(--color-white);
+    --color-black: #111111;
+
+    --color-gray-50: #f9fafb;
+    --color-gray-100: #f3f4f6;
+    --color-gray-200: #e5e7eb;
+    --color-gray-300: #d1d5db;
+    --color-gray-600: #4b5563;
+    --color-gray-700: #374151;
+    --color-gray-800: #1f2937;
+    --color-gray-900: #111827;
+
+    --color-text: var(--color-gray-900);
+    --color-text-strong: var(--color-gray-800);
+    --color-text-secondary: var(--color-gray-700);
+    --color-text-quiet: var(--color-gray-600);
+    /* #340: 7.2:1 on white and gray-100. Do not switch this to slate-400. */
+    --color-text-muted: #475569;
+    --color-ink: var(--color-gray-900);
+    --color-border: var(--color-gray-200);
+    --color-border-strong: var(--color-gray-300);
+
+    --color-success-bg: #d1fae5;
+    --color-success-fg: #065f46;
+    --color-success-soft: #ecfdf5;
+    --color-success-solid: #15803d;
+    --color-success-deep: #14532d;
+    --color-success-mint: #bbf7d0;
+
+    --color-warning-bg: #fef3c7;
+    --color-warning-fg: #92400e;
+    --color-warning-border: #b45309;
+    --color-warning-soft: #fffbeb;
+    --color-warning-solid: #a16207;
+    --color-flash: #fde68a;
+    --color-timeout-bg: #fff7ed;
+
+    --color-danger-bg: #fee2e2;
+    --color-danger-fg: #991b1b;
+    --color-danger-fg-strong: #7f1d1d;
+    --color-danger-soft: #fef2f2;
+    --color-danger-solid: #b91c1c;
+    --color-danger-border: var(--color-danger-solid);
+
+    --color-info-bg: #dbeafe;
+    --color-info-fg: var(--color-primary-dark);
+    --color-info-solid: #1d4ed8;
+
+    --color-slate-200: #e2e8f0;
+    --color-slate-700: #334155;
+    --color-slate-800: #1e293b;
+    --color-slate-900: #0f172a;
+    --color-border-table: var(--color-slate-700);
+    --color-staging: #ca8a04;
+    --color-staging-fg: var(--color-black);
+    --color-milestone-bg: var(--color-success-deep);
+    --color-milestone-fg: var(--color-success-mint);
+    --color-focus: #60a5fa;
+
+    --color-shadow: rgba(0, 0, 0, 0.1);
+    --color-shadow-raised: rgba(0, 0, 0, 0.15);
+    --color-shadow-bar: rgba(0, 0, 0, 0.12);
+    --color-primary-glow: rgba(37, 99, 235, 0.2);
+    --color-scrim: rgba(15, 23, 42, 0.45);
+    --color-on-primary-veil: rgba(255, 255, 255, 0.35);
+
+    /* Space — 4px grid. 1rem = 16px. */
+    --space-1: 0.25rem;
+    --space-2: 0.5rem;
+    --space-3: 0.75rem;
+    --space-4: 1rem;
+    --space-5: 1.25rem;
+    --space-6: 1.5rem;
+    --space-8: 2rem;
+
+    /* Radius */
+    --radius-xs: 2px;
+    --radius-sm: 0.25rem;
+    --radius-md: 0.375rem;
+    --radius-lg: 0.5rem;
+    --radius-pill: 9999px;
+    --radius-full: 50%;
+
+    /* Type */
+    --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    --font-size-2xs: 0.7rem;
+    --font-size-xs: 0.75rem;
+    --font-size-sm: 0.875rem;
+    --font-size-md: 1rem;
+    --font-size-lg: 1.25rem;
+    --font-size-xl: 1.5rem;
+    --font-size-2xl: 1.75rem;
+    --font-weight-semibold: 600;
+    --font-weight-bold: 700;
+
+    /* Legacy aliases. New rules should use --color-* / --space-* / --radius-* / --font-*. */
+    --primary: var(--color-primary);
+    --primary-dark: var(--color-primary-dark);
+    --secondary: var(--color-accent);
+    --success: var(--color-success);
+    --warning: var(--color-warning);
+    --danger: var(--color-danger);
+    --gray-50: var(--color-gray-50);
+    --gray-100: var(--color-gray-100);
+    --gray-200: var(--color-gray-200);
+    --gray-300: var(--color-gray-300);
+    --gray-600: var(--color-gray-600);
+    --gray-700: var(--color-gray-700);
+    --gray-800: var(--color-gray-800);
+    --gray-900: var(--color-gray-900);
+    --muted-text: var(--color-text-muted);
+}

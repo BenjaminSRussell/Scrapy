@@ -99,6 +99,33 @@ function initializeCharts() {
     }
 }
 
+// Chart.js paints a canvas, which does not resolve var(--color-*).
+// Read the semantic token from tokens.css (#991). The fallback matches
+// tokens.css so the node sandbox (no documentElement) still draws the series.
+const CHART_TOKEN_FALLBACK = {
+    '--color-primary': '#2563eb',
+    '--color-accent': '#7c3aed',
+    '--color-success': '#10b981',
+    '--color-warning': '#f59e0b',
+};
+
+function chartToken(name, alpha) {
+    let hex = CHART_TOKEN_FALLBACK[name] || '';
+    try {
+        if (typeof getComputedStyle === 'function' && document.documentElement) {
+            const raw = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+            if (/^#[0-9a-fA-F]{6}$/.test(raw)) hex = raw;
+        }
+    } catch (_) { /* tokens.css not applied */ }
+    const m = /^#([0-9a-fA-F]{6})$/.exec(hex);
+    const n = m ? parseInt(m[1], 16) : 0;
+    const r = (n >> 16) & 255;
+    const g = (n >> 8) & 255;
+    const b = n & 255;
+    if (alpha == null) return 'rgb(' + r + ', ' + g + ', ' + b + ')';
+    return 'rgba(' + r + ', ' + g + ', ' + b + ', ' + alpha + ')';
+}
+
 function buildCharts() {
     const chartConfig = {
         responsive: true,
@@ -126,14 +153,14 @@ function buildCharts() {
             datasets: [{
                 label: 'URLs/min',
                 data: [],
-                borderColor: 'rgb(37, 99, 235)',
-                backgroundColor: 'rgba(37, 99, 235, 0.1)',
+                borderColor: chartToken('--color-primary'),
+                backgroundColor: chartToken('--color-primary', 0.1),
                 tension: 0.4
             }, {
                 label: 'Pages/min',
                 data: [],
-                borderColor: 'rgb(124, 58, 237)',
-                backgroundColor: 'rgba(124, 58, 237, 0.1)',
+                borderColor: chartToken('--color-accent'),
+                backgroundColor: chartToken('--color-accent', 0.1),
                 tension: 0.4
             }]
         },
@@ -148,16 +175,16 @@ function buildCharts() {
                 label: 'Documents Processed',
                 data: [0, 0, 0, 0],
                 backgroundColor: [
-                    'rgba(37, 99, 235, 0.7)',
-                    'rgba(124, 58, 237, 0.7)',
-                    'rgba(16, 185, 129, 0.7)',
-                    'rgba(245, 158, 11, 0.7)'
+                    chartToken('--color-primary', 0.7),
+                    chartToken('--color-accent', 0.7),
+                    chartToken('--color-success', 0.7),
+                    chartToken('--color-warning', 0.7)
                 ],
                 borderColor: [
-                    'rgb(37, 99, 235)',
-                    'rgb(124, 58, 237)',
-                    'rgb(16, 185, 129)',
-                    'rgb(245, 158, 11)'
+                    chartToken('--color-primary'),
+                    chartToken('--color-accent'),
+                    chartToken('--color-success'),
+                    chartToken('--color-warning')
                 ],
                 borderWidth: 2
             }]
@@ -172,12 +199,12 @@ function buildCharts() {
             datasets: [{
                 data: [0, 0],
                 backgroundColor: [
-                    'rgba(16, 185, 129, 0.7)',
-                    'rgba(245, 158, 11, 0.7)'
+                    chartToken('--color-success', 0.7),
+                    chartToken('--color-warning', 0.7)
                 ],
                 borderColor: [
-                    'rgb(16, 185, 129)',
-                    'rgb(245, 158, 11)'
+                    chartToken('--color-success'),
+                    chartToken('--color-warning')
                 ],
                 borderWidth: 2
             }]
@@ -204,8 +231,8 @@ function buildCharts() {
             datasets: [{
                 label: 'URLs Discovered',
                 data: [],
-                borderColor: 'rgb(37, 99, 235)',
-                backgroundColor: 'rgba(37, 99, 235, 0.1)',
+                borderColor: chartToken('--color-primary'),
+                backgroundColor: chartToken('--color-primary', 0.1),
                 fill: true,
                 tension: 0.4
             }]
@@ -220,8 +247,8 @@ function buildCharts() {
             datasets: [{
                 label: 'Pages Analyzed',
                 data: [],
-                borderColor: 'rgb(124, 58, 237)',
-                backgroundColor: 'rgba(124, 58, 237, 0.1)',
+                borderColor: chartToken('--color-accent'),
+                backgroundColor: chartToken('--color-accent', 0.1),
                 fill: true,
                 tension: 0.4
             }]
@@ -236,8 +263,8 @@ function buildCharts() {
             datasets: [{
                 label: 'Summaries Created',
                 data: [],
-                borderColor: 'rgb(16, 185, 129)',
-                backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                borderColor: chartToken('--color-success'),
+                backgroundColor: chartToken('--color-success', 0.1),
                 fill: true,
                 tension: 0.4
             }]
