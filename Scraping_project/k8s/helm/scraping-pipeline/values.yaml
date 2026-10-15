@@ -413,6 +413,21 @@ stage2Worker:
     targetMemoryUtilizationPercentage: 75
     scaleUpStabilizationWindowSeconds: 60
     scaleDownStabilizationWindowSeconds: 300
+    # Queue-depth trigger through KEDA (#512). Off by default. It needs the KEDA
+    # operator and CRDs installed first (k8s/README.md, "Queue-depth
+    # autoscaling"). When on, keda-scaledobject.yaml replaces this stage's native
+    # HPA and keeps the CPU and memory targets above as triggers.
+    keda:
+      enabled: false
+      # One scalar PromQL value, read from this chart's Prometheus. Every replica
+      # reports the same stage2_queue snapshot, so use max(), not sum().
+      query: "max(stage2_queue_pending)"
+      # Pending rows per replica that trigger scale-up. Untuned starting point.
+      threshold: 500
+      # Namespace of the KEDA operator. While this block is on and
+      # networkPolicy.enabled is true, networkpolicy.yaml admits it to the
+      # Prometheus port.
+      operatorNamespace: keda
 
 stage3Worker:
   enabled: true

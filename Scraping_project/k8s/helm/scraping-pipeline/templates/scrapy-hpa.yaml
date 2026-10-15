@@ -51,7 +51,8 @@ spec:
       selectPolicy: Max
 {{- end }}
 
-{{- if and .Values.stage2Worker.enabled .Values.stage2Worker.autoscaling.enabled }}
+{{- /* #512: keda-scaledobject.yaml owns stage2 scaling when keda.enabled; two HPAs on one Deployment fight. */}}
+{{- if and .Values.stage2Worker.enabled .Values.stage2Worker.autoscaling.enabled (not .Values.stage2Worker.autoscaling.keda.enabled) }}
 ---
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler

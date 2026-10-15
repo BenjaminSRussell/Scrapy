@@ -546,6 +546,16 @@ spec:
     ports:
     - protocol: TCP
       port: {{ .Values.prometheus.service.port }}
+{{- if and .Values.stage2Worker.enabled .Values.stage2Worker.autoscaling.enabled .Values.stage2Worker.autoscaling.keda.enabled }}
+  # #512: the KEDA operator reads stage2_queue_pending through this Prometheus.
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: {{ .Values.stage2Worker.autoscaling.keda.operatorNamespace | quote }}
+    ports:
+    - protocol: TCP
+      port: {{ .Values.prometheus.service.port }}
+{{- end }}
 ---
 # Alertmanager replicas gossip on the cluster port (TCP and UDP).
 apiVersion: networking.k8s.io/v1

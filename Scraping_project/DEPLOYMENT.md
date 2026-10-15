@@ -63,6 +63,8 @@ kubectl autoscale deployment stage2-worker \
   -n uconn-scraper
 ```
 
+For Helm installs, Stage 2 can also scale on its queue backlog through KEDA. It is optional and off by default: see [k8s/README.md](k8s/README.md#queue-depth-autoscaling-with-keda-optional-512).
+
 ### Helm resource profiles
 
 Stage 1–4 CPU and memory are Helm values, not the one-size guess that used to live under Performance Tuning. Every enabled Deployment, StatefulSet and Job container, including init containers, sets both `resources.requests` and `resources.limits` (cpu and memory). `helm template` fails the render when an enabled workload omits either (#1104). PVC `resources.requests.storage` is disk, not a cpu/memory limit.

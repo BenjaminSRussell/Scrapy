@@ -56,6 +56,7 @@ renamed to the new version and date (see the release checklist).
 - Grafana scraping-pipeline-health dashboard provisioned in compose and Helm.
 - Release images (crawler, metrics, kafka-delta-ingest) smoke-tested on PRs that touch the image recipe (#449).
 - Repository policies: SECURITY.md, CODE_OF_CONDUCT.md, this changelog, ADRs, devcontainer (#669 #746 #747 #715 #694).
+- Helm: optional KEDA `ScaledObject` scales Stage 2 on its queue backlog (`max(stage2_queue_pending)` from Prometheus) and keeps the CPU and memory targets. Off by default (`stage2Worker.autoscaling.keda.enabled`); install the KEDA operator first, see k8s/README.md (#512).
 
 ### Changed
 - Control Center tabs, health tiles, and the title mark use inline SVG icons (`aria-hidden`) instead of emoji glyphs (#1049).

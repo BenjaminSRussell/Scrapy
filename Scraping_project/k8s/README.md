@@ -134,6 +134,38 @@ scrapyApp:
       memory: 32Gi
 ```
 
+#### Queue-depth autoscaling with KEDA (optional, #512)
+
+The chart's HPAs scale on CPU and memory only. A Stage 2 backlog can build while CPU stays low (I/O waits, polite delays), so Stage 2 can also scale on its queue through [KEDA](https://keda.sh). It is off by default, and a plain install renders what it did before.
+
+1. Install the KEDA operator once per cluster. Its CRDs must exist before you enable the option below, or Helm fails to apply the ScaledObject:
+
+   ```bash
+   helm repo add kedacore https://kedacore.github.io/charts
+   helm install keda kedacore/keda --namespace keda --create-namespace
+   ```
+
+2. Turn it on for Stage 2. Leave `prometheus.enabled` and `workerMetrics.enabled` at their defaults, because KEDA reads the queue gauge through the chart's own Prometheus:
+
+   ```bash
+   helm upgrade --install scraping-pipeline helm/scraping-pipeline \
+     -n scraping-pipeline \
+     --set stage2Worker.autoscaling.keda.enabled=true
+   ```
+
+3. Check it. `kubectl get scaledobject -n scraping-pipeline` should show `READY` as `True`. KEDA manages an HPA named `keda-hpa-<ScaledObject name>`, which is `keda-hpa-scraping-pipeline-stage2` for the release above. The chart stops rendering its own Stage 2 HPA while KEDA is on.
+
+How it scales: each Stage 2 pod serves `stage2_queue_pending` on the worker metrics port (9430). Prometheus scrapes it every 15 s, and KEDA sizes Stage 2 so each replica covers about `threshold` (500 by default) pending rows. The CPU and memory targets stay as triggers, so the stage still scales on CPU.
+
+Limits:
+
+- Use `max()`, not `sum()`. The default query is `max(stage2_queue_pending)`. Every replica reads the same `stage2_queue` table, so a sum counts the backlog once per pod.
+- The gauge is set once per Stage 2 cycle, from the pending count at the start of that cycle. A pod waits about 30 s between cycles, so the signal trails the queue by roughly a minute. A long cycle that drains the queue leaves the value high until the next cycle.
+- `threshold` is an untuned starting point. Tune it from the queue depth and throughput you observe.
+- Only Stage 2 has a backlog gauge. Stage 3 keeps CPU and memory scaling.
+- With `networkPolicy.enabled=true` (the prod profile), the chart admits the KEDA operator namespace to the Prometheus port. That namespace is `stage2Worker.autoscaling.keda.operatorNamespace` (default `keda`). Change it if KEDA runs elsewhere.
+- The render fails when the metrics path is off (`prometheus.enabled=false` or `workerMetrics.enabled=false`), so the ScaledObject never points at a gauge that is not scraped.
+
 ### Deploying stages separately (`start.py --stage`)
 
 `python start.py --env k8s --stage <stage>` deploys one stage as its own release and

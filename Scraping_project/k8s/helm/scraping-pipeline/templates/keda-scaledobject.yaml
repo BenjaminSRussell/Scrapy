@@ -1,0 +1,66 @@
+{{- /*
+#512: optional KEDA ScaledObject for Stage 2 queue-depth scaling. Renders only
+when stage2Worker.autoscaling.keda.enabled is true (default false). KEDA's CRDs
+(keda.sh/v1alpha1) must exist first: k8s/README.md, "Queue-depth autoscaling".
+scrapy-hpa.yaml drops the native stage2 HPA in that case, because two
+autoscalers on one Deployment fight. The CPU and memory targets stay as triggers.
+*/ -}}
+{{- $worker := .Values.stage2Worker }}
+{{- if and $worker.enabled $worker.autoscaling.enabled $worker.autoscaling.keda.enabled }}
+{{- if not (and .Values.prometheus.enabled .Values.workerMetrics.enabled) }}
+{{- fail "stage2Worker.autoscaling.keda.enabled needs prometheus.enabled and workerMetrics.enabled (#512): the queue gauge is scraped from the worker metrics port" }}
+{{- end }}
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: {{ include "scraping-pipeline.fullname" . }}-stage2
+  labels:
+    {{- include "scraping-pipeline.labels" . | nindent 4 }}
+    app.kubernetes.io/component: stage2
+spec:
+  scaleTargetRef:
+    name: {{ include "scraping-pipeline.fullname" . }}-stage2
+  minReplicaCount: {{ $worker.autoscaling.minReplicas }}
+  maxReplicaCount: {{ $worker.autoscaling.maxReplicas }}
+  advanced:
+    horizontalPodAutoscalerConfig:
+      behavior:
+        scaleDown:
+          stabilizationWindowSeconds: {{ $worker.autoscaling.scaleDownStabilizationWindowSeconds | default 300 }}
+          policies:
+          - type: Percent
+            value: 50
+            periodSeconds: 60
+          - type: Pods
+            value: 1
+            periodSeconds: 60
+          selectPolicy: Min
+        scaleUp:
+          stabilizationWindowSeconds: {{ $worker.autoscaling.scaleUpStabilizationWindowSeconds | default 60 }}
+          policies:
+          - type: Percent
+            value: 100
+            periodSeconds: 30
+          - type: Pods
+            value: 2
+            periodSeconds: 30
+          selectPolicy: Max
+  triggers:
+  - type: cpu
+    metricType: Utilization
+    metadata:
+      value: {{ $worker.autoscaling.targetCPUUtilizationPercentage | quote }}
+  {{- if $worker.autoscaling.targetMemoryUtilizationPercentage }}
+  - type: memory
+    metricType: Utilization
+    metadata:
+      value: {{ $worker.autoscaling.targetMemoryUtilizationPercentage | quote }}
+  {{- end }}
+  - type: prometheus
+    metadata:
+      serverAddress: http://{{ include "scraping-pipeline.fullname" . }}-prometheus.{{ .Release.Namespace }}.svc:{{ .Values.prometheus.service.port }}
+      query: {{ required "stage2Worker.autoscaling.keda.query must be set" $worker.autoscaling.keda.query | quote }}
+      threshold: {{ $worker.autoscaling.keda.threshold | quote }}
+      ignoreNullValues: "true"
+{{- end }}
