@@ -83,7 +83,7 @@ test('renderMetricNameMap writes one row per series with its fields', () => {
 test('System tab Settings panel is the metric-name map host', () => {
     assert.match(html, /id="metric-name-map"/);
     assert.match(html, /id="metric-name-map-title"[^>]*>Settings</);
-    assert.match(html, /<summary>Prometheus metric name map<\/summary>/);
+    assert.match(html, /<summary[^>]*>Prometheus metric name map<\/summary>/);
     assert.match(html, /id="metric-name-map-body"/);
     assert.match(app, /renderMetricNameMap\(document\.getElementById\('metric-name-map-body'\), document\)/);
     const system = html.slice(html.indexOf('id="tab-system"'), html.indexOf('id="tab-activity"'));

@@ -2,7 +2,7 @@
 
 Use for every dashboard PR:
 
-- [x] All controls reachable and operable by keyboard (Tab / Shift+Tab / Enter / Space) — Tabs follow the WAI-ARIA tabs pattern: roving tabindex, Arrow/Home/End (#153)
+- [x] All controls reachable and operable by keyboard (Tab / Shift+Tab / Enter / Space) — Tabs follow the WAI-ARIA tabs pattern: roving tabindex, Arrow/Home/End (#153). The language switcher is a native labelled `<select>` (`#cc-lang`) (#955).
 - [x] Visible focus indicator on every interactive element — `:focus-visible` rings outside forced-colors too (#343)
 - [ ] Buttons/links have accessible names (text or `aria-label`)
 - [ ] Toggle buttons expose `aria-pressed`; tabs expose `aria-selected`

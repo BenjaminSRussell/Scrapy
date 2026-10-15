@@ -116,6 +116,26 @@
             margin-top: 0.25rem;
         }
 
+        /* #955: language switcher. White control on the gradient; label inherits topbar text. */
+        .topbar-lang {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 0.25rem;
+        }
+        .lang-switch {
+            font: inherit;
+            font-size: 0.875rem;
+            color: var(--gray-900);
+            background: #fff;
+            border: 2px solid #fff;
+            border-radius: 0.375rem;
+            padding: 0.2rem 0.45rem;
+            min-height: 44px;
+            min-width: 7.5rem;
+        }
+
         .container {
             max-width: 1600px;
             margin: 0 auto;
@@ -1235,31 +1255,38 @@
             then open this page with JS enabled. Raw metrics are proxied at <code>/api/metrics</code>.
         </div>
     </noscript>
-    <a class="skip-to-main" href="#main">Skip to main content</a>
+    <a class="skip-to-main" href="#main" data-i18n="skip.main">Skip to main content</a>
 
     <header class="topbar">
         <div class="topbar-content">
-            <div class="topbar-title" title="Pipeline Control Center">
+            <div class="topbar-title" title="Pipeline Control Center" data-i18n-title="title.attr">
                 <h1>
-                    <span class="title-full"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8.5" r="2"/><ellipse cx="12" cy="15" rx="3" ry="3.4"/><path d="M10 9.5 5 6M9.2 12H4M10 14.5 5 19M14 9.5 19 6M14.8 12H20M14 14.5 19 19"/></svg> Pipeline Control Center</span>
-                    <span class="title-short">Control Center</span>
-                    <span id="env-badge" class="env-badge env-local" title="Runtime environment">local</span>
+                    <span class="title-full" data-i18n="title.full"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8.5" r="2"/><ellipse cx="12" cy="15" rx="3" ry="3.4"/><path d="M10 9.5 5 6M9.2 12H4M10 14.5 5 19M14 9.5 19 6M14.8 12H20M14 14.5 19 19"/></svg> Pipeline Control Center</span>
+                    <span class="title-short" data-i18n="title.short">Control Center</span>
+                    <span id="env-badge" class="env-badge env-local" title="Runtime environment" data-i18n-title="env.title">local</span>
                 </h1>
-                <p class="title-full">UConn Web Scraping Pipeline - Real-time Operations Dashboard</p>
-                <p class="title-short visually-hidden">Pipeline Control Center</p>
+                <p class="title-full" data-i18n="title.subtitle">UConn Web Scraping Pipeline - Real-time Operations Dashboard</p>
+                <p class="title-short visually-hidden" data-i18n="title.full">Pipeline Control Center</p>
             </div>
             <div class="topbar-stats">
-                <div class="topbar-stat">
-                    <div class="topbar-stat-label">Status</div>
-                    <div class="topbar-stat-value" id="topbar-status">Loading…</div>
-                    <span id="topbar-stale" class="stale-badge" hidden>Stale data</span>
+                <div class="topbar-lang">
+                    <label class="topbar-stat-label" for="cc-lang" data-i18n="lang.label">Language</label>
+                    <select id="cc-lang" class="lang-switch">
+                        <option value="en" data-i18n="lang.option.en">English</option>
+                        <option value="es" data-i18n="lang.option.es">Español</option>
+                    </select>
                 </div>
                 <div class="topbar-stat">
-                    <div class="topbar-stat-label">Total URLs</div>
+                    <div class="topbar-stat-label" data-i18n="label.status">Status</div>
+                    <div class="topbar-stat-value" id="topbar-status">Loading…</div>
+                    <span id="topbar-stale" class="stale-badge" hidden data-i18n="topbar.stale">Stale data</span>
+                </div>
+                <div class="topbar-stat">
+                    <div class="topbar-stat-label" data-i18n="topbar.urls">Total URLs</div>
                     <div class="topbar-stat-value" id="topbar-urls">0</div>
                 </div>
                 <div class="topbar-stat">
-                    <div class="topbar-stat-label">Summaries</div>
+                    <div class="topbar-stat-label" data-i18n="topbar.summaries">Summaries</div>
                     <div class="topbar-stat-value" id="topbar-summaries">0</div>
                 </div>
             </div>
@@ -1268,19 +1295,19 @@
 
     <main class="container" id="main">
         <div id="fetch-error-banner" class="fetch-error-banner" role="alert" hidden>
-            <span id="fetch-error-text">Could not load metrics.</span>
-            <button type="button" id="retry-fetch" class="btn" aria-label="Retry loading metrics now">Retry</button>
+            <span id="fetch-error-text" data-i18n="error.metrics">Could not load metrics.</span>
+            <button type="button" id="retry-fetch" class="btn" aria-label="Retry loading metrics now" data-i18n="error.retry" data-i18n-aria-label="error.retryAria">Retry</button>
         </div>
         <div id="metrics-flood-banner" class="metrics-flood-banner" role="status" aria-live="off" hidden>
-            <span id="metrics-flood-text">Metrics flood: charts paused. Showing summary counters only.</span>
+            <span id="metrics-flood-text" data-i18n="flood.banner">Metrics flood: charts paused. Showing summary counters only.</span>
         </div>
         <div class="tabs">
-            <nav class="tab-buttons-wrap" aria-label="Dashboard sections"><div class="tab-buttons" role="tablist" aria-label="Dashboard sections">
-                <button type="button" class="tab-button active" data-tab="overview" role="tab" id="tabbtn-overview" aria-controls="tab-overview" aria-selected="true" tabindex="0"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18M7 16v-5M12 16V8M17 16v-3"/></svg> Overview</button>
-                <button type="button" class="tab-button" data-tab="pipeline" role="tab" id="tabbtn-pipeline" aria-controls="tab-pipeline" aria-selected="false" tabindex="-1"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36M21 3v6h-6"/></svg> Pipeline Stages</button>
-                <button type="button" class="tab-button" data-tab="performance" role="tab" id="tabbtn-performance" aria-controls="tab-performance" aria-selected="false" tabindex="-1"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l6-6 4 4 8-8M14 7h7v7"/></svg> Performance</button>
-                <button type="button" class="tab-button" data-tab="system" role="tab" id="tabbtn-system" aria-controls="tab-system" aria-selected="false" tabindex="-1"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 0 0-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 0 0-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 0 0-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 0 0-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 0 0 1.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><circle cx="12" cy="12" r="3"/></svg> System Health</button>
-                <button type="button" class="tab-button" data-tab="activity" role="tab" id="tabbtn-activity" aria-controls="tab-activity" aria-selected="false" tabindex="-1"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg> Activity Log</button>
+            <nav class="tab-buttons-wrap" aria-label="Dashboard sections" data-i18n-aria-label="nav.sections"><div class="tab-buttons" role="tablist" aria-label="Dashboard sections" data-i18n-aria-label="nav.sections">
+                <button type="button" class="tab-button active" data-tab="overview" role="tab" data-i18n="tab.overview" id="tabbtn-overview" aria-controls="tab-overview" aria-selected="true" tabindex="0"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18M7 16v-5M12 16V8M17 16v-3"/></svg> Overview</button>
+                <button type="button" class="tab-button" data-tab="pipeline" role="tab" data-i18n="tab.pipeline" id="tabbtn-pipeline" aria-controls="tab-pipeline" aria-selected="false" tabindex="-1"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36M21 3v6h-6"/></svg> Pipeline Stages</button>
+                <button type="button" class="tab-button" data-tab="performance" role="tab" data-i18n="tab.performance" id="tabbtn-performance" aria-controls="tab-performance" aria-selected="false" tabindex="-1"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l6-6 4 4 8-8M14 7h7v7"/></svg> Performance</button>
+                <button type="button" class="tab-button" data-tab="system" role="tab" data-i18n="tab.system" id="tabbtn-system" aria-controls="tab-system" aria-selected="false" tabindex="-1"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 0 0-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 0 0-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 0 0-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 0 0-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 0 0 1.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><circle cx="12" cy="12" r="3"/></svg> System Health</button>
+                <button type="button" class="tab-button" data-tab="activity" role="tab" data-i18n="tab.activity" id="tabbtn-activity" aria-controls="tab-activity" aria-selected="false" tabindex="-1"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg> Activity Log</button>
             </div></nav>
             <p class="shortcut-hint" id="shortcut-hint">Shortcuts: 1–5 switch tabs · R refresh</p>
 
@@ -1289,76 +1316,76 @@
                 <div class="grid grid-4">
                     <div class="card">
                         <div class="card-header">
-                            <h2 class="card-title">Stage 1: Discovery</h2>
-                            <span class="card-badge badge-info">Pending</span>
+                            <h2 class="card-title" data-i18n="stage1.title">Stage 1: Discovery</h2>
+                            <span class="card-badge badge-info" data-i18n="badge.pending">Pending</span>
                         </div>
                         <div class="metric-row">
-                            <span class="metric-label">URLs Found</span>
+                            <span class="metric-label" data-i18n="metric.urlsFound">URLs Found</span>
                             <span class="metric-value" id="overview-s1-discovered">0</span>
                         </div>
                         <div class="overview-spark-wrap">
-                            <svg class="overview-spark" id="spark-overview-s1-discovered" role="img" aria-label="Stage 1 discovery trend" viewBox="0 0 100 28" preserveAspectRatio="none"></svg>
+                            <svg class="overview-spark" id="spark-overview-s1-discovered" role="img" aria-label="Stage 1 discovery trend" data-i18n-aria-label="spark.s1" viewBox="0 0 100 28" preserveAspectRatio="none"></svg>
                             <div class="overview-spark-dir" id="spark-dir-overview-s1-discovered" aria-live="polite">Trend: waiting for samples</div>
                         </div>
                         <div class="metric-row">
-                            <span class="metric-label">Queued</span>
+                            <span class="metric-label" data-i18n="metric.queued">Queued</span>
                             <span class="metric-value" id="overview-s1-queued">0</span>
                         </div>
                     </div>
 
                     <div class="card">
                         <div class="card-header">
-                            <h2 class="card-title">Stage 2: Analysis</h2>
-                            <span class="card-badge badge-info">Pending</span>
+                            <h2 class="card-title" data-i18n="stage2.title">Stage 2: Analysis</h2>
+                            <span class="card-badge badge-info" data-i18n="badge.pending">Pending</span>
                         </div>
                         <div class="metric-row">
-                            <span class="metric-label">Pages Analyzed</span>
+                            <span class="metric-label" data-i18n="metric.pagesAnalyzed">Pages Analyzed</span>
                             <span class="metric-value" id="overview-s2-analyzed">0</span>
                         </div>
                         <div class="overview-spark-wrap">
-                            <svg class="overview-spark" id="spark-overview-s2-analyzed" role="img" aria-label="Stage 2 analyze trend" viewBox="0 0 100 28" preserveAspectRatio="none"></svg>
+                            <svg class="overview-spark" id="spark-overview-s2-analyzed" role="img" aria-label="Stage 2 analyze trend" data-i18n-aria-label="spark.s2" viewBox="0 0 100 28" preserveAspectRatio="none"></svg>
                             <div class="overview-spark-dir" id="spark-dir-overview-s2-analyzed" aria-live="polite">Trend: waiting for samples</div>
                         </div>
                         <div class="metric-row">
-                            <span class="metric-label">Quality Docs</span>
+                            <span class="metric-label" data-i18n="metric.qualityDocs">Quality Docs</span>
                             <span class="metric-value success" id="overview-s2-quality">0</span>
                         </div>
                     </div>
 
                     <div class="card">
                         <div class="card-header">
-                            <h2 class="card-title">Stage 3: Summarization</h2>
-                            <span class="card-badge badge-success">Running</span>
+                            <h2 class="card-title" data-i18n="stage3.title">Stage 3: Summarization</h2>
+                            <span class="card-badge badge-success" data-i18n="badge.running">Running</span>
                         </div>
                         <div class="metric-row">
-                            <span class="metric-label">Summaries</span>
+                            <span class="metric-label" data-i18n="metric.summaries">Summaries</span>
                             <span class="metric-value success" id="overview-s3-summaries">0</span>
                         </div>
                         <div class="overview-spark-wrap">
-                            <svg class="overview-spark" id="spark-overview-s3-summaries" role="img" aria-label="Stage 3 summaries trend" viewBox="0 0 100 28" preserveAspectRatio="none"></svg>
+                            <svg class="overview-spark" id="spark-overview-s3-summaries" role="img" aria-label="Stage 3 summaries trend" data-i18n-aria-label="spark.s3" viewBox="0 0 100 28" preserveAspectRatio="none"></svg>
                             <div class="overview-spark-dir" id="spark-dir-overview-s3-summaries" aria-live="polite">Trend: waiting for samples</div>
                         </div>
                         <div class="metric-row">
-                            <span class="metric-label">Deduplicated</span>
+                            <span class="metric-label" data-i18n="metric.deduplicated">Deduplicated</span>
                             <span class="metric-value" id="overview-s3-dedup">0</span>
                         </div>
                     </div>
 
                     <div class="card">
                         <div class="card-header">
-                            <h2 class="card-title">Stage 4: Large Docs</h2>
-                            <span class="card-badge badge-info">Standby</span>
+                            <h2 class="card-title" data-i18n="stage4.title">Stage 4: Large Docs</h2>
+                            <span class="card-badge badge-info" data-i18n="badge.standby">Standby</span>
                         </div>
                         <div class="metric-row">
-                            <span class="metric-label">Processed</span>
+                            <span class="metric-label" data-i18n="metric.processed">Processed</span>
                             <span class="metric-value" id="overview-s4-summaries">0</span>
                         </div>
                         <div class="overview-spark-wrap">
-                            <svg class="overview-spark" id="spark-overview-s4-summaries" role="img" aria-label="Stage 4 large-doc trend" viewBox="0 0 100 28" preserveAspectRatio="none"></svg>
+                            <svg class="overview-spark" id="spark-overview-s4-summaries" role="img" aria-label="Stage 4 large-doc trend" data-i18n-aria-label="spark.s4" viewBox="0 0 100 28" preserveAspectRatio="none"></svg>
                             <div class="overview-spark-dir" id="spark-dir-overview-s4-summaries" aria-live="polite">Trend: waiting for samples</div>
                         </div>
                         <div class="metric-row">
-                            <span class="metric-label" title="Stage 4 compression = compressed output size ÷ input size; values under 1.0x mean more compact storage">Compression (out÷in)</span>
+                            <span class="metric-label" title="Stage 4 compression = compressed output size ÷ input size; values under 1.0x mean more compact storage" data-i18n="metric.compression" data-i18n-title="metric.compressionTitle">Compression (out÷in)</span>
                             <span class="metric-value" id="overview-s4-compression">0x</span>
                         </div>
                     </div>
@@ -1367,27 +1394,27 @@
                 <div class="grid grid-2" style="margin-top: 1.5rem;">
                     <div class="card">
                         <div class="card-header">
-                            <h2 class="card-title">Pipeline Throughput</h2>
+                            <h2 class="card-title" data-i18n="chart.throughput">Pipeline Throughput</h2>
                         </div>
                         <div class="chart-container">
-                            <figure class="chart-figure"><figcaption class="visually-hidden">Pipeline throughput over time</figcaption><canvas id="throughput-chart" role="img" aria-label="Pipeline throughput over time"></canvas></figure>
+                            <figure class="chart-figure"><figcaption class="visually-hidden" data-i18n="chart.throughputCaption">Pipeline throughput over time</figcaption><canvas id="throughput-chart" role="img" aria-label="Pipeline throughput over time" data-i18n-aria-label="chart.throughputCaption"></canvas></figure>
                         </div>
                         <details class="chart-data-table" id="table-throughput-details">
-                            <summary>View data table — Pipeline throughput</summary>
+                            <summary data-i18n="chart.throughputSummary">View data table — Pipeline throughput</summary>
                             <div class="table-scroll" tabindex="0">
                                 <table id="table-throughput" class="data-fallback-table">
-                                    <caption class="visually-hidden">Pipeline throughput data</caption>
+                                    <caption class="visually-hidden" data-i18n="chart.throughputData">Pipeline throughput data</caption>
                                     <thead></thead>
                                     <tbody></tbody>
                                 </table>
                             </div>
-                            <div class="legend-toggles" id="table-throughput-legend" role="group" aria-label="Pipeline throughput series toggles"></div>
+                            <div class="legend-toggles" id="table-throughput-legend" role="group" aria-label="Pipeline throughput series toggles" data-i18n-aria-label="chart.throughputLegend"></div>
                         </details>
                     </div>
 
                     <div class="card">
                         <div class="card-header">
-                            <h2 class="card-title">Recent Activity</h2>
+                            <h2 class="card-title" data-i18n="activity.recent">Recent Activity</h2>
                         </div>
                         <!-- Rendered by app.js on init; no static seed (#978). -->
                         <div class="activity-feed" id="overview-activity" aria-live="off"></div>
@@ -1398,11 +1425,11 @@
                      or an API stub lists them; never a made-up seed list. -->
                 <div class="card" id="scrape-targets-card" style="margin-top: 1.5rem;">
                     <div class="card-header">
-                        <h2 class="card-title" id="scrape-targets-title">Scrape targets</h2>
+                        <h2 class="card-title" data-i18n="targets.title" id="scrape-targets-title">Scrape targets</h2>
                     </div>
                     <p class="metric-label" id="scrape-targets-empty" role="status">No scrape-target metric reported.</p>
                     <table class="data-fallback-table" id="scrape-targets-table" aria-labelledby="scrape-targets-title" hidden>
-                        <thead><tr><th scope="col">Host</th><th scope="col">Value</th></tr></thead>
+                        <thead><tr><th scope="col" data-i18n="targets.host">Host</th><th scope="col" data-i18n="targets.value">Value</th></tr></thead>
                         <tbody id="scrape-targets-list"></tbody>
                     </table>
                 </div>
@@ -1411,129 +1438,129 @@
             <!-- Pipeline Tab -->
             <div class="tab-content" id="tab-pipeline" role="tabpanel" aria-labelledby="tabbtn-pipeline" tabindex="0">
                 <div class="stage-pipeline">
-                    <div class="stage-card" role="button" tabindex="0" data-stage="1" aria-haspopup="dialog" aria-controls="stage-drilldown" aria-expanded="false" aria-label="Open URL Discovery details">
+                    <div class="stage-card" role="button" tabindex="0" data-stage="1" aria-haspopup="dialog" aria-controls="stage-drilldown" aria-expanded="false" aria-label="Open URL Discovery details" data-i18n-aria-label="stage.aria1">
                         <div class="stage-number">1</div>
-                        <div class="stage-title">URL Discovery</div>
+                        <div class="stage-title" data-i18n="stage.discovery">URL Discovery</div>
                         <div class="stage-metrics">
                             <div class="stage-metric">
-                                <span class="stage-metric-label">URLs Discovered</span>
+                                <span class="stage-metric-label" data-i18n="metric.urlsDiscovered">URLs Discovered</span>
                                 <span class="stage-metric-value" id="pipeline-s1-discovered">0</span>
                             </div>
                             <div class="stage-metric">
-                                <span class="stage-metric-label">Queued for Stage 2</span>
+                                <span class="stage-metric-label" data-i18n="metric.queuedStage2">Queued for Stage 2</span>
                                 <span class="stage-metric-value" id="pipeline-s1-queued">0</span>
                             </div>
                             <div class="stage-metric">
-                                <span class="stage-metric-label">Scout Instances</span>
+                                <span class="stage-metric-label" data-i18n="metric.scouts">Scout Instances</span>
                                 <span class="stage-metric-value" id="scout-instances" title="Not reported by the metrics exporter">&mdash;</span>
                             </div>
                         </div>
-                        <span class="stage-card-hint">Details</span>
+                        <span class="stage-card-hint" data-i18n="stage.details">Details</span>
                     </div>
 
-                    <div class="stage-card" role="button" tabindex="0" data-stage="2" aria-haspopup="dialog" aria-controls="stage-drilldown" aria-expanded="false" aria-label="Open Page Analysis details">
+                    <div class="stage-card" role="button" tabindex="0" data-stage="2" aria-haspopup="dialog" aria-controls="stage-drilldown" aria-expanded="false" aria-label="Open Page Analysis details" data-i18n-aria-label="stage.aria2">
                         <div class="stage-number">2</div>
-                        <div class="stage-title">Page Analysis</div>
+                        <div class="stage-title" data-i18n="stage.analysis">Page Analysis</div>
                         <div class="stage-metrics">
                             <div class="stage-metric">
-                                <span class="stage-metric-label">Pages Analyzed</span>
+                                <span class="stage-metric-label" data-i18n="metric.pagesAnalyzed">Pages Analyzed</span>
                                 <span class="stage-metric-value" id="pipeline-s2-analyzed">0</span>
                             </div>
                             <div class="stage-metric">
-                                <span class="stage-metric-label">Quality Documents</span>
+                                <span class="stage-metric-label" data-i18n="metric.qualityDocuments">Quality Documents</span>
                                 <span class="stage-metric-value" id="pipeline-s2-quality">0</span>
                             </div>
                             <div class="stage-metric">
-                                <span class="stage-metric-label">Massive Documents</span>
+                                <span class="stage-metric-label" data-i18n="metric.massiveDocuments">Massive Documents</span>
                                 <span class="stage-metric-value" id="pipeline-s2-massive">0</span>
                             </div>
                             <div class="stage-metric">
-                                <span class="stage-metric-label">Avg Word Count</span>
+                                <span class="stage-metric-label" data-i18n="metric.avgWords">Avg Word Count</span>
                                 <span class="stage-metric-value" id="pipeline-s2-words">0</span>
                             </div>
                         </div>
-                        <span class="stage-card-hint">Details</span>
+                        <span class="stage-card-hint" data-i18n="stage.details">Details</span>
                     </div>
 
-                    <div class="stage-card" role="button" tabindex="0" data-stage="3" aria-haspopup="dialog" aria-controls="stage-drilldown" aria-expanded="false" aria-label="Open Summarization details">
+                    <div class="stage-card" role="button" tabindex="0" data-stage="3" aria-haspopup="dialog" aria-controls="stage-drilldown" aria-expanded="false" aria-label="Open Summarization details" data-i18n-aria-label="stage.aria3">
                         <div class="stage-number">3</div>
-                        <div class="stage-title">Summarization</div>
+                        <div class="stage-title" data-i18n="stage.summarization">Summarization</div>
                         <div class="stage-metrics">
                             <div class="stage-metric">
-                                <span class="stage-metric-label">Summaries Created</span>
+                                <span class="stage-metric-label" data-i18n="metric.summariesCreated">Summaries Created</span>
                                 <span class="stage-metric-value" id="pipeline-s3-summaries">0</span>
                             </div>
                             <div class="stage-metric">
-                                <span class="stage-metric-label">Deduplicated</span>
+                                <span class="stage-metric-label" data-i18n="metric.deduplicated">Deduplicated</span>
                                 <span class="stage-metric-value" id="pipeline-s3-dedup">0</span>
                             </div>
                             <div class="stage-metric">
-                                <span class="stage-metric-label">Processing Rate</span>
+                                <span class="stage-metric-label" data-i18n="metric.processingRate">Processing Rate</span>
                                 <span class="stage-metric-value" id="pipeline-s3-rate">0/min</span>
                             </div>
                         </div>
-                        <span class="stage-card-hint">Details</span>
+                        <span class="stage-card-hint" data-i18n="stage.details">Details</span>
                     </div>
 
-                    <div class="stage-card" role="button" tabindex="0" data-stage="4" aria-haspopup="dialog" aria-controls="stage-drilldown" aria-expanded="false" aria-label="Open Large Documents details">
+                    <div class="stage-card" role="button" tabindex="0" data-stage="4" aria-haspopup="dialog" aria-controls="stage-drilldown" aria-expanded="false" aria-label="Open Large Documents details" data-i18n-aria-label="stage.aria4">
                         <div class="stage-number">4</div>
-                        <div class="stage-title">Large Documents</div>
+                        <div class="stage-title" data-i18n="stage.largeDocs">Large Documents</div>
                         <div class="stage-metrics">
                             <div class="stage-metric">
-                                <span class="stage-metric-label">Large Summaries</span>
+                                <span class="stage-metric-label" data-i18n="metric.largeSummaries">Large Summaries</span>
                                 <span class="stage-metric-value" id="pipeline-s4-summaries">0</span>
                             </div>
                             <div class="stage-metric">
-                                <span class="stage-metric-label">Avg Compression</span>
+                                <span class="stage-metric-label" data-i18n="metric.avgCompression">Avg Compression</span>
                                 <span class="stage-metric-value" id="pipeline-s4-compression">0x</span>
                             </div>
                             <div class="stage-metric">
-                                <span class="stage-metric-label">Processing Rate</span>
+                                <span class="stage-metric-label" data-i18n="metric.processingRate">Processing Rate</span>
                                 <span class="stage-metric-value" id="pipeline-s4-rate">0/min</span>
                             </div>
                         </div>
-                        <span class="stage-card-hint">Details</span>
+                        <span class="stage-card-hint" data-i18n="stage.details">Details</span>
                     </div>
                 </div>
 
                 <div class="grid grid-2" style="margin-top: 2rem;">
                     <div class="card">
                         <div class="card-header">
-                            <h2 class="card-title">Stage Progression</h2>
+                            <h2 class="card-title" data-i18n="chart.stageProgression">Stage Progression</h2>
                         </div>
                         <div class="chart-container">
-                            <figure class="chart-figure"><figcaption class="visually-hidden">Stage progression over time</figcaption><canvas id="stage-progression-chart" role="img" aria-label="Stage progression over time"></canvas></figure>
+                            <figure class="chart-figure"><figcaption class="visually-hidden" data-i18n="chart.stageCaption">Stage progression over time</figcaption><canvas id="stage-progression-chart" role="img" aria-label="Stage progression over time" data-i18n-aria-label="chart.stageCaption"></canvas></figure>
                         </div>
                         <details class="chart-data-table" id="table-stage-details">
-                            <summary>View data table — Stage progression</summary>
+                            <summary data-i18n="chart.stageSummary">View data table — Stage progression</summary>
                             <div class="table-scroll" tabindex="0">
                                 <table id="table-stage" class="data-fallback-table">
-                                    <caption class="visually-hidden">Stage progression data</caption>
+                                    <caption class="visually-hidden" data-i18n="chart.stageData">Stage progression data</caption>
                                     <thead></thead>
                                     <tbody></tbody>
                                 </table>
                             </div>
-                            <div class="legend-toggles" id="table-stage-legend" role="group" aria-label="Stage progression series toggles"></div>
+                            <div class="legend-toggles" id="table-stage-legend" role="group" aria-label="Stage progression series toggles" data-i18n-aria-label="chart.stageLegend"></div>
                         </details>
                     </div>
 
                     <div class="card">
                         <div class="card-header">
-                            <h2 class="card-title">Document Routing</h2>
+                            <h2 class="card-title" data-i18n="chart.routing">Document Routing</h2>
                         </div>
                         <div class="chart-container">
-                            <figure class="chart-figure"><figcaption class="visually-hidden">Traffic routing breakdown</figcaption><canvas id="routing-chart" role="img" aria-label="Traffic routing breakdown"></canvas></figure>
+                            <figure class="chart-figure"><figcaption class="visually-hidden" data-i18n="chart.routingCaption">Traffic routing breakdown</figcaption><canvas id="routing-chart" role="img" aria-label="Traffic routing breakdown" data-i18n-aria-label="chart.routingCaption"></canvas></figure>
                         </div>
                         <details class="chart-data-table" id="table-routing-details">
-                            <summary>View data table — Traffic routing</summary>
+                            <summary data-i18n="chart.routingSummary">View data table — Traffic routing</summary>
                             <div class="table-scroll" tabindex="0">
                                 <table id="table-routing" class="data-fallback-table">
-                                    <caption class="visually-hidden">Traffic routing data</caption>
+                                    <caption class="visually-hidden" data-i18n="chart.routingData">Traffic routing data</caption>
                                     <thead></thead>
                                     <tbody></tbody>
                                 </table>
                             </div>
-                            <div class="legend-toggles" id="table-routing-legend" role="group" aria-label="Traffic routing series toggles"></div>
+                            <div class="legend-toggles" id="table-routing-legend" role="group" aria-label="Traffic routing series toggles" data-i18n-aria-label="chart.routingLegend"></div>
                         </details>
                     </div>
                 </div>
@@ -1542,90 +1569,90 @@
             <!-- Performance Tab -->
             <div class="tab-content" id="tab-performance" role="tabpanel" aria-labelledby="tabbtn-performance" tabindex="0">
                 <div class="card" style="margin-bottom:1rem;padding:0.75rem 1rem;display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap">
-                    <span>Performance chart history</span>
-                    <button type="button" id="reset-chart-history" class="btn" aria-describedby="chart-history-cap" aria-label="Reset chart history buffers">Reset chart history</button>
-                    <span id="chart-history-cap" class="refresh-info" style="flex-basis:100%">In-memory history keeps the last 50 samples per series. This cap is independent of the chart axis.</span>
+                    <span data-i18n="perf.history">Performance chart history</span>
+                    <button type="button" id="reset-chart-history" class="btn" aria-describedby="chart-history-cap" aria-label="Reset chart history buffers" data-i18n="perf.reset" data-i18n-aria-label="perf.resetAria">Reset chart history</button>
+                    <span id="chart-history-cap" class="refresh-info" style="flex-basis:100%" data-i18n="perf.cap">In-memory history keeps the last 50 samples per series. This cap is independent of the chart axis.</span>
                 </div>
 
                 <div class="grid grid-2">
                     <div class="card">
                         <div class="card-header">
-                            <h2 class="card-title">URLs Discovered Over Time</h2>
+                            <h2 class="card-title" data-i18n="chart.urlsOverTime">URLs Discovered Over Time</h2>
                         </div>
                         <div class="chart-container">
-                            <figure class="chart-figure"><figcaption class="visually-hidden">URLs discovered over time</figcaption><canvas id="urls-chart" role="img" aria-label="URLs discovered over time"></canvas></figure>
+                            <figure class="chart-figure"><figcaption class="visually-hidden" data-i18n="chart.urlsCaption">URLs discovered over time</figcaption><canvas id="urls-chart" role="img" aria-label="URLs discovered over time" data-i18n-aria-label="chart.urlsCaption"></canvas></figure>
                         </div>
                         <details class="chart-data-table" id="table-urls-details">
-                            <summary>View data table — URLs discovered</summary>
+                            <summary data-i18n="chart.urlsSummary">View data table — URLs discovered</summary>
                             <div class="table-scroll" tabindex="0">
                                 <table id="table-urls" class="data-fallback-table">
-                                    <caption class="visually-hidden">URLs discovered data</caption>
+                                    <caption class="visually-hidden" data-i18n="chart.urlsData">URLs discovered data</caption>
                                     <thead></thead>
                                     <tbody></tbody>
                                 </table>
                             </div>
-                            <div class="legend-toggles" id="table-urls-legend" role="group" aria-label="URLs discovered series toggles"></div>
+                            <div class="legend-toggles" id="table-urls-legend" role="group" aria-label="URLs discovered series toggles" data-i18n-aria-label="chart.urlsLegend"></div>
                         </details>
                     </div>
 
                     <div class="card">
                         <div class="card-header">
-                            <h2 class="card-title">Pages Analyzed Over Time</h2>
+                            <h2 class="card-title" data-i18n="chart.pagesOverTime">Pages Analyzed Over Time</h2>
                         </div>
                         <div class="chart-container">
-                            <figure class="chart-figure"><figcaption class="visually-hidden">Pages analyzed over time</figcaption><canvas id="pages-chart" role="img" aria-label="Pages analyzed over time"></canvas></figure>
+                            <figure class="chart-figure"><figcaption class="visually-hidden" data-i18n="chart.pagesCaption">Pages analyzed over time</figcaption><canvas id="pages-chart" role="img" aria-label="Pages analyzed over time" data-i18n-aria-label="chart.pagesCaption"></canvas></figure>
                         </div>
                         <details class="chart-data-table" id="table-pages-details">
-                            <summary>View data table — Pages analyzed</summary>
+                            <summary data-i18n="chart.pagesSummary">View data table — Pages analyzed</summary>
                             <div class="table-scroll" tabindex="0">
                                 <table id="table-pages" class="data-fallback-table">
-                                    <caption class="visually-hidden">Pages analyzed data</caption>
+                                    <caption class="visually-hidden" data-i18n="chart.pagesData">Pages analyzed data</caption>
                                     <thead></thead>
                                     <tbody></tbody>
                                 </table>
                             </div>
-                            <div class="legend-toggles" id="table-pages-legend" role="group" aria-label="Pages analyzed series toggles"></div>
+                            <div class="legend-toggles" id="table-pages-legend" role="group" aria-label="Pages analyzed series toggles" data-i18n-aria-label="chart.pagesLegend"></div>
                         </details>
                     </div>
 
                     <div class="card">
                         <div class="card-header">
-                            <h2 class="card-title">Summaries Created Over Time</h2>
+                            <h2 class="card-title" data-i18n="chart.summariesOverTime">Summaries Created Over Time</h2>
                         </div>
                         <div class="chart-container">
-                            <figure class="chart-figure"><figcaption class="visually-hidden">Summaries produced over time</figcaption><canvas id="summaries-chart" role="img" aria-label="Summaries produced over time"></canvas></figure>
+                            <figure class="chart-figure"><figcaption class="visually-hidden" data-i18n="chart.summariesCaption">Summaries produced over time</figcaption><canvas id="summaries-chart" role="img" aria-label="Summaries produced over time" data-i18n-aria-label="chart.summariesCaption"></canvas></figure>
                         </div>
                         <details class="chart-data-table" id="table-summaries-details">
-                            <summary>View data table — Summaries produced</summary>
+                            <summary data-i18n="chart.summariesSummary">View data table — Summaries produced</summary>
                             <div class="table-scroll" tabindex="0">
                                 <table id="table-summaries" class="data-fallback-table">
-                                    <caption class="visually-hidden">Summaries produced data</caption>
+                                    <caption class="visually-hidden" data-i18n="chart.summariesData">Summaries produced data</caption>
                                     <thead></thead>
                                     <tbody></tbody>
                                 </table>
                             </div>
-                            <div class="legend-toggles" id="table-summaries-legend" role="group" aria-label="Summaries produced series toggles"></div>
+                            <div class="legend-toggles" id="table-summaries-legend" role="group" aria-label="Summaries produced series toggles" data-i18n-aria-label="chart.summariesLegend"></div>
                         </details>
                     </div>
 
                     <div class="card">
                         <div class="card-header">
-                            <h2 class="card-title">Processing Rates</h2>
+                            <h2 class="card-title" data-i18n="perf.rates">Processing Rates</h2>
                         </div>
                         <div class="metric-row">
-                            <span class="metric-label">Stage 1: URL Discovery</span>
+                            <span class="metric-label" data-i18n="perf.s1">Stage 1: URL Discovery</span>
                             <span class="metric-value" id="perf-s1-rate">0 URLs/min</span>
                         </div>
                         <div class="metric-row">
-                            <span class="metric-label">Stage 2: Page Analysis</span>
+                            <span class="metric-label" data-i18n="perf.s2">Stage 2: Page Analysis</span>
                             <span class="metric-value" id="perf-s2-rate">0 pages/min</span>
                         </div>
                         <div class="metric-row">
-                            <span class="metric-label">Stage 3: Summarization</span>
+                            <span class="metric-label" data-i18n="perf.s3">Stage 3: Summarization</span>
                             <span class="metric-value" id="perf-s3-rate">0 summaries/min</span>
                         </div>
                         <div class="metric-row">
-                            <span class="metric-label">Stage 4: Large Docs</span>
+                            <span class="metric-label" data-i18n="perf.s4">Stage 4: Large Docs</span>
                             <span class="metric-value" id="perf-s4-rate">0 docs/min</span>
                         </div>
                     </div>
@@ -1636,48 +1663,48 @@
             <div class="tab-content" id="tab-system" role="tabpanel" aria-labelledby="tabbtn-system" tabindex="0">
                 <div class="card" style="margin-bottom: 2rem;">
                     <div class="card-header">
-                        <h2 class="card-title">System Status</h2>
+                        <h2 class="card-title" data-i18n="system.status">System Status</h2>
                         <span class="status-indicator online" id="system-status">
                             <span class="status-dot"></span>
-                            <span>Online</span>
+                            <span data-i18n="status.onlineWord">Online</span>
                         </span>
                     </div>
                     <div id="health-announce" class="visually-hidden" role="status" aria-live="polite" aria-atomic="true"></div>
                     <div class="system-health">
                         <div class="health-item" id="redis-health">
                             <div class="health-icon" aria-hidden="true"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6c0-1.66 3.58-3 8-3s8 1.34 8 3-3.58 3-8 3-8-1.34-8-3zM4 6v12c0 1.66 3.58 3 8 3s8-1.34 8-3V6M4 12c0 1.66 3.58 3 8 3s8-1.34 8-3"/></svg></div>
-                            <div class="health-label">Redis</div>
-                            <div class="health-value">Healthy</div>
+                            <div class="health-label" data-i18n="health.redis">Redis</div>
+                            <div class="health-value" data-i18n="health.healthy">Healthy</div>
                         </div>
                         <div class="health-item" id="metrics-health">
                             <div class="health-icon" aria-hidden="true"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18M7 16v-5M12 16V8M17 16v-3"/></svg></div>
-                            <div class="health-label">Metrics</div>
-                            <div class="health-value">Collecting</div>
+                            <div class="health-label" data-i18n="health.metrics">Metrics</div>
+                            <div class="health-value" data-i18n="health.collecting">Collecting</div>
                         </div>
                         <div class="health-item" id="stage1-health">
                             <div class="health-icon" aria-hidden="true"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16zM21 21l-4.35-4.35"/></svg></div>
-                            <div class="health-label">Stage 1</div>
-                            <div class="health-value">Running</div>
+                            <div class="health-label" data-i18n="health.stage1">Stage 1</div>
+                            <div class="health-value" data-i18n="badge.running">Running</div>
                         </div>
                         <div class="health-item" id="stage2-health">
                             <div class="health-icon" aria-hidden="true"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6"/></svg></div>
-                            <div class="health-label">Stage 2</div>
-                            <div class="health-value">Running</div>
+                            <div class="health-label" data-i18n="health.stage2">Stage 2</div>
+                            <div class="health-value" data-i18n="badge.running">Running</div>
                         </div>
                         <div class="health-item" id="stage3-health">
                             <div class="health-icon" aria-hidden="true"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/></svg></div>
-                            <div class="health-label">Stage 3</div>
-                            <div class="health-value">Running</div>
+                            <div class="health-label" data-i18n="health.stage3">Stage 3</div>
+                            <div class="health-value" data-i18n="badge.running">Running</div>
                         </div>
                         <div class="health-item healthy" id="stage4-health">
                             <div class="health-icon" aria-hidden="true"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></div>
-                            <div class="health-label">Stage 4</div>
-                            <div class="health-value">Standby</div>
+                            <div class="health-label" data-i18n="health.stage4">Stage 4</div>
+                            <div class="health-value" data-i18n="badge.standby">Standby</div>
                         </div>
                     </div>
                     <!-- #1030: last 20 poll outcomes; segments are painted by app.js. -->
                     <div class="health-history-wrap">
-                        <p class="health-label" id="health-history-heading">Poll history</p>
+                        <p class="health-label" id="health-history-heading" data-i18n="health.poll">Poll history</p>
                         <div class="health-history" id="health-history" role="img" aria-label="Metrics poll history, last 20 outcomes. No polls yet. Oldest on the left."></div>
                         <p class="health-history-caption" id="health-history-caption" aria-hidden="true">No polls yet</p>
                     </div>
@@ -1686,11 +1713,11 @@
                 <!-- #401: live depths from /api/queues (serve.py reads Redis server-side). -->
                 <div class="card" style="margin-bottom: 2rem;" id="queue-depths-card">
                     <div class="card-header">
-                        <h2 class="card-title" id="queue-depths-title">Redis Queue Depths</h2>
+                        <h2 class="card-title" data-i18n="queues.title" id="queue-depths-title">Redis Queue Depths</h2>
                     </div>
-                    <p class="metric-label" id="queue-depths-status" role="status" aria-live="polite">Waiting for first sample&hellip;</p>
+                    <p class="metric-label" id="queue-depths-status" role="status" aria-live="polite" data-i18n="queue.waiting">Waiting for first sample…</p>
                     <table class="data-fallback-table" aria-labelledby="queue-depths-title">
-                        <thead><tr><th scope="col">Key</th><th scope="col">Type</th><th scope="col">Depth</th></tr></thead>
+                        <thead><tr><th scope="col" data-i18n="queue.key">Key</th><th scope="col" data-i18n="queue.type">Type</th><th scope="col" data-i18n="queue.depth">Depth</th></tr></thead>
                         <tbody id="queue-depths"></tbody>
                     </table>
                 </div>
@@ -1698,42 +1725,42 @@
                 <div class="grid grid-3">
                     <div class="card">
                         <div class="card-header">
-                            <h2 class="card-title">Redis Metrics</h2>
+                            <h2 class="card-title" data-i18n="redis.metrics">Redis Metrics</h2>
                         </div>
                         <div class="metric-row">
-                            <span class="metric-label">Keys</span>
+                            <span class="metric-label" data-i18n="redis.keys">Keys</span>
                             <span class="metric-value" id="redis-keys">0</span>
                         </div>
                         <div class="metric-row">
-                            <span class="metric-label">Memory Used</span>
+                            <span class="metric-label" data-i18n="redis.memory">Memory Used</span>
                             <span class="metric-value" id="redis-memory">0 MB</span>
                         </div>
                     </div>
 
                     <div class="card">
                         <div class="card-header">
-                            <h2 class="card-title">Delta Lake</h2>
+                            <h2 class="card-title" data-i18n="delta.title">Delta Lake</h2>
                         </div>
                         <div class="metric-row">
-                            <span class="metric-label">Tables</span>
+                            <span class="metric-label" data-i18n="delta.tables">Tables</span>
                             <span class="metric-value" id="delta-table-count" title="Not reported by the metrics exporter">&mdash;</span>
                         </div>
                         <div class="metric-row">
                             <span class="metric-label">Status</span>
-                            <span class="metric-value success">Pending</span>
+                            <span class="metric-value success" data-i18n="badge.pending">Pending</span>
                         </div>
                     </div>
 
                     <div class="card">
                         <div class="card-header">
-                            <h2 class="card-title">Last Update</h2>
+                            <h2 class="card-title" data-i18n="update.title">Last Update</h2>
                         </div>
                         <div class="metric-row">
-                            <span class="metric-label">Timestamp</span>
+                            <span class="metric-label" data-i18n="update.timestamp">Timestamp</span>
                             <span class="metric-value" id="last-update">Never</span>
                         </div>
                         <div class="metric-row">
-                            <span class="metric-label">Session uptime</span>
+                            <span class="metric-label" data-i18n="update.uptime">Session uptime</span>
                             <span class="metric-value" id="uptime">0s</span>
                         </div>
                     </div>
@@ -1742,11 +1769,11 @@
                 <!-- #1038: series names the page reads, filled by renderMetricNameMap. -->
                 <div class="card metric-map-card" id="metric-name-map">
                     <div class="card-header">
-                        <h2 class="card-title" id="metric-name-map-title">Settings</h2>
+                        <h2 class="card-title" data-i18n="settings.title" id="metric-name-map-title">Settings</h2>
                     </div>
                     <details id="metric-name-map-panel" open>
-                        <summary>Prometheus metric name map</summary>
-                        <p class="metric-map-help" id="metric-name-map-help">Expected exporter series and the UI fields that read them. Session uptime and last refresh are client clocks, not series. An exporter rename moves a field only when that series is listed here.</p>
+                        <summary data-i18n="settings.summary">Prometheus metric name map</summary>
+                        <p class="metric-map-help" id="metric-name-map-help" data-i18n="settings.help">Expected exporter series and the UI fields that read them. Session uptime and last refresh are client clocks, not series. An exporter rename moves a field only when that series is listed here.</p>
                         <div class="table-scroll" id="metric-name-map-body"></div>
                     </details>
                 </div>
@@ -1756,34 +1783,34 @@
             <div class="tab-content" id="tab-activity" role="tabpanel" aria-labelledby="tabbtn-activity" tabindex="0">
                 <div class="card">
                     <div class="card-header" style="flex-wrap:wrap;gap:0.5rem">
-                        <h2 class="card-title">Pipeline Activity Log</h2>
-                        <span class="card-badge badge-info">Live</span>
+                        <h2 class="card-title" data-i18n="activity.logTitle">Pipeline Activity Log</h2>
+                        <span class="card-badge badge-info" data-i18n="badge.live">Live</span>
                         <div style="margin-left:auto;display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center">
                             <label class="danger-sound-label" for="danger-sound-toggle">
                                 <input type="checkbox" id="danger-sound-toggle" aria-describedby="danger-sound-hint">
-                                Sound on danger
+                                <span data-i18n="sound.danger">Sound on danger</span>
                             </label>
-                            <span id="danger-sound-hint" class="visually-hidden">Off by default. Plays a short tone for a new error. Stays silent when reduced motion or a mute preference is set.</span>
-                            <button type="button" id="export-activity-json" class="btn" aria-label="Export activity log as JSON">Export JSON</button>
-                            <button type="button" id="export-activity-csv" class="btn" aria-label="Export activity log as CSV">Export CSV</button>
-                            <button type="button" id="clear-activity" class="btn" aria-label="Clear activity log">Clear</button>
+                            <span id="danger-sound-hint" class="visually-hidden" data-i18n="sound.hint">Off by default. Plays a short tone for a new error. Stays silent when reduced motion or a mute preference is set.</span>
+                            <button type="button" id="export-activity-json" class="btn" aria-label="Export activity log as JSON" data-i18n="export.json" data-i18n-aria-label="export.jsonAria">Export JSON</button>
+                            <button type="button" id="export-activity-csv" class="btn" aria-label="Export activity log as CSV" data-i18n="export.csv" data-i18n-aria-label="export.csvAria">Export CSV</button>
+                            <button type="button" id="clear-activity" class="btn" aria-label="Clear activity log" data-i18n="activity.clear" data-i18n-aria-label="activity.clearAria">Clear</button>
                         </div>
                     </div>
                     <div class="activity-search-row">
-                        <label class="activity-search-label" for="activity-search">Search activity</label>
-                        <input type="search" id="activity-search" class="activity-search" placeholder="Filter messages" autocomplete="off" spellcheck="false" aria-controls="activity-log">
-                        <button type="button" id="clear-activity-search" class="btn" disabled aria-label="Clear activity search">Clear search</button>
+                        <label class="activity-search-label" for="activity-search" data-i18n="activity.search">Search activity</label>
+                        <input type="search" id="activity-search" class="activity-search" placeholder="Filter messages" data-i18n-placeholder="activity.placeholder" autocomplete="off" spellcheck="false" aria-controls="activity-log">
+                        <button type="button" id="clear-activity-search" class="btn" disabled aria-label="Clear activity search" data-i18n="activity.clearSearch" data-i18n-aria-label="activity.clearSearchAria">Clear search</button>
                     </div>
-                    <div class="activity-filters" role="group" aria-label="Filter activity by level">
-                        <button type="button" class="activity-chip" data-level="success" aria-pressed="false">Success <span class="activity-chip-count" data-level-count="success">0</span></button>
-                        <button type="button" class="activity-chip" data-level="warning" aria-pressed="false">Warning <span class="activity-chip-count" data-level-count="warning">0</span></button>
-                        <button type="button" class="activity-chip" data-level="danger" aria-pressed="false">Danger <span class="activity-chip-count" data-level-count="danger">0</span></button>
-                        <button type="button" class="activity-chip" data-level="timeout" aria-pressed="false">Timeout <span class="activity-chip-count" data-level-count="timeout">0</span></button>
-                        <button type="button" class="activity-chip" data-level="info" aria-pressed="false">Info <span class="activity-chip-count" data-level-count="info">0</span></button>
+                    <div class="activity-filters" role="group" aria-label="Filter activity by level" data-i18n-aria-label="activity.filterAria">
+                        <button type="button" class="activity-chip" data-level="success" aria-pressed="false" data-i18n="level.success">Success <span class="activity-chip-count" data-level-count="success">0</span></button>
+                        <button type="button" class="activity-chip" data-level="warning" aria-pressed="false" data-i18n="level.warning">Warning <span class="activity-chip-count" data-level-count="warning">0</span></button>
+                        <button type="button" class="activity-chip" data-level="danger" aria-pressed="false" data-i18n="level.danger">Danger <span class="activity-chip-count" data-level-count="danger">0</span></button>
+                        <button type="button" class="activity-chip" data-level="timeout" aria-pressed="false" data-i18n="level.timeout">Timeout <span class="activity-chip-count" data-level-count="timeout">0</span></button>
+                        <button type="button" class="activity-chip" data-level="info" aria-pressed="false" data-i18n="level.info">Info <span class="activity-chip-count" data-level-count="info">0</span></button>
                     </div>
-                    <p id="activity-filter-empty" class="activity-filter-empty" hidden>No activity at the selected levels.</p>
+                    <p id="activity-filter-empty" class="activity-filter-empty" hidden data-i18n="activity.empty">No activity at the selected levels.</p>
                     <p id="activity-filter-status" class="activity-filter-status" role="status" aria-live="polite" hidden></p>
-                    <p id="activity-log-cap" class="refresh-info" style="margin:-0.25rem 0 0.75rem">Activity log keeps the last 50 events (same cap as chart history).</p>
+                    <p id="activity-log-cap" class="refresh-info" style="margin:-0.25rem 0 0.75rem" data-i18n="activity.cap">Activity log keeps the last 50 events (same cap as chart history).</p>
                     <!-- Rendered by app.js on init; no static seed (#978). -->
                     <div class="activity-feed" id="activity-log" role="log" aria-live="off" aria-describedby="activity-log-cap"></div>
                 </div>
@@ -1792,40 +1819,40 @@
 
         <div class="refresh-bar">
             <div id="refresh-status" class="visually-hidden" role="status" aria-live="polite" aria-atomic="true"></div>
-            <div id="activity-announce" class="visually-hidden" role="log" aria-live="polite" aria-relevant="additions" aria-atomic="false" aria-label="New activity"></div>
-            <div class="refresh-info">Updated <span id="last-updated-rel">never</span>
-                <span id="stale-badge" class="stale-badge" hidden title="No successful metrics fetch for several refresh intervals">Stale</span> · 
-                Auto-refresh: <span class="refresh-countdown" id="refresh-countdown">5</span> seconds
+            <div id="activity-announce" class="visually-hidden" role="log" aria-live="polite" aria-relevant="additions" aria-atomic="false" aria-label="New activity" data-i18n-aria-label="announce.label"></div>
+            <div class="refresh-info"><span data-i18n="refresh.updated">Updated</span> <span id="last-updated-rel">never</span>
+                <span id="stale-badge" class="stale-badge" hidden title="No successful metrics fetch for several refresh intervals" data-i18n="refresh.stale" data-i18n-title="refresh.staleTitle">Stale</span> ·
+                <span data-i18n="refresh.auto">Auto-refresh:</span> <span class="refresh-countdown" id="refresh-countdown">5</span> <span data-i18n="refresh.seconds">seconds</span>
             </div>
             <div class="refresh-info">
-                Last updated: <span id="last-refresh-time">Never</span>
+                <span data-i18n="refresh.last">Last updated:</span> <span id="last-refresh-time">Never</span>
             </div>
-            <label class="refresh-info refresh-interval-label" for="refresh-interval">Every
-                <select id="refresh-interval" class="refresh-interval" aria-label="Auto-refresh interval">
+            <label class="refresh-info refresh-interval-label" for="refresh-interval" data-i18n="refresh.every">Every
+                <select id="refresh-interval" class="refresh-interval" aria-label="Auto-refresh interval" data-i18n-aria-label="refresh.intervalAria">
                     <option value="5000" selected>5s</option>
                     <option value="10000">10s</option>
                     <option value="30000">30s</option>
                 </select>
             </label>
-            <button type="button" id="compare-prev-hour" class="btn" aria-pressed="false" aria-describedby="comparison-baseline-note">Compare to previous hour</button>
+            <button type="button" id="compare-prev-hour" class="btn" aria-pressed="false" aria-describedby="comparison-baseline-note" data-i18n="compare.label">Compare to previous hour</button>
             <p id="comparison-baseline-note" class="comparison-note" role="status" hidden></p>
-            <button type="button" id="pause-refresh" class="btn" aria-pressed="false" aria-label="Pause auto-refresh">Pause</button>
-            <span class="refresh-info" id="cc-version" title="Control Center build">v—</span>
-            <button type="button" id="manual-refresh" class="btn" aria-label="Refresh metrics now">Refresh now</button>
+            <button type="button" id="pause-refresh" class="btn" aria-pressed="false" aria-label="Pause auto-refresh" data-i18n="pause.label" data-i18n-aria-label="pause.aria">Pause</button>
+            <span class="refresh-info" id="cc-version" title="Control Center build" data-i18n-title="version.title">v—</span>
+            <button type="button" id="manual-refresh" class="btn" aria-label="Refresh metrics now" data-i18n="refresh.now" data-i18n-aria-label="refresh.nowAria">Refresh now</button>
         </div>
         <div id="stage-drilldown-announce" class="visually-hidden" role="status" aria-live="polite" aria-atomic="true"></div>
         <div id="stage-drilldown" class="stage-drilldown" hidden>
             <div id="stage-drilldown-backdrop" class="stage-drilldown-backdrop" aria-hidden="true"></div>
             <div class="stage-drilldown-panel" role="dialog" aria-modal="true" aria-labelledby="stage-drilldown-title" aria-describedby="stage-drilldown-note">
                 <div class="stage-drilldown-header">
-                    <h2 id="stage-drilldown-title" class="card-title">Stage details</h2>
-                    <button type="button" class="btn" id="stage-drilldown-close" aria-label="Close stage details">Close</button>
+                    <h2 id="stage-drilldown-title" class="card-title" data-i18n="drill.title">Stage details</h2>
+                    <button type="button" class="btn" id="stage-drilldown-close" aria-label="Close stage details" data-i18n="drill.close" data-i18n-aria-label="drill.closeAria">Close</button>
                 </div>
-                <p id="stage-drilldown-status" class="stage-drilldown-status">Idle</p>
+                <p id="stage-drilldown-status" class="stage-drilldown-status" data-i18n="drill.idle">Idle</p>
                 <div id="stage-drilldown-metrics" class="stage-metrics"></div>
-                <h3 class="stage-drilldown-links-title">Related</h3>
+                <h3 class="stage-drilldown-links-title" data-i18n="drill.related">Related</h3>
                 <ul id="stage-drilldown-links" class="stage-drilldown-links"></ul>
-                <p id="stage-drilldown-note" class="stage-drilldown-note">Job and queue links are placeholders until those views exist. Press Escape to close.</p>
+                <p id="stage-drilldown-note" class="stage-drilldown-note" data-i18n="drill.note">Job and queue links are placeholders until those views exist. Press Escape to close.</p>
             </div>
         </div>
     </main>
@@ -1833,6 +1860,7 @@
     <script src="features.js"></script>
     <script src="format-utils.js"></script>
     <script src="version.js"></script>
+    <script src="i18n.js"></script>
     <script src="app.js"></script>
 </body>
 </html>

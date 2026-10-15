@@ -15,6 +15,20 @@ tab (#1029). A reload restores them and shows a note that they came from before
 the reload and may be stale. Closing the tab drops them; Clear drops them
 immediately.
 
+## Language (#955)
+
+Shell copy (tabs, card titles, health labels, the activity controls, and the
+refresh bar) is in [`locales/en.json`](locales/en.json). [`locales/es.json`](locales/es.json)
+is a stub: same keys, unreviewed Spanish, and any empty value falls back to
+English. The top-bar **Language** select applies a catalog without a reload.
+The choice is stored in `localStorage` (`cc.locale`). `?lang=es` or `?lang=en`
+overrides it for that load and is then remembered.
+
+Strings that `format-utils.js` builds stay English so their contracts do not
+move: the tab-title words ONLINE / OFFLINE / ERROR (#945), the shortcut hint,
+the metrics-flood sentence, the comparison note, and activity-search status.
+Logged activity lines stay in the language they were recorded.
+
 All throughput figures are per minute, computed from the real time between samples (#141).
 Labelled series such as `errors_total{stage="stage1"}` are kept under their full key and
 also summed under the bare name (`errors_total`) unless an unlabelled series of that name

@@ -22,7 +22,32 @@ let consecutiveFetchFailures = 0;
 // #1030: last HEALTH_HISTORY_LIMIT metrics-poll outcomes (true = success).
 let pollHistory = [];
 // Static <title> captured once; connection state is prefixed onto it (#945).
+// ONLINE / OFFLINE / ERROR in the tab title stay English. The shell uses CCI18n (#955).
 const BASE_TITLE = (typeof document !== 'undefined' && document.title) || 'Pipeline Control Center';
+
+// #955: catalog lookup. Before locales load, or for an unknown key, keep the English fallback.
+function ccT(key, fallback, vars) {
+    try {
+        if (typeof window !== 'undefined' && window.CCI18n && typeof window.CCI18n.t === 'function') {
+            const value = window.CCI18n.t(key, vars);
+            if (typeof value === 'string' && value !== key) return value;
+        }
+    } catch (_) { /* catalog not ready */ }
+    let text = fallback == null ? key : String(fallback);
+    if (vars && typeof vars === 'object') {
+        text = text.replace(/\{(\w+)\}/g, (match, name) =>
+            (vars[name] == null ? match : String(vars[name])));
+    }
+    return text;
+}
+function ccLocaleTag() {
+    try {
+        if (typeof window !== 'undefined' && window.CCI18n && typeof window.CCI18n.getLocale === 'function') {
+            return window.CCI18n.getLocale();
+        }
+    } catch (_) { /* ignore */ }
+    return undefined;
+}
 let chartsHaveSample = false;
 // #690: charts stay paused while a scrape is over the series or parse-time limit.
 let metricsFlood = { degraded: false, calm: 0 };
@@ -133,12 +158,14 @@ function buildCharts() {
         data: {
             labels: [],
             datasets: [{
+                i18nKey: 'chart.urlsPerMin',
                 label: 'URLs/min',
                 data: [],
                 borderColor: 'rgb(37, 99, 235)',
                 backgroundColor: 'rgba(37, 99, 235, 0.1)',
                 tension: 0.4
             }, {
+                i18nKey: 'chart.pagesPerMin',
                 label: 'Pages/min',
                 data: [],
                 borderColor: 'rgb(124, 58, 237)',
@@ -154,6 +181,7 @@ function buildCharts() {
         data: {
             labels: ['Stage 1', 'Stage 2', 'Stage 3', 'Stage 4'],
             datasets: [{
+                i18nKey: 'chart.docsProcessed',
                 label: 'Documents Processed',
                 data: [0, 0, 0, 0],
                 backgroundColor: [
@@ -211,6 +239,7 @@ function buildCharts() {
         data: {
             labels: [],
             datasets: [{
+                i18nKey: 'chart.urlsDiscovered',
                 label: 'URLs Discovered',
                 data: [],
                 borderColor: 'rgb(37, 99, 235)',
@@ -227,6 +256,7 @@ function buildCharts() {
         data: {
             labels: [],
             datasets: [{
+                i18nKey: 'chart.pagesAnalyzed',
                 label: 'Pages Analyzed',
                 data: [],
                 borderColor: 'rgb(124, 58, 237)',
@@ -243,6 +273,7 @@ function buildCharts() {
         data: {
             labels: [],
             datasets: [{
+                i18nKey: 'chart.summariesCreated',
                 label: 'Summaries Created',
                 data: [],
                 borderColor: 'rgb(16, 185, 129)',
@@ -252,6 +283,34 @@ function buildCharts() {
             }]
         },
         options: chartConfig
+    });
+
+    charts.stageProgression._i18nLabelKeys = ['chart.stage1', 'chart.stage2', 'chart.stage3', 'chart.stage4'];
+    charts.routing._i18nLabelKeys = ['chart.qualityRoute', 'chart.massiveRoute'];
+    applyChartLabels();
+}
+
+// #955: dataset labels and category labels follow the active catalog.
+function applyChartLabels() {
+    Object.values(charts || {}).forEach(ch => {
+        if (!ch || !ch.data) return;
+        let changed = false;
+        (ch.data.datasets || []).forEach(ds => {
+            if (!ds.i18nKey) return;
+            if (!ds._i18nFallback) ds._i18nFallback = ds.label;
+            const next = ccT(ds.i18nKey, ds._i18nFallback);
+            if (ds.label !== next) { ds.label = next; changed = true; }
+        });
+        if (ch._i18nLabelKeys) {
+            if (!ch._i18nLabelFallback) ch._i18nLabelFallback = (ch.data.labels || []).slice();
+            const nextLabels = ch._i18nLabelKeys.map((key, i) => ccT(key, ch._i18nLabelFallback[i] || key));
+            const prev = ch.data.labels || [];
+            if (nextLabels.length !== prev.length || nextLabels.some((label, i) => label !== prev[i])) {
+                ch.data.labels = nextLabels;
+                changed = true;
+            }
+        }
+        if (changed) { try { ch.update('none'); } catch (_) {} }
     });
 }
 
@@ -782,6 +841,18 @@ function calculateRates(metrics, now = Date.now()) {
 /** Announce System Health tile transitions once per change (#1096). */
 const _healthLastState = Object.create(null);
 
+function paintHealthTiles(metrics) {
+    const redisReported = ('pipeline_redis_keys' in metrics) || ('pipeline_redis_memory_bytes' in metrics);
+    setHealthTile('redis-health', ccT('health.redis', 'Redis'), redisReported, redisReported ? ccT('health.healthy', 'Healthy') : ccT('health.unreachable', 'Unreachable'));
+    const metricsOk = Boolean(metrics) && Object.keys(metrics).length > 0;
+    setHealthTile('metrics-health', ccT('health.metrics', 'Metrics'), metricsOk, metricsOk ? ccT('health.collecting', 'Collecting') : ccT('health.stale', 'Stale'));
+}
+
+function paintFetchFailedHealth() {
+    setHealthTile('metrics-health', ccT('health.metrics', 'Metrics'), false, ccT('health.fetchFailed', 'Fetch failed'));
+    setHealthTile('redis-health', ccT('health.redis', 'Redis'), false, ccT('health.unknown', 'Unknown'));
+}
+
 function setHealthTile(id, label, healthy, detailText) {
     const el = document.getElementById(id);
     if (!el) return;
@@ -840,6 +911,9 @@ function checkMilestones(metrics) {
 }
 
 function updateDashboard(metrics) {
+    sawMetrics = true;
+    healthFailed = false;
+    lastPaintedMetrics = metrics;
     checkMilestones(metrics);
     if (metricsWasDown) {
         metricsWasDown = false;
@@ -924,10 +998,7 @@ function updateDashboard(metrics) {
     setMetricText('redis-memory', formatBytes(redisMemory));
 
     // System Health tiles (#1096)
-    const redisReported = ('pipeline_redis_keys' in metrics) || ('pipeline_redis_memory_bytes' in metrics);
-    setHealthTile('redis-health', 'Redis', redisReported, redisReported ? 'Healthy' : 'Unreachable');
-    const metricsOk = Boolean(metrics) && Object.keys(metrics).length > 0;
-    setHealthTile('metrics-health', 'Metrics', metricsOk, metricsOk ? 'Collecting' : 'Stale');
+    paintHealthTiles(metrics);
 
     const lastUpdateEl = document.getElementById('last-update');
     if (lastUpdateEl) lastUpdateEl.textContent = formatEpochTime(metrics['pipeline_last_update_timestamp']);
@@ -938,7 +1009,7 @@ function updateDashboard(metrics) {
     setReportedValue('scout-instances',
         'pipeline_scout_instances' in metrics ? metrics['pipeline_scout_instances'] : null);
     const lastRefreshEl = document.getElementById('last-refresh-time');
-    if (lastRefreshEl) lastRefreshEl.textContent = new Date().toLocaleTimeString();
+    if (lastRefreshEl) lastRefreshEl.textContent = new Date().toLocaleTimeString(ccLocaleTag());
     const uptimeEl = document.getElementById('uptime');
     if (uptimeEl) uptimeEl.textContent = getUptime();
 
@@ -989,7 +1060,7 @@ function renderScrapeTargets(metrics) {
     list.replaceChildren();
     if (summary.missing) {
         empty.hidden = false;
-        empty.textContent = summary.empty;
+        empty.textContent = ccT('targets.empty', summary.empty);
         table.hidden = true;
         return;
     }
@@ -1031,9 +1102,13 @@ function applyMetricsFlood(decision) {
     if (host && host.classList) host.classList.toggle('metrics-flood', !!decision.degraded);
     if (banner) {
         if (decision.degraded) {
-            if (text) text.textContent = metricsFloodBannerText(decision);
+            if (text) {
+                text.textContent = metricsFloodBannerText(decision);
+                text.setAttribute('data-i18n-owned', 'js');
+            }
             banner.hidden = false;
         } else {
+            if (text) text.removeAttribute('data-i18n-owned');
             banner.hidden = true;
         }
     }
@@ -1050,7 +1125,7 @@ function setReportedValue(id, value) {
     if (!el) return;
     if (value === null || value === undefined) {
         el.textContent = '\u2014';
-        el.title = 'Not reported by the metrics exporter';
+        el.title = ccT('metric.notReported', 'Not reported by the metrics exporter');
     } else {
         el.textContent = formatNumber(value);
         el.removeAttribute('title');
@@ -1078,15 +1153,22 @@ function notePollOutcome(ok) {
     renderHealthHistory();
 }
 
+let lastConnectionArgs = null;
+let lastQueueView = null;
+let sawMetrics = false;
+let healthFailed = false;
+let lastPaintedMetrics = null;
+let lastFetchErrorMessage = null;
 function setConnectionStatus(kind, pipelineRunning) {
     // kind: 'online' | 'never' | 'offline'
+    lastConnectionArgs = { kind: kind, pipelineRunning: pipelineRunning };
     const state = connectionState(kind, pipelineRunning, consecutiveFetchFailures);
     const sys = document.getElementById('system-status');
     const top = document.getElementById('topbar-status');
     const labels = {
-        online: 'Online',
-        never: 'Not connected',
-        offline: 'Disconnected',
+        online: ccT('status.onlineWord', 'Online'),
+        never: ccT('status.neverWord', 'Not connected'),
+        offline: ccT('status.offlineWord', 'Disconnected'),
     };
     if (sys) {
         sys.classList.remove('online', 'offline', 'never');
@@ -1096,7 +1178,18 @@ function setConnectionStatus(kind, pipelineRunning) {
     }
     const title = documentTitle(state, BASE_TITLE);
     if (document.title !== title) document.title = title;
-    if (top) { const __n = state.top; if (top.textContent !== String(__n)) { top.textContent = __n; top.classList.remove('flash'); void top.offsetWidth; top.classList.add('flash'); } else { top.textContent = __n; } }
+    if (top) { const __n = localizeStatusTop(state.top); if (top.textContent !== String(__n)) { top.textContent = __n; top.classList.remove('flash'); void top.offsetWidth; top.classList.add('flash'); } else { top.textContent = __n; } }
+}
+
+function localizeStatusTop(top) {
+    const map = {
+        '\u25CF Online': 'status.onlineTop',
+        '\u25D0 Pipeline offline': 'status.stoppedTop',
+        '\u25CB Not connected': 'status.neverTop',
+        '\u25CF Disconnected': 'status.offlineTop',
+    };
+    const key = map[top];
+    return key ? ccT(key, top) : top;
 }
 
 // #401: Redis queue depths from serve.py. Only when served over http(s) (the
@@ -1123,10 +1216,17 @@ async function fetchQueueDepths() {
     const { error, rows } = queueDepthRows(payload);
     tbody.replaceChildren();
     if (error) {
+        lastQueueView = { error: error };
+        status.setAttribute('data-i18n-owned', 'js');
         status.textContent = error;
         return;
     }
-    status.textContent = rows.length ? `Updated ${new Date().toLocaleTimeString()}` : 'No queue keys configured (CC_QUEUE_KEYS).';
+    const when = new Date().toLocaleTimeString(ccLocaleTag());
+    lastQueueView = { error: '', count: rows.length, time: when };
+    status.setAttribute('data-i18n-owned', 'js');
+    status.textContent = rows.length
+        ? ccT('queue.updated', 'Updated {time}', { time: when })
+        : ccT('queue.none', 'No queue keys configured (CC_QUEUE_KEYS).');
     for (const row of rows) {
         const tr = document.createElement('tr');
         for (const value of [row.key, row.type, row.depth === null ? '—' : formatNumber(row.depth)]) {
@@ -1174,8 +1274,10 @@ async function fetchMetrics() {
         consecutiveFetchFailures += 1;
         setConnectionStatus(hasEverSucceeded ? 'offline' : 'never');
         notePollOutcome(false);
+        healthFailed = true;
         document.querySelectorAll('.card-badge.badge-info, .card-badge.badge-success').forEach(b => {
-            b.textContent = 'Unknown';
+            b.setAttribute('data-i18n', 'health.unknown');
+            b.textContent = ccT('health.unknown', 'Unknown');
             b.classList.remove('badge-info', 'badge-success');
             b.classList.add('badge-danger');
         });
@@ -1183,14 +1285,14 @@ async function fetchMetrics() {
             el.classList.remove('healthy');
             el.classList.add('unhealthy');
             const v = el.querySelector('.health-value');
-            if (v) v.textContent = 'Unreachable';
+            if (v) {
+                v.setAttribute('data-i18n', 'health.unreachable');
+                v.textContent = ccT('health.unreachable', 'Unreachable');
+            }
         });
         const delta = document.getElementById('delta-tables');
         if (delta) delta.textContent = '—';
-        if (typeof setHealthTile === 'function') {
-            setHealthTile('metrics-health', 'Metrics', false, 'Fetch failed');
-            setHealthTile('redis-health', 'Redis', false, 'Unknown');
-        }
+        if (typeof setHealthTile === 'function') paintFetchFailedHealth();
     } finally {
         if (main) main.setAttribute('aria-busy', 'false');
     }
@@ -1593,7 +1695,7 @@ function markLoading() {
         el.setAttribute('aria-busy', 'true');
     });
     const top = document.getElementById('topbar-status');
-    if (top) top.textContent = 'Loading…';
+    if (top && !lastConnectionArgs) top.textContent = ccT('status.loading', 'Loading…');
 }
 function finishLoading(failed) {
     document.querySelectorAll('.is-loading').forEach(el => {
@@ -1610,10 +1712,17 @@ function showFetchError(message) {
     const text = document.getElementById('fetch-error-text');
     // Unhide before writing so role=alert announces the new text.
     if (banner && banner.hidden) banner.hidden = false;
-    if (text) text.textContent = `Could not load metrics: ${message}`;
+    lastFetchErrorMessage = message;
+    if (text) {
+        text.setAttribute('data-i18n-owned', 'js');
+        text.textContent = ccT('error.metricsWithDetail', 'Could not load metrics: {message}', { message: message });
+    }
 }
 function hideFetchError() {
+    lastFetchErrorMessage = null;
     const banner = document.getElementById('fetch-error-banner');
+    const text = document.getElementById('fetch-error-text');
+    if (text) text.removeAttribute('data-i18n-owned');
     if (banner && !banner.hidden) banner.hidden = true;
 }
 
@@ -1639,7 +1748,9 @@ function setRefreshBusy(busy) {
     if (!btn) return;
     btn.setAttribute('aria-busy', busy ? 'true' : 'false');
     btn.setAttribute('aria-disabled', busy ? 'true' : 'false');
-    btn.textContent = busy ? 'Refreshing…' : 'Refresh now';
+    const key = busy ? 'refresh.busy' : 'refresh.now';
+    btn.setAttribute('data-i18n', key);
+    btn.textContent = ccT(key, busy ? 'Refreshing…' : 'Refresh now');
 }
 function requestRefresh() {
     if (!refreshScheduler || refreshScheduler.isFetching()) return;
@@ -1867,6 +1978,42 @@ function applyVersionWatermark() {
     if (el) el.textContent = 'v' + (window.__CC_VERSION__ || 'dev');
 }
 
+function paintPauseButton(btn) {
+    const pauseBtn = btn || document.getElementById('pause-refresh');
+    if (!pauseBtn) return;
+    const labelKey = refreshPaused ? 'pause.resume' : 'pause.label';
+    const ariaKey = refreshPaused ? 'pause.resumeAria' : 'pause.aria';
+    pauseBtn.setAttribute('data-i18n', labelKey);
+    pauseBtn.setAttribute('data-i18n-aria-label', ariaKey);
+    pauseBtn.setAttribute('aria-pressed', refreshPaused ? 'true' : 'false');
+    pauseBtn.textContent = ccT(labelKey, refreshPaused ? 'Resume' : 'Pause');
+    pauseBtn.setAttribute('aria-label', ccT(ariaKey, refreshPaused ? 'Resume auto-refresh' : 'Pause auto-refresh'));
+}
+
+// Re-apply strings that app.js owns after the catalog paints (#955).
+function refreshLocaleChrome() {
+    paintPauseButton();
+    const refreshBtn = document.getElementById('manual-refresh');
+    if (refreshBtn) setRefreshBusy(refreshBtn.getAttribute('aria-busy') === 'true');
+    if (lastConnectionArgs) setConnectionStatus(lastConnectionArgs.kind, lastConnectionArgs.pipelineRunning);
+    else if (!hasEverSucceeded) markLoading();
+    if (healthFailed) paintFetchFailedHealth();
+    else if (sawMetrics && lastPaintedMetrics) paintHealthTiles(lastPaintedMetrics);
+    const errBanner = document.getElementById('fetch-error-banner');
+    if (errBanner && !errBanner.hidden && lastFetchErrorMessage != null) showFetchError(lastFetchErrorMessage);
+    if (sawMetrics && lastPaintedMetrics) renderScrapeTargets(lastPaintedMetrics);
+    if (lastQueueView && !lastQueueView.error) {
+        const status = document.getElementById('queue-depths-status');
+        if (status) {
+            status.textContent = lastQueueView.count
+                ? ccT('queue.updated', 'Updated {time}', { time: lastQueueView.time })
+                : ccT('queue.none', 'No queue keys configured (CC_QUEUE_KEYS).');
+        }
+    }
+    applyChartLabels();
+    if (comparisonEnabled) applyComparisonBaselines();
+}
+
 function initialize() {
     console.log('Initializing Pipeline Control Center...');
 
@@ -1897,13 +2044,13 @@ function initialize() {
     if (pauseBtn) {
         pauseBtn.addEventListener('click', () => {
             refreshPaused = !refreshPaused;
-            pauseBtn.setAttribute('aria-pressed', refreshPaused ? 'true' : 'false');
-            pauseBtn.textContent = refreshPaused ? 'Resume' : 'Pause';
-            pauseBtn.setAttribute('aria-label', refreshPaused ? 'Resume auto-refresh' : 'Pause auto-refresh');
+            paintPauseButton(pauseBtn);
             refreshScheduler.setPaused(refreshPaused);
             renderCountdown();
             const live = document.getElementById('refresh-status');
-            if (live) live.textContent = refreshPaused ? 'Auto-refresh paused' : 'Auto-refresh resumed';
+            if (live) live.textContent = refreshPaused
+                ? ccT('pause.pausedStatus', 'Auto-refresh paused')
+                : ccT('pause.resumedStatus', 'Auto-refresh resumed');
         });
     }
     const manualBtn = document.getElementById('manual-refresh');
@@ -1932,7 +2079,12 @@ function initialize() {
         addActivityLogItem('danger', metricsProblem);
     }
 
+    if (window.CCI18n && window.CCI18n._ready) refreshLocaleChrome();
     console.log('Dashboard ready!');
+}
+
+if (typeof document !== 'undefined') {
+    document.addEventListener('cc:locale', () => refreshLocaleChrome());
 }
 
 if (document.readyState === 'loading') {

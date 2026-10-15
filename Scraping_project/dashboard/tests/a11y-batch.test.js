@@ -82,7 +82,7 @@ test('health tiles and the title mark use the same decorative SVG set (#1049)', 
         assert.match(h[0], /<svg class="ui-icon"[^>]*aria-hidden="true"[^>]*stroke="currentColor"/);
         assert.ok(!emoji.test(h[0]), h[0]);
     }
-    const title = body.match(/<span class="title-full">([\s\S]*?)<\/span>/);
+    const title = body.match(/<span class="title-full"[^>]*>([\s\S]*?)<\/span>/);
     assert.ok(title, 'title mark present');
     assert.match(title[1], /<svg class="ui-icon"[^>]*aria-hidden="true"[^>]*stroke="currentColor"/);
     assert.match(title[1], /Pipeline Control Center/);
@@ -102,7 +102,7 @@ test('app.js handles arrow keys on the tablist and keeps tabindex roving', () =>
 // --- #332 landmarks & headings -------------------------------------------
 test('header / nav / main landmarks and h1 -> h2 outline', () => {
     assert.match(body, /<header class="topbar">/);
-    assert.match(body, /<nav class="tab-buttons-wrap" aria-label="Dashboard sections">/);
+    assert.match(body, /<nav class="tab-buttons-wrap" aria-label="Dashboard sections"/);
     assert.match(body, /<main class="container" id="main">/);
     assert.strictEqual((body.match(/<h1\b/g) || []).length, 1);
     assert.ok((body.match(/<h2 class="card-title"/g) || []).length >= 15);
