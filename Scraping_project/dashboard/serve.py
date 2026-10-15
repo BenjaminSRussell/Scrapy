@@ -328,6 +328,12 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             return False
         return Path(parts[-1]).suffix.lower() in ALLOWED_SUFFIXES
 
+    def guess_type(self, path):
+        # #944: nosniff is on, and .svg is absent from SimpleHTTPRequestHandler.extensions_map.
+        if Path(str(path)).suffix.lower() == ".svg":
+            return "image/svg+xml"
+        return super().guess_type(path)
+
     def send_head(self):
         if not self._is_servable(self.path):
             self.send_error(404, "Not Found")
