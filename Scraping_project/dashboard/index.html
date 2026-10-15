@@ -30,6 +30,23 @@
             --gray-900: #111827;
             /* #340: muted text on white / gray-100 cards: 7.2:1 (was #94a3b8, 2.6:1). */
             --muted-text: #475569;
+            --page-bg: #f3f4f6;
+            --surface: #ffffff;
+            --line: #f3f4f6;
+            --accent: #2563eb;
+            --gray-400: #9ca3af;
+            --gray-600: #4b5563;
+            --activity-success-bg: #ecfdf5;
+            --activity-warning-bg: #fffbeb;
+            --activity-timeout-bg: #fff7ed;
+            --activity-danger-bg: #fef2f2;
+            --health-ok-bg: #ecfdf5;
+            --health-bad-bg: #fef2f2;
+            --compare-on-bg: #eff6ff;
+            --compare-on-text: #1e40af;
+            --table-border: #334155;
+            --flash: #fde68a;
+            color-scheme: light;
         }
 
         .skip-to-main {
@@ -50,7 +67,7 @@
             animation: metricFlash 1.2s ease;
         }
         @keyframes metricFlash {
-            0% { background: #fde68a; }
+            0% { background: var(--flash); }
             100% { background: transparent; }
         }
         html {
@@ -61,7 +78,7 @@
         }
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-            background-color: var(--gray-100);
+            background-color: var(--page-bg);
             color: var(--gray-900);
         }
 
@@ -116,6 +133,26 @@
             margin-top: 0.25rem;
         }
 
+        /* #946: sits on the brand gradient in both schemes. White on #2563eb is 5.2:1. */
+        .theme-toggle {
+            align-self: center;
+            background: transparent;
+            color: #fff;
+            border: 2px solid #fff;
+            border-radius: 999px;
+            padding: 0.35rem 0.8rem;
+            font: inherit;
+            font-size: 0.8rem;
+            font-weight: 700;
+            line-height: 1.2;
+            cursor: pointer;
+            min-height: 44px;
+        }
+        .theme-toggle[aria-pressed="true"] {
+            background: #fff;
+            color: #1e3a8a;
+        }
+
         .container {
             max-width: 1600px;
             margin: 0 auto;
@@ -124,7 +161,7 @@
 
         .tabs {
             overflow: visible;
-            background: white;
+            background: var(--surface);
             border-radius: 0.5rem;
             box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
             margin-bottom: 2rem;
@@ -139,7 +176,7 @@
         .tab-button {
             flex: 1;
             padding: 1rem 1.5rem;
-            background: white;
+            background: var(--surface);
             border: none;
             border-bottom: 3px solid transparent;
             font-size: 0.9rem;
@@ -155,8 +192,8 @@
         }
 
         .tab-button.active {
-            color: var(--primary);
-            border-bottom-color: var(--primary);
+            color: var(--accent);
+            border-bottom-color: var(--accent);
             background: var(--gray-50);
         }
 
@@ -201,7 +238,7 @@
         }
 
         .card {
-            background: white;
+            background: var(--surface);
             border-radius: 0.5rem;
             padding: 1.5rem;
             box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
@@ -219,7 +256,7 @@
             align-items: center;
             margin-bottom: 1rem;
             padding-bottom: 0.75rem;
-            border-bottom: 2px solid var(--gray-100);
+            border-bottom: 2px solid var(--line);
         }
 
         .card-title {
@@ -261,7 +298,7 @@
             justify-content: space-between;
             align-items: center;
             padding: 0.75rem 0;
-            border-bottom: 1px solid var(--gray-100);
+            border-bottom: 1px solid var(--line);
         }
 
         .metric-row:last-child {
@@ -316,7 +353,7 @@
         }
 
         .stage-card {
-            background: white;
+            background: var(--surface);
             border-radius: 0.5rem;
             padding: 1.5rem;
             box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
@@ -331,7 +368,7 @@
         }
 
         .stage-card.active {
-            border-color: var(--primary);
+            border-color: var(--accent);
             box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2);
         }
 
@@ -406,7 +443,7 @@
             max-width: 100%;
             height: 100%;
             overflow-y: auto;
-            background: white;
+            background: var(--surface);
             color: var(--gray-900);
             padding: 1.25rem 1.5rem;
             box-shadow: -4px 0 16px rgba(0, 0, 0, 0.15);
@@ -476,17 +513,17 @@
 
         .activity-item.success {
             border-left-color: var(--success);
-            background: #ecfdf5;
+            background: var(--activity-success-bg);
         }
 
         .activity-item.warning {
             border-left-color: var(--warning);
-            background: #fffbeb;
+            background: var(--activity-warning-bg);
         }
 
         .activity-item.timeout {
             border-left-color: var(--warning);
-            background: #fff7ed;
+            background: var(--activity-timeout-bg);
             border-left-style: dashed;
         }
 
@@ -502,7 +539,7 @@
 
         .activity-item.danger {
             border-left-color: var(--danger);
-            background: #fef2f2;
+            background: var(--activity-danger-bg);
         }
 
         .activity-timestamp {
@@ -566,7 +603,7 @@
             padding: 0.3rem 0.7rem;
             border-radius: 9999px;
             border: 1px solid var(--gray-300);
-            background: white;
+            background: var(--surface);
             color: var(--gray-800);
             cursor: pointer;
         }
@@ -641,7 +678,7 @@
             padding: 0.35rem 0.6rem;
             border: 1px solid var(--gray-300);
             border-radius: 6px;
-            background: white;
+            background: var(--surface);
             color: var(--gray-900);
         }
 
@@ -713,12 +750,12 @@
 
         .health-item.healthy {
             border-color: var(--success);
-            background: #ecfdf5;
+            background: var(--health-ok-bg);
         }
 
         .health-item.unhealthy {
             border-color: var(--danger);
-            background: #fef2f2;
+            background: var(--health-bad-bg);
         }
 
         .health-icon {
@@ -785,7 +822,7 @@
            Activity log (#975). Opaque background + shadow keep it legible over
            content; wraps on narrow screens instead of overflowing. */
         .refresh-bar {
-            background: white;
+            background: var(--surface);
             border-radius: 0.5rem;
             padding: 0.75rem 1.5rem;
             box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.12);
@@ -824,12 +861,12 @@
             padding: 0.15rem 0.35rem;
             border: 1px solid var(--gray-300, #d1d5db);
             border-radius: 6px;
-            background: white;
+            background: var(--surface);
         }
 
         .refresh-countdown {
             font-weight: 700;
-            color: var(--primary);
+            color: var(--accent);
         }
 
         /* #1035: status under the comparison toggle. hidden wins over flex. */
@@ -840,7 +877,8 @@
             color: var(--gray-700);
         }
         #compare-prev-hour[aria-pressed="true"] {
-            background: #eff6ff;
+            background: var(--compare-on-bg);
+            color: var(--compare-on-text);
             border-color: var(--primary-dark);
         }
 
@@ -915,7 +953,7 @@
         .chart-data-table summary { cursor: pointer; color: var(--muted-text); }
         .table-scroll { overflow-x: auto; max-width: 100%; }
         .data-fallback-table { width: 100%; border-collapse: collapse; margin-top: 0.5rem; }
-        .data-fallback-table th, .data-fallback-table td { border: 1px solid #334155; padding: 0.25rem 0.5rem; text-align: left; vertical-align: top; }
+        .data-fallback-table th, .data-fallback-table td { border: 1px solid var(--table-border); padding: 0.25rem 0.5rem; text-align: left; vertical-align: top; }
         .metric-map-card { margin-top: 2rem; }
         .metric-map-card summary { cursor: pointer; font-weight: 600; color: var(--gray-800); }
         .metric-map-help { font-size: 0.9rem; color: var(--gray-700); margin: 0.75rem 0; }
@@ -1224,6 +1262,76 @@
         }
         .fetch-error-banner[hidden] { display: none; }
         .btn[aria-busy="true"] { cursor: progress; }
+
+        /* #946: dark scheme. Explicit data-theme wins over the system preference.
+           The same tokens are repeated so a stored choice and prefers-color-scheme
+           cannot drift. Brand gradient (--primary / --secondary) stays put so
+           white topbar text keeps its contrast. */
+        html[data-theme="light"] { color-scheme: light; }
+        html[data-theme="dark"] {
+            color-scheme: dark;
+            --page-bg: #0f172a;
+            --surface: #1e293b;
+            --line: #64748b;
+            --gray-50: #334155;
+            --gray-100: #0f172a;
+            --gray-200: #94a3b8;
+            --gray-300: #cbd5e1;
+            --gray-400: #94a3b8;
+            --gray-600: #cbd5e1;
+            --gray-700: #cbd5e1;
+            --gray-800: #e2e8f0;
+            --gray-900: #f8fafc;
+            --muted-text: #cbd5e1;
+            --accent: #93c5fd;
+            --primary-dark: #93c5fd;
+            --success: #34d399;
+            --warning: #fbbf24;
+            --danger: #f87171;
+            --activity-success-bg: #064e3b;
+            --activity-warning-bg: #78350f;
+            --activity-timeout-bg: #7c2d12;
+            --activity-danger-bg: #7f1d1d;
+            --health-ok-bg: #064e3b;
+            --health-bad-bg: #7f1d1d;
+            --compare-on-bg: #1e3a8a;
+            --compare-on-text: #eff6ff;
+            --table-border: #cbd5e1;
+            --flash: #854d0e;
+        }
+        @media (prefers-color-scheme: dark) {
+            html:not([data-theme="light"]) {
+                color-scheme: dark;
+                --page-bg: #0f172a;
+                --surface: #1e293b;
+                --line: #64748b;
+                --gray-50: #334155;
+                --gray-100: #0f172a;
+                --gray-200: #94a3b8;
+                --gray-300: #cbd5e1;
+                --gray-400: #94a3b8;
+                --gray-600: #cbd5e1;
+                --gray-700: #cbd5e1;
+                --gray-800: #e2e8f0;
+                --gray-900: #f8fafc;
+                --muted-text: #cbd5e1;
+                --accent: #93c5fd;
+                --primary-dark: #93c5fd;
+                --success: #34d399;
+                --warning: #fbbf24;
+                --danger: #f87171;
+                --activity-success-bg: #064e3b;
+                --activity-warning-bg: #78350f;
+                --activity-timeout-bg: #7c2d12;
+                --activity-danger-bg: #7f1d1d;
+                --health-ok-bg: #064e3b;
+                --health-bad-bg: #7f1d1d;
+                --compare-on-bg: #1e3a8a;
+                --compare-on-text: #eff6ff;
+                --table-border: #cbd5e1;
+                --flash: #854d0e;
+            }
+        }
     </style>
 </head>
 <body>
@@ -1249,6 +1357,7 @@
                 <p class="title-short visually-hidden">Pipeline Control Center</p>
             </div>
             <div class="topbar-stats">
+                <button type="button" id="theme-toggle" class="theme-toggle" aria-pressed="false">Dark mode</button>
                 <div class="topbar-stat">
                     <div class="topbar-stat-label">Status</div>
                     <div class="topbar-stat-value" id="topbar-status">Loading…</div>

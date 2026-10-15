@@ -8,6 +8,7 @@ Use for every dashboard PR:
 - [ ] Toggle buttons expose `aria-pressed`; tabs expose `aria-selected`
   - Activity level chips are toggle buttons (`aria-pressed`). The count is in the button name, and a pressed chip uses a thicker border as well as colour (#1027).
 - [ ] Text contrast ≥ 4.5:1 (3:1 for large text / UI chrome)
+  - Dark scheme (#946): `prefers-color-scheme: dark` and the Dark mode toggle (`cc.colorScheme` in localStorage). Body text stays on tokens at ≥ 4.5:1. Chart series use a lighter palette at ≥ 3:1 on the dark card. The brand gradient is unchanged so white topbar text keeps its contrast.
 - [ ] Status changes announced via `role="status"` / `aria-live="polite"` (not spammy)
   - Activity items: only the new item is spoken, via the always-present `#activity-announce` region (additions only, identical repeats at most once per 5 min). The visual feeds are `aria-live="off"` because they re-render wholesale (#962).
   - Activity search (#1028): `#activity-filter-status` (polite) announces the match count only. The log itself stays `aria-live="off"`. Clear search is a button, and Escape in the field also clears it.

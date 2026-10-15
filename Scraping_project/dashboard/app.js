@@ -14,6 +14,8 @@ const STORE_DANGER_SOUND_KEY = 'cc.dangerSound'; // #1037
 let dangerSoundEnabled = false;
 let dangerAudioCtx = null;
 const STORE_COMPARE_KEY = 'cc.comparePrevHour'; // #1035
+const STORE_THEME_KEY = 'cc.colorScheme'; // #946 light | dark; absent follows the system
+let themeToggleBound = false;
 const ACTIVITY_STORE_KEY = 'cc.activityLog'; // #1029 sessionStorage ring
 let refreshPaused = false;
 let metricsFetcher = null;
@@ -108,25 +110,38 @@ function initializeCharts() {
     }
 }
 
-function buildCharts() {
-    const chartConfig = {
+function axisTheme(palette, extra) {
+    return Object.assign({
+        ticks: { color: palette.tick },
+        grid: { color: palette.grid },
+        border: { color: palette.grid },
+    }, extra || {});
+}
+
+function chartOptions(palette) {
+    return {
         responsive: true,
         maintainAspectRatio: false,
         plugins: {
             legend: {
                 display: false, // until first real sample (#1076)
-                position: 'top'
+                position: 'top',
+                labels: { color: palette.tick },
             },
             tooltip: {
                 enabled: false
             }
         },
         scales: {
-            y: {
-                beginAtZero: true
-            }
-        }
+            x: axisTheme(palette),
+            y: axisTheme(palette, { beginAtZero: true }),
+        },
     };
+}
+
+function buildCharts() {
+    const palette = chartPalette(resolvedTheme());
+    const chartConfig = chartOptions(palette);
 
     charts.throughput = new Chart(document.getElementById('throughput-chart'), {
         type: 'line',
@@ -135,14 +150,14 @@ function buildCharts() {
             datasets: [{
                 label: 'URLs/min',
                 data: [],
-                borderColor: 'rgb(37, 99, 235)',
-                backgroundColor: 'rgba(37, 99, 235, 0.1)',
+                borderColor: palette.blue,
+                backgroundColor: palette.blueFill,
                 tension: 0.4
             }, {
                 label: 'Pages/min',
                 data: [],
-                borderColor: 'rgb(124, 58, 237)',
-                backgroundColor: 'rgba(124, 58, 237, 0.1)',
+                borderColor: palette.purple,
+                backgroundColor: palette.purpleFill,
                 tension: 0.4
             }]
         },
@@ -156,18 +171,8 @@ function buildCharts() {
             datasets: [{
                 label: 'Documents Processed',
                 data: [0, 0, 0, 0],
-                backgroundColor: [
-                    'rgba(37, 99, 235, 0.7)',
-                    'rgba(124, 58, 237, 0.7)',
-                    'rgba(16, 185, 129, 0.7)',
-                    'rgba(245, 158, 11, 0.7)'
-                ],
-                borderColor: [
-                    'rgb(37, 99, 235)',
-                    'rgb(124, 58, 237)',
-                    'rgb(16, 185, 129)',
-                    'rgb(245, 158, 11)'
-                ],
+                backgroundColor: [palette.blueBar, palette.purpleBar, palette.greenBar, palette.amberBar],
+                borderColor: [palette.blue, palette.purple, palette.green, palette.amber],
                 borderWidth: 2
             }]
         },
@@ -180,14 +185,8 @@ function buildCharts() {
             labels: ['Quality Docs (Stage 3)', 'Massive Docs (Stage 4)'],
             datasets: [{
                 data: [0, 0],
-                backgroundColor: [
-                    'rgba(16, 185, 129, 0.7)',
-                    'rgba(245, 158, 11, 0.7)'
-                ],
-                borderColor: [
-                    'rgb(16, 185, 129)',
-                    'rgb(245, 158, 11)'
-                ],
+                backgroundColor: [palette.greenBar, palette.amberBar],
+                borderColor: [palette.green, palette.amber],
                 borderWidth: 2
             }]
         },
@@ -198,7 +197,8 @@ function buildCharts() {
             plugins: {
                 legend: {
                     display: false,
-                    position: 'bottom'
+                    position: 'bottom',
+                    labels: { color: palette.tick },
                 },
                 tooltip: { enabled: false }
             }
@@ -213,8 +213,8 @@ function buildCharts() {
             datasets: [{
                 label: 'URLs Discovered',
                 data: [],
-                borderColor: 'rgb(37, 99, 235)',
-                backgroundColor: 'rgba(37, 99, 235, 0.1)',
+                borderColor: palette.blue,
+                backgroundColor: palette.blueFill,
                 fill: true,
                 tension: 0.4
             }]
@@ -229,8 +229,8 @@ function buildCharts() {
             datasets: [{
                 label: 'Pages Analyzed',
                 data: [],
-                borderColor: 'rgb(124, 58, 237)',
-                backgroundColor: 'rgba(124, 58, 237, 0.1)',
+                borderColor: palette.purple,
+                backgroundColor: palette.purpleFill,
                 fill: true,
                 tension: 0.4
             }]
@@ -245,14 +245,84 @@ function buildCharts() {
             datasets: [{
                 label: 'Summaries Created',
                 data: [],
-                borderColor: 'rgb(16, 185, 129)',
-                backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                borderColor: palette.green,
+                backgroundColor: palette.greenFill,
                 fill: true,
                 tension: 0.4
             }]
         },
         options: chartConfig
     });
+}
+
+function paintChartChrome(chart, palette) {
+    const options = chart && chart.options;
+    if (!options) return;
+    if (options.scales) {
+        Object.keys(options.scales).forEach(key => {
+            const axis = options.scales[key];
+            if (!axis) return;
+            axis.ticks = Object.assign({}, axis.ticks, { color: palette.tick });
+            axis.grid = Object.assign({}, axis.grid, { color: palette.grid });
+            axis.border = Object.assign({}, axis.border, { color: palette.grid });
+        });
+    }
+    const legend = options.plugins && options.plugins.legend;
+    if (legend) legend.labels = Object.assign({}, legend.labels, { color: palette.tick });
+}
+
+function paintLineChart(chart, palette, colors) {
+    if (!chart || !chart.data || !Array.isArray(chart.data.datasets)) return;
+    let i = 0;
+    chart.data.datasets.forEach(ds => {
+        if (ds.ccBaseline) {
+            ds.borderColor = palette.baseline;
+            ds.backgroundColor = 'transparent';
+            return;
+        }
+        const spec = colors[Math.min(i, colors.length - 1)];
+        ds.borderColor = spec.border;
+        ds.backgroundColor = spec.fill;
+        i += 1;
+    });
+    paintChartChrome(chart, palette);
+    try { chart.update('none'); } catch (_) {}
+}
+
+// Recolour existing canvases when the scheme changes. Chart.js does not read
+// CSS variables, so dataset, tick, grid and legend colours are applied here.
+function applyChartTheme(theme) {
+    const palette = chartPalette(theme === 'dark' ? 'dark' : 'light');
+    paintLineChart(charts.throughput, palette, [
+        { border: palette.blue, fill: palette.blueFill },
+        { border: palette.purple, fill: palette.purpleFill },
+    ]);
+    paintLineChart(charts.urls, palette, [{ border: palette.blue, fill: palette.blueFill }]);
+    paintLineChart(charts.pages, palette, [{ border: palette.purple, fill: palette.purpleFill }]);
+    paintLineChart(charts.summaries, palette, [{ border: palette.green, fill: palette.greenFill }]);
+    const bar = charts.stageProgression;
+    if (bar && bar.data && bar.data.datasets && bar.data.datasets[0]) {
+        bar.data.datasets[0].backgroundColor = [palette.blueBar, palette.purpleBar, palette.greenBar, palette.amberBar];
+        bar.data.datasets[0].borderColor = [palette.blue, palette.purple, palette.green, palette.amber];
+        paintChartChrome(bar, palette);
+        try { bar.update('none'); } catch (_) {}
+    }
+    const ring = charts.routing;
+    if (ring && ring.data && ring.data.datasets && ring.data.datasets[0]) {
+        ring.data.datasets[0].backgroundColor = [palette.greenBar, palette.amberBar];
+        ring.data.datasets[0].borderColor = [palette.green, palette.amber];
+        paintChartChrome(ring, palette);
+        try { ring.update('none'); } catch (_) {}
+    }
+}
+
+function resolvedTheme() {
+    const featureOn = !(window.__CC_FEATURES__ && window.__CC_FEATURES__.dark === false);
+    return resolveColorScheme(
+        storeGet(STORE_THEME_KEY),
+        mediaQueryMatches('(prefers-color-scheme: dark)'),
+        featureOn
+    );
 }
 
 // parseMetrics / formatNumber / formatBytes come from format-utils.js (#1043)
@@ -720,6 +790,9 @@ function applyComparisonBaselines() {
             );
             if (series.placeholder) placeholderCount += 1;
             else realCount += 1;
+            if (typeof chartPalette === 'function') {
+                series.borderColor = chartPalette(resolvedTheme()).baseline;
+            }
             next.push(series);
         });
         chart.data.datasets = next;
@@ -1849,6 +1922,60 @@ function applyEnvBadge() {
     if (/prod/i.test(env)) el.classList.add('env-prod');
 }
 
+function syncThemeToggle() {
+    const btn = document.getElementById('theme-toggle');
+    if (!btn) return;
+    btn.setAttribute('aria-pressed', resolvedTheme() === 'dark' ? 'true' : 'false');
+}
+
+// #946: system scheme unless the operator has stored light or dark.
+// features.dark === false forces light and hides the toggle.
+function setupTheme() {
+    const featureOn = !(window.__CC_FEATURES__ && window.__CC_FEATURES__.dark === false);
+    const root = document.documentElement;
+    const btn = document.getElementById('theme-toggle');
+    if (!featureOn) {
+        if (root) root.dataset.theme = 'light';
+        if (btn) btn.hidden = true;
+        applyChartTheme('light');
+        return;
+    }
+    if (btn) btn.hidden = false;
+    const stored = typeof parseStoredColorScheme === 'function'
+        ? parseStoredColorScheme(storeGet(STORE_THEME_KEY))
+        : null;
+    if (root) {
+        if (stored) root.dataset.theme = stored;
+        else delete root.dataset.theme;
+    }
+    syncThemeToggle();
+    applyChartTheme(resolvedTheme());
+    if (themeToggleBound) return;
+    themeToggleBound = true;
+    if (btn) {
+        btn.addEventListener('click', () => {
+            const next = resolvedTheme() === 'dark' ? 'light' : 'dark';
+            storeSet(STORE_THEME_KEY, next);
+            if (document.documentElement) document.documentElement.dataset.theme = next;
+            syncThemeToggle();
+            applyChartTheme(next);
+            const live = document.getElementById('refresh-status');
+            if (live) live.textContent = next === 'dark' ? 'Dark mode on' : 'Light mode on';
+        });
+    }
+    let mql = null;
+    try { mql = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)'); } catch (_) { mql = null; }
+    const onScheme = () => {
+        if (parseStoredColorScheme(storeGet(STORE_THEME_KEY))) return;
+        if (window.__CC_FEATURES__ && window.__CC_FEATURES__.dark === false) return;
+        if (document.documentElement) delete document.documentElement.dataset.theme;
+        syncThemeToggle();
+        applyChartTheme(resolvedTheme());
+    };
+    if (mql && mql.addEventListener) mql.addEventListener('change', onScheme);
+    else if (mql && mql.addListener) mql.addListener(onScheme);
+}
+
 function applyFeatureFlags() {
     const f = window.__CC_FEATURES__ || {};
     // Hide jobs tab unless flag on (#1047)
@@ -1856,9 +1983,7 @@ function applyFeatureFlags() {
         el.hidden = !f.jobs;
         if (!f.jobs) el.style.display = 'none';
     });
-    if (f.dark === false) {
-        document.documentElement.dataset.theme = 'light';
-    }
+    setupTheme();
     applyEnvBadge();
 }
 

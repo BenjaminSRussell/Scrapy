@@ -107,6 +107,12 @@ gate (fonts and Chrome builds differ), and it is not part of `node --test`.
 | Where it is produced | Optional workflow [`.github/workflows/ci-dashboard-visual.yml`](../../.github/workflows/ci-dashboard-visual.yml): pull requests that touch this directory, or Actions → Run workflow. `continue-on-error: true`, so a capture failure does not fail the dashboard unit tests. The artifact is kept 14 days. It does not run on every push to `main`. |
 | Regenerate locally | `python Scraping_project/dashboard/overview_screenshot.py --channel chrome` (or bundled Chromium after `python -m playwright install chromium`). Default path: `Scraping_project/dashboard/visual/overview.png` (gitignored). Needs `playwright==1.55.0`, already pinned for the JS spider. |
 
+## Color scheme (#946)
+
+The page is light unless the operating system asks for dark (`prefers-color-scheme: dark`). **Dark mode** in the top bar is a toggle (`aria-pressed`) that stores `light` or `dark` in `localStorage` under `cc.colorScheme`. With no stored value, changing the system scheme updates the page, including chart colours. A stored value wins over the system until it is changed again.
+
+`features.js` can force the light scheme with `dark: false` (the toggle is hidden). Chart.js does not read CSS variables, so series, axis ticks, grid lines, and the previous-hour baseline are repainted from `chartPalette()` when the scheme changes. The top bar gradient stays the same blue-to-purple in both schemes.
+
 ## Comparison mode (#1035)
 
 The refresh-bar toggle **Compare to previous hour** overlays a dashed baseline on the throughput, URLs, pages, and summaries line charts (not the stage bar or routing doughnut). The choice is remembered in `localStorage` (`cc.comparePrevHour`).

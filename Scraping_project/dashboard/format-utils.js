@@ -1118,5 +1118,52 @@
         if (!rows.length) return { missing: true, rows: [], empty: SCRAPE_TARGET_EMPTY };
         return { missing: false, rows: rows.slice(0, cap), empty: SCRAPE_TARGET_EMPTY };
     }
-    return { tabKeyTarget, staleState, queueDepthRows, metricsFailureActivity, shortcutHintText, parseMetrics, metricSeriesCount, METRICS_FLOOD_DEFAULTS, metricsFloodLimits, advanceMetricsFlood, metricsFloodBannerText, ratePerMinute, resolveMetricsUrl, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler, stageActivity, stageDrilldown, stageDrilldownKey, doughnutLegendLayout, connectionState, documentTitle, createActivityAnnouncer, metricsUrlProblem, splitLinks, createMetricsFetcher, REFRESH_INTERVAL_CHOICES, parseRefreshInterval, shortcutAction, pickInitialTab, METRIC_UI_MAP, renderMetricNameMap, parseDangerSoundEnabled, dangerSoundDecision, HEALTH_HISTORY_LIMIT, pushPollOutcome, healthHistoryView, COMPARISON_BASELINE_ROLE, PREV_HOUR_AVG_KEYS, readPrevHourAverage, comparisonBaselineSeries, comparisonNote, ACTIVITY_LOG_CAP, capActivityLog, activityStaleNote, restoreActivityLog, topScrapeTargets, SCRAPE_TARGET_EMPTY, ACTIVITY_LEVELS, activityLevelCounts, filterActivityItems, filterActivityMessages, activityFilterStatus, toggleActivityLevel, HISTORY_MAX_POINTS, assertHistoryBound, boundHistoryBuffer, pushHistorySample, enforceHistoryCap };
+    // #946: explicit "light" / "dark" wins; anything else follows the system.
+    function parseStoredColorScheme(value) {
+        return value === 'dark' || value === 'light' ? value : null;
+    }
+    function resolveColorScheme(stored, systemDark, featureEnabled) {
+        if (featureEnabled === false) return 'light';
+        const explicit = parseStoredColorScheme(stored);
+        if (explicit) return explicit;
+        return systemDark ? 'dark' : 'light';
+    }
+    // Light series are the original Chart.js colours. On a #1e293b card the
+    // light blue and purple are under 3:1, so the dark palette is lighter.
+    const CHART_PALETTE_LIGHT = {
+        blue: 'rgb(37, 99, 235)',
+        blueFill: 'rgba(37, 99, 235, 0.1)',
+        purple: 'rgb(124, 58, 237)',
+        purpleFill: 'rgba(124, 58, 237, 0.1)',
+        green: 'rgb(16, 185, 129)',
+        greenFill: 'rgba(16, 185, 129, 0.1)',
+        amber: 'rgb(245, 158, 11)',
+        blueBar: 'rgba(37, 99, 235, 0.7)',
+        purpleBar: 'rgba(124, 58, 237, 0.7)',
+        greenBar: 'rgba(16, 185, 129, 0.7)',
+        amberBar: 'rgba(245, 158, 11, 0.7)',
+        tick: '#374151',
+        grid: 'rgba(55, 65, 81, 0.2)',
+        baseline: '#475569',
+    };
+    const CHART_PALETTE_DARK = {
+        blue: '#93c5fd',
+        blueFill: 'rgba(147, 197, 253, 0.22)',
+        purple: '#c4b5fd',
+        purpleFill: 'rgba(196, 181, 253, 0.22)',
+        green: '#6ee7b7',
+        greenFill: 'rgba(110, 231, 183, 0.22)',
+        amber: '#fcd34d',
+        blueBar: 'rgba(147, 197, 253, 0.85)',
+        purpleBar: 'rgba(196, 181, 253, 0.85)',
+        greenBar: 'rgba(110, 231, 183, 0.85)',
+        amberBar: 'rgba(252, 211, 77, 0.85)',
+        tick: '#e2e8f0',
+        grid: 'rgba(226, 232, 240, 0.28)',
+        baseline: '#cbd5e1',
+    };
+    function chartPalette(theme) {
+        return Object.assign({}, theme === 'dark' ? CHART_PALETTE_DARK : CHART_PALETTE_LIGHT);
+    }
+    return { tabKeyTarget, staleState, queueDepthRows, metricsFailureActivity, shortcutHintText, parseMetrics, metricSeriesCount, METRICS_FLOOD_DEFAULTS, metricsFloodLimits, advanceMetricsFlood, metricsFloodBannerText, ratePerMinute, resolveMetricsUrl, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler, stageActivity, stageDrilldown, stageDrilldownKey, doughnutLegendLayout, connectionState, documentTitle, createActivityAnnouncer, metricsUrlProblem, splitLinks, createMetricsFetcher, REFRESH_INTERVAL_CHOICES, parseRefreshInterval, shortcutAction, pickInitialTab, METRIC_UI_MAP, renderMetricNameMap, parseDangerSoundEnabled, dangerSoundDecision, HEALTH_HISTORY_LIMIT, pushPollOutcome, healthHistoryView, COMPARISON_BASELINE_ROLE, PREV_HOUR_AVG_KEYS, readPrevHourAverage, comparisonBaselineSeries, comparisonNote, ACTIVITY_LOG_CAP, capActivityLog, activityStaleNote, restoreActivityLog, topScrapeTargets, SCRAPE_TARGET_EMPTY, ACTIVITY_LEVELS, activityLevelCounts, filterActivityItems, filterActivityMessages, activityFilterStatus, toggleActivityLevel, HISTORY_MAX_POINTS, assertHistoryBound, boundHistoryBuffer, pushHistorySample, enforceHistoryCap, parseStoredColorScheme, resolveColorScheme, chartPalette };
 });
