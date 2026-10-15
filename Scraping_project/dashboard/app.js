@@ -382,9 +382,8 @@ function renderActivityMessage(el, message) {
     for (const seg of splitLinks(message)) {
         if (seg.href) {
             const a = document.createElement('a');
-            a.href = seg.href;
-            a.target = '_blank';
-            a.rel = 'noopener noreferrer';
+            // #988: one helper for every new-tab URL (activity, Grafana, docs).
+            applyExternalLink(a, seg.href);
             a.textContent = seg.text;
             el.appendChild(a);
         } else {
