@@ -89,7 +89,19 @@ def run_profile(browser, base: str, name: str, context_args: dict, scheme: str, 
     problems: list[str] = []
     ctx = browser.new_context(color_scheme=scheme, **context_args)
     page = ctx.new_page()
-    page.on("console", lambda m: m.type == "error" and problems.append(f"console: {m.text}"))
+    # Lookups this test makes on purpose that must 404. Older Chromium (Playwright 1.55, as
+    # pinned in CI) logs any 404 fetch as a console error; everything else stays fatal.
+    expected_404: list[str] = []
+
+    def on_console(m):
+        if m.type != "error":
+            return
+        url = (m.location or {}).get("url") or ""
+        if "404" in m.text and any(url.startswith(prefix) for prefix in expected_404):
+            return
+        problems.append(f"console: {m.text} ({url[:120] or 'no url'})")
+
+    page.on("console", on_console)
     page.on("pageerror", lambda e: problems.append(f"page error: {e}"))
     tag = f"{name}-{scheme}"
 
@@ -161,6 +173,7 @@ def run_profile(browser, base: str, name: str, context_args: dict, scheme: str, 
 
     # A 4 kB URL: the subtitle is clamped (the full path is in its title), not a page-long wall.
     long_url = "https://a.example.edu/" + "segment/" * 500
+    expected_404.append(f"{base}/api/url?u=" + urllib.parse.quote("https://a.example.edu/", safe=""))
     page.goto(f"{base}/#/activity/url:" + urllib.parse.quote(long_url, safe=""))
     page.wait_for_selector(".subtitle.url-path", timeout=10_000)
     height = page.evaluate("document.querySelector('.subtitle.url-path').getBoundingClientRect().height")
