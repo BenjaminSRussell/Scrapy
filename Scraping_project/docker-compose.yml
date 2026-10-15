@@ -305,6 +305,7 @@ services:
       # queue depths, and Prometheus as the metrics-upstream health check.
       - DELTA_LAKE_PATH=/data/delta
       - REDIS_HOST=redis
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
       - METRICS_UPSTREAM=http://prometheus:9090/metrics
     ports:
       - "127.0.0.1:8080:8080"

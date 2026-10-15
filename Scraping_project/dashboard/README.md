@@ -12,8 +12,8 @@ python Scraping_project/dashboard/serve.py --demo     # a simulated crawl, no se
 ```
 
 Grafana stays the place for history, alerts and custom queries. Control Center
-links to it from Health (`CC_GRAFANA_URL`, default `http://localhost:3000/`) and
-does not embed it.
+does not embed Grafana; Health links to it (`CC_GRAFANA_URL`, default
+`http://localhost:3000/`). See [Grafana deep links](#grafana-deep-links) below.
 
 ## What you see
 
@@ -150,6 +150,26 @@ read-only and reads the same lake the workers write. It talks to `redis` and
 - **Auth.** The gate is a shared secret for LAN use, not an identity provider. Beyond a
   trusted LAN, keep the server on loopback and put it behind a reverse proxy that
   terminates TLS and authenticates users.
+
+## Grafana deep links
+
+Control Center does not embed Grafana. The page is served from this origin (`:8080`),
+while Grafana is another origin (`:3000` for the monitoring profile, `:3001` for the
+observability pack). An iframe would fight the CSP and would not be a supported embed.
+Open the pack's panels directly instead:
+
+| Panel | URL |
+|---|---|
+| Lag, Redis depth, crawl rate, Delta commits | http://127.0.0.1:3001/d/ops-lag-depth-commits |
+| Kafka consumer lag | http://127.0.0.1:3001/d/ops-lag-depth-commits?viewPanel=2 |
+| Redis frontier depth | http://127.0.0.1:3001/d/ops-lag-depth-commits?viewPanel=3 |
+| Crawl rate | http://127.0.0.1:3001/d/ops-lag-depth-commits?viewPanel=4 |
+| Delta commits | http://127.0.0.1:3001/d/ops-lag-depth-commits?viewPanel=5 |
+
+The same uid is provisioned on the monitoring-profile Grafana at
+http://localhost:3000/d/ops-lag-depth-commits. Health's Redis depth is the live key
+length; the Grafana panel is `redis_queue_length` from StatsD. They are two views of the
+same frontier.
 
 ## Code
 
