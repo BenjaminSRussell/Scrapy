@@ -2,7 +2,7 @@
 
 #669 SECURITY.md, #746 CODE_OF_CONDUCT.md, #747/#692 CHANGELOG + release process,
 #715 ADRs, #748 .python-version, #783 .envrc example, #694 devcontainer,
-#784 py.typed, #639 examples/README, #627 scrapy.cfg docs.
+#784 py.typed, #639 examples/README, #627 scrapy.cfg docs, #641 cache gitignore.
 """
 from __future__ import annotations
 
@@ -130,6 +130,32 @@ def test_examples_readme_lists_every_example():  # #639
     for script in sorted((ROOT / "examples").rglob("*.py")):
         rel = script.relative_to(ROOT / "examples").as_posix()
         assert rel in text, f"examples/{rel} not documented in examples/README.md"
+
+
+def _git_ignored_by_rule(path: str) -> bool:
+    """True when exclude rules match, even if the path is already tracked."""
+    proc = subprocess.run(
+        ["git", "check-ignore", "--no-index", "-q", path],
+        cwd=REPO,
+        capture_output=True,
+    )
+    if proc.returncode not in (0, 1):
+        pytest.skip("not a git checkout")
+    return proc.returncode == 0
+
+
+@pytest.mark.skipif(shutil.which("git") is None, reason="git not installed")
+def test_data_cache_ignore_allows_only_the_placeholder():  # #641
+    assert not _git_ignored_by_rule("Scraping_project/data/cache/.gitkeep")
+    assert _git_ignored_by_rule("Scraping_project/data/cache/scrapy/scout/ab/response_body")
+    assert _git_ignored_by_rule("Scraping_project/data/cache/scrapy/.gitkeep")
+    assert _git_ignored_by_rule("Scraping_project/data/cache/foo.cache")
+    assert _git_ignored_by_rule("Scraping_project/data/cache/notes.txt")
+    assert _git_ignored_by_rule(".scrapy/httpcache/x")
+    assert _git_ignored_by_rule("Scraping_project/.scrapy/httpcache/x")
+    note = _read(REPO / "CONTRIBUTING.md")
+    assert "data/cache" in note and ".scrapy/" in note and "HTTPCACHE_DIR" in note
+    assert "git add -f" in note
 
 
 def test_scrapy_cfg_documented():  # #627

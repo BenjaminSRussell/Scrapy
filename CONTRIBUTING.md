@@ -114,6 +114,26 @@ User-Agent and stats). **Scrapyd deploy is unsupported**: the `url` is commented
 and nothing in CI or Helm uses it. The supported runners are `start.py`, `cli.py`, and
 the Helm chart.
 
+## Cache directories (`data/cache` vs `.scrapy/`)
+
+These are different directories. Do not commit either one's contents, and do not
+`git add -f` cache files.
+
+- **`Scraping_project/data/cache/`** is the pipeline runtime cache. Scrapy's HTTP
+  cache (`HTTPCACHE_DIR` in `src/settings.py`) is `Scraping_project/data/cache/scrapy`
+  (filesystem storage, one directory per response). `python cli.py data gc` can
+  delete old files under `data/cache`. Git tracks only `data/cache/.gitkeep`.
+  Every other file in that directory is ignored, including a nested `.gitkeep`.
+- **`.scrapy/`** is Scrapy's own project directory (crawl jobs, stats, and the
+  default HTTP cache if you run Scrapy without these settings). It is ignored
+  wherever it appears, including `Scraping_project/.scrapy/`. `python cli.py clean`
+  removes `.scrapy` trees and does not empty `data/cache`.
+
+`data/**` in `.gitignore` matches a `data/` directory at the repo root only. It
+does not cover `Scraping_project/data/`. Config under `Scraping_project/data/config/`
+and the seed file `data/raw/uconn_urls.csv` stay tracked on purpose. Seeds are not
+cache.
+
 ## Releases, changelog, and decisions
 
 - Add a line to [CHANGELOG.md](CHANGELOG.md) under `## [Unreleased]` for behaviour

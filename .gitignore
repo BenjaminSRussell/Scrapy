@@ -51,11 +51,15 @@ env/
 # ====================================
 # Scrapy
 # ====================================
+# Scrapy's own project directory (jobs, stats, and the default HTTP cache
+# when these project settings are not in use). The pipeline HTTP cache is
+# Scraping_project/data/cache/scrapy, not this directory (#641).
 .scrapy/
 
 # ====================================
 # Data / Logs
 # ====================================
+# Matches a data/ directory at the repo root only, not Scraping_project/data/.
 data/**
 logs/**
 *.log
@@ -236,6 +240,12 @@ Scraping_project/data/warc/
 Scraping_project/data/profiles/
 Scraping_project/data/exports/*
 !Scraping_project/data/exports/.gitkeep
+# Pipeline runtime cache (#641). HTTPCACHE_DIR is
+# Scraping_project/data/cache/scrapy (see src/settings.py). Only the
+# directory placeholder is tracked. Do not force-add response bodies,
+# *.cache files, or a nested .gitkeep. `.scrapy/` above is a different cache.
+Scraping_project/data/cache/*
+!Scraping_project/data/cache/.gitkeep
 Scraping_project/screenshots/
 Scraping_project/profiles/
 /screenshots/
