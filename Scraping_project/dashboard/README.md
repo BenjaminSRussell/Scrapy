@@ -53,6 +53,12 @@ node --test Scraping_project/dashboard/tests/   # helper unit tests
   Missing files, directory listings, dotfiles, `tests/` and source/docs (`serve.py`, `*.md`)
   return a plain 404 that never includes filesystem paths.
 - Version watermark: `CC_VERSION` env or `git describe` via `/version.js`.
+- Cache (#969): HTML, `/version.js`, and `/api/*` send `Cache-Control: no-store`
+  so a reload always sees the current page and live data. CSS, JS, images, and
+  fonts are `public, max-age=300` (reusable across a refresh, not pinned for a
+  deploy). A content hash in the file name (`app.a1b2c3d4.js`) or a `?v=`,
+  `?ver=`, `?version=`, or `?hash=` query is `public, max-age=31536000, immutable`.
+  Error and `OPTIONS` responses stay `no-store`.
 - Redis queue depths (#401): the System tab polls `/api/queues`, which reads the keys in
   `CC_QUEUE_KEYS` (comma list, default `js_spider:priority_queue`) with the type-aware
   length (`LLEN`/`ZCARD`/`SCARD`/`XLEN`/`HLEN`, so a list matches `redis-cli llen`).
