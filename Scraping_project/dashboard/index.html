@@ -933,6 +933,9 @@
                 background: Canvas;
                 border: 1px dashed GrayText;
             }
+            .jobs-empty {
+                border: 1px solid CanvasText;
+            }
             /* Chart.js paints fixed colours on canvas; keep its light backdrop
                so axis text and series stay legible under a dark system theme. */
             .chart-container canvas {
@@ -1031,6 +1034,37 @@
         }
         .fetch-error-banner[hidden] { display: none; }
         .btn[aria-busy="true"] { cursor: progress; }
+
+        /* #996: Jobs tab is a shell. No rows until the job API exists. */
+        .jobs-empty {
+            margin: 0 0 1rem;
+            padding: 1.25rem 1rem;
+            border: 1px dashed var(--gray-300);
+            border-radius: 0.5rem;
+            background: var(--gray-50);
+            color: var(--gray-700);
+        }
+        .jobs-empty-title {
+            margin: 0 0 0.35rem;
+            font-size: 1.05rem;
+            font-weight: 700;
+            color: var(--gray-900);
+        }
+        .jobs-empty-detail {
+            margin: 0;
+            max-width: 42rem;
+        }
+        #jobs-start:disabled {
+            min-height: 44px;
+            padding: 0.5rem 1rem;
+            border-radius: 0.375rem;
+            border: 1px solid var(--gray-300);
+            background: var(--gray-100);
+            color: var(--gray-700);
+            font: inherit;
+            font-weight: 600;
+            cursor: not-allowed;
+        }
     </style>
 </head>
 <body>
@@ -1085,8 +1119,9 @@
                 <button type="button" class="tab-button" data-tab="performance" role="tab" id="tabbtn-performance" aria-controls="tab-performance" aria-selected="false" tabindex="-1"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l6-6 4 4 8-8M14 7h7v7"/></svg> Performance</button>
                 <button type="button" class="tab-button" data-tab="system" role="tab" id="tabbtn-system" aria-controls="tab-system" aria-selected="false" tabindex="-1"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 0 0-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 0 0-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 0 0-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 0 0-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 0 0 1.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><circle cx="12" cy="12" r="3"/></svg> System Health</button>
                 <button type="button" class="tab-button" data-tab="activity" role="tab" id="tabbtn-activity" aria-controls="tab-activity" aria-selected="false" tabindex="-1"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg> Activity Log</button>
+                <button type="button" class="tab-button" data-tab="jobs" role="tab" id="tabbtn-jobs" aria-controls="tab-jobs" aria-selected="false" tabindex="-1"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 12h6M9 16h6"/></svg> Jobs</button>
             </div></nav>
-            <p class="shortcut-hint" id="shortcut-hint">Shortcuts: 1–5 switch tabs · R refresh</p>
+            <p class="shortcut-hint" id="shortcut-hint">Shortcuts: 1–6 switch tabs · R refresh</p>
 
             <!-- Overview Tab -->
             <div class="tab-content active" id="tab-overview" role="tabpanel" aria-labelledby="tabbtn-overview" tabindex="0">
@@ -1561,6 +1596,21 @@
                     </div>
                     <!-- Rendered by app.js on init; no static seed (#978). -->
                     <div class="activity-feed" id="activity-log" role="log" aria-live="off"></div>
+                </div>
+            </div>
+
+            <!-- Jobs tab (#996): empty until the crawl job API exists. No sample rows. -->
+            <div class="tab-content" id="tab-jobs" role="tabpanel" aria-labelledby="tabbtn-jobs" tabindex="0">
+                <div class="card">
+                    <div class="card-header">
+                        <h2 class="card-title">Crawl jobs</h2>
+                        <span class="card-badge badge-info">Not connected</span>
+                    </div>
+                    <div class="jobs-empty" id="jobs-empty" role="status">
+                        <p class="jobs-empty-title">Job API not connected</p>
+                        <p class="jobs-empty-detail">This panel lists crawl jobs only after the job API is connected. It does not show running, queued, or finished jobs.</p>
+                    </div>
+                    <button type="button" id="jobs-start" class="btn" disabled aria-describedby="jobs-empty">Start</button>
                 </div>
             </div>
         </div>

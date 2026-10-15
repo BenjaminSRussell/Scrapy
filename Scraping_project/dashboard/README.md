@@ -28,6 +28,9 @@ node --test Scraping_project/dashboard/tests/   # helper unit tests
   Missing files, directory listings, dotfiles, `tests/` and source/docs (`serve.py`, `*.md`)
   return a plain 404 that never includes filesystem paths.
 - Version watermark: `CC_VERSION` env or `git describe` via `/version.js`.
+- Jobs tab (#996): empty state copy "Job API not connected" and a disabled Start
+  button. The panel does not list or start crawl jobs. `jobs: false` in
+  `features.js` hides the tab (#1047). The default is on so the shell is visible.
 - Redis queue depths (#401): the System tab polls `/api/queues`, which reads the keys in
   `CC_QUEUE_KEYS` (comma list, default `js_spider:priority_queue`) with the type-aware
   length (`LLEN`/`ZCARD`/`SCARD`/`XLEN`/`HLEN`, so a list matches `redis-cli llen`).
