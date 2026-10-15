@@ -15,6 +15,7 @@ renamed to the new version and date (see the release checklist).
 ## [Unreleased]
 
 ### Added
+- Control Center footer locale switcher: English is enabled and selecting it does not reload the page or change `lang`. Other languages stay disabled and are labelled Coming soon (#1007).
 - Dashboard `.skeleton` block: one pulsing gray placeholder for cards (a content bar) and charts (fills the plot). `prefers-reduced-motion: reduce` leaves a static gray and does not pulse (#1025).
 - Control Center pipeline stage cards open a side panel with a subset of that stage's metrics and placeholder links for later job and queue detail. Cards are keyboard buttons; Escape closes the panel (#1033).
 - Control Center can play a short tone on a new danger activity item. The Sound on danger checkbox is off by default and the choice is remembered in localStorage. Reduced motion and a mute media preference keep it silent (#1037).

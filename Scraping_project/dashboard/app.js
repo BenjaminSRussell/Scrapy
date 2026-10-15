@@ -1367,6 +1367,19 @@ function setupDangerSound() {
     });
 }
 
+// #1007: English is the only live locale. Selecting it does not navigate,
+// persist, or rewrite documentElement.lang. A non-en value is put back.
+function setupLocaleSwitcher() {
+    const select = document.getElementById('locale-switcher');
+    if (!select || typeof applyLocaleChoice !== 'function') return;
+    const sync = () => {
+        const result = applyLocaleChoice(select.value);
+        if (select.value !== result.locale) select.value = result.locale;
+    };
+    sync();
+    select.addEventListener('change', sync);
+}
+
 // #1015: 5/10/30s interval picker, remembered in localStorage.
 function setupIntervalControl() {
     const select = document.getElementById('refresh-interval');
@@ -1734,6 +1747,7 @@ function initialize() {
     setupComparisonToggle();
     refreshScheduler = createRefreshScheduler({ interval: REFRESH_INTERVAL, fetch: fetchAndAnnounce });
     setupIntervalControl();
+    setupLocaleSwitcher();
     setupVisibilityPause();
     setupDangerSound();
     startCountdown();

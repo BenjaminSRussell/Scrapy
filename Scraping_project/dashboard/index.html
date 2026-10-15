@@ -696,12 +696,42 @@
             color: var(--gray-700);
         }
 
+        /* #1007: footer locale stub. After the refresh bar in document order
+           so it is on screen at the bottom of the page, not inside a tab. */
+        .site-footer {
+            max-width: 1600px;
+            margin: 0 auto;
+            padding: 0.75rem 2rem 1.5rem;
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+            align-items: center;
+            gap: 0.5rem 1rem;
+            color: var(--gray-700);
+            font-size: 0.9rem;
+        }
+        .locale-switcher-label {
+            display: inline-flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .locale-switcher {
+            font: inherit;
+            color: var(--gray-900);
+            background: #fff;
+            padding: 0.35rem 0.5rem;
+            border: 1px solid var(--gray-300);
+            border-radius: 6px;
+        }
+
         /* #953: >=44px touch targets wherever the pointer is coarse (phones/tablets). */
         @media (pointer: coarse) {
             .tab-button,
             .refresh-bar .btn,
             .refresh-bar select,
-            .danger-sound-label {
+            .danger-sound-label,
+            .locale-switcher {
                 min-height: 44px;
                 min-width: 44px;
             }
@@ -927,6 +957,10 @@
             }
             .card-badge,
             .status-indicator {
+                border: 1px solid CanvasText;
+            }
+            .site-footer,
+            .locale-switcher {
                 border: 1px solid CanvasText;
             }
             .status-dot {
@@ -1675,6 +1709,18 @@
             </div>
         </div>
     </main>
+
+    <footer class="site-footer">
+        <label class="locale-switcher-label" for="locale-switcher">Language
+            <select id="locale-switcher" class="locale-switcher">
+                <option value="en" selected>English</option>
+                <option value="es" disabled>Español — Coming soon</option>
+                <option value="fr" disabled>Français — Coming soon</option>
+                <option value="de" disabled>Deutsch — Coming soon</option>
+                <option value="zh" disabled>中文 — Coming soon</option>
+            </select>
+        </label>
+    </footer>
 
     <script src="features.js"></script>
     <script src="format-utils.js"></script>

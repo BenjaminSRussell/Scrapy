@@ -138,6 +138,12 @@ Sentinels (`unknown`, `rejected`, `-`) are dropped. When no usable series is
 present the card stays on **No scrape-target metric reported.** and does not
 invent seeds. Host text is rendered with `textContent`.
 
+## Language (#1007)
+
+The page footer has a language `<select>`. English (`en`) is the only enabled
+option; choosing it does not navigate, store a preference, or change
+`<html lang>`. Other languages are visible but disabled, labelled Coming soon.
+
 ## Threat model notes (#1046)
 
 **Activity log XSS.** Activity messages may contain text derived from metrics,
