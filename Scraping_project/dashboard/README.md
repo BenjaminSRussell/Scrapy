@@ -177,8 +177,11 @@ invent seeds. Host text is rendered with `textContent`.
 **Activity log XSS.** Activity messages may contain text derived from metrics,
 URLs, or error strings. Rows are built with DOM APIs only (`textContent`,
 `setAttribute`), never `innerHTML` (#906): a `<script>` in a message renders as
-text. Only `http(s)://` URLs become links (`splitLinks`), with
-`rel="noopener noreferrer"`; `javascript:` and other schemes are never linked.
+text. Only `http(s)://` URLs become links (`splitLinks`). New-tab anchors
+(activity URLs, and any later Grafana or docs link) go through
+`applyExternalLink` (`target="_blank"` and `rel="noopener noreferrer"`).
+Static HTML must use that same `rel` on every `target="_blank"`.
+`javascript:` and other schemes are never linked.
 Do not introduce `innerHTML` writes of unescaped data.
 
 **CSP and headers (#245).** `serve.py` sends an enforcing

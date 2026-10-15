@@ -7,6 +7,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Pipeline Control Center - UConn Scraping</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.js" integrity="sha384-FcQlsUOd0TJjROrBxhJdUhXTUgNJQxTMcxZe6nHbaEfFL1zjQ+bq/uRoBQxb0KMo" crossorigin="anonymous"></script>
+    <!-- #988: Chart.js above is a pinned script (SRI), not a navigation.
+         An anchor that opens another tab (Grafana, docs, other off-origin
+         pages) must set rel="noopener noreferrer". In JS, call applyExternalLink(). -->
     <style>
         * {
             margin: 0;
