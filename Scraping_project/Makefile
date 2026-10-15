@@ -5,7 +5,7 @@
 	docker-shell docker-test pre-commit pre-commit-update ci ci-docker clean clean-all dev \
 	serve stop restart shell notebook db-migrate db-reset logs metrics prometheus docs \
 	docs-coverage benchmark quick-test quick-check quick-commit show-config tree size \
-	profile models backup restore anomaly-scan
+	profile models backup restore delta-replicate anomaly-scan
 
 # Default target
 .DEFAULT_GOAL := help
@@ -320,6 +320,18 @@ restore: ## Dry-run restore plan (no database). DRY_RUN=0 extracts; ROUNDTRIP=1 
 		RESTORE_SQL_DEST="$(RESTORE_SQL_DEST)" \
 		ROUNDTRIP="$(ROUNDTRIP)" \
 		./scripts/restore_backup.sh
+
+##@ Replication
+
+# Cross-region Delta stub (#705). Dry-run only: no rclone, no lake read, no remote.
+# Core help group: it does not start services. DRY_RUN other than on is refused.
+delta-replicate: ## Dry-run rclone sync plan for the Delta lake (no copy, no remote)
+	@env \
+		DRY_RUN="$(DRY_RUN)" \
+		LAKE_SRC="$(LAKE_SRC)" \
+		RCLONE_DEST="$(RCLONE_DEST)" \
+		RCLONE_FLAGS="$(RCLONE_FLAGS)" \
+		./scripts/delta_replicate.sh
 
 ##@ Anomaly
 
