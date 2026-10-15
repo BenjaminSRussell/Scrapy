@@ -49,6 +49,10 @@ Drain timeout: `JS_DRAIN_TIMEOUT_SECONDS` (or orchestrator
   `playwright install chromium`).
 - **Many `failed` rows:** query `js_spider_queue` for `status = 'failed'` and
   group by `error`. To retry, set those rows back to `pending`.
+- **Empty or failed render, nothing to look at:** set `JS_SCREENSHOTS_ENABLED=1`
+  and re-drain. The spider writes `data/screenshots/{url_hash}.png` after a
+  successful render and on failure when the page is still open. The directory
+  is gitignored. Details: [JS rendering](../JS_RENDERING.md).
 - **Queue growing with JS off:** rows were written before the switch flipped;
   drain once with `ENABLE_JS_SPIDER=1`, or mark them `failed`.
 

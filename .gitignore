@@ -228,7 +228,8 @@ yarn-error.log*
 !Cargo.lock
 
 # ====================================
-# Crawl artifacts (#797): screenshots, WARC archives, profiler dumps, exports.
+# Crawl artifacts (#797, #630): screenshots, WARC archives, profiler dumps, exports.
+# JS spider PNGs are data/screenshots/{url_hash}.png (also Scraping_project/.gitignore).
 # Scraping_project/data/config/ and tests/**/fixtures/ stay tracked.
 # ====================================
 Scraping_project/data/screenshots/

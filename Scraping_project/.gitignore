@@ -1,0 +1,3 @@
+# Optional javascript-spider debug PNGs (#630). Not source.
+# Path is relative to Scraping_project/: data/screenshots/{url_hash}.png
+data/screenshots/

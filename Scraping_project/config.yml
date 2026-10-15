@@ -114,6 +114,12 @@ stage1:
   # images; override per domain (host + subdomains, most specific wins). Never blocks "document".
   js_blocked_resource_types: [image, stylesheet, font, media]
   js_blocked_resource_types_by_domain: {}
+  # #630: after each debug PNG, drop files older than this many days (0 = keep)
+  # and keep at most this many newest PNGs (0 = no cap). Capture itself stays
+  # off unless JS_SCREENSHOTS_ENABLED=1 or feature_flags.js_screenshots_enabled.
+  # Env JS_SCREENSHOT_RETENTION_DAYS / JS_SCREENSHOT_MAX_FILES override these.
+  js_screenshot_retention_days: 7
+  js_screenshot_max_files: 200
 
   # Circuit Breaker Settings
   circuit_breaker_enabled: true
@@ -512,3 +518,11 @@ export:
   batch_size: 65536          # rows per scanned batch (bounds peak memory)
   max_rows_per_file: 0       # 0 = unlimited; else roll over to <stem>.part-NNNNN<ext>
   max_bytes_per_file: 0      # 0 = unlimited; soft limit checked per batch
+
+# ============================================
+# Feature flags (#304). The environment variable of the same name wins.
+# Experimental flags stay off. See docs/FEATURE_FLAGS.md.
+# ============================================
+feature_flags:
+  # #630: PNG per javascript-spider render. Files: data/screenshots/{url_hash}.png
+  js_screenshots_enabled: false

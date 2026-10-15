@@ -27,5 +27,6 @@ New experimental features must **default to off**. Add each new flag to `FLAGS` 
 | `STAGE4_ASR_ENABLED` | off | `src/stage4/summarization.py`, `src/stage4/stage4_worker.py` | Fold local audio/text fixtures into Stage 4 summaries (#1101). Does not download remote media |
 | `KAFKA_DLQ_ENABLED` | on | `src/pipelines.py` (`KafkaPipeline`) | Write undeliverable Kafka items to the file DLQ (#162) |
 | `STAGE2_CONTENT_CACHE_ENABLED` | off | `src/stage2/stage2_worker.py`, `src/utils/cache.py` | Reuse a Stage 2 HTML body keyed by url_hash plus ETag or Last-Modified. A hit skips the network fetch and increments `cache_hit_total` (#478). No validator means the response is not cached |
+| `JS_SCREENSHOTS_ENABLED` | off | `src/stage1/experimental/js_screenshots.py`, `js_spider.py` | PNG of each javascript-spider render (`data/screenshots/{url_hash}.png`) on success and, when the page is still open, on failure (#630). A capture error does not fail the crawl |
 
 `feature_flags.snapshot()` returns the effective value of every registered flag, which is useful when debugging a deployment.

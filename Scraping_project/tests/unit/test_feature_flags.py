@@ -52,9 +52,11 @@ def test_registry_experimental_defaults_off():
     assert ff.FLAGS["ASR_ENABLED"][0] is False
     assert ff.FLAGS["STAGE4_ASR_ENABLED"][0] is False
     assert ff.FLAGS["STAGE2_CONTENT_CACHE_ENABLED"][0] is False
+    assert ff.FLAGS["JS_SCREENSHOTS_ENABLED"][0] is False
     snap = ff.snapshot(env={})
     assert snap["ENABLE_EXPERIMENTAL_SPIDERS"] is False
     assert snap["STAGE2_CONTENT_CACHE_ENABLED"] is False
+    assert snap["JS_SCREENSHOTS_ENABLED"] is False
     assert snap["SSRF_GUARD_ENABLED"] is True and snap["KAFKA_DLQ_ENABLED"] is True
 
 

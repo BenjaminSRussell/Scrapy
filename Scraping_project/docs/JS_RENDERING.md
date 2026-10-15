@@ -50,3 +50,23 @@ fetched everything.
 - Blocking `image`/`media`/`font` is almost always safe for link discovery and cuts bandwidth and render time sharply.
 - Blocking `stylesheet` is cheap, but it can hide content on sites that reveal text or trigger lazy loading through CSS (e.g. `display:none` until a class is added, or infinite scroll that depends on layout height). Override those domains.
 - Blocking `script`, `xhr` or `fetch` usually defeats the point of rendering. Only do it for a domain where you know the content is server-rendered.
+
+## Debug screenshots (#630)
+
+Off by default. An empty render used to leave no artifact of what Chromium actually painted.
+
+| Control | Default | Effect |
+|---|---|---|
+| `JS_SCREENSHOTS_ENABLED` or `feature_flags.js_screenshots_enabled` | off | Save a PNG after a successful render, and on a failed request when the Playwright page is still open. |
+| `js_screenshot_retention_days` / `JS_SCREENSHOT_RETENTION_DAYS` | `7` | On the next successful capture, delete PNGs older than this. `0` keeps them. |
+| `js_screenshot_max_files` / `JS_SCREENSHOT_MAX_FILES` | `200` | After the age pass, keep this many newest PNGs. `0` means no count cap. |
+
+Files land in `data/screenshots/{url_hash}.png` (`url_hash` is the pipeline sha256, 16 hex chars). The directory is gitignored (`Scraping_project/.gitignore` and the repo `.gitignore`). The shot is taken after scrolling and before the page is closed, with a 5 second timeout. A capture error is logged and does not fail the crawl or skip page release. The same URL overwrites its previous PNG.
+
+Turning the flag off does not delete files already written. Reclaim them without a crawl:
+
+```bash
+python -m cli data gc --roots data/screenshots --ttl-days 7 --apply
+```
+
+`--apply` is required; omit it to preview. Retention inside the spider still runs only while captures are enabled.
