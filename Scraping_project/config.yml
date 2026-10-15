@@ -75,6 +75,10 @@ stage1:
     rustmapper_enabled: false  # when true, consume rustmapper sitemap.jsonl handoff
     handoff_path: null  # optional path to discovery_handoff.json sidecar
     jsonl_path: null    # optional path to rustmapper sitemap.jsonl
+    # Resume handoff (#937). When set, Stage 1 reads this rustmapper --data-dir
+    # and injects only URLs new since its checkpoint. It does not reseed the
+    # full sitemap.jsonl snapshot. Null keeps the Scout crawl.
+    resume_data_dir: null
   enable_depth_mode: true  # Switch to depth spider when idle
   enable_rescraping: true  # Re-scrape existing URLs to find missed links
 

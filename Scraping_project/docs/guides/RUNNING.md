@@ -65,7 +65,7 @@ Then add seeds with `cli.py seeds add` or `scripts/reseed.py --csv` (`python res
 
 Every stage writes its progress to Delta tables or Redis, so to resume you usually just start the same command again.
 
-- **Stage 1.** Visited URLs are recorded in Redis seen-sets, so a restarted crawl skips pages it already fetched. To also keep Scrapy's in-flight scheduler queue across restarts, give the run a job directory and reuse it:
+- **Stage 1.** Visited URLs are recorded in Redis seen-sets, so a restarted crawl skips pages it already fetched. A rustmapper `--data-dir` is separate: set `stage1.discovery.resume_data_dir` (or `RUSTMAPPER_RESUME_DATA_DIR`) and Stage 1 injects only URLs new since its checkpoint instead of reseeding the snapshot. A corrupt data-dir stops the resume. Layout: [rustmapper_resume.md](../rustmapper_resume.md). To also keep Scrapy's in-flight scheduler queue across restarts, give the run a job directory and reuse it:
 
   ```bash
   scrapy crawl scout -s JOBDIR=data/jobs/scout-1     # Ctrl-C once for a clean pause

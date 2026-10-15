@@ -15,6 +15,7 @@ from src.core.constants import LEGACY_TABLE_STAGE3_SUMMARIES, TABLE_STAGE3_SUMMA
 from src.utils.delta import get_delta
 from src.orchestrator.hop_reconciliation import BARRIER_MODES, alert_kind, count_hops, reconcile
 from src.stage1.js_queue import count_pending, js_spider_enabled
+from src.stage1.rustmapper_resume import inject_resume, plan_resume
 from src.stage2.stage2_worker import Stage2Worker
 from src.stage3.stage3_worker import Stage3Worker
 from src.stage4.stage4_worker import Stage4Worker
@@ -179,20 +180,95 @@ class PipelineOrchestrator:
         logger.info(" JS queue drain complete: %s pending remaining (was %s)", remaining, pending)
         return remaining
 
+    def resolve_rustmapper_resume_dir(self, explicit: str | None = None) -> str | None:
+        """Resume data-dir for Stage 1, if the operator asked for one (#937).
+
+        Explicit argument, then ``RUSTMAPPER_RESUME_DATA_DIR``, then
+        ``stage1.discovery.resume_data_dir`` on the orchestrator config or
+        config.yml. Blank and null mean "run Scout".
+        """
+        if isinstance(explicit, str) and explicit.strip():
+            return explicit.strip()
+        env = os.environ.get("RUSTMAPPER_RESUME_DATA_DIR", "").strip()
+        if env:
+            return env
+        cfg = self.config if isinstance(self.config, dict) else {}
+        stage1 = cfg.get("stage1")
+        if isinstance(stage1, dict):
+            discovery = stage1.get("discovery")
+            if isinstance(discovery, dict):
+                raw = discovery.get("resume_data_dir")
+                if isinstance(raw, str) and raw.strip():
+                    return raw.strip()
+        raw = cfg.get("resume_data_dir")
+        if isinstance(raw, str) and raw.strip():
+            return raw.strip()
+        try:
+            from src.core.config import get_config
+
+            raw = get_config().get("stage1.discovery.resume_data_dir")
+        except Exception:
+            logger.debug("Could not read stage1.discovery.resume_data_dir", exc_info=True)
+            return None
+        if isinstance(raw, str) and raw.strip():
+            return raw.strip()
+        return None
+
+    def inject_rustmapper_resume(self, data_dir: str, *, seed_manager=None, dedup=None) -> int:
+        """Insert URLs new since the rustmapper checkpoint. Does not crawl.
+
+        Corrupt artifacts raise ``RustmapperResumeError`` and insert nothing.
+        """
+        # Validate before opening the lake. A corrupt data-dir must fail
+        # with RustmapperResumeError and must not construct SeedManager.
+        plan = plan_resume(data_dir)
+        if seed_manager is None and plan.urls:
+            from src.lakehouse.seed_manager import SeedManager
+
+            seed_manager = SeedManager(self.delta)
+        result = inject_resume(
+            data_dir,
+            seed_manager,
+            dedup=dedup,
+            write_uconn_urls=True,
+            enqueue_stage2=True,
+        )
+        injected = result.get("injected", 0)
+        if isinstance(injected, bool) or not isinstance(injected, int):
+            injected = 0
+        self.stats.stage1_urls_discovered = injected
+        self.stats.stage1_urls_queued = injected
+        logger.info("rustmapper resume injected %s new URL(s) from %s", injected, data_dir)
+        return injected
+
     def run_stage1(
         self,
         spider_name: str = "scout",
         url_limit: int | None = None,
+        *,
+        resume_data_dir: str | None = None,
     ) -> int:
         """Run Stage 1 (URL Discovery) with Scout spider.
+
+        When a rustmapper resume data-dir is set (#937), inject only URLs new
+        since the Stage 1 checkpoint and do not start Scout. A corrupt
+        data-dir fails instead of reseeding.
 
         Args:
             spider_name: Spider to run (scout, deep_dive, or javascript)
             url_limit: Max items to scrape (None = unlimited)
+            resume_data_dir: rustmapper ``--data-dir`` (else env or config)
 
         Returns:
-            Number of URLs queued for Stage 2
+            Number of URLs queued for Stage 2, or newly injected on resume
         """
+        data_dir = self.resolve_rustmapper_resume_dir(resume_data_dir)
+        if data_dir:
+            logger.info("=" * 80)
+            logger.info("STAGE 1: RUSTMAPPER RESUME %s", data_dir)
+            logger.info("=" * 80)
+            return self.inject_rustmapper_resume(data_dir)
+
         logger.info("=" * 80)
         logger.info("STAGE 1: URL DISCOVERY")
         logger.info("=" * 80)

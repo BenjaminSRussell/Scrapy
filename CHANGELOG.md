@@ -15,6 +15,7 @@ renamed to the new version and date (see the release checklist).
 ## [Unreleased]
 
 ### Added
+- Stage 1 understands a rustmapper `--data-dir` resume (`stage1.discovery.resume_data_dir` or `RUSTMAPPER_RESUME_DATA_DIR`). It injects only URLs new since its checkpoint and does not start Scout or reseed the full snapshot. A corrupt data-dir fails instead of reseeding. Artifact layout: `Scraping_project/docs/rustmapper_resume.md` (#937).
 - Stage 1 to stage 2 handoff (`StageQueueHandoff`) keeps the in-memory queue at the Redis high watermark (default 10000, same gate as `QueueBacklog`). Producers block until stage 2 drains to the low watermark instead of buffering an unbounded backlog, and each key is delivered once after the consumer catches up (#703).
 - Control Center pauses chart history when a metrics scrape is over 2000 series or 50ms to parse, keeps the numeric KPI counters, and shows a banner. Charts return after 3 calm intervals. Override with `window.CC_METRICS_FLOOD` or `?floodMaxSeries=`, `?floodMaxParseMs=`, and `?floodRecover=` (#690).
 - Control Center Activity tab has level filter chips (Success, Warning, Danger, Timeout, Info). Each chip shows a count and toggles that level in the browser. No chip pressed shows the full log; Danger alone shows errors only. The overview feed is unchanged (#1027).
