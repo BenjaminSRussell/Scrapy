@@ -30,6 +30,10 @@
             --gray-900: #111827;
             /* #340: muted text on white / gray-100 cards: 7.2:1 (was #94a3b8, 2.6:1). */
             --muted-text: #475569;
+            /* #1017: accent picker overrides these on <html>. */
+            --accent: #2563eb;
+            --accent-ink: #ffffff;
+            --accent-border: #2563eb;
         }
 
         .skip-to-main {
@@ -156,7 +160,7 @@
 
         .tab-button.active {
             color: var(--primary);
-            border-bottom-color: var(--primary);
+            border-bottom-color: var(--accent-border);
             background: var(--gray-50);
         }
 
@@ -825,7 +829,8 @@
             .danger-sound-label,
             .activity-chip,
             .activity-search,
-            #clear-activity-search {
+            #clear-activity-search,
+            .refresh-bar .accent-color {
                 min-height: 44px;
                 min-width: 44px;
             }
@@ -854,6 +859,7 @@
         #compare-prev-hour[aria-pressed="true"] {
             background: #eff6ff;
             border-color: var(--primary-dark);
+            color: #1e3a8a;
         }
 
         @media (max-width: 1024px) {
@@ -1018,6 +1024,30 @@
         .env-badge.env-prod { background: #b91c1c; color: #fff; font-weight: 700; }
         .milestone-badge { display: inline-block; margin-left: 0.35rem; padding: 0.1rem 0.4rem; border-radius: 0.25rem; background: #14532d; color: #bbf7d0; font-size: 0.75rem; }
     
+        /* #1017: buttons follow the accent; text is --accent-ink for contrast. */
+        .btn {
+            background: var(--accent);
+            color: var(--accent-ink);
+            border: 1px solid var(--accent);
+            border-radius: 0.375rem;
+            padding: 0.4rem 0.75rem;
+            font: inherit;
+            font-size: 0.9rem;
+            font-weight: 600;
+            line-height: 1.2;
+            cursor: pointer;
+        }
+        .accent-color {
+            width: 2.5rem;
+            height: 1.75rem;
+            padding: 0;
+            border: 1px solid var(--gray-300);
+            border-radius: 6px;
+            background: white;
+            vertical-align: middle;
+            cursor: pointer;
+        }
+
         /* #982: Windows High Contrast / forced-colors. Shadows and author
            colours are dropped in this mode, so structure and state must come
            from borders and system colours (which forced colours keep). */
@@ -1078,6 +1108,11 @@
             .status-dot {
                 forced-color-adjust: none;
                 background: CanvasText;
+            }
+            .btn {
+                background: ButtonFace;
+                color: ButtonText;
+                border: 1px solid ButtonText;
             }
             .health-item.unhealthy {
                 border: 3px dashed CanvasText;  /* state without colour */
@@ -1879,6 +1914,10 @@
                     <option value="30000">30s</option>
                 </select>
             </label>
+            <label class="refresh-info" for="accent-color">Accent
+                <input type="color" id="accent-color" class="accent-color" value="#2563eb" title="Accent color for buttons and the active tab">
+            </label>
+            <button type="button" id="accent-reset" class="btn" aria-label="Reset accent color to default">Reset accent</button>
             <button type="button" id="compare-prev-hour" class="btn" aria-pressed="false" aria-describedby="comparison-baseline-note">Compare to previous hour</button>
             <p id="comparison-baseline-note" class="comparison-note" role="status" hidden></p>
             <button type="button" id="job-start" class="btn job-start" disabled aria-describedby="job-start-hint" title="Requires job API (#147)">

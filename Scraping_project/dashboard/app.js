@@ -15,6 +15,7 @@ let dangerSoundEnabled = false;
 let dangerAudioCtx = null;
 const STORE_COMPARE_KEY = 'cc.comparePrevHour'; // #1035
 const ACTIVITY_STORE_KEY = 'cc.activityLog'; // #1029 sessionStorage ring
+const STORE_ACCENT_KEY = 'cc.accent'; // #1017
 let refreshPaused = false;
 let metricsFetcher = null;
 let metricsWasDown = false;
@@ -1432,6 +1433,45 @@ function storeGet(key) {
 function storeSet(key, value) {
     try { if (window.localStorage) window.localStorage.setItem(key, String(value)); } catch (_) { /* ignore */ }
 }
+function storeDel(key) {
+    try { if (window.localStorage) window.localStorage.removeItem(key); } catch (_) { /* ignore */ }
+}
+
+// #1017: accent picker writes --accent / --accent-ink / --accent-border.
+function applyAccent(hex) {
+    const vars = accentCssVars(hex);
+    const root = document.documentElement;
+    Object.keys(vars).forEach((name) => root.style.setProperty(name, vars[name]));
+    const input = document.getElementById('accent-color');
+    if (input && input.value !== vars['--accent']) input.value = vars['--accent'];
+    return vars;
+}
+
+function setupAccentControl() {
+    const stored = storeGet(STORE_ACCENT_KEY);
+    const color = parseAccentColor(stored);
+    if (stored && color !== String(stored).trim().toLowerCase()) storeDel(STORE_ACCENT_KEY);
+    applyAccent(color);
+    const input = document.getElementById('accent-color');
+    if (input) {
+        input.addEventListener('input', () => {
+            const next = parseAccentColor(input.value);
+            applyAccent(next);
+            storeSet(STORE_ACCENT_KEY, next);
+            const live = document.getElementById('refresh-status');
+            if (live) live.textContent = 'Accent color updated';
+        });
+    }
+    const resetBtn = document.getElementById('accent-reset');
+    if (resetBtn) {
+        resetBtn.addEventListener('click', () => {
+            storeDel(STORE_ACCENT_KEY);
+            applyAccent(DEFAULT_ACCENT);
+            const live = document.getElementById('refresh-status');
+            if (live) live.textContent = 'Accent color reset';
+        });
+    }
+}
 
 function visibleTabNames() {
     return Array.from(document.querySelectorAll('.tab-button'))
@@ -1913,6 +1953,7 @@ function initialize() {
     console.log('Initializing Pipeline Control Center...');
 
     applyFeatureFlags();
+    setupAccentControl();
     applyVersionWatermark();
     // #1038: Settings panel. A missing helper must not block the metrics poll.
     if (typeof renderMetricNameMap === 'function') {

@@ -97,6 +97,10 @@ nginx/Traefik with OAuth2 Proxy, or a Kubernetes ingress with an auth annotation
 - Contributor styleguide: [`styleguide.html`](styleguide.html)
 - Accessibility checklist for PRs: [`A11Y_CHECKLIST.md`](A11Y_CHECKLIST.md)
 
+## Accent color (#1017)
+
+The refresh bar includes an accent color picker. The choice is kept in `localStorage` under `cc.accent` and applied as CSS variables: `--accent` (button fill), `--accent-ink` (button text, white or near-black for contrast), and `--accent-border` (active tab underline). A pale color is darkened for the underline until it reaches 3:1 against the tab bar. The default is `#2563eb`. Reset accent clears the saved choice.
+
 ## Overview screenshot (#1044)
 
 One smoke capture of the Overview tab, for CSS refactors. It is not a pixel-diff

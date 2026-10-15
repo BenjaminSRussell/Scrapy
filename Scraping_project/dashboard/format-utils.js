@@ -1152,5 +1152,69 @@
             confetti: false
         };
     }
-    return { tabKeyTarget, staleState, queueDepthRows, metricsFailureActivity, shortcutHintText, parseMetrics, metricSeriesCount, METRICS_FLOOD_DEFAULTS, metricsFloodLimits, advanceMetricsFlood, metricsFloodBannerText, ratePerMinute, resolveMetricsUrl, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler, stageActivity, stageDrilldown, stageDrilldownKey, doughnutLegendLayout, connectionState, documentTitle, createActivityAnnouncer, metricsUrlProblem, splitLinks, createMetricsFetcher, REFRESH_INTERVAL_CHOICES, parseRefreshInterval, shortcutAction, pickInitialTab, METRIC_UI_MAP, renderMetricNameMap, parseDangerSoundEnabled, dangerSoundDecision, HEALTH_HISTORY_LIMIT, pushPollOutcome, healthHistoryView, COMPARISON_BASELINE_ROLE, PREV_HOUR_AVG_KEYS, readPrevHourAverage, comparisonBaselineSeries, comparisonNote, ACTIVITY_LOG_CAP, capActivityLog, activityStaleNote, restoreActivityLog, topScrapeTargets, SCRAPE_TARGET_EMPTY, ACTIVITY_LEVELS, activityLevelCounts, filterActivityItems, filterActivityMessages, activityFilterStatus, toggleActivityLevel, HISTORY_MAX_POINTS, assertHistoryBound, boundHistoryBuffer, pushHistorySample, enforceHistoryCap, grafanaHomeUrl, jobStartedPresentation };
+    // #1017: custom accent. Only #rrggbb is accepted so a stored value cannot
+    // be written into a CSS variable as anything other than a color.
+    const DEFAULT_ACCENT = '#2563eb';
+    const ACCENT_INK_DARK = '#111827';
+    const ACCENT_BORDER_BG = '#f9fafb'; // active tab bar (--gray-50)
+
+    function parseAccentColor(value, fallback) {
+        const fb = arguments.length > 1 ? fallback : DEFAULT_ACCENT;
+        const s = String(value == null ? '' : value).trim();
+        return /^#[0-9a-fA-F]{6}$/.test(s) ? s.toLowerCase() : fb;
+    }
+
+    function _hexRgb(hex) {
+        const n = parseInt(hex.slice(1), 16);
+        return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+    }
+
+    function _relLuminance(hex) {
+        const lin = (c) => {
+            const v = c / 255;
+            return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+        };
+        const [r, g, b] = _hexRgb(hex);
+        return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+    }
+
+    function _contrast(a, b) {
+        const x = _relLuminance(a);
+        const y = _relLuminance(b);
+        const hi = x > y ? x : y;
+        const lo = x > y ? y : x;
+        return (hi + 0.05) / (lo + 0.05);
+    }
+
+    // Button label: white or near-black, whichever contrasts more with the fill.
+    function accentInk(hex) {
+        const color = parseAccentColor(hex);
+        return _contrast(color, '#ffffff') >= _contrast(color, ACCENT_INK_DARK) ? '#ffffff' : ACCENT_INK_DARK;
+    }
+
+    // Active-tab underline. A pale accent is mixed toward black until it is
+    // at least 3:1 against the tab bar, so the border stays visible.
+    function accentBorder(hex, against) {
+        const bg = parseAccentColor(against, ACCENT_BORDER_BG);
+        let [r, g, b] = _hexRgb(parseAccentColor(hex));
+        for (let i = 0; i < 24; i++) {
+            const cur = '#' + [r, g, b].map((c) => c.toString(16).padStart(2, '0')).join('');
+            if (_contrast(cur, bg) >= 3) return cur;
+            r = Math.round(r * 0.82);
+            g = Math.round(g * 0.82);
+            b = Math.round(b * 0.82);
+        }
+        return ACCENT_INK_DARK;
+    }
+
+    function accentCssVars(hex) {
+        const color = parseAccentColor(hex);
+        return {
+            '--accent': color,
+            '--accent-ink': accentInk(color),
+            '--accent-border': accentBorder(color),
+        };
+    }
+
+    return { tabKeyTarget, staleState, queueDepthRows, metricsFailureActivity, shortcutHintText, parseMetrics, metricSeriesCount, METRICS_FLOOD_DEFAULTS, metricsFloodLimits, advanceMetricsFlood, metricsFloodBannerText, ratePerMinute, resolveMetricsUrl, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler, stageActivity, stageDrilldown, stageDrilldownKey, doughnutLegendLayout, connectionState, documentTitle, createActivityAnnouncer, metricsUrlProblem, splitLinks, createMetricsFetcher, REFRESH_INTERVAL_CHOICES, parseRefreshInterval, shortcutAction, pickInitialTab, METRIC_UI_MAP, renderMetricNameMap, parseDangerSoundEnabled, dangerSoundDecision, HEALTH_HISTORY_LIMIT, pushPollOutcome, healthHistoryView, COMPARISON_BASELINE_ROLE, PREV_HOUR_AVG_KEYS, readPrevHourAverage, comparisonBaselineSeries, comparisonNote, ACTIVITY_LOG_CAP, capActivityLog, activityStaleNote, restoreActivityLog, topScrapeTargets, SCRAPE_TARGET_EMPTY, ACTIVITY_LEVELS, activityLevelCounts, filterActivityItems, filterActivityMessages, activityFilterStatus, toggleActivityLevel, HISTORY_MAX_POINTS, assertHistoryBound, boundHistoryBuffer, pushHistorySample, enforceHistoryCap, grafanaHomeUrl, jobStartedPresentation, DEFAULT_ACCENT, parseAccentColor, accentInk, accentBorder, accentCssVars };
 });
