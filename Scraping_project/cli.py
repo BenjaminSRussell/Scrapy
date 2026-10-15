@@ -631,6 +631,39 @@ def cmd_seeds(args):
     raise SystemExit("unknown seeds command")
 
 
+def cmd_url_policy(args):
+    """Add/remove URL allow and block rules on the Redis overlay (#633)."""
+    import json as _json
+
+    from src.stage1.url_policy import UrlPolicy
+
+    policy = UrlPolicy.from_config()
+    command = args.url_policy_command
+    if command == "list":
+        print(_json.dumps(policy.snapshot(), indent=2))
+        return
+    if command == "audit":
+        for row in policy.audit(limit=args.limit):
+            print(_json.dumps(row))
+        return
+    try:
+        if command == "add":
+            changed = policy.add(args.kind, args.pattern, actor=args.actor, reason=args.reason or "")
+        elif command == "remove":
+            changed = policy.remove(args.kind, args.pattern, actor=args.actor, reason=args.reason or "")
+        else:
+            raise SystemExit("unknown url-policy command")
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
+    if changed:
+        print(
+            f"{command} {args.kind} {args.pattern} "
+            f"(workers reload within {policy.reload_seconds:g}s)"
+        )
+    else:
+        print(f"unchanged {args.kind} {args.pattern}")
+
+
 def cmd_killswitch(args):
     """Global crawl kill switch (#456): stops Stage 1/2 downloads cluster-wide."""
     import json as _json
@@ -874,6 +907,27 @@ def main():
     ks_audit = ks_sub.add_parser("audit", help="Show recent engage/release events")
     ks_audit.add_argument("--limit", type=int, default=20)
     ks_parser.set_defaults(func=cmd_killswitch)
+
+    # URL allow/block: YAML baseline + Redis hot overlay (#633)
+    up_parser = subparsers.add_parser(
+        "url-policy",
+        help="Add/remove URL allow and block rules (Redis overlay, hot within reload_seconds)",
+    )
+    up_sub = up_parser.add_subparsers(dest="url_policy_command", required=True)
+    up_add = up_sub.add_parser("add", help="Add a rule to the Redis overlay")
+    up_add.add_argument("kind", choices=["block", "allow"])
+    up_add.add_argument("pattern", help="Glob, URL prefix, path prefix, host/path, or host")
+    up_add.add_argument("--actor", required=True)
+    up_add.add_argument("--reason", default="", help="Required when kind is block")
+    up_rm = up_sub.add_parser("remove", help="Remove a rule from the Redis overlay")
+    up_rm.add_argument("kind", choices=["block", "allow"])
+    up_rm.add_argument("pattern")
+    up_rm.add_argument("--actor", required=True)
+    up_rm.add_argument("--reason", default="")
+    up_sub.add_parser("list", help="Show YAML rules and the Redis overlay")
+    up_audit = up_sub.add_parser("audit", help="Show recent allow/block changes")
+    up_audit.add_argument("--limit", type=int, default=20)
+    up_parser.set_defaults(func=cmd_url_policy)
 
     seeds_parser = subparsers.add_parser("seeds", help="List/add/disable seed URLs with audit log")
     seeds_sub = seeds_parser.add_subparsers(dest="seeds_command", required=True)
