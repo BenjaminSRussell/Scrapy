@@ -6,6 +6,8 @@ All pipeline data lives in Delta Lake tables, which are Parquet files plus a `_d
 
 The lake root is `DELTA_LAKE_PATH` if that is set, otherwise `delta_lake.base_path` (default `./data/delta_lake`). Compose sets it to `/data/delta` inside the containers, which is `./data/delta` on the host. Each table is a directory under the root. Column contracts for `pages`, `extractions` and `jobs` are in the [Delta schema registry](../../../docs/contracts/README.md).
 
+`delta_lake.tenant_path_prefix` is false, so the table directories below sit directly on that root. See [Per-tenant directory](#per-tenant-directory-optional-671) before changing it.
+
 | Table | Written by | Contents |
 |---|---|---|
 | `seed_urls` | `cli.py seeds`, `scripts/reseed.py` (`python reseed.py` is deprecated), scout seed expansion | Seeds and their active flag |
@@ -19,6 +21,27 @@ The lake root is `DELTA_LAKE_PATH` if that is set, otherwise `delta_lake.base_pa
 | `stage4_large_docs`, `stage4_large_doc_summaries`, `stage4_summaries` | Stage 4 | The large-document queue and its summaries |
 
 `python cli.py health` lists every table with its row and file counts.
+
+## Per-tenant directory (optional, #671)
+
+Off by default (`delta_lake.tenant_path_prefix: false` in `config.yml`). `DELTA_TENANT_PATH_PREFIX` overrides the flag when it is set to `true`, `false`, `1`, `0`, `yes`, `no`, `on`, or `off`. Any other value raises at startup. Unset means the config flag.
+
+When the flag is on, `LakehouseManager` and `DeltaHelper` append one segment to a root they resolved themselves (`DELTA_LAKE_PATH`, else `delta_lake.base_path`): `{root}/{tenant_id}/{table}`. Spill (`_write_spill`), trash (`_trash`), audit (`_audit`), and `<table>_history` follow that directory. The segment is `SITE_ID`, else `TENANT_ID`, else `REDIS_SITE_ID`, else `default` — the same id as Redis seen-sets. It must be one path segment matching `[A-Za-z0-9][A-Za-z0-9._-]{0,127}`. A slash, `..`, or other shape raises, and no directory is created.
+
+An explicit `base_path` (a test, a tool, or `DeltaHelper` handing its path to the manager) is not prefixed again. Pass `{root}/{tenant_id}` yourself if that caller should see the prefixed lake. `kafka-delta-ingest` takes a table path on its command line and does not read this flag.
+
+The flag does not move files and does not resize a PVC. Claim sizes stay 500Gi (`deltaLake.persistence.size`) and 200Gi (`scrapyApp.persistence.deltaLake.size`). How to size a shared claim for more than one tenant is in [REDIS_CAPACITY.md](../REDIS_CAPACITY.md). The decision is [ADR-0004](../../../docs/adr/0004-per-tenant-delta-prefix.md).
+
+### Upgrade
+
+Enabling the flag on a root that already has tables makes writers create empty tables under the prefix and leave the old ones unread.
+
+1. Stop Python writers and `kafka-delta-ingest`.
+2. Resolve the id above. A single-site install with `SITE_ID`, `TENANT_ID`, and `REDIS_SITE_ID` all unset uses `default`.
+3. Create `{root}/{id}` and move each table directory plus `_write_spill`, `_trash`, and `_audit` into it. Do not copy. A copy doubles the bytes on the PVC until the old tree is deleted, and the old tree is not read.
+4. Point every `kafka-delta-ingest` table argument at `{root}/{id}/{table}`.
+5. Set the flag, or `DELTA_TENANT_PATH_PREFIX=true`, and start writers.
+6. To go back, stop writers, move those directories up to `{root}`, and set the flag false before any new commits exist only under the prefix.
 
 ## Query from Python
 

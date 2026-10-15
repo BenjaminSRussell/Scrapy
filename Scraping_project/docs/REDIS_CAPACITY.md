@@ -154,3 +154,9 @@ Retention bounds how long removed files stay. It is not a growth rate (`config.y
 - `queue_retention_hours`: 168 for completed/failed rows in `stage2_queue`, `js_spider_queue`, and `stage4_large_docs`
 
 Row size on disk depends on the Parquet encoding of each table and was not measured. `MEMORY USAGE` style sampling for Delta is the table directory size divided by the row count from `python cli.py health`, on a lake you already have. This repository does not record that quotient.
+
+### Per-tenant prefix (#671)
+
+`delta_lake.tenant_path_prefix` is false. Tables stay directly under the lake root, and the two Delta claims stay 500Gi and 200Gi.
+
+Turning the flag on does not add a PVC and does not change `deltaLake.persistence.size` or `scrapyApp.persistence.deltaLake.size`. Every tenant is another directory on the same claim (`{root}/{tenant_id}/`, see [DATA_USAGE.md](guides/DATA_USAGE.md)). Bytes per tenant were not measured, so this note does not give a GB-per-tenant number. One tenant keeps the reservation above. More than one tenant on that claim needs the reservation multiplied by the tenant count you will actually place there: vacuum of one directory does not free another's files, and retention does not cap the sum. A tenant that should not share a volume gets its own claim and its own `DELTA_LAKE_PATH`, with the flag left false. The flag does not resize a claim.

@@ -355,6 +355,14 @@ kafka:
 # ============================================
 delta_lake:
   base_path: ./data/delta_lake
+  # #671: false keeps tables at {base_path}/{table}. true puts a root this
+  # process resolved itself (DELTA_LAKE_PATH, else base_path) under
+  # {root}/{tenant_id}/. An explicit constructor path is not prefixed again.
+  # tenant_id is SITE_ID, else TENANT_ID, else REDIS_SITE_ID, else default
+  # (same id as Redis seen-sets, #191). Move existing tables before turning
+  # this on. DELTA_TENANT_PATH_PREFIX overrides the flag. Upgrade and PVC
+  # sizing: docs/guides/DATA_USAGE.md and docs/REDIS_CAPACITY.md.
+  tenant_path_prefix: false
   # Delta log checkpoint every N commits (sets the delta.checkpointInterval table
   # property); checkpoint()/shutdown also writes one explicitly (#274).
   checkpoint_interval: 100
