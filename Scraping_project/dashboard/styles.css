@@ -722,3 +722,152 @@ button.row { width: 100%; border: 0; background: none; text-align: left; cursor:
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; scroll-behavior: auto !important; }
 }
+
+/* ---------- inline bits ---------- */
+.status-label { display: inline-flex; align-items: center; gap: 6px; }
+.banner code, .row code {
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: var(--fill);
+}
+.bad { color: var(--red-text); }
+
+/* ---------- flow diagram ---------- */
+.flow-card { padding: 14px; container: flow / inline-size; }
+.flow {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-areas:
+    "seeds seeds"
+    "discovery discovery"
+    "analysis analysis"
+    "summaries large_docs";
+  gap: 26px 12px;
+}
+.flow-edges { position: absolute; inset: 0; overflow: visible; pointer-events: none; z-index: 0; }
+.flow-edges .edge {
+  fill: none;
+  stroke: color-mix(in srgb, var(--t) 42%, transparent);
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+.flow-edges .particle { fill: var(--t); stroke: var(--cell); stroke-width: 1.5; }
+
+.flow-node {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: "head count" "sub count";
+  align-items: center;
+  column-gap: 12px;
+  row-gap: 3px;
+  min-height: 64px;
+  padding: 11px 14px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--t) 10%, var(--cell));
+  color: var(--label);
+  transition: transform 0.15s var(--ease-ios);
+}
+.flow-node[data-stage="seeds"] { grid-area: seeds; }
+.flow-node[data-stage="discovery"] { grid-area: discovery; }
+.flow-node[data-stage="analysis"] { grid-area: analysis; }
+.flow-node[data-stage="summaries"] { grid-area: summaries; }
+.flow-node[data-stage="large_docs"] { grid-area: large_docs; }
+.flow-node:active { transform: scale(0.98); background: color-mix(in srgb, var(--t) 18%, var(--cell)); }
+@media (hover: hover) { .flow-node:hover { background: color-mix(in srgb, var(--t) 15%, var(--cell)); } }
+.flow-head { grid-area: head; display: flex; align-items: center; gap: 9px; min-width: 0; }
+.flow-title { font-size: var(--fs-subhead); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.flow-head .chev { display: none; margin-left: auto; }
+.flow-count {
+  grid-area: count;
+  font-size: var(--fs-title1);
+  font-weight: 700;
+  line-height: 1.05;
+  text-align: right;
+  white-space: nowrap;
+}
+.flow-sub { grid-area: sub; font-size: var(--fs-footnote); color: var(--label-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.flow-sub.good { color: var(--tt); font-weight: 600; }
+.flow-sub.bad, .flow-sub .bad { color: var(--red-text); font-weight: 600; }
+
+/* stacked cards: the two end stages on phones, every stage when wide */
+.flow-node[data-stage="summaries"], .flow-node[data-stage="large_docs"] {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: "head" "count" "sub";
+  align-content: start;
+}
+.flow-node[data-stage="summaries"] .flow-count,
+.flow-node[data-stage="large_docs"] .flow-count { text-align: left; margin-top: 6px; }
+.flow-node[data-stage="summaries"] .chev,
+.flow-node[data-stage="large_docs"] .chev { display: block; }
+
+@container flow (min-width: 640px) {
+  .flow {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-areas:
+      "seeds discovery analysis summaries"
+      "seeds discovery analysis large_docs";
+    gap: 18px 34px;
+    align-items: center;
+  }
+  .flow-node {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "head" "count" "sub";
+    align-content: start;
+    min-height: 118px;
+  }
+  .flow-node .flow-count { text-align: left; margin-top: 8px; }
+  .flow-node .chev { display: block; }
+}
+
+.flow-card.stale .flow-count, .flow-card.stale .flow-sub { opacity: 0.55; }
+@media (prefers-reduced-motion: no-preference) {
+  .flow-node.bump .flow-count { animation: cc-bump 0.36s var(--ease-ios); }
+}
+@keyframes cc-bump { 40% { transform: scale(1.07); } }
+
+/* ---------- metric header + area chart ---------- */
+.metric-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; margin: 14px 2px 0; }
+.metric-value { font-size: var(--fs-title1); font-weight: 700; }
+.metric-label { color: var(--label-2); font-size: var(--fs-footnote); }
+
+.chart {
+  position: relative;
+  margin-top: 10px;
+  border-radius: 10px;
+  touch-action: pan-y;
+  -webkit-user-select: none;
+  user-select: none;
+  cursor: crosshair;
+}
+.chart svg { overflow: visible; }
+.chart .grid line { stroke: var(--separator); stroke-dasharray: 2 3; }
+.chart text { fill: var(--label-2); font-size: 11px; font-family: var(--font-text); letter-spacing: 0; }
+.chart .line { fill: none; stroke: var(--t); stroke-width: 2.25; stroke-linejoin: round; stroke-linecap: round; }
+.chart .grad-top { stop-color: var(--t); stop-opacity: 0.3; }
+.chart .grad-bottom { stop-color: var(--t); stop-opacity: 0; }
+.chart .scrub line { stroke: var(--label-3); stroke-width: 1; }
+.chart .scrub circle { fill: var(--t); stroke: var(--cell); stroke-width: 2.5; }
+.scrub-tip {
+  position: absolute;
+  top: -4px;
+  transform: translate(-50%, -100%);
+  display: grid;
+  justify-items: center;
+  padding: 6px 10px;
+  border-radius: 10px;
+  background: var(--cell);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.16);
+  font-size: var(--fs-caption);
+  color: var(--label-2);
+  white-space: nowrap;
+  pointer-events: none;
+}
+.scrub-tip strong { color: var(--label); font-size: var(--fs-subhead); }
+.empty-chart { cursor: default; }
+.empty-chart p { padding: 44px 8px; text-align: center; color: var(--label-2); font-size: var(--fs-subhead); }
+.card > .segmented { max-width: 420px; }

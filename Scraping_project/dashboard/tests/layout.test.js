@@ -73,3 +73,36 @@ test('monotonePath handles 0, 1 and many points without overshooting', () => {
   assert.ok(areaPath([[0, 5], [10, 2]], 20).endsWith('L10,20L0,20Z'));
   assert.equal(areaPath([], 20), '');
 });
+
+import { edgePath, edgeOrientation } from '../app/layout/geometry.js';
+import { nearestIndex } from '../app/layout/scale.js';
+
+test('edges run bottom-to-top when the next card is below, side-to-side when beside', () => {
+  const a = { x: 0, y: 0, w: 100, h: 40 };
+  const below = { x: 0, y: 60, w: 100, h: 40 };
+  const beside = { x: 140, y: 0, w: 100, h: 40 };
+  assert.equal(edgeOrientation(a, below), 'vertical');
+  assert.equal(edgeOrientation(a, beside), 'horizontal');
+  assert.equal(edgePath(a, below), 'M50,40C50,50 50,50 50,60');
+  assert.equal(edgePath(a, beside), 'M100,20C120,20 120,20 140,20');
+  const lowerRight = { x: 140, y: 80, w: 100, h: 40 };
+  assert.equal(edgeOrientation({ x: 0, y: 0, w: 100, h: 120 }, lowerRight), 'horizontal', 'tall card beside a lower one');
+});
+
+test('nearestIndex finds the closest x, clamping outside the range', () => {
+  const pts = [[0, 1], [10, 2], [20, 3]];
+  assert.equal(nearestIndex(pts, -5), 0);
+  assert.equal(nearestIndex(pts, 4), 0);
+  assert.equal(nearestIndex(pts, 6), 1);
+  assert.equal(nearestIndex(pts, 99), 2);
+  assert.equal(nearestIndex([], 3), -1);
+});
+
+import { bucketMean } from '../app/layout/scale.js';
+
+test('bucketMean averages 10 s rate points into 30 s buckets for a readable line', () => {
+  const pts = [[0, 30], [10, 60], [20, 90], [30, 10], [40, 20], [50, 30], [60, 5]];
+  assert.deepEqual(bucketMean(pts, 30), [[0, 60], [30, 20], [60, 5]]);
+  assert.deepEqual(bucketMean([], 30), []);
+  assert.deepEqual(bucketMean(pts, 0), pts, 'no bucketing without a size');
+});

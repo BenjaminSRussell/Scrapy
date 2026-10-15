@@ -64,3 +64,33 @@ export function areaPath(points, baseline) {
   const last = points[points.length - 1];
   return `${monotonePath(points)}L${r(last[0])},${r(baseline)}L${r(first[0])},${r(baseline)}Z`;
 }
+
+// Index of the point whose x is closest to `x` (-1 for no points).
+export function nearestIndex(points, x) {
+  if (!points.length) return -1;
+  let lo = 0;
+  let hi = points.length - 1;
+  while (hi - lo > 1) {
+    const mid = (lo + hi) >> 1;
+    if (points[mid][0] <= x) lo = mid;
+    else hi = mid;
+  }
+  return Math.abs(points[lo][0] - x) <= Math.abs(points[hi][0] - x) ? lo : hi;
+}
+
+// Mean of [t, value] points per `size`-second bucket, keyed by bucket start.
+export function bucketMean(points, size) {
+  if (!(size > 0)) return points;
+  const out = [];
+  for (const [t, v] of points) {
+    const key = Math.floor(t / size) * size;
+    const last = out[out.length - 1];
+    if (last && last[0] === key) {
+      last[2] += v;
+      last[3] += 1;
+    } else {
+      out.push([key, 0, v, 1]);
+    }
+  }
+  return out.map(([key, , sum, n]) => [key, sum / n]);
+}
