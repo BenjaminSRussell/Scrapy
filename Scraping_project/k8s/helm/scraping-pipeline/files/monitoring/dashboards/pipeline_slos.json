@@ -124,7 +124,7 @@
         {
           "datasource": {"type": "prometheus", "uid": "${datasource}"},
           "expr": "max_over_time(kafka_consumergroup_lag_max[5m])",
-          "legendFormat": "{{group}} {{topic}}",
+          "legendFormat": "{{client_id}} {{topic}}",
           "refId": "A"
         }
       ],
