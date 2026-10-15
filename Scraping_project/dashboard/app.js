@@ -18,6 +18,13 @@ const ACTIVITY_STORE_KEY = 'cc.activityLog'; // #1029 sessionStorage ring
 let refreshPaused = false;
 let metricsFetcher = null;
 let metricsWasDown = false;
+// #656: same-origin SSE. ssePrefer skips the metrics poll; a failed stream sets sseGaveUp.
+let liveMetrics = null;
+let ssePrefer = false;
+let sseGaveUp = false;
+let sseAnnounced = false;
+let pollLoopStarted = false;
+let manualRefreshOnce = false;
 let consecutiveFetchFailures = 0;
 // #1030: last HEALTH_HISTORY_LIMIT metrics-poll outcomes (true = success).
 let pollHistory = [];
@@ -1149,50 +1156,61 @@ async function fetchMetrics() {
         const text = await metricsFetcher.fetchText(METRICS_URL);
         const parseStarted = clockMs();
         const metrics = parseMetrics(text);
-        const decision = advanceMetricsFlood(metricsFlood, {
-            seriesCount: metricSeriesCount(metrics),
-            parseMs: clockMs() - parseStarted,
-        }, readMetricsFloodLimits());
-        applyMetricsFlood(decision);
-        updateDashboard(metrics);
-        hasEverSucceeded = true;
-        lastMetricsAt = Date.now();
-        consecutiveFetchFailures = 0;
-        finishLoading(false);
-        hideFetchError();
-        renderStale();
-        setConnectionStatus('online', metrics['pipeline_running']);
-        notePollOutcome(true);
+        acceptMetricsSample(metrics, clockMs() - parseStarted);
     } catch (error) {
         if (error && error.superseded) return; // a newer request owns the result (#1031)
-        metricsWasDown = true;
-        console.error('Error fetching metrics:', error);
-        const failure = metricsFailureActivity(error, METRICS_TIMEOUT_MS);
-        addActivityLogItem(failure.type, failure.message);
-        if (!hasEverSucceeded) finishLoading(true);
-        showFetchError(failure.message);
-        consecutiveFetchFailures += 1;
-        setConnectionStatus(hasEverSucceeded ? 'offline' : 'never');
-        notePollOutcome(false);
-        document.querySelectorAll('.card-badge.badge-info, .card-badge.badge-success').forEach(b => {
-            b.textContent = 'Unknown';
-            b.classList.remove('badge-info', 'badge-success');
-            b.classList.add('badge-danger');
-        });
-        document.querySelectorAll('.health-item.healthy').forEach(el => {
-            el.classList.remove('healthy');
-            el.classList.add('unhealthy');
-            const v = el.querySelector('.health-value');
-            if (v) v.textContent = 'Unreachable';
-        });
-        const delta = document.getElementById('delta-tables');
-        if (delta) delta.textContent = '—';
-        if (typeof setHealthTile === 'function') {
-            setHealthTile('metrics-health', 'Metrics', false, 'Fetch failed');
-            setHealthTile('redis-health', 'Redis', false, 'Unknown');
-        }
+        failMetricsSample(error);
     } finally {
         if (main) main.setAttribute('aria-busy', 'false');
+    }
+}
+
+function acceptMetricsSample(metrics, parseMs) {
+    // #690: a flooded scrape still updates the numbers, and an SSE sample counts too.
+    if (typeof advanceMetricsFlood === 'function' && typeof applyMetricsFlood === 'function') {
+        const decision = advanceMetricsFlood(metricsFlood, {
+            seriesCount: typeof metricSeriesCount === 'function' ? metricSeriesCount(metrics) : 0,
+            parseMs: Number(parseMs) || 0,
+        }, readMetricsFloodLimits());
+        applyMetricsFlood(decision);
+    }
+    updateDashboard(metrics);
+    hasEverSucceeded = true;
+    lastMetricsAt = Date.now();
+    consecutiveFetchFailures = 0;
+    finishLoading(false);
+    hideFetchError();
+    renderStale();
+    setConnectionStatus('online', metrics['pipeline_running']);
+    notePollOutcome(true);
+}
+
+function failMetricsSample(error) {
+    metricsWasDown = true;
+    console.error('Error fetching metrics:', error);
+    const failure = metricsFailureActivity(error, METRICS_TIMEOUT_MS);
+    addActivityLogItem(failure.type, failure.message);
+    if (!hasEverSucceeded) finishLoading(true);
+    showFetchError(failure.message);
+    consecutiveFetchFailures += 1;
+    setConnectionStatus(hasEverSucceeded ? 'offline' : 'never');
+    notePollOutcome(false);
+    document.querySelectorAll('.card-badge.badge-info, .card-badge.badge-success').forEach(b => {
+        b.textContent = 'Unknown';
+        b.classList.remove('badge-info', 'badge-success');
+        b.classList.add('badge-danger');
+    });
+    document.querySelectorAll('.health-item.healthy').forEach(el => {
+        el.classList.remove('healthy');
+        el.classList.add('unhealthy');
+        const v = el.querySelector('.health-value');
+        if (v) v.textContent = 'Unreachable';
+    });
+    const delta = document.getElementById('delta-tables');
+    if (delta) delta.textContent = '—';
+    if (typeof setHealthTile === 'function') {
+        setHealthTile('metrics-health', 'Metrics', false, 'Fetch failed');
+        setHealthTile('redis-health', 'Redis', false, 'Unknown');
     }
 }
 
@@ -1472,11 +1490,15 @@ function setupVisibilityPause() {
         if (!refreshScheduler) return;
         const live = document.getElementById('refresh-status');
         if (document.hidden) {
+            if (liveMetrics) liveMetrics.stop(); // #656/#963: drop the stream with the poll
             refreshScheduler.setPaused(true);
         } else if (!refreshPaused) {
             refreshScheduler.setPaused(false);
-            refreshScheduler.refreshNow();
-            if (live) live.textContent = 'Auto-refresh resumed';
+            if (!sseGaveUp && currentStreamUrl()) beginStream();
+            else refreshScheduler.refreshNow();
+            if (live) {
+                live.textContent = (ssePrefer && !sseGaveUp) ? 'Live metrics resumed' : 'Auto-refresh resumed';
+            }
         }
         renderCountdown();
     });
@@ -1642,8 +1664,29 @@ function setRefreshBusy(busy) {
     btn.textContent = busy ? 'Refreshing…' : 'Refresh now';
 }
 function requestRefresh() {
-    if (!refreshScheduler || refreshScheduler.isFetching()) return;
+    if (!refreshScheduler) return;
+    if (ssePrefer && !sseGaveUp) {
+        refreshOnce();
+        return;
+    }
+    if (refreshScheduler.isFetching()) return;
     refreshScheduler.refreshNow();
+}
+
+async function refreshOnce() {
+    if (manualRefreshOnce) return;
+    manualRefreshOnce = true;
+    const before = lastMetricsAt;
+    setRefreshBusy(true);
+    try {
+        await Promise.all([fetchMetrics(), fetchQueueDepths()]);
+    } finally {
+        setRefreshBusy(false);
+        manualRefreshOnce = false;
+    }
+    const live = document.getElementById('refresh-status');
+    if (live && lastMetricsAt !== before) live.textContent = 'Metrics refreshed';
+    renderCountdown();
 }
 
 function formatRelative(ts) {
@@ -1661,10 +1704,18 @@ let hasEverSucceeded = false;
 function renderCountdown() {
     if (!refreshScheduler) return;
     const el = document.getElementById('refresh-countdown');
+    const unit = document.getElementById('refresh-unit');
+    const pushing = ssePrefer && !sseGaveUp && !refreshPaused && !document.hidden;
     if (el) {
-        const s = refreshScheduler.secondsRemaining();
-        const text = s === null ? 'paused' : String(s);
-        if (el.textContent !== text) el.textContent = text;
+        if (pushing) {
+            if (el.textContent !== 'live') el.textContent = 'live';
+            if (unit && unit.textContent !== '') unit.textContent = '';
+        } else {
+            const s = refreshScheduler.secondsRemaining();
+            const text = s === null ? 'paused' : String(s);
+            if (el.textContent !== text) el.textContent = text;
+            if (unit && unit.textContent !== ' seconds') unit.textContent = ' seconds';
+        }
     }
     const rel = document.getElementById('last-updated-rel');
     if (rel) rel.textContent = formatRelative(lastMetricsAt);
@@ -1679,14 +1730,73 @@ function startCountdown() {
 // One aria announcement per completed successful fetch (#1093).
 async function fetchAndAnnounce() {
     const before = lastMetricsAt;
-    setRefreshBusy(true);
+    const includeMetrics = !ssePrefer;
+    if (includeMetrics) setRefreshBusy(true);
     try {
-        await Promise.all([fetchMetrics(), fetchQueueDepths()]);
+        const jobs = [fetchQueueDepths()];
+        if (!ssePrefer) jobs.push(fetchMetrics());
+        await Promise.all(jobs);
     } finally {
-        setRefreshBusy(false);
+        if (includeMetrics) setRefreshBusy(false);
     }
     const live = document.getElementById('refresh-status');
     if (live && lastMetricsAt !== before) live.textContent = 'Metrics refreshed';
+    renderCountdown();
+}
+
+// #656: /api/metrics/stream when it applies; otherwise the refresh poll.
+function currentStreamUrl() {
+    if (typeof window !== 'undefined' && window.__CC_FEATURES__ && window.__CC_FEATURES__.sse === false) return null;
+    const base = typeof metricsStreamUrl === 'function'
+        ? metricsStreamUrl(METRICS_URL, typeof location !== 'undefined' ? location : null, typeof EventSource !== 'undefined')
+        : null;
+    if (!base) return null;
+    // Push period is CC_SSE_INTERVAL (default 2s), not the poll picker (#656).
+    return base;
+}
+
+function startPollLoop() {
+    if (pollLoopStarted || !refreshScheduler) return;
+    pollLoopStarted = true;
+    refreshScheduler.start();
+}
+
+function beginStream() {
+    const url = currentStreamUrl();
+    if (!url || sseGaveUp || typeof EventSource === 'undefined' || typeof createLiveMetrics !== 'function') {
+        ssePrefer = false;
+        startPollLoop();
+        return;
+    }
+    if (liveMetrics) liveMetrics.stop();
+    ssePrefer = true;
+    if (!pollLoopStarted) startPollLoop();
+    else fetchQueueDepths();
+    liveMetrics = createLiveMetrics({
+        streamUrl: url,
+        EventSource,
+        onMetrics(metrics) {
+            if (!sseAnnounced) {
+                sseAnnounced = true;
+                addActivityLogItem('info', 'Live metrics stream connected');
+            }
+            acceptMetricsSample(metrics);
+        },
+        onUpstreamError(err) {
+            failMetricsSample(err instanceof Error ? err : new Error(String(err && err.message || err)));
+        },
+        onFallback() {
+            if (sseGaveUp) return;
+            sseGaveUp = true;
+            ssePrefer = false;
+            sseAnnounced = false;
+            addActivityLogItem('warning', 'Live metrics stream unavailable; using refresh polling');
+            if (!pollLoopStarted) startPollLoop();
+            else fetchMetrics();
+            renderCountdown();
+        },
+    });
+    liveMetrics.start();
     renderCountdown();
 }
 
@@ -1900,10 +2010,21 @@ function initialize() {
             pauseBtn.setAttribute('aria-pressed', refreshPaused ? 'true' : 'false');
             pauseBtn.textContent = refreshPaused ? 'Resume' : 'Pause';
             pauseBtn.setAttribute('aria-label', refreshPaused ? 'Resume auto-refresh' : 'Pause auto-refresh');
-            refreshScheduler.setPaused(refreshPaused);
+            if (refreshPaused) {
+                if (liveMetrics) liveMetrics.stop();
+                refreshScheduler.setPaused(true);
+            } else {
+                refreshScheduler.setPaused(false);
+                if (!sseGaveUp && currentStreamUrl()) beginStream();
+                else refreshScheduler.refreshNow();
+            }
             renderCountdown();
             const live = document.getElementById('refresh-status');
-            if (live) live.textContent = refreshPaused ? 'Auto-refresh paused' : 'Auto-refresh resumed';
+            if (live) {
+                live.textContent = refreshPaused
+                    ? 'Auto-refresh paused'
+                    : (ssePrefer && !sseGaveUp ? 'Live metrics resumed' : 'Auto-refresh resumed');
+            }
         });
     }
     const manualBtn = document.getElementById('manual-refresh');
@@ -1914,7 +2035,7 @@ function initialize() {
     restorePersistedActivityLog(); // #1029: before the fresh init line, so it stays newest
     addActivityLogItem('success', 'Pipeline Control Center initialized');
 
-    refreshScheduler.start();
+    beginStream();
 
     const chartHeightMql = window.matchMedia('(max-width: 640px)');
     const onChartBreak = () => {

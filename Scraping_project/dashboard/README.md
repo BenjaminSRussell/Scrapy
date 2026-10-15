@@ -15,6 +15,10 @@ tab (#1029). A reload restores them and shows a note that they came from before
 the reload and may be stale. Closing the tab drops them; Clear drops them
 immediately.
 
+Same-origin pages can also subscribe to **`/api/metrics/stream`** (SSE, #656) instead of
+polling `/api/metrics`. The page falls back to the refresh poll when the stream is
+off, refused, or the metrics URL is not this server's proxy.
+
 All throughput figures are per minute, computed from the real time between samples (#141).
 Labelled series such as `errors_total{stage="stage1"}` are kept under their full key and
 also summed under the bare name (`errors_total`) unless an unlabelled series of that name
@@ -74,6 +78,9 @@ node --test Scraping_project/dashboard/tests/   # helper unit tests
 | `CC_CORS_ORIGINS` | unset (no CORS headers) | Comma list of exact origins allowed to read responses cross-origin; `*` is for local development only and prints a warning (#189) |
 | `CC_CONNECT_SRC` | unset | Extra http(s) origins allowed in CSP `connect-src` (only for a cross-origin `?metrics=`) (#245) |
 | `CC_RATE_LIMIT` / `CC_RATE_BURST` | `600` / `120` | Per-client token bucket: requests per minute and burst. Excess requests get `429` with `Retry-After`. `CC_RATE_LIMIT=0` disables it (#257) |
+| `CC_SSE` | `1` (on) | `0` / `off` / `false` / `no` disables `GET /api/metrics/stream` (404). The page then polls `/api/metrics` (#656) |
+| `CC_SSE_INTERVAL` | `2` | Seconds between SSE pushes (clamped 0.05–60). `?interval=` overrides one connection (seconds, minimum 0.5; a value ≥ 500 is milliseconds). The refresh picker does not change this (#656) |
+| `CC_SSE_MAX` | `32` | Concurrent streams in this process. One more client gets `503` and the page polls (#656) |
 
 ## Exposing the dashboard (#189/#455)
 
@@ -91,8 +98,69 @@ transport. For anything beyond a trusted LAN, keep `serve.py` on loopback and pu
 through a reverse proxy or ingress that terminates TLS and authenticates users (for example
 nginx/Traefik with OAuth2 Proxy, or a Kubernetes ingress with an auth annotation). Set
 `CC_CORS_ORIGINS` only if another site really needs to read the API.
+
+The live stream is the same gate, not a second one. `EventSource` cannot set
+`Authorization`, and the token must not be placed in the query string (it would
+land in access logs, history, and `Referer`). See [Live metrics](#live-metrics-sse-656).
+
 - Contributor styleguide: [`styleguide.html`](styleguide.html)
 - Accessibility checklist for PRs: [`A11Y_CHECKLIST.md`](A11Y_CHECKLIST.md)
+
+## Live metrics (SSE) (#656)
+
+`GET /api/metrics/stream` re-reads `METRICS_UPSTREAM` on the server and pushes
+parsed samples so the browser does not poll the exporter itself:
+
+| Event | Body |
+|---|---|
+| `metrics` | JSON object in the same shape as `parseMetrics` (labelled series kept; an unlabelled series wins over the sum of its labelled siblings) |
+| `upstream` | `{"ok":false,"error":"<exception name>"}` when that read fails. The stream stays open |
+
+A leading `retry: 3000` sets the browser reconnect delay. `X-Accel-Buffering: no`
+asks a reverse proxy not to buffer the body; a buffering proxy holds every sample
+until the connection closes. The response is chunked HTTP/1.1.
+
+The page opens the stream only when the metrics URL is the same-origin proxy
+(`/api/metrics`). It keeps the refresh poll when any of these is true: `?sse=0`
+(also `off` / `false` / `no`), `window.__CC_FEATURES__.sse === false`, no
+`EventSource`, a `file://` page, a `?metrics=` or `CC_METRICS_URL` override, or
+the stream returns a non-200 (`CC_SSE=0` is 404, auth failure is 401, too many
+streams is 503). After a non-200 or a stream that dies before the first sample,
+the page polls for the rest of that visit. Hiding the tab or pressing Pause
+closes the stream (#963); showing the tab or Resume opens it again unless it
+already fell back. Queue depths stay on `/api/queues`, on the refresh picker.
+That picker is the fallback poll and the queue poll; the push period is
+`CC_SSE_INTERVAL` (default 2s), which is what makes the live view faster than
+the 5s poll. A client that can set headers may pass `?interval=` itself. Each
+stream sample is recorded in the System tab poll history.
+
+### Auth
+
+`/api/metrics/stream` uses the same `AuthGate` as every other route. A missing
+or wrong `Authorization` header is **401 before any event**. There is no separate
+stream secret, and the server ignores any token in the query string.
+
+`EventSource` cannot set headers, so a Bearer token that exists only in
+JavaScript is not sent. The browser path is the one the page already uses for
+`/api/metrics`:
+
+- auth off (the default loopback bind), or
+- HTTP Basic: `CC_BASIC_AUTH=user:password`, or `CC_AUTH_TOKEN` typed as the
+  password in the login prompt (any user name). The browser resends that cached
+  Basic credential on the EventSource request.
+
+Scripts that have a Bearer token send `Authorization: Bearer …` themselves.
+If the stream is 401, the page falls back to polling `/api/metrics`, which has
+the same browser limitation and the same success once Basic credentials are cached.
+
+A stream counts as **one** request against `CC_RATE_LIMIT` when it connects, not
+one request per push. Reconnects (interval change, tab resume, a proxy idle cut)
+count again. Each stream holds a thread (`ThreadingTCPServer`); `CC_SSE_MAX`
+(default 32) answers extras with `503` and `Retry-After: 5` so a client loop
+cannot exhaust the process. Beyond a trusted LAN, terminate TLS and authenticate
+at a proxy (nginx/Traefik with OAuth2 Proxy, or an ingress auth annotation). The
+shared secret is not an identity provider. Values are numbers parsed server-side
+and rendered with `textContent`, same as a polled scrape.
 
 ## Overview screenshot (#1044)
 

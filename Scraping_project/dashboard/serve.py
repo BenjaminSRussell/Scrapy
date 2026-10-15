@@ -25,6 +25,7 @@ import http.server
 import json
 import math
 import os
+import re
 import socketserver
 import subprocess
 import sys
@@ -33,7 +34,7 @@ import time
 import urllib.error
 import urllib.request
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 # #735: loopback by default. Containers/LAN must opt in explicitly
 # (CC_HOST=0.0.0.0 or --host 0.0.0.0), which prints a warning.
@@ -213,6 +214,115 @@ def fetch_upstream(url: str, timeout: float = 4.0, opener=urllib.request.urlopen
     return body
 
 
+# Same shape as parseMetrics in format-utils.js: labelled series are kept under
+# the full key and summed under the bare name, unless an unlabelled series of
+# that name exists, which then wins. Non-finite values (+Inf/NaN) are dropped.
+_SERIES_RE = re.compile(
+    r'^([a-zA-Z_:][a-zA-Z0-9_:]*)(\{(?:[^"}]|"(?:[^"\\]|\\.)*")*\})?\s+(\S+)(?:\s+-?\d+)?\s*$'
+)
+_SSE_CLIENTS: dict[type, int] = {}
+_SSE_LOCK = threading.Lock()
+
+
+def parse_metrics_text(text: str) -> dict[str, float]:
+    """Prometheus text exposition -> flat name/value map (#656)."""
+    metrics: dict[str, float] = {}
+    sums: dict[str, float] = {}
+    unlabelled: set[str] = set()
+    for raw in str(text or "").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        match = _SERIES_RE.match(line)
+        if not match:
+            continue
+        try:
+            value = float(match.group(3))
+        except ValueError:
+            continue
+        if not math.isfinite(value):
+            continue
+        name, labels = match.group(1), match.group(2) or ""
+        metrics[name + labels] = value
+        if labels:
+            sums[name] = sums.get(name, 0.0) + value
+        else:
+            unlabelled.add(name)
+    for name, total in sums.items():
+        if name not in unlabelled:
+            metrics[name] = total
+    return metrics
+
+
+def _clamp_interval(value: float, floor: float) -> float:
+    if not math.isfinite(value) or value <= 0:
+        return 2.0
+    return min(60.0, max(floor, value))
+
+
+def sse_interval_from_env(env) -> float:
+    """CC_SSE_INTERVAL seconds. Floor 0.05 so tests can be short; cap 60."""
+    env = os.environ if env is None else env
+    try:
+        value = float(env.get("CC_SSE_INTERVAL", 2.0))
+    except (TypeError, ValueError):
+        return 2.0
+    return _clamp_interval(value, 0.05)
+
+
+def resolve_sse_interval(default: float, raw: str | None) -> float:
+    """Push period. Query `interval` is seconds, or milliseconds when >= 500. Min 0.5s."""
+    if raw is None or str(raw).strip() == "":
+        return _clamp_interval(default, 0.05)
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        return _clamp_interval(default, 0.05)
+    if not math.isfinite(value) or value <= 0:
+        return _clamp_interval(default, 0.05)
+    if value >= 500:
+        value = value / 1000.0
+    return _clamp_interval(value, 0.5)
+
+
+def sse_enabled_from_env(env) -> bool:
+    """CC_SSE=0/off/false/no disables the stream. Unset stays on (#656)."""
+    env = os.environ if env is None else env
+    raw = env.get("CC_SSE")
+    if raw is None or str(raw).strip() == "":
+        return True
+    return str(raw).strip().lower() not in {"0", "false", "off", "no"}
+
+
+def sse_max_from_env(env) -> int:
+    """CC_SSE_MAX concurrent streams. Invalid or < 1 falls back to 32; cap 1000."""
+    env = os.environ if env is None else env
+    try:
+        count = int(env.get("CC_SSE_MAX", 32))
+    except (TypeError, ValueError):
+        return 32
+    if count < 1:
+        return 32
+    return min(count, 1000)
+
+
+def _sse_enter(handler) -> bool:
+    cls = type(handler)
+    limit = getattr(cls, "sse_max_clients", None) or 32
+    with _SSE_LOCK:
+        current = _SSE_CLIENTS.get(cls, 0)
+        if current >= limit:
+            return False
+        _SSE_CLIENTS[cls] = current + 1
+        return True
+
+
+def _sse_leave(handler) -> None:
+    cls = type(handler)
+    with _SSE_LOCK:
+        _SSE_CLIENTS[cls] = max(0, _SSE_CLIENTS.get(cls, 0) - 1)
+
+
 def _redis_from_env(env=None):
     """Client from REDIS_URL, else REDIS_HOST/PORT/DB/PASSWORD (short timeouts)."""
     import redis  # lazy: the static dashboard works without the package
@@ -259,6 +369,10 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
     upstream_timeout: float = 4.0
     redis_factory = staticmethod(_redis_from_env)
     queue_keys: tuple[str, ...] | None = None
+    # #656: None means "not configured yet" (treated as on / 2s). configure() sets them.
+    sse_enabled: bool | None = None
+    sse_interval: float | None = None
+    sse_max_clients: int = 32
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(self.root), **kwargs)
@@ -274,6 +388,9 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         cls.metrics_upstream = env.get("METRICS_UPSTREAM", DEFAULT_METRICS_UPSTREAM)
         cls.upstream_timeout = _env_float(env, "CC_UPSTREAM_TIMEOUT", 4.0) or 4.0
         cls.queue_keys = queue_keys(env)
+        cls.sse_enabled = sse_enabled_from_env(env)
+        cls.sse_interval = sse_interval_from_env(env)
+        cls.sse_max_clients = sse_max_from_env(env)
 
     def _cfg(self):
         if self.auth is None:
@@ -383,7 +500,84 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             return
         self._send_json(200, {"ok": True, "queues": queues, "checked_at": time.time()})
 
-    API_ROUTES = {"/api/metrics": "_api_metrics", "/api/health": "_api_health", "/api/queues": "_api_queues"}
+    def _sse_is_on(self) -> bool:
+        if self.sse_enabled is None:
+            return True
+        return bool(self.sse_enabled)
+
+    def _stream_interval(self) -> float:
+        default = 2.0 if self.sse_interval is None else float(self.sse_interval)
+        raw = parse_qs(urlsplit(self.path).query).get("interval", [None])[0]
+        return resolve_sse_interval(default, raw)
+
+    def _sse_write(self, payload: bytes) -> None:
+        header = f"{len(payload):X}\r\n".encode("ascii")
+        self.wfile.write(header + payload + b"\r\n")
+        self.wfile.flush()
+
+    def _sse_event(self, name: str, payload: dict) -> None:
+        data = json.dumps(payload, separators=(",", ":"), allow_nan=False)
+        self._sse_write(f"event: {name}\ndata: {data}\n\n".encode("utf-8"))
+
+    def _sse_push_once(self) -> None:
+        # Client disconnects raise from _sse_event (outside this try) so a dead
+        # socket is not reported as an upstream failure.
+        try:
+            raw = fetch_upstream(self.metrics_upstream or DEFAULT_METRICS_UPSTREAM, self.upstream_timeout)
+            parsed = parse_metrics_text(raw.decode("utf-8", "replace"))
+        except (OSError, ValueError) as exc:  # URLError is an OSError
+            self._sse_event("upstream", {"ok": False, "error": type(exc).__name__})
+            return
+        self._sse_event("metrics", parsed)
+
+    def _stream_metrics(self) -> None:
+        """Chunked SSE. One rate-limit token was already taken by _guard (#656)."""
+        self.protocol_version = "HTTP/1.1"
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Connection", "close")
+        self.send_header("X-Accel-Buffering", "no")
+        self.send_header("Transfer-Encoding", "chunked")
+        self.end_headers()
+        interval = self._stream_interval()
+        self._sse_write(b"retry: 3000\n: keep-alive\n\n")
+        while True:
+            self._sse_push_once()
+            time.sleep(interval)
+
+    def _api_metrics_stream(self) -> None:
+        """Push parsed metrics. Same auth gate as the rest of the server (#656).
+
+        EventSource cannot set Authorization. Browsers authenticate with the
+        cached HTTP Basic credential (CC_BASIC_AUTH, or CC_AUTH_TOKEN as the
+        password). Do not accept the token from the query string.
+        """
+        if not self._sse_is_on():
+            self._send_bytes(404, b"SSE disabled\n", "text/plain; charset=utf-8")
+            return
+        if not _sse_enter(self):
+            body = b"Too many live metric streams\n"
+            self.send_response(503)
+            self.send_header("Retry-After", "5")
+            self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        try:
+            self._stream_metrics()
+        except OSError:
+            return
+        finally:
+            _sse_leave(self)
+
+    API_ROUTES = {
+        "/api/metrics": "_api_metrics",
+        "/api/metrics/stream": "_api_metrics_stream",
+        "/api/health": "_api_health",
+        "/api/queues": "_api_queues",
+    }
 
     def do_OPTIONS(self):
         self._cfg()
@@ -493,6 +687,8 @@ def main(argv=None):
     print()
     print(f"📊 Dashboard:  http://{shown}:{port}")
     print(f"📈 Metrics:    /api/metrics -> {DashboardHandler.metrics_upstream}  (METRICS_UPSTREAM)")
+    sse_on = DashboardHandler.sse_enabled if DashboardHandler.sse_enabled is not None else True
+    print(f"📡 Live:       /api/metrics/stream  ({'on' if sse_on else 'off'}, CC_SSE)")
     print(f"🔐 Auth:       {'on' if DashboardHandler.auth and DashboardHandler.auth.enabled else 'off (CC_AUTH_TOKEN / CC_BASIC_AUTH)'}")
     print("📉 Grafana:    http://localhost:3001 (separate analytics)")
     print()
