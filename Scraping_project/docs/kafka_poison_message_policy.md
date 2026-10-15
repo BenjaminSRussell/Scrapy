@@ -26,7 +26,7 @@ These keys are not in `config.yml`.
 [`SchemaValidationPipeline`](../src/pipelines.py) validates items in the spider
 and publishes producer-side failures to `validation_failures`. That topic does
 not commit the ingest consumer's offset. A payload that still arrives on
-`scraped-items` (bad JSON, schema miss, empty body) is handled here.
+`scraped-items` (bad JSON, schema miss, empty body) is handled here. A `schema_id` header other than the published id `1` (`scraped-items-value`) is `unknown_schema_id` and takes the same path (#654). A missing header is still accepted.
 
 ## Rule
 

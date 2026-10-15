@@ -55,7 +55,7 @@ class ScriptedBroker:
         self.produce_calls = 0
         self.poll_timeouts: list[float] = []
 
-    def produce(self, topic, value, callback, key=None):
+    def produce(self, topic, value, callback, key=None, headers=None):
         self.produce_calls += 1
         if self.down:
             raise KafkaDown("Local: All broker connections are down")
@@ -163,9 +163,9 @@ def test_broker_recovers_mid_retry_produces_exactly_once(tmp_path):
     k = _pipe(tmp_path, broker, retries=3)
     real_produce = broker.produce
 
-    def flaky(topic, value, callback, key=None):
+    def flaky(topic, value, callback, key=None, headers=None):
         broker.down = broker.produce_calls < 1  # first attempt fails, second succeeds
-        return real_produce(topic, value, callback, key=key)
+        return real_produce(topic, value, callback, key=key, headers=headers)
 
     broker.produce = flaky
     k.process_item(_item(0), SPIDER)

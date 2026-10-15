@@ -57,7 +57,7 @@ class KeyedProducer:
         self.config = config or {}
         self.sent = []
 
-    def produce(self, topic, value, callback, key=None):
+    def produce(self, topic, value, callback, key=None, headers=None):
         self.sent.append((topic, key, json.loads(value)))
 
     def poll(self, timeout=0):

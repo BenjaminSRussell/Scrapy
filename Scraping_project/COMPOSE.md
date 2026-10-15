@@ -9,6 +9,7 @@ One Compose file (`docker-compose.yml`) plus an observability overlay. The obsol
 | `core` | redis, scraper, stage1–stage3 workers, Postgres (least-privilege `scrapy_app` role) |
 | `monitoring` | Prometheus, Grafana, redis-exporter, postgres-exporter, ops dashboard (`dashboard/serve.py` on `127.0.0.1:8080`). Redis and Postgres are on this profile too, because the exporters depend on them |
 | `streaming` | Kafka (KRaft, no ZooKeeper). Postgres is also on `core` |
+| `schema-registry` | Confluent Schema Registry (`confluentinc/cp-schema-registry:7.7.1` on `127.0.0.1:8081`). Optional example for scraped-item contracts. Not started by `start.py`. Needs `streaming` so `kafka` is up. The in-process stub does not call it |
 | `ml`, `full` | `stage4-worker` only (torch / OCR image). Redis is on these profiles too so the worker can start |
 | `observability` | Loki, Jaeger, OpenTelemetry collector in `docker-compose.observability.yml`. Prometheus, Grafana, and StatsD in that file have no profile and start on a bare `up` |
 
@@ -24,7 +25,7 @@ cp .env.example .env   # then set real passwords before sharing the host
 docker compose --profile core --profile monitoring up -d
 ```
 
-`python start.py` and `make docker-up` enable the same two profiles (`COMPOSE_PROFILES`, default `core,monitoring`). They do not start Stage 4, Kafka or the OTEL overlay.
+`python start.py` and `make docker-up` enable the same two profiles (`COMPOSE_PROFILES`, default `core,monitoring`). They do not start Stage 4, Kafka, Schema Registry, or the OTEL overlay.
 
 ## Validate config (no containers)
 
@@ -50,6 +51,10 @@ curl -sf -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8080/
 ```bash
 # Kafka. In-network bootstrap is kafka:9092. Host clients use localhost:9092.
 docker compose --profile core --profile streaming up -d
+
+# Schema Registry example (#654). Scraped items still publish schema id 1
+# (subject scraped-items-value) without this process. Unknown ids are rejected.
+docker compose --profile streaming --profile schema-registry up -d schema-registry
 
 # Packaged Prometheus + Grafana + StatsD (no app stack). Loopback 9095 / 3001.
 docker compose -f docker-compose.observability.yml up -d
@@ -77,6 +82,7 @@ docker compose --profile ml up -d stage4-worker
 | Grafana | 3000 |
 | Postgres | 5432 |
 | Kafka | `127.0.0.1:9092` |
+| Schema Registry | `127.0.0.1:8081` |
 | Loki | 3100 |
 | Jaeger UI | 16686 |
 | OTLP gRPC/HTTP | 4317 / 4318 |

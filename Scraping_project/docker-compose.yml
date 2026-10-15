@@ -334,6 +334,28 @@ services:
     networks:
       - scraper-network
 
+  # Optional Confluent-compatible Schema Registry (#654). Not on core,
+  # monitoring, or streaming, and not started by start.py. Enable with
+  # `--profile streaming --profile schema-registry` (Kafka must be up).
+  # The pipeline stub does not call this HTTP API. Scraped-item messages
+  # carry published schema id 1 (subject scraped-items-value) in the
+  # schema_id header; the ingestor rejects any other id.
+  schema-registry:
+    profiles: ["schema-registry"]
+    image: confluentinc/cp-schema-registry:7.7.1
+    container_name: uconn-schema-registry
+    restart: unless-stopped
+    depends_on:
+      - kafka
+    ports:
+      - "127.0.0.1:8081:8081"
+    environment:
+      - SCHEMA_REGISTRY_HOST_NAME=schema-registry
+      - SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS=kafka:9092
+      - SCHEMA_REGISTRY_LISTENERS=http://0.0.0.0:8081
+    networks:
+      - scraper-network
+
 volumes:
   redis-data:
   postgres-data:

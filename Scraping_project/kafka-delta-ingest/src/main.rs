@@ -136,6 +136,12 @@ impl ScrapyMetrics {
 /// `tests/unit/test_ingest_field_contract.py`) (#531).
 const REQUIRED_INGEST_FIELDS: [&str; 3] = ["url", "scraped_at_utc", "spider_name"];
 
+/// Published Confluent schema id for subject `scraped-items-value` (#654).
+/// Must match `SCRAPED_ITEM_SCHEMA_ID` in `src/schemas.py`. A missing header is
+/// a pre-stub message and is still accepted. Any other id is rejected.
+const SCRAPED_ITEM_SCHEMA_ID: i32 = 1;
+const SCRAPED_ITEM_SCHEMA_SUBJECT: &str = "scraped-items-value";
+
 /// One validated message, typed. Required fields are never defaulted: a message
 /// that lacks one is rejected instead of being written with an empty string (#531).
 #[derive(Debug, Clone, PartialEq)]
@@ -190,11 +196,56 @@ struct Rejection {
     detail: String,
 }
 
+/// Decimal schema id, optional leading `-`. `+1` and whitespace are not ids.
+fn parse_schema_id(raw: &str) -> std::result::Result<i32, ()> {
+    let digits = raw.strip_prefix('-').unwrap_or(raw);
+    if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
+        return Err(());
+    }
+    raw.parse().map_err(|_| ())
+}
+
+/// `None` is a legacy message with no schema id. Any other value must be the
+/// published scraped-item id (#654).
+fn check_published_schema_id(schema_id: Option<&str>) -> std::result::Result<(), Rejection> {
+    let Some(raw) = schema_id else {
+        return Ok(());
+    };
+    match parse_schema_id(raw) {
+        Ok(id) if id == SCRAPED_ITEM_SCHEMA_ID => Ok(()),
+        Ok(id) => Err(Rejection {
+            reason: "unknown_schema_id",
+            detail: format!("schema id {id} is not published for {SCRAPED_ITEM_SCHEMA_SUBJECT}"),
+        }),
+        Err(()) => Err(Rejection {
+            reason: "unknown_schema_id",
+            detail: format!("schema id {raw:?} is not published for {SCRAPED_ITEM_SCHEMA_SUBJECT}"),
+        }),
+    }
+}
+
+fn schema_id_header_value(headers: Option<&impl rdkafka::message::Headers>) -> Option<String> {
+    let headers = headers?;
+    for index in 0..headers.count() {
+        let header = headers.get(index);
+        if header.key == "schema_id" {
+            let text = header
+                .value
+                .map(|raw| String::from_utf8_lossy(raw).into_owned())
+                .unwrap_or_default();
+            return Some(text);
+        }
+    }
+    None
+}
+
 /// Validate one Kafka payload: Ok(row) to buffer for Delta, or Err(rejection) for the DLQ.
 fn classify(
     payload: Option<&[u8]>,
     validator: &jsonschema::Validator,
+    schema_id: Option<&str>,
 ) -> std::result::Result<IngestRow, Rejection> {
+    check_published_schema_id(schema_id)?;
     let bytes = payload.ok_or_else(|| Rejection {
         reason: "empty_payload",
         detail: "message has no payload".to_string(),
@@ -605,10 +656,11 @@ async fn ingest(
                 // is bounded by poison_limit even if the process is not restarted.
                 // Do not seek: a failed rewind could commit a later offset past
                 // a payload that was never dead-lettered.
+                let schema_id = schema_id_header_value(message.headers());
                 let mut failures: u32 = 0;
                 let mut pending_rejection: Option<Rejection> = None;
                 loop {
-                    match classify(message.payload(), &schema_validator) {
+                    match classify(message.payload(), &schema_validator, schema_id.as_deref()) {
                         Ok(row) => {
                             pending_offsets.record(&topic_name, partition, offset);
                             scrapy_metrics.response_received(200).await.ok();
@@ -1047,17 +1099,36 @@ mod tests {
     fn classify_accepts_valid_and_rejects_each_kind() {
         let v = validator();
         let good = serde_json::to_vec(&valid_message()).unwrap();
-        assert!(classify(Some(&good), &v).is_ok());
+        assert!(classify(Some(&good), &v, None).is_ok());
+        assert!(classify(Some(&good), &v, Some("1")).is_ok());
 
-        assert_eq!(classify(None, &v).unwrap_err().reason, "empty_payload");
-        assert_eq!(classify(Some(b"{not json"), &v).unwrap_err().reason, "parse_failed");
+        assert_eq!(classify(None, &v, None).unwrap_err().reason, "empty_payload");
+        assert_eq!(classify(Some(b"{not json"), &v, None).unwrap_err().reason, "parse_failed");
 
         let mut bad = valid_message();
         bad["url"] = json!(12345);
         let bad = serde_json::to_vec(&bad).unwrap();
-        let rej = classify(Some(&bad), &v).unwrap_err();
+        let rej = classify(Some(&bad), &v, None).unwrap_err();
         assert_eq!(rej.reason, "schema_validation_failed");
         assert!(rej.detail.contains("url"), "{}", rej.detail);
+    }
+
+    #[test]
+    fn classify_rejects_unknown_schema_id() {
+        let v = validator();
+        let good = serde_json::to_vec(&valid_message()).unwrap();
+        assert!(classify(Some(&good), &v, Some("1")).is_ok());
+        assert!(classify(Some(&good), &v, Some("01")).is_ok());
+        let unknown = classify(Some(&good), &v, Some("99")).unwrap_err();
+        assert_eq!(unknown.reason, "unknown_schema_id");
+        assert!(unknown.detail.contains("99"), "{}", unknown.detail);
+        assert!(unknown.detail.contains(SCRAPED_ITEM_SCHEMA_SUBJECT));
+        assert_eq!(classify(Some(&good), &v, Some("nope")).unwrap_err().reason, "unknown_schema_id");
+        assert_eq!(classify(Some(&good), &v, Some("")).unwrap_err().reason, "unknown_schema_id");
+        assert_eq!(classify(Some(&good), &v, Some("+1")).unwrap_err().reason, "unknown_schema_id");
+        assert_eq!(classify(Some(&good), &v, Some("-1")).unwrap_err().reason, "unknown_schema_id");
+        // Unknown id wins over an empty body so the reason is not hidden.
+        assert_eq!(classify(None, &v, Some("99")).unwrap_err().reason, "unknown_schema_id");
     }
 
     #[test]

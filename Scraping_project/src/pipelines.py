@@ -36,6 +36,7 @@ from scrapy.exceptions import DropItem, NotConfigured
 
 from src.items import OffsiteCandidateItem
 from src.core.timeutil import utc_now_iso
+from src.schemas import schema_id_headers
 from src.utils.kafka_config import (
     enforce_idempotent_producer,
     idempotence_required,
@@ -512,6 +513,7 @@ class KafkaPipeline:
                     topic=self.topic,
                     key=key,
                     value=value,
+                    headers=schema_id_headers(),
                     callback=self._delivery_callback(msg_id),
                 )
             except Exception as e:  # BufferError (queue full), KafkaException, ...
