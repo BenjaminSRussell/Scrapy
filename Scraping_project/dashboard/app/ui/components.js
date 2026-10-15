@@ -123,7 +123,7 @@ export function Segmented({ label, options, value, onChange }) {
     onChange(next.id);
     requestAnimationFrame(() => e.currentTarget?.querySelector('[aria-checked="true"]')?.focus());
   };
-  return html`<div class="segmented" role="radiogroup" aria-label=${label} onKeyDown=${onKey}>
+  return html`<div class=${`segmented${options.length > 4 ? ' dense' : ''}`} role="radiogroup" aria-label=${label} onKeyDown=${onKey}>
     ${options.map((o) => html`<button type="button" role="radio" class="segment" aria-checked=${String(o.id === value)}
       tabindex=${o.id === value ? 0 : -1} onClick=${() => onChange(o.id)}>${o.label}</button>`)}
   </div>`;

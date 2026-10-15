@@ -24,7 +24,7 @@ export const FILTERS = [
   { id: 'all', label: 'All', kinds: null },
   { id: 'found', label: 'Found', kinds: ['discovered', 'seeded'] },
   { id: 'analyzed', label: 'Analyzed', kinds: ['analyzed'] },
-  { id: 'summarized', label: 'Summarized', kinds: ['summarized', 'large_doc'] },
+  { id: 'summarized', label: 'Summaries', kinds: ['summarized', 'large_doc'] },
   { id: 'errors', label: 'Errors', kinds: ['error'] },
 ];
 

@@ -652,7 +652,7 @@ button.row { width: 100%; border: 0; background: none; text-align: left; cursor:
 }
 .segment {
   min-height: 32px;
-  padding: 0 8px;
+  padding: 0 4px;
   border: 0;
   border-radius: 7px;
   background: transparent;
@@ -919,3 +919,49 @@ button.row { width: 100%; border: 0; background: none; text-align: left; cursor:
 .field dt { font-size: var(--fs-caption); color: var(--label-2); }
 .field dd { margin: 1px 0 0; font-size: var(--fs-subhead); overflow-wrap: anywhere; }
 .field.block dd { line-height: 1.38; }
+
+/* ---------- treemap ---------- */
+.treemap-card { padding: 6px; }
+.treemap { position: relative; width: 100%; overflow: hidden; border-radius: 12px; }
+.tm-tile {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 1px;
+  padding: 8px 9px;
+  border: 2px solid var(--cell);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--t) 24%, var(--cell));
+  color: var(--label);
+  overflow: hidden;
+  transition: background-color 0.15s;
+}
+.tm-tile:active { background: color-mix(in srgb, var(--t) 36%, var(--cell)); }
+@media (hover: hover) { .tm-tile:hover { background: color-mix(in srgb, var(--t) 32%, var(--cell)); } }
+.tm-name { font-size: var(--fs-footnote); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tm-count { font-size: var(--fs-caption); color: var(--tt); font-weight: 600; }
+
+/* ---------- activity ---------- */
+.toolbar { display: flex; align-items: center; gap: 4px; }
+.toolbar .search { flex: 1; margin: 0; }
+.toolbar + .segmented { margin: 10px 0 4px; }
+.new-pill {
+  position: sticky;
+  top: calc(env(safe-area-inset-top) + var(--navbar-h) + 8px);
+  z-index: 15;
+  display: block;
+  margin: 10px auto 0;
+  min-height: 36px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--tint);
+  color: #fff;
+  font-size: var(--fs-subhead);
+  font-weight: 600;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
+  cursor: pointer;
+}
+.row-sub.queue { white-space: normal; overflow-wrap: anywhere; }
+@media (max-width: 430px) { .segmented.dense .segment { font-size: var(--fs-caption); padding: 0 2px; } }
