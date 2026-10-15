@@ -1,0 +1,30 @@
+# Entrypoint smoke stack (#685). Not the application stack.
+# Pulls redis and a Python image, runs the shell entrypoints with mock
+# commands, and publishes no host ports. No production credentials or data.
+
+services:
+  redis:
+    image: redis:7-alpine
+    restart: "no"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 20
+      start_period: 2s
+
+  smoke:
+    image: python:3.11-slim
+    restart: "no"
+    depends_on:
+      redis:
+        condition: service_healthy
+    entrypoint: ["bash", "/smoke.sh"]
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_WAIT_TIMEOUT: "30"
+      KAFKA_WAIT_TIMEOUT: "20"
+    volumes:
+      - ./docker/entrypoints:/entrypoints:ro
+      - ./scripts/entrypoint_smoke_inside.sh:/smoke.sh:ro
