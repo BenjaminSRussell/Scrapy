@@ -120,6 +120,10 @@ FLAGS: dict[str, tuple[Any, str]] = {
         False,
         "Reuse a cached Stage 2 HTML body (url_hash + ETag/Last-Modified) and skip the fetch (#478).",
     ),
+    "JS_SCREENSHOTS_ENABLED": (
+        False,
+        "Save a Playwright PNG per JS render to data/screenshots/{url_hash}.png (#630).",
+    ),
 }
 
 

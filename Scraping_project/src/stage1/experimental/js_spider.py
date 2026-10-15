@@ -20,6 +20,7 @@ from src.stage1.middlewares.spider_config import get_spider_settings
 from src.utils.delta import get_delta
 from src.stage1.experimental.playwright_blocking import DEFAULT_BLOCKED_TYPES
 from src.stage1.experimental.playwright_blocking import get_policy as get_blocking_policy
+from src.stage1.experimental.js_screenshots import capture_page_screenshot
 from src.lakehouse import SeedManager
 
 logger = logging.getLogger(__name__)
@@ -201,7 +202,12 @@ class JavaScriptSpider(ExperimentalSpiderMixin, scrapy.Spider):
             if page and intercepted_urls:
                 discovered_urls.extend(intercepted_urls)
         finally:
-            await ledger.release(page, "parse")
+            # #630: shoot the rendered page before release. Nested so a capture
+            # error cannot skip the close or leak the page.
+            try:
+                await self._capture_screenshot(page, url)
+            finally:
+                await ledger.release(page, "parse")
 
         discovered_urls = list(set(discovered_urls))
 
@@ -331,12 +337,24 @@ class JavaScriptSpider(ExperimentalSpiderMixin, scrapy.Spider):
         except Exception as e:
             logger.error(f"[JS_SPIDER] Failed to add URLs via SeedManager: {e}", exc_info=True)
 
+    async def _capture_screenshot(self, page: Any, url: str) -> None:
+        """#630: optional PNG. Never raises; callers still release the page."""
+        try:
+            await capture_page_screenshot(page, url)
+        except Exception as exc:
+            logger.warning("[JAVASCRIPT] screenshot capture failed: %s", exc)
+
     async def handle_error(self, failure):
         logger.error(f"[JAVASCRIPT] Rendering failed: {failure.getErrorMessage()} for {failure.request.url[:80]}")
         # #645: a failed render must leave "pending", or the queue only ever grows.
         self._failed_urls()[failure.request.url] = str(failure.getErrorMessage())[:500]
-        # #452: a failed request may still carry an open page.
-        await self._ledger().release_from_failure(failure)
+        # #630: the errback page is often still open (navigation timeout, empty
+        # document). Shoot it when we can, then always release (#452).
+        try:
+            meta = getattr(failure.request, "meta", None) or {}
+            await self._capture_screenshot(meta.get("playwright_page"), failure.request.url)
+        finally:
+            await self._ledger().release_from_failure(failure)
 
     def _failed_urls(self) -> dict[str, str]:
         if not hasattr(self, "failed_urls"):  # spiders built without __init__ (tests)
