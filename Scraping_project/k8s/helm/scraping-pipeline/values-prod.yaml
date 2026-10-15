@@ -73,3 +73,47 @@ redis:
     port: 6379
     egressCIDRs:
       - 203.0.113.0/24
+
+# Stage 1–4 resources (#1104). Higher memory than values.yaml so a Kafka lag
+# spike does not OOM the worker: the limit is the OOM line, the request is
+# what the scheduler reserves. Stage 4 stays disabled until
+# stage4Worker.enabled=true. Replica counts stay at the dev values.
+# namespaceQuota in values.yaml (8 CPU / 32Gi requests, 16 CPU / 64Gi limits)
+# is smaller than a full prod stack plus these requests. Raise
+# namespaceQuota.hard or disable components you do not run. Do not set
+# REDIS_URL. Table: Scraping_project/DEPLOYMENT.md.
+scrapyApp:
+  resources:
+    requests:
+      cpu: 500m
+      memory: 512Mi
+    limits:
+      cpu: 2000m
+      memory: 2Gi
+
+stage2Worker:
+  resources:
+    requests:
+      cpu: 1000m
+      memory: 2Gi
+    limits:
+      cpu: 2000m
+      memory: 4Gi
+
+stage3Worker:
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: 2000m
+      memory: 2Gi
+
+stage4Worker:
+  resources:
+    requests:
+      cpu: 1000m
+      memory: 2Gi
+    limits:
+      cpu: 4000m
+      memory: 8Gi

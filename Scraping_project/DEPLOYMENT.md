@@ -63,6 +63,43 @@ kubectl autoscale deployment stage2-worker \
   -n uconn-scraper
 ```
 
+### Helm resource profiles
+
+Stage 1–4 CPU and memory are Helm values, not the one-size guess that used to live under Performance Tuning. Every enabled Deployment, StatefulSet and Job container, including init containers, sets both `resources.requests` and `resources.limits` (cpu and memory). `helm template` fails the render when an enabled workload omits either (#1104). PVC `resources.requests.storage` is disk, not a cpu/memory limit.
+
+Three profiles. `dev` is `k8s/helm/scraping-pipeline/values.yaml`. `small` and `prod` are overlays on top of it. CI lints and templates dev, small and prod (Stage 4 off, and again with `stage4Worker.enabled=true`).
+
+```bash
+# dev (chart defaults; Stage 4 off)
+helm template scraping-pipeline k8s/helm/scraping-pipeline
+
+# small: one replica of each stage worker, HPA off
+helm template scraping-pipeline k8s/helm/scraping-pipeline \
+  -f k8s/helm/scraping-pipeline/values.yaml \
+  -f k8s/helm/scraping-pipeline/values-small.yaml
+
+# prod: durability overlay plus higher worker memory for Kafka lag spikes
+helm upgrade --install scraping-pipeline k8s/helm/scraping-pipeline \
+  -f k8s/helm/scraping-pipeline/values.yaml \
+  -f k8s/helm/scraping-pipeline/values-prod.yaml \
+  -n scraping-pipeline
+```
+
+Per pod. The limit is the OOM line. The request is what the scheduler reserves. A Kafka lag spike holds a catch-up batch in the Stage 2/3 process, so prod (and small) memory limits sit above the dev 1Gi line.
+
+| Workload | dev request | dev limit | small request | small limit | prod request | prod limit |
+|---|---|---|---|---|---|---|
+| scrapyApp (stage 1) | 250m / 256Mi | 1000m / 1Gi | 100m / 256Mi | 500m / 1Gi | 500m / 512Mi | 2000m / 2Gi |
+| stage2Worker | 250m / 256Mi | 1000m / 1Gi | 100m / 512Mi | 1000m / 2Gi | 1000m / 2Gi | 2000m / 4Gi |
+| stage3Worker | 250m / 256Mi | 1000m / 1Gi | 100m / 512Mi | 1000m / 2Gi | 500m / 1Gi | 2000m / 2Gi |
+| stage4Worker | 500m / 1Gi | 2000m / 4Gi | 250m / 1Gi | 1000m / 4Gi | 1000m / 2Gi | 4000m / 8Gi |
+
+Dev replicaCount is 3 for scrapyApp, 3 for stage2Worker, 2 for stage3Worker and 1 for stage4Worker (stage4Worker.enabled is false). Small sets replicaCount 1 and turns autoscaling off for scrapyApp, stage2Worker and stage3Worker. Prod keeps those replica counts and only replaces resources. Stage 4 stays off until its image is set (`--set stage4Worker.enabled=true`).
+
+`namespaceQuota` in values.yaml is 8 CPU / 32Gi requests and 16 CPU / 64Gi limits. A full prod stack with monitoring plus the prod worker requests exceeds that ceiling. Raise `namespaceQuota.hard` or disable components you do not run before install. Do not set `REDIS_URL`.
+
+Redis, Postgres, ZooKeeper, Kafka, Prometheus, Alertmanager, Grafana, the delta ingestor, the metrics exporter and the four exporters already set requests and limits in `values.yaml`. The kafka-topics Job sets both in its template. Small and prod do not change those.
+
 ## Configuration
 
 ### Environment Variables
@@ -215,10 +252,7 @@ Use [docs/REDIS_CAPACITY.md](docs/REDIS_CAPACITY.md) to size `maxmemory` and the
 
 ### Resource Allocation
 
-Recommended per worker:
-- CPU: 0.5-1.0 cores
-- Memory: 1-2 GB
-- Storage: 100+ GB for Delta Lake
+Use the [Helm resource profiles](#helm-resource-profiles) table. Do not size Stage 1–4 from a single 0.5–1 CPU / 1–2 GB guess: Stage 4 and the prod Stage 2 limit are larger, and a 1Gi Stage 2 limit is the dev OOM line during a Kafka lag spike. Delta Lake storage stays 100Gi+ (`deltaLake.persistence.size`, default 500Gi).
 
 ## Security
 
