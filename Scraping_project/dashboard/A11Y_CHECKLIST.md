@@ -19,3 +19,4 @@ Use for every dashboard PR:
 - [x] Landmarks (`header`, `nav`, `main`) and an h1 → h2 heading outline (#332)
 - [x] Decorative icons are inline SVG with `aria-hidden`; tabs, health tiles, and the title mark do not use emoji glyphs (#1049)
 - [x] Loading, stale and error states are text, not just colour or zeros (#351, #352, #362)
+- [x] Job-history sort headers are buttons inside `<th>` with `aria-sort`. Tab to a header; Enter or Space cycles ascending, then descending, then unsorted; Arrow Left/Right move between headers without wrapping; Home/End jump to the ends. Empty tables keep the header and a text row (#1023).
