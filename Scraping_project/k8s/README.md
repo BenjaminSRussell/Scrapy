@@ -46,6 +46,7 @@ k8s/
 │   └── scraping-pipeline/         # Helm chart
 │       ├── Chart.yaml             # Chart metadata
 │       ├── values.yaml            # Default values
+│       ├── values-tenant.example.yaml  # Per-tenant quota and LimitRange (#676)
 │       └── templates/             # Kubernetes manifests
 │           ├── _helpers.tpl       # Template helpers
 │           ├── secrets.yaml       # Secret management
@@ -78,6 +79,38 @@ Detailed deployment steps: [../DEPLOYMENT.md](../DEPLOYMENT.md#kubernetes-deploy
 - **Kafka Delta Ingestor**: Streaming to Delta Lake (scalable)
 - **Metrics Exporter**: Custom metrics (1 replica)
 - **Exporters**: Redis, PostgreSQL, Kafka JMX, StatsD
+
+## Per-tenant namespaces
+
+`templates/resourcequota.yaml` renders one [ResourceQuota](helm/scraping-pipeline/templates/resourcequota.yaml) in the release namespace when `namespaceQuota.enabled` is true (the default). A ResourceQuota counts only pods in that namespace. Sharing `scraping-pipeline` across tenants shares one quota; the chart does not split it.
+
+Use one namespace and one Helm release per tenant. Copy [values-tenant.example.yaml](helm/scraping-pipeline/values-tenant.example.yaml), set that tenant's `namespaceQuota.hard`, and install into the tenant namespace. Helm loads `values.yaml` first; the example only overlays the quota and the LimitRange.
+
+```bash
+kubectl create namespace tenant-a
+helm upgrade --install scraping-pipeline helm/scraping-pipeline \
+  -n tenant-a \
+  -f helm/scraping-pipeline/values-tenant.example.yaml
+```
+
+Repeat for `tenant-b` with its own copy of the file when the caps differ. Do not install two tenants into one namespace. Do not commit passwords into the values file. Clients keep `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`, and `REDIS_DB`. Do not set `REDIS_URL`.
+
+The example sets `limitRange.enabled=true`, which renders `templates/limitrange.yaml`. A default install does not pass that flag, so it does not render a LimitRange. The sample LimitRange is per container:
+
+| | Sample |
+|---|---|
+| ResourceQuota requests | 8 CPU, 32Gi (same compute as `values.yaml`) |
+| ResourceQuota limits | 16 CPU, 64Gi |
+| Pods / PVCs / Services | 80 / 20 / 40 |
+| LoadBalancer and NodePort Services | 0 |
+| LimitRange default request | 100m, 128Mi |
+| LimitRange default limit | 500m, 512Mi |
+| LimitRange max | 2 CPU, 8Gi |
+| LimitRange min | 50m, 64Mi |
+
+`requests.storage` is omitted, so storage stays uncapped until you set it. The compute numbers match the shared-namespace default and do not cover every replica at HPA max; raise `namespaceQuota.hard` or turn workloads off. `limitRange.max` covers the largest container in `values.yaml` (Prometheus at 2 CPU and 8Gi). Raise it before any container limit goes above that. `limitRange.min` is under the smallest chart request (exporters at 100m / 128Mi).
+
+A smaller tenant that does not run in-chart data stores can start from the commented quota in the example (2 CPU / 4Gi requests, 4 CPU / 8Gi limits, 20 pods) and set `redis.enabled`, `kafka.enabled`, and `postgresql.enabled` to false. Production still must not use the chart's single-replica Redis; point `redis.external.host` at the shared endpoint (#216).
 
 ## Configuration
 

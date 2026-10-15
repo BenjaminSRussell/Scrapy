@@ -1,0 +1,58 @@
+# Per-tenant overlay (#676). One namespace and one Helm release per tenant.
+# Helm still loads values.yaml; this file only overrides the quota and turns
+# on a LimitRange. It does not create the namespace.
+#
+#   kubectl create namespace tenant-a
+#   helm upgrade --install scraping-pipeline helm/scraping-pipeline \
+#     -n tenant-a \
+#     -f helm/scraping-pipeline/values-tenant.example.yaml
+#
+# Copy this file per tenant and edit the numbers. Do not commit passwords.
+# Do not set REDIS_URL. Clients stay on REDIS_HOST, REDIS_PORT, REDIS_PASSWORD,
+# and REDIS_DB.
+#
+# Compute totals match the chart default (requests 8 CPU / 32Gi, limits 16 CPU /
+# 64Gi) and will not hold every replica at HPA max. Raise them, or drop
+# in-chart stores, before you treat the sample as a cap. Object counts are
+# extra; delete a key to leave that resource uncapped. requests.storage is
+# unset on purpose.
+#
+# Smaller tenant that only runs scrapers against shared stores (also set
+# redis.enabled, kafka.enabled, postgresql.enabled, and the monitoring
+# stacks to false; production Redis stays external, #216):
+#   requests.cpu: "2"
+#   requests.memory: "4Gi"
+#   limits.cpu: "4"
+#   limits.memory: "8Gi"
+#   pods: "20"
+
+namespaceQuota:
+  enabled: true
+  hard:
+    requests.cpu: "8"
+    requests.memory: "32Gi"
+    limits.cpu: "16"
+    limits.memory: "64Gi"
+    pods: "80"
+    persistentvolumeclaims: "20"
+    services: "40"
+    services.loadbalancers: "0"
+    services.nodeports: "0"
+
+# Container defaults apply only when a pod omits them. max must stay at or
+# above the largest container in values.yaml (Prometheus 2000m / 8Gi). min
+# stays under the smallest request (exporters 100m / 128Mi).
+limitRange:
+  enabled: true
+  default:
+    cpu: "500m"
+    memory: "512Mi"
+  defaultRequest:
+    cpu: "100m"
+    memory: "128Mi"
+  max:
+    cpu: "2"
+    memory: "8Gi"
+  min:
+    cpu: "50m"
+    memory: "64Mi"
