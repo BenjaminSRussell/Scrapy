@@ -8,6 +8,11 @@ const METRICS_URL = resolveMetricsUrl(
 );
 const REFRESH_INTERVAL = 5000;
 const METRICS_TIMEOUT_MS = 4000; // #1032
+// #665: coalesce updateDashboard onto one frame so a burst of samples cannot
+// stack synchronous DOM writes (forced reflows included).
+const scheduleDashboardFrame = createFrameCoalescer(
+    typeof requestAnimationFrame === 'function' ? requestAnimationFrame : null
+);
 const STORE_TAB_KEY = 'cc.lastTab'; // #1034
 const STORE_INTERVAL_KEY = 'cc.refreshInterval'; // #1015
 const STORE_DANGER_SOUND_KEY = 'cc.dangerSound'; // #1037
@@ -980,18 +985,39 @@ async function fetchMetrics() {
             metricsFetcher = createMetricsFetcher({ fetch: (u, init) => fetch(u, init), timeoutMs: METRICS_TIMEOUT_MS });
         }
         const text = await metricsFetcher.fetchText(METRICS_URL);
-        const metrics = parseMetrics(text);
-        updateDashboard(metrics);
-        hasEverSucceeded = true;
-        lastMetricsAt = Date.now();
-        consecutiveFetchFailures = 0;
-        finishLoading(false);
-        hideFetchError();
-        renderStale();
-        setConnectionStatus('online', metrics['pipeline_running']);
+        // #665: only the allowlisted names; a 10k-series flood is not stored.
+        // Paint runs on one frame. A newer sample replaces a pending paint.
+        // A failed fetch cancels that paint so it cannot cover the error.
+        const metrics = parseMetrics(text, {
+            allow: CONTROL_CENTER_METRICS,
+            maxSeries: CC_METRICS_SERIES_CAP,
+        });
         notePollOutcome(true);
+        scheduleDashboardFrame(() => {
+            try {
+                updateDashboard(metrics);
+            } catch (error) {
+                console.error('Error updating dashboard:', error);
+                metricsWasDown = true;
+                const failure = metricsFailureActivity(error, METRICS_TIMEOUT_MS);
+                addActivityLogItem(failure.type, failure.message);
+                if (!hasEverSucceeded) finishLoading(true);
+                showFetchError(failure.message);
+                consecutiveFetchFailures += 1;
+                setConnectionStatus(hasEverSucceeded ? 'offline' : 'never');
+                return;
+            }
+            hasEverSucceeded = true;
+            lastMetricsAt = Date.now();
+            consecutiveFetchFailures = 0;
+            finishLoading(false);
+            hideFetchError();
+            renderStale();
+            setConnectionStatus('online', metrics['pipeline_running']);
+        });
     } catch (error) {
         if (error && error.superseded) return; // a newer request owns the result (#1031)
+        scheduleDashboardFrame.cancel();
         metricsWasDown = true;
         console.error('Error fetching metrics:', error);
         const failure = metricsFailureActivity(error, METRICS_TIMEOUT_MS);
