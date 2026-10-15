@@ -81,6 +81,23 @@ The browser tab title is prefixed with the live state so a background tab still 
 
 The topbar status is derived from the same state (`connectionState()` in `format-utils.js`).
 
+## Destructive job confirm (#995)
+
+Job actions that stop work go through a confirm dialog (`modal.js`), not a bare click.
+`stop-all-stages` is the preset (the stop control itself lands with the job UI).
+Cancel is focused on open so Enter does not confirm by accident.
+
+```javascript
+confirmDestructiveJobAction('stop-all-stages', function () {
+  // runs once, after the dialog has dismissed and focus has returned
+}, triggerButton);
+```
+
+Esc and Cancel dismiss without calling the callback. Confirm calls it once; a second
+click does not call it again. Tab and Shift+Tab cycle inside the dialog. While it is
+open the rest of the page is `inert` and `aria-hidden`, and digit / R shortcuts do
+not move focus. Copy is set with `textContent` only. Unknown action names do nothing.
+
 ## Threat model notes (#1046)
 
 **Activity log XSS.** Activity messages may contain text derived from metrics,

@@ -131,6 +131,10 @@ test('shortcuts ignore modifiers, form fields, IME and handled events', () => {
         assert.strictEqual(shortcutAction({ key: '1', target: { tagName } }, TABS), null);
     }
     assert.strictEqual(shortcutAction({ key: 'r', target: { tagName: 'DIV', isContentEditable: true } }, TABS), null);
+    assert.strictEqual(shortcutAction({
+        key: '1',
+        target: { tagName: 'BUTTON', closest: (sel) => (sel.indexOf('alertdialog') >= 0 ? {} : null) },
+    }, TABS), null, 'shortcuts do not steal focus from the confirm dialog (#995)');
     assert.strictEqual(shortcutAction(key('1', { isComposing: true }), TABS), null);
     assert.strictEqual(shortcutAction(key('1', { defaultPrevented: true }), TABS), null);
     assert.strictEqual(shortcutAction(key('x'), TABS), null);

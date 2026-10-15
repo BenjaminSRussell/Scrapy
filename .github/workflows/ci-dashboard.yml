@@ -34,5 +34,6 @@ jobs:
         run: |
           node --check Scraping_project/dashboard/app.js
           node --check Scraping_project/dashboard/format-utils.js
+          node --check Scraping_project/dashboard/modal.js
       - name: Unit tests
         run: node --test Scraping_project/dashboard/tests/

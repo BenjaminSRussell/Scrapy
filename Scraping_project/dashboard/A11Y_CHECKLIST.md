@@ -16,4 +16,5 @@ Use for every dashboard PR:
 - [x] Forced-colors / Windows High Contrast: cards, tabs, active stage and status stay distinguishable via borders and system colours (`@media (forced-colors: active)`, #982)
 - [x] Landmarks (`header`, `nav`, `main`) and an h1 → h2 heading outline (#332)
 - [x] Decorative icons are inline SVG with `aria-hidden`; tabs, health tiles, and the title mark do not use emoji glyphs (#1049)
+- [x] Destructive confirm dialog (`role="alertdialog"`) traps focus, dismisses on Esc and Cancel, returns focus to the opener, and runs Confirm once (#995)
 - [x] Loading, stale and error states are text, not just colour or zeros (#351, #352, #362)

@@ -326,6 +326,8 @@
         const t = event.target || {};
         const tag = String(t.tagName || '').toUpperCase();
         if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || t.isContentEditable) return null;
+        // #995: digit / R shortcuts must not move focus out of a confirm dialog.
+        if (typeof t.closest === 'function' && t.closest('[role="dialog"],[role="alertdialog"]')) return null;
         const key = String(event.key || '');
         if (/^[1-9]$/.test(key)) {
             const tab = (tabNames || [])[Number(key) - 1];

@@ -1023,6 +1023,8 @@ function setupShortcuts() {
     const hint = document.getElementById('shortcut-hint');
     if (hint) hint.textContent = shortcutHintText(visibleTabNames().length);  // #503
     document.addEventListener('keydown', (event) => {
+        const confirmDialog = document.getElementById('cc-confirm-dialog');
+        if (confirmDialog && !confirmDialog.hidden) return; // #995: focus stays in the dialog
         const action = shortcutAction(event, visibleTabNames());
         if (!action) return;
         event.preventDefault();
@@ -1257,9 +1259,25 @@ function applyVersionWatermark() {
     if (el) el.textContent = 'v' + (window.__CC_VERSION__ || 'dev');
 }
 
+// #995: destructive job actions (stop-all-stages) confirm through the shared dialog.
+// A failure here must not abort metrics startup (#983).
+function installDestructiveConfirm() {
+    try {
+        if (typeof createConfirmDialog !== 'function') return;
+        const dialog = createConfirmDialog(document);
+        if (!dialog) return;
+        window.confirmDestructiveJobAction = function (action, onConfirm, trigger) {
+            return dialog.openAction(action, onConfirm, trigger);
+        };
+    } catch (err) {
+        console.error('Confirm dialog failed to install', err);
+    }
+}
+
 function initialize() {
     console.log('Initializing Pipeline Control Center...');
 
+    installDestructiveConfirm();
     applyFeatureFlags();
     applyVersionWatermark();
     setupTabs();
