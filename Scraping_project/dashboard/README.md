@@ -67,6 +67,12 @@ node --test Scraping_project/dashboard/tests/   # helper unit tests
   keys; see Grafana for those. System Health links to Grafana home
   (`CC_GRAFANA_URL`, default `http://localhost:3000/`), not a `/d/<uid>` dashboard,
   so the card still works when that JSON is absent (#1040).
+- Lake SQL (#635): `GET /api/sql` reports the switch. `POST /api/sql` with
+  `{"sql":"SELECT ..."}` runs one read-only SELECT over Delta tables under
+  `DELTA_LAKE_PATH` (else `delta_lake.base_path`). Off unless `LAKE_SQL_ENABLED`
+  is set. Other statements are rejected, the query is interrupted at
+  `LAKE_SQL_TIMEOUT_SECONDS`, and at most `LAKE_SQL_ROW_CAP` rows are returned.
+  DuckDB is optional; if it is not installed the enabled endpoint returns 503.
 
 ## Server settings
 
@@ -82,6 +88,10 @@ node --test Scraping_project/dashboard/tests/   # helper unit tests
 | `CC_CONNECT_SRC` | unset | Extra http(s) origins allowed in CSP `connect-src` (only for a cross-origin `?metrics=`) (#245) |
 | `CC_GRAFANA_URL` | `http://localhost:3000/` | Grafana home linked from System Health. Injected on `/version.js`. A `/d/<uid>` path is trimmed back to the base (#1040) |
 | `CC_RATE_LIMIT` / `CC_RATE_BURST` | `600` / `120` | Per-client token bucket: requests per minute and burst. Excess requests get `429` with `Retry-After`. `CC_RATE_LIMIT=0` disables it (#257) |
+| `LAKE_SQL_ENABLED` | off | `POST /api/sql` SELECT over Delta tables. DuckDB must be installed (#635) |
+| `LAKE_SQL_TIMEOUT_SECONDS` | `5` | Statement timeout, clamped to 0.1–30 seconds |
+| `LAKE_SQL_ROW_CAP` | `1000` | Maximum rows returned, clamped to 1–10000 |
+| `DELTA_LAKE_PATH` | config `delta_lake.base_path` | Lake root the SQL endpoint reads. Not created if missing |
 
 ## Exposing the dashboard (#189/#455)
 
