@@ -59,7 +59,7 @@ export function Row({ href, onClick, icon, title, sub, value, strong, chevron, l
       type=${Tag === 'button' ? 'button' : undefined} target=${target} rel=${rel}>
       ${icon}
       <div class="row-body">
-        <div class=${`row-title${wrap ? ' wrap' : ''}`}>${title}</div>
+        <div class=${`row-title${wrap ? ' wrap' : ''}`} title=${typeof title === 'string' ? title : undefined}>${title}</div>
         ${sub != null && sub !== '' && html`<div class="row-sub">${sub}</div>`}
         ${children}
       </div>

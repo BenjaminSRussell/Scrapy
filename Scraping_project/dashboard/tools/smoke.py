@@ -22,11 +22,42 @@ import socket
 import subprocess
 import sys
 import time
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
 DASH = Path(__file__).resolve().parents[1]
 STAGES = ("seeds", "discovery", "analysis", "summaries", "large_docs")
+
+
+# WCAG contrast of an element's text against the backgrounds it actually sits on.
+CONTRAST_JS = """(sel) => {
+  const el = document.querySelector(sel);
+  if (!el) return null;
+  const parse = (c) => {
+    const m = c.match(/rgba?\\(([^)]+)\\)/);
+    if (!m) return null;
+    const p = m[1].split(/[\\s,\\/]+/).filter(Boolean).map(Number);
+    return { r: p[0], g: p[1], b: p[2], a: p.length > 3 ? p[3] : 1 };
+  };
+  const layers = [];
+  for (let n = el; n; n = n.parentElement) {
+    const bg = parse(getComputedStyle(n).backgroundColor);
+    if (bg && bg.a > 0) layers.push(bg);
+    if (bg && bg.a >= 1) break;
+  }
+  let base = { r: 255, g: 255, b: 255 };
+  for (const l of layers.reverse()) base = { r: l.a * l.r + (1 - l.a) * base.r, g: l.a * l.g + (1 - l.a) * base.g, b: l.a * l.b + (1 - l.a) * base.b };
+  const f = parse(getComputedStyle(el).color);
+  const fg = { r: f.a * f.r + (1 - f.a) * base.r, g: f.a * f.g + (1 - f.a) * base.g, b: f.a * f.b + (1 - f.a) * base.b };
+  const lum = (c) => ['r', 'g', 'b'].map((k) => { const v = c[k] / 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; })
+    .reduce((a, v, i) => a + v * [0.2126, 0.7152, 0.0722][i], 0);
+  const [hi, lo] = [lum(fg), lum(base)].sort((a, b) => b - a);
+  return (hi + 0.05) / (lo + 0.05);
+}"""
+
+# Rendered height of every element matching a selector (CSS px).
+HEIGHTS_JS = "(sel) => [...document.querySelectorAll(sel)].filter((e) => e.offsetParent !== null).map((e) => e.getBoundingClientRect().height)"
 
 
 def free_port() -> int:
@@ -86,6 +117,30 @@ def run_profile(browser, base: str, name: str, context_args: dict, scheme: str, 
     if focused != "Analysis":
         problems.append(f"ArrowRight on the throughput control left focus on {focused!r}, not 'Analysis'")
     page.get_by_role("radio", name="Discovery").click()
+
+    # Text contrast at least 4.5:1, including the small tab and sidebar labels.
+    for sel in (".tab:not([aria-current])", ".tab[aria-current] span", ".side-item[aria-current]",
+                ".flow-sub", ".row-sub", ".section-title"):
+        ratio = page.evaluate(CONTRAST_JS, sel)
+        if ratio is not None and ratio < 4.5:
+            problems.append(f"contrast of {sel} is {ratio:.2f}:1, below 4.5:1")
+
+    if context_args.get("has_touch"):
+        # 44 pt touch targets.
+        for sel in (".tab", ".segment", ".search input", "a.back", ".icon-btn"):
+            small = [h for h in page.evaluate(HEIGHTS_JS, sel) if h < 44]
+            if small:
+                problems.append(f"{sel} touch target is {min(small):.0f}px tall, below 44")
+        # Largest accessibility text size: tab labels must not run into each other.
+        page.evaluate("document.documentElement.style.fontSize = '53px'")
+        page.wait_for_timeout(200)
+        overlap = page.evaluate("""() => {
+          const spans = [...document.querySelectorAll('.tab span')].map((s) => s.getBoundingClientRect());
+          return spans.some((r, i) => (i && r.left < spans[i - 1].right + 4) || r.right > innerWidth + 0.5);
+        }""")
+        if overlap:
+            problems.append("tab bar labels collide or run off screen at the largest text size")
+        page.evaluate("document.documentElement.style.fontSize = ''")
     shot("1-pipeline")
 
     page.locator('.flow-node[data-stage="discovery"]').click()
@@ -97,9 +152,21 @@ def run_profile(browser, base: str, name: str, context_args: dict, scheme: str, 
     page.wait_for_selector(".timeline .step", timeout=10_000)
     if page.locator(".timeline .step").count() != len(STAGES):
         problems.append("URL journey does not list all five stages")
+    ratio = page.evaluate(CONTRAST_JS, ".btn.filled")
+    if ratio is not None and ratio < 4.5:
+        problems.append(f"contrast of the Open Page button is {ratio:.2f}:1, below 4.5:1")
     shot("3-url")
     page.locator("a.back").click()
     h1("Discovery")
+
+    # A 4 kB URL: the subtitle is clamped (the full path is in its title), not a page-long wall.
+    long_url = "https://a.example.edu/" + "segment/" * 500
+    page.goto(f"{base}/#/activity/url:" + urllib.parse.quote(long_url, safe=""))
+    page.wait_for_selector(".subtitle.url-path", timeout=10_000)
+    height = page.evaluate("document.querySelector('.subtitle.url-path').getBoundingClientRect().height")
+    titled = page.evaluate("document.querySelector('.subtitle.url-path').title.length")
+    if height > 90 or titled < 4000:
+        problems.append(f"long URL subtitle is {height:.0f}px tall (title {titled} chars); expected clamped with the full path in title")
 
     page.goto(f"{base}/#/explore")
     h1("Explore")
@@ -113,6 +180,13 @@ def run_profile(browser, base: str, name: str, context_args: dict, scheme: str, 
     h1("Activity")
     page.wait_for_selector(".section a.row", timeout=10_000)
     all_rows = page.locator(".section .row").count()
+    if context_args.get("has_touch"):
+        page.locator(".search input").fill("a")  # shows the clear button
+        for sel in (".search input", ".search .clear", ".icon-btn"):
+            small = [h for h in page.evaluate(HEIGHTS_JS, sel) if h < 44]
+            if small:
+                problems.append(f"{sel} touch target is {min(small):.0f}px tall, below 44")
+        page.locator(".search input").fill("")
     page.get_by_role("radio", name="Errors").click()
     page.wait_for_timeout(300)
     error_rows = page.locator(".section .row").count()
@@ -125,6 +199,12 @@ def run_profile(browser, base: str, name: str, context_args: dict, scheme: str, 
     services = page.locator("section", has_text="Services").locator(".row").count()
     if services < 3:
         problems.append(f"Health lists {services} services, expected 3")
+    delta_row = page.locator("section", has_text="Services").locator(".row", has_text="Delta Lake").inner_text()
+    if "(simulated)" not in delta_row or "Last commit" not in delta_row:
+        problems.append(f"Health's Delta Lake row lacks its path or last commit: {delta_row!r}")
+    titled_rows = page.evaluate("[...document.querySelectorAll('.row-title')].filter((t) => t.title === t.textContent).length")
+    if not titled_rows:
+        problems.append("row titles carry no title attribute with their full text")
     shot("6-health")
 
     ctx.close()

@@ -36,7 +36,7 @@ export function UrlView({ state, route, now }) {
   }
 
   return html`
-    <p class="subtitle url-path">${path}</p>
+    <p class="subtitle url-path" title=${path}>${path}</p>
     <div class="btn-row actions">
       <a class="btn filled" href=${url} target="_blank" rel="noopener noreferrer">${icons.external()}Open Page</a>
       <button type="button" class="btn" onClick=${share}>${icons.share()}Share</button>

@@ -40,6 +40,8 @@ export function HealthView({ state, route, now }) {
             title=${s.label} sub=${s.detail} value=${html`<${StatusLabel} status=${s.status} />`}
             label=${`${s.label}: ${s.status}. ${s.detail}`}>
             ${(s.data?.queues || []).map((q) => html`<div class="row-sub queue"><code>${q.key}</code> · ${full(q.depth)} waiting</div>`)}
+            ${s.id === 'delta' && s.data?.path && html`<div class="row-sub queue"><code>${s.data.path}</code></div>`}
+            ${s.id === 'delta' && html`<div class="row-sub">Last commit ${relativeTime(s.data?.last_write, now)}</div>`}
           </${Row}>`)}</${List}>`
         : html`<div class="card"><div class="empty"><span>No service checks reported yet.</span></div></div>`}
     </${Section}>

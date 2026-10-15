@@ -42,6 +42,8 @@
 
   --tint: var(--blue);
   --tint-text: var(--blue-text);
+  --fill-strong: #0062cc;   /* white text on it is 5.9:1, in both themes */
+  --tab-gray: #6c6c70;      /* inactive tab labels, 4.7:1 on the bar */
 
   --radius-cell: 12px;
   --radius-card: 18px;
@@ -101,6 +103,7 @@
     --label-3: rgba(235, 235, 245, 0.32);
     --separator: rgba(84, 84, 88, 0.65);
     --bar: rgba(22, 22, 24, 0.78);
+    --tab-gray: #98989d;
     --scrim: rgba(255, 255, 255, 0.04);
     --shadow: none;
   }
@@ -276,7 +279,7 @@ svg { display: block; }
   left: 0; right: 0; bottom: 0;
   z-index: 30;
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   padding: 0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
   background: var(--bar);
   -webkit-backdrop-filter: saturate(180%) blur(20px);
@@ -291,13 +294,16 @@ svg { display: block; }
   justify-content: center;
   gap: 2px;
   height: var(--tabbar-h);
-  color: var(--gray);
-  font-size: var(--fs-caption2);
+  min-width: 0;
+  color: var(--tab-gray);
+  /* Fixed like iOS tab bars: at accessibility text sizes the labels would collide. */
+  font-size: 10.5px;
   font-weight: 500;
   letter-spacing: 0.01em;
 }
+.tab span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tab svg { width: 26px; height: 26px; }
-.tab[aria-current="page"] { color: var(--tint); }
+.tab[aria-current="page"] { color: var(--tint-text); }
 .tab:active svg { transform: scale(0.92); }
 
 /* sidebar (iPad and desktop) */
@@ -340,7 +346,7 @@ svg { display: block; }
   }
   .side-item svg { width: 24px; height: 24px; color: var(--tint); }
   .side-item:hover { background: var(--fill); }
-  .side-item[aria-current="page"] { background: var(--tint); color: #fff; }
+  .side-item[aria-current="page"] { background: var(--fill-strong); color: #fff; }
   .side-item[aria-current="page"] svg { color: #fff; }
   .sidebar-foot { margin-top: auto; padding: 0 10px; color: var(--label-2); font-size: var(--fs-footnote); }
   .sidebar-foot .pill { margin-bottom: 8px; }
@@ -603,7 +609,7 @@ button.row { width: 100%; border: 0; background: none; text-align: left; cursor:
   font-weight: 600;
   cursor: pointer;
 }
-.btn.filled { background: var(--tint); color: #fff; }
+.btn.filled { background: var(--fill-strong); color: #fff; }
 .btn svg { width: 18px; height: 18px; }
 .btn:active { opacity: 0.7; }
 .btn-row { display: flex; gap: 10px; flex-wrap: wrap; margin: 12px 0 0; }
@@ -668,7 +674,7 @@ button.row { width: 100%; border: 0; background: none; text-align: left; cursor:
 }
 @media (prefers-color-scheme: dark) { .segment[aria-checked="true"] { background: #636366; } }
 /* 44 pt touch target around a 32 pt segment */
-@media (pointer: coarse) { .segmented { padding: 2px; } .segment { min-height: 40px; } }
+/* 44 pt touch targets: see the end of this file (must follow the base rules). */
 
 .search {
   position: relative;
@@ -884,7 +890,16 @@ button.row { width: 100%; border: 0; background: none; text-align: left; cursor:
 .bar-fill { display: block; height: 100%; border-radius: 4px; background: var(--t); min-width: 4px; }
 
 /* ---------- URL journey ---------- */
-.url-path { font-family: var(--font-mono); font-size: var(--fs-footnote); letter-spacing: 0; }
+.url-path {
+  font-family: var(--font-mono);
+  font-size: var(--fs-footnote);
+  letter-spacing: 0;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  overflow: hidden;
+}
 .actions { align-items: center; margin: 0 0 6px; }
 .toast { font-size: var(--fs-footnote); color: var(--label-2); }
 
@@ -953,7 +968,7 @@ button.row { width: 100%; border: 0; background: none; text-align: left; cursor:
   padding: 0 16px;
   border: 0;
   border-radius: 999px;
-  background: var(--tint);
+  background: var(--fill-strong);
   color: #fff;
   font-size: var(--fs-subhead);
   font-weight: 600;
@@ -962,3 +977,10 @@ button.row { width: 100%; border: 0; background: none; text-align: left; cursor:
 }
 .row-sub.queue { white-space: normal; overflow-wrap: anywhere; }
 @media (max-width: 430px) { .segmented.dense .segment { font-size: var(--fs-caption); padding: 0 2px; } }
+
+/* ---------- 44 pt touch targets on touch screens (after every base rule) ---------- */
+@media (pointer: coarse) {
+  .segment { min-height: 44px; }
+  .search input { min-height: 44px; }
+  .search .clear { width: 44px; height: 44px; }
+}
