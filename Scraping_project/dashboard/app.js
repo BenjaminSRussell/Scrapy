@@ -8,6 +8,11 @@ let METRICS_ENDPOINT = { url: '/api/metrics', source: 'default' };
 let METRICS_URL = METRICS_ENDPOINT.url;
 const REFRESH_INTERVAL = 5000;
 const METRICS_TIMEOUT_MS = 4000; // #1032
+// #1012: main-thread budget for one poll's updateDashboard.
+const POLL_MAIN_THREAD_BUDGET_MS = 50;
+const POLL_MARK_START = 'updateDashboard:start';
+const POLL_MARK_END = 'updateDashboard:end';
+const POLL_MEASURE_NAME = 'updateDashboard';
 const STORE_TAB_KEY = 'cc.lastTab'; // #1034
 const STORE_INTERVAL_KEY = 'cc.refreshInterval'; // #1015
 const STORE_DANGER_SOUND_KEY = 'cc.dangerSound'; // #1037
@@ -827,16 +832,86 @@ function setHealthTile(id, label, healthy, detailText) {
 }
 
 
-function setMetricText(id, value) {
-    const el = document.getElementById(id);
+// One forced layout per poll restarts every changed metric's flash (#1012).
+const _flashQueue = [];
+let _pollT0 = null;
+
+function setFlashingText(el, value) {
     if (!el) return;
     const next = String(value);
-    if (el.textContent !== next) {
-        el.textContent = next;
-        el.classList.remove('flash');
-        // reflow so animation restarts
-        void el.offsetWidth;
-        el.classList.add('flash');
+    if (el.textContent === next) return;
+    el.textContent = next;
+    el.classList.remove('flash');
+    _flashQueue.push(el);
+}
+
+function flushFlashingText() {
+    if (_flashQueue.length === 0) return;
+    const pending = _flashQueue.splice(0, _flashQueue.length);
+    void pending[0].offsetWidth;
+    for (let i = 0; i < pending.length; i++) pending[i].classList.add('flash');
+}
+
+function setMetricText(id, value) {
+    setFlashingText(document.getElementById(id), value);
+}
+
+function setPrefixedMetric(prefixes, suffix, value) {
+    for (let i = 0; i < prefixes.length; i++) {
+        setFlashingText(document.getElementById(prefixes[i] + suffix), value);
+    }
+}
+
+function sameSeries(prev, next) {
+    if (!prev || prev.length !== next.length) return false;
+    for (let i = 0; i < next.length; i++) {
+        if (prev[i] !== next[i]) return false;
+    }
+    return true;
+}
+
+// Idle polls used to call Chart.update even when the series had not moved.
+function writeChartDataset(chart, values) {
+    if (!chart || !chart.data || !chart.data.datasets || !chart.data.datasets[0]) return;
+    if (sameSeries(chart.data.datasets[0].data, values)) return;
+    chart.data.datasets[0].data = values;
+    chart.update('none');
+}
+
+function pollPerf() {
+    return (typeof performance !== 'undefined') ? performance : null;
+}
+
+function beginPollMeasure() {
+    const perf = pollPerf();
+    _pollT0 = perf && typeof perf.now === 'function' ? perf.now() : Date.now();
+    if (!perf || typeof perf.mark !== 'function') return;
+    try { if (typeof perf.clearMarks === 'function') perf.clearMarks(POLL_MARK_START); } catch (_) {}
+    try { if (typeof perf.clearMarks === 'function') perf.clearMarks(POLL_MARK_END); } catch (_) {}
+    try { if (typeof perf.clearMeasures === 'function') perf.clearMeasures(POLL_MEASURE_NAME); } catch (_) {}
+    try { perf.mark(POLL_MARK_START); } catch (_) {}
+}
+
+function finishPollMeasure() {
+    const perf = pollPerf();
+    let duration = null;
+    const t1 = perf && typeof perf.now === 'function' ? perf.now() : Date.now();
+    if (perf && typeof perf.mark === 'function' && typeof perf.measure === 'function') {
+        try {
+            perf.mark(POLL_MARK_END);
+            let measure = perf.measure(POLL_MEASURE_NAME, POLL_MARK_START, POLL_MARK_END);
+            if ((!measure || typeof measure.duration !== 'number') && typeof perf.getEntriesByName === 'function') {
+                const entries = perf.getEntriesByName(POLL_MEASURE_NAME);
+                measure = entries && entries[entries.length - 1];
+            }
+            if (measure && typeof measure.duration === 'number') duration = measure.duration;
+        } catch (_) {}
+    }
+    if (duration === null && _pollT0 !== null) duration = t1 - _pollT0;
+    if (typeof duration === 'number' && duration > POLL_MAIN_THREAD_BUDGET_MS) {
+        console.warn(
+            `[perf] updateDashboard main-thread work ${duration.toFixed(1)}ms exceeds ${POLL_MAIN_THREAD_BUDGET_MS}ms budget`
+        );
     }
 }
 
@@ -866,6 +941,8 @@ function checkMilestones(metrics) {
 }
 
 function updateDashboard(metrics) {
+    beginPollMeasure();
+    try {
     checkMilestones(metrics);
     if (metricsWasDown) {
         metricsWasDown = false;
@@ -886,56 +963,23 @@ function updateDashboard(metrics) {
     const rates = calculateRates(metrics);
 
     // topbar status is owned by setConnectionStatus (#945)
+    const tilePrefixes = ['overview', 'pipeline'];
     setMetricText('topbar-urls', formatNumber(s1Discovered));
     setMetricText('topbar-summaries', formatNumber(s3Summaries));
-
-    ['overview', 'pipeline'].forEach(prefix => {
-        const elem = document.getElementById(`${prefix}-s1-discovered`);
-        if (elem) { const __n = formatNumber(s1Discovered); if (elem.textContent !== String(__n)) { elem.textContent = __n; elem.classList.remove('flash'); void elem.offsetWidth; elem.classList.add('flash'); } else { elem.textContent = __n; } }
-    });
-    ['overview', 'pipeline'].forEach(prefix => {
-        const elem = document.getElementById(`${prefix}-s1-queued`);
-        if (elem) { const __n = formatNumber(s1Queued); if (elem.textContent !== String(__n)) { elem.textContent = __n; elem.classList.remove('flash'); void elem.offsetWidth; elem.classList.add('flash'); } else { elem.textContent = __n; } }
-    });
-    ['overview', 'pipeline'].forEach(prefix => {
-        const elem = document.getElementById(`${prefix}-s2-analyzed`);
-        if (elem) { const __n = formatNumber(s2Analyzed); if (elem.textContent !== String(__n)) { elem.textContent = __n; elem.classList.remove('flash'); void elem.offsetWidth; elem.classList.add('flash'); } else { elem.textContent = __n; } }
-    });
-    ['overview', 'pipeline'].forEach(prefix => {
-        const elem = document.getElementById(`${prefix}-s2-quality`);
-        if (elem) { const __n = formatNumber(s2Quality); if (elem.textContent !== String(__n)) { elem.textContent = __n; elem.classList.remove('flash'); void elem.offsetWidth; elem.classList.add('flash'); } else { elem.textContent = __n; } }
-    });
-
-    const s2MassiveElem = document.getElementById('pipeline-s2-massive');
-    if (s2MassiveElem) { const __n = formatNumber(s2Massive); if (s2MassiveElem.textContent !== String(__n)) { s2MassiveElem.textContent = __n; s2MassiveElem.classList.remove('flash'); void s2MassiveElem.offsetWidth; s2MassiveElem.classList.add('flash'); } else { s2MassiveElem.textContent = __n; } }
-
-    const s2WordsElem = document.getElementById('pipeline-s2-words');
-    if (s2WordsElem) { const __n = formatNumber(s2Words); if (s2WordsElem.textContent !== String(__n)) { s2WordsElem.textContent = __n; s2WordsElem.classList.remove('flash'); void s2WordsElem.offsetWidth; s2WordsElem.classList.add('flash'); } else { s2WordsElem.textContent = __n; } }
-
-    ['overview', 'pipeline'].forEach(prefix => {
-        const elem = document.getElementById(`${prefix}-s3-summaries`);
-        if (elem) { const __n = formatNumber(s3Summaries); if (elem.textContent !== String(__n)) { elem.textContent = __n; elem.classList.remove('flash'); void elem.offsetWidth; elem.classList.add('flash'); } else { elem.textContent = __n; } }
-    });
-    ['overview', 'pipeline'].forEach(prefix => {
-        const elem = document.getElementById(`${prefix}-s3-dedup`);
-        if (elem) { const __n = formatNumber(s3Dedup); if (elem.textContent !== String(__n)) { elem.textContent = __n; elem.classList.remove('flash'); void elem.offsetWidth; elem.classList.add('flash'); } else { elem.textContent = __n; } }
-    });
-    ['overview', 'pipeline'].forEach(prefix => {
-        const elem = document.getElementById(`${prefix}-s4-summaries`);
-        if (elem) { const __n = formatNumber(s4Summaries); if (elem.textContent !== String(__n)) { elem.textContent = __n; elem.classList.remove('flash'); void elem.offsetWidth; elem.classList.add('flash'); } else { elem.textContent = __n; } }
-    });
+    setPrefixedMetric(tilePrefixes, '-s1-discovered', formatNumber(s1Discovered));
+    setPrefixedMetric(tilePrefixes, '-s1-queued', formatNumber(s1Queued));
+    setPrefixedMetric(tilePrefixes, '-s2-analyzed', formatNumber(s2Analyzed));
+    setPrefixedMetric(tilePrefixes, '-s2-quality', formatNumber(s2Quality));
+    setFlashingText(document.getElementById('pipeline-s2-massive'), formatNumber(s2Massive));
+    setFlashingText(document.getElementById('pipeline-s2-words'), formatNumber(s2Words));
+    setPrefixedMetric(tilePrefixes, '-s3-summaries', formatNumber(s3Summaries));
+    setPrefixedMetric(tilePrefixes, '-s3-dedup', formatNumber(s3Dedup));
+    setPrefixedMetric(tilePrefixes, '-s4-summaries', formatNumber(s4Summaries));
 
     const compressionRatio = s4Compression > 0 ? (1 / s4Compression).toFixed(0) + 'x' : '0x';
-    ['overview', 'pipeline'].forEach(prefix => {
-        const elem = document.getElementById(`${prefix}-s4-compression`);
-        if (elem) { const __n = compressionRatio; if (elem.textContent !== String(__n)) { elem.textContent = __n; elem.classList.remove('flash'); void elem.offsetWidth; elem.classList.add('flash'); } else { elem.textContent = __n; } }
-    });
-
-    const s3RateElem = document.getElementById('pipeline-s3-rate');
-    if (s3RateElem) { const __n = rates.summaries.toFixed(1) + '/min'; if (s3RateElem.textContent !== String(__n)) { s3RateElem.textContent = __n; s3RateElem.classList.remove('flash'); void s3RateElem.offsetWidth; s3RateElem.classList.add('flash'); } else { s3RateElem.textContent = __n; } }
-
-    const s4RateElem = document.getElementById('pipeline-s4-rate');
-    if (s4RateElem) { const __n = rates.largeDocs.toFixed(1) + '/min'; if (s4RateElem.textContent !== String(__n)) { s4RateElem.textContent = __n; s4RateElem.classList.remove('flash'); void s4RateElem.offsetWidth; s4RateElem.classList.add('flash'); } else { s4RateElem.textContent = __n; } }
+    setPrefixedMetric(tilePrefixes, '-s4-compression', compressionRatio);
+    setFlashingText(document.getElementById('pipeline-s3-rate'), rates.summaries.toFixed(1) + '/min');
+    setFlashingText(document.getElementById('pipeline-s4-rate'), rates.largeDocs.toFixed(1) + '/min');
 
     applyStageActivity(rates);
 
@@ -969,17 +1013,11 @@ function updateDashboard(metrics) {
     if (uptimeEl) uptimeEl.textContent = getUptime();
 
     // #690: summary counters above stay live. Chart history does not.
+    // History refresh syncs every data table once. Doing it here as well
+    // rebuilt all six tables twice per poll (#1012).
     if (!metricsFlood.degraded) {
-        if (charts.stageProgression) {
-            charts.stageProgression.data.datasets[0].data = [s1Discovered, s2Analyzed, s3Summaries, s4Summaries];
-            charts.stageProgression.update('none');
-        }
-
-        if (charts.routing) {
-            charts.routing.data.datasets[0].data = [s2Quality, s2Massive];
-            charts.routing.update('none');
-            syncAllChartTables();
-        }
+        writeChartDataset(charts.stageProgression, [s1Discovered, s2Analyzed, s3Summaries, s4Summaries]);
+        writeChartDataset(charts.routing, [s2Quality, s2Massive]);
     }
 
     if (Object.keys(previousMetrics).length > 0) {
@@ -1002,6 +1040,10 @@ function updateDashboard(metrics) {
     }
     previousMetricsAt = Date.now();
     syncStageDrilldownValues();
+    } finally {
+        flushFlashingText();
+        finishPollMeasure();
+    }
 }
 
 // #1052: rank hosts from the metrics sample (or an API stub of the same
@@ -1256,9 +1298,33 @@ function exportActivityLog(format) {
     downloadBlob('activity-log.csv', 'text/csv', lines.join('\n'));
 }
 
+const chartTableSig = new WeakMap();
+
+function chartTableSignature(chart) {
+    const labels = (chart.data && chart.data.labels) || [];
+    const datasets = (chart.data && chart.data.datasets) || [];
+    const parts = [String(labels.length)];
+    for (let i = 0; i < labels.length; i++) parts.push(String(labels[i]));
+    for (let idx = 0; idx < datasets.length; idx++) {
+        const ds = datasets[idx] || {};
+        let hidden = false;
+        if (typeof chart.getDatasetMeta === 'function') {
+            const meta = chart.getDatasetMeta(idx);
+            hidden = !!(meta && meta.hidden);
+        }
+        const data = ds.data || [];
+        parts.push(String(ds.label || ''), hidden ? '1' : '0', String(data.length));
+        for (let j = 0; j < data.length; j++) parts.push(String(data[j]));
+    }
+    return parts.join('\u0001');
+}
+
 function syncChartDataTable(chart, tableId) {
     const table = document.getElementById(tableId);
     if (!table || !chart) return;
+    const sig = chartTableSignature(chart);
+    if (chartTableSig.get(table) === sig) return;
+    chartTableSig.set(table, sig);
     const thead = table.querySelector('thead');
     const tbody = table.querySelector('tbody');
     const labels = chart.data.labels || [];
