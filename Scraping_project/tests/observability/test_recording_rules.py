@@ -34,6 +34,10 @@ SAMPLES = [
     ("scraping-pipeline-0", "stage2", 120),
     ("zsc-service-3", "stage2", 999),
     ("standalone", "stage3", 7),
+    # Role groups (#624): client.id is {group}-{hyphen-free suffix}.
+    ("scrapy-ingestor-4242", "scraped-items", 10),
+    ("scrapy-dq-4242", "scraped-items", 4),
+    ("scrapy-replay-4242", "scraped-items", 1),
 ]
 
 
@@ -69,6 +73,9 @@ def test_helm_copy_matches_monitoring():
         ("zsc-service-3", "zsc-service"),
         ("consumer-group-a-1", "consumer-group-a"),
         ("standalone", "standalone"),
+        ("scrapy-ingestor-4242", "scrapy-ingestor"),
+        ("scrapy-dq-4242", "scrapy-dq"),
+        ("scrapy-replay-4242", "scrapy-replay"),
     ],
 )
 def test_group_keeps_hyphenated_names(record, client_id, group):

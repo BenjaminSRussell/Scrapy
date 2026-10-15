@@ -15,6 +15,7 @@ renamed to the new version and date (see the release checklist).
 ## [Unreleased]
 
 ### Added
+- Kafka consumer groups are per role in `kafka.consumer.groups`: ingest `scrapy-ingestor`, DQ `scrapy-dq`, replay `scrapy-replay`. Config validation rejects a shared id, including reuse of the retired `kafka.consumer.group_id` (`scraping-pipeline`). Lag alerts stay labeled by that group; `KafkaConsumerLagSLO` stays above 250000 (#624).
 - Control Center confirms a job start with one CSS check on Start. `prefers-reduced-motion: reduce` skips the stroke animation and shows the finished check. There is no confetti (#1022).
 - Control Center accent picker (refresh bar) stores a `#rrggbb` choice in `localStorage` (`cc.accent`) and writes `--accent`, `--accent-ink`, and `--accent-border`. Buttons use the accent fill; the active tab underline uses the accent, darkened when it would be under 3:1 on the tab bar (#1017).
 - Stage 1 to stage 2 handoff (`StageQueueHandoff`) keeps the in-memory queue at the Redis high watermark (default 10000, same gate as `QueueBacklog`). Producers block until stage 2 drains to the low watermark instead of buffering an unbounded backlog, and each key is delivered once after the consumer catches up (#703).
@@ -58,6 +59,7 @@ renamed to the new version and date (see the release checklist).
 - Repository policies: SECURITY.md, CODE_OF_CONDUCT.md, this changelog, ADRs, devcontainer (#669 #746 #747 #715 #694).
 
 ### Changed
+- `kafka-delta-ingest` default `--app-id` is `scrapy-ingestor` (the ingest role) instead of `kafka-delta-ingest`, and `client.id` is `{app-id}-{pid}` so the lag `group` label is that id. Helm already passed `scrapy-ingestor`, so that Deployment's group does not move. The process refuses the DQ, replay, and retired shared ids. A bare CLI that still has offsets on `kafka-delta-ingest` starts a new group and does not resume them (#624).
 - Control Center tabs, health tiles, and the title mark use inline SVG icons (`aria-hidden`) instead of emoji glyphs (#1049).
 - Helm Stage 1–4 sizing: dev stays `values.yaml`, `values-small.yaml` is one replica with HPA off, and `values-prod.yaml` raises worker memory limits so a Kafka lag spike does not OOM the pod. `helm template` fails when an enabled workload omits cpu and memory requests or limits. The delta-ingestor `wait-for-kafka` init container sets both. The sizes are in DEPLOYMENT.md (#1104).
 - Control Center metrics URL resolves as `?metrics=` (http or https), then a URL remembered in this browser, then `window.CC_METRICS_URL`, then the relative `/api/metrics` default. The Status connection popover shows the URL in use (#1020).

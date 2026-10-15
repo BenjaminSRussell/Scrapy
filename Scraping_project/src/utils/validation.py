@@ -24,6 +24,8 @@ from pydantic import (
     model_validator,
 )
 
+from src.utils.kafka_consumer_groups import require_distinct_groups
+
 logger = logging.getLogger(__name__)
 
 
@@ -356,12 +358,30 @@ class KafkaProducer(BaseModel):
         return {_PRODUCER_DOT_KEYS.get(str(key), key): value for key, value in data.items()}
 
 
+class KafkaConsumerGroups(BaseModel):
+    """One group.id per incompatible processor (#624). Sharing is rejected."""
+
+    model_config = _STRICT
+    ingest: StrictStr
+    dq: StrictStr
+    replay: StrictStr
+
+
 class KafkaConsumer(BaseModel):
     model_config = _STRICT
     group_id: StrictStr
+    groups: KafkaConsumerGroups
     auto_offset_reset: StrictStr
     enable_auto_commit: StrictBool
     auto_commit_interval_ms: StrictInt
+
+    @model_validator(mode="after")
+    def _roles_do_not_share_a_group(self) -> "KafkaConsumer":
+        require_distinct_groups(
+            {"ingest": self.groups.ingest, "dq": self.groups.dq, "replay": self.groups.replay},
+            legacy_group_id=self.group_id,
+        )
+        return self
 
 
 class KafkaSection(BaseModel):

@@ -395,8 +395,10 @@ enum Commands {
         #[arg(long, default_value = "localhost:9092")]
         kafka: String,
 
-        /// Consumer group ID
-        #[arg(long, default_value = "kafka-delta-ingest")]
+        /// Consumer group ID. Default is the ingest role
+        /// (`config.yml` `kafka.consumer.groups.ingest`, Helm `appId`).
+        /// DQ, replay, and the retired shared id are rejected (#624).
+        #[arg(long, default_value = INGEST_GROUP_ID)]
         app_id: String,
 
         /// Auto offset reset strategy
@@ -481,6 +483,32 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
+/// Ingest ``group.id``. Helm ``kafkaDeltaIngestor.config.appId`` and
+/// ``config.yml`` ``kafka.consumer.groups.ingest`` use the same value (#624).
+const INGEST_GROUP_ID: &str = "scrapy-ingestor";
+
+/// Group ids this process must not join. DQ and replay keep their own offsets;
+/// ``scraping-pipeline`` is the retired shared id.
+const RESERVED_NON_INGEST_GROUPS: &[&str] = &["scrapy-dq", "scrapy-replay", "scraping-pipeline"];
+
+fn reject_shared_ingest_group(app_id: &str) -> Result<()> {
+    if app_id.is_empty() || app_id.chars().any(char::is_whitespace) {
+        anyhow::bail!("--app-id must be a non-empty consumer group id with no whitespace (#624)");
+    }
+    if RESERVED_NON_INGEST_GROUPS.contains(&app_id) {
+        anyhow::bail!(
+            "--app-id {app_id} belongs to another consumer role; ingest must use {INGEST_GROUP_ID} so DQ and replay can seek on their own (#624)"
+        );
+    }
+    Ok(())
+}
+
+/// ``client.id`` whose last hyphen segment is the process id. Recording rules
+/// strip that segment, so the lag ``group`` label equals ``group.id``.
+fn lag_client_id(group_id: &str) -> String {
+    format!("{}-{}", group_id, std::process::id())
+}
+
 async fn ingest(
     topic: &str,
     table_path: &str,
@@ -494,11 +522,14 @@ async fn ingest(
     dlq_topic: &str,
     max_deserialize_failures: u32,
 ) -> Result<()> {
+    reject_shared_ingest_group(app_id)?;
+    let client_id = lag_client_id(app_id);
     info!("Starting Kafka to Delta Lake ingestor");
     info!("Topic: {}", topic);
     info!("Table path: {}", table_path);
     info!("Kafka brokers: {}", kafka_brokers);
     info!("App ID: {}", app_id);
+    info!("Client ID: {}", client_id);
 
     // Build and compile JSON schema for validation
     let schema_def = build_scraped_item_schema();
@@ -542,6 +573,8 @@ async fn ingest(
     let consumer: StreamConsumer = ClientConfig::new()
         .set("bootstrap.servers", kafka_brokers)
         .set("group.id", app_id)
+        // {group.id}-{pid}: lag rules strip the last hyphen segment (#624).
+        .set("client.id", &client_id)
         .set("auto.offset.reset", auto_offset_reset)
         .set("enable.auto.commit", "false")
         .create()
@@ -933,6 +966,27 @@ fn percent_encode_userinfo(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ingest_refuses_groups_owned_by_other_roles() {
+        assert!(reject_shared_ingest_group(INGEST_GROUP_ID).is_ok());
+        assert!(reject_shared_ingest_group("scrapy-ingestor-backfill").is_ok());
+        for reserved in ["scrapy-dq", "scrapy-replay", "scraping-pipeline", "", "scrapy ingestor"] {
+            assert!(
+                reject_shared_ingest_group(reserved).is_err(),
+                "{reserved} must not be an ingest group"
+            );
+        }
+    }
+
+    #[test]
+    fn lag_client_id_keeps_the_group_before_a_hyphen_free_suffix() {
+        let client_id = lag_client_id(INGEST_GROUP_ID);
+        let pid = std::process::id().to_string();
+        assert_eq!(client_id, format!("{INGEST_GROUP_ID}-{pid}"));
+        assert!(!pid.contains('-'));
+        assert!(client_id.strip_suffix(&format!("-{pid}")) == Some(INGEST_GROUP_ID));
+    }
 
     #[test]
     fn pending_offsets_track_next_offset_per_partition() {
