@@ -428,7 +428,6 @@ class ScoutSpider(BaseSpider):
                 source_url=source_url,
                 dedup=self.discovery_dedup,
                 ack_empty=self.ack_empty_discovery,
-                write_uconn_urls=True,
                 enqueue_stage2=False,
             )
             self.scout_stats["urls_added_to_seeds"] += result.get("seed_inserted", 0)

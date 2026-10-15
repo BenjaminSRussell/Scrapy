@@ -91,6 +91,7 @@ renamed to the new version and date (see the release checklist).
 - ASR never leaks temp media files and caps download size (#468).
 - Config reloads that fail to parse keep the previous snapshot live.
 - Control Center: keyboard tabs, landmarks, contrast, focus, reduced motion, a wrapping mobile topbar, and loading, stale, and error states (#153 #155 #332 #340 #341 #343 #349 #351 #352 #362).
+- Scout's sitemap ingest no longer forces the deprecated `write_uconn_urls=True` alias. It follows the config-driven `stage1.write_domain_urls` default (off unless set), so the domain side table is not written by default and the DeprecationWarning is gone (#997).
 
 ### Security
 - Production Helm overlay turns on default-deny NetworkPolicies for Redis, Kafka, Postgres and the scrapers. The delta ingestor may dial Redis, and Grafana may install the Redis datasource plugin over public HTTPS (same private and link-local exclusions as scrape egress; the plugin is not baked into the image). Alertmanager external receivers stay closed. `networkPolicy.breakGlass` is the debug override and must not stay on (#190).
