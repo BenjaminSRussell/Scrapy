@@ -1039,6 +1039,7 @@ async function fetchMetrics() {
         consecutiveFetchFailures = 0;
         finishLoading(false);
         hideFetchError();
+        hideOfflineBanner();
         renderStale();
         setConnectionStatus('online', metrics['pipeline_running']);
         notePollOutcome(true);
@@ -1047,9 +1048,16 @@ async function fetchMetrics() {
         metricsWasDown = true;
         console.error('Error fetching metrics:', error);
         const failure = metricsFailureActivity(error, METRICS_TIMEOUT_MS);
-        addActivityLogItem(failure.type, failure.message);
         if (!hasEverSucceeded) finishLoading(true);
-        showFetchError(failure.message);
+        // #1004: navigator.onLine false is Wi-Fi/network, not an exporter 5xx/CORS/timeout.
+        if (!browserIsOnline()) {
+            addActivityLogItem('warning', OFFLINE_BANNER_COPY);
+            showOfflineBanner();
+        } else {
+            addActivityLogItem(failure.type, failure.message);
+            hideOfflineBanner();
+            showFetchError(failure.message);
+        }
         consecutiveFetchFailures += 1;
         setConnectionStatus(hasEverSucceeded ? 'offline' : 'never');
         notePollOutcome(false);
@@ -1484,6 +1492,54 @@ function finishLoading(failed) {
     });
 }
 
+// #1004: browser offline (navigator.onLine, online/offline events) is Wi-Fi or
+// the network. Copy must not match the metrics exporter banner (5xx, CORS, timeout).
+const OFFLINE_BANNER_COPY = 'You are offline. Check Wi-Fi or your network connection. This is not a metrics exporter error.';
+
+function browserIsOnline() {
+    if (typeof navigator === 'undefined' || navigator === null) return true;
+    if (typeof navigator.onLine !== 'boolean') return true;
+    return navigator.onLine;
+}
+
+function showOfflineBanner() {
+    const banner = document.getElementById('offline-banner');
+    const text = document.getElementById('offline-banner-text');
+    // Unhide before writing so role=alert announces the new text.
+    if (banner && banner.hidden) banner.hidden = false;
+    if (text) text.textContent = OFFLINE_BANNER_COPY;
+    hideFetchError();
+}
+
+function hideOfflineBanner() {
+    const banner = document.getElementById('offline-banner');
+    if (banner && !banner.hidden) banner.hidden = true;
+}
+
+function onBrowserOffline() {
+    showOfflineBanner();
+}
+
+function onBrowserOnline() {
+    hideOfflineBanner();
+    // Refresh so a healthy exporter clears the UI and a still-down exporter
+    // shows the metrics banner instead of the offline copy.
+    if (refreshScheduler && refreshScheduler.isFetching()) {
+        return Promise.resolve(refreshScheduler.refreshNow()).then(() => {
+            if (!browserIsOnline() || !refreshScheduler || refreshScheduler.isFetching()) return;
+            return requestRefresh();
+        });
+    }
+    return requestRefresh();
+}
+
+function setupConnectivityBanner() {
+    if (!browserIsOnline()) showOfflineBanner();
+    if (typeof window === 'undefined' || typeof window.addEventListener !== 'function') return;
+    window.addEventListener('offline', onBrowserOffline);
+    window.addEventListener('online', onBrowserOnline);
+}
+
 // #362: visible error with a Retry control; cleared by the next success.
 function showFetchError(message) {
     const banner = document.getElementById('fetch-error-banner');
@@ -1523,7 +1579,7 @@ function setRefreshBusy(busy) {
 }
 function requestRefresh() {
     if (!refreshScheduler || refreshScheduler.isFetching()) return;
-    refreshScheduler.refreshNow();
+    return refreshScheduler.refreshNow();
 }
 
 function formatRelative(ts) {
@@ -1767,6 +1823,7 @@ function initialize() {
     ensureChartPlaceholders();
     setupComparisonToggle();
     refreshScheduler = createRefreshScheduler({ interval: REFRESH_INTERVAL, fetch: fetchAndAnnounce });
+    setupConnectivityBanner();
     setupIntervalControl();
     setupVisibilityPause();
     setupDangerSound();
@@ -1789,6 +1846,8 @@ function initialize() {
     if (manualBtn) manualBtn.addEventListener('click', requestRefresh);
     const retryBtn = document.getElementById('retry-fetch');
     if (retryBtn) retryBtn.addEventListener('click', requestRefresh);
+    const retryOfflineBtn = document.getElementById('retry-offline');
+    if (retryOfflineBtn) retryOfflineBtn.addEventListener('click', requestRefresh);
 
     restorePersistedActivityLog(); // #1029: before the fresh init line, so it stays newest
     addActivityLogItem('success', 'Pipeline Control Center initialized');

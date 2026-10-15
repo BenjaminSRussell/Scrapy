@@ -1042,6 +1042,10 @@
             .activity-stale-note {
                 border: 1px dashed CanvasText;
             }
+            .offline-banner,
+            .fetch-error-banner {
+                border: 2px solid CanvasText;
+            }
             /* Chart.js paints fixed colours on canvas; keep its light backdrop
                so axis text and series stay legible under a dark system theme. */
             .chart-container canvas {
@@ -1172,6 +1176,22 @@
             border: 1px solid #b91c1c;
         }
         .fetch-error-banner[hidden] { display: none; }
+
+        /* #1004: browser offline. Blue, not the red metrics-exporter banner. */
+        .offline-banner {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem 1rem;
+            align-items: center;
+            justify-content: space-between;
+            margin: 0 0 1rem;
+            padding: 0.75rem 1rem;
+            border-radius: 0.5rem;
+            background: #dbeafe;
+            color: #1e3a8a;
+            border: 1px solid #1d4ed8;
+        }
+        .offline-banner[hidden] { display: none; }
         .btn[aria-busy="true"] { cursor: progress; }
     </style>
 </head>
@@ -1216,6 +1236,10 @@
     </header>
 
     <main class="container" id="main">
+        <div id="offline-banner" class="offline-banner" role="alert" hidden>
+            <span id="offline-banner-text">You are offline. Check Wi-Fi or your network connection. This is not a metrics exporter error.</span>
+            <button type="button" id="retry-offline" class="btn" aria-label="Retry loading metrics after reconnecting">Retry</button>
+        </div>
         <div id="fetch-error-banner" class="fetch-error-banner" role="alert" hidden>
             <span id="fetch-error-text">Could not load metrics.</span>
             <button type="button" id="retry-fetch" class="btn" aria-label="Retry loading metrics now">Retry</button>
