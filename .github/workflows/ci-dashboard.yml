@@ -1,5 +1,6 @@
-# Pure-JS dashboard helpers (format-utils.js) had node tests that no workflow
-# ran (#1043). Cheap: no install step, node ships on the runner image.
+# Control Center client: syntax-check every ES module under app/ and run the
+# node tests for its pure modules (router, state, format, layouts). Cheap: no
+# install step; dashboard/package.json only marks the folder as ESM.
 name: CI Dashboard
 
 on:
@@ -31,8 +32,6 @@ jobs:
         with:
           node-version: "20"
       - name: Syntax check
-        run: |
-          node --check Scraping_project/dashboard/app.js
-          node --check Scraping_project/dashboard/format-utils.js
+        run: find Scraping_project/dashboard/app -name '*.js' -print0 | xargs -0 -n1 node --check
       - name: Unit tests
         run: node --test Scraping_project/dashboard/tests/

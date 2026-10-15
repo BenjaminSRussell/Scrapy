@@ -198,6 +198,8 @@ yarn-error.log*
 # Shared editor/dev-container config (#321, #363, #694); must come after *.json above.
 !.vscode/settings.json
 !.vscode/launch.json
+# Control Center web app manifest (Add to Home Screen); a source file, not data.
+!Scraping_project/dashboard/manifest.json
 !.vscode/tasks.json
 !.devcontainer/devcontainer.json
 # Pinned ML model revisions + checksums (#486); verified by `cli.py setup`.

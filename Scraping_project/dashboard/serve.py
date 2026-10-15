@@ -33,7 +33,7 @@ import time
 import urllib.error
 import urllib.request
 from pathlib import Path
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import parse_qs, unquote, urlsplit, urlunsplit
 
 # #735: loopback by default. Containers/LAN must opt in explicitly
 # (CC_HOST=0.0.0.0 or --host 0.0.0.0), which prints a warning.
@@ -45,17 +45,19 @@ DASHBOARD_DIR = Path(__file__).parent
 # #721: only dashboard assets are served; source, tests, docs and dotfiles are 404.
 ALLOWED_SUFFIXES = frozenset({".html", ".js", ".css", ".map", ".png", ".svg", ".ico", ".jpg", ".jpeg",
                               ".gif", ".webp", ".woff", ".woff2", ".json", ".txt"})
-DENIED_DIRS = frozenset({"tests", "__pycache__", "node_modules"})
+DENIED_DIRS = frozenset({"tests", "__pycache__", "node_modules", "tools", "ccfeed"})
+# package.json only marks app/ modules as ESM for `node --test`; it is not an asset.
+DENIED_NAMES = frozenset({"package.json"})
 
-# #245: enforcing CSP. index.html has no inline <script> (feature flags live in
-# features.js); inline style attributes remain, hence style-src 'unsafe-inline'.
-# Chart.js is the only third-party script. connect-src is same-origin: metrics go
-# through /api/metrics (#400). Extra origins (e.g. a cross-origin ?metrics= URL)
-# must be allowed explicitly with CC_CONNECT_SRC.
+# #245: enforcing CSP. Every script is a same-origin module (Preact and htm are
+# vendored), index.html has no inline <script> or style attribute, and Preact sets
+# styles through the CSSOM, so neither 'unsafe-inline' is needed. connect-src is
+# same-origin: data comes from /api/* and the /api/stream event source. Extra
+# origins must be allowed explicitly with CC_CONNECT_SRC.
 CSP_BASE = {
     "default-src": "'self'",
-    "script-src": "'self' https://cdn.jsdelivr.net",
-    "style-src": "'self' 'unsafe-inline'",
+    "script-src": "'self'",
+    "style-src": "'self'",
     "img-src": "'self' data:",
     "font-src": "'self'",
     "connect-src": "'self'",
@@ -248,6 +250,108 @@ def fetch_upstream(url: str, timeout: float = 4.0, opener=urllib.request.urlopen
     return body
 
 
+# ---- live feed (Delta Lake + Redis) and demo feed ----
+DEFAULT_MAX_STREAMS = 16
+STREAM_PING_SECONDS = 15.0
+MAX_PAGE_URL = 4096
+_TRUE = frozenset({"1", "true", "yes", "on"})
+_HUB_LOCK = threading.Lock()
+
+
+def feed_settings(env=None, args=None) -> dict:
+    """--demo/--demo-seed/--interval/--delta-path, else CC_DEMO/CC_DEMO_SEED/CC_FEED_INTERVAL/DELTA_LAKE_PATH."""
+    env = os.environ if env is None else env
+
+    def pick(attr, name):
+        value = getattr(args, attr, None) if args is not None else None
+        return value if value is not None else env.get(name)
+
+    demo = bool(getattr(args, "demo", False)) or str(env.get("CC_DEMO", "")).strip().lower() in _TRUE
+    try:
+        seed = int(pick("demo_seed", "CC_DEMO_SEED") or 7)
+    except (TypeError, ValueError):
+        raise SystemExit(f"invalid demo seed: {pick('demo_seed', 'CC_DEMO_SEED')!r}") from None
+    raw = pick("interval", "CC_FEED_INTERVAL")
+    try:
+        interval = float(raw) if raw not in (None, "") else (1.0 if demo else 2.0)
+    except (TypeError, ValueError):
+        raise SystemExit(f"invalid feed interval: {raw!r}") from None
+    if not interval > 0 or math.isinf(interval):
+        raise SystemExit(f"invalid feed interval: {raw!r}")
+    delta_path = pick("delta_path", "DELTA_LAKE_PATH") or str(DASHBOARD_DIR.parent / "data" / "delta_lake")
+    return {"demo": demo, "seed": seed, "interval": interval, "delta_path": str(delta_path)}
+
+
+def service_probe(redis_factory, keys, metrics_upstream: str, timeout: float) -> list[dict]:
+    """Redis and metrics-upstream rows for System Health. Failures are reported, never zeroed."""
+    now = time.time()
+    rows = []
+    try:
+        started = time.perf_counter()
+        client = redis_factory()
+        client.ping()
+        latency = (time.perf_counter() - started) * 1000
+        queues = queue_depths(client, keys)
+        noun = "queue" if len(queues) == 1 else "queues"
+        rows.append({"id": "redis", "label": "Redis", "status": "ok",
+                     "detail": f"{latency:.0f} ms · {len(queues)} {noun}", "checked_at": now,
+                     "data": {"latency_ms": round(latency, 1), "queues": queues}})
+    except ImportError:
+        rows.append({"id": "redis", "label": "Redis", "status": "unknown", "detail": "redis package not installed",
+                     "checked_at": now, "data": {}})
+    except Exception as e:  # refused, auth, timeout
+        rows.append({"id": "redis", "label": "Redis", "status": "down", "detail": f"Unavailable: {type(e).__name__}",
+                     "checked_at": now, "data": {}})
+    try:
+        fetch_upstream(metrics_upstream, timeout)
+        rows.append({"id": "metrics", "label": "Metrics upstream", "status": "ok", "detail": "Reachable",
+                     "checked_at": now, "data": {"url": metrics_upstream}})
+    except (OSError, ValueError, urllib.error.URLError) as e:
+        rows.append({"id": "metrics", "label": "Metrics upstream", "status": "down",
+                     "detail": f"Unreachable: {type(e).__name__}", "checked_at": now, "data": {"url": metrics_upstream}})
+    return rows
+
+
+def _ccfeed(name: str):
+    """Import one feed module lazily. Demo mode needs only the standard library; the
+    live feed brings in pyarrow/deltalake, so it is imported only when used."""
+    if str(DASHBOARD_DIR) not in sys.path:
+        sys.path.insert(0, str(DASHBOARD_DIR))
+    import importlib
+
+    return importlib.import_module(f"ccfeed.{name}")
+
+
+def json_safe(obj):
+    """NaN and Infinity become null: browsers' JSON.parse rejects them, which would
+    break a whole snapshot or tick over one bad number."""
+    if isinstance(obj, float):
+        return obj if math.isfinite(obj) else None
+    if isinstance(obj, dict):
+        return {k: json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [json_safe(v) for v in obj]
+    return obj
+
+
+def json_bytes(payload) -> bytes:
+    return json.dumps(json_safe(payload), separators=(",", ":"), allow_nan=False).encode("utf-8")
+
+
+def sse_frame(kind: str, payload) -> bytes:
+    return b"event: " + kind.encode("ascii") + b"\ndata: " + json_bytes(payload) + b"\n\n"
+
+
+def valid_page_url(url: str) -> bool:
+    if not url or len(url) > MAX_PAGE_URL or any(c.isspace() or ord(c) < 32 for c in url):
+        return False
+    try:
+        parts = urlsplit(url)
+    except ValueError:
+        return False
+    return parts.scheme in ("http", "https") and bool(parts.netloc)
+
+
 def _redis_from_env(env=None):
     """Client from REDIS_URL, else REDIS_HOST/PORT/DB/PASSWORD (short timeouts)."""
     import redis  # lazy: the static dashboard works without the package
@@ -295,6 +399,13 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
     redis_factory = staticmethod(_redis_from_env)
     queue_keys: tuple[str, ...] | None = None
     grafana_url: str | None = None
+    # Feed hub: built lazily on the first data request (tests inject hub_factory).
+    hub_factory = None
+    feed_cfg: dict | None = None
+    _hub = None
+    max_streams: int = DEFAULT_MAX_STREAMS
+    stream_ping: float = STREAM_PING_SECONDS
+    _streams: int = 0
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(self.root), **kwargs)
@@ -311,6 +422,12 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         cls.upstream_timeout = _env_float(env, "CC_UPSTREAM_TIMEOUT", 4.0) or 4.0
         cls.queue_keys = queue_keys(env)
         cls.grafana_url = grafana_base_url(env)
+        try:
+            cls.max_streams = int(env.get("CC_MAX_STREAMS", DEFAULT_MAX_STREAMS))
+        except (TypeError, ValueError):
+            raise SystemExit(f"invalid CC_MAX_STREAMS: {env.get('CC_MAX_STREAMS')!r}") from None
+        if cls.max_streams < 1:
+            raise SystemExit(f"invalid CC_MAX_STREAMS: {env.get('CC_MAX_STREAMS')!r}")
 
     def _cfg(self):
         if self.auth is None:
@@ -324,7 +441,7 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         parts = [p for p in url_path.split("?", 1)[0].split("#", 1)[0].split("/") if p]
         if not parts:
             return True
-        if any(p.startswith(".") or p in DENIED_DIRS for p in parts):
+        if any(p.startswith(".") or p in DENIED_DIRS for p in parts) or parts[-1] in DENIED_NAMES:
             return False
         return Path(parts[-1]).suffix.lower() in ALLOWED_SUFFIXES
 
@@ -387,7 +504,7 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         self.wfile.write(body)
 
     def _send_json(self, status: int, payload: dict) -> None:
-        self._send_bytes(status, json.dumps(payload).encode("utf-8"), "application/json; charset=utf-8")
+        self._send_bytes(status, json_bytes(payload), "application/json; charset=utf-8")
 
     # ---- API ----
     def _api_metrics(self) -> None:
@@ -420,7 +537,105 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             return
         self._send_json(200, {"ok": True, "queues": queues, "checked_at": time.time()})
 
+    # ---- feed API ----
+    @classmethod
+    def get_hub(cls):
+        if cls._hub is None:
+            with _HUB_LOCK:
+                if cls._hub is None:
+                    cls._hub = (cls.hub_factory or cls._default_hub)()
+        return cls._hub
+
+    @classmethod
+    def _default_hub(cls):
+        cfg = cls.feed_cfg or feed_settings()
+        if cfg["demo"]:
+            feed, probe = _ccfeed("demo").DemoFeed(seed=cfg["seed"]), None
+        else:
+            feed = _ccfeed("live").LiveFeed(cfg["delta_path"])
+            keys = cls.queue_keys if cls.queue_keys is not None else DEFAULT_QUEUE_KEYS
+            upstream = cls.metrics_upstream or DEFAULT_METRICS_UPSTREAM
+
+            def probe():
+                return service_probe(cls.redis_factory, keys, upstream, cls.upstream_timeout)
+        instance = _ccfeed("hub").Hub(feed, interval=cfg["interval"], probe=probe)
+        instance.start()
+        return instance
+
+    def _send_query(self, fn) -> None:
+        """200 with the result, 404 when the feed has no such thing, 500 if the feed failed."""
+        try:
+            result = fn(self.get_hub())
+        except Exception as e:
+            self.log_error("feed query failed: %s: %s", type(e).__name__, e)
+            self._send_json(500, {"ok": False, "error": f"feed error: {type(e).__name__}"})
+            return
+        if result is None:
+            self._send_json(404, {"ok": False, "error": "not found"})
+            return
+        self._send_json(200, result)
+
+    def _api_snapshot(self, query) -> None:
+        self._send_query(lambda hub: hub.snapshot())
+
+    def _api_url(self, query) -> None:
+        url = (query.get("u") or [""])[0]
+        if not valid_page_url(url):
+            self._send_json(400, {"ok": False, "error": "u must be an http(s) URL of at most 4096 characters"})
+            return
+        self._send_query(lambda hub: hub.url_journey(url))
+
+    def _api_explore(self, query) -> None:
+        path = [seg for seg in (query.get("path") or [""])[0].split("/") if seg]
+        self._send_query(lambda hub: hub.explore(path))
+
+    def _api_stage(self, stage_id: str) -> None:
+        self._send_query(lambda hub: hub.stage_detail(stage_id))
+
+    def _api_stream(self, query) -> None:
+        cls = type(self)
+        with _HUB_LOCK:
+            if cls._streams >= cls.max_streams:
+                full = True
+            else:
+                full = False
+                cls._streams += 1
+        if full:
+            self._send_json(503, {"ok": False, "error": "too many live streams"})
+            return
+        sub = hub = None
+        try:
+            hub = self.get_hub()
+            sub = hub.subscribe()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+            self.send_header("X-Accel-Buffering", "no")
+            self.end_headers()
+            self.wfile.write(b"retry: 3000\n\n")
+            self.wfile.flush()
+            last_write = time.monotonic()
+            while True:
+                item = sub.get(timeout=min(1.0, self.stream_ping))
+                if item is not None:
+                    self.wfile.write(sse_frame(*item))
+                elif time.monotonic() - last_write >= self.stream_ping:
+                    self.wfile.write(b": ping\n\n")
+                else:
+                    continue
+                self.wfile.flush()
+                last_write = time.monotonic()
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError, TimeoutError):
+            pass  # the browser went away; EventSource reconnects on its own
+        finally:
+            if hub is not None and sub is not None:
+                hub.unsubscribe(sub)
+            with _HUB_LOCK:
+                cls._streams -= 1
+            self.close_connection = True
+
     API_ROUTES = {"/api/metrics": "_api_metrics", "/api/health": "_api_health", "/api/queues": "_api_queues"}
+    FEED_ROUTES = {"/api/snapshot": "_api_snapshot", "/api/stream": "_api_stream", "/api/url": "_api_url",
+                   "/api/explore": "_api_explore"}
 
     def do_OPTIONS(self):
         self._cfg()
@@ -449,9 +664,16 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
     def do_GET(self):
         if not self._guard():
             return
-        route = urlsplit(self.path).path
+        parts = urlsplit(self.path)
+        route = parts.path
         if route in self.API_ROUTES:
             getattr(self, self.API_ROUTES[route])()
+            return
+        if route in self.FEED_ROUTES:
+            getattr(self, self.FEED_ROUTES[route])(parse_qs(parts.query, keep_blank_values=True))
+            return
+        if route.startswith("/api/stage/"):
+            self._api_stage(unquote(route[len("/api/stage/"):]))
             return
         if route == '/':
             self.path = '/index.html'
@@ -519,13 +741,24 @@ def make_server(host: str, port: int, handler=DashboardHandler, server_factory=D
     return server_factory((host, port), handler)
 
 
-def main(argv=None):
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Serve the Pipeline Control Center")
     parser.add_argument("--host", default=None, help=f"bind address (default: CC_HOST or {DEFAULT_HOST})")
     parser.add_argument("--port", default=None, help=f"port (default: CC_PORT or {DEFAULT_PORT})")
-    args = parser.parse_args(argv)
+    parser.add_argument("--demo", action="store_true", help="simulate a crawl instead of reading Delta Lake (CC_DEMO)")
+    parser.add_argument("--demo-seed", type=int, default=None, help="demo random seed (CC_DEMO_SEED, default 7)")
+    parser.add_argument("--delta-path", default=None,
+                        help="Delta Lake base path (DELTA_LAKE_PATH, default Scraping_project/data/delta_lake)")
+    parser.add_argument("--interval", type=float, default=None,
+                        help="seconds between feed polls (CC_FEED_INTERVAL, default 2, or 1 in demo)")
+    return parser
+
+
+def main(argv=None):
+    args = build_parser().parse_args(argv)
     host, port = resolve_bind(args.host, args.port)
     DashboardHandler.configure()
+    DashboardHandler.feed_cfg = feed_settings(os.environ, args)
     shown = "localhost" if host in ("127.0.0.1", "localhost", "::1") else (host or "0.0.0.0")
 
     print("=" * 80)
@@ -533,6 +766,8 @@ def main(argv=None):
     print("=" * 80)
     print()
     print(f"📊 Dashboard:  http://{shown}:{port}")
+    cfg = DashboardHandler.feed_cfg
+    print(f"🛰️  Feed:       {'demo (simulated crawl)' if cfg['demo'] else 'live: ' + cfg['delta_path']}")
     print(f"📈 Metrics:    /api/metrics -> {DashboardHandler.metrics_upstream}  (METRICS_UPSTREAM)")
     print(f"🔐 Auth:       {'on' if DashboardHandler.auth and DashboardHandler.auth.enabled else 'off (CC_AUTH_TOKEN / CC_BASIC_AUTH)'}")
     print(f"📉 Grafana:    {DashboardHandler.grafana_url or grafana_base_url()} (separate analytics)")
@@ -551,6 +786,7 @@ def main(argv=None):
 
     with make_server(host, port) as httpd:
         try:
+            DashboardHandler.get_hub()  # backfill and first poll now, not on the first visit
             print(f"✅ Server started on {host or '*'}:{port}")
             httpd.serve_forever()
         except KeyboardInterrupt:

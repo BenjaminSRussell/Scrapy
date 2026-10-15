@@ -1,6 +1,7 @@
-# Optional Overview smoke screenshot (#1044). Not a pixel-diff gate: fonts and
-# Chrome builds differ, so a capture failure must not fail the dashboard unit job.
-# Produces one artifact, dashboard-overview-screenshot, containing overview.png.
+# Browser smoke test of the Control Center on its demo feed (iPhone 15 and
+# desktop, light and dark): it fails on a broken layer, a missing heading or any
+# console error. Not a pixel diff (fonts and Chrome builds differ); the
+# screenshots are uploaded for review as the dashboard-screenshots artifact.
 name: CI Dashboard Visual
 
 on:
@@ -17,8 +18,7 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  overview-screenshot:
-    continue-on-error: true
+  smoke:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -31,13 +31,13 @@ jobs:
           python -m pip install --upgrade pip
           pip install 'playwright==1.55.0'
           python -m playwright install --with-deps chromium
-      - name: Capture Overview screenshot
-        run: python Scraping_project/dashboard/overview_screenshot.py --out Scraping_project/dashboard/visual/overview.png
-      - name: Upload Overview screenshot
+      - name: Smoke test (demo feed, 4 profiles)
+        run: python Scraping_project/dashboard/tools/smoke.py --out Scraping_project/dashboard/visual
+      - name: Upload screenshots
         if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: dashboard-overview-screenshot
-          path: Scraping_project/dashboard/visual/overview.png
+          name: dashboard-screenshots
+          path: Scraping_project/dashboard/visual/*.png
           if-no-files-found: warn
           retention-days: 14

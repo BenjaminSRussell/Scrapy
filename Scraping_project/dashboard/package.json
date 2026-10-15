@@ -1,0 +1,5 @@
+{
+  "private": true,
+  "type": "module",
+  "description": "Marks app/ and tests/ as ES modules for `node --test`. No dependencies; never served."
+}
