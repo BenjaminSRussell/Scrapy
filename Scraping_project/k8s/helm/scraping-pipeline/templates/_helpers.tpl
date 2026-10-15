@@ -127,6 +127,39 @@ Hard errors in any profile: configurations that cannot work.
 {{- if $resErr -}}
 {{- $errors = append $errors $resErr -}}
 {{- end -}}
+{{- if not (kindIs "slice" (.Values.networkPolicy.crawlProfiles | default (list))) -}}
+{{- $errors = append $errors "networkPolicy.crawlProfiles must be a list (#677)" -}}
+{{- else -}}
+{{- range .Values.networkPolicy.crawlProfiles | default (list) -}}
+{{- $profileName := .name | default "" | toString -}}
+{{- if not (regexMatch "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$" $profileName) -}}
+{{- $errors = append $errors (printf "networkPolicy crawl profile name %q must be a lowercase DNS label (#677)" $profileName) -}}
+{{- end -}}
+{{- if not (kindIs "slice" (.allowedDomains | default (list))) -}}
+{{- $errors = append $errors (printf "networkPolicy crawl profile %s allowedDomains must be a list of hostnames (#677)" $profileName) -}}
+{{- else -}}
+{{- range .allowedDomains | default (list) -}}
+{{- if not (regexMatch "^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$" (. | toString)) -}}
+{{- $errors = append $errors (printf "networkPolicy allowedDomain %q is not a hostname. No scheme, port, path, or wildcard. NetworkPolicy cannot match a DNS name; put resolved IPv4 CIDRs in egressCIDRs (#677)" .) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- if not (kindIs "slice" (.egressCIDRs | default (list))) -}}
+{{- $errors = append $errors (printf "networkPolicy crawl profile %s egressCIDRs must be a list of IPv4 CIDRs (#677)" $profileName) -}}
+{{- else -}}
+{{- range .egressCIDRs | default (list) -}}
+{{- if not (regexMatch "^([0-9]{1,3}\\.){3}[0-9]{1,3}/([0-9]|[1-2][0-9]|3[0-2])$" (. | toString)) -}}
+{{- $errors = append $errors (printf "networkPolicy egress CIDR %q is not an IPv4 CIDR. NetworkPolicy cannot match a DNS name (#677)" .) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- if .Values.networkPolicy.profileAllowlist -}}
+{{- if not (include "scraping-pipeline.crawlProfileEgressCIDRs" .) -}}
+{{- $errors = append $errors "networkPolicy.profileAllowlist=true but no crawlProfiles egressCIDRs are set. Resolve allowedDomains to IPv4 CIDRs first. An empty allowlist with default-deny drops every crawl. UDP/TCP 53 to kube-dns stays a separate rule and does not allow HTTP (#677)" -}}
+{{- end -}}
+{{- end -}}
 {{- join "\n" $errors -}}
 {{- end }}
 
@@ -225,5 +258,23 @@ NetworkPolicy cannot select a DNS name (#216).
   - protocol: TCP
     port: {{ $port }}
 {{- end -}}
+{{- end -}}
+
+{{/*
+#677: unique IPv4 CIDRs from networkPolicy.crawlProfiles, one per line.
+Empty when none are set. Hostnames are not accepted.
+*/}}
+{{- define "scraping-pipeline.crawlProfileEgressCIDRs" -}}
+{{- $cidrs := list -}}
+{{- range .Values.networkPolicy.crawlProfiles | default (list) -}}
+{{- if kindIs "slice" (.egressCIDRs | default (list)) -}}
+{{- range .egressCIDRs | default (list) -}}
+{{- if and . (not (has . $cidrs)) -}}
+{{- $cidrs = append $cidrs . -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- join "\n" $cidrs -}}
 {{- end -}}
 

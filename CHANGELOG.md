@@ -94,6 +94,7 @@ renamed to the new version and date (see the release checklist).
 
 ### Security
 - Production Helm overlay turns on default-deny NetworkPolicies for Redis, Kafka, Postgres and the scrapers. The delta ingestor may dial Redis, and Grafana may install the Redis datasource plugin over public HTTPS (same private and link-local exclusions as scrape egress; the plugin is not baked into the image). Alertmanager external receivers stay closed. `networkPolicy.breakGlass` is the debug override and must not stay on (#190).
+- Helm can limit scraper and stage-worker public egress to IPv4 CIDRs taken from `networkPolicy.crawlProfiles` when `networkPolicy.profileAllowlist` is true. Hostnames such as `uconn.edu` are annotations only, because a NetworkPolicy cannot match a DNS name; UDP/TCP 53 to kube-dns stays required and is not HTTP. The default stays the coarse public TCP 80/443 rule. A break-glass policy annotated `scraping-pipeline/break-glass=true` matches only a pod labeled `scraping-pipeline/network-break-glass=true` (#677).
 - Compose reads the Postgres superuser password from `POSTGRES_PASSWORD` (local default `postgres`), and SECURITY.md covers secret handling and rotation (#482).
 - `cli.py setup` downloads the revisions pinned in `models.lock.json` and fails closed on a missing file, a size mismatch, or a digest mismatch (#486).
 - Redis uses `volatile-lru` so seen-sets and queues are never LRU-evicted, and logs an error on `allkeys-*` servers.

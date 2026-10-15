@@ -16,4 +16,10 @@ WARNING: not production-safe (fine for local clusters; profile=production would 
 {{- if .Values.networkPolicy.breakGlass }}
 
 WARNING: networkPolicy.breakGlass is on (#190). No NetworkPolicies are rendered, so Redis, Kafka and Postgres accept traffic from any pod. Turn breakGlass off when debugging is done. kubectl port-forward does not need it.
+{{- else if and .Values.networkPolicy.enabled .Values.networkPolicy.profileAllowlist }}
+
+Crawl egress is limited to networkPolicy.crawlProfiles egressCIDRs (#677). allowedDomains are not selectors. Pods still need UDP/TCP 53 to kube-dns. The break-glass annotation scraping-pipeline/break-glass=true matches only a pod labeled scraping-pipeline/network-break-glass=true.
+{{- else if .Values.networkPolicy.enabled }}
+
+Crawl egress is still public TCP/80 and TCP/443 except networkPolicy.scrapeExcept (#190). Set networkPolicy.profileAllowlist=true with resolved IPv4 CIDRs so workers do not reach arbitrary public IPs (#677). DNS to kube-dns stays required. Break-glass for one pod is the label scraping-pipeline/network-break-glass=true.
 {{- end }}
