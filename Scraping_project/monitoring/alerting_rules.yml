@@ -462,6 +462,22 @@ groups:
           impact: "Low - Large documents are not analysed or summarized"
           action: "Check which hosts serve them (worker logs: 'Skipping oversized'); raise stage2.max_body_bytes / STAGE4_PDF_MAX_BYTES only if disk allows"
 
+      # #653: pending rows above the per-replica scale target, and the workers
+      # exporting the gauge have not grown enough to cover them. CPU can stay
+      # under the HPA target the whole time. 100 is
+      # stage2Worker.autoscaling.queue.targetPendingPerReplica. Not an SLO.
+      - alert: Stage2QueuePendingWithoutScale
+        expr: max(stage2_queue_pending) > count(stage2_queue_pending) * 100
+        for: 10m
+        labels:
+          severity: warning
+          component: stage2
+        annotations:
+          summary: "Stage 2 queue is above the per-replica scale target and workers have not scaled"
+          description: "max(stage2_queue_pending) is {{ $value }}, more than 100 pending rows for each Stage 2 worker exporting the gauge. CPU utilization can stay under the HPA target while this grows."
+          impact: "Medium - Page analysis lags while CPU looks fine"
+          action: "Enable stage2Worker.autoscaling.queue (prometheus-adapter external metric) or the KEDA ScaledObject via values-stage2-queue-hpa.example.yaml. If replicas are already at maxReplicas, raise maxReplicas."
+
   # ============================================
   # Infrastructure Alerts
   # ============================================

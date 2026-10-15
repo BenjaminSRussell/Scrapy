@@ -1,0 +1,37 @@
+# Stage 2 queue-depth scaling example (#653).
+#
+# CPU and memory targets in values.yaml stay. This overlay adds an External
+# metric so pending stage2_queue rows scale the worker when CPU looks fine.
+#
+#   helm upgrade --install scraping-pipeline k8s/helm/scraping-pipeline \
+#     -n scraping-pipeline \
+#     -f k8s/helm/scraping-pipeline/values-stage2-queue-hpa.example.yaml
+#
+# Requires an external.metrics.k8s.io provider. Merge
+# examples/prometheus-adapter-stage2-queue.yaml into the live
+# prometheus-adapter config (applying that file alone does not publish the
+# metric). The series is the unlabeled gauge stage2_queue_pending from each
+# Stage 2 pod (workerMetrics port). HPA target type is Value, not
+# AverageValue: every pod reports the same table depth, so an average would
+# multiply replicas on every sync.
+#
+#   desiredReplicas = ceil(max(stage2_queue_pending) / targetPendingPerReplica)
+#
+# Prometheus query ingress in this chart allows Grafana only. Allow the
+# adapter (or KEDA) to query Prometheus before expecting a scale event.
+#
+# Do not also set keda.enabled. The alternate renders
+# templates/stage2-keda-scaledobject.yaml and skips the Stage 2 HPA:
+#
+# stage2Worker:
+#   autoscaling:
+#     keda:
+#       enabled: true
+#       prometheusServerAddress: ""  # chart Prometheus Service
+
+stage2Worker:
+  autoscaling:
+    queue:
+      enabled: true
+      metricName: stage2_queue_pending
+      targetPendingPerReplica: 100

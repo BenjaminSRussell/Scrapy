@@ -408,6 +408,20 @@ stage2Worker:
     targetMemoryUtilizationPercentage: 75
     scaleUpStabilizationWindowSeconds: 60
     scaleDownStabilizationWindowSeconds: 300
+    # Pending stage2_queue rows (#653). CPU and memory stay. Off until an
+    # external.metrics.k8s.io provider publishes metricName. Overlay:
+    # values-stage2-queue-hpa.example.yaml.
+    # desiredReplicas = ceil(max(stage2_queue_pending) / targetPendingPerReplica).
+    # Alert Stage2QueuePendingWithoutScale uses this same per-replica number.
+    queue:
+      enabled: false
+      metricName: stage2_queue_pending
+      targetPendingPerReplica: 100
+    # KEDA ScaledObject instead of the external metric. Skips the Stage 2 HPA.
+    # Do not enable queue and keda together.
+    keda:
+      enabled: false
+      prometheusServerAddress: ""  # empty: this chart's Prometheus Service
 
 stage3Worker:
   enabled: true

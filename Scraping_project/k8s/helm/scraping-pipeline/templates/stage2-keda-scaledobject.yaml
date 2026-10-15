@@ -1,0 +1,32 @@
+{{- if and .Values.stage2Worker.enabled (eq (include "scraping-pipeline.stage2QueueScaleMode" .) "keda") }}
+# #653: KEDA owns Stage 2 replicas (CPU plus stage2_queue_pending). The chart
+# HPA for Stage 2 is not rendered in this mode. Query ingress on Prometheus
+# allows Grafana only; allow this client before expecting the trigger to fire.
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: {{ include "scraping-pipeline.fullname" . }}-stage2
+  labels:
+    {{- include "scraping-pipeline.labels" . | nindent 4 }}
+    app.kubernetes.io/component: stage2
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "scraping-pipeline.fullname" . }}-stage2
+  minReplicaCount: {{ .Values.stage2Worker.autoscaling.minReplicas }}
+  maxReplicaCount: {{ .Values.stage2Worker.autoscaling.maxReplicas }}
+  pollingInterval: 30
+  cooldownPeriod: {{ .Values.stage2Worker.autoscaling.scaleDownStabilizationWindowSeconds | default 300 }}
+  triggers:
+  - type: cpu
+    metricType: Utilization
+    metadata:
+      value: {{ .Values.stage2Worker.autoscaling.targetCPUUtilizationPercentage | quote }}
+  - type: prometheus
+    metadata:
+      serverAddress: {{ include "scraping-pipeline.stage2KedaPrometheus" . | quote }}
+      metricName: {{ .Values.stage2Worker.autoscaling.queue.metricName | default "stage2_queue_pending" | quote }}
+      query: {{ printf "max(%s)" (.Values.stage2Worker.autoscaling.queue.metricName | default "stage2_queue_pending") | quote }}
+      threshold: {{ .Values.stage2Worker.autoscaling.queue.targetPendingPerReplica | default 100 | quote }}
+{{- end }}

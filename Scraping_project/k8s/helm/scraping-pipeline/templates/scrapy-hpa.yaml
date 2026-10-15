@@ -1,3 +1,4 @@
+{{- $stage2ScaleMode := include "scraping-pipeline.stage2QueueScaleMode" . }}
 {{- if and .Values.scrapyApp.enabled .Values.scrapyApp.autoscaling.enabled }}
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
@@ -51,7 +52,7 @@ spec:
       selectPolicy: Max
 {{- end }}
 
-{{- if and .Values.stage2Worker.enabled .Values.stage2Worker.autoscaling.enabled }}
+{{- if and .Values.stage2Worker.enabled .Values.stage2Worker.autoscaling.enabled (ne $stage2ScaleMode "keda") }}
 ---
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
@@ -81,6 +82,17 @@ spec:
       target:
         type: Utilization
         averageUtilization: {{ .Values.stage2Worker.autoscaling.targetMemoryUtilizationPercentage }}
+  {{- end }}
+  {{- if eq $stage2ScaleMode "queue" }}
+  # #653: absolute pending rows, not an average. Each pod exports the same
+  # stage2_queue_pending gauge, so AverageValue would multiply replicas.
+  - type: External
+    external:
+      metric:
+        name: {{ .Values.stage2Worker.autoscaling.queue.metricName | default "stage2_queue_pending" }}
+      target:
+        type: Value
+        value: {{ .Values.stage2Worker.autoscaling.queue.targetPendingPerReplica | default 100 | quote }}
   {{- end }}
   behavior:
     scaleDown:

@@ -1,0 +1,22 @@
+# Merge into the cluster prometheus-adapter ConfigMap (#653).
+# This chart does not install the adapter. Applying this ConfigMap by itself
+# does not publish a metric; the adapter only reads its own config volume.
+#
+# Publishes external metric stage2_queue_pending = max(stage2_queue_pending)
+# for the Stage 2 HPA target (type Value). The gauge has no namespace label.
+# If the adapter only returns series that carry one, add namespace via a
+# Prometheus metric_relabel on the stage2_worker scrape.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-adapter-stage2-queue-example
+  labels:
+    app.kubernetes.io/component: example
+    scrapy.uconn.edu/example: stage2-queue-hpa
+data:
+  config.yaml: |
+    externalRules:
+    - seriesQuery: 'stage2_queue_pending'
+      metricsQuery: max(stage2_queue_pending)
+      name:
+        as: stage2_queue_pending

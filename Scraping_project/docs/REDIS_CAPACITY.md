@@ -127,7 +127,7 @@ The Helm chart is the supported install (`DEPLOYMENT.md`). Its current defaults 
 | `stage4Worker` | 1 | none (`enabled: false`; scale with `replicaCount`) |
 | Redis | 1 | none. Production does not run this pod. |
 
-HPA in `templates/scrapy-hpa.yaml` scales on CPU and memory utilization. It does not scale on `redis_queue_length`. `QueueBacklog` tells a person to scale the consuming stage or look for a stall. Raising replicas does not raise Redis `maxmemory`. One Redis (chart replica 1, or the single external primary) holds every seen-set and the JS queue.
+HPA in `templates/scrapy-hpa.yaml` scales on CPU and memory utilization. It does not scale on `redis_queue_length`. Stage 2 can also scale on the Prometheus gauge `stage2_queue_pending` (external metric or the KEDA example in `values-stage2-queue-hpa.example.yaml`, #653). That gauge is the Delta `stage2_queue` pending count, not `redis_queue_length`. `QueueBacklog` tells a person to scale the consuming stage or look for a stall. Raising replicas does not raise Redis `maxmemory`. One Redis (chart replica 1, or the single external primary) holds every seen-set and the JS queue.
 
 `scrapyApp.env.SCOUT_INSTANCES` is `"8"`. That is a configured env value, not a measured replica requirement.
 

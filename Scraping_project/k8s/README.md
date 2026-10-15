@@ -126,6 +126,16 @@ scrapyApp:
 stage2Worker:
   replicaCount: 5
 
+# Queue depth as well as CPU (#653). CPU stays. Pending stage2_queue rows
+# are the gauge stage2_queue_pending (one value per worker pod, same table).
+# desiredReplicas = ceil(max(stage2_queue_pending) / targetPendingPerReplica).
+# helm upgrade --install ... -f helm/scraping-pipeline/values-stage2-queue-hpa.example.yaml
+# Needs prometheus-adapter: merge helm/scraping-pipeline/examples/prometheus-adapter-stage2-queue.yaml
+# into the adapter config. KEDA is the other switch (stage2Worker.autoscaling.keda.enabled);
+# do not enable both. Prometheus query ingress allows Grafana only, so allow
+# the adapter or KEDA to query Prometheus. Alert Stage2QueuePendingWithoutScale
+# fires when pending stays above 100 rows per reporting worker for 10m.
+
 # Resource scaling
 scrapyApp:
   resources:

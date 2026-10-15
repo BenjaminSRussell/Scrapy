@@ -232,3 +232,48 @@ tests:
               description: "1 Stage 2 runs in 30m failed to read stage2_queue and exited without work."
               impact: "High - Stage 2 is stalled while looking idle"
               action: "Check Delta storage access and the stage2_queue table (worker logs: 'Could not read stage2_queue')"
+  # #653: pending above 100 per reporting worker, held 10m, alerts. Enough
+  # workers for that depth does not. Below the per-replica target does not.
+  - interval: 1m
+    input_series:
+      - series: 'stage2_queue_pending{pod="a"}'
+        values: '250x30'
+      - series: 'stage2_queue_pending{pod="b"}'
+        values: '250x30'
+    alert_rule_test:
+      - eval_time: 9m
+        alertname: Stage2QueuePendingWithoutScale
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: Stage2QueuePendingWithoutScale
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              component: stage2
+            exp_annotations:
+              summary: "Stage 2 queue is above the per-replica scale target and workers have not scaled"
+              description: "max(stage2_queue_pending) is 250, more than 100 pending rows for each Stage 2 worker exporting the gauge. CPU utilization can stay under the HPA target while this grows."
+              impact: "Medium - Page analysis lags while CPU looks fine"
+              action: "Enable stage2Worker.autoscaling.queue (prometheus-adapter external metric) or the KEDA ScaledObject via values-stage2-queue-hpa.example.yaml. If replicas are already at maxReplicas, raise maxReplicas."
+  - interval: 1m
+    input_series:
+      - series: 'stage2_queue_pending{pod="a"}'
+        values: '250x30'
+      - series: 'stage2_queue_pending{pod="b"}'
+        values: '250x30'
+      - series: 'stage2_queue_pending{pod="c"}'
+        values: '250x30'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: Stage2QueuePendingWithoutScale
+        exp_alerts: []
+  - interval: 1m
+    input_series:
+      - series: 'stage2_queue_pending{pod="a"}'
+        values: '80x30'
+      - series: 'stage2_queue_pending{pod="b"}'
+        values: '80x30'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: Stage2QueuePendingWithoutScale
+        exp_alerts: []

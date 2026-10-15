@@ -180,3 +180,36 @@ NetworkPolicy cannot select a DNS name (#216).
 {{- end -}}
 {{- end -}}
 
+{{/*
+#653: how Stage 2 adds queue depth to the CPU HPA.
+Returns "queue" (external metric on the chart HPA), "keda" (ScaledObject; chart
+HPA for Stage 2 is skipped), or empty. Both at once is a render error.
+*/}}
+{{- define "scraping-pipeline.stage2QueueScaleMode" -}}
+{{- $auto := .Values.stage2Worker.autoscaling | default dict -}}
+{{- $queue := dict -}}
+{{- if hasKey $auto "queue" }}{{- $queue = $auto.queue }}{{- end -}}
+{{- $keda := dict -}}
+{{- if hasKey $auto "keda" }}{{- $keda = $auto.keda }}{{- end -}}
+{{- if and $queue.enabled $keda.enabled -}}
+{{- fail "stage2Worker.autoscaling.queue.enabled and keda.enabled both scale on stage2_queue_pending; enable only one (#653)" -}}
+{{- else if $keda.enabled -}}keda
+{{- else if $queue.enabled -}}queue
+{{- end -}}
+{{- end -}}
+
+{{/*
+Prometheus base URL for the Stage 2 KEDA trigger. Empty
+keda.prometheusServerAddress uses this chart's Prometheus Service (port 9100).
+*/}}
+{{- define "scraping-pipeline.stage2KedaPrometheus" -}}
+{{- $auto := .Values.stage2Worker.autoscaling | default dict -}}
+{{- $keda := dict -}}
+{{- if hasKey $auto "keda" }}{{- $keda = $auto.keda }}{{- end -}}
+{{- if $keda.prometheusServerAddress -}}
+{{- $keda.prometheusServerAddress -}}
+{{- else -}}
+{{- printf "http://%s-prometheus:%v" (include "scraping-pipeline.fullname" .) (.Values.prometheus.service.port | int) -}}
+{{- end -}}
+{{- end -}}
+

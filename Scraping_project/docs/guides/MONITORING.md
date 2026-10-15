@@ -27,13 +27,13 @@ The "Unified Dashboard" (`monitoring/dashboards/unified_dashboard.json`) adds Ka
 
 ## Alerts
 
-`alerting_rules.yml` has 44 rules in 9 groups:
+`alerting_rules.yml` has 45 rules in 9 groups:
 
 - `kafka_infrastructure`: broker and controller health, under-replicated or offline partitions, consumer lag (`KafkaHighConsumerLag`, `KafkaVeryHighConsumerLag`, `KafkaConsumerLagSLO`).
 - `scrapy_application`: `ScrapyAppDown`, no items scraped, error rate, item drops, slow responses, blocked.
 - `kafka_pipeline`: Kafka → Delta ingest health, write failures, and `KafkaPoisonMessageRate` (DLQ rate above 0.1/s for 5 minutes; not an SLO).
 - `delta_lakehouse_writes`: `DeltaWriteFailuresSustained`, `DeltaWriteQueueSaturated`, `DeltaWriteQueueBacklog`, `DeltaUndomainableRows`.
-- `stage2_queue`: Stage 2 starved while Stage 1 is active, unreadable queue.
+- `stage2_queue`: Stage 2 starved while Stage 1 is active, unreadable queue, and `Stage2QueuePendingWithoutScale` (pending rows above 100 per reporting worker for 10m, so the queue grew while CPU-based HPA did not add pods). Not an SLO. Queue scaling: [k8s/README.md](../../k8s/README.md#scaling).
 - `infrastructure`: Redis and Postgres up/memory/pool, soft-ban spike, metrics sink failing.
 - `monitoring`: Prometheus storage and scrape failures.
 - `data_quality`: throughput drop, open circuit breakers, low Delta writes, pipeline error rate, queue backlog.
