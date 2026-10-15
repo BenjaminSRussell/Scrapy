@@ -49,7 +49,7 @@ second). The smoke suite is a quick PR signal, not a replacement for the CI sele
 | `observability/` | Prometheus config, alert rules and metric-name checks (offline) |
 | `performance/` | Load/stress benchmarks (`performance` + `slow`; `make test-perf`) |
 | `retry/`, `test_*.py` | Retry/circuit breaker, cache, models, Redis smoke |
-| `fixtures/` | Data fixtures; `fixtures/html/` holds HTML page snapshots for spiders (#273) |
+| `fixtures/` | Data fixtures; `fixtures/html/` holds HTML page snapshots for spiders (#273). rustmapper JSONL ↔ SeedManager fixtures are [`fixtures/rustmapper_seed/`](fixtures/rustmapper_seed/) (#936) |
 | `factories.py` | Record builders for Stage 1–4 rows (#275) |
 | `flaky_policy.py` | Flaky-test quarantine rules (#288) |
 | `conftest.py` | Shared fixtures: `redis_clean` (FakeRedis), `delta_sandbox`, `postgres_clean`, `http_server`, … |

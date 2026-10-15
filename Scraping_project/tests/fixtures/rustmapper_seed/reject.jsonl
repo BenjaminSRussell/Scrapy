@@ -1,0 +1,5 @@
+{"url":"ftp://files.uconn.edu/a.pdf","depth":0,"status_code":200,"content_length":10,"title":"Files","link_count":0}
+{"url":"","depth":1,"status_code":200,"content_length":0,"title":"","link_count":0}
+{"url":"javascript:alert(1)","depth":2,"status_code":0,"content_length":0,"title":"script","link_count":0}
+{"url":"https://","depth":0,"status_code":200,"content_length":1,"title":"no host","link_count":0}
+{"url":"https://uconn.edu/a b","depth":0,"status_code":404,"content_length":0,"title":"space","link_count":1}

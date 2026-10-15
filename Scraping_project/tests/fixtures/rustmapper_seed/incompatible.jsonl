@@ -1,0 +1,9 @@
+{"url":"https://uconn.edu/about","depth":0,"status_code":200,"content_length":1024,"title":"About UConn","link_count":5,"priority":1}
+{"url":"https://uconn.edu/about","depth":"zero","status_code":200,"content_length":1024,"title":"About UConn","link_count":5}
+{"url":1,"depth":0,"status_code":200,"content_length":1024,"title":"About UConn","link_count":5}
+{"depth":0,"status_code":200,"content_length":1024,"title":"About UConn","link_count":5}
+{"url":"https://uconn.edu/about","depth":0,"status_code":200.5,"content_length":1024,"title":"About UConn","link_count":5}
+{"url":"https://uconn.edu/about","depth":0,"status_code":200,"content_length":1024,"title":null,"link_count":5}
+{"url":"https://uconn.edu/about","depth":true,"status_code":200,"content_length":1024,"title":"About UConn","link_count":5}
+{"url":"https://uconn.edu/about","depth":0,"status_code":70000,"content_length":1024,"title":"About UConn","link_count":5}
+{"url":"https://uconn.edu/about","depth":0,"status_code":200,"content_length":1024,"title":"About UConn","link_count":-1}

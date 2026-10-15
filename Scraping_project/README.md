@@ -637,6 +637,17 @@ pytest tests/test_models.py -v
 pytest tests/test_retry.py -v
 ```
 
+### rustmapper JSONL contract (#936)
+
+Fixtures: [tests/fixtures/rustmapper_seed/](tests/fixtures/rustmapper_seed/).
+`accept.jsonl` is what SeedManager inserts (`source_spider=rustmapper`).
+`reject.jsonl` is the same six-field shape, but SeedManager rejects the URL.
+`incompatible.jsonl` (unknown field, missing field, or wrong JSON type) fails
+`tests/contract/test_rustmapper_seed_contract.py` and `cargo test` in
+`rustmapper_contract/`. CI runs both sides
+(`.github/workflows/ci-rustmapper-contract.yml`). The pytest also runs in the
+default suite.
+
 ### Test Results
 
 Current test status:

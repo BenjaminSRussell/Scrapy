@@ -1,0 +1,73 @@
+name: rustmapper JSONL contract
+
+on:
+  pull_request:
+    paths:
+      - 'Scraping_project/rustmapper_contract/**'
+      - 'Scraping_project/src/stage1/rustmapper_contract.py'
+      - 'Scraping_project/src/lakehouse/seed_manager.py'
+      - 'Scraping_project/tests/contract/test_rustmapper_seed_contract.py'
+      - 'Scraping_project/tests/fixtures/rustmapper_seed/**'
+      - '.github/workflows/ci-rustmapper-contract.yml'
+  push:
+    branches: [ main ]
+    paths:
+      - 'Scraping_project/rustmapper_contract/**'
+      - 'Scraping_project/src/stage1/rustmapper_contract.py'
+      - 'Scraping_project/src/lakehouse/seed_manager.py'
+      - 'Scraping_project/tests/contract/test_rustmapper_seed_contract.py'
+      - 'Scraping_project/tests/fixtures/rustmapper_seed/**'
+      - '.github/workflows/ci-rustmapper-contract.yml'
+
+# Both sides of the rustmapper JSONL ↔ SeedManager contract (#936).
+# The pytest also runs in the default suite (main.yml). This workflow runs
+# that pytest and `cargo test` when the contract, the fixtures, or SeedManager
+# change. See main.yml for the concurrency rationale.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: |
+            Scraping_project/requirements.txt
+            Scraping_project/dev-requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r Scraping_project/requirements.txt
+          pip install -r Scraping_project/dev-requirements.txt
+
+      - name: Pytest SeedManager accept/reject
+        working-directory: Scraping_project
+        env:
+          CI: "true"
+          OBS_OFFLINE: "1"
+        run: |
+          python -m pytest tests/contract/test_rustmapper_seed_contract.py \
+            -o addopts= --strict-markers -q --tb=short -p no:cacheprovider
+
+  rust:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v7
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cargo test emits the fixture shapes
+        run: cargo test --manifest-path Scraping_project/rustmapper_contract/Cargo.toml --locked

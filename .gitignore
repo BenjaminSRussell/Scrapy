@@ -206,6 +206,8 @@ yarn-error.log*
 !Scraping_project/scripts/fixtures/anomaly/*.json
 # Cross-repo Delta contracts (#1099). Hand-written schemas, not generated data.
 !docs/contracts/*.json
+# rustmapper JSONL ↔ SeedManager contract fixtures (#936). Hand-written, not crawl output.
+!Scraping_project/tests/fixtures/rustmapper_seed/*.jsonl
 
 # ====================================
 # Jupyter Notebook
