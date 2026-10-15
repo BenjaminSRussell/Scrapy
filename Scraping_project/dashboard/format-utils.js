@@ -519,9 +519,10 @@
         const v = Number(value);
         return REFRESH_INTERVAL_CHOICES.includes(v) ? v : fallback;
     }
-    // #952/#1010: keyboard shortcuts. Digits 1..N pick the Nth visible tab, R
-    // refreshes. Ignored with modifier keys, during IME composition, or while
-    // typing in a form field / contenteditable.
+    // #952/#1010/#1008: keyboard shortcuts. Digits 1..N pick the Nth visible tab,
+    // R refreshes, ? opens the shortcut map, Escape closes it. Ignored with
+    // modifier keys, during IME composition, or while typing in a form field /
+    // contenteditable (so ? inside an input does not open the map).
     function shortcutAction(event, tabNames) {
         if (!event || event.defaultPrevented || event.isComposing) return null;
         if (event.ctrlKey || event.metaKey || event.altKey) return null;
@@ -534,7 +535,22 @@
             return tab ? { type: 'tab', tab } : null;
         }
         if (key === 'r' || key === 'R') return { type: 'refresh' };
+        if (key === '?') return { type: 'help' };
+        if (key === 'Escape' || key === 'Esc') return { type: 'dismiss' };
         return null;
+    }
+    // #1008: rows for the ? overlay. Tab digits follow the visible tab count
+    // (same 1..9 cap as shortcutHintText). `keys` is a display label.
+    function shortcutMapEntries(tabCount) {
+        const n = Math.min(Math.max(0, Number(tabCount) || 0), 9);
+        const rows = [];
+        if (n > 0) {
+            rows.push({ keys: n === 1 ? '1' : '1\u2013' + n, action: 'Switch tabs' });
+        }
+        rows.push({ keys: 'R', action: 'Refresh metrics' });
+        rows.push({ keys: '?', action: 'Show this shortcut list' });
+        rows.push({ keys: 'Esc', action: 'Close this dialog' });
+        return rows;
     }
     // #1034: a deep link (?tab= / #tab) wins; otherwise the remembered tab if it
     // still exists; otherwise null (keep the default tab).
@@ -626,11 +642,12 @@
         if (n === 0) return `No activity matches "${q}".`;
         return `Showing ${n} of ${t}`;
     }
-    // #503: on-screen hint text for the digit shortcuts.
+    // #503/#1008: on-screen hint. The trailing "? list" is how the map is found.
     function shortcutHintText(tabCount) {
         const n = Math.min(Math.max(0, Number(tabCount) || 0), 9);
-        if (n === 0) return 'Shortcut: R refresh';
-        return `Shortcuts: ${n === 1 ? '1' : '1\u2013' + n} switch tabs \u00b7 R refresh`;
+        const tail = ' \u00b7 ? list';
+        if (n === 0) return 'Shortcut: R refresh' + tail;
+        return `Shortcuts: ${n === 1 ? '1' : '1\u2013' + n} switch tabs \u00b7 R refresh` + tail;
     }
     // #153: WAI-ARIA tabs keyboard model. Index of the tab to focus/select for
     // `key` from `index` among `count` tabs (wrapping), or null if not a tab key.
@@ -1345,5 +1362,5 @@
         return sampled;
     }
 
-    return { tabKeyTarget, staleState, queueDepthRows, metricsFailureActivity, shortcutHintText, parseMetrics, metricSeriesCount, METRICS_FLOOD_DEFAULTS, metricsFloodLimits, advanceMetricsFlood, metricsFloodBannerText, ratePerMinute, resolveMetricsUrl, metricsEndpoint, metricsEndpointLabel, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler, stageActivity, stageDrilldown, stageDrilldownKey, doughnutLegendLayout, connectionState, documentTitle, createActivityAnnouncer, metricsUrlProblem, splitLinks, createMetricsFetcher, REFRESH_INTERVAL_CHOICES, parseRefreshInterval, shortcutAction, pickInitialTab, METRIC_UI_MAP, renderMetricNameMap, parseDangerSoundEnabled, dangerSoundDecision, HEALTH_HISTORY_LIMIT, pushPollOutcome, healthHistoryView, COMPARISON_BASELINE_ROLE, PREV_HOUR_AVG_KEYS, readPrevHourAverage, comparisonBaselineSeries, comparisonNote, ACTIVITY_LOG_CAP, capActivityLog, activityStaleNote, restoreActivityLog, topScrapeTargets, SCRAPE_TARGET_EMPTY, ACTIVITY_LEVELS, activityLevelCounts, filterActivityItems, filterActivityMessages, activityFilterStatus, toggleActivityLevel, HISTORY_MAX_POINTS, HISTORY_RAW_POINTS, assertHistoryBound, boundHistoryBuffer, pushHistorySample, enforceHistoryCap, downsampleIndices, grafanaHomeUrl, jobStartedPresentation, DEFAULT_ACCENT, parseAccentColor, accentInk, accentBorder, accentCssVars };
+    return { tabKeyTarget, staleState, queueDepthRows, metricsFailureActivity, shortcutHintText, shortcutMapEntries, parseMetrics, metricSeriesCount, METRICS_FLOOD_DEFAULTS, metricsFloodLimits, advanceMetricsFlood, metricsFloodBannerText, ratePerMinute, resolveMetricsUrl, metricsEndpoint, metricsEndpointLabel, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler, stageActivity, stageDrilldown, stageDrilldownKey, doughnutLegendLayout, connectionState, documentTitle, createActivityAnnouncer, metricsUrlProblem, splitLinks, createMetricsFetcher, REFRESH_INTERVAL_CHOICES, parseRefreshInterval, shortcutAction, pickInitialTab, METRIC_UI_MAP, renderMetricNameMap, parseDangerSoundEnabled, dangerSoundDecision, HEALTH_HISTORY_LIMIT, pushPollOutcome, healthHistoryView, COMPARISON_BASELINE_ROLE, PREV_HOUR_AVG_KEYS, readPrevHourAverage, comparisonBaselineSeries, comparisonNote, ACTIVITY_LOG_CAP, capActivityLog, activityStaleNote, restoreActivityLog, topScrapeTargets, SCRAPE_TARGET_EMPTY, ACTIVITY_LEVELS, activityLevelCounts, filterActivityItems, filterActivityMessages, activityFilterStatus, toggleActivityLevel, HISTORY_MAX_POINTS, HISTORY_RAW_POINTS, assertHistoryBound, boundHistoryBuffer, pushHistorySample, enforceHistoryCap, downsampleIndices, grafanaHomeUrl, jobStartedPresentation, DEFAULT_ACCENT, parseAccentColor, accentInk, accentBorder, accentCssVars };
 });

@@ -513,6 +513,54 @@
             color: var(--gray-600, #4b5563);
         }
 
+        /* #1008: ? opens this dialog; Esc (and Close) dismiss it. margin:auto
+           recenters it — the universal margin reset beats the UA dialog rule. */
+        .shortcut-map {
+            margin: auto;
+            padding: 1.25rem 1.5rem;
+            border: 1px solid var(--gray-300);
+            border-radius: 0.5rem;
+            max-width: 28rem;
+            width: calc(100vw - 2rem);
+            background: #fff;
+            color: var(--gray-900);
+            box-shadow: 0 12px 40px rgba(17, 24, 39, 0.28);
+        }
+        .shortcut-map::backdrop {
+            background: rgba(17, 24, 39, 0.55);
+        }
+        .shortcut-map-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 1rem;
+            margin-bottom: 0.75rem;
+        }
+        .shortcut-map-head h2 {
+            font-size: 1.1rem;
+            font-weight: 700;
+        }
+        .shortcut-map-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        .shortcut-map-table th,
+        .shortcut-map-table td {
+            text-align: left;
+            padding: 0.45rem 0.25rem;
+            border-bottom: 1px solid var(--gray-200);
+            font-size: 0.95rem;
+        }
+        .shortcut-map-table kbd {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+            background: var(--gray-100);
+            border: 1px solid var(--gray-300);
+            border-radius: 0.25rem;
+            padding: 0.1rem 0.45rem;
+            font-size: 0.85rem;
+            color: var(--gray-900);
+        }
+
         @media (pointer: coarse) {
             .shortcut-hint { display: none; }
         }
@@ -831,7 +879,8 @@
             .activity-chip,
             .activity-search,
             #clear-activity-search,
-            .refresh-bar .accent-color {
+            .refresh-bar .accent-color,
+            .shortcut-map .btn {
                 min-height: 44px;
                 min-width: 44px;
             }
@@ -1108,6 +1157,10 @@
             }
             .card-badge,
             .status-indicator {
+                border: 1px solid CanvasText;
+            }
+            .shortcut-map,
+            .shortcut-map kbd {
                 border: 1px solid CanvasText;
             }
             .status-dot {
@@ -1458,7 +1511,7 @@
                 <button type="button" class="tab-button" data-tab="system" role="tab" id="tabbtn-system" aria-controls="tab-system" aria-selected="false" tabindex="-1"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 0 0-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 0 0-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 0 0-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 0 0-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 0 0 1.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><circle cx="12" cy="12" r="3"/></svg> System Health</button>
                 <button type="button" class="tab-button" data-tab="activity" role="tab" id="tabbtn-activity" aria-controls="tab-activity" aria-selected="false" tabindex="-1"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg> Activity Log</button>
             </div></nav>
-            <p class="shortcut-hint" id="shortcut-hint">Shortcuts: 1–5 switch tabs · R refresh</p>
+            <p class="shortcut-hint" id="shortcut-hint">Shortcuts: 1–5 switch tabs · R refresh · ? list</p>
 
             <!-- Overview Tab -->
             <div class="tab-content active" id="tab-overview" role="tabpanel" aria-labelledby="tabbtn-overview" tabindex="0">
@@ -2029,6 +2082,17 @@
             </div>
         </div>
     </main>
+
+    <dialog id="shortcut-map" class="shortcut-map" aria-labelledby="shortcut-map-title">
+        <div class="shortcut-map-head">
+            <h2 id="shortcut-map-title">Keyboard shortcuts</h2>
+            <button type="button" class="btn" id="shortcut-map-close">Close</button>
+        </div>
+        <table class="shortcut-map-table">
+            <caption class="visually-hidden">Keyboard shortcuts</caption>
+            <tbody id="shortcut-map-rows"></tbody>
+        </table>
+    </dialog>
 
     <script src="features.js"></script>
     <script src="format-utils.js"></script>
