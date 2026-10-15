@@ -1077,6 +1077,53 @@
         const items = capActivityLog(parsed, cap);
         return { items, staleNote: activityStaleNote(items.length) };
     }
+    // #845: activity timestamps are ISO-8601 UTC (`2026-10-15T22:36:12.345Z`), the
+    // form addActivityLogItem writes. Each one is shown in this single zone, so
+    // every operator reads the same clock, labelled with its abbreviation.
+    const ACTIVITY_TIME_ZONE = 'America/New_York';
+    const ACTIVITY_UTC_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3})?Z$/;
+    let activityTimeFormat = null;
+    // Epoch ms for a UTC stamp, or null for anything else. Local clock strings from
+    // older builds have no zone, so they get null rather than a guessed zone.
+    function activityTimeMs(stamp) {
+        if (typeof stamp !== 'string' || !ACTIVITY_UTC_RE.test(stamp)) return null;
+        const ms = Date.parse(stamp);
+        return Number.isFinite(ms) ? ms : null;
+    }
+    // Newest first by instant, the same in every zone. Array#sort is stable, so
+    // equal instants keep their order, and rows without a usable stamp sort last.
+    function compareActivityNewestFirst(a, b) {
+        const ta = activityTimeMs(a && a.timestamp);
+        const tb = activityTimeMs(b && b.timestamp);
+        if (ta === tb) return 0;
+        if (ta === null) return 1;
+        if (tb === null) return -1;
+        return tb - ta;
+    }
+    // { text, title, iso }: text is the time in ACTIVITY_TIME_ZONE with its label,
+    // e.g. "18:36:12 EDT". title is the UTC reading for the tooltip. A bad stamp
+    // is an em dash, as formatEpochTime shows for a missing value (#364).
+    function formatActivityTime(stamp) {
+        const ms = activityTimeMs(stamp);
+        if (ms === null) return { text: '\u2014', title: '', iso: '' };
+        if (!activityTimeFormat) {
+            activityTimeFormat = new Intl.DateTimeFormat('en-US', {
+                timeZone: ACTIVITY_TIME_ZONE,
+                hourCycle: 'h23',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+                timeZoneName: 'short',
+            });
+        }
+        const d = new Date(ms);
+        const iso = d.toISOString();
+        return {
+            text: activityTimeFormat.format(d),
+            title: iso.slice(0, 10) + ' ' + iso.slice(11, 19) + ' UTC',
+            iso,
+        };
+    }
     // #1052: hosts in play, ranked from a small set of labelled series or from
     // an API stub of the same shape. The configured `domain` label on crawl
     // counters is not a request host (see metric_labels.py) and is ignored.
@@ -1345,5 +1392,5 @@
         return sampled;
     }
 
-    return { tabKeyTarget, staleState, queueDepthRows, metricsFailureActivity, shortcutHintText, parseMetrics, metricSeriesCount, METRICS_FLOOD_DEFAULTS, metricsFloodLimits, advanceMetricsFlood, metricsFloodBannerText, ratePerMinute, resolveMetricsUrl, metricsEndpoint, metricsEndpointLabel, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler, stageActivity, stageDrilldown, stageDrilldownKey, doughnutLegendLayout, connectionState, documentTitle, createActivityAnnouncer, metricsUrlProblem, splitLinks, createMetricsFetcher, REFRESH_INTERVAL_CHOICES, parseRefreshInterval, shortcutAction, pickInitialTab, METRIC_UI_MAP, renderMetricNameMap, parseDangerSoundEnabled, dangerSoundDecision, HEALTH_HISTORY_LIMIT, pushPollOutcome, healthHistoryView, COMPARISON_BASELINE_ROLE, PREV_HOUR_AVG_KEYS, readPrevHourAverage, comparisonBaselineSeries, comparisonNote, ACTIVITY_LOG_CAP, capActivityLog, activityStaleNote, restoreActivityLog, topScrapeTargets, SCRAPE_TARGET_EMPTY, ACTIVITY_LEVELS, activityLevelCounts, filterActivityItems, filterActivityMessages, activityFilterStatus, toggleActivityLevel, HISTORY_MAX_POINTS, HISTORY_RAW_POINTS, assertHistoryBound, boundHistoryBuffer, pushHistorySample, enforceHistoryCap, downsampleIndices, grafanaHomeUrl, jobStartedPresentation, DEFAULT_ACCENT, parseAccentColor, accentInk, accentBorder, accentCssVars };
+    return { tabKeyTarget, staleState, queueDepthRows, metricsFailureActivity, shortcutHintText, parseMetrics, metricSeriesCount, METRICS_FLOOD_DEFAULTS, metricsFloodLimits, advanceMetricsFlood, metricsFloodBannerText, ratePerMinute, resolveMetricsUrl, metricsEndpoint, metricsEndpointLabel, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler, stageActivity, stageDrilldown, stageDrilldownKey, doughnutLegendLayout, connectionState, documentTitle, createActivityAnnouncer, metricsUrlProblem, splitLinks, createMetricsFetcher, REFRESH_INTERVAL_CHOICES, parseRefreshInterval, shortcutAction, pickInitialTab, METRIC_UI_MAP, renderMetricNameMap, parseDangerSoundEnabled, dangerSoundDecision, HEALTH_HISTORY_LIMIT, pushPollOutcome, healthHistoryView, COMPARISON_BASELINE_ROLE, PREV_HOUR_AVG_KEYS, readPrevHourAverage, comparisonBaselineSeries, comparisonNote, ACTIVITY_LOG_CAP, capActivityLog, activityStaleNote, restoreActivityLog, ACTIVITY_TIME_ZONE, activityTimeMs, compareActivityNewestFirst, formatActivityTime, topScrapeTargets, SCRAPE_TARGET_EMPTY, ACTIVITY_LEVELS, activityLevelCounts, filterActivityItems, filterActivityMessages, activityFilterStatus, toggleActivityLevel, HISTORY_MAX_POINTS, HISTORY_RAW_POINTS, assertHistoryBound, boundHistoryBuffer, pushHistorySample, enforceHistoryCap, downsampleIndices, grafanaHomeUrl, jobStartedPresentation, DEFAULT_ACCENT, parseAccentColor, accentInk, accentBorder, accentCssVars };
 });

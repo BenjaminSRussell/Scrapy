@@ -286,8 +286,11 @@ function escapeHtml(s) {
 }
 
 function addActivityLogItem(type, message) {
-    const timestamp = new Date().toLocaleTimeString();
+    // #845: stored as ISO-8601 UTC, which carries no zone; formatActivityTime shows it.
+    const timestamp = new Date().toISOString();
     activityLog.unshift({ type, message, timestamp });
+    // Order by instant, not by push order: a wall-clock step cannot leave an older row above a newer one.
+    activityLog.sort(compareActivityNewestFirst);
     boundHistoryBuffer(activityLog, 'end');
     if (activityLog.length > ACTIVITY_LOG_CAP) {
         activityLog.length = ACTIVITY_LOG_CAP;
@@ -412,7 +415,13 @@ function renderActivityList(container, { maxItems = HISTORY_MAX_POINTS, levels =
         if (/^[a-z-]+$/.test(type)) li.classList.add(type);
         const ts = document.createElement('div');
         ts.className = 'activity-timestamp';
-        ts.textContent = String(item.timestamp ?? '');
+        // #845: zone-labelled time for the eye; the <time> element carries the UTC instant.
+        const when = formatActivityTime(item.timestamp);
+        const time = document.createElement('time');
+        time.textContent = when.text;
+        if (when.iso) time.setAttribute('datetime', when.iso);
+        if (when.title) time.title = when.title;
+        ts.appendChild(time);
         if (item.restored) {
             li.classList.add('restored');
             ts.appendChild(document.createTextNode(' \u00b7 '));
@@ -577,13 +586,16 @@ function syncActivityStaleNotes() {
 
 function restorePersistedActivityLog() {
     const restored = restoreActivityLog(sessionGet(ACTIVITY_STORE_KEY));
-    activityLog = restored.items.map((item) => ({
+    // #845: rows saved by the previous build have a local clock reading and no zone,
+    // so they cannot be labelled or ordered. They are dropped; the note counts the rest.
+    const rows = restored.items.filter((item) => activityTimeMs(item.timestamp) !== null);
+    activityLog = rows.map((item) => ({
         type: item.type,
         message: item.message,
         timestamp: item.timestamp,
         restored: true
-    }));
-    activityStaleText = restored.staleNote;
+    })).sort(compareActivityNewestFirst);
+    activityStaleText = activityStaleNote(rows.length);
     syncActivityStaleNotes();
     if (activityLog.length) updateActivityLog();
 }

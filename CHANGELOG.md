@@ -70,6 +70,7 @@ renamed to the new version and date (see the release checklist).
 - Kafka messages are keyed by `url_hash`, with an enforceable idempotent producer (#285).
 - Undomainable rows are quarantined instead of landing in a hot `domain=unknown` partition.
 - ASR no longer sends audio to Google by default (`ASR_PROVIDER` opt-in; local whisper).
+- Control Center activity log stores each entry's time as ISO-8601 UTC and shows it in America/New_York with the zone label (EDT or EST), with the UTC reading in the tooltip. Rows sort by that instant, and Export JSON and CSV write the UTC value. Rows saved by the previous build (local time, no zone) are not restored after a reload (#845).
 
 ### Deprecated
 - `python reseed.py`, `python drain_lake.py`, `python audit_file_counts.py`, and `python monitor_and_trigger_depth.py` at the Scraping_project root. Run `python scripts/<name>.py` from `Scraping_project/` instead. `cli.py` stays the root Python entrypoint (#568).

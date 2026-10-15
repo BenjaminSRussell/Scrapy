@@ -196,6 +196,10 @@ still apply on the same tab. The Overview feed is not filtered. Export JSON
 and Export CSV still download every buffered row, including ones the filter hides.
 The match count is text in `#activity-filter-status`, not HTML.
 
+## Activity log timestamps (#845)
+
+Each activity row stores its time as an ISO-8601 UTC instant (for example `2026-10-15T22:36:12.345Z`). The row shows that instant in America/New_York with its zone abbreviation (`18:36:12 EDT`, or `EST` in winter). Hovering a time shows the UTC reading. Rows are ordered by that instant, so every browser time zone sees the same order. Export JSON and Export CSV write the UTC value. Rows saved by the previous build (local clock time, no zone) are not restored after a reload.
+
 ## Job started (#1022)
 
 A confirmed start (`cc:job-started` on `#job-start`) draws one check on the Start control. There is no confetti. `prefers-reduced-motion: reduce` skips that stroke animation and shows the finished check. Start stays disabled until the job API exists (#147); the control does not launch a crawl.
