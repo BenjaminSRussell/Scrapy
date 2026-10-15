@@ -8,7 +8,9 @@ import httpx
 from bs4 import BeautifulSoup
 
 from src.core.config import stage2_quality_thresholds
+from src.stage2.people_directory import extract_people
 from src.utils.delta import get_delta
+from src.utils.feature_flags import get_bool
 
 logger = logging.getLogger(__name__)
 
@@ -87,7 +89,7 @@ class IntelligentAnalyzer:
         hrefs = [str(a["href"]) for a in soup.find_all("a", href=True)]
         pdf_links = [href for href in hrefs if _is_pdf_link(href)]
 
-        return {
+        record: dict[str, Any] = {
             "url": url,
             "has_error": False,
             "is_404": False,
@@ -104,6 +106,10 @@ class IntelligentAnalyzer:
             "pdf_links": pdf_links[:10],
             "quality_score": self._calculate_quality_score(word_count, text_to_html_ratio),
         }
+        # Off by default. The key stays absent so existing analysis rows are unchanged (#642).
+        if get_bool("PEOPLE_DIRECTORY_PARSE_ENABLED", False):
+            record["people"] = [person.to_record() for person in extract_people(html, url, enabled=True)]
+        return record
 
     def _analyze_pdf(self, url: str, pdf_content: bytes, is_heavy: bool) -> dict[str, Any]:
         text_extracted = ""

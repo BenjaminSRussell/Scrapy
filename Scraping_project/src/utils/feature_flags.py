@@ -120,6 +120,10 @@ FLAGS: dict[str, tuple[Any, str]] = {
         False,
         "Reuse a cached Stage 2 HTML body (url_hash + ETag/Last-Modified) and skip the fetch (#478).",
     ),
+    "PEOPLE_DIRECTORY_PARSE_ENABLED": (
+        False,
+        "Emit PersonItem rows from a faculty/people directory card when confidence is high (#642).",
+    ),
 }
 
 
