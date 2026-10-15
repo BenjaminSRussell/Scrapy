@@ -75,8 +75,9 @@ renamed to the new version and date (see the release checklist).
 - `python reseed.py`, `python drain_lake.py`, `python audit_file_counts.py`, and `python monitor_and_trigger_depth.py` at the Scraping_project root. Run `python scripts/<name>.py` from `Scraping_project/` instead. `cli.py` stays the root Python entrypoint (#568).
 
 ### Fixed
+- Control Center line charts plot at most 50 points (LTTB) while the raw chart history keeps 200 samples, so a shorter refresh interval does not turn the series into a solid line. Rates and overview sparklines read the raw buffer. The activity log stays on the 50-point ring (#1014).
 - Control Center keeps the last 50 activity-log entries in `sessionStorage` for this browser tab. A reload restores them and shows a note that they are from before the reload and may be stale. Clear drops the buffer (#1029).
-- Control Center keeps every client time-series (chart history and the activity log) to the last 50 samples with one ring-buffer cap, independent of the chart axis, and cites that cap in the panel help text (#691).
+- Control Center bounds client time-series with a ring-buffer cap independent of the chart axis (50 for the activity log and any store without a raw cap) and cites that cap in the panel help text (#691).
 - Stage 2 replicas jitter the 30s poll (`STAGE2_POLL_JITTER_SECONDS`, default ±15s) and take an exclusive Redis lease (`SET stage2:claim:{url_hash} NX EX`) on each pending URL so two workers do not analyze the same batch. If the lease cannot be acquired, including when Redis is down, the URL is not analyzed (#235).
 - Crawl counters and the StatsD families shared by the metrics exporter and in-process callers now use one label set (`stage`, `worker_id`, `domain`, and the existing `site_id` where it was already present). A value that fails the site-id pattern is `rejected`. Series are not dropped, and there is no numeric site cap (#243).
 - Stage 4 entity updates load stored facts for that entity id, append and dedupe them, and rewrite the summary only when that entity's cluster changed. A new document does not recompute unrelated entities (#474).

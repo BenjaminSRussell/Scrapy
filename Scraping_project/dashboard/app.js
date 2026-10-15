@@ -38,7 +38,10 @@ let historicalData = {
     pages: [],
     summaries: [],
     sampleTimes: [],  // ms, parallel to the arrays above (#141)
-    // Length is HISTORY_MAX_POINTS (format-utils.js), not a chart axis max (#691).
+    // Plotted points stay HISTORY_MAX_POINTS. rawCap is the in-memory buffer
+    // for rates and sparklines (#1014). The activity log stays on the shared
+    // 50-point ring and does not follow a chart axis (#691).
+    rawCap: HISTORY_RAW_POINTS,
 };
 let previousMetrics = {};
 let previousMetricsAt = 0;  // ms timestamp of previousMetrics (#141)
@@ -628,13 +631,15 @@ function updateHistoricalData(metrics) {
     const now = new Date();
     const timeLabel = now.toLocaleTimeString();
 
-    // Each series is capped on its own. A short chart-label series must not
-    // leave urls, pages, summaries, or sampleTimes free to grow (#691).
-    pushHistorySample(historicalData.timestamps, timeLabel);
-    pushHistorySample(historicalData.urls, metrics['stage1_urls_discovered_total'] || 0);
-    pushHistorySample(historicalData.pages, metrics['stage2_pages_analyzed_total'] || 0);
-    pushHistorySample(historicalData.summaries, metrics['stage3_summaries_created_total'] || 0);
-    pushHistorySample(historicalData.sampleTimes, now.getTime());
+    // Each series is capped on its own at rawCap. A short chart-label series
+    // must not leave urls, pages, summaries, or sampleTimes free to grow (#691).
+    // Line charts downsample that buffer to HISTORY_MAX_POINTS (#1014).
+    const cap = historicalData.rawCap;
+    pushHistorySample(historicalData.timestamps, timeLabel, cap);
+    pushHistorySample(historicalData.urls, metrics['stage1_urls_discovered_total'] || 0, cap);
+    pushHistorySample(historicalData.pages, metrics['stage2_pages_analyzed_total'] || 0, cap);
+    pushHistorySample(historicalData.summaries, metrics['stage3_summaries_created_total'] || 0, cap);
+    pushHistorySample(historicalData.sampleTimes, now.getTime(), cap);
     enforceHistoryCap(historicalData, 'start');
 
     updatePerformanceCharts();
@@ -644,38 +649,58 @@ function updateHistoricalData(metrics) {
     markChartsHaveSample();
 }
 
+function projectAt(values, indices) {
+    const out = new Array(indices.length);
+    for (let k = 0; k < indices.length; k++) out[k] = values[indices[k]];
+    return out;
+}
+
 function updatePerformanceCharts() {
+    // Plot a downsampled view. historicalData itself stays the raw buffer (#1014).
+    const plotMax = HISTORY_MAX_POINTS;
+    const idx = downsampleIndices(
+        [historicalData.urls, historicalData.pages, historicalData.summaries],
+        plotMax,
+        historicalData.sampleTimes
+    );
+    const labels = projectAt(historicalData.timestamps, idx);
+
     if (charts.urls) {
-        charts.urls.data.labels = historicalData.timestamps;
-        charts.urls.data.datasets[0].data = historicalData.urls;
+        charts.urls.data.labels = labels;
+        charts.urls.data.datasets[0].data = projectAt(historicalData.urls, idx);
         charts.urls.update('none');
     }
 
     if (charts.pages) {
-        charts.pages.data.labels = historicalData.timestamps;
-        charts.pages.data.datasets[0].data = historicalData.pages;
+        charts.pages.data.labels = labels;
+        charts.pages.data.datasets[0].data = projectAt(historicalData.pages, idx);
         charts.pages.update('none');
     }
 
     if (charts.summaries) {
-        charts.summaries.data.labels = historicalData.timestamps;
-        charts.summaries.data.datasets[0].data = historicalData.summaries;
+        charts.summaries.data.labels = labels;
+        charts.summaries.data.datasets[0].data = projectAt(historicalData.summaries, idx);
         charts.summaries.update('none');
     }
 
     if (charts.throughput && historicalData.timestamps.length > 1) {
         const urlsRate = [];
         const pagesRate = [];
+        const rateTimes = [];
+        const rateLabels = [];
 
         for (let i = 1; i < historicalData.urls.length; i++) {
             const ms = historicalData.sampleTimes[i] - historicalData.sampleTimes[i-1];
             urlsRate.push(ratePerMinute(historicalData.urls[i], historicalData.urls[i-1], ms));
             pagesRate.push(ratePerMinute(historicalData.pages[i], historicalData.pages[i-1], ms));
+            rateTimes.push(historicalData.sampleTimes[i]);
+            rateLabels.push(historicalData.timestamps[i]);
         }
 
-        charts.throughput.data.labels = historicalData.timestamps.slice(1);
-        charts.throughput.data.datasets[0].data = urlsRate;
-        charts.throughput.data.datasets[1].data = pagesRate;
+        const rateIdx = downsampleIndices([urlsRate, pagesRate], plotMax, rateTimes);
+        charts.throughput.data.labels = projectAt(rateLabels, rateIdx);
+        charts.throughput.data.datasets[0].data = projectAt(urlsRate, rateIdx);
+        charts.throughput.data.datasets[1].data = projectAt(pagesRate, rateIdx);
         charts.throughput.update('none');
     }
     applyComparisonBaselines();

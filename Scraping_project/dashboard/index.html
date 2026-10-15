@@ -1720,7 +1720,7 @@
                 <div class="card" style="margin-bottom:1rem;padding:0.75rem 1rem;display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap">
                     <span>Performance chart history</span>
                     <button type="button" id="reset-chart-history" class="btn" aria-describedby="chart-history-cap" aria-label="Reset chart history buffers">Reset chart history</button>
-                    <span id="chart-history-cap" class="refresh-info" style="flex-basis:100%">In-memory history keeps the last 50 samples per series. This cap is independent of the chart axis.</span>
+                    <span id="chart-history-cap" class="refresh-info" style="flex-basis:100%">In-memory history keeps a raw buffer of 200 samples per series. Line charts plot at most the last 50 samples (LTTB). This cap is independent of the chart axis.</span>
                 </div>
 
                 <div class="grid grid-2">
@@ -1971,7 +1971,7 @@
                     </div>
                     <p id="activity-filter-empty" class="activity-filter-empty" hidden>No activity at the selected levels.</p>
                     <p id="activity-filter-status" class="activity-filter-status" role="status" aria-live="polite" hidden></p>
-                    <p id="activity-log-cap" class="refresh-info" style="margin:-0.25rem 0 0.75rem">Activity log keeps the last 50 events (same cap as chart history).</p>
+                    <p id="activity-log-cap" class="refresh-info" style="margin:-0.25rem 0 0.75rem">Activity log keeps the last 50 events (shared ring, not the chart raw buffer).</p>
                     <!-- Rendered by app.js on init; no static seed (#978). -->
                     <div class="activity-feed" id="activity-log" role="log" aria-live="off" aria-describedby="activity-log-cap"></div>
                 </div>
