@@ -40,6 +40,7 @@ WARM_UP = 1800.0
 MAX_CATCH_UP = 3600.0
 MAX_URLS = 60_000
 EVICT = 10_000
+MAX_BACKLOG = 5_000  # per stage queue; older work is dropped, as a real backlog would be shed
 REPLAY_EVENTS = 50
 EVENTS_PER_POLL = 500
 SAMPLES_KEPT = 1900
@@ -49,9 +50,13 @@ QUEUE_KEY = "js_spider:priority_queue"
 class DemoFeed:
     mode = "demo"
 
-    def __init__(self, seed: int = 7, clock=time.time):
+    def __init__(self, seed: int = 7, clock=time.time, max_urls: int = MAX_URLS, evict: int = EVICT,
+                 max_backlog: int = MAX_BACKLOG):
         self.seed = seed
         self.clock = clock
+        self.max_urls = max_urls
+        self.evict_count = evict
+        self.max_backlog = max_backlog
         self.rng = random.Random(seed)
         self._svc_rng = random.Random(seed + 1)
         self._sim_t: float | None = None
@@ -115,7 +120,7 @@ class DemoFeed:
                 self._add_seed(url, t)
         for sid in self._samples:
             self._samples[sid].append((t, self._counts[sid]))
-        if len(self._rows["discovery"]) > MAX_URLS:
+        if len(self._rows["discovery"]) > self.max_urls:
             self._evict()
 
     # ---- writers ----
@@ -143,7 +148,7 @@ class DemoFeed:
                "urls_found": self.rng.randint(0, 90), "parent_url": parent}
         self._write("discovery", row, t)
         if status == 200:
-            self._queues["analysis"].append(url)
+            self._enqueue("analysis", url)
 
     def _discover(self, t: float) -> None:
         parent = self._pick_parent()
@@ -184,7 +189,15 @@ class DemoFeed:
             n += 1
         return url
 
+    def _enqueue(self, stage_id: str, url: str) -> None:
+        queue = self._queues[stage_id]
+        queue.append(url)
+        while len(queue) > self.max_backlog:
+            queue.popleft()  # shed the oldest work rather than grow without bound
+
     def _analyze(self, url: str, t: float) -> None:
+        if url not in self._by_url:
+            return
         pdf = url.endswith(".pdf")
         massive = self.rng.random() < (0.85 if pdf else 0.01)
         words = self.rng.randint(9_000, 80_000) if massive else int(self.rng.lognormvariate(6.4, 0.6))
@@ -194,28 +207,35 @@ class DemoFeed:
                "quality_score": round(self.rng.uniform(0.55, 0.98) if quality else self.rng.uniform(0.1, 0.5), 3)}
         self._write("analysis", row, t)
         if massive:
-            self._queues["large_docs"].append(url)
+            self._enqueue("large_docs", url)
         elif quality:
-            self._queues["summaries"].append(url)
+            self._enqueue("summaries", url)
 
     def _summarize(self, url: str, t: float) -> None:
+        if url not in self._by_url:
+            return
         title = _title(url)
         model = MODELS[0] if self.rng.random() < 0.85 else MODELS[1]
         self._write("summaries", {"url": url, "title": title, "model": model, "summary": _summary(title, url)}, t)
 
     def _large_doc(self, url: str, t: float) -> None:
-        original = self._by_url[url]["analysis"]["word_count"]
+        analysis = self._by_url.get(url, {}).get("analysis")
+        if analysis is None:
+            return
+        original = analysis["word_count"]
         short = self.rng.randint(350, 900)
         self._write("large_docs", {"url": url, "title": _title(url), "original_word_count": original,
                                    "summary_word_count": short, "compression_ratio": round(short / original, 4),
                                    "summary": _summary(_title(url), url)}, t)
 
     def _evict(self) -> None:
-        gone = {r["url"] for r in self._rows["discovery"][:EVICT]}
+        gone = {r["url"] for r in self._rows["discovery"][: self.evict_count]}
         for sid in self._rows:
             self._rows[sid] = [r for r in self._rows[sid] if r["url"] not in gone]
         for url in gone:
             self._by_url.pop(url, None)
+        for sid, queue in self._queues.items():
+            self._queues[sid] = deque(u for u in queue if u not in gone)
 
     # ---- Feed interface ----
     def poll(self, now: float) -> PollResult:

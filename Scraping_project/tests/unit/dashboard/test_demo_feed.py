@@ -121,3 +121,19 @@ def test_memory_stays_bounded_over_long_runs(seconds):
     clock.t += seconds
     feed.poll(clock.t)  # one big catch-up step, as after a laptop sleep
     assert sum(len(v) for v in feed._rows.values()) <= 4 * 60_000
+
+
+def test_long_runs_stay_bounded_and_never_raise():
+    """Eviction must keep queues and indexes consistent (it used to KeyError after ~18 h)."""
+    clock = Clock()
+    feed = DemoFeed(seed=4, clock=clock, max_urls=1500, evict=400, max_backlog=300)
+    feed.poll(clock.t)
+    for _ in range(24):  # 12 simulated hours, half an hour per poll
+        clock.t += 1800
+        feed.poll(clock.t)  # raises if eviction left a dangling URL
+    assert len(feed._rows["discovery"]) <= 1500
+    assert all(len(rows) <= 1500 for rows in feed._rows.values())
+    assert len(feed._by_url) <= 1500 + 300
+    assert all(len(q) <= 300 for q in feed._queues.values())
+    live = set(feed._by_url)
+    assert all(url in live for q in feed._queues.values() for url in q)
