@@ -1,0 +1,8 @@
+{
+  "error_code": "OK",
+  "status": "success",
+  "error": null,
+  "discovery_source": "rustmapper",
+  "discovered": ["https://example.edu/a"],
+  "retry_action": "none"
+}

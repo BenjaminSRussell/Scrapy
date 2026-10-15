@@ -17,6 +17,7 @@ from src.lakehouse import SeedManager
 from src.stage1.base_spider import BaseSpider
 from src.stage1.sitemap_parser import discover_sitemaps_handoff_sync
 from src.stage1.discovery_dedup import DiscoveryDedup, get_discovery_dedup_from_config
+from src.stage1.discovery_errors import stage1_retry_plan
 from src.stage1.discovery_handoff import (
     DiscoveryEmptyNeedsAck,
     DiscoveryHandoffError,
@@ -390,8 +391,10 @@ class ScoutSpider(BaseSpider):
 
             if handoff.status == DiscoveryStatus.FAILED:
                 self.scout_stats["discovery_failures"] += 1
+                plan = stage1_retry_plan(handoff.error_code, load=False)
                 logger.error(
-                    f"[SCOUT] Sitemap discovery FAILED (abort Stage2 ingest): {handoff.error}"
+                    f"[SCOUT] Sitemap discovery FAILED (abort Stage2 ingest): {handoff.error} "
+                    f"code={plan['code']} retry_action={plan['action']}"
                 )
                 return
 

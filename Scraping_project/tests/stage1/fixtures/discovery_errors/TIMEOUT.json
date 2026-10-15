@@ -1,0 +1,8 @@
+{
+  "error_code": "TIMEOUT",
+  "status": "failed",
+  "error": "sitemap fetch timed out",
+  "discovery_source": "rustmapper",
+  "discovered": [],
+  "retry_action": "queue"
+}

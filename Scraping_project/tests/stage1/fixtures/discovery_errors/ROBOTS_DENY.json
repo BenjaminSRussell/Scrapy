@@ -1,0 +1,8 @@
+{
+  "error_code": "ROBOTS_DENY",
+  "status": "failed",
+  "error": "robots.txt disallowed /sitemap.xml",
+  "discovery_source": "rustmapper",
+  "discovered": [],
+  "retry_action": "drop"
+}

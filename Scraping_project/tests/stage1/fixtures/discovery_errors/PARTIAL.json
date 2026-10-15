@@ -1,0 +1,8 @@
+{
+  "error_code": "PARTIAL",
+  "status": "success",
+  "error": null,
+  "discovery_source": "sitemap_parser",
+  "discovered": ["https://example.edu/kept"],
+  "retry_action": "ingest_partial"
+}

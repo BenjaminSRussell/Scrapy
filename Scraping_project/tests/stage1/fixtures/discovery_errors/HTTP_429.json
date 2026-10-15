@@ -1,0 +1,8 @@
+{
+  "error_code": "HTTP_429",
+  "status": "failed",
+  "error": "HTTP 429 Too Many Requests",
+  "discovery_source": "sitemap_parser",
+  "discovered": [],
+  "retry_action": "queue"
+}

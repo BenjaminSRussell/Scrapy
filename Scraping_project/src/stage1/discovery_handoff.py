@@ -2,6 +2,10 @@
 
 Distinguishes "no URLs found" from hard failures so orchestrators do not treat
 rustmapper crashes / empty sitemap.jsonl as green incomplete success.
+
+``error_code`` is the shared rustmapper / Stage 1 taxonomy (#933): OK,
+PARTIAL, TIMEOUT, ROBOTS_DENY, HTTP_429, PARSE_FAIL. See
+``src.stage1.discovery_errors`` and ``docs/discovery_error_taxonomy.md``.
 """
 
 from __future__ import annotations
@@ -13,6 +17,13 @@ from dataclasses import asdict, dataclass, field
 from enum import Enum
 from pathlib import Path
 from typing import Any, Iterable
+
+from src.stage1.discovery_errors import (
+    DiscoveryErrorCode,
+    classify_discovery_failure,
+    coerce_error_code,
+    select_handoff_code,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +44,7 @@ class DiscoveryHandoff:
         status: success | empty | failed
         discovered: URL list (empty when status is empty/failed)
         error: failure detail (required when failed)
+        error_code: shared taxonomy code, or None when empty / unclassified
         checksum: sha256 over JSONL body or sorted URL payload
         discovery_source: provenance (sitemap_parser | scout | rustmapper | ...)
         job_id / site: optional coordination metadata
@@ -45,12 +57,14 @@ class DiscoveryHandoff:
     discovery_source: str = "unknown"
     job_id: str | None = None
     site: str | None = None
+    error_code: DiscoveryErrorCode | str | None = None
 
     def __post_init__(self) -> None:
         if isinstance(self.status, str):
             self.status = DiscoveryStatus(self.status)
         if self.checksum is None and self.discovered:
             self.checksum = checksum_urls(self.discovered)
+        self.error_code = coerce_error_code(self.error_code)
 
     @property
     def is_success(self) -> bool:
@@ -67,6 +81,9 @@ class DiscoveryHandoff:
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
         data["status"] = self.status.value if isinstance(self.status, DiscoveryStatus) else self.status
+        code = data.get("error_code")
+        if isinstance(code, DiscoveryErrorCode):
+            data["error_code"] = code.value
         return data
 
     @classmethod
@@ -79,6 +96,7 @@ class DiscoveryHandoff:
             discovery_source=data.get("discovery_source", "unknown"),
             job_id=data.get("job_id"),
             site=data.get("site"),
+            error_code=data.get("error_code"),
         )
 
     @classmethod
@@ -90,6 +108,7 @@ class DiscoveryHandoff:
         job_id: str | None = None,
         site: str | None = None,
         checksum: str | None = None,
+        error_code: DiscoveryErrorCode | str | None = None,
     ) -> "DiscoveryHandoff":
         url_list = list(urls)
         if not url_list:
@@ -102,6 +121,7 @@ class DiscoveryHandoff:
             discovery_source=discovery_source,
             job_id=job_id,
             site=site,
+            error_code=DiscoveryErrorCode.OK if error_code is None else error_code,
         )
 
     @classmethod
@@ -130,6 +150,7 @@ class DiscoveryHandoff:
         discovery_source: str,
         job_id: str | None = None,
         site: str | None = None,
+        error_code: DiscoveryErrorCode | str | None = None,
     ) -> "DiscoveryHandoff":
         return cls(
             status=DiscoveryStatus.FAILED,
@@ -139,6 +160,7 @@ class DiscoveryHandoff:
             discovery_source=discovery_source,
             job_id=job_id,
             site=site,
+            error_code=error_code,
         )
 
 
@@ -181,10 +203,23 @@ def load_sitemap_jsonl(path: str | Path) -> tuple[list[str], str]:
     """Parse rustmapper sitemap.jsonl -> (urls, file_checksum).
 
     Each line may be a bare URL string or a JSON object with a ``url`` field.
+    Invalid JSON lines are skipped here; ``read_sitemap_jsonl`` records them
+    as ``PARSE_FAIL``.
+    """
+    urls, file_checksum, _codes = read_sitemap_jsonl(path)
+    return urls, file_checksum
+
+
+def read_sitemap_jsonl(path: str | Path) -> tuple[list[str], str, list[DiscoveryErrorCode]]:
+    """Like ``load_sitemap_jsonl``, plus coded failures from JSONL objects.
+
+    A line that is not valid JSON is ``PARSE_FAIL``. ``error_code`` other than
+    ``OK`` is collected. URL lines are unchanged.
     """
     raw = Path(path).read_bytes()
     file_checksum = checksum_jsonl_bytes(raw)
     urls: list[str] = []
+    codes: list[DiscoveryErrorCode] = []
     text = raw.decode("utf-8", errors="replace")
     for line in text.splitlines():
         line = line.strip()
@@ -194,13 +229,22 @@ def load_sitemap_jsonl(path: str | Path) -> tuple[list[str], str]:
             try:
                 obj = json.loads(line)
             except json.JSONDecodeError:
+                codes.append(DiscoveryErrorCode.PARSE_FAIL)
                 continue
+            if not isinstance(obj, dict):
+                codes.append(DiscoveryErrorCode.PARSE_FAIL)
+                continue
+            raw_code = obj.get("error_code")
+            if raw_code not in (None, ""):
+                code = coerce_error_code(raw_code)
+                if code is not None and code is not DiscoveryErrorCode.OK:
+                    codes.append(code)
             url = obj.get("url") or obj.get("loc")
             if url:
                 urls.append(str(url).strip())
         elif line.startswith("http://") or line.startswith("https://"):
             urls.append(line)
-    return urls, file_checksum
+    return urls, file_checksum, codes
 
 
 def consume_rustmapper_handoff(
@@ -212,25 +256,33 @@ def consume_rustmapper_handoff(
     site: str | None = None,
     forced_failed: bool = False,
     failure_error: str | None = None,
+    failure_code: DiscoveryErrorCode | str | None = None,
 ) -> DiscoveryHandoff:
     """Build a DiscoveryHandoff from rustmapper outputs.
 
     - If ``forced_failed`` or handoff JSON says failed -> FAILED (never EMPTY).
     - Empty JSONL with no failure -> EMPTY (needs ack/skip Stage2).
     - Non-empty JSONL -> SUCCESS with file checksum (+ URL payload checksum).
+    - ``error_code`` on the sidecar or on a JSONL object is the shared taxonomy
+      (#933). A coded failure with no URLs stays FAILED, not EMPTY.
     """
     if forced_failed:
+        detail = failure_error or "rustmapper crashed / non-zero exit"
+        code = coerce_error_code(failure_code) or classify_discovery_failure(detail)
         return DiscoveryHandoff.failed(
-            failure_error or "rustmapper crashed / non-zero exit",
+            detail,
             discovery_source=discovery_source,
             job_id=job_id,
             site=site,
+            error_code=code,
         )
 
     if handoff_path is not None and Path(handoff_path).exists():
         existing = read_handoff_json(handoff_path)
         if existing.is_failed:
             existing.discovery_source = existing.discovery_source or discovery_source
+            if existing.error_code is None:
+                existing.error_code = classify_discovery_failure(existing.error)
             return existing
         if existing.is_empty:
             return existing
@@ -245,16 +297,26 @@ def consume_rustmapper_handoff(
         )
 
     try:
-        urls, file_checksum = load_sitemap_jsonl(path)
+        urls, file_checksum, codes = read_sitemap_jsonl(path)
     except Exception as exc:
         return DiscoveryHandoff.failed(
             f"failed to read sitemap.jsonl: {exc}",
             discovery_source=discovery_source,
             job_id=job_id,
             site=site,
+            error_code=classify_discovery_failure(str(exc), exc=exc),
         )
 
+    code = select_handoff_code(urls_found=bool(urls), codes=codes)
     if not urls:
+        if code is not None:
+            return DiscoveryHandoff.failed(
+                f"rustmapper sitemap.jsonl: {code.value}",
+                discovery_source=discovery_source,
+                job_id=job_id,
+                site=site,
+                error_code=code,
+            )
         return DiscoveryHandoff.empty(
             discovery_source=discovery_source,
             job_id=job_id,
@@ -267,6 +329,7 @@ def consume_rustmapper_handoff(
         job_id=job_id,
         site=site,
         checksum=checksum_urls(urls),
+        error_code=code,
     )
     logger.info(
         "rustmapper handoff success: %d urls payload_checksum=%s file_checksum=%s",
@@ -325,6 +388,7 @@ def ingest_handoff_via_seed_manager(
     Returns counts plus handoff status metadata.
     """
     urls = require_ingestible(handoff, ack_empty=ack_empty)
+    code_value = handoff.error_code.value if isinstance(handoff.error_code, DiscoveryErrorCode) else None
     if not urls:
         return {
             "status": handoff.status.value if isinstance(handoff.status, DiscoveryStatus) else handoff.status,
@@ -335,6 +399,7 @@ def ingest_handoff_via_seed_manager(
             "skipped_dedup": 0,
             "checksum": handoff.checksum,
             "discovery_source": handoff.discovery_source,
+            "error_code": code_value,
         }
 
     claimed_urls = urls
@@ -357,6 +422,7 @@ def ingest_handoff_via_seed_manager(
             "skipped_dedup": skipped,
             "checksum": handoff.checksum,
             "discovery_source": handoff.discovery_source,
+            "error_code": code_value,
         }
 
     result = seed_manager.add_urls_to_seeds(
@@ -374,6 +440,7 @@ def ingest_handoff_via_seed_manager(
             "skipped_dedup": skipped,
             "checksum": handoff.checksum,
             "discovery_source": handoff.discovery_source,
+            "error_code": code_value,
         }
     )
     return result

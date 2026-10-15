@@ -17,6 +17,11 @@ from urllib.parse import urljoin, urlparse
 
 import httpx
 
+from src.stage1.discovery_errors import (
+    DiscoveryErrorCode,
+    classify_discovery_failure,
+    select_handoff_code,
+)
 from src.stage1.discovery_handoff import DiscoveryHandoff
 
 logger = logging.getLogger(__name__)
@@ -283,6 +288,7 @@ class SitemapParser:
         self._lastmods: dict[str, float | None] = {}
         self._limit_events = 0
         self._hard_errors: list[str] = []
+        self._error_codes: list[DiscoveryErrorCode] = []
         self._any_success = False
 
     async def discover_all_urls(self) -> list[str]:
@@ -319,18 +325,31 @@ class SitemapParser:
 
         ``discover_all_urls`` stays the walk (caps, gzip, lastmod watermarks).
         A walk that never received HTTP 200 and recorded transport errors is
-        failed, not an empty site.
+        failed, not an empty site. ``error_code`` is the shared taxonomy (#933).
+        HTTP 404 on a candidate is not a code and stays empty when nothing else
+        was fetched. 429, timeouts, robots denials, and parse failures are codes.
         """
         site = urlparse(self.base_url).netloc.lower() or None
+        fatal: BaseException | None = None
+        urls: list[str] = []
         try:
             urls = await self.discover_all_urls()
         except Exception as e:
+            fatal = e
             logger.error(f"Sitemap discovery hard failure: {e}")
+        code = select_handoff_code(
+            urls_found=bool(urls),
+            codes=self._error_codes,
+            limits_hit=bool(self.limits_hit),
+            fatal=fatal,
+        )
+        if fatal is not None:
             return DiscoveryHandoff.failed(
-                str(e),
+                str(fatal),
                 discovery_source=discovery_source,
                 job_id=job_id,
                 site=site,
+                error_code=code,
             )
         if urls:
             return DiscoveryHandoff.success(
@@ -338,13 +357,16 @@ class SitemapParser:
                 discovery_source=discovery_source,
                 job_id=job_id,
                 site=site,
+                error_code=code,
             )
-        if self._hard_errors and not self._any_success:
+        if code is not None or (self._hard_errors and not self._any_success):
+            detail = "; ".join(self._hard_errors[:5]) or (code.value if code else "discovery failed")
             return DiscoveryHandoff.failed(
-                "; ".join(self._hard_errors[:5]),
+                detail,
                 discovery_source=discovery_source,
                 job_id=job_id,
                 site=site,
+                error_code=code,
             )
         return DiscoveryHandoff.empty(
             discovery_source=discovery_source,
@@ -387,6 +409,8 @@ class SitemapParser:
 
             if response.status_code != 200:
                 logger.warning(f"Sitemap returned {response.status_code}: {sitemap_url}")
+                if response.status_code == 429:
+                    self._note(DiscoveryErrorCode.HTTP_429, f"{sitemap_url}: HTTP 429")
                 return False
 
             self._any_success = True
@@ -403,6 +427,7 @@ class SitemapParser:
                     return False
                 except (zlib.error, gzip.BadGzipFile, EOFError) as e:
                     logger.warning(f"Failed to decompress sitemap: {sitemap_url} - {e}")
+                    self._note(DiscoveryErrorCode.PARSE_FAIL, f"{sitemap_url}: decompress failed: {e}")
                     return False
 
             try:
@@ -452,6 +477,7 @@ class SitemapParser:
 
             except DefusedXmlException as e:
                 logger.warning(f"Rejected unsafe XML in sitemap {sitemap_url}: {e}")
+                self._note(DiscoveryErrorCode.PARSE_FAIL, f"{sitemap_url}: unsafe XML: {e}")
                 return False
             except ET.ParseError as e:
                 content_type = response.headers.get("content-type", "").lower()
@@ -467,12 +493,19 @@ class SitemapParser:
                         logger.warning(f"Plain-text parsing also failed for {sitemap_url}: {text_error}")
                 else:
                     logger.warning(f"Failed to parse sitemap XML: {sitemap_url} - {e}")
+                self._note(DiscoveryErrorCode.PARSE_FAIL, f"{sitemap_url}: parse failed: {e}")
 
         except Exception as e:
             _count(SITEMAP_FETCHES, kind="error")
             logger.warning(f"Error processing sitemap: {sitemap_url} - {e}")
-            self._hard_errors.append(f"{sitemap_url}: {e}")
+            self._note(classify_discovery_failure(str(e), exc=e), f"{sitemap_url}: {e}")
         return False
+
+    def _note(self, code: DiscoveryErrorCode | None, message: str) -> None:
+        """Record a coded sitemap failure. 404 is not passed here (#933)."""
+        self._hard_errors.append(message)
+        if code is not None:
+            self._error_codes.append(code)
 
     async def _fetch(self, client: httpx.AsyncClient, url: str) -> tuple[httpx.Response, bytes | None]:
         """GET ``url``, reading at most ``max_bytes`` of (transport-decoded) body.
@@ -629,7 +662,11 @@ class SitemapIntegration:
             return handoff
         except Exception as e:
             logger.error(f"Sitemap discovery failed: {e}")
-            return DiscoveryHandoff.failed(str(e), discovery_source="sitemap_parser")
+            return DiscoveryHandoff.failed(
+                str(e),
+                discovery_source="sitemap_parser",
+                error_code=classify_discovery_failure(str(e), exc=e),
+            )
 
     def generate_scrapy_requests(self, urls: list[str]) -> Iterator:
         import scrapy
@@ -700,12 +737,20 @@ def discover_sitemaps_handoff_sync(
             logger.error(f"Sitemap discovery failed: {e}")
 
     def _classify(timed_out: bool = False) -> DiscoveryHandoff:
+        code = select_handoff_code(
+            urls_found=bool(found),
+            codes=parser._error_codes,
+            limits_hit=bool(parser.limits_hit),
+            timed_out=timed_out,
+            fatal=error,
+        )
         if timed_out:
             return DiscoveryHandoff.failed(
                 "sitemap discovery timed out",
                 discovery_source=discovery_source,
                 job_id=job_id,
                 site=site,
+                error_code=code or DiscoveryErrorCode.TIMEOUT,
             )
         if error is not None:
             return DiscoveryHandoff.failed(
@@ -713,6 +758,7 @@ def discover_sitemaps_handoff_sync(
                 discovery_source=discovery_source,
                 job_id=job_id,
                 site=site,
+                error_code=code,
             )
         if found:
             return DiscoveryHandoff.success(
@@ -720,13 +766,18 @@ def discover_sitemaps_handoff_sync(
                 discovery_source=discovery_source,
                 job_id=job_id,
                 site=site,
+                error_code=code,
             )
-        if parser._hard_errors and not parser._any_success:
+        if code is not None or (parser._hard_errors and not parser._any_success):
+            detail = "; ".join(parser._hard_errors[:5]) or (
+                code.value if code else "discovery failed"
+            )
             return DiscoveryHandoff.failed(
-                "; ".join(parser._hard_errors[:5]),
+                detail,
                 discovery_source=discovery_source,
                 job_id=job_id,
                 site=site,
+                error_code=code,
             )
         return DiscoveryHandoff.empty(
             discovery_source=discovery_source,

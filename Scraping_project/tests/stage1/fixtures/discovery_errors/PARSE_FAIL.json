@@ -1,0 +1,8 @@
+{
+  "error_code": "PARSE_FAIL",
+  "status": "failed",
+  "error": "failed to parse sitemap XML",
+  "discovery_source": "sitemap_parser",
+  "discovered": [],
+  "retry_action": "drop"
+}

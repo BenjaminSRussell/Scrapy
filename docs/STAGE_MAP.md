@@ -80,6 +80,10 @@ key, a `rustmapper_bridge.py` plus `Crawler` / JSONL, feeding SeedManager, and
 a Stage 1-only pin. That recommendation is not implemented in this file.
 Prerequisites it names remain open gaps: #607, #610, #608, #142.
 
+Shared handoff codes (`TIMEOUT`, `ROBOTS_DENY`, `HTTP_429`, `PARSE_FAIL`,
+`PARTIAL`, `OK`) and the Stage 1 retry table are in
+[discovery_error_taxonomy.md](discovery_error_taxonomy.md) (#933).
+
 ## Recorded finish order
 
 Order #606 recorded. Each item is an open gap. This file does not schedule
