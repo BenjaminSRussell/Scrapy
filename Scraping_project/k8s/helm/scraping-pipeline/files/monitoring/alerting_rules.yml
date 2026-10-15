@@ -760,3 +760,25 @@ groups:
           description: "Accepted Stage 2 rows are {{ $value }} of stage2_rows_total over 24h, under the 99% SLO. The error budget for that window is 1% of rows (any outcome other than accepted)."
           impact: "Critical - Stage 2 is missing its published success objective"
           action: "Check stage2_rows_total by outcome and the stage2_errors quarantine. Do not raise the 99% target to silence this alert."
+
+  # ============================================
+  # Customer-success health per org (#966)
+  # ============================================
+  # Warning only. Not a fourth SLO. Stage2SuccessSLO has no bool modifier,
+  # QueueBacklog stays > 10000, and KafkaConsumerLagSLO stays > 250000.
+  # Absent series (no finished jobs) do not fire.
+  - name: org_customer_health
+    interval: 60s
+    rules:
+      - alert: OrgCustomerHealthLow
+        expr: org_customer_health_score < 0.5
+        for: 30m
+        labels:
+          severity: warning
+          component: customer_success
+        annotations:
+          summary: "Customer success health for org {{ $labels.org_id }} is under 0.5"
+          description: "org_customer_health_score for {{ $labels.org_id }} is {{ $value }} (activity weight 0.4, success-rate weight 0.6). Warning only. Not an SLO."
+          org: "{{ $labels.org_id }}"
+          impact: "Medium - this org is inactive or its finished jobs are failing"
+          action: "Open the org-customer-health dashboard and compare activity with success ratio. Do not retune Stage2SuccessSLO, QueueBacklog (> 10000), or KafkaConsumerLagSLO (> 250000)."
