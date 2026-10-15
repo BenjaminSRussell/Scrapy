@@ -25,7 +25,11 @@ postgres:
 # Stage 1: Discovery Settings
 # ============================================
 stage1:
-  # Target domains (dynamically populated from start_urls if not specified)
+  # Target domains (dynamically populated from start_urls if not specified).
+  # Shared by the sitemap walk and SeedManager inject of sitemap_parser /
+  # rustmapper seeds (#940). Hosts match exactly or as a subdomain. A nested
+  # sitemap loc or a redirect onto any other host is dropped
+  # (cross_domain_sitemap_dropped) and is not seeded.
   allowed_domains:
     - uconn.edu
   # Domain URL side table (#317). Off unless a profile opts in; this bundled

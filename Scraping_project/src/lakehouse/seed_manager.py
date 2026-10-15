@@ -27,9 +27,16 @@ from collections.abc import Callable, Iterable
 from typing import Any
 from urllib.parse import urlparse
 
-from src.lakehouse.lakehouse_manager import LakehouseManager
-from src.utils.url_canon import canonical_or_raw, url_hash
 from src.core.timeutil import utc_now_iso
+from src.lakehouse.lakehouse_manager import LakehouseManager
+from src.utils.discovery_allowlist import (
+    DISCOVERY_SEED_SOURCES,
+    allowed_domains_from_config,
+    host_in_domains,
+    record_cross_domain_drop,
+)
+from src.utils.discovery_allowlist import normalize_domains as _normalize_domains
+from src.utils.url_canon import canonical_or_raw, url_hash
 
 logger = logging.getLogger(__name__)
 
@@ -140,27 +147,6 @@ def default_url_hasher(url: str) -> str:
 DEFAULT_DOMAIN_URLS_TABLE = "uconn_urls"  # legacy table name, kept for existing lakes
 
 
-def _normalize_domains(domains: Iterable[str] | str | None) -> tuple[str, ...]:
-    if not domains:
-        return ()
-    if isinstance(domains, str):
-        domains = [domains]
-    out = []
-    for d in domains:
-        d = str(d).strip().lower().lstrip(".")
-        if d.startswith("*."):
-            d = d[2:]
-        if d:
-            out.append(d)
-    return tuple(dict.fromkeys(out))
-
-
-def host_in_domains(host: str, domains: Iterable[str]) -> bool:
-    """Exact-or-subdomain host match (``www.uconn.edu`` yes, ``uconn.edu.evil.com`` no)."""
-    host = (host or "").strip().lower().rstrip(".")
-    return bool(host) and any(host == d or host.endswith("." + d) for d in domains)
-
-
 def domain_urls_policy(config: Any = None) -> dict[str, Any]:
     """Domain side-table policy from config ``stage1.*`` (#317).
 
@@ -192,7 +178,7 @@ def domain_urls_policy(config: Any = None) -> dict[str, Any]:
     flag = raw_flag.strip().lower() in ("1", "true", "yes", "on") if isinstance(raw_flag, str) else bool(raw_flag)
     return {
         "write_domain_urls": flag,
-        "allowed_domains": _normalize_domains(get("allowed_domains", ())),
+        "allowed_domains": allowed_domains_from_config(config),
         "domain_urls_table": str(get("domain_urls_table", DEFAULT_DOMAIN_URLS_TABLE)),
     }
 
@@ -300,6 +286,37 @@ class SeedManager:
         """True if ``url``'s host is an allowed domain or a subdomain of one."""
         return host_in_domains(urlparse(url).hostname or "", self.allowed_domains)
 
+    def _drop_cross_domain_seeds(self, urls: Iterable[str], source_url: str) -> tuple[list[str], int]:
+        """Drop sitemap/rustmapper seeds whose host is outside the shared allowlist.
+
+        An empty configured list falls back to the source URL's host so a trap
+        sitemap still cannot fan out. Page-link expansion (scout and the rest)
+        does not call this.
+        """
+        allow = self.allowed_domains
+        if not allow:
+            host = urlparse(source_url or "").hostname or ""
+            allow = _normalize_domains((host,)) if host else ()
+        if not allow:
+            return list(urls), 0
+        kept: list[str] = []
+        dropped = 0
+        for raw in urls:
+            candidate = raw.strip() if isinstance(raw, str) else raw
+            host = urlparse(candidate).hostname or "" if isinstance(candidate, str) else ""
+            if host_in_domains(host, allow):
+                kept.append(raw if isinstance(raw, str) else candidate)
+            else:
+                dropped += 1
+        if dropped:
+            record_cross_domain_drop(dropped)
+            logger.warning(
+                "[SeedManager] Dropped %s cross-domain sitemap seed(s) outside allowlist %s",
+                dropped,
+                ",".join(allow),
+            )
+        return kept, dropped
+
     def add_urls_to_seeds(
         self,
         urls: Iterable[str],
@@ -361,6 +378,12 @@ class SeedManager:
                 write_domain_urls = write_uconn_urls
         write_domain = self.write_domain_urls if write_domain_urls is None else bool(write_domain_urls)
 
+        # Sitemap / rustmapper inject is checked again here (#940). Scout page
+        # links are not sitemap traps and stay eligible for seed_urls.
+        cross_dropped = 0
+        if source_spider in DISCOVERY_SEED_SOURCES:
+            urls, cross_dropped = self._drop_cross_domain_seeds(urls, source_url)
+
         # Reject non-crawlable seeds (ftp:, javascript:, blanks, host-less, >2 KB)
         # with a stable reason code, canonicalize (#728), then dedupe by
         # url_hash, not just by string: two spellings with one hash would be two
@@ -381,8 +404,11 @@ class SeedManager:
         if n_rejected:
             logger.warning(f"[SeedManager] Rejected {n_rejected} invalid seed URL(s) from {source_spider}: {rejected}")
         if not by_hash:
-            return {"seed_inserted": 0, "domain_inserted": 0, "uconn_inserted": 0, "stage2_enqueued": 0,
-                    "rejected": n_rejected}
+            empty = {"seed_inserted": 0, "domain_inserted": 0, "uconn_inserted": 0, "stage2_enqueued": 0,
+                     "rejected": n_rejected}
+            if cross_dropped:
+                empty["cross_domain_dropped"] = cross_dropped
+            return empty
 
         # Before enqueue: read Redis depth. Above the high watermark, or unknown, skip.
         if self._depth_blocks_enqueue():
@@ -395,13 +421,16 @@ class SeedManager:
                 source_spider,
                 seed_enqueue_threshold(self._config),
             )
-            return {
+            throttled = {
                 "seed_inserted": 0,
                 "domain_inserted": 0,
                 "uconn_inserted": 0,
                 "stage2_enqueued": 0,
                 "rejected": n_rejected,
             }
+            if cross_dropped:
+                throttled["cross_domain_dropped"] = cross_dropped
+            return throttled
 
         now = utc_now_iso()
 
@@ -479,13 +508,16 @@ class SeedManager:
             except Exception as e:
                 logger.warning(f"[SeedManager] Failed to enqueue to stage2_queue: {e}")
 
-        return {
+        result = {
             "seed_inserted": ins_seed,
             "domain_inserted": ins_uconn,
             "uconn_inserted": ins_uconn,
             "stage2_enqueued": enq,
             "rejected": n_rejected,
         }
+        if cross_dropped:
+            result["cross_domain_dropped"] = cross_dropped
+        return result
 
     def bulk_seed_from_list(
         self,

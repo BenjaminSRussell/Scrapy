@@ -92,6 +92,7 @@ renamed to the new version and date (see the release checklist).
 - Control Center: keyboard tabs, landmarks, contrast, focus, reduced motion, a wrapping mobile topbar, and loading, stale, and error states (#153 #155 #332 #340 #341 #343 #349 #351 #352 #362).
 
 ### Security
+- Sitemap discovery drops nested sitemap locs, off-allowlist page locs, and redirects that leave the shared `stage1.allowed_domains` list or loop. SeedManager applies that same list again when the source is `sitemap_parser`, `rustmapper`, or `sitemap`, so a cross-domain sitemap trap is not seeded ahead of Stage 1. Each drop increments `cross_domain_sitemap_dropped` (#940).
 - Production Helm overlay turns on default-deny NetworkPolicies for Redis, Kafka, Postgres and the scrapers. The delta ingestor may dial Redis, and Grafana may install the Redis datasource plugin over public HTTPS (same private and link-local exclusions as scrape egress; the plugin is not baked into the image). Alertmanager external receivers stay closed. `networkPolicy.breakGlass` is the debug override and must not stay on (#190).
 - Compose reads the Postgres superuser password from `POSTGRES_PASSWORD` (local default `postgres`), and SECURITY.md covers secret handling and rotation (#482).
 - `cli.py setup` downloads the revisions pinned in `models.lock.json` and fails closed on a missing file, a size mismatch, or a digest mismatch (#486).
