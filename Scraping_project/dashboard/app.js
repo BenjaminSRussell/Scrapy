@@ -989,6 +989,8 @@ function updateDashboard(metrics) {
     if (!metricsFlood.degraded) updateHistoricalData(metrics);
     renderScrapeTargets(metrics);
 
+    renderQueueDepthViz(metrics);
+
     if (metricsFlood.degraded) {
         previousMetrics = {
             stage1_urls_discovered_total: metrics['stage1_urls_discovered_total'],
@@ -1068,6 +1070,45 @@ function applyMetricsFlood(decision) {
     } else if (decision.recovered) {
         addActivityLogItem('success', 'Metrics flood cleared: charts resumed');
     }
+}
+
+// #1002: horizontal bars from queueDepthView(metrics). Text nodes only.
+function renderQueueDepthViz(metrics) {
+    const root = document.getElementById('queue-depth-viz');
+    const tbody = document.querySelector('#queue-depth-viz-table tbody');
+    const status = document.getElementById('queue-depth-viz-status');
+    if (!root || !tbody || typeof queueDepthView !== 'function') return;
+    const view = queueDepthView(metrics);
+    root.replaceChildren();
+    tbody.replaceChildren();
+    for (const bar of view.bars) {
+        const row = document.createElement('div');
+        row.className = 'qd-row';
+        const name = document.createElement('div');
+        name.className = 'qd-name';
+        name.textContent = bar.label;
+        const track = document.createElement('div');
+        track.className = 'qd-track';
+        track.setAttribute('role', 'img');
+        track.setAttribute('aria-label', bar.aria);
+        const fill = document.createElement('div');
+        fill.className = 'qd-fill qd-' + bar.level;
+        fill.style.width = bar.pct.toFixed(1) + '%';
+        track.appendChild(fill);
+        const meta = document.createElement('div');
+        meta.className = 'qd-meta';
+        meta.textContent = bar.meta;
+        row.append(name, track, meta);
+        root.appendChild(row);
+        const tr = document.createElement('tr');
+        for (const value of [bar.label, bar.depthText, bar.levelLabel, String(bar.warn), String(bar.critical)]) {
+            const td = document.createElement('td');
+            td.textContent = value;
+            tr.appendChild(td);
+        }
+        tbody.appendChild(tr);
+    }
+    if (status && status.textContent !== view.summary) status.textContent = view.summary;
 }
 
 
@@ -2033,6 +2074,7 @@ function initialize() {
     initializeCharts();
     ensureChartPlaceholders();
     setupComparisonToggle();
+    renderQueueDepthViz({});
     refreshScheduler = createRefreshScheduler({ interval: REFRESH_INTERVAL, fetch: fetchAndAnnounce });
     setupIntervalControl();
     setupVisibilityPause();

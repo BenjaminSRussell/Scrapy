@@ -70,6 +70,29 @@ node --test Scraping_project/dashboard/tests/   # helper unit tests
   keys; see Grafana for those. System Health links to Grafana home
   (`CC_GRAFANA_URL`, default `http://localhost:3000/`), not a `/d/<uid>` dashboard,
   so the card still works when that JSON is absent (#1040).
+- Queue depth bars (#1002): the Overview tab draws one horizontal bar per hop from the
+  parsed metrics map (`queueDepthView` in `format-utils.js`), not from `/api/queues`.
+  Redis hops are Stage 1 → 2 (`redis_queue_length` queue `stage1_discovered_urls`),
+  Stage 1 → JS (`priority_queue`, or `js_priority_queue_size` only when that series is
+  absent), Stage 2 → 3, and Stage 2 → 4. Any other `redis_queue_length` queue is an
+  extra bar. Delta write reads `delta_write_queue_depth`. Labelled samples use the max
+  (same as `max by (queue)`); a bare summed name is not a depth. A missing series is
+  **not reported**, never a zero.
+
+  Threshold colors (fill plus the word beside the bar; `#` values are the dashboard tokens):
+
+  | Level | Color | When |
+  |---|---|---|
+  | ok | `#10b981` | depth ≤ warning line |
+  | warning | `#f59e0b` | depth > warning line and ≤ backlog line |
+  | backlog | `#ef4444` | depth > backlog line |
+  | not reported | `#64748b` | series absent |
+
+  Redis warning line is **8000** (low watermark) and the backlog line is **10000**
+  (`QueueBacklog`: `redis_queue_length > 10000`). Delta write warns above **50** and
+  backlogs above **100** (`DeltaWriteQueueBacklog`). 50 is a display warning only; it
+  is not an alert and not a fourth SLO. The bar width is depth ÷ backlog line, capped
+  at 100%.
 
 ## Server settings
 

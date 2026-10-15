@@ -1345,5 +1345,162 @@
         return sampled;
     }
 
-    return { tabKeyTarget, staleState, queueDepthRows, metricsFailureActivity, shortcutHintText, parseMetrics, metricSeriesCount, METRICS_FLOOD_DEFAULTS, metricsFloodLimits, advanceMetricsFlood, metricsFloodBannerText, ratePerMinute, resolveMetricsUrl, metricsEndpoint, metricsEndpointLabel, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler, stageActivity, stageDrilldown, stageDrilldownKey, doughnutLegendLayout, connectionState, documentTitle, createActivityAnnouncer, metricsUrlProblem, splitLinks, createMetricsFetcher, REFRESH_INTERVAL_CHOICES, parseRefreshInterval, shortcutAction, pickInitialTab, METRIC_UI_MAP, renderMetricNameMap, parseDangerSoundEnabled, dangerSoundDecision, HEALTH_HISTORY_LIMIT, pushPollOutcome, healthHistoryView, COMPARISON_BASELINE_ROLE, PREV_HOUR_AVG_KEYS, readPrevHourAverage, comparisonBaselineSeries, comparisonNote, ACTIVITY_LOG_CAP, capActivityLog, activityStaleNote, restoreActivityLog, topScrapeTargets, SCRAPE_TARGET_EMPTY, ACTIVITY_LEVELS, activityLevelCounts, filterActivityItems, filterActivityMessages, activityFilterStatus, toggleActivityLevel, HISTORY_MAX_POINTS, HISTORY_RAW_POINTS, assertHistoryBound, boundHistoryBuffer, pushHistorySample, enforceHistoryCap, downsampleIndices, grafanaHomeUrl, jobStartedPresentation, DEFAULT_ACCENT, parseAccentColor, accentInk, accentBorder, accentCssVars };
+    // #1002: horizontal bars for pipeline hops, read from a parseMetrics map.
+    // Comparisons match the shipped alerts (`>`), not new SLOs. QueueBacklog
+    // stays redis_queue_length > 10000; the warning line is the low watermark
+    // 8000. DeltaWriteQueueBacklog stays delta_write_queue_depth > 100; the
+    // warning line is 50 (half of that alert, display only). A missing series
+    // is unknown, never a fabricated zero. Colours are the dashboard tokens.
+    const QUEUE_DEPTH_LEVELS = {
+        ok: { color: '#10b981', label: 'ok' },
+        warn: { color: '#f59e0b', label: 'warning' },
+        critical: { color: '#ef4444', label: 'backlog' },
+        unknown: { color: '#64748b', label: 'not reported' },
+    };
+    const QUEUE_DEPTH_HOPS = [
+        {
+            id: 'stage1-stage2',
+            label: 'Stage 1 \u2192 2',
+            warn: 8000,
+            critical: 10000,
+            sources: [{ metric: 'redis_queue_length', queues: ['stage1_discovered_urls', 'stage1_to_stage2'] }],
+        },
+        {
+            id: 'stage1-js',
+            label: 'Stage 1 \u2192 JS',
+            warn: 8000,
+            critical: 10000,
+            sources: [
+                { metric: 'redis_queue_length', queues: ['priority_queue', 'js_spider:priority_queue', 'stage1_js_render_pending'] },
+                { metric: 'js_priority_queue_size', queues: null },
+            ],
+        },
+        {
+            id: 'stage2-stage3',
+            label: 'Stage 2 \u2192 3',
+            warn: 8000,
+            critical: 10000,
+            sources: [{ metric: 'redis_queue_length', queues: ['stage2_analyzed_pages', 'stage2_to_stage3'] }],
+        },
+        {
+            id: 'stage2-stage4',
+            label: 'Stage 2 \u2192 4',
+            warn: 8000,
+            critical: 10000,
+            sources: [{ metric: 'redis_queue_length', queues: ['stage2_large_docs', 'stage2_to_stage4'] }],
+        },
+        {
+            id: 'delta-write',
+            label: 'Delta write',
+            warn: 50,
+            critical: 100,
+            sources: [{ metric: 'delta_write_queue_depth', queues: null }],
+        },
+    ];
+    function promLabel(key, name) {
+        const re = new RegExp('(?:^|[{,])' + name + '="((?:[^"\\\\]|\\\\.)*)"');
+        const m = String(key).match(re);
+        return m ? m[1].replace(/\\(.)/g, '$1') : null;
+    }
+    // Max across matching series. Labelled samples win; the bare key is the
+    // unlabelled gauge only when no labelled series exist (parseMetrics stores
+    // the sum of labelled series under the bare name, which is not a depth).
+    function maxSeries(metrics, metricName, queues) {
+        const want = queues ? new Set(queues) : null;
+        let best = null;
+        let sawLabelled = false;
+        const prefix = metricName + '{';
+        for (const key of Object.keys(metrics)) {
+            if (!key.startsWith(prefix)) continue;
+            sawLabelled = true;
+            if (want && !want.has(promLabel(key, 'queue'))) continue;
+            const v = Number(metrics[key]);
+            if (!Number.isFinite(v)) continue;
+            if (best === null || v > best) best = v;
+        }
+        if (best !== null) return best;
+        if (!want && !sawLabelled && Object.prototype.hasOwnProperty.call(metrics, metricName)) {
+            const v = Number(metrics[metricName]);
+            if (Number.isFinite(v)) return v;
+        }
+        return null;
+    }
+    function queueDepthLevel(depth, warn, critical) {
+        const d = Number(depth);
+        if (!Number.isFinite(d)) return 'unknown';
+        if (d > critical) return 'critical';
+        if (d > warn) return 'warn';
+        return 'ok';
+    }
+    function queueDepthPct(depth, critical) {
+        const d = Number(depth);
+        const c = Number(critical);
+        if (!Number.isFinite(d) || !Number.isFinite(c) || c <= 0) return 0;
+        return Math.max(0, Math.min(100, (d / c) * 100));
+    }
+    function queueDepthBar(id, label, depth, warn, critical) {
+        const known = depth !== null && Number.isFinite(Number(depth));
+        const level = known ? queueDepthLevel(depth, warn, critical) : 'unknown';
+        const spec = QUEUE_DEPTH_LEVELS[level];
+        const pct = known ? queueDepthPct(depth, critical) : 0;
+        const depthText = known ? formatNumber(depth) : '\u2014';
+        const meta = known ? depthText + ' \u00b7 ' + spec.label : spec.label;
+        return {
+            id: id,
+            label: label,
+            depth: known ? Number(depth) : null,
+            warn: warn,
+            critical: critical,
+            level: level,
+            color: spec.color,
+            levelLabel: spec.label,
+            pct: pct,
+            depthText: depthText,
+            meta: meta,
+            aria: label + ': ' + (known ? depth + ' ' + spec.label : spec.label) +
+                '. Warning above ' + warn + ', backlog above ' + critical + '.',
+        };
+    }
+    function queueDepthSummary(bars) {
+        const crit = bars.filter(b => b.level === 'critical').map(b => b.label);
+        const warn = bars.filter(b => b.level === 'warn').map(b => b.label);
+        if (crit.length) return 'Backlog: ' + crit.join(', ');
+        if (warn.length) return 'Warning: ' + warn.join(', ');
+        if (bars.every(b => b.level === 'unknown')) return 'Queue depths not reported by the metrics exporter.';
+        return 'Reported queues are under the warning line.';
+    }
+    function queueDepthView(metrics) {
+        const m = metrics && typeof metrics === 'object' ? metrics : {};
+        const claimed = new Set();
+        for (const hop of QUEUE_DEPTH_HOPS) {
+            for (const source of hop.sources) {
+                if (source.metric === 'redis_queue_length' && source.queues) {
+                    for (const q of source.queues) claimed.add(q);
+                }
+            }
+        }
+        const bars = QUEUE_DEPTH_HOPS.map(hop => {
+            let depth = null;
+            for (const source of hop.sources) {
+                const found = maxSeries(m, source.metric, source.queues || null);
+                if (found !== null) { depth = found; break; }
+            }
+            return queueDepthBar(hop.id, hop.label, depth, hop.warn, hop.critical);
+        });
+        const extras = new Map();
+        for (const key of Object.keys(m)) {
+            if (!key.startsWith('redis_queue_length{')) continue;
+            const q = promLabel(key, 'queue');
+            if (!q || claimed.has(q)) continue;
+            const v = Number(m[key]);
+            if (!Number.isFinite(v)) continue;
+            const prev = extras.get(q);
+            if (prev === undefined || v > prev) extras.set(q, v);
+        }
+        for (const name of [...extras.keys()].sort()) {
+            bars.push(queueDepthBar('redis:' + name, name, extras.get(name), 8000, 10000));
+        }
+        return { levels: QUEUE_DEPTH_LEVELS, bars: bars, summary: queueDepthSummary(bars) };
+    }
+    return { tabKeyTarget, staleState, queueDepthRows, queueDepthView, queueDepthLevel, QUEUE_DEPTH_LEVELS, QUEUE_DEPTH_HOPS, metricsFailureActivity, shortcutHintText, parseMetrics, metricSeriesCount, METRICS_FLOOD_DEFAULTS, metricsFloodLimits, advanceMetricsFlood, metricsFloodBannerText, ratePerMinute, resolveMetricsUrl, metricsEndpoint, metricsEndpointLabel, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler, stageActivity, stageDrilldown, stageDrilldownKey, doughnutLegendLayout, connectionState, documentTitle, createActivityAnnouncer, metricsUrlProblem, splitLinks, createMetricsFetcher, REFRESH_INTERVAL_CHOICES, parseRefreshInterval, shortcutAction, pickInitialTab, METRIC_UI_MAP, renderMetricNameMap, parseDangerSoundEnabled, dangerSoundDecision, HEALTH_HISTORY_LIMIT, pushPollOutcome, healthHistoryView, COMPARISON_BASELINE_ROLE, PREV_HOUR_AVG_KEYS, readPrevHourAverage, comparisonBaselineSeries, comparisonNote, ACTIVITY_LOG_CAP, capActivityLog, activityStaleNote, restoreActivityLog, topScrapeTargets, SCRAPE_TARGET_EMPTY, ACTIVITY_LEVELS, activityLevelCounts, filterActivityItems, filterActivityMessages, activityFilterStatus, toggleActivityLevel, HISTORY_MAX_POINTS, HISTORY_RAW_POINTS, assertHistoryBound, boundHistoryBuffer, pushHistorySample, enforceHistoryCap, downsampleIndices, grafanaHomeUrl, jobStartedPresentation, DEFAULT_ACCENT, parseAccentColor, accentInk, accentBorder, accentCssVars };
 });
