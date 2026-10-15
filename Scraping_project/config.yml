@@ -355,6 +355,11 @@ kafka:
 # ============================================
 delta_lake:
   base_path: ./data/delta_lake
+  # Tenant stamped on every new lake row as nullable tenant_id (#670).
+  # DELTA_TENANT_ID overrides this. Blank or invalid values become "default".
+  # Rows written before the column existed stay null until backfill.
+  # See docs/TENANT_ID.md.
+  tenant_id: default
   # Delta log checkpoint every N commits (sets the delta.checkpointInterval table
   # property); checkpoint()/shutdown also writes one explicitly (#274).
   checkpoint_interval: 100

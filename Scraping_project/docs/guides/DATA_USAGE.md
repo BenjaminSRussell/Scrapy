@@ -37,6 +37,16 @@ old = lake.read("stage2_queue", version=0)                    # time travel
 
 `read()` returns a list of dicts. Filters use pyarrow DNF tuples (`[("col", "op", value), ...]`).
 
+### One tenant
+
+Every new row has `tenant_id`. `read()` still returns every tenant. To keep one:
+
+```python
+rows = lake.read_for_tenant("stage2_page_analysis", "default")
+```
+
+`default` also returns rows written before the column existed (`tenant_id` null). Any other id does not. Details and the backfill are in [TENANT_ID.md](../TENANT_ID.md).
+
 ### With the `deltalake` package directly (pandas / pyarrow)
 
 ```python

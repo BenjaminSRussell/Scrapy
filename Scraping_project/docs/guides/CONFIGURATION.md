@@ -36,7 +36,7 @@ The YAML file comments every key in detail. A few keys are documented in the fil
 | `stage3` | Summarization of normal pages | `max_workers`, `batch_size`, `poll_interval_seconds`, `similarity_threshold` (MinHash dedup), `model_name`, `min_length`, `max_length`, `device` (`cpu`/`cuda`) |
 | `stage4` | Large-document summarization | `chunk_size`, `chunk_overlap`, `model_name`, `min_summary_length`, `max_summary_length`, `device`, `max_workers` |
 | `kafka` | Producer/consumer for the Kafka → Delta path | `bootstrap_servers`, `topics.*`, `topic_settings.*`, `producer.*`, `consumer.*`, `message_key_field`, `require_idempotence` |
-| `delta_lake` | Storage | `base_path`, `queue_maxsize`, `queue_put_timeout_seconds`, `write_retries`, `write_retry_backoff_seconds`, `cast_mode` (`strict` quarantines rows with uncastable values, `coerce` sets them to null), `queue_retention_hours` / `queue_gc_*` (queue-table GC), `z_order_columns`, `checkpoint_interval`, `force_shutdown_timeout`, `tables.*` |
+| `delta_lake` | Storage | `base_path`, `tenant_id` (stamped on new rows; default `default`; see [TENANT_ID.md](../TENANT_ID.md)), `queue_maxsize`, `queue_put_timeout_seconds`, `write_retries`, `write_retry_backoff_seconds`, `cast_mode` (`strict` quarantines rows with uncastable values, `coerce` sets them to null), `queue_retention_hours` / `queue_gc_*` (queue-table GC), `z_order_columns`, `checkpoint_interval`, `force_shutdown_timeout`, `tables.*` |
 | `message_queues` | Logical queue names between stages | `stage1_to_stage2`, `stage2_to_stage3`, `stage2_to_stage4`, `js_render_*`, `stage*_errors`, `persistent_queues`, `transient_queues` |
 | `logging` | Python logging | `level`, which feeds Scrapy's `LOG_LEVEL`; the `LOG_LEVEL` env var takes precedence. `format`, `file`, `max_bytes` and `backup_count` are **not read by the code today**: logs go to stdout, and the shape is chosen with `LOG_FORMAT=text\|json` |
 | `monitoring` | Reference values only | `enabled`, `prometheus_port`, `grafana_port` and `metrics.*` are **not read by the code**. The ports really come from `docker-compose.yml` and `monitoring/prometheus.yml` |
@@ -50,7 +50,7 @@ These are the variables the code actually reads (`grep -rn "getenv" src cli.py s
 
 | Area | Variables |
 |---|---|
-| Storage | `DELTA_LAKE_PATH` (takes precedence over `delta_lake.base_path`; compose and k8s set it so workers and the exporter share one lake), `DELTA_BACKEND`, `DELTA_ALLOW_HARD_DELETE` |
+| Storage | `DELTA_LAKE_PATH` (takes precedence over `delta_lake.base_path`; compose and k8s set it so workers and the exporter share one lake), `DELTA_TENANT_ID` (overrides `delta_lake.tenant_id`), `DELTA_BACKEND`, `DELTA_ALLOW_HARD_DELETE` |
 | Redis | `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD` |
 | Postgres | `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD` |
 | Kafka | `KAFKA_BOOTSTRAP_SERVERS`, `KAFKA_SECURITY_PROTOCOL`, `KAFKA_SASL_MECHANISM`, `KAFKA_SASL_USERNAME`, `KAFKA_SASL_PASSWORD`, `KAFKA_PRODUCER_ACKS`, `KAFKA_REQUIRE_IDEMPOTENCE`, `KAFKA_DLQ_ENABLED`, `KAFKA_SPILL_DIR`, `DLQ_PATH` |

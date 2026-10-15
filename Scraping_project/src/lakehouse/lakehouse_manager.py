@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any, Literal, TypeAlias
 
 from src.core.config import Config
+from src.core.schemas import DEFAULT_TENANT_ID, TENANT_ID_COLUMN
 from src.scrapy_prometheus import (
     DELTA_MANAGER_CONTEXT_ENTER_TOTAL,
     DELTA_MANAGER_CONTEXT_EXIT_TOTAL,
@@ -285,6 +286,132 @@ def infer_table(rows: list[dict[str, Any]]) -> Any:
     table = pa.Table.from_pylist(rows)
     keep = [name for name, typ in zip(table.column_names, table.schema.types) if not pa.types.is_null(typ)]
     return table.select(keep)
+
+
+# Same alphabet as site ids (#191): safe in a Delta predicate, no colon or whitespace.
+_TENANT_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+_BAD_TENANT_LOGGED: set[str] = set()
+
+
+def _warn_bad_tenant(value: str) -> None:
+    if value in _BAD_TENANT_LOGGED:
+        return
+    _BAD_TENANT_LOGGED.add(value)
+    logger.warning(
+        "tenant_id %r does not match %s; using %r (#670)",
+        value,
+        _TENANT_ID_RE.pattern,
+        DEFAULT_TENANT_ID,
+    )
+
+
+def resolve_profile_tenant_id(explicit: str | None = None) -> str:
+    """Tenant stamped on new lake rows and used by the query helper (#670).
+
+    Precedence: a non-empty ``explicit`` argument, else the ``DELTA_TENANT_ID``
+    environment variable, else ``delta_lake.tenant_id`` in the crawl profile,
+    else ``default``. A blank or pattern-invalid value is ``default`` so a bad
+    setting cannot block a write or inject predicate metacharacters.
+    """
+    if explicit is not None and str(explicit).strip():
+        candidate = str(explicit).strip()
+    else:
+        env = os.getenv("DELTA_TENANT_ID")
+        if env and env.strip():
+            candidate = env.strip()
+        else:
+            try:
+                configured = Config.get_instance().get("delta_lake.tenant_id", DEFAULT_TENANT_ID)
+            except Exception:
+                configured = DEFAULT_TENANT_ID
+            candidate = str(configured).strip() if configured is not None else ""
+    if candidate and _TENANT_ID_RE.fullmatch(candidate):
+        return candidate
+    if candidate:
+        _warn_bad_tenant(candidate)
+    return DEFAULT_TENANT_ID
+
+
+def _stamp_tenant_id(records: list[dict[str, Any]], tenant_id: str | None = None) -> str:
+    """Fill missing ``tenant_id`` in place. A non-empty valid value already on the row wins."""
+    tenant = resolve_profile_tenant_id(tenant_id)
+    for record in records:
+        raw = record.get(TENANT_ID_COLUMN)
+        if isinstance(raw, str) and raw.strip():
+            chosen = raw.strip()
+            if _TENANT_ID_RE.fullmatch(chosen):
+                record[TENANT_ID_COLUMN] = chosen
+                continue
+            _warn_bad_tenant(chosen)
+        record[TENANT_ID_COLUMN] = tenant
+    return tenant
+
+
+def filter_rows_by_tenant(
+    rows: list[dict[str, Any]],
+    tenant_id: str | None = None,
+    *,
+    include_legacy: bool | None = None,
+) -> list[dict[str, Any]]:
+    """Keep rows for one tenant (#670).
+
+    ``tenant_id`` defaults to :func:`resolve_profile_tenant_id`. Rows with a
+    null, missing, or blank ``tenant_id`` were written before the column
+    existed. They are included only when ``include_legacy`` is true, which
+    defaults to true for ``default`` and false for any other tenant. The
+    column is not a partition key; this filters already-scanned rows.
+    """
+    tenant = resolve_profile_tenant_id(tenant_id)
+    if include_legacy is None:
+        include_legacy = tenant == DEFAULT_TENANT_ID
+    kept: list[dict[str, Any]] = []
+    for row in rows:
+        raw = row.get(TENANT_ID_COLUMN)
+        if not isinstance(raw, str) or not raw.strip():
+            if include_legacy:
+                kept.append(row)
+            continue
+        if raw.strip() == tenant:
+            kept.append(row)
+    return kept
+
+
+def apply_tenant_read(
+    reader: Any,
+    table_name: str,
+    tenant_id: str | None = None,
+    *,
+    include_legacy: bool | None = None,
+    **kwargs: Any,
+) -> list[dict]:
+    """``reader.read`` then :func:`filter_rows_by_tenant`.
+
+    ``columns`` is applied after the tenant check so a projection that omits
+    ``tenant_id`` still works, including on tables that do not have the column
+    yet (those rows are legacy nulls).
+    """
+    columns = kwargs.pop("columns", None)
+    rows = reader.read(table_name, **kwargs)
+    filtered = filter_rows_by_tenant(rows, tenant_id, include_legacy=include_legacy)
+    if not columns:
+        return filtered
+    return [{col: row.get(col) for col in columns} for row in filtered]
+
+
+def _with_nullable_tenant(table: Any) -> Any:
+    """Force ``tenant_id`` to a nullable string so evolution can add it (#670).
+
+    Inference marks the column non-nullable when every new row has a value.
+    Delta cannot add a required column onto files that lack it.
+    """
+    if pa is None or TENANT_ID_COLUMN not in getattr(table, "column_names", ()):
+        return table
+    idx = table.schema.get_field_index(TENANT_ID_COLUMN)
+    field = table.schema.field(idx)
+    if field.nullable and pa.types.is_string(field.type):
+        return table
+    updated = table.schema.set(idx, pa.field(TENANT_ID_COLUMN, pa.string(), nullable=True))
+    return table.cast(updated)
 
 
 try:  # schema evolution visibility (#226)
@@ -994,10 +1121,13 @@ class LakehouseManager:
         no usable host are removed from ``data`` and returned, to be
         quarantined (#458) rather than written to a skewed domain="unknown"
         partition. For date-partitioned tables ``date`` is derived (#268).
+        Every row gets ``tenant_id`` from the crawl profile when the caller
+        did not set one (#670), including rows that are about to be quarantined.
         """
         if partitions == "config":
             partitions = _partition_columns(table_name)
         partitions = partitions or []
+        _stamp_tenant_id(data)
         undomainable: list[dict[str, Any]] = []
         if "domain" in partitions:
             # Partition key: public-suffix-aware registrable domain (#251).
@@ -1216,7 +1346,7 @@ class LakehouseManager:
             keep_schema = mode in ("append", "overwrite") and not schema_overwrite
             table_schema = self._table_schema(table_path) if keep_schema else None
             if table_schema is None:
-                table = infer_table(data)
+                table = _with_nullable_tenant(infer_table(data))
             else:
                 cast_table, kept, failures = cast_rows_to_schema(
                     data, table_schema, getattr(self, "cast_mode", "strict")
@@ -1231,6 +1361,7 @@ class LakehouseManager:
                     return True  # handled: every row is recorded in quarantine
                 data = kept
                 table, added = evolve_table(cast_table, data, set(table_schema.names))
+                table = _with_nullable_tenant(table)
                 if added:
                     if DELTA_SCHEMA_EVOLUTIONS is not None:
                         DELTA_SCHEMA_EVOLUTIONS.labels(table=table_name).inc(len(added))
@@ -1407,6 +1538,17 @@ class LakehouseManager:
         pa_table = table.to_pyarrow_table(filters=filters, columns=columns)
         rows: list[dict] = pa_table.to_pylist()
         return rows
+
+    def read_for_tenant(
+        self,
+        table_name: str,
+        tenant_id: str | None = None,
+        *,
+        include_legacy: bool | None = None,
+        **kwargs: Any,
+    ) -> list[dict]:
+        """Read one tenant. See :func:`filter_rows_by_tenant` (#670)."""
+        return apply_tenant_read(self, table_name, tenant_id, include_legacy=include_legacy, **kwargs)
 
     def count(self, table_name: str) -> int:
         from deltalake import DeltaTable
@@ -2320,7 +2462,7 @@ class LakehouseManager:
         try:
             write_deltalake(
                 str(table_path),
-                infer_table(rows),
+                _with_nullable_tenant(infer_table(rows)),
                 mode="error",
                 partition_by=partition_by,
                 configuration=self._table_properties(),
@@ -2534,6 +2676,17 @@ class InMemoryBackend:
         if columns:
             return [{col: row.get(col) for col in columns} for row in data]
         return data
+
+    def read_for_tenant(
+        self,
+        table_name: str,
+        tenant_id: str | None = None,
+        *,
+        include_legacy: bool | None = None,
+        **kwargs: Any,
+    ) -> list[dict]:
+        """Read one tenant. See :func:`filter_rows_by_tenant` (#670)."""
+        return apply_tenant_read(self, table_name, tenant_id, include_legacy=include_legacy, **kwargs)
 
     def list_tables(self) -> list[str]:
         return list(self.tables.keys())

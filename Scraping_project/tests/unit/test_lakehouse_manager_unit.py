@@ -93,7 +93,8 @@ def test_schema_shaped_records_round_trip(lake):
 
     names = get_schema("stage3_summaries").names
     row = {"url": "https://example.com/a", "url_hash": "a", "summary": "s", "word_count": 3,
-           "keywords": ["k"], "quality_score": 0.5, "timestamp": datetime(2026, 1, 1)}
+           "keywords": ["k"], "quality_score": 0.5, "timestamp": datetime(2026, 1, 1),
+           "tenant_id": "default"}
     assert set(row) == set(names)
     lake.write("stage3_summaries", [row, {**row, "url_hash": "b"}], async_write=False)
     assert lake.count("stage3_summaries") == 2

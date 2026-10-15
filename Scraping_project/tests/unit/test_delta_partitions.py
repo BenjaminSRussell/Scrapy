@@ -213,6 +213,7 @@ def test_metadata_queue_is_declared_partitioned_and_vacuumed(manager):
     # Column contract matches MetadataExtractionPipeline's written row (#433).
     assert set(get_schema("metadata_queue").names) == {
         "url", "title", "keywords", "entities", "extraction_timestamp", "spider_name",
+        "tenant_id",
     }
 
 

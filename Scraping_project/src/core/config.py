@@ -202,7 +202,8 @@ class Config:
         return {
             "redis": _default_redis_section(),
             "delta_lake": {
-                "base_path": "./data/delta_lake"
+                "base_path": "./data/delta_lake",
+                "tenant_id": "default",
             },
             "stages": {
                 "stage1": {

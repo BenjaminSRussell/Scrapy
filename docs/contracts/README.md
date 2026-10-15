@@ -18,9 +18,10 @@ open work in #303. The federated gold query
 ([docs/product/federated-tenant-gold-query.md](../product/federated-tenant-gold-query.md))
 still has no gold tables to open. Do not point it at these stage tables.
 
-`LakehouseManager` also stamps `_ingestion_time` and `_stage` on every write.
-Those columns are not part of the contract. Schemas set
-`additionalProperties: true` so a reader can ignore them.
+`LakehouseManager` also stamps `_ingestion_time`, `_stage`, and `tenant_id`
+on every write. Those columns are not part of these contracts.
+`additionalProperties` stays true so a reader can ignore them. `tenant_id`
+is nullable and documented in `Scraping_project/docs/TENANT_ID.md` (#670).
 
 ## What CI checks
 

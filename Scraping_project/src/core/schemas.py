@@ -8,6 +8,12 @@ column projection for performance.
 import pyarrow as pa
 from typing import Final, Dict
 
+# Nullable tenant column on every lake table (#670). New writes stamp a value;
+# historical rows stay null until backfilled. See docs/TENANT_ID.md.
+TENANT_ID_COLUMN: Final[str] = "tenant_id"
+DEFAULT_TENANT_ID: Final[str] = "default"
+
+
 # Stage 1: URL Discovery Schema
 STAGE1_DISCOVERY_SCHEMA: Final[pa.Schema] = pa.schema([
     ("url", pa.string()),
@@ -19,6 +25,7 @@ STAGE1_DISCOVERY_SCHEMA: Final[pa.Schema] = pa.schema([
     ("status", pa.string()),
     ("queued_at", pa.timestamp("ms")),
     ("discovered_at", pa.timestamp("ms")),
+    ("tenant_id", pa.string()),  # nullable; stamped from the crawl profile (#670)
 ])
 
 # Stage 2: Page Analysis Schema
@@ -39,6 +46,7 @@ STAGE2_ANALYSIS_SCHEMA: Final[pa.Schema] = pa.schema([
     ("error_message", pa.string()),
     ("error_code", pa.int32()),
     ("processed_at", pa.timestamp("ms")),
+    ("tenant_id", pa.string()),  # nullable; stamped from the crawl profile (#670)
 ])
 
 # Stage 2: Queue Schema
@@ -51,6 +59,7 @@ STAGE2_QUEUE_SCHEMA: Final[pa.Schema] = pa.schema([
     ("started_at", pa.timestamp("ms")),
     ("completed_at", pa.timestamp("ms")),
     ("retry_count", pa.int32()),
+    ("tenant_id", pa.string()),  # nullable; stamped from the crawl profile (#670)
 ])
 
 # Stage 3: Summary Schema
@@ -62,6 +71,7 @@ STAGE3_SUMMARY_SCHEMA: Final[pa.Schema] = pa.schema([
     ("keywords", pa.list_(pa.string())),
     ("quality_score", pa.float64()),
     ("timestamp", pa.timestamp("ms")),
+    ("tenant_id", pa.string()),  # nullable; stamped from the crawl profile (#670)
 ])
 
 # Stage 4: Large Document Summary Schema
@@ -75,6 +85,7 @@ STAGE4_LARGE_DOC_SCHEMA: Final[pa.Schema] = pa.schema([
     ("compression_ratio", pa.float64()),
     ("is_pdf", pa.bool_()),
     ("processed_at", pa.timestamp("ms")),
+    ("tenant_id", pa.string()),  # nullable; stamped from the crawl profile (#670)
 ])
 
 # Seed URLs Schema
@@ -84,6 +95,7 @@ SEED_URLS_SCHEMA: Final[pa.Schema] = pa.schema([
     ("seed_priority", pa.int32()),
     ("last_crawled", pa.timestamp("ms")),
     ("is_active", pa.bool_()),
+    ("tenant_id", pa.string()),  # nullable; stamped from the crawl profile (#670)
 ])
 
 # Error Tracking Schema
@@ -98,6 +110,7 @@ ERROR_LOG_SCHEMA: Final[pa.Schema] = pa.schema([
     ("is_retryable", pa.bool_()),
     ("severity", pa.string()),
     ("timestamp", pa.timestamp("ms")),
+    ("tenant_id", pa.string()),  # nullable; stamped from the crawl profile (#670)
 ])
 
 # Metadata extraction output (#433). `entities` is JSON text: Parquet cannot
@@ -109,6 +122,7 @@ METADATA_QUEUE_SCHEMA: Final[pa.Schema] = pa.schema([
     ("entities", pa.string()),
     ("extraction_timestamp", pa.string()),
     ("spider_name", pa.string()),
+    ("tenant_id", pa.string()),  # nullable; stamped from the crawl profile (#670)
 ])
 
 # Performance Metrics Schema
@@ -121,6 +135,7 @@ METRICS_SCHEMA: Final[pa.Schema] = pa.schema([
     ("throughput_per_minute", pa.float64()),
     ("error_rate", pa.float64()),
     ("timestamp", pa.timestamp("ms")),
+    ("tenant_id", pa.string()),  # nullable; stamped from the crawl profile (#670)
 ])
 
 # Schema Registry

@@ -10,6 +10,8 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
+from src.core.schemas import DEFAULT_TENANT_ID
+
 
 def _now() -> datetime:
     return datetime(2026, 1, 15, 12, 0, 0, tzinfo=timezone.utc)
@@ -27,6 +29,7 @@ def url_record(**overrides: Any) -> dict[str, Any]:
         "status": "pending",
         "queued_at": _now(),
         "discovered_at": _now(),
+        "tenant_id": DEFAULT_TENANT_ID,
     }
     base.update(overrides)
     return base
@@ -51,6 +54,7 @@ def stage2_record(**overrides: Any) -> dict[str, Any]:
         "error_message": None,
         "error_code": None,
         "processed_at": _now(),
+        "tenant_id": DEFAULT_TENANT_ID,
     }
     base.update(overrides)
     return base
@@ -66,6 +70,7 @@ def stage3_summary(**overrides: Any) -> dict[str, Any]:
         "keywords": ["summary", "test"],
         "quality_score": 0.75,
         "timestamp": _now(),
+        "tenant_id": DEFAULT_TENANT_ID,
     }
     base.update(overrides)
     return base
@@ -83,6 +88,7 @@ def stage4_large_doc(**overrides: Any) -> dict[str, Any]:
         "compression_ratio": 0.004,
         "is_pdf": True,
         "processed_at": _now(),
+        "tenant_id": DEFAULT_TENANT_ID,
     }
     base.update(overrides)
     return base
