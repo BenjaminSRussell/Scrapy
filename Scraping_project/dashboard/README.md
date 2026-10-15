@@ -49,6 +49,19 @@ node --test Scraping_project/dashboard/tests/   # helper unit tests
 | `CC_CORS_ORIGINS` | unset (no CORS headers) | Comma list of exact origins allowed to read responses cross-origin; `*` is for local development only and prints a warning (#189) |
 | `CC_CONNECT_SRC` | unset | Extra http(s) origins allowed in CSP `connect-src` (only for a cross-origin `?metrics=`) (#245) |
 | `CC_RATE_LIMIT` / `CC_RATE_BURST` | `600` / `120` | Per-client token bucket: requests per minute and burst. Excess requests get `429` with `Retry-After`. `CC_RATE_LIMIT=0` disables it (#257) |
+| `CC_OIDC_CONFIG_PATH` | `dashboard/.oidc-sso.json` | Saved OIDC fields from the SSO tab (#673). An empty value keeps them in memory for this process only. The file is mode `0600` and may hold a client secret. Login stays `not_implemented` either way |
+
+## SSO settings (#673)
+
+The SSO tab is an OIDC config screen, not a login. It edits issuer, client id,
+client secret, redirect URI, and scopes, and posts them to `POST /api/sso/oidc`.
+`GET /api/sso/oidc` returns the same fields with `enabled: false` and
+`login: "not_implemented"`. The client secret is never in that JSON
+(`client_secret_set` is a boolean). `GET` or `POST /api/sso/oidc/login` answers
+`501` with `{"status":"not_implemented"}` and does not redirect. The shared-secret
+gate above still protects the settings document; the login path is public so a
+client can see that SSO is off. Nothing in this screen contacts an identity
+provider. Future enablement is [docs/product/673-oidc-sso.md](../../docs/product/673-oidc-sso.md).
 
 ## Exposing the dashboard (#189/#455)
 

@@ -251,3 +251,6 @@ Scraping_project/profiles/
 # direnv: commit only Scraping_project/.envrc.example (#783)
 .envrc
 .direnv/
+
+# OIDC placeholder overlay (#673). May contain a client secret. Dotfile, not served.
+Scraping_project/dashboard/.oidc-sso.json

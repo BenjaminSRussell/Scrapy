@@ -1172,7 +1172,7 @@ function visibleTabNames() {
         .map(b => b.getAttribute('data-tab'));
 }
 
-// #952/#1010: 1-5 switch tabs, R refreshes (see shortcutAction in format-utils.js).
+// #952/#1010: digits 1-N switch visible tabs, R refreshes (see shortcutAction).
 function setupShortcuts() {
     visibleTabNames().forEach((name, i) => {
         const btn = document.querySelector(`.tab-button[data-tab="${name}"]`);
@@ -1595,6 +1595,103 @@ function applyVersionWatermark() {
     if (el) el.textContent = 'v' + (window.__CC_VERSION__ || 'dev');
 }
 
+// #673: OIDC settings screen. Save persists fields. Login stays not_implemented.
+function oidcField(id) {
+    const el = document.getElementById(id);
+    return el ? String(el.value || '') : '';
+}
+function setOidcField(id, value) {
+    const el = document.getElementById(id);
+    if (el && typeof value === 'string') el.value = value;
+}
+function oidcStatus(text) {
+    const el = document.getElementById('oidc-status');
+    if (el) el.textContent = text;
+}
+function applyOidcForm(data) {
+    if (!data || typeof data !== 'object') return;
+    setOidcField('oidc-issuer', typeof data.issuer === 'string' ? data.issuer : '');
+    setOidcField('oidc-client-id', typeof data.client_id === 'string' ? data.client_id : '');
+    setOidcField('oidc-redirect-uri', typeof data.redirect_uri === 'string' ? data.redirect_uri : '');
+    setOidcField('oidc-scopes', typeof data.scopes === 'string' ? data.scopes : '');
+    const enabled = document.getElementById('oidc-enabled');
+    if (enabled) enabled.checked = false;
+    const secret = document.getElementById('oidc-client-secret');
+    if (secret) {
+        secret.value = '';
+        secret.placeholder = data.client_secret_set ? 'Saved secret kept if this stays blank' : 'Not set';
+    }
+}
+async function loadOidcForm() {
+    try {
+        const res = await fetch('/api/sso/oidc', { headers: { Accept: 'application/json' } });
+        const data = await res.json();
+        if (!res.ok || !data || data.ok === false) {
+            oidcStatus('Could not load OIDC settings.');
+            return;
+        }
+        applyOidcForm(data);
+        oidcStatus('SSO login is not implemented. Saved fields do not turn it on.');
+    } catch (_) {
+        oidcStatus('Could not load OIDC settings.');
+    }
+}
+async function saveOidcForm() {
+    const btn = document.getElementById('oidc-save');
+    if (btn) btn.setAttribute('aria-busy', 'true');
+    const body = {
+        issuer: oidcField('oidc-issuer').trim(),
+        client_id: oidcField('oidc-client-id').trim(),
+        redirect_uri: oidcField('oidc-redirect-uri').trim(),
+        scopes: oidcField('oidc-scopes').trim(),
+        enabled: false
+    };
+    const secret = oidcField('oidc-client-secret');
+    if (secret) body.client_secret = secret;
+    try {
+        const res = await fetch('/api/sso/oidc', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+            body: JSON.stringify(body)
+        });
+        let data = null;
+        try { data = await res.json(); } catch (_) { data = null; }
+        if (!res.ok || !data || data.ok === false) {
+            oidcStatus(data && data.error ? String(data.error) : 'Could not save OIDC settings.');
+            return;
+        }
+        applyOidcForm(data);
+        oidcStatus('Saved. SSO login is still not implemented.');
+    } catch (_) {
+        oidcStatus('Could not save OIDC settings.');
+    } finally {
+        if (btn) btn.removeAttribute('aria-busy');
+    }
+}
+async function tryOidcLogin() {
+    const btn = document.getElementById('oidc-login');
+    if (btn) btn.setAttribute('aria-busy', 'true');
+    try {
+        const res = await fetch('/api/sso/oidc/login', { headers: { Accept: 'application/json' } });
+        let data = null;
+        try { data = await res.json(); } catch (_) { data = null; }
+        const status = data && (data.status || data.error);
+        oidcStatus(status ? String(status) : 'not_implemented');
+    } catch (_) {
+        oidcStatus('not_implemented');
+    } finally {
+        if (btn) btn.removeAttribute('aria-busy');
+    }
+}
+function setupSsoSettings() {
+    const saveBtn = document.getElementById('oidc-save');
+    const loginBtn = document.getElementById('oidc-login');
+    if (!saveBtn && !loginBtn) return;
+    if (saveBtn) saveBtn.addEventListener('click', saveOidcForm);
+    if (loginBtn) loginBtn.addEventListener('click', tryOidcLogin);
+    loadOidcForm();
+}
+
 function initialize() {
     console.log('Initializing Pipeline Control Center...');
 
@@ -1608,6 +1705,7 @@ function initialize() {
     setupTabs();
     setupStageDrilldown();
     setupShortcuts();
+    setupSsoSettings();
     const initialTab = pickInitialTab(tabFromLocation(), storeGet(STORE_TAB_KEY), visibleTabNames());
     if (initialTab) activateTab(initialTab, false);
     markLoading();

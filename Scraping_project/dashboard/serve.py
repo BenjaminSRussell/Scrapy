@@ -80,6 +80,22 @@ UPSTREAM_MAX_BYTES = 8 * 1024 * 1024
 # is the only Redis-backed work queue (stage 2-4 queues are Delta tables / Kafka).
 DEFAULT_QUEUE_KEYS = ("js_spider:priority_queue",)
 _LENGTH_OPS = {"list": "llen", "zset": "zcard", "set": "scard", "stream": "xlen", "hash": "hlen"}
+_OIDC_BODY_MAX = 8192
+
+
+def _import_oidc():
+    """Load the OIDC placeholder. ``python dashboard/serve.py`` has no package path."""
+    try:
+        from src.utils import oidc_placeholder
+    except ImportError:
+        project = str(Path(__file__).resolve().parents[1])
+        if project not in sys.path:
+            sys.path.insert(0, project)
+        from src.utils import oidc_placeholder
+    return oidc_placeholder
+
+
+oidc_placeholder = _import_oidc()
 
 
 def build_csp(env=None) -> str:
@@ -111,6 +127,10 @@ class AuthGate:
       or as the Basic password with any user name.
     Comparisons are constant-time. This is a shared-secret gate for LAN demos,
     not an identity provider: put real deployments behind an authenticating proxy.
+
+    OIDC SSO is a separate disabled placeholder (#673). Saved issuer and client
+    fields do not satisfy this gate, and ``/api/sso/oidc/login`` returns
+    ``not_implemented``.
     """
 
     def __init__(self, token: str = "", basic: str = ""):
@@ -259,6 +279,7 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
     upstream_timeout: float = 4.0
     redis_factory = staticmethod(_redis_from_env)
     queue_keys: tuple[str, ...] | None = None
+    oidc_store: oidc_placeholder.OidcConfigStore | None = None
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(self.root), **kwargs)
@@ -274,6 +295,7 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         cls.metrics_upstream = env.get("METRICS_UPSTREAM", DEFAULT_METRICS_UPSTREAM)
         cls.upstream_timeout = _env_float(env, "CC_UPSTREAM_TIMEOUT", 4.0) or 4.0
         cls.queue_keys = queue_keys(env)
+        cls.oidc_store = oidc_placeholder.OidcConfigStore.from_env(env)
 
     def _cfg(self):
         if self.auth is None:
@@ -315,7 +337,13 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         super().end_headers()
 
     # ---- guards ----
-    def _guard(self) -> bool:
+    def _oidc(self) -> oidc_placeholder.OidcConfigStore:
+        if self.oidc_store is None:
+            type(self).oidc_store = oidc_placeholder.OidcConfigStore.from_env(os.environ)
+        assert self.oidc_store is not None
+        return self.oidc_store
+
+    def _guard(self, *, auth: bool = True) -> bool:
         """Rate limit, then auth. False means a response was already sent."""
         self._cfg()
         assert self.limiter is not None and self.auth is not None
@@ -330,7 +358,7 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(body)
             return False
-        if not self.auth.allows(self.headers.get("Authorization")):
+        if auth and not self.auth.allows(self.headers.get("Authorization")):
             body = b"Authentication required\n"
             self.send_response(401)
             if self.auth.basic or self.auth.token:
@@ -383,7 +411,66 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             return
         self._send_json(200, {"ok": True, "queues": queues, "checked_at": time.time()})
 
-    API_ROUTES = {"/api/metrics": "_api_metrics", "/api/health": "_api_health", "/api/queues": "_api_queues"}
+    def _api_sso_config(self) -> None:
+        self._send_json(200, self._oidc().public())
+
+    def _api_sso_login(self) -> None:
+        """OIDC login. Disabled: the body status is ``not_implemented`` (#673)."""
+        self._send_json(501, self._oidc().login_response())
+
+    def _read_json_object(self) -> dict | None:
+        """Parse a small JSON object. None means an error response was sent."""
+        raw_len = self.headers.get("Content-Length")
+        if raw_len is None:
+            self._send_json(411, {"ok": False, "error": "length_required"})
+            return None
+        try:
+            length = int(raw_len)
+        except ValueError:
+            self._send_json(400, {"ok": False, "error": "bad_length"})
+            return None
+        if length < 0 or length > _OIDC_BODY_MAX:
+            self._send_json(413, {"ok": False, "error": "body_too_large"})
+            return None
+        data = self.rfile.read(length)
+        if len(data) != length:
+            self._send_json(400, {"ok": False, "error": "short_body"})
+            return None
+        ctype = (self.headers.get("Content-Type") or "").split(";", 1)[0].strip().lower()
+        if ctype != "application/json":
+            self._send_json(415, {"ok": False, "error": "content_type"})
+            return None
+        try:
+            parsed = json.loads(data.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            self._send_json(400, {"ok": False, "error": "invalid_json"})
+            return None
+        if not isinstance(parsed, dict):
+            self._send_json(400, {"ok": False, "error": "body_must_be_object"})
+            return None
+        return parsed
+
+    def _api_sso_save(self) -> None:
+        payload = self._read_json_object()
+        if payload is None:
+            return
+        try:
+            saved = self._oidc().save(payload)
+        except oidc_placeholder.OidcConfigError as exc:
+            self._send_json(400, {"ok": False, "error": str(exc), "field": exc.field})
+            return
+        except OSError:
+            self._send_json(500, {"ok": False, "error": "save_failed"})
+            return
+        self._send_json(200, saved)
+
+    API_ROUTES = {
+        "/api/metrics": "_api_metrics",
+        "/api/health": "_api_health",
+        "/api/queues": "_api_queues",
+        oidc_placeholder.CONFIG_PATH: "_api_sso_config",
+        oidc_placeholder.LOGIN_PATH: "_api_sso_login",
+    }
 
     def do_OPTIONS(self):
         self._cfg()
@@ -409,10 +496,24 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             return
         return super().do_HEAD()
 
-    def do_GET(self):
-        if not self._guard():
-            return
+    def do_POST(self):
         route = urlsplit(self.path).path
+        if not self._guard(auth=route != oidc_placeholder.LOGIN_PATH):
+            return
+        if route == oidc_placeholder.LOGIN_PATH:
+            self._api_sso_login()
+            return
+        if route == oidc_placeholder.CONFIG_PATH:
+            self._api_sso_save()
+            return
+        self.send_error(404, "Not Found")
+
+    def do_GET(self):
+        route = urlsplit(self.path).path
+        # Login is public so a client can see SSO is not implemented. The
+        # settings document stays behind the shared-secret gate.
+        if not self._guard(auth=route != oidc_placeholder.LOGIN_PATH):
+            return
         if route in self.API_ROUTES:
             getattr(self, self.API_ROUTES[route])()
             return
@@ -494,6 +595,7 @@ def main(argv=None):
     print(f"📊 Dashboard:  http://{shown}:{port}")
     print(f"📈 Metrics:    /api/metrics -> {DashboardHandler.metrics_upstream}  (METRICS_UPSTREAM)")
     print(f"🔐 Auth:       {'on' if DashboardHandler.auth and DashboardHandler.auth.enabled else 'off (CC_AUTH_TOKEN / CC_BASIC_AUTH)'}")
+    print("🔐 SSO:        disabled (OIDC fields on the SSO tab; login is not_implemented)")
     print("📉 Grafana:    http://localhost:3001 (separate analytics)")
     print()
     print("Purpose:")
