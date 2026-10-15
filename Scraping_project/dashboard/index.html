@@ -6,6 +6,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Pipeline Control Center - UConn Scraping</title>
+    <link rel="stylesheet" href="form-fields.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.js" integrity="sha384-FcQlsUOd0TJjROrBxhJdUhXTUgNJQxTMcxZe6nHbaEfFL1zjQ+bq/uRoBQxb0KMo" crossorigin="anonymous"></script>
     <style>
         * {
@@ -910,10 +911,17 @@
             }
             .ui-icon { stroke: CanvasText; }
             .tab-button.active .ui-icon { stroke: HighlightText; }
+            .field-control {
+                border: 1px solid CanvasText;
+                background: Canvas;
+                color: CanvasText;
+            }
             .tab-button:focus-visible,
             .btn:focus-visible,
             .stage-card:focus-visible,
-            .skip-to-main:focus {
+            .skip-to-main:focus,
+            .field-control:focus-visible,
+            .field-checkbox:focus-visible {
                 outline: 3px solid Highlight;
                 outline-offset: 2px;
             }
@@ -977,6 +985,8 @@
         .stage-card:focus-visible,
         select:focus-visible,
         input:focus-visible,
+        .field-control:focus-visible,
+        .field-checkbox:focus-visible,
         a:focus-visible,
         summary:focus-visible,
         .legend-toggles button:focus-visible,
@@ -1672,6 +1682,27 @@
                 <h3 class="stage-drilldown-links-title">Related</h3>
                 <ul id="stage-drilldown-links" class="stage-drilldown-links"></ul>
                 <p id="stage-drilldown-note" class="stage-drilldown-note">Job and queue links are placeholders until those views exist. Press Escape to close.</p>
+            </div>
+        </div>
+
+        <!-- #993: labeled job/config controls. Hidden demo, not a dashboard tab. -->
+        <div id="form-field-styleguide" hidden>
+            <div class="field">
+                <label class="field-label" for="ff-job-name">Job name</label>
+                <input class="field-control" type="text" id="ff-job-name" name="job_name" autocomplete="off">
+            </div>
+            <div class="field">
+                <label class="field-label" for="ff-job-profile">Profile</label>
+                <select class="field-control" id="ff-job-profile" name="profile">
+                    <option value="core">core</option>
+                    <option value="full">full</option>
+                </select>
+            </div>
+            <div class="field">
+                <label class="field-check" for="ff-job-enabled">
+                    <input class="field-checkbox" type="checkbox" id="ff-job-enabled" name="enabled">
+                    Enabled
+                </label>
             </div>
         </div>
     </main>
