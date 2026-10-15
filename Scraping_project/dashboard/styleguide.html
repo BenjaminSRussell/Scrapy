@@ -66,5 +66,12 @@
 <div class="row"><div class="swatch" style="background:#f59e0b"></div><code>warning #f59e0b</code></div>
 <div class="row"><div class="swatch" style="background:#ef4444"></div><code>danger #ef4444</code></div>
 <p>Chart heights: <code>--chart-h-sm 160px</code>, <code>--chart-h-md 240px</code>, <code>--chart-h-lg 300px</code>.</p>
+
+<h2>Queue depth (#1002)</h2>
+<p>Bars on the Overview tab. The word next to the bar repeats the level. Redis warns above 8000 and backlogs above 10000 (<code>QueueBacklog</code>). Delta write warns above 50 and backlogs above 100 (<code>DeltaWriteQueueBacklog</code>). A missing series is not reported, not zero.</p>
+<div class="row"><div class="swatch" style="background:#10b981"></div><code>ok #10b981</code> at or under the warning line</div>
+<div class="row"><div class="swatch" style="background:#f59e0b"></div><code>warning #f59e0b</code> above the warning line, at or under the backlog line</div>
+<div class="row"><div class="swatch" style="background:#ef4444"></div><code>backlog #ef4444</code> above the backlog line</div>
+<div class="row"><div class="swatch" style="background:#64748b"></div><code>not reported #64748b</code> series absent</div>
 </body>
 </html>

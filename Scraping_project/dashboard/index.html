@@ -1023,6 +1023,35 @@
         @media (max-width: 640px) { :root { --chart-height: var(--chart-h-sm); } }
         @media (min-width: 641px) and (max-width: 1024px) { :root { --chart-height: var(--chart-h-md); } }
         .chart-container { height: var(--chart-height); min-height: var(--chart-height); }
+        /* #1002: queue-depth bars. Fill colour is paired with a level word. */
+        .qd-legend { margin: 0 0 0.75rem; line-height: 1.45; }
+        .qd-swatch {
+            display: inline-block; width: 0.75rem; height: 0.75rem;
+            margin: 0 0.2rem 0 0.15rem; border: 1px solid var(--gray-700);
+            border-radius: 2px; vertical-align: -1px;
+        }
+        .qd-ok { background: #10b981; }
+        .qd-warn { background: #f59e0b; }
+        .qd-critical { background: #ef4444; }
+        .qd-unknown { background: #64748b; }
+        .qd-row {
+            display: grid;
+            grid-template-columns: minmax(8rem, 11rem) minmax(0, 1fr) auto;
+            gap: 0.5rem 0.75rem; align-items: center; margin: 0.45rem 0;
+        }
+        .qd-name { font-size: 0.875rem; color: var(--gray-800); }
+        .qd-track {
+            background: var(--gray-200); border: 1px solid var(--gray-300);
+            border-radius: 4px; height: 0.75rem; overflow: hidden;
+        }
+        .qd-fill { display: block; height: 100%; width: 0; }
+        .qd-fill.qd-warn { box-shadow: inset 0 0 0 2px #92400e; }
+        .qd-fill.qd-critical { box-shadow: inset 0 0 0 2px #7f1d1d; }
+        .qd-meta { font-size: 0.8rem; color: var(--gray-700); font-variant-numeric: tabular-nums; white-space: nowrap; }
+        @media (max-width: 640px) {
+            .qd-row { grid-template-columns: 1fr auto; }
+            .qd-track { grid-column: 1 / -1; }
+        }
         .env-badge { font-size: 0.7rem; padding: 0.15rem 0.5rem; border-radius: 999px; margin-left: 0.5rem; vertical-align: middle; }
         .env-badge.env-local { background: #334155; color: #e2e8f0; }
         .env-badge.env-staging { background: #ca8a04; color: #111; }
@@ -1162,6 +1191,26 @@
             }
             .job-started-check path {
                 stroke: CanvasText;
+            }
+            /* #1002: bar level stays visible when author colours are dropped. */
+            .qd-track {
+                border: 1px solid CanvasText;
+                background: Canvas;
+            }
+            .qd-fill.qd-ok {
+                outline: 1px solid CanvasText;
+                forced-color-adjust: none;
+            }
+            .qd-fill.qd-warn {
+                outline: 2px dotted CanvasText;
+                forced-color-adjust: none;
+            }
+            .qd-fill.qd-critical {
+                outline: 2px dashed CanvasText;
+                forced-color-adjust: none;
+            }
+            .qd-swatch {
+                border: 1px solid CanvasText;
             }
         }
 
@@ -1538,6 +1587,43 @@
                             <span class="metric-value" id="overview-s4-compression">0x</span>
                         </div>
                     </div>
+                </div>
+
+                <!-- #1002: bars from the Prometheus metric map, not /api/queues. -->
+                <div class="card" id="queue-depth-viz-card" style="margin-top: 1.5rem;">
+                    <div class="card-header">
+                        <h2 class="card-title" id="queue-depth-viz-title">Queue depth</h2>
+                    </div>
+                    <p class="metric-label qd-legend" id="queue-depth-viz-legend">
+                        Threshold colors:
+                        <span class="qd-swatch qd-ok" aria-hidden="true"></span>ok (#10b981) at or under the warning line;
+                        <span class="qd-swatch qd-warn" aria-hidden="true"></span>warning (#f59e0b) above the warning line through the backlog line;
+                        <span class="qd-swatch qd-critical" aria-hidden="true"></span>backlog (#ef4444) above the backlog line;
+                        <span class="qd-swatch qd-unknown" aria-hidden="true"></span>not reported (#64748b) when that series is absent (never shown as zero).
+                        Redis hops (Stage 1 → 2, Stage 1 → JS, Stage 2 → 3, Stage 2 → 4) warn above 8000 and backlog above 10000, the same comparison as QueueBacklog.
+                        Delta write warns above 50 and backlogs above 100, the same comparison as DeltaWriteQueueBacklog.
+                        Each bar fills toward its backlog line, and the word beside it repeats the level.
+                    </p>
+                    <p class="metric-label" id="queue-depth-viz-status" role="status" aria-live="polite">Waiting for metrics&hellip;</p>
+                    <div id="queue-depth-viz" aria-labelledby="queue-depth-viz-title"></div>
+                    <details class="chart-data-table" id="queue-depth-viz-details">
+                        <summary>View data table — Queue depth</summary>
+                        <div class="table-scroll" tabindex="0">
+                            <table id="queue-depth-viz-table" class="data-fallback-table">
+                                <caption class="visually-hidden">Queue depth by hop</caption>
+                                <thead>
+                                    <tr>
+                                        <th scope="col">Queue</th>
+                                        <th scope="col">Depth</th>
+                                        <th scope="col">Level</th>
+                                        <th scope="col">Warning above</th>
+                                        <th scope="col">Backlog above</th>
+                                    </tr>
+                                </thead>
+                                <tbody></tbody>
+                            </table>
+                        </div>
+                    </details>
                 </div>
 
                 <div class="grid grid-2" style="margin-top: 1.5rem;">
