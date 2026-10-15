@@ -118,12 +118,24 @@ function buildCharts() {
                 position: 'top'
             },
             tooltip: {
-                enabled: false
+                enabled: false,
+                // #965: hover stays the full value; y ticks below are K/M.
+                callbacks: {
+                    label(item) {
+                        const raw = item && item.parsed ? item.parsed.y : undefined;
+                        const text = formatPreciseNumber(raw);
+                        const name = item && item.dataset && item.dataset.label;
+                        return name ? name + ': ' + text : text;
+                    }
+                }
             }
         },
         scales: {
             y: {
-                beginAtZero: true
+                beginAtZero: true,
+                ticks: {
+                    callback(value) { return formatNumber(value); }
+                }
             }
         }
     };
