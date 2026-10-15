@@ -17,7 +17,7 @@ from urllib.parse import urljoin, urlparse
 
 import httpx
 
-from src.stage1.discovery_handoff import DiscoveryHandoff
+from src.stage1.discovery_handoff import DiscoveryHandoff, DiscoveryStatus
 
 logger = logging.getLogger(__name__)
 
@@ -623,7 +623,7 @@ class SitemapIntegration:
         try:
             handoff = await self.parser.discover_with_handoff(discovery_source="sitemap_parser")
             logger.info(
-                f"Sitemap discovery handoff: status={handoff.status.value} "
+                f"Sitemap discovery handoff: status={DiscoveryStatus(handoff.status).value} "
                 f"discovered={len(handoff.discovered)}"
             )
             return handoff
