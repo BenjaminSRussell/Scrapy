@@ -1,0 +1,122 @@
+# Prometheus for docker-compose.observability.yml (#1097).
+#
+# Not monitoring/prometheus.yml. That file may only scrape services the main
+# compose file runs (#371). This pack scrapes those jobs when they share
+# scraper-network, and keeps targets that are often absent:
+#   rust-sitemap:9464  — Rust sitemap /metrics, only if that process joined the network
+#   kafka-jmx-exporter:5556 — Helm's JMX port; absent on compose-only Kafka
+#   scraper / workers / redis-exporter — up when the app stack is on this network
+#
+# A missing DNS name stays down. This pack does not load the global `up == 0`
+# rule (PrometheusScrapeFailures); optional jobs would page on a clean host.
+# The monitoring-profile Prometheus still has that rule.
+#
+# Prometheus does not expand ${VARS} in this file.
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: scraping-pipeline
+    replica: observability-pack
+
+rule_files:
+  - /etc/prometheus/recording_rules.yml
+  - /etc/prometheus/alerting_rules.yml
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # metrics_exporter.py and kafka-delta-ingest push StatsD here. The mapping
+  # file is the Helm one (redis_queue_length, kafka_delta_ingest_* commits).
+  - job_name: statsd
+    scrape_interval: 30s
+    scrape_timeout: 10s
+    static_configs:
+      - targets: ['statsd-exporter:9102']
+        labels:
+          service: statsd
+
+  # oliver006/redis_exporter from the monitoring profile, when that service
+  # is on scraper-network. redis_queue_length itself is the StatsD gauge above.
+  - job_name: redis
+    scrape_interval: 30s
+    scrape_timeout: 10s
+    static_configs:
+      - targets: ['redis-exporter:9121']
+        labels:
+          service: redis
+
+  # Scrapy extension :9410. lakehouse_manager registers compaction series
+  # (delta_optimize_skipped_total, delta_maintenance_conflicts_total,
+  # delta_checkpoints_total) on the same process registry.
+  - job_name: scrapy_app
+    scrape_interval: 30s
+    scrape_timeout: 10s
+    static_configs:
+      - targets: ['scraper:9410']
+        labels:
+          service: scrapy
+          component: scraper
+
+  - job_name: stage2_worker
+    scrape_interval: 30s
+    scrape_timeout: 10s
+    dns_sd_configs:
+      - names: ['stage2-worker']
+        type: A
+        port: 9430
+    relabel_configs:
+      - target_label: service
+        replacement: stage2
+      - target_label: component
+        replacement: worker
+
+  - job_name: stage3_worker
+    scrape_interval: 30s
+    scrape_timeout: 10s
+    dns_sd_configs:
+      - names: ['stage3-worker']
+        type: A
+        port: 9430
+    relabel_configs:
+      - target_label: service
+        replacement: stage3
+      - target_label: component
+        replacement: worker
+
+  - job_name: stage4_worker
+    scrape_interval: 30s
+    scrape_timeout: 10s
+    dns_sd_configs:
+      - names: ['stage4-worker']
+        type: A
+        port: 9430
+    relabel_configs:
+      - target_label: service
+        replacement: stage4
+      - target_label: component
+        replacement: worker
+
+  # Present only when a Rust sitemap exporter is attached to scraper-network
+  # and serves /metrics on 9464. No alert fires while it is absent.
+  - job_name: rust_sitemap
+    scrape_interval: 30s
+    scrape_timeout: 10s
+    static_configs:
+      - targets: ['rust-sitemap:9464']
+        labels:
+          service: rust-sitemap
+          component: sitemap
+
+  # Same port as the Helm kafka-jmx exporter. kafka_consumer_records_lag is
+  # the series the lag recording rules and the pack alerts read.
+  - job_name: kafka_jmx
+    scrape_interval: 30s
+    scrape_timeout: 10s
+    static_configs:
+      - targets: ['kafka-jmx-exporter:5556']
+        labels:
+          service: kafka
+          component: broker

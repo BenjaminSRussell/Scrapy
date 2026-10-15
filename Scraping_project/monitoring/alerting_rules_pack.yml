@@ -1,0 +1,72 @@
+# Rules loaded only by the observability pack Prometheus (#1097).
+#
+# Consumer-lag expressions are copies of monitoring/alerting_rules.yml.
+# tests/unit/monitoring/test_observability_pack.py fails if they drift.
+# KafkaConsumerLagSLO stays > 250000. QueueBacklog stays > 10000 and is not
+# redefined here. PrometheusScrapeFailures (`up == 0`) is intentionally
+# absent: rust-sitemap, Kafka JMX, Redis and the app targets are optional.
+groups:
+  - name: kafka_consumer_lag
+    interval: 30s
+    rules:
+      - alert: KafkaHighConsumerLag
+        expr: max_over_time(kafka_consumergroup_lag_max[5m]) > 10000
+        for: 5m
+        labels:
+          severity: warning
+          component: kafka
+        annotations:
+          summary: "High Kafka consumer group lag detected"
+          description: "Consumer group {{ $labels.group }} on topic {{ $labels.topic }} has a max lag of {{ $value }} messages on at least one partition."
+          impact: "Medium - Data processing delayed"
+          action: "Scale up consumers or investigate processing bottleneck"
+
+      - alert: KafkaVeryHighConsumerLag
+        expr: max_over_time(kafka_consumergroup_lag_max[5m]) > 100000
+        for: 5m
+        labels:
+          severity: critical
+          component: kafka
+        annotations:
+          summary: "Very high Kafka consumer group lag"
+          description: "Consumer group {{ $labels.group }} on topic {{ $labels.topic }} has a max lag of {{ $value }} messages."
+          impact: "High - Significant data processing backlog"
+          action: "Immediate action: scale consumers or pause producers"
+
+      - alert: KafkaConsumerLagSLO
+        expr: max_over_time(kafka_consumergroup_lag_max[5m]) > 250000
+        for: 15m
+        labels:
+          severity: critical
+          component: kafka
+          slo: "true"
+        annotations:
+          summary: "Kafka consumer lag has breached the SLO"
+          description: "Consumer group {{ $labels.group }} on topic {{ $labels.topic }} has a max lag of {{ $value }} messages for over 15 minutes, violating the SLO."
+          impact: "Critical - Service Level Objective for data processing timeliness is not being met."
+          action: "Immediately investigate consumer performance, consider scaling up consumers or pausing producers if necessary."
+
+  - name: frontier_growth
+    interval: 30s
+    rules:
+      # Not QueueBacklog. That rule stays redis_queue_length > 10000.
+      # This one fires only when a non-trivial frontier is still climbing.
+      - alert: FrontierGrowth
+        expr: |
+          (
+            max by (queue, site_id) (redis_queue_length) > 1000
+          )
+          and
+          (
+            max by (queue, site_id) (delta(redis_queue_length[15m])) > 5000
+          )
+        for: 15m
+        labels:
+          severity: warning
+          component: pipeline
+        annotations:
+          summary: "URL frontier growing on {{ $labels.queue }} (site {{ $labels.site_id }})"
+          description: "{{ $labels.queue }} on site {{ $labels.site_id }} is still above 1000 and gained more than 5000 items over 15 minutes (current depth {{ $value }})."
+          site: "{{ $labels.site_id }}"
+          impact: "Medium - Discovery is outrunning consumers"
+          action: "Compare crawl rate with Redis depth on the ops-lag-depth-commits dashboard. QueueBacklog (> 10000) is a separate alert and is unchanged."

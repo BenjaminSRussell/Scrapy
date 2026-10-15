@@ -701,16 +701,19 @@ python start.py
 
 Same as Quick Start: profiles `core` and `monitoring`. See [COMPOSE.md](COMPOSE.md) and [docs/guides/RUNNING.md](docs/guides/RUNNING.md). A bare `docker compose up -d` starts no services.
 
-### Observability (Loki, Jaeger, OpenTelemetry)
+### Observability
 
-`docker-compose.observability.yml` is an overlay on the main file (same network, mounts
-under `./monitoring/`). There is no separate standalone production compose file:
+`docker-compose.observability.yml` is two things. A bare `up` starts the packaged Prometheus, Grafana, and StatsD exporter (loopback `9095`, `3001`, `9102`/`9125`) with the lag / Redis depth / crawl rate / Delta commits dashboard. Loki, Jaeger, and the OpenTelemetry collector stay on the `observability` profile and still overlay `docker-compose.yml` (same `scraper-network`). There is no separate production compose file.
 
 ```bash
+# Pack alone (clean host)
+docker compose -f docker-compose.observability.yml up -d
+
+# App stack plus tracing. The pack containers start too (different ports).
 docker compose -f docker-compose.yml -f docker-compose.observability.yml --profile core --profile monitoring --profile observability up -d
 ```
 
-See [../MONITORING.md](../MONITORING.md) for enabling OTEL traces.
+Control Center is http://localhost:8080. It does not embed Grafana. Deep-link the pack board at http://127.0.0.1:3001/d/ops-lag-depth-commits (the same uid is on the monitoring-profile Grafana at http://localhost:3000/d/ops-lag-depth-commits). See [../MONITORING.md](../MONITORING.md) for OTEL traces and [dashboard/README.md](dashboard/README.md) for the Control Center side of the link.
 
 ### Release images
 

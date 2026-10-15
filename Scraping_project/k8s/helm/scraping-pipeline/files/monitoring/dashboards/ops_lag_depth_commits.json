@@ -1,0 +1,207 @@
+{
+  "uid": "ops-lag-depth-commits",
+  "title": "Kafka lag, Redis depth, Delta commits",
+  "description": "Integrated pack (#1097). Control Center stays on http://localhost:8080 and does not embed these panels. Pack Grafana is http://127.0.0.1:3001/d/ops-lag-depth-commits; the monitoring-profile Grafana serves the same uid at http://localhost:3000/d/ops-lag-depth-commits. Lag series need the Kafka JMX target. Redis depth and Delta commits need StatsD on statsd-exporter:9125. Crawl rate and compaction need the Scrapy or worker /metrics targets. QueueBacklog stays > 10000 and KafkaConsumerLagSLO stays > 250000.",
+  "tags": ["scraping", "pipeline", "ops"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "refresh": "30s",
+  "time": {"from": "now-6h", "to": "now"},
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "label": "Datasource",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": {"text": "Prometheus", "value": "prometheus"},
+        "hide": 0
+      }
+    ]
+  },
+  "annotations": {"list": []},
+  "panels": [
+    {
+      "type": "row",
+      "title": "Lag, depth, crawl rate, Delta commits",
+      "id": 1,
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 0},
+      "panels": []
+    },
+    {
+      "type": "stat",
+      "title": "Kafka consumer lag",
+      "id": 2,
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "description": "max of kafka_consumergroup_lag_max. KafkaConsumerLagSLO is still > 250000 for 15m and is not retuned.",
+      "gridPos": {"h": 8, "w": 6, "x": 0, "y": 1},
+      "targets": [
+        {
+          "datasource": {"type": "prometheus", "uid": "${datasource}"},
+          "expr": "max(kafka_consumergroup_lag_max)",
+          "legendFormat": "max lag",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "red", "value": 250000}
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto"
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Redis frontier depth",
+      "id": 3,
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "description": "max by queue of redis_queue_length (StatsD redis.queue.length). QueueBacklog stays > 10000. FrontierGrowth is the climb alert and does not change that line.",
+      "gridPos": {"h": 8, "w": 6, "x": 6, "y": 1},
+      "targets": [
+        {
+          "datasource": {"type": "prometheus", "uid": "${datasource}"},
+          "expr": "max by (queue) (redis_queue_length)",
+          "legendFormat": "{{queue}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "red", "value": 10000}
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto"
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Crawl rate",
+      "id": 4,
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "description": "Items scraped per second from scrapy_items_scraped_total on the Scrapy /metrics registry.",
+      "gridPos": {"h": 8, "w": 6, "x": 12, "y": 1},
+      "targets": [
+        {
+          "datasource": {"type": "prometheus", "uid": "${datasource}"},
+          "expr": "sum(rate(scrapy_items_scraped_total[5m]))",
+          "legendFormat": "items/s",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "decimals": 2,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "green", "value": null}
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto"
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Delta commits",
+      "id": 5,
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "description": "Kafka to Delta offset commits per second (kafka_delta_ingest_offsets_committed_total). The ingestor increments offsets.committed after the Delta commit.",
+      "gridPos": {"h": 8, "w": 6, "x": 18, "y": 1},
+      "targets": [
+        {
+          "datasource": {"type": "prometheus", "uid": "${datasource}"},
+          "expr": "sum(rate(kafka_delta_ingest_offsets_committed_total[5m]))",
+          "legendFormat": "commits/s",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "decimals": 2,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "green", "value": null}
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto"
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Lakehouse compaction",
+      "id": 6,
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "description": "lakehouse_manager compaction signals on the Scrapy and worker registries: skipped or failed optimize steps, and maintenance commits that lost a race.",
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 9},
+      "targets": [
+        {
+          "datasource": {"type": "prometheus", "uid": "${datasource}"},
+          "expr": "sum by (table, reason) (rate(delta_optimize_skipped_total[15m]))",
+          "legendFormat": "skipped {{table}} {{reason}}",
+          "refId": "A"
+        },
+        {
+          "datasource": {"type": "prometheus", "uid": "${datasource}"},
+          "expr": "sum by (table, operation) (rate(delta_maintenance_conflicts_total[15m]))",
+          "legendFormat": "conflicts {{table}} {{operation}}",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {"unit": "ops", "decimals": 3},
+        "overrides": []
+      },
+      "options": {
+        "legend": {"displayMode": "list", "placement": "bottom"},
+        "tooltip": {"mode": "single"}
+      }
+    }
+  ]
+}

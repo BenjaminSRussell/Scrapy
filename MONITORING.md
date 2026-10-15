@@ -9,6 +9,25 @@ The observability stack lives next to the app stack in `Scraping_project/`:
 
 Prometheus metrics remain available via `src.scrapy_prometheus.PrometheusExtension` (typically `:9410/metrics`). Tracing is additive and does not replace metrics.
 
+## Packaged Prometheus and Grafana (#1097)
+
+The same compose file starts a Prometheus + Grafana + StatsD pack with no profile, so this works on a clean host from `Scraping_project/`:
+
+```bash
+docker compose -f docker-compose.observability.yml up -d
+```
+
+| Surface | URL |
+|---|---|
+| Grafana (user `admin`, password `GRAFANA_ADMIN_PASSWORD`, default `admin` local-dev only) | http://127.0.0.1:3001 |
+| Lag, Redis depth, crawl rate, Delta commits | http://127.0.0.1:3001/d/ops-lag-depth-commits |
+| Panel deep link | add `?viewPanel=2` (lag), `3` (depth), `4` (crawl rate), `5` (commits) |
+| Prometheus | http://127.0.0.1:9095 |
+
+Control Center (http://localhost:8080) does not embed these panels. It is a different origin. Operators open the URLs above from the browser. The monitoring-profile Grafana also provisions the same dashboard uid at http://localhost:3000/d/ops-lag-depth-commits; the pack Prometheus is the one that scrapes StatsD, optional Kafka JMX, and `rust-sitemap:9464`.
+
+Scrape jobs live in `monitoring/prometheus-pack.yml`. StatsD mapping is the Helm file, mounted into `statsd-exporter`. Point `metrics_exporter.py` and kafka-delta-ingest at `statsd-exporter:9125` (or `127.0.0.1:9125` from the host) so `redis_queue_length` and `kafka_delta_ingest_offsets_committed_total` show up. `lakehouse_manager` compaction series are on the Scrapy and worker `/metrics` ports. `KafkaConsumerLagSLO` stays `> 250000`. `QueueBacklog` stays `> 10000`. `FrontierGrowth` is the climb alert. The pack does not load `PrometheusScrapeFailures`, because several targets are optional.
+
 ## Install optional OTEL packages
 
 OpenTelemetry is **not** in the lean core lockfile. Install the optional extra from `Scraping_project/`:

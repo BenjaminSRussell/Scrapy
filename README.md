@@ -165,6 +165,26 @@ python start.py --reset-delta
 
 ---
 
+## Observability
+
+Control Center (`dashboard/serve.py`, http://localhost:8080) is the crawl console. It does not embed Grafana. Grafana is a separate origin, so panels are deep links, not iframes. The System tab on Control Center reads Redis depth from `/api/queues`. Lag, crawl rate, and Delta commits are the pack dashboard.
+
+From `Scraping_project/`, on a clean host:
+
+```bash
+docker compose -f docker-compose.observability.yml up -d
+```
+
+| | |
+|---|---|
+| Pack Grafana | http://127.0.0.1:3001 (user `admin`, password `GRAFANA_ADMIN_PASSWORD`, default `admin` for local dev only) |
+| Lag, depth, crawl rate, Delta commits | http://127.0.0.1:3001/d/ops-lag-depth-commits |
+| One panel | append `?viewPanel=2` (lag), `3` (Redis depth), `4` (crawl rate), or `5` (Delta commits) |
+| Pack Prometheus | http://127.0.0.1:9095 |
+| Same dashboard on the monitoring-profile Grafana | http://localhost:3000/d/ops-lag-depth-commits |
+
+The pack scrapes StatsD (`statsd-exporter:9125`, host `127.0.0.1:9125`), the Redis exporter, Scrapy `:9410` and stage workers `:9430` (crawl rate and `lakehouse_manager` compaction), Kafka JMX `:5556`, and `rust-sitemap:9464` when that process is on `scraper-network`. Absent targets stay down and do not page. `KafkaConsumerLagSLO` stays above 250000 messages. `QueueBacklog` stays above 10000. `FrontierGrowth` is the extra climb alert. Loki, Jaeger, and OpenTelemetry still use `--profile observability` on the same file. Detail: [MONITORING.md](MONITORING.md) and [Scraping_project/COMPOSE.md](Scraping_project/COMPOSE.md).
+
 ## Security
 
 - Report vulnerabilities **privately**; see [SECURITY.md](SECURITY.md). Don't open a public issue.
