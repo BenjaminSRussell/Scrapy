@@ -15,6 +15,7 @@ renamed to the new version and date (see the release checklist).
 ## [Unreleased]
 
 ### Added
+- Control Center pauses chart history when a metrics scrape is over 2000 series or 50ms to parse, keeps the numeric KPI counters, and shows a banner. Charts return after 3 calm intervals. Override with `window.CC_METRICS_FLOOD` or `?floodMaxSeries=`, `?floodMaxParseMs=`, and `?floodRecover=` (#690).
 - Control Center Activity tab has level filter chips (Success, Warning, Danger, Timeout, Info). Each chip shows a count and toggles that level in the browser. No chip pressed shows the full log; Danger alone shows errors only. The overview feed is unchanged (#1027).
 - Dashboard `.skeleton` block: one pulsing gray placeholder for cards (a content bar) and charts (fills the plot). `prefers-reduced-motion: reduce` leaves a static gray and does not pulse (#1025).
 - Control Center pipeline stage cards open a side panel with a subset of that stage's metrics and placeholder links for later job and queue detail. Cards are keyboard buttons; Escape closes the panel (#1033).

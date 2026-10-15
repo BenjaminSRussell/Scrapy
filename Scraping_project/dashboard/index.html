@@ -940,6 +940,17 @@
             margin: 0 0 1rem; padding: 0.75rem 1rem; border-radius: 8px;
             background: #fef3c7; color: #92400e; border: 1px solid #f59e0b; font-size: 0.9rem;
         }
+        /* #690: metrics flood keeps KPI counters and hides chart history. */
+        .metrics-flood-banner {
+            margin: 0 0 1rem; padding: 0.75rem 1rem; border-radius: 8px;
+            background: #fef3c7; color: #92400e; border: 1px solid #f59e0b; font-size: 0.9rem;
+        }
+        .metrics-flood-banner[hidden] { display: none; }
+        #main.metrics-flood .chart-container,
+        #main.metrics-flood .chart-data-table,
+        #main.metrics-flood .overview-spark-wrap {
+            display: none;
+        }
         
         :root {
             --chart-h-sm: 160px;
@@ -1219,6 +1230,9 @@
         <div id="fetch-error-banner" class="fetch-error-banner" role="alert" hidden>
             <span id="fetch-error-text">Could not load metrics.</span>
             <button type="button" id="retry-fetch" class="btn" aria-label="Retry loading metrics now">Retry</button>
+        </div>
+        <div id="metrics-flood-banner" class="metrics-flood-banner" role="status" aria-live="off" hidden>
+            <span id="metrics-flood-text">Metrics flood: charts paused. Showing summary counters only.</span>
         </div>
         <div class="tabs">
             <nav class="tab-buttons-wrap" aria-label="Dashboard sections"><div class="tab-buttons" role="tablist" aria-label="Dashboard sections">
