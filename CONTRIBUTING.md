@@ -146,6 +146,7 @@ machine-local absolute path.
 | `python cli.py health` | Row and file counts for every Delta table |
 | `python cli.py validate` | Validate the Delta tables |
 | `python cli.py seeds list\|add\|disable\|audit` | Manage seed URLs, with an audit log |
+| `python cli.py robots status\|confirm\|audit` | Dual-confirm rustmapper `ignore_robots` before Stage 1 will ignore robots.txt (#938) |
 | `python cli.py scrapy --spiders scout` | Run Scrapy spiders |
 | `python cli.py deep_dive --experimental` | Run the experimental deep-dive spider (refuses without the flag) |
 | `python cli.py pipeline [--skip-stage1 ...]` | Run stages 1–3 once, in order |

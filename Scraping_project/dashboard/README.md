@@ -58,6 +58,7 @@ node --test Scraping_project/dashboard/tests/   # helper unit tests
   Missing files, directory listings, dotfiles, `tests/` and source/docs (`serve.py`, `*.md`)
   return a plain 404 that never includes filesystem paths.
 - Version watermark: `CC_VERSION` env or `git describe` via `/version.js`.
+- Stage 1 robots confirmation (#938): `/robots-confirm.html` posts to `POST /api/stage1/ignore-robots`. Both confirmations default off. The handler appends the ignore-robots audit log and does not start a crawl.
 - Redis queue depths (#401): the System tab polls `/api/queues`, which reads the keys in
   `CC_QUEUE_KEYS` (comma list, default `js_spider:priority_queue`) with the type-aware
   length (`LLEN`/`ZCARD`/`SCARD`/`XLEN`/`HLEN`, so a list matches `redis-cli llen`).

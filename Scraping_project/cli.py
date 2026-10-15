@@ -631,6 +631,51 @@ def cmd_seeds(args):
     raise SystemExit("unknown seeds command")
 
 
+def cmd_robots(args):
+    """Stage 1 dual confirm for rustmapper ignore_robots (#938). Does not crawl."""
+    import json as _json
+
+    from src.stage1.ignore_robots import CONFIRM_PHRASE, decide, read_audit, write_decision_file
+
+    if args.robots_command == "audit":
+        for row in read_audit(limit=args.limit):
+            print(_json.dumps(row))
+        return
+    if args.robots_command == "status":
+        print("robotstxt_obey=true")
+        print("rustmapper_ignore_robots=false")
+        print("stage1_confirm=false")
+        print(
+            "ignore_robots stays off until rustmapper sets it and Stage1 confirms "
+            f"(cli.py robots confirm, or /robots-confirm.html). Phrase: {CONFIRM_PHRASE}"
+        )
+        return
+
+    typed = args.typed
+    if args.confirm and not args.yes and not typed and sys.stdin is not None and sys.stdin.isatty():
+        try:
+            typed = input(f"Type '{CONFIRM_PHRASE}' to ignore robots.txt: ")
+        except EOFError:
+            typed = ""
+    decision = decide(
+        rustmapper_ignore_robots=args.rustmapper_ignore,
+        stage1_confirm=args.confirm,
+        typed=typed,
+        reason=args.reason or "",
+        assume_yes=bool(args.yes),
+        source="cli",
+        actor=args.actor,
+    )
+    if args.decision_file and decision.ignore_robots:
+        write_decision_file(Path(args.decision_file), decision)
+        print(f"IGNORE_ROBOTS_DECISION_FILE={args.decision_file}")
+    print(f"outcome={decision.outcome}")
+    print(f"ROBOTSTXT_OBEY={'true' if decision.robotstxt_obey else 'false'}")
+    print(decision.detail)
+    if not decision.ignore_robots:
+        raise SystemExit(3)
+
+
 def cmd_killswitch(args):
     """Global crawl kill switch (#456): stops Stage 1/2 downloads cluster-wide."""
     import json as _json
@@ -892,6 +937,46 @@ def main():
     seeds_audit = seeds_sub.add_parser("audit", help="Show recent audit log rows")
     seeds_audit.add_argument("--limit", type=int, default=50)
     seeds_audit.set_defaults(func=cmd_seeds)
+
+    robots_parser = subparsers.add_parser(
+        "robots",
+        help="Stage1 dual confirm before inheriting rustmapper ignore_robots (#938)",
+    )
+    robots_sub = robots_parser.add_subparsers(dest="robots_command", required=True)
+    robots_sub.add_parser("status", help="Show the default: obey robots; ignore is not inherited").set_defaults(
+        func=cmd_robots
+    )
+    robots_confirm = robots_sub.add_parser(
+        "confirm",
+        help="Confirm ignore_robots (refused unless rustmapper and Stage1 both opt in)",
+    )
+    robots_confirm.add_argument(
+        "--rustmapper-ignore",
+        action="store_true",
+        help="rustmapper set ignore_robots (default off)",
+    )
+    robots_confirm.add_argument(
+        "--confirm",
+        action="store_true",
+        help="Stage1 confirms ignoring robots.txt",
+    )
+    robots_confirm.add_argument("--reason", default="", help="Why this crawl may ignore robots.txt")
+    robots_confirm.add_argument("--typed", default=None, help="Typed phrase IGNORE ROBOTS (or prompt on a TTY)")
+    robots_confirm.add_argument(
+        "--yes",
+        action="store_true",
+        help="Skip the typed phrase only when ALLOW_IGNORE_ROBOTS=1",
+    )
+    robots_confirm.add_argument("--actor", default=None)
+    robots_confirm.add_argument(
+        "--decision-file",
+        default=None,
+        help="Write an authorized decision here (crawler reads IGNORE_ROBOTS_DECISION_FILE)",
+    )
+    robots_confirm.set_defaults(func=cmd_robots)
+    robots_audit = robots_sub.add_parser("audit", help="Show ignore_robots audit log rows")
+    robots_audit.add_argument("--limit", type=int, default=50)
+    robots_audit.set_defaults(func=cmd_robots)
 
     ml_parser = subparsers.add_parser("ml", help="ML service operations")
     ml_sub = ml_parser.add_subparsers(dest="ml_command", required=True)
