@@ -1,0 +1,77 @@
+{
+  "uid": "pipeline-home",
+  "title": "Pipeline home",
+  "description": "Home page when no pipeline dashboards are provisioned (#980). Same steps as dashboard/grafana-empty.md.",
+  "tags": ["scraping", "home"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "refresh": "",
+  "time": {"from": "now-6h", "to": "now"},
+  "timepicker": {},
+  "templating": {"list": []},
+  "annotations": {"list": []},
+  "links": [
+    {
+      "asDropdown": false,
+      "icon": "external link",
+      "includeVars": false,
+      "keepTime": false,
+      "tags": [],
+      "targetBlank": true,
+      "title": "Control Center (:8080)",
+      "tooltip": "Ops dashboard. Does not need Grafana.",
+      "type": "link",
+      "url": "http://127.0.0.1:8080"
+    },
+    {
+      "asDropdown": false,
+      "icon": "doc",
+      "includeVars": false,
+      "keepTime": false,
+      "tags": [],
+      "targetBlank": false,
+      "title": "Import dashboards",
+      "tooltip": "Upload Scraping_project/monitoring/dashboards/*.json",
+      "type": "link",
+      "url": "/dashboard/import"
+    },
+    {
+      "asDropdown": false,
+      "icon": "dashboard",
+      "includeVars": false,
+      "keepTime": true,
+      "tags": [],
+      "targetBlank": false,
+      "title": "Pipeline health",
+      "tooltip": "Provisioned dashboard scraping-pipeline-health",
+      "type": "link",
+      "url": "/d/scraping-pipeline-health"
+    },
+    {
+      "asDropdown": false,
+      "icon": "dashboard",
+      "includeVars": false,
+      "keepTime": true,
+      "tags": [],
+      "targetBlank": false,
+      "title": "Pipeline SLOs",
+      "tooltip": "Provisioned dashboard pipeline-slos",
+      "type": "link",
+      "url": "/d/pipeline-slos"
+    }
+  ],
+  "panels": [
+    {
+      "type": "text",
+      "title": "No pipeline dashboards on this Grafana?",
+      "id": 1,
+      "gridPos": {"h": 12, "w": 24, "x": 0, "y": 0},
+      "options": {
+        "mode": "markdown",
+        "content": "## Next steps\n\nThis home page stays up when dashboard provisioning loaded nothing.\n\n1. **Control Center** (ops UI, no Grafana): http://127.0.0.1:8080\n2. **Open a dashboard** if provisioning worked: [Scraping Pipeline Health](/d/scraping-pipeline-health), [Pipeline SLOs](/d/pipeline-slos), or [lag, depth, and commits](/d/ops-lag-depth-commits).\n3. **Import** when the list is empty: [Dashboards → New → Import](/dashboard/import). Upload JSON from `Scraping_project/monitoring/dashboards/` (`scraping_pipeline_health.json`, `pipeline_slos.json`, `ops_lag_depth_commits.json`, `unified_dashboard.json`).\n4. Repo note with the Compose mounts and the Helm gap: `dashboard/grafana-empty.md`.\n\nSign in as `admin`. The password is `GRAFANA_ADMIN_PASSWORD` (local default `admin`)."
+      }
+    }
+  ]
+}

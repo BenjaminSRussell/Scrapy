@@ -98,6 +98,25 @@ def test_helm_dashboard_copies_match_monitoring():
             f"k8s/helm/.../files/monitoring/dashboards/{name} drifted from monitoring/dashboards/{name}")
 
 
+def test_compose_home_dashboard_covers_an_empty_provision():
+    """Home file is mounted outside the provider dir so an empty list still has steps (#980)."""
+    home = json.loads((ROOT / "dashboard" / "grafana-home.json").read_text())
+    assert home["uid"] == "pipeline-home"
+    text = next(p for p in home["panels"] if p["type"] == "text")
+    assert "127.0.0.1:8080" in text["options"]["content"]
+    assert "monitoring/dashboards/" in text["options"]["content"]
+    urls = [link["url"] for link in home["links"]]
+    assert "http://127.0.0.1:8080" in urls
+    assert "/dashboard/import" in urls
+    note = (ROOT / "dashboard" / "grafana-empty.md").read_text()
+    assert "127.0.0.1:8080" in note and "monitoring/dashboards/" in note
+    env = "\n".join(_compose_grafana()["environment"])
+    assert "GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/etc/grafana/home.json" in env
+    mounts = _mounts()
+    assert mounts["/etc/grafana/home.json"] == "./dashboard/grafana-home.json"
+    assert mounts["/var/lib/grafana/dashboards"] == "./monitoring/dashboards"
+
+
 def test_both_providers_read_the_mounted_directory():
     assert _provider_path(MON / "grafana_dashboards.yml") == "/var/lib/grafana/dashboards"
     assert _provider_path(CHART / "files" / "monitoring" / "grafana_dashboards.yml") == "/var/lib/grafana/dashboards"

@@ -61,6 +61,12 @@ node --test Scraping_project/dashboard/tests/   # helper unit tests
   shows made-up zeros. Stage 2–4 backlogs are Delta tables / Kafka topics, not Redis
   keys; see the Grafana pipeline-health dashboard for those.
 
+## Grafana empty home (#980)
+
+`serve.py` does not serve markdown (`.md` is 404). [`grafana-empty.md`](grafana-empty.md) is the operator note for an empty Grafana at `http://localhost:3000`.
+
+Compose sets `GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH` to [`grafana-home.json`](grafana-home.json), mounted at `/etc/grafana/home.json`, so the Grafana home page lists the next steps even when `monitoring/dashboards/` did not provision. One click from that page: this Control Center at `http://127.0.0.1:8080`, or **Dashboards → New → Import** of `monitoring/dashboards/*.json`. Helm does not mount the home file; the note covers that gap. A home dashboard saved in Grafana overrides the file.
+
 ## Server settings
 
 | Variable | Default | Purpose |

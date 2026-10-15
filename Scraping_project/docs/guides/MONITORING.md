@@ -14,6 +14,8 @@ Monitoring has three parts: metrics (Prometheus, shown in Grafana), alerts (Prom
 
 Grafana provisions its datasources and dashboards from `monitoring/grafana_*.yml` and `monitoring/dashboards/`. If a dashboard is empty, check *Status → Targets* in Prometheus first. A target that is `down` means the service isn't running or its port changed.
 
+If the Grafana home has no pipeline dashboards at all, Compose still mounts `dashboard/grafana-home.json` as the default home (`GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH`). That page links the Control Center (`http://127.0.0.1:8080`) and **Dashboards → Import** of `monitoring/dashboards/*.json`. The same steps are in [grafana-empty.md](../../dashboard/grafana-empty.md) (#980). Helm does not mount that home file; use the note. A panel with no series is a different problem (scrape target down); this note is only for a missing dashboard list.
+
 ## Reading the main dashboard
 
 | Row | Panels | Healthy looks like |
