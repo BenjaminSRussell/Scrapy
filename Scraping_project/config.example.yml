@@ -1,0 +1,14 @@
+# Example Hugging Face pins for Stage 3 and Stage 4 (#650).
+#
+# Scraping_project/config.yml is the file workers read (docs/adr/0001).
+# This file is the example of the `models:` block. Keep the two copies
+# identical. revision is the Hub commit; sha256 is the weight file
+# (stage3: pytorch_model.bin, stage4: model.safetensors).
+# How to move a pin: docs/MODEL_PINS.md.
+models:
+  stage3:
+    revision: "a4f8f3ea906ed274767e9906dbaede7531d660ff"
+    sha256: "3bac65d18c99463302d12ca75c2220ea714f9c81ce235f205fa818efe71df6ea"
+  stage4:
+    revision: "37f520fa929c961707657b28798b30c003dd100b"
+    sha256: "40041830399afb5348525ef8354b007ecec4286fdf3524f7e6b54377e17096cb"

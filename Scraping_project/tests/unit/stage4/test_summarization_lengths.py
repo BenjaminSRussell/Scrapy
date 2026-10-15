@@ -109,10 +109,35 @@ def test_missing_transformers_falls_back(monkeypatch):
 def test_default_model_pipeline_is_built_lazily(monkeypatch):
     stub = Stub("lazy")
     built = []
-    fake = types.SimpleNamespace(pipeline=lambda task, model, device: built.append((task, model, device)) or stub)
+
+    def pipeline(task, **kw):
+        built.append((task, kw))
+        return stub
+
+    fake = types.SimpleNamespace(pipeline=pipeline)
     monkeypatch.setitem(sys.modules, "transformers", fake)
     assert sm.summarize_with_heavy_model(LONG) == "lazy"
-    assert built == [("summarization", "facebook/bart-large-cnn", -1)]
+    from src.utils.model_integrity import load_stage_pin
+
+    pin = load_stage_pin("stage4")
+    assert built == [
+        (
+            "summarization",
+            {"model": pin.repo_id, "device": -1, "revision": pin.revision},
+        )
+    ]
+
+
+def test_weight_checksum_mismatch_is_not_a_fallback(monkeypatch):
+    """A pin failure must not become the 500-char prefix (#650)."""
+    from src.utils import model_integrity as mi
+
+    def boom(stage, model_name, cache=None):
+        raise mi.ModelIntegrityError("model.safetensors: sha256 aaaa != pinned bbbb")
+
+    monkeypatch.setattr(mi, "revision_for_load", boom)
+    with pytest.raises(mi.ModelIntegrityError, match="sha256"):
+        sm.summarize_with_heavy_model(LONG)
 
 
 @pytest.mark.parametrize("min_len,max_len", [(0, 1), (30, 150), (150, 150)])

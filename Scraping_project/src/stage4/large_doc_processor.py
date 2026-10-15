@@ -106,16 +106,24 @@ class LargeDocProcessor:
         if self.summarizer is not None:
             return
 
+        from src.utils.model_integrity import ModelIntegrityError, confirm_load, revision_for_load
+
+        # Pin the Hub commit. A cached weight with the wrong sha256 raises (#650).
+        revision = revision_for_load("stage4", self.model_name)
         try:
             from transformers import pipeline
 
             logger.info(f"Loading heavyweight model: {self.model_name}")
-            self.summarizer = pipeline(
-                "summarization",
-                model=self.model_name,
-                device=-1,
-            )
+            kwargs: dict[str, Any] = {"model": self.model_name, "device": -1}
+            if revision is not None:
+                kwargs["revision"] = revision
+            self.summarizer = pipeline("summarization", **kwargs)
+            if revision is not None:
+                confirm_load("stage4", self.model_name)
             logger.info("Model loaded successfully")
+        except ModelIntegrityError:
+            self.summarizer = None
+            raise
         except Exception as e:
             logger.error(f"Failed to load model: {e}")
             raise

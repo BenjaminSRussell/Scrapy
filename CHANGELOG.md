@@ -93,6 +93,7 @@ renamed to the new version and date (see the release checklist).
 - Control Center: keyboard tabs, landmarks, contrast, focus, reduced motion, a wrapping mobile topbar, and loading, stale, and error states (#153 #155 #332 #340 #341 #343 #349 #351 #352 #362).
 
 ### Security
+- Stage 3 and Stage 4 summarizers load a pinned Hugging Face commit (`models.stage3` / `models.stage4` revision and weight sha256 in `config.yml` and `config.example.yml`). Startup and model load refuse a cached weight file that does not match. The update steps are in `Scraping_project/docs/MODEL_PINS.md` (#650).
 - Production Helm overlay turns on default-deny NetworkPolicies for Redis, Kafka, Postgres and the scrapers. The delta ingestor may dial Redis, and Grafana may install the Redis datasource plugin over public HTTPS (same private and link-local exclusions as scrape egress; the plugin is not baked into the image). Alertmanager external receivers stay closed. `networkPolicy.breakGlass` is the debug override and must not stay on (#190).
 - Compose reads the Postgres superuser password from `POSTGRES_PASSWORD` (local default `postgres`), and SECURITY.md covers secret handling and rotation (#482).
 - `cli.py setup` downloads the revisions pinned in `models.lock.json` and fails closed on a missing file, a size mismatch, or a digest mismatch (#486).
