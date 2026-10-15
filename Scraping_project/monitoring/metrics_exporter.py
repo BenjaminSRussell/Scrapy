@@ -2,9 +2,11 @@ import json
 import logging
 import os
 import socket
+import ssl
 import sys
 import threading
 import time
+from collections.abc import Mapping
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -19,6 +21,51 @@ from src.core.timeutil import utc_now_iso
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
+
+
+def tls_materials_from_env(env: Mapping[str, str] | None = None) -> dict[str, str] | None:
+    """Server cert, key, and optional client CA from the environment (#678).
+
+    Unset means plain HTTP, which is the default for local dev and Compose.
+    A cert without a key (or a CA without both) is refused so the process
+    cannot fall back to serving the scrape over HTTP by accident.
+    """
+    source = os.environ if env is None else env
+    cert = source.get("METRICS_EXPORTER_TLS_CERT", "").strip()
+    key = source.get("METRICS_EXPORTER_TLS_KEY", "").strip()
+    ca = source.get("METRICS_EXPORTER_TLS_CA", "").strip()
+    if not cert and not key and not ca:
+        return None
+    if not cert or not key:
+        raise ValueError(
+            "METRICS_EXPORTER_TLS_CERT and METRICS_EXPORTER_TLS_KEY are both required when exporter TLS is set"
+        )
+    return {"cert": cert, "key": key, "ca": ca}
+
+
+def build_server_ssl_context(cert: str, key: str, ca: str = "") -> ssl.SSLContext:
+    """TLS 1.2+ server context. A CA turns on optional client certificates."""
+    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    ctx.minimum_version = ssl.TLSVersion.TLSv1_2
+    ctx.load_cert_chain(certfile=cert, keyfile=key)
+    if ca:
+        ctx.load_verify_locations(cafile=ca)
+        # OPTIONAL so kubelet HTTPS probes (no client cert) still reach
+        # /healthz. /metrics rejects a missing client cert itself.
+        ctx.verify_mode = ssl.CERT_OPTIONAL
+    return ctx
+
+
+def client_certificate_presented(handler: BaseHTTPRequestHandler) -> bool:
+    """True when the peer completed the handshake with a certificate."""
+    getter = getattr(handler.connection, "getpeercert", None)
+    if getter is None:
+        return False
+    try:
+        cert = getter()
+    except (OSError, ssl.SSLError, ValueError):
+        return False
+    return bool(cert)
 
 
 class StatsDClient:
@@ -168,17 +215,18 @@ class MetricsExporter:
 
         logger.info(f"UDP metrics exporter initialized (StatsD: {statsd_host}:{statsd_port}, interval: {update_interval}s)")
 
-    def start(self, health_port: int = 0):
+    def start(self, health_port: int = 0, tls: dict[str, str] | None = None):
         """Start metrics update loop (UDP - no server needed).
 
         No longer waits for crawl data (#208): zero baselines are emitted in
         __init__, and the first real update runs immediately, so a fresh
         cluster has metrics within one interval. ``health_port`` > 0 also
-        serves /healthz and /metrics over HTTP for k8s probes.
+        serves /healthz and /metrics over HTTP for k8s probes. ``tls`` (cert,
+        key, and optional client CA) serves that port over TLS instead (#678).
         """
         logger.info("Starting UDP metrics exporter (fire-and-forget mode)")
         if health_port:
-            self.start_health_server(health_port)
+            self.start_health_server(health_port, tls=tls)
         self._update_loop()
 
     # -- health endpoint (#208) --------------------------------------------
@@ -201,13 +249,21 @@ class MetricsExporter:
             f"metrics_exporter_last_update_timestamp_seconds {self.last_update_ts}\n"
         )
 
-    def start_health_server(self, port: int, host: str = "0.0.0.0") -> ThreadingHTTPServer:
+    def start_health_server(
+        self,
+        port: int,
+        host: str = "0.0.0.0",
+        tls: dict[str, str] | None = None,
+    ) -> ThreadingHTTPServer:
         exporter = self
+        require_client = bool(tls and tls.get("ca"))
 
         class _Handler(BaseHTTPRequestHandler):
             def do_GET(self):  # noqa: N802 (http.server API)
                 path = self.path.split("?", 1)[0]
-                if path == "/metrics":
+                if path == "/metrics" and require_client and not client_certificate_presented(self):
+                    status, body, ctype = 401, "client certificate required\n", "text/plain"
+                elif path == "/metrics":
                     status, body, ctype = 200, exporter.health_text(), "text/plain; version=0.0.4"
                 elif path in ("/healthz", "/readyz"):
                     ok = exporter.is_healthy()
@@ -225,9 +281,13 @@ class MetricsExporter:
                 return
 
         server = ThreadingHTTPServer((host, port), _Handler)
+        if tls:
+            ctx = build_server_ssl_context(tls["cert"], tls["key"], tls.get("ca", ""))
+            server.socket = ctx.wrap_socket(server.socket, server_side=True)
         threading.Thread(target=server.serve_forever, daemon=True, name="exporter-health").start()
         self._health_server = server
-        logger.info(f"Exporter health endpoint on :{server.server_address[1]} (/metrics, /healthz)")
+        mode = "https+mtls" if require_client else "https" if tls else "http"
+        logger.info(f"Exporter health endpoint on :{server.server_address[1]} ({mode} /metrics, /healthz)")
         return server
 
     def _update_loop(self):
@@ -537,12 +597,19 @@ def main():
 
     args = parser.parse_args()
 
+    try:
+        tls = tls_materials_from_env()
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
+
     exporter = MetricsExporter(
         statsd_host=args.statsd_host,
         statsd_port=args.statsd_port,
         update_interval=args.interval,
     )
-    exporter.start(health_port=args.port)
+    # Pass tls only when set so callers that stub start(health_port=) stay valid.
+    extra = {"tls": tls} if tls else {}
+    exporter.start(health_port=args.port, **extra)
 
 
 if __name__ == "__main__":

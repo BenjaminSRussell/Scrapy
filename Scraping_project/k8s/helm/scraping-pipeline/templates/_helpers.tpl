@@ -120,6 +120,17 @@ Hard errors in any profile: configurations that cannot work.
 {{- if or (contains "://" $redisHost) (contains ":" $redisHost) (contains "/" $redisHost) -}}
 {{- $errors = append $errors "redis.external.host must be a hostname only; set the port on redis.external.port. Do not use a redis:// URL or REDIS_URL (#216)" -}}
 {{- end -}}
+{{- if and .Values.metricsExporter.enabled .Values.metricsExporter.mtls.enabled -}}
+{{- if .Values.metricsExporter.mtls.issueCerts -}}
+{{- if not .Values.metricsExporter.mtls.issuerRef.name -}}
+{{- $errors = append $errors "metricsExporter.mtls.enabled with issueCerts requires metricsExporter.mtls.issuerRef.name (a cert-manager Issuer or ClusterIssuer backed by an internal CA). See k8s/README.md (#678)" -}}
+{{- end -}}
+{{- else -}}
+{{- if or (not .Values.metricsExporter.mtls.serverSecretName) (not .Values.metricsExporter.mtls.clientSecretName) -}}
+{{- $errors = append $errors "metricsExporter.mtls.enabled with issueCerts=false requires metricsExporter.mtls.serverSecretName and metricsExporter.mtls.clientSecretName (#678)" -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
 {{- if and .Values.redis.external .Values.redis.external.egressCIDRs (not (kindIs "slice" .Values.redis.external.egressCIDRs)) -}}
 {{- $errors = append $errors "redis.external.egressCIDRs must be a list of CIDRs (#216)" -}}
 {{- end -}}
@@ -177,6 +188,41 @@ NetworkPolicy cannot select a DNS name (#216).
   ports:
   - protocol: TCP
     port: {{ $port }}
+{{- end -}}
+{{- end -}}
+
+{{/*
+#678: TLS secret the metrics exporter presents, and the CA it uses to check
+Prometheus. Empty serverSecretName uses <fullname>-metrics-exporter-tls.
+*/}}
+{{- define "scraping-pipeline.metricsExporterMtlsServerSecret" -}}
+{{- if .Values.metricsExporter.mtls.serverSecretName -}}
+{{- .Values.metricsExporter.mtls.serverSecretName | trunc 63 | trimSuffix "-" -}}
+{{- else -}}
+{{- printf "%s-metrics-exporter-tls" (include "scraping-pipeline.fullname" .) | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+#678: client certificate Prometheus presents on the metrics-exporter scrape.
+*/}}
+{{- define "scraping-pipeline.metricsExporterMtlsClientSecret" -}}
+{{- if .Values.metricsExporter.mtls.clientSecretName -}}
+{{- .Values.metricsExporter.mtls.clientSecretName | trunc 63 | trimSuffix "-" -}}
+{{- else -}}
+{{- printf "%s-prometheus-scrape-client" (include "scraping-pipeline.fullname" .) | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+DNS name Prometheus checks on the exporter certificate. Default is the
+in-cluster Service name, which the Certificate also lists.
+*/}}
+{{- define "scraping-pipeline.metricsExporterMtlsServerName" -}}
+{{- if .Values.metricsExporter.mtls.serverName -}}
+{{- .Values.metricsExporter.mtls.serverName -}}
+{{- else -}}
+{{- printf "%s-metrics-exporter.%s.svc" (include "scraping-pipeline.fullname" .) .Release.Namespace -}}
 {{- end -}}
 {{- end -}}
 

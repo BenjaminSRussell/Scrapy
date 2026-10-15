@@ -173,7 +173,7 @@ annotation-based Prometheus.
 |-----|--------|------|-----------|
 | `scrapy_app` | Scrapy pods | 9410-9419 | Service + `prometheus.io/*` annotations |
 | `stage2_worker`, `stage3_worker` | every worker pod | `workerMetrics.port` (9430) | headless `<release>-stageN-metrics` Service, `dns_sd_configs` (one target per replica) + `prometheus.io/*` annotations |
-| `scraping_pipeline` | metrics-exporter | 9100 | Service |
+| `scraping_pipeline` | metrics-exporter | 9100 | Service (plain HTTP unless `metricsExporter.mtls.enabled`, #678) |
 | `redis`, `postgres`, `kafka_jmx` | exporters | 9121 / 9187 / 5556 | Service |
 | `statsd` | statsd-exporter (kafka-delta-ingestor pushes StatsD) | 9102 | Service |
 
@@ -184,6 +184,78 @@ port clash is logged and the worker keeps consuming. Set
 With `networkPolicy.enabled=true`, each target gets a
 `<target>-metrics-ingress` policy admitting only Prometheus on its metrics
 port(s); default-deny previously blocked every scrape.
+
+#### Optional mTLS (#678)
+
+`metricsExporter.mtls.enabled` is `false` in `values.yaml`. `values-prod.yaml`
+does not turn it on. A default install, and docker compose, stay on plain HTTP.
+Compose does not run this exporter, and `monitoring/prometheus.yml` does not
+scrape it.
+
+To require mutual TLS on that one scrape, point `issuerRef` at a cert-manager
+Issuer or ClusterIssuer that uses an internal CA (`spec.ca.secretName`). Do
+not use the public Let's Encrypt issuer from the Grafana ingress. It will not
+issue a client certificate for this in-cluster scrape. Create the CA Secret
+out of band and do not commit the private key.
+
+```yaml
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: pipeline-ca
+  namespace: scraping-pipeline
+spec:
+  ca:
+    secretName: pipeline-ca-key-pair   # kubernetes.io/tls, not in git
+```
+
+```yaml
+metricsExporter:
+  mtls:
+    enabled: true
+    issuerRef:
+      name: pipeline-ca
+      kind: Issuer          # or ClusterIssuer
+      group: cert-manager.io
+```
+
+With `issueCerts: true` (the default) the chart renders two Certificate
+objects from that issuer:
+
+| Secret | Mounted by | Use |
+|---|---|---|
+| `<release>-metrics-exporter-tls` | metrics exporter | server cert (`tls.crt`, `tls.key`) and the CA (`ca.crt`) that checks Prometheus |
+| `<release>-prometheus-scrape-client` | bundled Prometheus | client cert and the same CA, at `/etc/prometheus-mtls` |
+
+Override either name with `serverSecretName` or `clientSecretName`. Set
+`issueCerts: false` to mount secrets you already have. Both names are then
+required, and the chart renders no Certificate. The render fails if the flag
+is on without an issuer (when issuing) or without both secret names (when not).
+
+The bundled Prometheus job `scraping_pipeline` is then:
+
+```yaml
+scheme: https
+tls_config:
+  ca_file: /etc/prometheus-mtls/ca.crt
+  cert_file: /etc/prometheus-mtls/tls.crt
+  key_file: /etc/prometheus-mtls/tls.key
+  server_name: <fullname>-metrics-exporter.<namespace>.svc
+```
+
+`serverName` overrides that DNS name. The server certificate includes
+`<fullname>-metrics-exporter`, plus the `.namespace`, `.namespace.svc`, and
+`.namespace.svc.cluster.local` forms, and `serverName` when it differs. An
+external Prometheus copies the same `tls_config` and mounts the client secret.
+The TCP port stays 9100, so NetworkPolicy does not change.
+
+The exporter reads `METRICS_EXPORTER_TLS_CERT`, `METRICS_EXPORTER_TLS_KEY`, and
+`METRICS_EXPORTER_TLS_CA`. `/metrics` answers only when the client certificate
+chains to that CA. `/healthz` and `/readyz` stay open so the kubelet can probe
+with `scheme: HTTPS` and no client certificate. The pod may restart until
+cert-manager fills the Secrets. The process loads the files at start, so
+restart the exporter and Prometheus after a renewal. Unset the three variables
+and the process serves plain HTTP again.
 
 ### Grafana Dashboards
 

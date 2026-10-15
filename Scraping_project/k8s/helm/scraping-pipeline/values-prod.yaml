@@ -73,3 +73,6 @@ redis:
     port: 6379
     egressCIDRs:
       - 203.0.113.0/24
+
+# metricsExporter.mtls stays off (#678). This overlay does not issue those
+# certificates. See k8s/README.md before requiring mTLS on the Prometheus scrape.

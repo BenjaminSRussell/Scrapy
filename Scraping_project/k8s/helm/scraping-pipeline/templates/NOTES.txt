@@ -13,6 +13,10 @@ WARNING: not production-safe (fine for local clusters; profile=production would 
   - {{ . }}
 {{- end }}
 {{- end }}
+{{- if and .Values.metricsExporter.enabled .Values.metricsExporter.mtls.enabled }}
+
+Metrics exporter scrape is mTLS (#678). Prometheus uses the client cert in secret {{ include "scraping-pipeline.metricsExporterMtlsClientSecret" . }}. Probes use HTTPS /healthz and do not present a client cert. Restart both pods after the certificate renews.
+{{- end }}
 {{- if .Values.networkPolicy.breakGlass }}
 
 WARNING: networkPolicy.breakGlass is on (#190). No NetworkPolicies are rendered, so Redis, Kafka and Postgres accept traffic from any pod. Turn breakGlass off when debugging is done. kubectl port-forward does not need it.

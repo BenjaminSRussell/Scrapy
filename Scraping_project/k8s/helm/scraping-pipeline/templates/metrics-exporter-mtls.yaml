@@ -1,0 +1,65 @@
+{{- if and .Values.metricsExporter.enabled .Values.metricsExporter.mtls.enabled .Values.metricsExporter.mtls.issueCerts }}
+{{- $fullname := include "scraping-pipeline.fullname" . }}
+{{- $ns := .Release.Namespace }}
+{{- $svc := printf "%s-metrics-exporter" $fullname }}
+{{- $names := list $svc (printf "%s.%s" $svc $ns) (printf "%s.%s.svc" $svc $ns) (printf "%s.%s.svc.cluster.local" $svc $ns) }}
+{{- $chosen := include "scraping-pipeline.metricsExporterMtlsServerName" . }}
+{{- if not (has $chosen $names) }}
+{{- $names = append $names $chosen }}
+{{- end }}
+# Optional mTLS for the Prometheus scrape of the metrics exporter (#678).
+# Both certificates come from the same issuer so ca.crt in each Secret is
+# the CA the other side trusts. The chart does not create that CA.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "scraping-pipeline.metricsExporterMtlsServerSecret" . }}
+  labels:
+    {{- include "scraping-pipeline.labels" . | nindent 4 }}
+    app.kubernetes.io/component: metrics-exporter
+spec:
+  secretName: {{ include "scraping-pipeline.metricsExporterMtlsServerSecret" . }}
+  duration: 2160h
+  renewBefore: 360h
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+    rotationPolicy: Always
+  usages:
+    - server auth
+    - digital signature
+  dnsNames:
+    {{- range $names }}
+    - {{ . | quote }}
+    {{- end }}
+  issuerRef:
+    name: {{ .Values.metricsExporter.mtls.issuerRef.name | quote }}
+    kind: {{ .Values.metricsExporter.mtls.issuerRef.kind | default "ClusterIssuer" }}
+    group: {{ .Values.metricsExporter.mtls.issuerRef.group | default "cert-manager.io" }}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "scraping-pipeline.metricsExporterMtlsClientSecret" . }}
+  labels:
+    {{- include "scraping-pipeline.labels" . | nindent 4 }}
+    app.kubernetes.io/component: prometheus
+spec:
+  secretName: {{ include "scraping-pipeline.metricsExporterMtlsClientSecret" . }}
+  duration: 2160h
+  renewBefore: 360h
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+    rotationPolicy: Always
+  usages:
+    - client auth
+    - digital signature
+  commonName: prometheus-metrics-scrape
+  uris:
+    - {{ printf "spiffe://%s/prometheus-metrics-scrape" $ns | quote }}
+  issuerRef:
+    name: {{ .Values.metricsExporter.mtls.issuerRef.name | quote }}
+    kind: {{ .Values.metricsExporter.mtls.issuerRef.kind | default "ClusterIssuer" }}
+    group: {{ .Values.metricsExporter.mtls.issuerRef.group | default "cert-manager.io" }}
+{{- end -}}
