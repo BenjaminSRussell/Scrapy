@@ -106,6 +106,7 @@
 
         .topbar-stat {
             text-align: center;
+            position: relative;
         }
 
         .topbar-stat-label {
@@ -885,12 +886,16 @@
             }
             .topbar-stat {
                 display: flex;
+                flex-wrap: wrap;
                 align-items: baseline;
                 gap: 0.35rem;
             }
             .topbar-stat-value {
                 font-size: 1rem;
                 margin-top: 0;
+            }
+            .connection-popover {
+                flex-basis: 100%;
             }
         }
 
@@ -1114,6 +1119,15 @@
                 color: ButtonText;
                 border: 1px solid ButtonText;
             }
+            .connection-popover-panel,
+            .connection-forget {
+                border: 1px solid CanvasText;
+                background: Canvas;
+                color: CanvasText;
+            }
+            .connection-popover > summary {
+                color: CanvasText;
+            }
             .health-item.unhealthy {
                 border: 3px dashed CanvasText;  /* state without colour */
             }
@@ -1303,6 +1317,64 @@
         }
         .stale-badge[hidden] { display: none; }
 
+        /* #1020: Status "Connection" disclosure shows the resolved metrics URL. */
+        .connection-popover {
+            margin-top: 0.35rem;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-align: left;
+        }
+        .connection-popover > summary {
+            cursor: pointer;
+            color: #fff;
+            text-underline-offset: 2px;
+        }
+        .connection-popover-panel {
+            position: absolute;
+            z-index: 2;
+            right: 0;
+            top: calc(100% + 0.25rem);
+            width: min(22rem, 70vw);
+            padding: 0.75rem 1rem;
+            background: #ffffff;
+            color: #111827;
+            border: 1px solid #d1d5db;
+            border-radius: 0.5rem;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+        }
+        .connection-popover-k,
+        .connection-popover-source {
+            margin: 0;
+            font-weight: 600;
+            color: #374151;
+        }
+        .connection-popover-url {
+            margin: 0.25rem 0 0.5rem;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+            font-size: 0.8rem;
+            font-weight: 400;
+            line-height: 1.4;
+            word-break: break-all;
+            color: #111827;
+        }
+        .connection-forget {
+            margin-top: 0.25rem;
+            font: inherit;
+            font-size: 0.8rem;
+            font-weight: 600;
+            padding: 0.35rem 0.6rem;
+            border: 1px solid #374151;
+            border-radius: 0.25rem;
+            background: #ffffff;
+            color: #111827;
+            cursor: pointer;
+        }
+        .connection-forget[hidden] { display: none; }
+        .connection-forget:focus-visible {
+            outline: 3px solid var(--primary-dark);
+            outline-offset: 2px;
+        }
+
         /* #362: fetch error banner with Retry. */
         .fetch-error-banner {
             display: flex;
@@ -1348,6 +1420,15 @@
                     <div class="topbar-stat-label">Status</div>
                     <div class="topbar-stat-value" id="topbar-status">Loading…</div>
                     <span id="topbar-stale" class="stale-badge" hidden>Stale data</span>
+                    <details class="connection-popover" id="connection-popover">
+                        <summary>Connection</summary>
+                        <div class="connection-popover-panel" role="region" aria-label="Metrics connection">
+                            <p class="connection-popover-k">Metrics URL</p>
+                            <p id="connection-metrics-url" class="connection-popover-url"></p>
+                            <p id="connection-metrics-source" class="connection-popover-source"></p>
+                            <button type="button" class="connection-forget" id="connection-forget" hidden>Forget remembered URL</button>
+                        </div>
+                    </details>
                 </div>
                 <div class="topbar-stat">
                     <div class="topbar-stat-label">Total URLs</div>

@@ -101,12 +101,39 @@ test('resolveMetricsUrl: same-origin proxy when served over http(s) (#141/#400)'
     assert.strictEqual(resolveMetricsUrl(null), 'http://localhost:9090/metrics');
 });
 
-test('resolveMetricsUrl precedence: override, then http(s) ?metrics=', () => {
+test('resolveMetricsUrl precedence: ?metrics= > localStorage > override > relative default (#1020)', () => {
+    const { metricsEndpoint, metricsEndpointLabel } = require('../format-utils.js');
     const loc = { protocol: 'http:', hostname: 'h', search: '?metrics=http%3A%2F%2Fexporter%3A9100%2Fmetrics' };
     assert.strictEqual(resolveMetricsUrl(loc), 'http://exporter:9100/metrics');
-    assert.strictEqual(resolveMetricsUrl(loc, '/proxy/metrics'), '/proxy/metrics');
+    // Query beats a baked-in override and a remembered URL.
+    const both = { stored: 'https://old.example/metrics', override: '/proxy/metrics' };
+    assert.strictEqual(resolveMetricsUrl(loc, both), 'http://exporter:9100/metrics');
+    assert.strictEqual(resolveMetricsUrl(loc, '/proxy/metrics'), 'http://exporter:9100/metrics');
+    assert.strictEqual(metricsEndpoint(loc, both).source, 'query');
+    // Remembered http(s) URL when this visit has no query.
+    const plain = { protocol: 'http:', hostname: 'h', search: '' };
+    assert.strictEqual(resolveMetricsUrl(plain, both), 'https://old.example/metrics');
+    assert.strictEqual(metricsEndpoint(plain, both).source, 'storage');
+    // Legacy string override still applies when query and storage are absent.
+    assert.strictEqual(resolveMetricsUrl(plain, '/proxy/metrics'), '/proxy/metrics');
+    assert.strictEqual(metricsEndpoint(plain, '/proxy/metrics').source, 'override');
+    // Non-http storage is ignored; relative default remains /api/metrics.
+    assert.strictEqual(resolveMetricsUrl(plain, { stored: 'javascript:alert(1)' }), '/api/metrics');
+    assert.strictEqual(metricsEndpoint(plain).source, 'default');
+    assert.strictEqual(metricsEndpointLabel(metricsEndpoint(plain), plain), 'Relative default');
+    // A rejected ?metrics= does not fall through to storage or the override (#910).
     const bad = { protocol: 'http:', hostname: 'h', search: '?metrics=javascript:alert(1)' };
     assert.strictEqual(resolveMetricsUrl(bad), '/api/metrics');
+    assert.strictEqual(resolveMetricsUrl(bad, both), '/api/metrics');
+    const rejected = metricsEndpoint(bad, both);
+    assert.strictEqual(rejected.source, 'default');
+    assert.strictEqual(rejected.rejectedQuery, true);
+    assert.match(metricsEndpointLabel(rejected, bad), /invalid \?metrics=/);
+    // file:// default, unless a remembered http(s) URL is set.
+    const fileLoc = { protocol: 'file:', hostname: '', search: '' };
+    assert.strictEqual(resolveMetricsUrl(fileLoc, { stored: 'http://127.0.0.1:9091/metrics' }),
+        'http://127.0.0.1:9091/metrics');
+    assert.strictEqual(metricsEndpointLabel(metricsEndpoint(fileLoc), fileLoc), 'Default exporter URL');
 });
 
 // #906 / #910

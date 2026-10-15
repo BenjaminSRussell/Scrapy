@@ -1,11 +1,11 @@
 // Pipeline Control Center - Main Application
 // Real-time monitoring dashboard for UConn scraping pipeline
 
-// #141/#400: window.CC_METRICS_URL, ?metrics=, else same-origin /api/metrics (format-utils.js).
-const METRICS_URL = resolveMetricsUrl(
-    typeof location !== 'undefined' ? location : null,
-    (typeof window !== 'undefined' && window.CC_METRICS_URL) || null
-);
+// #1020: ?metrics= > localStorage > window.CC_METRICS_URL > relative /api/metrics.
+// Filled in by loadMetricsChoice() once the storage helpers exist.
+const STORE_METRICS_URL_KEY = 'cc.metricsUrl';
+let METRICS_ENDPOINT = { url: '/api/metrics', source: 'default' };
+let METRICS_URL = METRICS_ENDPOINT.url;
 const REFRESH_INTERVAL = 5000;
 const METRICS_TIMEOUT_MS = 4000; // #1032
 const STORE_TAB_KEY = 'cc.lastTab'; // #1034
@@ -1436,6 +1436,9 @@ function storeSet(key, value) {
 function storeDel(key) {
     try { if (window.localStorage) window.localStorage.removeItem(key); } catch (_) { /* ignore */ }
 }
+function storeRemove(key) {
+    try { if (window.localStorage) window.localStorage.removeItem(key); } catch (_) { /* ignore */ }
+}
 
 // #1017: accent picker writes --accent / --accent-ink / --accent-border.
 function applyAccent(hex) {
@@ -1471,6 +1474,39 @@ function setupAccentControl() {
             if (live) live.textContent = 'Accent color reset';
         });
     }
+}
+
+// #1020: query wins, then a remembered http(s) URL, then CC_METRICS_URL, then
+// the relative default. A valid ?metrics= is what later visits remember.
+function loadMetricsChoice() {
+    const loc = typeof location !== 'undefined' ? location : null;
+    METRICS_ENDPOINT = metricsEndpoint(loc, {
+        stored: storeGet(STORE_METRICS_URL_KEY),
+        override: (typeof window !== 'undefined' && window.CC_METRICS_URL) || null,
+    });
+    METRICS_URL = METRICS_ENDPOINT.url;
+    if (METRICS_ENDPOINT.source === 'query') storeSet(STORE_METRICS_URL_KEY, METRICS_URL);
+}
+loadMetricsChoice();
+
+function renderConnectionPopover() {
+    const urlEl = document.getElementById('connection-metrics-url');
+    const srcEl = document.getElementById('connection-metrics-source');
+    const loc = typeof location !== 'undefined' ? location : null;
+    if (urlEl) urlEl.textContent = METRICS_URL;
+    if (srcEl) srcEl.textContent = metricsEndpointLabel(METRICS_ENDPOINT, loc);
+    const forget = document.getElementById('connection-forget');
+    if (!forget || forget.dataset.bound === '1') return;
+    forget.dataset.bound = '1';
+    const remembered = METRICS_ENDPOINT.source === 'query' || METRICS_ENDPOINT.source === 'storage';
+    forget.hidden = !remembered;
+    forget.addEventListener('click', () => {
+        storeRemove(STORE_METRICS_URL_KEY);
+        if (!loc) return;
+        const next = new URL(loc.href);
+        next.searchParams.delete('metrics');
+        loc.assign(next.toString());
+    });
 }
 
 function visibleTabNames() {
@@ -1961,6 +1997,7 @@ function initialize() {
     }
     renderHealthHistory();
     applyGrafanaLink();
+    renderConnectionPopover();
     setupTabs();
     setupActivitySearch();
     setupStageDrilldown();

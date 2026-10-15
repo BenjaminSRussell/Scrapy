@@ -149,17 +149,57 @@
         if (delta <= 0) return 0;
         return delta / (ms / 60000);
     }
-    // #141/#400: no hard-coded localhost. Precedence: explicit override
-    // (window.CC_METRICS_URL), then ?metrics=<url>, then the same-origin proxy
-    // /api/metrics on serve.py (METRICS_UPSTREAM picks the exporter server-side).
-    // Opened as a file:// page there is no proxy, so fall back to localhost:9090.
-    function resolveMetricsUrl(loc, override) {
-        if (override) return String(override);
-        const search = (loc && loc.search) || '';
-        const fromQuery = new URLSearchParams(search).get('metrics');
-        if (fromQuery && /^https?:\/\/[^\s]+$/i.test(fromQuery)) return fromQuery;  // http(s) only
+    // http(s) only. javascript: and other schemes are never a metrics URL (#141/#910).
+    const METRICS_HTTP_RE = /^https?:\/\/[^\s]+$/i;
+    function defaultMetricsUrl(loc) {
+        // Same-origin proxy when the page is served. file:// has no proxy (#400).
         if (loc && /^https?:$/.test(loc.protocol)) return '/api/metrics';
         return 'http://localhost:9090/metrics';
+    }
+    function readMetricsQuery(loc) {
+        const search = (loc && loc.search) || '';
+        let params;
+        try { params = new URLSearchParams(search); } catch (_) { return { present: false, url: null }; }
+        if (!params.has('metrics')) return { present: false, url: null };
+        const raw = params.get('metrics');
+        if (raw && METRICS_HTTP_RE.test(raw)) return { present: true, url: raw };
+        return { present: true, url: null };
+    }
+    // Second arg is either a legacy override string (window.CC_METRICS_URL) or
+    // { stored, override }. stored is the localStorage value (#1020).
+    function metricsChoiceArgs(storedOrOverride) {
+        if (storedOrOverride && typeof storedOrOverride === 'object') {
+            const stored = storedOrOverride.stored == null || storedOrOverride.stored === ''
+                ? null : String(storedOrOverride.stored);
+            const override = storedOrOverride.override ? String(storedOrOverride.override) : null;
+            return { stored, override };
+        }
+        if (storedOrOverride) return { stored: null, override: String(storedOrOverride) };
+        return { stored: null, override: null };
+    }
+    // #1020: ?metrics=http(s) > localStorage > window.CC_METRICS_URL > relative
+    // /api/metrics. A present but rejected ?metrics= does not use storage or the
+    // baked override — the operator is told the default is in use (#910).
+    function metricsEndpoint(loc, storedOrOverride) {
+        const choice = metricsChoiceArgs(storedOrOverride);
+        const q = readMetricsQuery(loc);
+        if (q.url) return { url: q.url, source: 'query' };
+        if (q.present) return { url: defaultMetricsUrl(loc), source: 'default', rejectedQuery: true };
+        if (choice.stored && METRICS_HTTP_RE.test(choice.stored)) return { url: choice.stored, source: 'storage' };
+        if (choice.override) return { url: choice.override, source: 'override' };
+        return { url: defaultMetricsUrl(loc), source: 'default' };
+    }
+    function resolveMetricsUrl(loc, storedOrOverride) {
+        return metricsEndpoint(loc, storedOrOverride).url;
+    }
+    function metricsEndpointLabel(endpoint, loc) {
+        if (!endpoint || !endpoint.source) return '';
+        if (endpoint.source === 'query') return 'Override from ?metrics= (saved in this browser)';
+        if (endpoint.source === 'storage') return 'Remembered in this browser';
+        if (endpoint.source === 'override') return 'Set by window.CC_METRICS_URL';
+        const relative = loc && /^https?:$/.test(loc.protocol);
+        const base = relative ? 'Relative default' : 'Default exporter URL';
+        return endpoint.rejectedQuery ? base + ' (invalid ?metrics= ignored)' : base;
     }
     // #401: /api/queues payload -> rows for the System tab. Redis down (ok:false)
     // is reported as an error, never as zero-depth queues.
@@ -1216,5 +1256,5 @@
         };
     }
 
-    return { tabKeyTarget, staleState, queueDepthRows, metricsFailureActivity, shortcutHintText, parseMetrics, metricSeriesCount, METRICS_FLOOD_DEFAULTS, metricsFloodLimits, advanceMetricsFlood, metricsFloodBannerText, ratePerMinute, resolveMetricsUrl, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler, stageActivity, stageDrilldown, stageDrilldownKey, doughnutLegendLayout, connectionState, documentTitle, createActivityAnnouncer, metricsUrlProblem, splitLinks, createMetricsFetcher, REFRESH_INTERVAL_CHOICES, parseRefreshInterval, shortcutAction, pickInitialTab, METRIC_UI_MAP, renderMetricNameMap, parseDangerSoundEnabled, dangerSoundDecision, HEALTH_HISTORY_LIMIT, pushPollOutcome, healthHistoryView, COMPARISON_BASELINE_ROLE, PREV_HOUR_AVG_KEYS, readPrevHourAverage, comparisonBaselineSeries, comparisonNote, ACTIVITY_LOG_CAP, capActivityLog, activityStaleNote, restoreActivityLog, topScrapeTargets, SCRAPE_TARGET_EMPTY, ACTIVITY_LEVELS, activityLevelCounts, filterActivityItems, filterActivityMessages, activityFilterStatus, toggleActivityLevel, HISTORY_MAX_POINTS, assertHistoryBound, boundHistoryBuffer, pushHistorySample, enforceHistoryCap, grafanaHomeUrl, jobStartedPresentation, DEFAULT_ACCENT, parseAccentColor, accentInk, accentBorder, accentCssVars };
+    return { tabKeyTarget, staleState, queueDepthRows, metricsFailureActivity, shortcutHintText, parseMetrics, metricSeriesCount, METRICS_FLOOD_DEFAULTS, metricsFloodLimits, advanceMetricsFlood, metricsFloodBannerText, ratePerMinute, resolveMetricsUrl, metricsEndpoint, metricsEndpointLabel, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler, stageActivity, stageDrilldown, stageDrilldownKey, doughnutLegendLayout, connectionState, documentTitle, createActivityAnnouncer, metricsUrlProblem, splitLinks, createMetricsFetcher, REFRESH_INTERVAL_CHOICES, parseRefreshInterval, shortcutAction, pickInitialTab, METRIC_UI_MAP, renderMetricNameMap, parseDangerSoundEnabled, dangerSoundDecision, HEALTH_HISTORY_LIMIT, pushPollOutcome, healthHistoryView, COMPARISON_BASELINE_ROLE, PREV_HOUR_AVG_KEYS, readPrevHourAverage, comparisonBaselineSeries, comparisonNote, ACTIVITY_LOG_CAP, capActivityLog, activityStaleNote, restoreActivityLog, topScrapeTargets, SCRAPE_TARGET_EMPTY, ACTIVITY_LEVELS, activityLevelCounts, filterActivityItems, filterActivityMessages, activityFilterStatus, toggleActivityLevel, HISTORY_MAX_POINTS, assertHistoryBound, boundHistoryBuffer, pushHistorySample, enforceHistoryCap, grafanaHomeUrl, jobStartedPresentation, DEFAULT_ACCENT, parseAccentColor, accentInk, accentBorder, accentCssVars };
 });
