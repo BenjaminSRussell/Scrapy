@@ -85,7 +85,7 @@ def _as_hour(value: Any) -> int:
         raise ValueError(_HOUR_ERROR)
     if value < 0 or value > 23:
         raise ValueError(_HOUR_ERROR)
-    return value
+    return int(value)
 
 
 def parse_quiet_hours(value: Any) -> tuple[int, int] | None:
