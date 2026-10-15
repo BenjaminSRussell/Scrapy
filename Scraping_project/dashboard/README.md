@@ -10,6 +10,11 @@ that is not http(s) is ignored, and the dashboard says so in the activity log an
 console (#910). Opened as a `file://` page (no server), it falls back to
 `http://localhost:9090/metrics`.
 
+The activity log keeps its last 50 entries in `sessionStorage` for this browser
+tab (#1029). A reload restores them and shows a note that they came from before
+the reload and may be stale. Closing the tab drops them; Clear drops them
+immediately.
+
 All throughput figures are per minute, computed from the real time between samples (#141).
 Labelled series such as `errors_total{stage="stage1"}` are kept under their full key and
 also summed under the bare name (`errors_total`) unless an unlabelled series of that name

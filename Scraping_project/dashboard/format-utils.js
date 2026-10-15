@@ -777,5 +777,50 @@
             : `Metrics poll history, last ${n} outcomes. ${caption}. Oldest on the left.`;
         return { slots, ok: okCount, fail: failCount, total: windowed.length, limit: n, label, caption };
     }
-    return { tabKeyTarget, staleState, queueDepthRows, metricsFailureActivity, shortcutHintText, parseMetrics, ratePerMinute, resolveMetricsUrl, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler, stageActivity, stageDrilldown, stageDrilldownKey, doughnutLegendLayout, connectionState, documentTitle, createActivityAnnouncer, metricsUrlProblem, splitLinks, createMetricsFetcher, REFRESH_INTERVAL_CHOICES, parseRefreshInterval, shortcutAction, pickInitialTab, METRIC_UI_MAP, renderMetricNameMap, parseDangerSoundEnabled, dangerSoundDecision, HEALTH_HISTORY_LIMIT, pushPollOutcome, healthHistoryView, COMPARISON_BASELINE_ROLE, PREV_HOUR_AVG_KEYS, readPrevHourAverage, comparisonBaselineSeries, comparisonNote };
+    // #1029: sessionStorage ring for the activity log. Newest first, same cap
+    // the on-screen log already uses. Only type/message/timestamp are kept.
+    const ACTIVITY_LOG_CAP = 50;
+    const ACTIVITY_LOG_TEXT_MAX = 1000;
+    const ACTIVITY_LOG_SCAN_MAX = 500;
+    function activityLogCapSize(cap) {
+        const n = Math.floor(Number(cap));
+        return Number.isFinite(n) && n >= 1 ? n : ACTIVITY_LOG_CAP;
+    }
+    function activityLogItem(item) {
+        if (!item || typeof item !== 'object') return null;
+        const message = typeof item.message === 'string' ? item.message : '';
+        if (!message.trim()) return null;
+        const rawType = typeof item.type === 'string' ? item.type : '';
+        const type = /^[a-z][a-z0-9-]{0,31}$/.test(rawType) ? rawType : 'info';
+        const timestamp = typeof item.timestamp === 'string' ? item.timestamp.slice(0, 80) : '';
+        return { type, message: message.slice(0, ACTIVITY_LOG_TEXT_MAX), timestamp };
+    }
+    function capActivityLog(items, cap) {
+        const n = activityLogCapSize(cap);
+        const list = Array.isArray(items) ? items : [];
+        const out = [];
+        const scan = Math.min(list.length, ACTIVITY_LOG_SCAN_MAX);
+        for (let i = 0; i < scan && out.length < n; i++) {
+            const row = activityLogItem(list[i]);
+            if (row) out.push(row);
+        }
+        return out;
+    }
+    function activityStaleNote(count) {
+        const n = Math.floor(Number(count));
+        if (!Number.isFinite(n) || n <= 0) return null;
+        if (n === 1) {
+            return 'Restored 1 earlier entry from this tab. It is from before the reload and may be stale.';
+        }
+        return `Restored ${n} earlier entries from this tab. They are from before the reload and may be stale.`;
+    }
+    function restoreActivityLog(raw, cap) {
+        let parsed = null;
+        if (typeof raw === 'string' && raw.length > 0 && raw.length <= 200000) {
+            try { parsed = JSON.parse(raw); } catch (_) { parsed = null; }
+        }
+        const items = capActivityLog(parsed, cap);
+        return { items, staleNote: activityStaleNote(items.length) };
+    }
+    return { tabKeyTarget, staleState, queueDepthRows, metricsFailureActivity, shortcutHintText, parseMetrics, ratePerMinute, resolveMetricsUrl, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler, stageActivity, stageDrilldown, stageDrilldownKey, doughnutLegendLayout, connectionState, documentTitle, createActivityAnnouncer, metricsUrlProblem, splitLinks, createMetricsFetcher, REFRESH_INTERVAL_CHOICES, parseRefreshInterval, shortcutAction, pickInitialTab, METRIC_UI_MAP, renderMetricNameMap, parseDangerSoundEnabled, dangerSoundDecision, HEALTH_HISTORY_LIMIT, pushPollOutcome, healthHistoryView, COMPARISON_BASELINE_ROLE, PREV_HOUR_AVG_KEYS, readPrevHourAverage, comparisonBaselineSeries, comparisonNote, ACTIVITY_LOG_CAP, capActivityLog, activityStaleNote, restoreActivityLog };
 });
