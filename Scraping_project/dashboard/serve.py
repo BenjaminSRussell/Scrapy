@@ -23,8 +23,10 @@ import base64
 import hmac
 import http.server
 import json
+import logging
 import math
 import os
+import posixpath
 import socketserver
 import subprocess
 import sys
@@ -80,6 +82,8 @@ UPSTREAM_MAX_BYTES = 8 * 1024 * 1024
 # is the only Redis-backed work queue (stage 2-4 queues are Delta tables / Kafka).
 DEFAULT_QUEUE_KEYS = ("js_spider:priority_queue",)
 _LENGTH_OPS = {"list": "llen", "zset": "zcard", "set": "scard", "stream": "xlen", "hash": "hlen"}
+_LOG = logging.getLogger("dashboard.serve")
+_cc_auth_mod = None
 
 
 def build_csp(env=None) -> str:
@@ -233,6 +237,45 @@ def queue_keys(env=None) -> tuple[str, ...]:
     return tuple(k.strip() for k in raw.split(",") if k.strip())
 
 
+def load_cc_auth():
+    """Load dashboard/cc_auth.py without putting the dashboard dir on sys.path."""
+    global _cc_auth_mod
+    if _cc_auth_mod is not None:
+        return _cc_auth_mod
+    import importlib.util
+
+    name = "dashboard_cc_auth"
+    cached = sys.modules.get(name)
+    if cached is not None:
+        _cc_auth_mod = cached
+        return cached
+    spec = importlib.util.spec_from_file_location(name, DASHBOARD_DIR / "cc_auth.py")
+    if spec is None or spec.loader is None:
+        raise RuntimeError("dashboard/cc_auth.py is missing")
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[name] = mod
+    spec.loader.exec_module(mod)
+    mod.install_log_scrub(_LOG)
+    _cc_auth_mod = mod
+    return mod
+
+
+def request_path(url_path: str) -> str:
+    """Path only, with ``..`` collapsed, so control checks cannot be dodged."""
+    path = urlsplit(url_path).path or "/"
+    norm = posixpath.normpath(path)
+    if norm == ".":
+        return "/"
+    if not norm.startswith("/"):
+        norm = "/" + norm
+    return norm
+
+
+def is_control_route(url_path: str) -> bool:
+    route = request_path(url_path)
+    return route == "/api/control" or route.startswith("/api/control/")
+
+
 def queue_depths(client, keys) -> list[dict]:
     """Type-aware depth per key (LLEN/ZCARD/SCARD/XLEN/HLEN); a missing key is 0."""
     out = []
@@ -259,6 +302,11 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
     upstream_timeout: float = 4.0
     redis_factory = staticmethod(_redis_from_env)
     queue_keys: tuple[str, ...] | None = None
+    # #658: control routes do not accept CC_AUTH_TOKEN. None builds a store from
+    # the environment on first use. control_runner(action, key_id) is optional;
+    # unset start/stop answers 501 and does not launch a crawl.
+    api_key_store = None
+    control_runner = None
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(self.root), **kwargs)
@@ -315,21 +363,28 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         super().end_headers()
 
     # ---- guards ----
+    def _rate_limited(self) -> bool:
+        """True when a 429 was already sent."""
+        self._cfg()
+        assert self.limiter is not None
+        allowed, retry, _remaining = self.limiter.check(self.client_address[0])
+        if allowed:
+            return False
+        body = b"Too Many Requests\n"
+        self.send_response(429)
+        self.send_header("Retry-After", str(max(1, math.ceil(retry))))
+        self.send_header("RateLimit-Remaining", "0")
+        self.send_header("Content-Type", "text/plain; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+        return True
+
     def _guard(self) -> bool:
         """Rate limit, then auth. False means a response was already sent."""
-        self._cfg()
-        assert self.limiter is not None and self.auth is not None
-        allowed, retry, remaining = self.limiter.check(self.client_address[0])
-        if not allowed:
-            body = b"Too Many Requests\n"
-            self.send_response(429)
-            self.send_header("Retry-After", str(max(1, math.ceil(retry))))
-            self.send_header("RateLimit-Remaining", "0")
-            self.send_header("Content-Type", "text/plain; charset=utf-8")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
+        if self._rate_limited():
             return False
+        assert self.auth is not None
         if not self.auth.allows(self.headers.get("Authorization")):
             body = b"Authentication required\n"
             self.send_response(401)
@@ -385,6 +440,66 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
 
     API_ROUTES = {"/api/metrics": "_api_metrics", "/api/health": "_api_health", "/api/queues": "_api_queues"}
 
+    def _control_directory(self):
+        if self.api_key_store is None:
+            type(self).api_key_store = load_cc_auth().store_from_env()
+        return self.api_key_store
+
+    def _send_unauthorized(self) -> None:
+        body = b'{"ok": false, "error": "unauthorized"}'
+        self.send_response(401)
+        self.send_header("WWW-Authenticate", 'Bearer realm="Pipeline Control Center"')
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _control_principal(self):
+        """Authenticate a control-plane key. 401/503 are already sent on failure.
+
+        The shared dashboard secret is not accepted here (#658).
+        """
+        auth_mod = load_cc_auth()
+        token = auth_mod.bearer_token(self.headers.get("Authorization") if self.headers else None)
+        if not token:
+            self._send_unauthorized()
+            return None
+        try:
+            record = self._control_directory().authenticate(token)
+        except Exception as exc:
+            _LOG.warning("cc_api_key store unavailable: %s", type(exc).__name__)
+            self._send_json(503, {"ok": False, "error": "key store unavailable"})
+            return None
+        if record is None:
+            self._send_unauthorized()
+            return None
+        return record
+
+    def _control(self, route: str, method: str) -> None:
+        if self._rate_limited():
+            return
+        record = self._control_principal()
+        if record is None:
+            return
+        action = route[len("/api/control/"):] if route.startswith("/api/control/") else ""
+        if method == "GET" and action == "status":
+            self._send_json(200, {"ok": True, "key_id": record.key_id, "name": record.name})
+            return
+        if method == "POST" and action in {"start", "stop"}:
+            runner = self.control_runner
+            if runner is None:
+                self._send_json(501, {"ok": False, "error": "control action not configured", "action": action})
+                return
+            try:
+                runner(action, record.key_id)
+            except Exception as exc:
+                _LOG.warning("control action failed: %s", type(exc).__name__)
+                self._send_json(500, {"ok": False, "error": "control action failed", "action": action})
+                return
+            self._send_json(200, {"ok": True, "action": action, "key_id": record.key_id})
+            return
+        self.send_error(404, "Not Found")
+
     def do_OPTIONS(self):
         self._cfg()
         if not self._guard_rate_only():
@@ -409,10 +524,22 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             return
         return super().do_HEAD()
 
-    def do_GET(self):
+    def do_POST(self):
+        route = request_path(self.path)
+        if is_control_route(route):
+            self._control(route, "POST")
+            return
         if not self._guard():
             return
-        route = urlsplit(self.path).path
+        self.send_error(404, "Not Found")
+
+    def do_GET(self):
+        route = request_path(self.path)
+        if is_control_route(route):
+            self._control(route, "GET")
+            return
+        if not self._guard():
+            return
         if route in self.API_ROUTES:
             getattr(self, self.API_ROUTES[route])()
             return
@@ -494,6 +621,7 @@ def main(argv=None):
     print(f"📊 Dashboard:  http://{shown}:{port}")
     print(f"📈 Metrics:    /api/metrics -> {DashboardHandler.metrics_upstream}  (METRICS_UPSTREAM)")
     print(f"🔐 Auth:       {'on' if DashboardHandler.auth and DashboardHandler.auth.enabled else 'off (CC_AUTH_TOKEN / CC_BASIC_AUTH)'}")
+    print("🔑 Control:    /api/control/* requires a key from dashboard/cc_auth.py")
     print("📉 Grafana:    http://localhost:3001 (separate analytics)")
     print()
     print("Purpose:")

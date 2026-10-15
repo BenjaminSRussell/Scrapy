@@ -44,8 +44,9 @@ node --test Scraping_project/dashboard/tests/   # helper unit tests
 | `METRICS_UPSTREAM` | `http://127.0.0.1:9090/metrics` | Exporter fetched by `/api/metrics` and checked by `/api/health` (#400) |
 | `CC_UPSTREAM_TIMEOUT` | `4` | Seconds per upstream fetch |
 | `CC_QUEUE_KEYS` | `js_spider:priority_queue` | Redis keys shown by `/api/queues` (#401) |
-| `CC_AUTH_TOKEN` | unset (auth off) | Shared secret: `Authorization: Bearer <token>`, or the password in the browser login prompt (any user name) (#189/#455) |
-| `CC_BASIC_AUTH` | unset (auth off) | `user:password` for the browser login prompt (HTTP Basic) |
+| `CC_AUTH_TOKEN` | unset (auth off) | Shared secret for the dashboard and read APIs: `Authorization: Bearer <token>`, or the password in the browser login prompt (any user name). Does **not** authorize `/api/control/*` (#189/#455) |
+| `CC_BASIC_AUTH` | unset (auth off) | `user:password` for the browser login prompt (HTTP Basic). Does **not** authorize `/api/control/*` |
+| `CC_API_KEY_BACKEND` | `redis` | Where hashed control-plane keys live: `redis`, `postgres`, or `both` (#658) |
 | `CC_CORS_ORIGINS` | unset (no CORS headers) | Comma list of exact origins allowed to read responses cross-origin; `*` is for local development only and prints a warning (#189) |
 | `CC_CONNECT_SRC` | unset | Extra http(s) origins allowed in CSP `connect-src` (only for a cross-origin `?metrics=`) (#245) |
 | `CC_RATE_LIMIT` / `CC_RATE_BURST` | `600` / `120` | Per-client token bucket: requests per minute and burst. Excess requests get `429` with `Retry-After`. `CC_RATE_LIMIT=0` disables it (#257) |
@@ -66,6 +67,33 @@ transport. For anything beyond a trusted LAN, keep `serve.py` on loopback and pu
 through a reverse proxy or ingress that terminates TLS and authenticates users (for example
 nginx/Traefik with OAuth2 Proxy, or a Kubernetes ingress with an auth annotation). Set
 `CC_CORS_ORIGINS` only if another site really needs to read the API.
+
+## Control-plane API keys (#658)
+
+`/api/control/*` ignores `CC_AUTH_TOKEN` and `CC_BASIC_AUTH`. Callers send
+`Authorization: Bearer <key>`. A missing, unknown, or revoked key is **401**.
+If the key store cannot be reached, the answer is **503** (not a silent allow).
+`GET /`, `/api/metrics`, `/api/health`, and `/api/queues` keep the shared-secret
+gate above.
+
+```bash
+python Scraping_project/dashboard/cc_auth.py mint --name ops
+python Scraping_project/dashboard/cc_auth.py revoke ck_<id>
+# curl -H "Authorization: Bearer <key printed once>" http://127.0.0.1:8080/api/control/status
+```
+
+`mint` prints the secret on stdout once. Do not copy it into a log. Redis keys
+`cc:api_key:*` and Postgres `cc_api_keys.token_hash` store the SHA-256 digest
+only. Postgres revocation inserts into `cc_api_key_revocations` (the app role
+cannot UPDATE). Re-run `docker/init-db.sql` as the superuser on an existing
+volume before `CC_API_KEY_BACKEND=postgres` or `both`. Redis settings are
+`REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`, and `REDIS_DB` (this path does
+not read `REDIS_URL`). Postgres settings are `DB_HOST`, `DB_PORT`, `DB_NAME`,
+`DB_USER`, and `DB_PASSWORD`.
+
+`POST /api/control/start` and `POST /api/control/stop` use the same check and
+return **501** until a process-local runner is configured. They do not start
+or stop crawls.
 - Contributor styleguide: [`styleguide.html`](styleguide.html)
 - Accessibility checklist for PRs: [`A11Y_CHECKLIST.md`](A11Y_CHECKLIST.md)
 

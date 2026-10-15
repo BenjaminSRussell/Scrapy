@@ -77,6 +77,21 @@ CREATE TABLE IF NOT EXISTS error_analysis_reports (
     created_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
+-- Control Center API keys (#658). The plaintext bearer token is never a column.
+-- Revocation is a new row: the app role has SELECT/INSERT, not UPDATE/DELETE.
+CREATE TABLE IF NOT EXISTS cc_api_keys (
+    key_id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    prefix TEXT NOT NULL,
+    token_hash TEXT NOT NULL UNIQUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS cc_api_key_revocations (
+    key_id TEXT PRIMARY KEY,
+    revoked_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 -- ============================================================================
 -- Least-privilege application role (#538)
 -- APP_DB_USER (default scrapy_app) / APP_DB_PASSWORD come from the container
@@ -102,7 +117,7 @@ WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = :'app_user') \gexec
 SELECT format('ALTER ROLE %I WITH LOGIN PASSWORD %L', :'app_user', :'app_password') \gexec
 SELECT format('GRANT CONNECT ON DATABASE %I TO %I', current_database(), :'app_user') \gexec
 SELECT format('GRANT USAGE ON SCHEMA public TO %I', :'app_user') \gexec
-SELECT format('GRANT SELECT, INSERT ON performance_metrics, error_logs, spider_stats, error_analysis_reports TO %I', :'app_user') \gexec
+SELECT format('GRANT SELECT, INSERT ON performance_metrics, error_logs, spider_stats, error_analysis_reports, cc_api_keys, cc_api_key_revocations TO %I', :'app_user') \gexec
 SELECT format('GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO %I', :'app_user') \gexec
 \echo 'App role' :'app_user' 'ready (SELECT/INSERT on pipeline tables only)'
 \else
