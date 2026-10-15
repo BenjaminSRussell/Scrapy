@@ -69,7 +69,13 @@
             background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
             color: white;
             padding: 1.5rem 2rem;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            /* #985: a blurred drop-shadow on this sticky gradient is repainted
+               over the page on every scroll frame (Activity tab jank). The
+               hairline stays inside the border box; contain:paint isolates
+               the gradient from the scroller. No shadow transition. */
+            box-shadow: none;
+            border-bottom: 1px solid rgba(0, 0, 0, 0.22);
+            contain: paint;
             position: sticky;
             top: 0;
             z-index: 1000;
@@ -1107,6 +1113,11 @@
             .skeleton {
                 background-color: var(--gray-200) !important;
                 opacity: 1 !important;
+            }
+            /* #985: reduce-motion-safe paint. Solid fill, still no shadow
+               animation — the hairline on .topbar is already static. */
+            .topbar {
+                background: var(--primary);
             }
         }
 
