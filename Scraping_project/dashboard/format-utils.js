@@ -513,6 +513,174 @@
         }
         return { fetchText, inFlight: () => current !== null, timeoutMs };
     }
+    // #713: one metrics poller per origin. Dashboard tabs elect a leader over a
+    // BroadcastChannel. Only the leader fetches METRICS_URL; it publishes each
+    // result, and the followers render it without fetching. The leader sends a
+    // heartbeat every interval. A follower that hears none for two intervals
+    // promotes itself at once. A clean close sends `bye`, and the followers
+    // promote after electionMs. A tab that is hidden or paused cannot lead, so a
+    // visible tab takes over. Timers and the channel are injectable for tests.
+    function createPollLeader(opts) {
+        const o = opts || {};
+        const channel = o.channel || null;
+        const id = String(o.id || Math.random().toString(36).slice(2) + Date.now().toString(36));
+        const setT = o.setTimeout || ((fn, ms) => globalThis.setTimeout(fn, ms));
+        const clearT = o.clearTimeout || ((h) => globalThis.clearTimeout(h));
+        const setI = o.setInterval || ((fn, ms) => globalThis.setInterval(fn, ms));
+        const clearI = o.clearInterval || ((h) => globalThis.clearInterval(h));
+        const onRoleChange = o.onRoleChange || (() => {});
+        const onSnapshot = o.onSnapshot || (() => {});
+        const onPollRequest = o.onPollRequest || (() => {});
+        const electionMs = o.electionMs == null ? 250 : o.electionMs;
+        let interval = Number(o.interval) > 0 ? Number(o.interval) : 5000;
+        let eligible = o.eligible !== false;
+        let leading = false;
+        let leaderId = null;
+        let lastPayload = null;
+        let beat = null;     // leader: heartbeat timer
+        let silence = null;  // follower: fires when the leader has been quiet for two intervals
+        let election = null; // delayed claim: startup, a bye, or regained eligibility
+
+        function post(msg) {
+            if (!channel) return;
+            try { channel.postMessage(Object.assign({ id }, msg)); } catch (_) { /* channel closed */ }
+        }
+        function stopBeat() {
+            if (beat !== null) { clearI(beat); beat = null; }
+        }
+        function startBeat() {
+            stopBeat();
+            if (channel) beat = setI(() => post({ t: 'hb', interval }), interval);
+        }
+        function stopSilence() {
+            if (silence !== null) { clearT(silence); silence = null; }
+        }
+        function stopElection() {
+            if (election !== null) { clearT(election); election = null; }
+        }
+        function setLeading(v) {
+            if (leading === v) return;
+            leading = v;
+            onRoleChange(v);
+        }
+        function follow(leader, ms) {
+            stopElection();
+            stopSilence();
+            leaderId = leader;
+            silence = setT(lostLeader, 2 * (Number(ms) > 0 ? Number(ms) : interval));
+        }
+        function lostLeader() {
+            silence = null;
+            leaderId = null;
+            claimIfEligible(0);
+        }
+        function claim() {
+            stopElection();
+            stopSilence();
+            leaderId = null;
+            // The heartbeat goes out before the role callback, so the first poll's
+            // snapshot always reaches followers after they have heard this leader.
+            post({ t: 'hb', interval });
+            startBeat();
+            setLeading(true);
+        }
+        function claimIfEligible(delay) {
+            if (leading || !eligible || leaderId !== null) return;
+            if (!delay) { claim(); return; }
+            stopElection();
+            election = setT(() => { election = null; claimIfEligible(0); }, delay);
+        }
+        function resign() {
+            if (!leading) return;
+            stopBeat();
+            post({ t: 'bye' });
+            setLeading(false);
+        }
+        function onMessage(msg) {
+            if (!msg || msg.id === undefined || String(msg.id) === id) return;
+            const from = String(msg.id);
+            switch (msg.t) {
+                case 'hello':
+                    if (leading) {
+                        post({ t: 'hb', interval });
+                        if (lastPayload) post({ t: 'snap', payload: lastPayload });
+                    }
+                    return;
+                case 'hb':
+                    if (!leading) { follow(from, msg.interval); return; }
+                    // Two leaders (they claimed at once): the lower id keeps the role.
+                    if (from < id) { stopBeat(); setLeading(false); follow(from, msg.interval); }
+                    else post({ t: 'hb', interval });
+                    return;
+                case 'snap':
+                    if (msg.payload) lastPayload = msg.payload;
+                    if (!leading && from === leaderId) onSnapshot(msg.payload);
+                    return;
+                case 'bye':
+                    if (!leading && from === leaderId) {
+                        leaderId = null;
+                        stopSilence();
+                        claimIfEligible(electionMs);
+                    }
+                    return;
+                case 'poke':
+                    if (leading) onPollRequest();
+                    return;
+                default:
+                    return;
+            }
+        }
+        function start() {
+            if (!channel) { claimIfEligible(0); return; }
+            post({ t: 'hello' });
+            claimIfEligible(electionMs);
+        }
+        function stop() {
+            stopBeat();
+            stopSilence();
+            stopElection();
+            resign();
+        }
+        function publish(payload) {
+            lastPayload = payload;
+            if (leading) post({ t: 'snap', payload });
+        }
+        function requestPoll() {
+            post({ t: 'poke' });
+        }
+        function setEligible(v) {
+            const next = !!v;
+            if (next === eligible) return;
+            eligible = next;
+            if (!eligible) { resign(); return; }
+            post({ t: 'hello' });
+            claimIfEligible(electionMs);
+        }
+        function setPollInterval(ms) {
+            const v = Number(ms);
+            if (!Number.isFinite(v) || v <= 0 || v === interval) return;
+            interval = v;
+            if (leading) { post({ t: 'hb', interval }); startBeat(); }
+        }
+        if (channel) {
+            if (typeof channel.addEventListener === 'function') {
+                channel.addEventListener('message', (ev) => onMessage(ev && ev.data));
+            } else {
+                channel.onmessage = (ev) => onMessage(ev && ev.data);
+            }
+        }
+        return {
+            id,
+            start,
+            stop,
+            publish,
+            requestPoll,
+            setEligible,
+            setPollInterval,
+            isLeader: () => leading,
+            leaderId: () => (leading ? id : leaderId),
+        };
+    }
     // #1015: allowed auto-refresh intervals (ms); anything else falls back to 5s.
     const REFRESH_INTERVAL_CHOICES = [5000, 10000, 30000];
     function parseRefreshInterval(value, fallback = 5000) {
@@ -1345,5 +1513,5 @@
         return sampled;
     }
 
-    return { tabKeyTarget, staleState, queueDepthRows, metricsFailureActivity, shortcutHintText, parseMetrics, metricSeriesCount, METRICS_FLOOD_DEFAULTS, metricsFloodLimits, advanceMetricsFlood, metricsFloodBannerText, ratePerMinute, resolveMetricsUrl, metricsEndpoint, metricsEndpointLabel, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler, stageActivity, stageDrilldown, stageDrilldownKey, doughnutLegendLayout, connectionState, documentTitle, createActivityAnnouncer, metricsUrlProblem, splitLinks, createMetricsFetcher, REFRESH_INTERVAL_CHOICES, parseRefreshInterval, shortcutAction, pickInitialTab, METRIC_UI_MAP, renderMetricNameMap, parseDangerSoundEnabled, dangerSoundDecision, HEALTH_HISTORY_LIMIT, pushPollOutcome, healthHistoryView, COMPARISON_BASELINE_ROLE, PREV_HOUR_AVG_KEYS, readPrevHourAverage, comparisonBaselineSeries, comparisonNote, ACTIVITY_LOG_CAP, capActivityLog, activityStaleNote, restoreActivityLog, topScrapeTargets, SCRAPE_TARGET_EMPTY, ACTIVITY_LEVELS, activityLevelCounts, filterActivityItems, filterActivityMessages, activityFilterStatus, toggleActivityLevel, HISTORY_MAX_POINTS, HISTORY_RAW_POINTS, assertHistoryBound, boundHistoryBuffer, pushHistorySample, enforceHistoryCap, downsampleIndices, grafanaHomeUrl, jobStartedPresentation, DEFAULT_ACCENT, parseAccentColor, accentInk, accentBorder, accentCssVars };
+    return { tabKeyTarget, staleState, queueDepthRows, metricsFailureActivity, shortcutHintText, parseMetrics, metricSeriesCount, METRICS_FLOOD_DEFAULTS, metricsFloodLimits, advanceMetricsFlood, metricsFloodBannerText, ratePerMinute, resolveMetricsUrl, metricsEndpoint, metricsEndpointLabel, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler, stageActivity, stageDrilldown, stageDrilldownKey, doughnutLegendLayout, connectionState, documentTitle, createActivityAnnouncer, metricsUrlProblem, splitLinks, createMetricsFetcher, createPollLeader, REFRESH_INTERVAL_CHOICES, parseRefreshInterval, shortcutAction, pickInitialTab, METRIC_UI_MAP, renderMetricNameMap, parseDangerSoundEnabled, dangerSoundDecision, HEALTH_HISTORY_LIMIT, pushPollOutcome, healthHistoryView, COMPARISON_BASELINE_ROLE, PREV_HOUR_AVG_KEYS, readPrevHourAverage, comparisonBaselineSeries, comparisonNote, ACTIVITY_LOG_CAP, capActivityLog, activityStaleNote, restoreActivityLog, topScrapeTargets, SCRAPE_TARGET_EMPTY, ACTIVITY_LEVELS, activityLevelCounts, filterActivityItems, filterActivityMessages, activityFilterStatus, toggleActivityLevel, HISTORY_MAX_POINTS, HISTORY_RAW_POINTS, assertHistoryBound, boundHistoryBuffer, pushHistorySample, enforceHistoryCap, downsampleIndices, grafanaHomeUrl, jobStartedPresentation, DEFAULT_ACCENT, parseAccentColor, accentInk, accentBorder, accentCssVars };
 });

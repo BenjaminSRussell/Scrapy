@@ -16,6 +16,10 @@ let dangerAudioCtx = null;
 const STORE_COMPARE_KEY = 'cc.comparePrevHour'; // #1035
 const ACTIVITY_STORE_KEY = 'cc.activityLog'; // #1029 sessionStorage ring
 const STORE_ACCENT_KEY = 'cc.accent'; // #1017
+// #713: one tab polls METRICS_URL and the others render its pushed snapshots.
+let pollLeader = null;
+let replayingPoll = false; // true while a follower replays the leader's poll
+let pollReplayNext = false; // a follower's manual refresh is shown even while paused
 let refreshPaused = false;
 let metricsFetcher = null;
 let metricsWasDown = false;
@@ -286,6 +290,7 @@ function escapeHtml(s) {
 }
 
 function addActivityLogItem(type, message) {
+    if (replayingPoll) return; // #713: the leader tab writes poll activity once, not per tab
     const timestamp = new Date().toLocaleTimeString();
     activityLog.unshift({ type, message, timestamp });
     boundHistoryBuffer(activityLog, 'end');
@@ -1164,7 +1169,10 @@ async function fetchQueueDepths() {
     }
 }
 
+// #713: only the leader tab fetches METRICS_URL. Each result goes to the other
+// tabs through publishPoll, and they render it through replayPollSnapshot.
 async function fetchMetrics() {
+    if (pollLeader && !pollLeader.isLeader()) return;
     const main = document.getElementById('main') || document.querySelector('.container');
     if (main) main.setAttribute('aria-busy', 'true');
     try {
@@ -1173,53 +1181,143 @@ async function fetchMetrics() {
             metricsFetcher = createMetricsFetcher({ fetch: (u, init) => fetch(u, init), timeoutMs: METRICS_TIMEOUT_MS });
         }
         const text = await metricsFetcher.fetchText(METRICS_URL);
-        const parseStarted = clockMs();
-        const metrics = parseMetrics(text);
-        const decision = advanceMetricsFlood(metricsFlood, {
-            seriesCount: metricSeriesCount(metrics),
-            parseMs: clockMs() - parseStarted,
-        }, readMetricsFloodLimits());
-        applyMetricsFlood(decision);
-        updateDashboard(metrics);
-        hasEverSucceeded = true;
-        lastMetricsAt = Date.now();
-        consecutiveFetchFailures = 0;
-        finishLoading(false);
-        hideFetchError();
-        renderStale();
-        setConnectionStatus('online', metrics['pipeline_running']);
-        notePollOutcome(true);
+        applyMetricsText(text);
+        publishPoll({ text });
     } catch (error) {
         if (error && error.superseded) return; // a newer request owns the result (#1031)
-        metricsWasDown = true;
         console.error('Error fetching metrics:', error);
         const failure = metricsFailureActivity(error, METRICS_TIMEOUT_MS);
-        addActivityLogItem(failure.type, failure.message);
-        if (!hasEverSucceeded) finishLoading(true);
-        showFetchError(failure.message);
-        consecutiveFetchFailures += 1;
-        setConnectionStatus(hasEverSucceeded ? 'offline' : 'never');
-        notePollOutcome(false);
-        document.querySelectorAll('.card-badge.badge-info, .card-badge.badge-success').forEach(b => {
-            b.textContent = 'Unknown';
-            b.classList.remove('badge-info', 'badge-success');
-            b.classList.add('badge-danger');
-        });
-        document.querySelectorAll('.health-item.healthy').forEach(el => {
-            el.classList.remove('healthy');
-            el.classList.add('unhealthy');
-            const v = el.querySelector('.health-value');
-            if (v) v.textContent = 'Unreachable';
-        });
-        const delta = document.getElementById('delta-tables');
-        if (delta) delta.textContent = '—';
-        if (typeof setHealthTile === 'function') {
-            setHealthTile('metrics-health', 'Metrics', false, 'Fetch failed');
-            setHealthTile('redis-health', 'Redis', false, 'Unknown');
-        }
+        applyMetricsFailure(failure);
+        publishPoll({ error: failure.message, type: failure.type });
     } finally {
         if (main) main.setAttribute('aria-busy', 'false');
     }
+}
+
+function applyMetricsText(text) {
+    const parseStarted = clockMs();
+    const metrics = parseMetrics(text);
+    const decision = advanceMetricsFlood(metricsFlood, {
+        seriesCount: metricSeriesCount(metrics),
+        parseMs: clockMs() - parseStarted,
+    }, readMetricsFloodLimits());
+    applyMetricsFlood(decision);
+    updateDashboard(metrics);
+    hasEverSucceeded = true;
+    lastMetricsAt = Date.now();
+    consecutiveFetchFailures = 0;
+    finishLoading(false);
+    hideFetchError();
+    renderStale();
+    setConnectionStatus('online', metrics['pipeline_running']);
+    notePollOutcome(true);
+}
+
+function applyMetricsFailure(failure) {
+    metricsWasDown = true;
+    addActivityLogItem(failure.type, failure.message);
+    if (!hasEverSucceeded) finishLoading(true);
+    showFetchError(failure.message);
+    consecutiveFetchFailures += 1;
+    setConnectionStatus(hasEverSucceeded ? 'offline' : 'never');
+    notePollOutcome(false);
+    document.querySelectorAll('.card-badge.badge-info, .card-badge.badge-success').forEach(b => {
+        b.textContent = 'Unknown';
+        b.classList.remove('badge-info', 'badge-success');
+        b.classList.add('badge-danger');
+    });
+    document.querySelectorAll('.health-item.healthy').forEach(el => {
+        el.classList.remove('healthy');
+        el.classList.add('unhealthy');
+        const v = el.querySelector('.health-value');
+        if (v) v.textContent = 'Unreachable';
+    });
+    const delta = document.getElementById('delta-tables');
+    if (delta) delta.textContent = '—';
+    if (typeof setHealthTile === 'function') {
+        setHealthTile('metrics-health', 'Metrics', false, 'Fetch failed');
+        setHealthTile('redis-health', 'Redis', false, 'Unknown');
+    }
+}
+
+// #713: a follower renders the leader's last poll. The leader already wrote the
+// activity lines for it, so the replay runs with activity silenced. A hidden or
+// paused tab skips passive pushes (its Pause still holds) unless the user asked.
+function replayPollSnapshot(payload) {
+    if (!payload) return;
+    if (!tabIsLive() && !pollReplayNext) return;
+    pollReplayNext = false;
+    const before = lastMetricsAt;
+    replayingPoll = true;
+    try {
+        if (typeof payload.text === 'string') applyMetricsText(payload.text);
+        else applyMetricsFailure({ type: payload.type || 'danger', message: String(payload.error || 'metrics unavailable') });
+    } catch (error) {
+        applyMetricsFailure(metricsFailureActivity(error, METRICS_TIMEOUT_MS));
+    } finally {
+        replayingPoll = false;
+    }
+    // Same announcement as a fetch in the leader tab (#1093).
+    const live = document.getElementById('refresh-status');
+    if (live && lastMetricsAt !== before) live.textContent = 'Metrics refreshed';
+    renderCountdown();
+}
+
+function publishPoll(payload) {
+    if (pollLeader) pollLeader.publish(payload);
+}
+
+function tabIsLive() {
+    return !(typeof document !== 'undefined' && document.hidden) && !refreshPaused;
+}
+
+// #713: leadership follows visibility and the Pause button. A follower that
+// becomes live asks the leader for a fresh poll instead of waiting an interval.
+function syncPollEligibility() {
+    if (!pollLeader) return;
+    const live = tabIsLive();
+    pollLeader.setEligible(live);
+    if (live && !pollLeader.isLeader()) pollLeader.requestPoll();
+}
+
+function onPollRoleChange(leading) {
+    if (leading) {
+        // #713: a new leader polls now rather than after a full interval.
+        if (refreshScheduler && !refreshScheduler.isPaused()) refreshScheduler.refreshNow();
+        return;
+    }
+    const live = document.getElementById('refresh-status');
+    if (live) live.textContent = 'Metrics now come from another Control Center tab';
+}
+
+// A picker change in another tab moves this tab's cadence too. The leader's
+// interval sets how often the shared feed is polled.
+function onRefreshIntervalStored(ev) {
+    if (!ev || ev.key !== STORE_INTERVAL_KEY || !refreshScheduler) return;
+    const v = parseRefreshInterval(ev.newValue, REFRESH_INTERVAL);
+    refreshScheduler.setInterval(v);
+    if (pollLeader) pollLeader.setPollInterval(v);
+    const select = document.getElementById('refresh-interval');
+    if (select) select.value = String(v);
+    renderCountdown();
+}
+
+function setupPollLeader() {
+    let channel = null;
+    try {
+        // One channel per metrics URL, so tabs watching different feeds never share a poll.
+        if (typeof BroadcastChannel === 'function') channel = new BroadcastChannel(`cc.metrics-poll|${METRICS_URL}`);
+    } catch (_) { channel = null; }
+    pollLeader = createPollLeader({
+        channel,
+        interval: refreshScheduler.getInterval(),
+        eligible: tabIsLive(),
+        onRoleChange: onPollRoleChange,
+        onSnapshot: replayPollSnapshot,
+        onPollRequest: () => { if (refreshScheduler && !refreshScheduler.isPaused()) refreshScheduler.refreshNow(); },
+    });
+    pollLeader.start();
+    window.addEventListener('pagehide', () => pollLeader.stop());
 }
 
 
@@ -1579,6 +1677,7 @@ function setupVisibilityPause() {
             refreshScheduler.refreshNow();
             if (live) live.textContent = 'Auto-refresh resumed';
         }
+        syncPollEligibility(); // #713: a hidden tab gives up leadership so a visible one polls
         renderCountdown();
     });
 }
@@ -1620,6 +1719,7 @@ function setupIntervalControl() {
     select.addEventListener('change', () => {
         const v = parseRefreshInterval(select.value, REFRESH_INTERVAL);
         refreshScheduler.setInterval(v);
+        if (pollLeader) pollLeader.setPollInterval(v); // #713
         storeSet(STORE_INTERVAL_KEY, v);
         renderCountdown();
         const live = document.getElementById('refresh-status');
@@ -1744,6 +1844,13 @@ function setRefreshBusy(busy) {
 }
 function requestRefresh() {
     if (!refreshScheduler || refreshScheduler.isFetching()) return;
+    if (pollLeader && !pollLeader.isLeader()) {
+        // #713: a follower asks the leader to poll now, and shows the result even while paused.
+        pollReplayNext = true;
+        pollLeader.requestPoll();
+        fetchQueueDepths();
+        return;
+    }
     refreshScheduler.refreshNow();
 }
 
@@ -1779,6 +1886,13 @@ function startCountdown() {
 
 // One aria announcement per completed successful fetch (#1093).
 async function fetchAndAnnounce() {
+    if (pollLeader && !pollLeader.isLeader()) {
+        // #713: metrics come from the leader tab. The queue table stays per tab and is
+        // not awaited, so a slow read cannot hold up a leadership refresh.
+        fetchQueueDepths();
+        renderCountdown();
+        return;
+    }
     const before = lastMetricsAt;
     setRefreshBusy(true);
     try {
@@ -2047,6 +2161,7 @@ function initialize() {
             pauseBtn.textContent = refreshPaused ? 'Resume' : 'Pause';
             pauseBtn.setAttribute('aria-label', refreshPaused ? 'Resume auto-refresh' : 'Pause auto-refresh');
             refreshScheduler.setPaused(refreshPaused);
+            syncPollEligibility(); // #713: a paused leader hands polling to another tab
             renderCountdown();
             const live = document.getElementById('refresh-status');
             if (live) live.textContent = refreshPaused ? 'Auto-refresh paused' : 'Auto-refresh resumed';
@@ -2060,6 +2175,9 @@ function initialize() {
 
     restorePersistedActivityLog(); // #1029: before the fresh init line, so it stays newest
     addActivityLogItem('success', 'Pipeline Control Center initialized');
+
+    setupPollLeader(); // #713: elects the tab that polls; exists before the first tick
+    window.addEventListener('storage', onRefreshIntervalStored);
 
     refreshScheduler.start();
 

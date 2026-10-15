@@ -105,6 +105,15 @@ nginx/Traefik with OAuth2 Proxy, or a Kubernetes ingress with an auth annotation
 - Contributor styleguide: [`styleguide.html`](styleguide.html)
 - Accessibility checklist for PRs: [`A11Y_CHECKLIST.md`](A11Y_CHECKLIST.md)
 
+## Several tabs (#713)
+
+Open Control Center tabs elect one leader over a `BroadcastChannel` named `cc.metrics-poll|<metrics URL>`. Only the leader fetches the metrics feed. It pushes each result to the other tabs, which render it without fetching and without writing their own activity lines. Tabs without `BroadcastChannel` poll on their own, as before. The queue table (`/api/queues`) is still read per tab.
+
+- A hidden or paused tab does not lead, so a visible tab takes over. Pause and the visibility rules are unchanged.
+- A follower takes over within two refresh intervals when the leader stops sending heartbeats, and at once after a clean close.
+- A paused or hidden follower skips pushed polls. When it is shown or resumed, it asks the leader for a fresh poll. Refresh now in a follower asks the leader to poll and shows the result, even while paused.
+- A change to the refresh interval in one tab applies to every tab in this browser.
+
 ## Accent color (#1017)
 
 The refresh bar includes an accent color picker. The choice is kept in `localStorage` under `cc.accent` and applied as CSS variables: `--accent` (button fill), `--accent-ink` (button text, white or near-black for contrast), and `--accent-border` (active tab underline). A pale color is darkened for the underline until it reaches 3:1 against the tab bar. The default is `#2563eb`. Reset accent clears the saved choice.

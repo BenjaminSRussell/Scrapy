@@ -70,6 +70,7 @@ renamed to the new version and date (see the release checklist).
 - Kafka messages are keyed by `url_hash`, with an enforceable idempotent producer (#285).
 - Undomainable rows are quarantined instead of landing in a hot `domain=unknown` partition.
 - ASR no longer sends audio to Google by default (`ASR_PROVIDER` opt-in; local whisper).
+- Control Center tabs share one metrics poll: the leader tab fetches `METRICS_URL` and the other tabs render its result without fetching or writing their own activity lines. A hidden or paused tab does not lead, and a follower takes over within two refresh intervals (at once after a clean close) (#713).
 
 ### Deprecated
 - `python reseed.py`, `python drain_lake.py`, `python audit_file_counts.py`, and `python monitor_and_trigger_depth.py` at the Scraping_project root. Run `python scripts/<name>.py` from `Scraping_project/` instead. `cli.py` stays the root Python entrypoint (#568).
