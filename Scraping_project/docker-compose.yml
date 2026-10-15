@@ -215,6 +215,8 @@ services:
   # Monitoring dashboard (optional)
   # Exporters scraped by monitoring/prometheus.yml (#371). Redis and Postgres
   # do not serve Prometheus metrics themselves.
+  # Image tags below are release pins, never :latest (#626). Grafana matches
+  # helm grafana.image.tag. Upgrade path: scripts/README.md.
   redis-exporter:
     profiles: ["monitoring"]
     image: oliver006/redis_exporter:v1.62.0
