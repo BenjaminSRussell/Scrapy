@@ -1,0 +1,16 @@
+{
+  "url": "https://example.edu/admissions",
+  "url_hash": "abc123def4567890abc123def4567890",
+  "title": "Admissions",
+  "word_count": 420,
+  "content_length": 2500,
+  "html_length": 5000,
+  "text_to_html_ratio": 0.5,
+  "is_low_quality": false,
+  "is_massive_doc": false,
+  "quality_score": 0.82,
+  "text_content": "Admissions at Example opens in the fall. Deadlines are posted each spring.",
+  "keywords": ["admissions", "deadlines"],
+  "has_error": false,
+  "processed_at": "2026-01-15T12:00:00+00:00"
+}
