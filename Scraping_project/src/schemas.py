@@ -1,4 +1,5 @@
-from datetime import datetime
+import re
+from datetime import UTC, datetime
 from enum import Enum
 
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -196,3 +197,31 @@ class LowConfidenceRecord(BaseModel):
             }
         }
     }
+
+
+class TombstoneRecord(BaseModel):
+    """Retraction of one URL (#417): every lake row with this ``url_hash`` is marked deleted.
+
+    ``LakehouseManager.tombstone_urls`` stores it as ``is_deleted=true``,
+    ``deleted_at`` (ISO-8601, UTC) and ``deleted_reason`` (from ``reason``). The
+    rows stay in the table; consumers filter them out (docs/contracts/README.md).
+    """
+
+    url_hash: str = Field(..., description="url_hash of the retracted URL: 16-64 hex characters")
+    deleted_at: datetime = Field(default_factory=lambda: datetime.now(UTC), description="Retraction time (UTC)")
+    reason: str = Field(
+        ..., min_length=1, max_length=500, description="Why it was retracted, e.g. takedown or robots_disallowed"
+    )
+
+    @field_validator("url_hash")
+    @classmethod
+    def normalise_url_hash(cls, v: str) -> str:
+        value = v.strip().lower()
+        if not re.fullmatch(r"[0-9a-f]{16,64}", value):
+            raise ValueError("url_hash must be 16-64 hexadecimal characters")
+        return value
+
+    @field_validator("deleted_at")
+    @classmethod
+    def deleted_at_utc(cls, v: datetime) -> datetime:
+        return v.replace(tzinfo=UTC) if v.tzinfo is None else v.astimezone(UTC)

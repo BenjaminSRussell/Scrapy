@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any, Literal, TypeAlias
 
 from src.core.config import Config
+from src.schemas import TombstoneRecord
 from src.scrapy_prometheus import (
     DELTA_MANAGER_CONTEXT_ENTER_TOTAL,
     DELTA_MANAGER_CONTEXT_EXIT_TOTAL,
@@ -2359,6 +2360,112 @@ class LakehouseManager:
         logger.info(f"[merge_into] {table_name}: {updated} updated, {inserted} inserted")
         return updated + inserted
 
+    def tombstone_urls(self, table_name: str, tombstones: list[TombstoneRecord | dict[str, Any]]) -> int:
+        """Soft-delete retracted URLs in ``table_name`` by ``url_hash`` (#417).
+
+        Each existing row whose ``url_hash`` is retracted gets ``is_deleted=true``,
+        ``deleted_at`` and ``deleted_reason``. Nothing is removed, and no older
+        version is rewritten: the MERGE only touches files that hold a retracted
+        row, and time travel still reads the pre-retraction versions. Missing
+        columns are added as nullable first. The MERGE is update-only, so an
+        unknown hash inserts nothing, and a row that is already deleted keeps its
+        first ``deleted_at``. Consumers filter on ``is_deleted``
+        (docs/contracts/README.md).
+
+        Returns the number of rows newly marked deleted, or 0 if the table does
+        not exist. Raises on failure: nothing is committed, so the caller may retry.
+        """
+        from deltalake.exceptions import CommitFailedError, DeltaError
+
+        records = [t if isinstance(t, TombstoneRecord) else TombstoneRecord.model_validate(t) for t in tombstones]
+        if not records:
+            return 0
+        if not self._undeclared_table_allowed(table_name):
+            raise ValueError(f"tombstone refused: {table_name!r} is an undeclared table (#433)")
+        try:
+            table_path = self.get_table_path(table_name)
+        except ValueError:  # no such table, so nothing to retract
+            return 0
+        if not (table_path / "_delta_log").exists():
+            return 0
+        rows = _dedupe_by_key(
+            [
+                {
+                    "url_hash": r.url_hash,
+                    "is_deleted": True,
+                    "deleted_at": r.deleted_at.isoformat(),
+                    "deleted_reason": r.reason,
+                }
+                for r in records
+            ],
+            ["url_hash"],
+        )
+
+        failure: Exception | None = None
+        for attempt in range(1, MERGE_MAX_ATTEMPTS + 1):
+            try:
+                with self._table_lock(table_name):
+                    return self._tombstone_rows(table_name, table_path, rows)
+            except (CommitFailedError, DeltaError) as e:
+                conflict = isinstance(e, CommitFailedError) or "already exists" in str(e)
+                if conflict and attempt < MERGE_MAX_ATTEMPTS:
+                    logger.warning(
+                        f"[tombstone] Commit conflict on {table_name} "
+                        f"(attempt {attempt}/{MERGE_MAX_ATTEMPTS}), retrying"
+                    )
+                    time.sleep(MERGE_RETRY_BACKOFF_SECONDS * (2 ** (attempt - 1)))
+                    continue
+                failure = e
+            except Exception as e:
+                failure = e
+            break
+
+        if DELTA_MERGE_FAILURES is not None:
+            DELTA_MERGE_FAILURES.labels(table=table_name).inc()
+        raise RuntimeError(f"tombstone_urls failed for {table_name}; nothing committed") from failure
+
+    def _tombstone_rows(self, table_name: str, table_path: Path, rows: list[dict[str, Any]]) -> int:
+        """One tombstone MERGE attempt. Caller holds the table lock and handles retries."""
+        from deltalake.schema import Field as DeltaField
+        from deltalake.schema import PrimitiveType
+
+        schema = self._table_schema(table_path)
+        if "url_hash" not in schema.names:
+            logger.warning(f"[tombstone] {table_name} has no url_hash column; nothing retracted")
+            return 0
+        added = [
+            DeltaField(name, PrimitiveType(typ))
+            for name, typ in (("is_deleted", "boolean"), ("deleted_at", "string"), ("deleted_reason", "string"))
+            if name not in schema.names
+        ]
+        if added:
+            DeltaTable(str(table_path)).alter.add_columns(added)  # metadata-only, nullable
+            if DELTA_SCHEMA_EVOLUTIONS is not None:
+                DELTA_SCHEMA_EVOLUTIONS.labels(table=table_name).inc(len(added))
+            logger.warning(f"[SCHEMA EVOLUTION] {table_name}: adding columns {[f.name for f in added]} (#417)")
+            schema = self._table_schema(table_path)
+        metrics = (
+            DeltaTable(str(table_path))
+            .merge(
+                source=_source_table(rows, schema),
+                predicate="target.url_hash = source.url_hash",
+                source_alias="source",
+                target_alias="target",
+            )
+            .when_matched_update(
+                updates={
+                    "is_deleted": "source.is_deleted",
+                    "deleted_at": "source.deleted_at",
+                    "deleted_reason": "source.deleted_reason",
+                },
+                predicate="target.is_deleted IS NULL OR NOT target.is_deleted",
+            )
+            .execute()  # no when_not_matched clause: unknown hashes insert nothing
+        )
+        marked = int(metrics.get("num_target_rows_updated", 0) or 0)
+        logger.info(f"[tombstone] {table_name}: {marked} rows marked deleted for {len(rows)} url_hash(es)")
+        return marked
+
     def get_table_history(self, table_name: str) -> list[dict]:
         from deltalake import DeltaTable
 
@@ -2673,6 +2780,41 @@ class InMemoryBackend:
 
         logger.debug(f"[InMemory merge_into] {table_name}: {updates_count} updated, {inserts_count} inserted")
         return updates_count + inserts_count
+
+    def tombstone_urls(self, table_name: str, tombstones: list[TombstoneRecord | dict[str, Any]]) -> int:
+        """Soft-delete retracted ``url_hash`` rows in memory (#417). Returns rows newly marked.
+
+        Changed rows are copied and a new snapshot is pushed, as ``write`` does, so
+        older versions keep the values they had before the retraction.
+        """
+        records = [t if isinstance(t, TombstoneRecord) else TombstoneRecord.model_validate(t) for t in tombstones]
+        rows = self.tables.get(table_name)
+        if not records or rows is None:
+            return 0
+        by_hash = {r.url_hash: r for r in records}
+        updated: list[dict[str, Any]] = []
+        marked = 0
+        for row in rows:
+            record = by_hash.get(row.get("url_hash"))
+            if record is None or row.get("is_deleted"):
+                updated.append(row)
+                continue
+            updated.append(
+                {
+                    **row,
+                    "is_deleted": True,
+                    "deleted_at": record.deleted_at.isoformat(),
+                    "deleted_reason": record.reason,
+                }
+            )
+            marked += 1
+        if marked:
+            self.tables[table_name] = updated
+            if table_name not in self.history:
+                self.history[table_name] = deque(maxlen=self.history_depth)
+            self.history[table_name].append(list(updated))
+            self._next_version[table_name] = self._next_version.get(table_name, 0) + 1
+        return marked
 
     def append_to_table(self, table_name: str, records: list[dict[str, Any]]) -> None:
         if not records:

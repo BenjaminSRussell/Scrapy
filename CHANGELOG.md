@@ -56,6 +56,7 @@ renamed to the new version and date (see the release checklist).
 - Grafana scraping-pipeline-health dashboard provisioned in compose and Helm.
 - Release images (crawler, metrics, kafka-delta-ingest) smoke-tested on PRs that touch the image recipe (#449).
 - Repository policies: SECURITY.md, CODE_OF_CONDUCT.md, this changelog, ADRs, devcontainer (#669 #746 #747 #715 #694).
+- Retracted URLs can be soft-deleted. `LakehouseManager.tombstone_urls` sets `is_deleted`, `deleted_at` and `deleted_reason` on Delta rows with a retracted `url_hash` through an update-only MERGE, so nothing is removed; the in-memory backend has the same method. Readers filter with `NOT COALESCE(is_deleted, FALSE)`, documented in `docs/contracts/README.md` (#417).
 
 ### Changed
 - Control Center tabs, health tiles, and the title mark use inline SVG icons (`aria-hidden`) instead of emoji glyphs (#1049).

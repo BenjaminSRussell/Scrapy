@@ -64,6 +64,45 @@ as described in `Scraping_project/README.md`.
 `registry_version` in `registry.json` bumps MAJOR when a contract is removed
 or a contract id changes, and MINOR when a contract is added.
 
+## Retractions (`is_deleted`)
+
+A URL that must stop appearing downstream (a legal takedown, a robots.txt
+disallow, a crawl correction) is soft-deleted, not removed.
+`LakehouseManager.tombstone_urls(table, tombstones)` (#417) takes
+`TombstoneRecord` values (`url_hash`, `deleted_at`, `reason`). For the table it
+names, it:
+
+- adds the nullable columns `is_deleted` (boolean), `deleted_at` (ISO-8601 UTC
+  string) and `deleted_reason` (string, from `reason`) if the table lacks them;
+- sets them on every existing row with that `url_hash`, with an update-only
+  Delta MERGE. It never inserts a row, and a row that is already deleted keeps
+  its first `deleted_at`.
+
+Readers treat a row as live unless `is_deleted` is true:
+
+```sql
+SELECT url_hash, url FROM stage2_page_analysis WHERE NOT COALESCE(is_deleted, FALSE);
+```
+
+A row whose `is_deleted` is null is live. A table that has never been retracted
+has no `is_deleted` column yet, so the filter above does not apply to it: read
+it without the filter, or check its schema first. The `is_deleted` columns are
+not in the JSON Schemas above, which allow extra properties, so this needs no
+contract version bump.
+
+What this does not do:
+
+- It is a logical retraction, not a purge. Time travel still reads rows from
+  before the retraction, and their data files stay until `VACUUM` removes them
+  after the table's deleted-file retention (7 days in `config.yml`).
+- Only rows that exist when the retraction runs are marked. A later append of the
+  same `url_hash` writes a live row. Run `tombstone_urls` again after a backfill
+  or re-crawl. A plain `merge_into` that does not name `is_deleted` in its
+  `update_columns` leaves the mark in place. No writer checks tombstones yet.
+- There is no CLI command yet. Call the manager method directly.
+
+Decision record: [ADR-0004](../adr/0004-soft-delete-tombstones.md).
+
 ## Adding a table
 
 1. Copy an existing schema. Set `title`, `x-delta-table`, and `x-contract-version` to `1.0.0`.
