@@ -73,6 +73,11 @@ stage1:
     claim_ttl_seconds: 604800  # 7 days
     ack_empty: false    # when true, empty handoff skips Stage2 without warning
     rustmapper_enabled: false  # when true, consume rustmapper sitemap.jsonl handoff
+    # Host politeness (#939). The handoff envelope may include
+    # crawl_delay_seconds: {host: seconds} from robots.txt Crawl-Delay.
+    # Scout applies max(download_delay, discovered) per host, capped at
+    # robots_max_crawl_delay. A host omitted from the map, or a non-positive
+    # value, keeps that spider's download_delay.
     handoff_path: null  # optional path to discovery_handoff.json sidecar
     jsonl_path: null    # optional path to rustmapper sitemap.jsonl
   enable_depth_mode: true  # Switch to depth spider when idle

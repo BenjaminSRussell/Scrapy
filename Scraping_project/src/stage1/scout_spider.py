@@ -22,6 +22,8 @@ from src.stage1.discovery_handoff import (
     DiscoveryHandoffError,
     DiscoveryStatus,
     ingest_handoff_via_seed_manager,
+    load_discovered_crawl_delays,
+    merge_crawl_delay_maps,
 )
 from src.stage1.js_queue import js_spider_enabled
 from src.stage1.section_noise import SectionNoiseTracker, section_of
@@ -77,6 +79,9 @@ class ScoutSpider(BaseSpider):
         self._discovery_response: Response | None = None
         self._url_extractor: URLExtractor | None = None
         self._last_discovery_handoff = None
+        # #939: host → robots Crawl-Delay seconds inherited from discovery.
+        # Empty means every host stays on the configured download delay.
+        self.host_crawl_delays: dict[str, float] = {}
 
         from src.core.config import get_config
 
@@ -98,6 +103,14 @@ class ScoutSpider(BaseSpider):
 
         self.seed_manager = SeedManager(self.delta)
         self.discovery_dedup = self._init_discovery_dedup(config)
+        self._adopt_crawl_delays(
+            load_discovered_crawl_delays(
+                handoff_path=config.get("stage1.discovery.handoff_path")
+                or config.get("stages.stage1.discovery.handoff_path"),
+                jsonl_path=config.get("stage1.discovery.jsonl_path")
+                or config.get("stages.stage1.discovery.jsonl_path"),
+            )
+        )
 
         logger.info(f"[SCOUT] Initialized with allowed_domains={self.allowed_domains}")
         logger.info(f"[SCOUT] Seed expansion enabled: {self.expand_seeds}")
@@ -387,6 +400,7 @@ class ScoutSpider(BaseSpider):
                 job_id=self.job_id,
             )
             self._last_discovery_handoff = handoff
+            self._adopt_crawl_delays(getattr(handoff, "crawl_delay_seconds", None))
 
             if handoff.status == DiscoveryStatus.FAILED:
                 self.scout_stats["discovery_failures"] += 1
@@ -419,6 +433,18 @@ class ScoutSpider(BaseSpider):
             logger.warning(f"[SCOUT] Sitemap discovery failed: {e}")
         finally:
             self.discovery_dedup.release_mutex(site, source)
+
+    def _adopt_crawl_delays(self, delays) -> None:
+        """Keep the stricter discovered Crawl-Delay per host (#939)."""
+        if not delays:
+            return
+        merged = merge_crawl_delay_maps(self.host_crawl_delays, delays)
+        if merged == self.host_crawl_delays:
+            return
+        self.host_crawl_delays = merged
+        logger.info(
+            f"[SCOUT] Inherited Crawl-Delay for {len(self.host_crawl_delays)} host(s) from discovery"
+        )
 
     def _ingest_discovery_handoff(self, handoff, source_url: str) -> None:
         try:
