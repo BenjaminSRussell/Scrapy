@@ -15,6 +15,9 @@ from src.stage1.experimental.gate import ExperimentalSpiderMixin
 
 logger = logging.getLogger(__name__)
 
+# Provenance tag on every hidden-URL route (#378).
+DISCOVERY_SOURCE = "depth_spider"
+
 class DeepDiveSpider(ExperimentalSpiderMixin, BaseSpider):
 
     name = "deep_dive"
@@ -54,17 +57,20 @@ class DeepDiveSpider(ExperimentalSpiderMixin, BaseSpider):
         yield from super().parse(response)
 
         hidden_extractor = HiddenURLExtractor(base_url=response.url, allowed_domains=list(self.allowed_domains or []))
-        hidden_urls = hidden_extractor.extract_all_hidden_urls(response)
+        hidden_urls, method_of = hidden_extractor.extract_with_methods(response)
 
         for category, urls in hidden_urls.items():
             self.depth_stats[category] = self.depth_stats.get(category, 0) + len(urls)
             if urls and HIDDEN_URLS_FOUND is not None:
-                labels_for(HIDDEN_URLS_FOUND, spider=self.name, category=category).inc(len(urls))
+                labels_for(HIDDEN_URLS_FOUND, spider=self.name, discovery_method=category).inc(len(urls))
 
         for url in hidden_urls.pop("offsite", []):
             self._route("offsite")
             if self.record_offsite:
-                yield self._create_offsite_item(response, url)
+                item = self._create_offsite_item(response, url)
+                item["discovery_source"] = DISCOVERY_SOURCE
+                item["discovery_method"] = method_of.get(url, "unknown")
+                yield item
 
         all_hidden_urls = []
         for urls in hidden_urls.values():
@@ -104,12 +110,13 @@ class DeepDiveSpider(ExperimentalSpiderMixin, BaseSpider):
                     self._route("duplicate")
                     continue
 
+                method = method_of.get(url, "unknown")
                 if assessment.recommended_spider == "js":
-                    yield self._queue_for_js_spider(url, response.url, assessment)
+                    yield self._queue_for_js_spider(url, response.url, assessment, method)
                     self.depth_stats["routed_to_js"] += 1
                     self._route("js")
                 else:
-                    yield self._queue_for_depth_crawl(url, response.url, assessment, depth)
+                    yield self._queue_for_depth_crawl(url, response.url, assessment, depth, method)
                     self._route("depth_crawl")
 
         total_hidden = sum(self.depth_stats.values())
@@ -120,17 +127,20 @@ class DeepDiveSpider(ExperimentalSpiderMixin, BaseSpider):
         if HIDDEN_URLS_ROUTED is not None:
             labels_for(HIDDEN_URLS_ROUTED, spider=self.name, route=route).inc()
 
-    def _queue_for_js_spider(self, url: str, parent_url: str, assessment: Any) -> dict:
+    def _queue_for_js_spider(self, url: str, parent_url: str, assessment: Any, discovery_method: str) -> dict:
         return {
             "url": url,
             "parent_url": parent_url,
             "priority": min(assessment.value_score, 100),
             "value_score": assessment.value_score,
-            "discovery_source": "depth_spider",
+            "discovery_source": DISCOVERY_SOURCE,
+            "discovery_method": discovery_method,
             "target_spider": "javascript",
         }
 
-    def _queue_for_depth_crawl(self, url: str, parent_url: str, assessment: Any, depth: int) -> Request:
+    def _queue_for_depth_crawl(
+        self, url: str, parent_url: str, assessment: Any, depth: int, discovery_method: str
+    ) -> Request:
         import scrapy
 
         return scrapy.Request(
@@ -141,6 +151,9 @@ class DeepDiveSpider(ExperimentalSpiderMixin, BaseSpider):
                 "depth": depth + 1,
                 "parent_url": parent_url,
                 "value_score": assessment.value_score,
+                # BaseSpider copies these onto the page's stage1_discovery row (#378).
+                "discovery_source": DISCOVERY_SOURCE,
+                "discovery_method": discovery_method,
             },
             priority=min(assessment.value_score // 10, 10),
             dont_filter=False,

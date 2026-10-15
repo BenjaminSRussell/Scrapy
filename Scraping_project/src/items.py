@@ -20,6 +20,9 @@ class OffsiteCandidateItem(scrapy.Item):
     anchor_text = scrapy.Field()
     context = scrapy.Field()
     discovered_at = scrapy.Field()
+    #: Set only on hidden URLs that DeepDiveSpider routed here (#378).
+    discovery_source = scrapy.Field()
+    discovery_method = scrapy.Field()
 
     #: Fields without which the row is useless to the offsite review table.
     REQUIRED_FIELDS: tuple[str, ...] = ("source_page", "external_url", "discovered_at")

@@ -10,6 +10,18 @@ from scrapy.http import Response
 
 logger = logging.getLogger(__name__)
 
+# A URL found by several extractors is reported under the first of these, so a
+# specific source beats the generic regex scan (#378).
+METHOD_PRECEDENCE: tuple[str, ...] = (
+    "json_ld",
+    "data_attributes",
+    "iframes",
+    "meta_refresh",
+    "api_endpoints",
+    "sitemaps",
+    "javascript",
+)
+
 class HiddenURLExtractor:
 
     JS_URL_PATTERNS = [
@@ -43,6 +55,14 @@ class HiddenURLExtractor:
         return bool(host) and any(host == d or host.endswith("." + d) for d in self.allowed_domains)
 
     def extract_all_hidden_urls(self, response: Response) -> dict[str, list[str]]:
+        results, _ = self.extract_with_methods(response)
+        return results
+
+    def extract_with_methods(self, response: Response) -> tuple[dict[str, list[str]], dict[str, str]]:
+        """Extract every category and map each URL found to its ``discovery_method`` (#378).
+
+        The map includes off-domain URLs, so offsite candidates keep their provenance.
+        """
         results = {
             "data_attributes": self.extract_from_data_attributes(response),
             "json_ld": self.extract_from_json_ld(response),
@@ -52,6 +72,11 @@ class HiddenURLExtractor:
             "sitemaps": self.extract_sitemap_urls(response),
             "api_endpoints": self.extract_api_endpoints(response),
         }
+
+        method_of: dict[str, str] = {}
+        for category in METHOD_PRECEDENCE:
+            for url in results.get(category, []):
+                method_of.setdefault(url, category)
 
         if self.allowed_domains:
             offsite: set[str] = set()
@@ -67,7 +92,7 @@ class HiddenURLExtractor:
                 f"[HIDDEN_URLS] Found {total_found} hidden URLs: {dict((k, len(v)) for k, v in results.items())}"
             )
 
-        return results
+        return results, method_of
 
     def extract_from_data_attributes(self, response: Response) -> list[str]:
         urls = set()

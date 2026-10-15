@@ -56,6 +56,7 @@ renamed to the new version and date (see the release checklist).
 - Grafana scraping-pipeline-health dashboard provisioned in compose and Helm.
 - Release images (crawler, metrics, kafka-delta-ingest) smoke-tested on PRs that touch the image recipe (#449).
 - Repository policies: SECURITY.md, CODE_OF_CONDUCT.md, this changelog, ADRs, devcontainer (#669 #746 #747 #715 #694).
+- Hidden URLs carry discovery provenance into Delta rows: `js_spider_queue` rows, `stage1_offsite_candidates` rows, and the `stage1_discovery` row of each page crawled from a hidden URL gain `discovery_source` (`depth_spider`) and `discovery_method` (`json_ld`, `data_attributes`, `iframes`, `meta_refresh`, `api_endpoints`, `sitemaps` or `javascript`; a URL found by several extractors takes the most specific). Ordinary links keep no provenance (#378).
 
 ### Changed
 - Control Center tabs, health tiles, and the title mark use inline SVG icons (`aria-hidden`) instead of emoji glyphs (#1049).
@@ -70,6 +71,7 @@ renamed to the new version and date (see the release checklist).
 - Kafka messages are keyed by `url_hash`, with an enforceable idempotent producer (#285).
 - Undomainable rows are quarantined instead of landing in a hot `domain=unknown` partition.
 - ASR no longer sends audio to Google by default (`ASR_PROVIDER` opt-in; local whisper).
+- `scrapy_hidden_urls_found_total` label `category` is renamed to `discovery_method` (same values). Update any PromQL that groups by `category` (#378).
 
 ### Deprecated
 - `python reseed.py`, `python drain_lake.py`, `python audit_file_counts.py`, and `python monitor_and_trigger_depth.py` at the Scraping_project root. Run `python scripts/<name>.py` from `Scraping_project/` instead. `cli.py` stays the root Python entrypoint (#568).

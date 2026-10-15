@@ -189,12 +189,12 @@ if PROMETHEUS_AVAILABLE:
         list(SCRAPY_FAMILIES["scrapy_crawler_summary_skipped"]),
     )
 
-    # Hidden-URL discovery quality, per extractor category (#392). Grafana:
-    #   sum by (category) (rate(scrapy_hidden_urls_found_total[5m]))
+    # Hidden-URL discovery quality, per discovery method (#392, #378). Grafana:
+    #   sum by (discovery_method) (rate(scrapy_hidden_urls_found_total[5m]))
     #   sum by (route) (rate(scrapy_hidden_urls_routed_total[5m]))
     HIDDEN_URLS_FOUND = Counter(
         "scrapy_hidden_urls_found_total",
-        "URLs found by HiddenURLExtractor, by category (offsite = outside allowed_domains)",
+        "URLs found by HiddenURLExtractor, by discovery_method (offsite = outside allowed_domains)",
         list(SCRAPY_FAMILIES["scrapy_hidden_urls_found"]),
     )
     HIDDEN_URLS_ROUTED = Counter(

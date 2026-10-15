@@ -119,11 +119,11 @@ def test_offsite_recording_can_be_disabled(spider):
 
 
 def test_category_and_route_metrics(spider):
-    found_before = _sample("scrapy_hidden_urls_found_total", spider="deep_dive", category="iframes")
+    found_before = _sample("scrapy_hidden_urls_found_total", spider="deep_dive", discovery_method="iframes")
     offsite_before = _sample("scrapy_hidden_urls_routed_total", spider="deep_dive", route="offsite")
     crawl_before = _sample("scrapy_hidden_urls_routed_total", spider="deep_dive", route="depth_crawl")
     _parse(spider)
-    assert _sample("scrapy_hidden_urls_found_total", spider="deep_dive", category="iframes") == found_before + 1
+    assert _sample("scrapy_hidden_urls_found_total", spider="deep_dive", discovery_method="iframes") == found_before + 1
     assert _sample("scrapy_hidden_urls_routed_total", spider="deep_dive", route="offsite") == offsite_before + len(OFFSITE)
     assert _sample("scrapy_hidden_urls_routed_total", spider="deep_dive", route="depth_crawl") > crawl_before
 

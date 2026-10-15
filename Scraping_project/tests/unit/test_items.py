@@ -20,9 +20,18 @@ FULL = {
 }
 
 
+PROVENANCE = {"discovery_source", "discovery_method"}
+
+
 def test_declared_fields_are_the_offsite_table_columns():
-    assert set(OffsiteCandidateItem.fields) == set(FULL)
+    assert set(OffsiteCandidateItem.fields) == set(FULL) | PROVENANCE
     assert set(OffsiteCandidateItem.REQUIRED_FIELDS) <= set(OffsiteCandidateItem.fields)
+
+
+def test_provenance_is_optional_and_validates():
+    item = OffsiteCandidateItem(**FULL, discovery_source="depth_spider", discovery_method="json_ld")
+    item.validate()
+    assert item["discovery_method"] == "json_ld"
 
 
 def test_unknown_field_is_rejected_by_scrapy():

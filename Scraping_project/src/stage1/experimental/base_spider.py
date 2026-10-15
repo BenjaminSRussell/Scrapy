@@ -583,7 +583,24 @@ class BaseSpider(scrapy.Spider):
             "requires_js": requires_js,
             "discovered_at": datetime.now().isoformat(),
         }
+        record.update(self._discovery_provenance(response))
         self.discovered_records.append(record)
+
+    @staticmethod
+    def _discovery_provenance(response: Response) -> dict[str, str]:
+        """Provenance columns for a page's discovery row (#378).
+
+        A request routed from another source (a hidden URL) sets ``discovery_method``
+        and ``discovery_source`` in its meta. Ordinary link-following sets neither,
+        so its row carries no provenance.
+        """
+        method = response.meta.get("discovery_method")
+        if not method:
+            return {}
+        return {
+            "discovery_source": str(response.meta.get("discovery_source") or "unknown"),
+            "discovery_method": str(method),
+        }
 
     def _record_non_html(self, response: Response, url_hash: str, depth: int, content_type: str):
         record = {
@@ -594,6 +611,7 @@ class BaseSpider(scrapy.Spider):
             "content_size": len(response.body),
             "discovered_at": datetime.now().isoformat(),
         }
+        record.update(self._discovery_provenance(response))
         self.discovered_records.append(record)
 
     def _save_batch(self):
