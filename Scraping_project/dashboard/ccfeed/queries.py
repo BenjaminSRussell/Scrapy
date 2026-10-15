@@ -135,6 +135,8 @@ def build_journey(url: str, found: dict[str, dict | None]) -> dict:
                 status, note = "skipped", "Not a seed"
             elif stage_id == "summaries" and route == "large_docs":
                 status, note = "skipped", "Routed to Large Docs"
+            elif stage_id == "summaries" and route == "summaries" and analysis.get("has_quality_content") is False:
+                status, note = "skipped", "Low-quality page"
             elif stage_id == "large_docs" and route == "summaries":
                 status, note = "skipped", "Routed to Summaries"
         steps.append({"stage": stage_id, "title": _STEP_TITLES[stage_id], "status": status, "note": note,

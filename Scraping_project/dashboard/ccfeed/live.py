@@ -15,6 +15,7 @@ from .stages import (ERROR_COLUMNS, ERRORS_TABLE, STAGE_BY_ID, STAGES, TS_COLUMN
                      StageState, make_error_event, make_event, parse_ts)
 
 EVENTS_PER_POLL = 500
+REPLAY_EVENTS = 50
 EXPLORE_REBUILD_EVERY = 30.0
 
 _DETAIL_COLUMNS = {
@@ -35,6 +36,7 @@ class LiveFeed:
         self.watchers = {s.id: TableWatcher(self.base / s.table, s.columns) for s in STAGES}
         self.errors = TableWatcher(self.base / ERRORS_TABLE, ERROR_COLUMNS)
         self._seq = 0
+        self._replayed = False
         self._last: dict[str, StageState] = {}
         self._cache: dict[tuple, object] = {}
         self._explore: tuple[int | None, float, ExploreTree] | None = None
@@ -57,9 +59,22 @@ class LiveFeed:
             for row in err.new_rows:
                 self._seq += 1
                 events.append(make_error_event(row, self._seq, row["_t"]))
+        if not self._replayed:
+            self._replayed = True
+            events.extend(self._replay())
         events.sort(key=lambda e: e["t"])
         self._last = stages
         return PollResult(stages=stages, events=events[-EVENTS_PER_POLL:])
+
+    def _replay(self) -> list[dict]:
+        """The newest rows already on disk at startup, so lists are not empty. Never animated."""
+        rows = [(stage, row) for stage in STAGES for row in self.watchers[stage.id].recent_rows]
+        rows.sort(key=lambda sr: sr[1]["_t"])
+        out = []
+        for stage, row in rows[-REPLAY_EVENTS:]:
+            self._seq += 1
+            out.append({**make_event(stage, row, self._seq, row["_t"]), "replay": True})
+        return out
 
     def backfill(self, now: float, seconds: int, bucket: int) -> dict[str, list[tuple[float, int]]]:
         """Cumulative count at each bucket end over the last ``seconds``, from ``_ingestion_time``."""

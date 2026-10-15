@@ -117,6 +117,14 @@ def test_journey_routed_to_large_docs_waits_for_it():
     assert j["parent_url"] == "https://a.edu/"
 
 
+def test_journey_low_quality_page_is_not_left_waiting_for_a_summary():
+    j = build_journey("https://a.edu/thin", {"seeds": None, "discovery": {"_t": T},
+                                             "analysis": {"_t": T + 1, "is_massive_doc": False, "has_quality_content": False},
+                                             "summaries": None, "large_docs": None})
+    assert (step(j, "summaries")["status"], step(j, "summaries")["note"]) == ("skipped", "Low-quality page")
+    assert step(j, "large_docs")["status"] == "skipped"
+
+
 def test_journey_before_analysis_waits_on_both_branches():
     j = build_journey("https://a.edu/x", {"seeds": None, "discovery": {"_t": T}, "analysis": None,
                                           "summaries": None, "large_docs": None})
@@ -205,7 +213,8 @@ def test_live_feed_polls_counts_then_emits_new_rows_as_events(tmp_path):
     make_lake(tmp_path, now)
     feed = LiveFeed(tmp_path)
     first = feed.poll(now)
-    assert first.events == []
+    assert first.events and all(e.get("replay") for e in first.events)  # newest rows, not live
+    assert [e["t"] for e in first.events] == sorted(e["t"] for e in first.events)
     assert first.stages["discovery"].count == 2 and first.stages["discovery"].status == "ok"
     assert first.stages["large_docs"].last_write == pytest.approx(now - 100, abs=1e-3)
     write(tmp_path, "stage1_discovery", {"url": ["https://a.edu/new"], "domain": ["a.edu"], "depth": [1],
