@@ -107,6 +107,18 @@ gate (fonts and Chrome builds differ), and it is not part of `node --test`.
 | Where it is produced | Optional workflow [`.github/workflows/ci-dashboard-visual.yml`](../../.github/workflows/ci-dashboard-visual.yml): pull requests that touch this directory, or Actions → Run workflow. `continue-on-error: true`, so a capture failure does not fail the dashboard unit tests. The artifact is kept 14 days. It does not run on every push to `main`. |
 | Regenerate locally | `python Scraping_project/dashboard/overview_screenshot.py --channel chrome` (or bundled Chromium after `python -m playwright install chromium`). Default path: `Scraping_project/dashboard/visual/overview.png` (gitignored). Needs `playwright==1.55.0`, already pinned for the JS spider. |
 
+## Chart palette (#964)
+
+Series use the Okabe–Ito palette (blue `#0072B2`, vermillion `#D55E00`, bluish green `#009E73`, orange `#E69F00`). Hue is not the only difference between a pair:
+
+| Chart | First series | Second series |
+|---|---|---|
+| Throughput | URLs/min, solid line, circle markers | Pages/min, dashed line (`[8, 4]`), triangle markers |
+| Routing doughnut | Quality docs, solid slice | Massive docs, hatched fill, dashed outline, offset 18px |
+| Stage bars | Stages 1 and 3, solid fill (axis labels name each stage) | Stages 2 and 4, hatched fill |
+
+The previous-hour overlay stays a slate dash (`[6, 4]`) with no markers, so it does not look like Pages/min. Hatches need a canvas; the dash, marker, and offset still differ when a pattern cannot be built.
+
 ## Comparison mode (#1035)
 
 The refresh-bar toggle **Compare to previous hour** overlays a dashed baseline on the throughput, URLs, pages, and summaries line charts (not the stage bar or routing doughnut). The choice is remembered in `localStorage` (`cc.comparePrevHour`).

@@ -13,6 +13,7 @@ Use for every dashboard PR:
   - Activity search (#1028): `#activity-filter-status` (polite) announces the match count only. The log itself stays `aria-live="off"`. Clear search is a button, and Escape in the field also clears it.
 - [ ] Charts have a text alternative (data table / caption)
 - [ ] No information conveyed by color alone
+  - Chart pairs no longer differ by hue only (#964). Throughput pages/min is a dashed line with triangle markers; URLs/min stays a solid line with circles. The massive routing slice is hatched, offset, and dashed. Stage 2 and 4 bars are hatched. Colors are Okabe–Ito.
 - [x] Respects `prefers-reduced-motion` — hover lift, pulse, flash, loading shimmer, and the shared `.skeleton` block (static gray, no pulse) off (#341, #1025). The optional danger chime stays silent under reduced motion and under a mute preference, and is off until opted in (#1037).
 - [x] Works at 360px width without horizontal page scroll — checked at 360/375/768/1024 on every tab; topbar stats wrap instead of hiding (#155)
 - [x] Forced-colors / Windows High Contrast: cards, tabs, active stage and status stay distinguishable via borders and system colours (`@media (forced-colors: active)`, #982)
