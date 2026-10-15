@@ -25,6 +25,7 @@ from src.stage1.discovery_handoff import (
 )
 from src.stage1.js_queue import js_spider_enabled
 from src.stage1.section_noise import SectionNoiseTracker, section_of
+from src.stage1.url_policy import UrlPolicy
 
 try:
     from src.scrapy_prometheus import URLS_SKIPPED
@@ -72,6 +73,7 @@ class ScoutSpider(BaseSpider):
             "discovery_dedup_skipped": 0,
             "discovery_empty_acks": 0,
             "discovery_failures": 0,
+            "url_policy_dropped": 0,
         }
 
         self._discovery_response: Response | None = None
@@ -120,6 +122,40 @@ class ScoutSpider(BaseSpider):
             redis_client=getattr(self, "redis_client", None),
             job_id=self.job_id,
         )
+
+    def _url_policy(self) -> UrlPolicy:
+        # Reuse the spider's Redis client (REDIS_HOST/PORT/PASSWORD/DB). Do not
+        # open a second connection and do not read REDIS_URL.
+        policy: UrlPolicy | None = getattr(self, "_url_policy_obj", None)
+        if policy is None:
+            policy = UrlPolicy.from_config(client=getattr(self, "redis_client", None))
+            self._url_policy_obj = policy
+        return policy
+
+    def _dropped_by_url_policy(self, url: str) -> bool:
+        """True when the URL must not be requested or enqueued (#633).
+
+        A policy bug or a Redis blip fails open after YAML rules have been
+        applied inside ``UrlPolicy.decision`` (the last overlay is kept).
+        """
+        try:
+            decision = self._url_policy().decision(url)
+        except Exception as e:
+            logger.warning(f"[SCOUT] URL policy check failed open for {url[:120]}: {e}")
+            return False
+        if decision.allowed:
+            return False
+        self.scout_stats["url_policy_dropped"] = self.scout_stats.get("url_policy_dropped", 0) + 1
+        self._track_skip(url, "url_policy")
+        logger.info(f"[SCOUT] URL policy drop ({decision.reason}): {url[:120]}")
+        return True
+
+    async def start(self):
+        # Drop blocked seeds before Scrapy schedules the request.
+        async for request in super().start():
+            if self._dropped_by_url_policy(request.url):
+                continue
+            yield request
 
     def parse(self, response: Response) -> Iterator:
         decision = classify_response(response)  # #662: no binary into HTML parsing
@@ -188,6 +224,9 @@ class ScoutSpider(BaseSpider):
 
         for url in new_urls:
             if url in owned_elsewhere:
+                continue
+            # Block/allow before any request, Stage 2 row, JS row, or seed (#633).
+            if self._dropped_by_url_policy(url):
                 continue
             if self._is_external_url(url):
                 yield self._create_offsite_item(response, url)
@@ -421,6 +460,17 @@ class ScoutSpider(BaseSpider):
             self.discovery_dedup.release_mutex(site, source)
 
     def _ingest_discovery_handoff(self, handoff, source_url: str) -> None:
+        kept = [url for url in list(handoff.discovered) if not self._dropped_by_url_policy(url)]
+        if not kept:
+            logger.info("[SCOUT] URL policy dropped every sitemap URL; nothing ingested")
+            return
+        if len(kept) != len(handoff.discovered):
+            handoff = type(handoff).success(
+                kept,
+                discovery_source=str(handoff.discovery_source),
+                job_id=handoff.job_id,
+                site=handoff.site,
+            )
         try:
             result = ingest_handoff_via_seed_manager(
                 self.seed_manager,
