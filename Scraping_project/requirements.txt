@@ -6,8 +6,14 @@
 #
 aiohappyeyeballs==2.6.1
     # via aiohttp
-aiohttp==3.13.1
-    # via -r requirements.in
+aiohttp==3.14.3
+    # via
+    #   -r requirements.in
+    #   aiohttp-retry
+    #   kubernetes
+    #   scrapy
+aiohttp-retry==2.9.1
+    # via kubernetes
 aiosignal==1.4.0
     # via aiohttp
 annotated-types==0.7.0
@@ -24,11 +30,13 @@ attrs==25.4.0
     #   twisted
 automat==25.4.16
     # via twisted
-beautifulsoup4==4.14.2
+backports-zstd==1.8.0
+    # via scrapy
+beautifulsoup4==4.15.0
     # via -r requirements.in
-cachetools==6.2.1
-    # via google-auth
-certifi==2025.10.5
+brotli==1.2.0
+    # via scrapy
+certifi==2026.7.22
     # via
     #   httpcore
     #   httpx
@@ -37,12 +45,14 @@ certifi==2025.10.5
 cffi==2.0.0
     # via cryptography
 charset-normalizer==3.4.4
-    # via requests
-click==8.3.0
+    # via
+    #   requests
+    #   scrapy
+click==8.5.0
     # via
     #   -r requirements.in
     #   yake
-confluent-kafka==2.12.0
+confluent-kafka==2.16.0
     # via -r requirements.in
 constantly==23.10.4
     # via twisted
@@ -61,11 +71,11 @@ defusedxml==0.7.1
     # via
     #   -r requirements.in
     #   scrapy
-deltalake==1.2.0
+deltalake==1.6.6
     # via -r requirements.in
 deprecated==1.2.18
     # via deltalake
-durationpy==0.10
+durationpy==0.11
     # via kubernetes
 filelock==3.20.0
     # via tldextract
@@ -73,8 +83,6 @@ frozenlist==1.8.0
     # via
     #   aiohttp
     #   aiosignal
-google-auth==2.41.1
-    # via kubernetes
 greenlet==3.2.4
     # via playwright
 h11==0.16.0
@@ -95,7 +103,7 @@ idna==3.11
     #   yarl
 incremental==24.7.2
     # via twisted
-itemadapter==0.12.2
+itemadapter==0.13.1
     # via
     #   -r requirements.in
     #   itemloaders
@@ -110,9 +118,9 @@ jmespath==1.0.1
     #   parsel
 jsonlines==4.0.0
     # via -r requirements.in
-kubernetes==34.1.0
+kubernetes==37.0.1
     # via -r requirements.in
-lxml==6.0.2
+lxml==6.1.3
     # via
     #   -r requirements.in
     #   parsel
@@ -121,11 +129,11 @@ multidict==6.7.0
     # via
     #   aiohttp
     #   yarl
-networkx==3.5
+networkx==3.6.1
     # via
     #   -r requirements.in
     #   yake
-numpy==2.2.6
+numpy==2.4.6
     # via
     #   -r requirements.in
     #   datasketch
@@ -144,11 +152,13 @@ parsel==1.10.0
     # via
     #   itemloaders
     #   scrapy
-playwright==1.55.0
+platformdirs==4.13.0
+    # via scrapy
+playwright==1.63.0
     # via
     #   -r requirements.in
     #   scrapy-playwright
-prometheus-client==0.23.1
+prometheus-client==0.26.0
     # via -r requirements.in
 propcache==0.4.1
     # via
@@ -156,26 +166,25 @@ propcache==0.4.1
     #   yarl
 protego==0.5.0
     # via scrapy
-psutil==7.1.2
+psutil==7.2.2
     # via -r requirements.in
-psycopg2-binary==2.9.11
+psycopg2-binary==2.9.13
     # via -r requirements.in
-pyarrow==21.0.0
+pyarrow==26.0.0
     # via -r requirements.in
 pyasn1==0.6.1
     # via
     #   pyasn1-modules
-    #   rsa
     #   service-identity
 pyasn1-modules==0.4.2
-    # via
-    #   google-auth
-    #   service-identity
+    # via service-identity
 pycparser==2.23
     # via cffi
-pydantic==2.12.2
-    # via -r requirements.in
-pydantic-core==2.41.4
+pydantic==2.13.5
+    # via
+    #   -r requirements.in
+    #   kubernetes
+pydantic-core==2.46.5
     # via pydantic
 pydispatcher==2.0.7
     # via scrapy
@@ -188,7 +197,7 @@ python-dateutil==2.9.0.post0
     #   -r requirements.in
     #   kubernetes
     #   pandas
-python-dotenv==1.1.1
+python-dotenv==1.2.4
     # via -r requirements.in
 pytz==2025.2
     # via pandas
@@ -202,7 +211,7 @@ redis==7.0.1
     # via -r requirements.in
 regex==2025.9.18
     # via segtok
-requests==2.32.5
+requests==2.34.2
     # via
     #   -r requirements.in
     #   kubernetes
@@ -216,24 +225,20 @@ requests-mock==1.12.1
     # via -r requirements.in
 requests-oauthlib==2.0.0
     # via kubernetes
-rsa==4.9.1
-    # via google-auth
 scipy==1.16.2
     # via datasketch
-scrapy==2.13.3
+scrapy==2.19.0
     # via
     #   -r requirements.in
     #   scrapy-playwright
-scrapy-playwright==0.0.44
+scrapy-playwright==0.0.48
     # via -r requirements.in
 segtok==1.5.11
     # via yake
 service-identity==24.2.0
     # via scrapy
 six==1.17.0
-    # via
-    #   kubernetes
-    #   python-dateutil
+    # via python-dateutil
 sniffio==1.3.1
     # via anyio
 soupsieve==2.8
@@ -244,21 +249,21 @@ tenacity==9.2.1
     # via -r requirements.in
 tldextract==5.3.0
     # via scrapy
-tomli==2.3.0
-    # via confluent-kafka
-tqdm==4.67.1
+tqdm==4.70.1
     # via -r requirements.in
-twisted==25.5.0
+twisted==26.4.0
     # via
     #   -r requirements.in
     #   scrapy
-typing-extensions==4.15.0
+typing-extensions==4.16.0
     # via
     #   -r requirements.in
+    #   aiohttp
     #   aiosignal
     #   anyio
     #   arro3-core
     #   beautifulsoup4
+    #   kubernetes
     #   pydantic
     #   pydantic-core
     #   pyee
@@ -269,11 +274,11 @@ typing-inspection==0.4.2
     # via pydantic
 tzdata==2025.2
     # via pandas
-urllib3==2.3.0
+urllib3==2.8.0
     # via
     #   kubernetes
     #   requests
-w3lib==2.3.1
+w3lib==2.5.0
     # via
     #   -r requirements.in
     #   parsel
@@ -282,7 +287,7 @@ websocket-client==1.9.0
     # via kubernetes
 wrapt==1.17.3
     # via deprecated
-yake==0.6.0
+yake==0.7.3
     # via -r requirements.in
 yarl==1.22.0
     # via aiohttp
