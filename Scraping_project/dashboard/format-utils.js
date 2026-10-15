@@ -1118,5 +1118,116 @@
         if (!rows.length) return { missing: true, rows: [], empty: SCRAPE_TARGET_EMPTY };
         return { missing: false, rows: rows.slice(0, cap), empty: SCRAPE_TARGET_EMPTY };
     }
-    return { tabKeyTarget, staleState, queueDepthRows, metricsFailureActivity, shortcutHintText, parseMetrics, metricSeriesCount, METRICS_FLOOD_DEFAULTS, metricsFloodLimits, advanceMetricsFlood, metricsFloodBannerText, ratePerMinute, resolveMetricsUrl, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler, stageActivity, stageDrilldown, stageDrilldownKey, doughnutLegendLayout, connectionState, documentTitle, createActivityAnnouncer, metricsUrlProblem, splitLinks, createMetricsFetcher, REFRESH_INTERVAL_CHOICES, parseRefreshInterval, shortcutAction, pickInitialTab, METRIC_UI_MAP, renderMetricNameMap, parseDangerSoundEnabled, dangerSoundDecision, HEALTH_HISTORY_LIMIT, pushPollOutcome, healthHistoryView, COMPARISON_BASELINE_ROLE, PREV_HOUR_AVG_KEYS, readPrevHourAverage, comparisonBaselineSeries, comparisonNote, ACTIVITY_LOG_CAP, capActivityLog, activityStaleNote, restoreActivityLog, topScrapeTargets, SCRAPE_TARGET_EMPTY, ACTIVITY_LEVELS, activityLevelCounts, filterActivityItems, filterActivityMessages, activityFilterStatus, toggleActivityLevel, HISTORY_MAX_POINTS, assertHistoryBound, boundHistoryBuffer, pushHistorySample, enforceHistoryCap };
+    // #656: SSE only for the same-origin /api/metrics proxy. A cross-origin
+    // ?metrics= / CC_METRICS_URL, file://, or ?sse=0 stays on the refresh poll.
+    // EventSource cannot send Authorization; the page must not put a token in the URL.
+    function metricsStreamUrl(metricsUrl, loc, hasEventSource) {
+        if (!hasEventSource) return null;
+        if (metricsUrl !== '/api/metrics') return null;
+        const search = (loc && loc.search) || '';
+        let flag = null;
+        try {
+            const params = new URLSearchParams(search);
+            for (const [key, value] of params) {
+                if (String(key).toLowerCase() === 'sse') { flag = value; break; }
+            }
+        } catch (_) { flag = null; }
+        if (flag != null && /^(0|off|false|no)$/i.test(flag)) return null;
+        return '/api/metrics/stream';
+    }
+    // Opens one EventSource. Transport failure before any sample, or a terminal
+    // close, calls onFallback exactly once so the caller can start polling.
+    // A reconnect (readyState CONNECTING) after a sample stays on the stream.
+    function createLiveMetrics(opts) {
+        const o = opts || {};
+        const streamUrl = o.streamUrl || null;
+        const ES = o.EventSource || null;
+        const onMetrics = typeof o.onMetrics === 'function' ? o.onMetrics : function () {};
+        const onUpstreamError = typeof o.onUpstreamError === 'function' ? o.onUpstreamError : function () {};
+        const onFallback = typeof o.onFallback === 'function' ? o.onFallback : function () {};
+        let es = null;
+        let sawEvent = false;
+        let closedByUs = false;
+        let fellBack = false;
+        let mode = 'poll';
+
+        function stop() {
+            closedByUs = true;
+            mode = 'poll';
+            const src = es;
+            es = null;
+            if (src) {
+                try { src.close(); } catch (_) { /* already closed */ }
+            }
+        }
+        function fail(reason) {
+            if (fellBack || closedByUs) return;
+            fellBack = true;
+            closedByUs = true;
+            mode = 'poll';
+            const src = es;
+            es = null;
+            if (src) {
+                try { src.close(); } catch (_) { /* already closed */ }
+            }
+            onFallback(reason || 'sse-failed');
+        }
+        function arm(src) {
+            src.addEventListener('metrics', (ev) => {
+                if (closedByUs || fellBack) return;
+                sawEvent = true;
+                mode = 'sse';
+                let parsed;
+                try { parsed = JSON.parse(ev && ev.data); }
+                catch (err) { onUpstreamError(err); return; }
+                if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+                    onUpstreamError(new Error('invalid metrics event'));
+                    return;
+                }
+                onMetrics(parsed);
+            });
+            src.addEventListener('upstream', (ev) => {
+                if (closedByUs || fellBack) return;
+                sawEvent = true;
+                mode = 'sse';
+                let message = 'metrics upstream unavailable';
+                try {
+                    const body = JSON.parse(ev && ev.data);
+                    if (body && body.error) message = String(body.error);
+                } catch (_) { /* keep the default */ }
+                const err = new Error(message);
+                err.upstream = true;
+                onUpstreamError(err);
+            });
+            src.onerror = () => {
+                if (closedByUs || fellBack) return;
+                // 0 CONNECTING retries; 2 CLOSED does not. Stay only after a sample.
+                if (sawEvent && src.readyState !== 2) return;
+                fail(sawEvent ? 'sse-closed' : 'sse-failed');
+            };
+        }
+        function start() {
+            if (fellBack) return;
+            if (!streamUrl || !ES) {
+                fail('unavailable');
+                return;
+            }
+            closedByUs = false;
+            sawEvent = false;
+            try {
+                es = new ES(streamUrl);
+            } catch (_) {
+                fail('sse-failed');
+                return;
+            }
+            arm(es);
+        }
+        return {
+            start,
+            stop,
+            usingPush: () => mode === 'sse' && es !== null && !fellBack,
+            gaveUp: () => fellBack,
+        };
+    }
+    return { tabKeyTarget, staleState, queueDepthRows, metricsFailureActivity, shortcutHintText, parseMetrics, metricSeriesCount, METRICS_FLOOD_DEFAULTS, metricsFloodLimits, advanceMetricsFlood, metricsFloodBannerText, ratePerMinute, resolveMetricsUrl, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler, stageActivity, stageDrilldown, stageDrilldownKey, doughnutLegendLayout, connectionState, documentTitle, createActivityAnnouncer, metricsUrlProblem, splitLinks, createMetricsFetcher, REFRESH_INTERVAL_CHOICES, parseRefreshInterval, shortcutAction, pickInitialTab, METRIC_UI_MAP, renderMetricNameMap, parseDangerSoundEnabled, dangerSoundDecision, HEALTH_HISTORY_LIMIT, pushPollOutcome, healthHistoryView, COMPARISON_BASELINE_ROLE, PREV_HOUR_AVG_KEYS, readPrevHourAverage, comparisonBaselineSeries, comparisonNote, ACTIVITY_LOG_CAP, capActivityLog, activityStaleNote, restoreActivityLog, topScrapeTargets, SCRAPE_TARGET_EMPTY, ACTIVITY_LEVELS, activityLevelCounts, filterActivityItems, filterActivityMessages, activityFilterStatus, toggleActivityLevel, HISTORY_MAX_POINTS, assertHistoryBound, boundHistoryBuffer, pushHistorySample, enforceHistoryCap, metricsStreamUrl, createLiveMetrics };
 });
