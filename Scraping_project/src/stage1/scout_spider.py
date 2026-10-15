@@ -19,10 +19,12 @@ from src.stage1.sitemap_parser import discover_sitemaps_handoff_sync
 from src.stage1.discovery_dedup import DiscoveryDedup, get_discovery_dedup_from_config
 from src.stage1.discovery_handoff import (
     DiscoveryEmptyNeedsAck,
+    DiscoveryHandoff,
     DiscoveryHandoffError,
     DiscoveryStatus,
     ingest_handoff_via_seed_manager,
 )
+from src.stage1.feed_parser import profile_feed_urls
 from src.stage1.js_queue import js_spider_enabled
 from src.stage1.section_noise import SectionNoiseTracker, section_of
 
@@ -109,6 +111,12 @@ class ScoutSpider(BaseSpider):
 
         if self.parse_sitemaps and hasattr(self, "start_urls") and self.start_urls:
             self._discover_and_add_sitemap_urls()
+
+        # Profile feeds (#643). [] does not fetch. Item links join seeds and stage2_queue.
+        self.feed_urls = profile_feed_urls(config)
+        logger.info(f"[SCOUT] RSS/Atom feeds configured: {len(self.feed_urls)}")
+        if self.feed_urls:
+            self._discover_and_add_feed_urls()
 
     def _init_discovery_dedup(self, config) -> DiscoveryDedup:
         # BaseSpider already resolved REDIS_HOST/PORT/PASSWORD/DB. Reuse that
@@ -420,7 +428,37 @@ class ScoutSpider(BaseSpider):
         finally:
             self.discovery_dedup.release_mutex(site, source)
 
-    def _ingest_discovery_handoff(self, handoff, source_url: str) -> None:
+    def _discover_and_add_feed_urls(self) -> None:
+        from src.stage1.feed_parser import fetch_feed, parse_feed
+
+        for feed_url in list(getattr(self, "feed_urls", None) or []):
+            try:
+                body = fetch_feed(feed_url)
+                parsed = parse_feed(body, feed_url=feed_url)
+            except Exception as exc:
+                self.scout_stats["discovery_failures"] += 1
+                logger.warning(f"[SCOUT] Feed fetch/parse failed for {feed_url}: {exc}")
+                continue
+            if parsed.error or parsed.kind in {"error", "unknown"}:
+                self.scout_stats["discovery_failures"] += 1
+                logger.warning(
+                    f"[SCOUT] Feed {feed_url} not ingested ({parsed.kind}): {parsed.error or 'unreadable'}"
+                )
+                continue
+            if not parsed.urls:
+                logger.info(f"[SCOUT] Feed {feed_url} has no item links")
+                continue
+            handoff = DiscoveryHandoff.success(
+                parsed.urls,
+                discovery_source="feed_parser",
+                job_id=getattr(self, "job_id", None),
+                site=urlparse(feed_url).netloc or None,
+            )
+            self._last_discovery_handoff = handoff
+            logger.info(f"[SCOUT] Feed {feed_url}: {len(parsed.urls)} item links")
+            self._ingest_discovery_handoff(handoff, source_url=feed_url, enqueue_stage2=True)
+
+    def _ingest_discovery_handoff(self, handoff, source_url: str, *, enqueue_stage2: bool = False) -> None:
         try:
             result = ingest_handoff_via_seed_manager(
                 self.seed_manager,
@@ -429,7 +467,7 @@ class ScoutSpider(BaseSpider):
                 dedup=self.discovery_dedup,
                 ack_empty=self.ack_empty_discovery,
                 write_uconn_urls=True,
-                enqueue_stage2=False,
+                enqueue_stage2=enqueue_stage2,
             )
             self.scout_stats["urls_added_to_seeds"] += result.get("seed_inserted", 0)
             self.scout_stats["discovery_dedup_skipped"] += result.get("skipped_dedup", 0)

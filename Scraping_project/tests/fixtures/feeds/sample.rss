@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+  <channel>
+    <title>Example University Today</title>
+    <link>https://today.example.edu/</link>
+    <description>Campus news. The channel link is the site home, not an item.</description>
+    <item>
+      <title>Research grant announced</title>
+      <link>https://today.example.edu/2026/03/research-grant</link>
+      <guid isPermaLink="true">https://today.example.edu/2026/03/research-grant</guid>
+      <content:encoded><![CDATA[<p>Body only. <a href="https://today.example.edu/should-not-enqueue">not an item link</a></p>]]></content:encoded>
+    </item>
+    <item>
+      <title>Lecture series</title>
+      <link>https://today.example.edu/2026/03/lecture-series</link>
+    </item>
+    <item>
+      <title>Relative campus notes</title>
+      <link>/2026/03/campus-notes</link>
+    </item>
+    <item>
+      <title>Duplicate of the grant</title>
+      <link>https://today.example.edu/2026/03/research-grant</link>
+    </item>
+    <item>
+      <title>No link</title>
+      <description>Nothing to enqueue</description>
+    </item>
+    <item>
+      <title>Guid only</title>
+      <guid isPermaLink="true">https://today.example.edu/2026/04/guid-only</guid>
+    </item>
+    <item>
+      <title>Guid is not a permalink</title>
+      <guid isPermaLink="false">not-a-url</guid>
+    </item>
+  </channel>
+</rss>

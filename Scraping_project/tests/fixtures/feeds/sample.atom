@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>Example University Today</title>
+  <link rel="self" href="https://today.example.edu/atom.xml"/>
+  <link rel="alternate" href="https://today.example.edu/"/>
+  <id>https://today.example.edu/atom.xml</id>
+  <updated>2026-03-01T00:00:00Z</updated>
+  <entry>
+    <title>Faculty profile</title>
+    <link rel="alternate" type="text/html" href="https://today.example.edu/2026/03/faculty-profile"/>
+    <link rel="enclosure" href="https://today.example.edu/audio/faculty.mp3"/>
+    <id>https://today.example.edu/2026/03/faculty-profile</id>
+    <updated>2026-03-01T00:00:00Z</updated>
+  </entry>
+  <entry>
+    <title>Relative story</title>
+    <link href="2026/03/relative-story"/>
+    <id>tag:example.edu,2026:relative</id>
+    <updated>2026-03-02T00:00:00Z</updated>
+  </entry>
+</feed>

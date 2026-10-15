@@ -38,6 +38,10 @@ stage1:
   aggressive_collection: true  # Capture EVERYTHING - Stage 2 will filter
   expand_seeds: true  # Auto-add discovered URLs back to seed_urls
   parse_sitemaps: true  # Auto-discover and parse sitemaps
+  # RSS/Atom item links (#643). Empty: the scout does not fetch feeds.
+  # Each entry is an absolute http(s) feed URL. Item links are merged into
+  # seed_urls and enqueued on stage2_queue. HTML discovery is unchanged.
+  feeds: []
   sitemap:  # Walk limits for nested sitemap indexes (#206)
     max_depth: 5          # sitemapindex nesting levels to follow
     max_urls: 50000       # hard cap on URLs collected per site walk
