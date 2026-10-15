@@ -295,3 +295,69 @@ def test_main_starts_the_feed_before_serving(serve, monkeypatch):
     with pytest.raises(Stop):
         serve.main(["--demo", "--port", "8123"])
     assert order == ["hub", "serve"]
+
+
+def _strict(body: bytes):
+    def reject(const):
+        raise ValueError(f"non-standard JSON constant {const}")
+
+    return json.loads(body, parse_constant=reject)
+
+
+class NonFiniteHub:
+    """A feed whose numbers include NaN/Infinity (e.g. a mean over a NaN column)."""
+
+    subscriber_count = 0
+
+    def snapshot(self):
+        return {"mode": "live", "a": float("nan"), "b": [float("inf"), 1.5], "c": {"d": -float("inf")}}
+
+    def stage_detail(self, stage_id):
+        return {"stage": {"id": stage_id, "rate_per_min": float("nan")}, "breakdowns": [], "recent": []}
+
+    def subscribe(self):
+        from ccfeed.hub import Subscription
+
+        sub = Subscription()
+        sub.offer("snapshot", self.snapshot(), self.snapshot)
+        return sub
+
+    def unsubscribe(self, sub):
+        pass
+
+
+def test_non_finite_numbers_become_null_so_browsers_can_parse(serve, tmp_path):
+    root = tmp_path / "static"
+    root.mkdir()
+    (root / "index.html").write_text("x")
+    env = {"CC_RATE_LIMIT": "0"}
+    handler = type("H", (serve.DashboardHandler,), {
+        "root": root, "log_message": lambda *a: None, "auth": serve.AuthGate.from_env(env),
+        "limiter": serve.RateLimiter.from_env(env), "cors_origins": (), "csp": serve.build_csp(env),
+        "hub_factory": staticmethod(NonFiniteHub), "_hub": None, "stream_ping": 0.5,
+    })
+    httpd = serve.make_server("127.0.0.1", 0, handler=handler, env=env)
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{httpd.server_address[1]}"
+    try:
+        status, _, body = get(base + "/api/snapshot")
+        assert status == 200
+        assert _strict(body) == {"mode": "live", "a": None, "b": [None, 1.5], "c": {"d": None}}
+        assert _strict(get(base + "/api/stage/discovery")[2])["stage"]["rate_per_min"] is None
+        conn, resp = open_stream(base)
+        try:
+            lines, _ = read_until(resp, "snapshot")
+            data_line = next(line for line in lines if line.startswith("data: "))
+            assert _strict(data_line[6:].encode())["a"] is None
+        finally:
+            resp.close()
+            conn.close()
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
+def test_stream_frames_are_strict_json(serve):
+    frame = serve.sse_frame("tick", {"x": float("nan"), "y": 2})
+    assert frame.startswith(b"event: tick\ndata: ") and frame.endswith(b"\n\n")
+    assert _strict(frame.split(b"data: ", 1)[1].strip()) == {"x": None, "y": 2}

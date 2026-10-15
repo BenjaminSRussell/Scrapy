@@ -322,6 +322,26 @@ def _ccfeed(name: str):
     return importlib.import_module(f"ccfeed.{name}")
 
 
+def json_safe(obj):
+    """NaN and Infinity become null: browsers' JSON.parse rejects them, which would
+    break a whole snapshot or tick over one bad number."""
+    if isinstance(obj, float):
+        return obj if math.isfinite(obj) else None
+    if isinstance(obj, dict):
+        return {k: json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [json_safe(v) for v in obj]
+    return obj
+
+
+def json_bytes(payload) -> bytes:
+    return json.dumps(json_safe(payload), separators=(",", ":"), allow_nan=False).encode("utf-8")
+
+
+def sse_frame(kind: str, payload) -> bytes:
+    return b"event: " + kind.encode("ascii") + b"\ndata: " + json_bytes(payload) + b"\n\n"
+
+
 def valid_page_url(url: str) -> bool:
     if not url or len(url) > MAX_PAGE_URL or any(c.isspace() or ord(c) < 32 for c in url):
         return False
@@ -484,7 +504,7 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         self.wfile.write(body)
 
     def _send_json(self, status: int, payload: dict) -> None:
-        self._send_bytes(status, json.dumps(payload).encode("utf-8"), "application/json; charset=utf-8")
+        self._send_bytes(status, json_bytes(payload), "application/json; charset=utf-8")
 
     # ---- API ----
     def _api_metrics(self) -> None:
@@ -597,9 +617,7 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             while True:
                 item = sub.get(timeout=min(1.0, self.stream_ping))
                 if item is not None:
-                    kind, payload = item
-                    data = json.dumps(payload, separators=(",", ":"))
-                    self.wfile.write(f"event: {kind}\ndata: {data}\n\n".encode("utf-8"))
+                    self.wfile.write(sse_frame(*item))
                 elif time.monotonic() - last_write >= self.stream_ping:
                     self.wfile.write(b": ping\n\n")
                 else:
