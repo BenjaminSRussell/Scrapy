@@ -808,9 +808,55 @@
             : `Metrics poll history, last ${n} outcomes. ${caption}. Oldest on the left.`;
         return { slots, ok: okCount, fail: failCount, total: windowed.length, limit: n, label, caption };
     }
+
+    // #691: one ring-buffer cap for every client time-series (chart history and
+    // the activity log). Chart.js may draw a shorter window; this bound does
+    // not follow an axis or tick max, so a wider chart cannot grow memory.
+    const HISTORY_MAX_POINTS = 50;
+    function historyDebug() {
+        return typeof process === 'undefined'
+            || !process.env
+            || process.env.NODE_ENV !== 'production';
+    }
+    // Debug builds (the static dashboard, and node tests) assert length ≤ cap.
+    // NODE_ENV=production skips the assert; the trim itself still applies.
+    function assertHistoryBound(length, max) {
+        const cap = max == null ? HISTORY_MAX_POINTS : max;
+        if (!historyDebug()) return true;
+        const ok = Number(length) <= cap;
+        if (typeof console !== 'undefined' && typeof console.assert === 'function') {
+            console.assert(ok, `client history length ${length} exceeds cap ${cap}`);
+        }
+        if (!ok) throw new Error(`client history length ${length} exceeds cap ${cap}`);
+        return true;
+    }
+    // drop 'start': oldest-first series (charts). drop 'end': newest-first logs.
+    function boundHistoryBuffer(buffer, drop) {
+        if (!Array.isArray(buffer)) return buffer;
+        const cap = HISTORY_MAX_POINTS;
+        const overflow = buffer.length - cap;
+        if (overflow > 0) {
+            if (drop === 'end') buffer.splice(cap, overflow);
+            else buffer.splice(0, overflow);
+        }
+        assertHistoryBound(buffer.length, cap);
+        return buffer;
+    }
+    function pushHistorySample(buffer, value) {
+        if (!Array.isArray(buffer)) return buffer;
+        buffer.push(value);
+        return boundHistoryBuffer(buffer, 'start');
+    }
+    function enforceHistoryCap(store, drop) {
+        if (!store || typeof store !== 'object') return store;
+        for (const key of Object.keys(store)) {
+            if (Array.isArray(store[key])) boundHistoryBuffer(store[key], drop);
+        }
+        return store;
+    }
     // #1029: sessionStorage ring for the activity log. Newest first, same cap
     // the on-screen log already uses. Only type/message/timestamp are kept.
-    const ACTIVITY_LOG_CAP = 50;
+    const ACTIVITY_LOG_CAP = HISTORY_MAX_POINTS;
     const ACTIVITY_LOG_TEXT_MAX = 1000;
     const ACTIVITY_LOG_SCAN_MAX = 500;
     function activityLogCapSize(cap) {
@@ -943,5 +989,5 @@
         if (!rows.length) return { missing: true, rows: [], empty: SCRAPE_TARGET_EMPTY };
         return { missing: false, rows: rows.slice(0, cap), empty: SCRAPE_TARGET_EMPTY };
     }
-    return { tabKeyTarget, staleState, queueDepthRows, metricsFailureActivity, shortcutHintText, parseMetrics, ratePerMinute, resolveMetricsUrl, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler, stageActivity, stageDrilldown, stageDrilldownKey, doughnutLegendLayout, connectionState, documentTitle, createActivityAnnouncer, metricsUrlProblem, splitLinks, createMetricsFetcher, REFRESH_INTERVAL_CHOICES, parseRefreshInterval, shortcutAction, pickInitialTab, METRIC_UI_MAP, renderMetricNameMap, parseDangerSoundEnabled, dangerSoundDecision, HEALTH_HISTORY_LIMIT, pushPollOutcome, healthHistoryView, COMPARISON_BASELINE_ROLE, PREV_HOUR_AVG_KEYS, readPrevHourAverage, comparisonBaselineSeries, comparisonNote, ACTIVITY_LOG_CAP, capActivityLog, activityStaleNote, restoreActivityLog, topScrapeTargets, SCRAPE_TARGET_EMPTY, ACTIVITY_LEVELS, activityLevelCounts, filterActivityItems, toggleActivityLevel };
+    return { tabKeyTarget, staleState, queueDepthRows, metricsFailureActivity, shortcutHintText, parseMetrics, ratePerMinute, resolveMetricsUrl, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler, stageActivity, stageDrilldown, stageDrilldownKey, doughnutLegendLayout, connectionState, documentTitle, createActivityAnnouncer, metricsUrlProblem, splitLinks, createMetricsFetcher, REFRESH_INTERVAL_CHOICES, parseRefreshInterval, shortcutAction, pickInitialTab, METRIC_UI_MAP, renderMetricNameMap, parseDangerSoundEnabled, dangerSoundDecision, HEALTH_HISTORY_LIMIT, pushPollOutcome, healthHistoryView, COMPARISON_BASELINE_ROLE, PREV_HOUR_AVG_KEYS, readPrevHourAverage, comparisonBaselineSeries, comparisonNote, ACTIVITY_LOG_CAP, capActivityLog, activityStaleNote, restoreActivityLog, topScrapeTargets, SCRAPE_TARGET_EMPTY, ACTIVITY_LEVELS, activityLevelCounts, filterActivityItems, toggleActivityLevel, HISTORY_MAX_POINTS, assertHistoryBound, boundHistoryBuffer, pushHistorySample, enforceHistoryCap };
 });
