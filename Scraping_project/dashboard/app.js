@@ -1196,12 +1196,24 @@ function markChartsHaveSample() {
     });
     document.querySelectorAll('.chart-container.is-empty').forEach(el => el.classList.remove('is-empty'));
     document.querySelectorAll('.chart-empty-placeholder').forEach(el => el.remove());
+    document.querySelectorAll('.chart-container .skeleton').forEach(el => el.remove());
+}
+
+// #1025: one placeholder block. Cards use it as a bar; charts fill the plot.
+function skeletonEl() {
+    const el = document.createElement('div');
+    el.className = 'skeleton';
+    el.setAttribute('aria-hidden', 'true');
+    return el;
 }
 
 function ensureChartPlaceholders() {
-    if (chartsHaveSample) return;
+    if (chartsHaveSample || chartsUnavailable) return;
     document.querySelectorAll('.chart-container').forEach(el => {
         el.classList.add('is-empty');
+        if (!el.querySelector('.skeleton')) {
+            el.insertBefore(skeletonEl(), el.firstChild);
+        }
         if (!el.querySelector('.chart-empty-placeholder')) {
             const ph = document.createElement('div');
             ph.className = 'chart-empty-placeholder';
