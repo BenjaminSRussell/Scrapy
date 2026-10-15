@@ -108,6 +108,62 @@ function initializeCharts() {
     }
 }
 
+// Okabe–Ito. Deuteranopia confuses the old green/amber doughnut pair, and the
+// throughput lines differed by hue only. A second channel is required: dash
+// and marker shape on the second line, hatch plus offset on the second slice.
+// Bar strokes ignore borderDash, so stages 2 and 4 use a hatch fill instead (#964).
+const CHART_BLUE = 'rgb(0, 114, 178)';
+const CHART_VERMILLION = 'rgb(213, 94, 0)';
+const CHART_GREEN = 'rgb(0, 158, 115)';
+const CHART_ORANGE = 'rgb(230, 159, 0)';
+const CHART_SECOND_DASH = [8, 4];
+
+function chartAltDash(ctx) {
+    const index = ctx && typeof ctx.dataIndex === 'number' ? ctx.dataIndex : 0;
+    return index % 2 === 1 ? CHART_SECOND_DASH : [];
+}
+
+function chartPattern(baseColor, kind) {
+    if (kind !== 'hatch') return null;
+    let canvas;
+    try {
+        canvas = document.createElement('canvas');
+    } catch (_) {
+        return null;
+    }
+    if (!canvas || typeof canvas.getContext !== 'function') return null;
+    canvas.width = 8;
+    canvas.height = 8;
+    let g;
+    try {
+        g = canvas.getContext('2d');
+    } catch (_) {
+        return null;
+    }
+    if (!g || typeof g.createPattern !== 'function') return null;
+    try {
+        g.fillStyle = baseColor;
+        g.fillRect(0, 0, 8, 8);
+        g.strokeStyle = 'rgba(15, 23, 42, 0.85)';
+        g.lineWidth = 1.5;
+        g.beginPath();
+        g.moveTo(0, 8);
+        g.lineTo(8, 0);
+        g.moveTo(-2, 2);
+        g.lineTo(2, -2);
+        g.moveTo(6, 10);
+        g.lineTo(10, 6);
+        g.stroke();
+        return g.createPattern(canvas, 'repeat');
+    } catch (_) {
+        return null;
+    }
+}
+
+function chartFill(baseColor, kind) {
+    return chartPattern(baseColor, kind) || baseColor;
+}
+
 function buildCharts() {
     const chartConfig = {
         responsive: true,
@@ -115,7 +171,8 @@ function buildCharts() {
         plugins: {
             legend: {
                 display: false, // until first real sample (#1076)
-                position: 'top'
+                position: 'top',
+                labels: { usePointStyle: true }
             },
             tooltip: {
                 enabled: false
@@ -135,14 +192,24 @@ function buildCharts() {
             datasets: [{
                 label: 'URLs/min',
                 data: [],
-                borderColor: 'rgb(37, 99, 235)',
-                backgroundColor: 'rgba(37, 99, 235, 0.1)',
+                borderColor: CHART_BLUE,
+                backgroundColor: 'rgba(0, 114, 178, 0.16)',
+                borderDash: [],
+                borderWidth: 2,
+                pointStyle: 'circle',
+                pointRadius: 3,
+                pointBackgroundColor: CHART_BLUE,
                 tension: 0.4
             }, {
                 label: 'Pages/min',
                 data: [],
-                borderColor: 'rgb(124, 58, 237)',
-                backgroundColor: 'rgba(124, 58, 237, 0.1)',
+                borderColor: CHART_VERMILLION,
+                backgroundColor: 'rgba(213, 94, 0, 0.12)',
+                borderDash: CHART_SECOND_DASH,
+                borderWidth: 2,
+                pointStyle: 'triangle',
+                pointRadius: 4,
+                pointBackgroundColor: CHART_VERMILLION,
                 tension: 0.4
             }]
         },
@@ -157,17 +224,12 @@ function buildCharts() {
                 label: 'Documents Processed',
                 data: [0, 0, 0, 0],
                 backgroundColor: [
-                    'rgba(37, 99, 235, 0.7)',
-                    'rgba(124, 58, 237, 0.7)',
-                    'rgba(16, 185, 129, 0.7)',
-                    'rgba(245, 158, 11, 0.7)'
+                    chartFill('rgba(0, 114, 178, 0.75)', null),
+                    chartFill('rgba(213, 94, 0, 0.75)', 'hatch'),
+                    chartFill('rgba(0, 158, 115, 0.75)', null),
+                    chartFill('rgba(230, 159, 0, 0.8)', 'hatch')
                 ],
-                borderColor: [
-                    'rgb(37, 99, 235)',
-                    'rgb(124, 58, 237)',
-                    'rgb(16, 185, 129)',
-                    'rgb(245, 158, 11)'
-                ],
+                borderColor: [CHART_BLUE, CHART_VERMILLION, CHART_GREEN, CHART_ORANGE],
                 borderWidth: 2
             }]
         },
@@ -181,14 +243,13 @@ function buildCharts() {
             datasets: [{
                 data: [0, 0],
                 backgroundColor: [
-                    'rgba(16, 185, 129, 0.7)',
-                    'rgba(245, 158, 11, 0.7)'
+                    chartFill('rgba(0, 114, 178, 0.88)', null),
+                    chartFill('rgba(230, 159, 0, 0.9)', 'hatch')
                 ],
-                borderColor: [
-                    'rgb(16, 185, 129)',
-                    'rgb(245, 158, 11)'
-                ],
-                borderWidth: 2
+                borderColor: [CHART_BLUE, CHART_ORANGE],
+                borderWidth: [2, 3],
+                borderDash: chartAltDash,
+                offset: [0, 18]
             }]
         },
         options: {
@@ -213,8 +274,12 @@ function buildCharts() {
             datasets: [{
                 label: 'URLs Discovered',
                 data: [],
-                borderColor: 'rgb(37, 99, 235)',
-                backgroundColor: 'rgba(37, 99, 235, 0.1)',
+                borderColor: CHART_BLUE,
+                backgroundColor: 'rgba(0, 114, 178, 0.16)',
+                borderDash: [],
+                pointStyle: 'circle',
+                pointRadius: 3,
+                pointBackgroundColor: CHART_BLUE,
                 fill: true,
                 tension: 0.4
             }]
@@ -229,8 +294,12 @@ function buildCharts() {
             datasets: [{
                 label: 'Pages Analyzed',
                 data: [],
-                borderColor: 'rgb(124, 58, 237)',
-                backgroundColor: 'rgba(124, 58, 237, 0.1)',
+                borderColor: CHART_VERMILLION,
+                backgroundColor: 'rgba(213, 94, 0, 0.16)',
+                borderDash: [],
+                pointStyle: 'triangle',
+                pointRadius: 3,
+                pointBackgroundColor: CHART_VERMILLION,
                 fill: true,
                 tension: 0.4
             }]
@@ -245,8 +314,12 @@ function buildCharts() {
             datasets: [{
                 label: 'Summaries Created',
                 data: [],
-                borderColor: 'rgb(16, 185, 129)',
-                backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                borderColor: CHART_GREEN,
+                backgroundColor: 'rgba(0, 158, 115, 0.16)',
+                borderDash: [],
+                pointStyle: 'rect',
+                pointRadius: 3,
+                pointBackgroundColor: CHART_GREEN,
                 fill: true,
                 tension: 0.4
             }]
