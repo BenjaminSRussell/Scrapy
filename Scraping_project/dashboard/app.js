@@ -1,5 +1,11 @@
 // Pipeline Control Center - Main Application
 // Real-time monitoring dashboard for UConn scraping pipeline
+//
+// Coalesce policy (#666): overlapping metrics fetches apply only the latest snapshot.
+// A slower response must not overwrite a newer one. Chart data is written immediately,
+// but Chart.js update() from those snapshots is coalesced to a single paint per frame
+// via requestAnimationFrame. A burst that arrives faster than paint (including an
+// artificial 100ms flood) replaces the pending paint and does not stack chart updates.
 
 // #141/#400: window.CC_METRICS_URL, ?metrics=, else same-origin /api/metrics (format-utils.js).
 const METRICS_URL = resolveMetricsUrl(
@@ -16,6 +22,7 @@ let dangerAudioCtx = null;
 const STORE_COMPARE_KEY = 'cc.comparePrevHour'; // #1035
 let refreshPaused = false;
 let metricsFetcher = null;
+let metricsApplySeq = 0; // #666: newest in-flight fetchMetrics owns the snapshot
 let metricsWasDown = false;
 let consecutiveFetchFailures = 0;
 // #1030: last HEALTH_HISTORY_LIMIT metrics-poll outcomes (true = success).
@@ -476,23 +483,45 @@ function updateHistoricalData(metrics) {
     markChartsHaveSample();
 }
 
+// #666: one Chart.js update per frame. Data is already the latest snapshot;
+// a second sample before the frame runs only joins this set.
+let chartPaintScheduled = false;
+const chartsPendingPaint = new Set();
+
+function scheduleMetricsChartPaint(chart) {
+    if (chart && typeof chart.update === 'function') chartsPendingPaint.add(chart);
+    if (chartPaintScheduled || chartsPendingPaint.size === 0) return;
+    chartPaintScheduled = true;
+    const flush = () => {
+        chartPaintScheduled = false;
+        const pending = Array.from(chartsPendingPaint);
+        chartsPendingPaint.clear();
+        for (const ch of pending) {
+            try { ch.update('none'); } catch (_) {}
+        }
+    };
+    if (typeof requestAnimationFrame === 'function') requestAnimationFrame(flush);
+    else if (typeof setTimeout === 'function') setTimeout(flush, 0);
+    else flush();
+}
+
 function updatePerformanceCharts() {
     if (charts.urls) {
         charts.urls.data.labels = historicalData.timestamps;
         charts.urls.data.datasets[0].data = historicalData.urls;
-        charts.urls.update('none');
+        scheduleMetricsChartPaint(charts.urls);
     }
 
     if (charts.pages) {
         charts.pages.data.labels = historicalData.timestamps;
         charts.pages.data.datasets[0].data = historicalData.pages;
-        charts.pages.update('none');
+        scheduleMetricsChartPaint(charts.pages);
     }
 
     if (charts.summaries) {
         charts.summaries.data.labels = historicalData.timestamps;
         charts.summaries.data.datasets[0].data = historicalData.summaries;
-        charts.summaries.update('none');
+        scheduleMetricsChartPaint(charts.summaries);
     }
 
     if (charts.throughput && historicalData.timestamps.length > 1) {
@@ -508,7 +537,7 @@ function updatePerformanceCharts() {
         charts.throughput.data.labels = historicalData.timestamps.slice(1);
         charts.throughput.data.datasets[0].data = urlsRate;
         charts.throughput.data.datasets[1].data = pagesRate;
-        charts.throughput.update('none');
+        scheduleMetricsChartPaint(charts.throughput);
     }
     applyComparisonBaselines();
     syncAllChartTables();
@@ -541,7 +570,7 @@ function applyComparisonBaselines() {
         if (!comparisonEnabled) {
             if (live.length !== chart.data.datasets.length) {
                 chart.data.datasets = live;
-                try { chart.update('none'); } catch (_) {}
+                scheduleMetricsChartPaint(chart);
             }
             continue;
         }
@@ -556,7 +585,8 @@ function applyComparisonBaselines() {
             next.push(series);
         });
         chart.data.datasets = next;
-        try { chart.update('none'); } catch (_) {}
+        // Same frame as the metrics sample that just wrote the live series (#666).
+        scheduleMetricsChartPaint(chart);
     }
     const note = document.getElementById('comparison-baseline-note');
     if (!note) return;
@@ -774,12 +804,12 @@ function updateDashboard(metrics) {
 
     if (charts.stageProgression) {
         charts.stageProgression.data.datasets[0].data = [s1Discovered, s2Analyzed, s3Summaries, s4Summaries];
-        charts.stageProgression.update('none');
+        scheduleMetricsChartPaint(charts.stageProgression);
     }
 
     if (charts.routing) {
         charts.routing.data.datasets[0].data = [s2Quality, s2Massive];
-        charts.routing.update('none');
+        scheduleMetricsChartPaint(charts.routing);
         syncAllChartTables();
     }
 
@@ -889,6 +919,7 @@ async function fetchQueueDepths() {
 }
 
 async function fetchMetrics() {
+    const applySeq = ++metricsApplySeq;
     const main = document.getElementById('main') || document.querySelector('.container');
     if (main) main.setAttribute('aria-busy', 'true');
     try {
@@ -897,6 +928,8 @@ async function fetchMetrics() {
             metricsFetcher = createMetricsFetcher({ fetch: (u, init) => fetch(u, init), timeoutMs: METRICS_TIMEOUT_MS });
         }
         const text = await metricsFetcher.fetchText(METRICS_URL);
+        // #666: a slower overlapping response must not paint over a newer snapshot.
+        if (applySeq !== metricsApplySeq) return;
         const metrics = parseMetrics(text);
         updateDashboard(metrics);
         hasEverSucceeded = true;
@@ -908,6 +941,7 @@ async function fetchMetrics() {
         setConnectionStatus('online', metrics['pipeline_running']);
         notePollOutcome(true);
     } catch (error) {
+        if (applySeq !== metricsApplySeq) return; // newer request owns the outcome (#666)
         if (error && error.superseded) return; // a newer request owns the result (#1031)
         metricsWasDown = true;
         console.error('Error fetching metrics:', error);
@@ -936,7 +970,8 @@ async function fetchMetrics() {
             setHealthTile('redis-health', 'Redis', false, 'Unknown');
         }
     } finally {
-        if (main) main.setAttribute('aria-busy', 'false');
+        // A stale fetch finishing must not clear the busy flag of the newer one.
+        if (main && applySeq === metricsApplySeq) main.setAttribute('aria-busy', 'false');
     }
 }
 
