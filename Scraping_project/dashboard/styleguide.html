@@ -4,12 +4,12 @@
 <meta charset="utf-8">
 <title>Control Center Styleguide</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="buttons.css">
 <style>
   body { font-family: system-ui, sans-serif; background: #0f172a; color: #e2e8f0; padding: 2rem; }
   h1, h2 { margin-top: 1.5rem; }
   .row { display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: center; margin: 0.5rem 0; }
-  .btn { background: #1e293b; color: #e2e8f0; border: 1px solid #334155; padding: 0.4rem 0.8rem; border-radius: 0.375rem; cursor: pointer; }
-  .btn:focus-visible { outline: 2px solid #60a5fa; outline-offset: 2px; }
+  .btn-canvas { background: #f3f4f6; color: #111827; padding: 1rem; border-radius: 0.5rem; }
   .card-badge { padding: 0.15rem 0.5rem; border-radius: 999px; font-size: 0.75rem; }
   .badge-info { background: #1d4ed8; } .badge-success { background: #15803d; }
   .badge-warning { background: #a16207; } .badge-danger { background: #b91c1c; }
@@ -19,13 +19,39 @@
 </head>
 <body>
 <h1>Pipeline Control Center — Styleguide</h1>
-<p>Living reference for buttons, badges, and tokens (#1045). Served by <code>serve.py</code> at <code>/styleguide.html</code>.</p>
+<p>Living reference for buttons, badges, and tokens (#1045, #992). Served by <code>serve.py</code> at <code>/styleguide.html</code>. Button classes are in <code>buttons.css</code>.</p>
 
+<!--
+  Button variants (#992), defined in buttons.css:
+  .btn            base control (font, padding, radius)
+  .btn-primary    main action (Refresh, Retry)
+  .btn-secondary  alternate action (Pause, Export)
+  .btn-danger     destructive action (Clear)
+  .btn-ghost      low-emphasis action (Reset, series toggles)
+  Disabled: the disabled attribute (removed from tab order) or
+  aria-disabled="true" (stays focusable, so :focus-visible still draws).
+  Both use the gray fill. Keyboard focus is a 3px :focus-visible ring,
+  including under forced-colors. Do not remove the outline.
+-->
 <h2>Buttons</h2>
-<div class="row">
-  <button class="btn" type="button">Default</button>
-  <button class="btn" type="button" aria-pressed="true">Pressed</button>
-  <button class="btn" type="button" disabled>Disabled</button>
+<p>Four variants. The canvas matches the dashboard background so contrast is the same as in the app.</p>
+<div class="btn-canvas">
+  <div class="row">
+    <button class="btn btn-primary" type="button">Primary</button>
+    <button class="btn btn-secondary" type="button">Secondary</button>
+    <button class="btn btn-danger" type="button">Danger</button>
+    <button class="btn btn-ghost" type="button">Ghost</button>
+  </div>
+  <div class="row">
+    <button class="btn btn-primary" type="button" disabled>Primary disabled</button>
+    <button class="btn btn-secondary" type="button" disabled>Secondary disabled</button>
+    <button class="btn btn-danger" type="button" disabled>Danger disabled</button>
+    <button class="btn btn-ghost" type="button" disabled>Ghost disabled</button>
+  </div>
+  <div class="row">
+    <button class="btn btn-secondary" type="button" aria-pressed="true">Secondary pressed</button>
+    <button class="btn btn-secondary" type="button" aria-disabled="true">Secondary aria-disabled (focusable)</button>
+  </div>
 </div>
 
 <h2>Badges</h2>

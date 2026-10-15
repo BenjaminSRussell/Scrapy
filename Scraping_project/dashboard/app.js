@@ -840,7 +840,7 @@ function syncChartDataTable(chart, tableId) {
         legend.innerHTML = datasets.map((ds, idx) => {
             const hidden = typeof chart.getDatasetMeta === 'function' && chart.getDatasetMeta(idx)?.hidden;
             const pressed = hidden ? 'false' : 'true';
-            return `<button type="button" class="btn" data-dataset-index="${idx}" aria-pressed="${pressed}">${escapeHtml(ds.label || `Series ${idx + 1}`)}</button>`;
+            return `<button type="button" class="btn btn-ghost" data-dataset-index="${idx}" aria-pressed="${pressed}">${escapeHtml(ds.label || `Series ${idx + 1}`)}</button>`;
         }).join('');
         legend.querySelectorAll('button[data-dataset-index]').forEach(btn => {
             btn.addEventListener('click', () => {

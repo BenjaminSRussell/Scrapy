@@ -66,7 +66,7 @@ transport. For anything beyond a trusted LAN, keep `serve.py` on loopback and pu
 through a reverse proxy or ingress that terminates TLS and authenticates users (for example
 nginx/Traefik with OAuth2 Proxy, or a Kubernetes ingress with an auth annotation). Set
 `CC_CORS_ORIGINS` only if another site really needs to read the API.
-- Contributor styleguide: [`styleguide.html`](styleguide.html)
+- Contributor styleguide: [`styleguide.html`](styleguide.html). Button variants (primary, secondary, danger, ghost) live in [`buttons.css`](buttons.css) (#992).
 - Accessibility checklist for PRs: [`A11Y_CHECKLIST.md`](A11Y_CHECKLIST.md)
 
 ## Overview screenshot (#1044)
