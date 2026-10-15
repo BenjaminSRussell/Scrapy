@@ -100,6 +100,10 @@ Dev replicaCount is 3 for scrapyApp, 3 for stage2Worker, 2 for stage3Worker and 
 
 Redis, Postgres, ZooKeeper, Kafka, Prometheus, Alertmanager, Grafana, the delta ingestor, the metrics exporter and the four exporters already set requests and limits in `values.yaml`. The kafka-topics Job sets both in its template. Small and prod do not change those.
 
+### Terraform wrapper
+
+The chart stays the install. [k8s/terraform/scraping-pipeline](k8s/terraform/scraping-pipeline/README.md) is a Terraform root module that feeds this chart the same `values.yaml` plus `values-small.yaml` or `values-prod.yaml` on a cluster you already have. It does not create a VPC, a Kubernetes cluster, or a cloud database, and it does not set `REDIS_URL`. Profile sizes stay the table above. Design: [docs/product/943-terraform-cloud-deploy.md](../docs/product/943-terraform-cloud-deploy.md) (#943).
+
 ## Configuration
 
 ### Environment Variables

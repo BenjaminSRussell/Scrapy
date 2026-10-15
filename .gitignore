@@ -251,3 +251,12 @@ Scraping_project/profiles/
 # direnv: commit only Scraping_project/.envrc.example (#783)
 .envrc
 .direnv/
+
+# Terraform wrapper (k8s/terraform). Local state and provider cache stay off the repo.
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+*.tfvars
+*.auto.tfvars
+!*.tfvars.example

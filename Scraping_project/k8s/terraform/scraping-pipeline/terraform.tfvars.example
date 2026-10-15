@@ -1,0 +1,33 @@
+# Copy to terraform.tfvars (gitignored) and replace every example value.
+# Do not put credentials in this file. Do not set REDIS_URL.
+# Apply only against a cluster you operate. This file is not a cloud account.
+
+profile      = "small"
+release_name = "scraping-pipeline"
+namespace    = "scraping-pipeline"
+
+# Empty uses KUBECONFIG or ~/.kube/config.
+kubeconfig_path    = ""
+kubeconfig_context = ""
+
+# Three release images. cd-release.yml builds crawler, metrics, and
+# kafka-delta-ingest. Tags must not be latest.
+crawler_image_repository  = "ghcr.io/example/uconn-crawler"
+crawler_image_tag         = "v0.0.0"
+metrics_image_repository  = "ghcr.io/example/uconn-metrics"
+metrics_image_tag         = "v0.0.0"
+ingestor_image_repository = "ghcr.io/example/uconn-kafka-delta-ingest"
+ingestor_image_tag        = "v0.0.0"
+
+# Stage 4 stays off until its PDF/OCR image exists.
+stage4_enabled = false
+
+# profile = "prod" also needs all three of these, with the placeholders replaced.
+# redis_host         = "redis.prod.example.edu"
+# redis_port         = 6379
+# redis_egress_cidrs = ["10.1.2.0/24"]
+# grafana_host       = "grafana.prod.example.edu"
+
+# RWO class for the chart, and a ReadWriteMany class for Delta Lake.
+# storage_class            = "gp3"
+# delta_lake_storage_class = "efs-sc"

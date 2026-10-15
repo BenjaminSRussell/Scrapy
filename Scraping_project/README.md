@@ -727,6 +727,7 @@ Control Center is http://localhost:8080. It does not embed Grafana. Deep-link th
 See [DEPLOYMENT.md](DEPLOYMENT.md) for comprehensive deployment guide including:
 - Docker image building
 - Kubernetes deployment
+- Terraform wrapper for an existing cluster (`k8s/terraform/scraping-pipeline`)
 - Scaling strategies
 - Backup procedures
 - Security best practices

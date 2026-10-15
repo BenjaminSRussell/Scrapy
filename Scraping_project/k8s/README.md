@@ -53,6 +53,8 @@ k8s/
 │           ├── kafka-statefulset.yaml
 │           ├── scrapy-deployment.yaml
 │           └── delta-lake-pvc.yaml
+├── terraform/
+│   └── scraping-pipeline/         # Terraform wrapper for an existing cluster
 └── README.md                      # This file
 ```
 
@@ -248,6 +250,7 @@ kubectl delete namespace scraping-pipeline
 ## Documentation
 
 - **[DEPLOYMENT.md](../DEPLOYMENT.md#kubernetes-deployment)**: Comprehensive deployment guide
+- **[terraform/scraping-pipeline/README.md](terraform/scraping-pipeline/README.md)**: Terraform wrapper around this chart (existing cluster only)
 - **[values.yaml](helm/scraping-pipeline/values.yaml)**: Configuration options
 - **[Chart.yaml](helm/scraping-pipeline/Chart.yaml)**: Chart metadata
 
