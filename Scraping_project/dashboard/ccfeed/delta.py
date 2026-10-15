@@ -60,6 +60,9 @@ class TableWatcher:
         self._known: set[str] = set()
         self._watermark: float | None = None
         self._count: int | None = None
+        # A table that appears after we started watching streams its rows; one that
+        # was already there at startup only seeds the recent list.
+        self._seen_missing = False
         self._lock = threading.Lock()
 
     # ---- polling ----
@@ -72,12 +75,14 @@ class TableWatcher:
         try:
             if first:
                 if not (self.path / "_delta_log").is_dir():
+                    self._seen_missing = True
                     return WatchResult("missing")
                 from deltalake import DeltaTable
                 from deltalake.exceptions import TableNotFoundError
                 try:
                     self._dt = DeltaTable(str(self.path))
                 except TableNotFoundError:
+                    self._seen_missing = True
                     return WatchResult("missing")
             else:
                 self._dt.update_incremental()
@@ -94,7 +99,7 @@ class TableWatcher:
         self.version = version
         self._count = self._count_rows(files)
         stats_max = max((f.max_ts for f in files.values() if f.max_ts is not None), default=None)
-        if first:
+        if first and not self._seen_missing:
             self.recent_rows = self._seed_recent(files)
             seen = max((r["_t"] for r in self.recent_rows), default=None)
             self._watermark = _max(stats_max, seen)

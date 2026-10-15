@@ -135,13 +135,15 @@ def test_corrupt_log_reports_the_error_type(tmp_path):
     assert r.error and r.error.split(":")[0].endswith(("Error", "Exception"))
 
 
-def test_table_created_after_start_is_picked_up(tmp_path):
+def test_table_created_after_start_streams_its_rows(tmp_path):
     path = tmp_path / "t"
     w = TableWatcher(path, WANTED)
     assert w.poll().status == "missing"
-    append(path, rows(0, 5))
+    append(path, rows(0, 5))  # written while we watched, so these are live events
     r = w.poll()
-    assert r.status == "ok" and r.count == 5 and r.new_rows == []
+    assert r.status == "ok" and r.count == 5
+    assert [x["url"] for x in r.new_rows] == [f"https://example.edu/p{i}" for i in range(5)]
+    assert w.poll().new_rows == []
 
 
 @pytest.mark.parametrize("form", ["naive", "Z", "+00:00"])
