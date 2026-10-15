@@ -78,6 +78,14 @@ def run_profile(browser, base: str, name: str, context_args: dict, scheme: str, 
     if pill != "Demo":
         problems.append(f"connection pill says {pill!r}, expected 'Demo'")
     page.wait_for_selector(".chart svg path.line", timeout=10_000)
+    # Keyboard: arrows move the segmented selection and the focus together.
+    page.get_by_role("radio", name="Discovery").focus()
+    page.keyboard.press("ArrowRight")
+    page.wait_for_timeout(150)
+    focused = page.evaluate("document.activeElement?.textContent")
+    if focused != "Analysis":
+        problems.append(f"ArrowRight on the throughput control left focus on {focused!r}, not 'Analysis'")
+    page.get_by_role("radio", name="Discovery").click()
     shot("1-pipeline")
 
     page.locator('.flow-node[data-stage="discovery"]').click()

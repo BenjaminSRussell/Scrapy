@@ -120,8 +120,9 @@ export function Segmented({ label, options, value, onChange }) {
     if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') next = options[(i - 1 + options.length) % options.length];
     if (!next) return;
     e.preventDefault();
+    const group = e.currentTarget; // gone from the event by the time the frame runs
     onChange(next.id);
-    requestAnimationFrame(() => e.currentTarget?.querySelector('[aria-checked="true"]')?.focus());
+    requestAnimationFrame(() => group?.querySelector('[aria-checked="true"]')?.focus());
   };
   return html`<div class=${`segmented${options.length > 4 ? ' dense' : ''}`} role="radiogroup" aria-label=${label} onKeyDown=${onKey}>
     ${options.map((o) => html`<button type="button" role="radio" class="segment" aria-checked=${String(o.id === value)}
