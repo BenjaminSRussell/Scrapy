@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <title>Control Center Styleguide</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="form-fields.css">
 <style>
   body { font-family: system-ui, sans-serif; background: #0f172a; color: #e2e8f0; padding: 2rem; }
   h1, h2 { margin-top: 1.5rem; }
@@ -29,7 +30,7 @@
 </head>
 <body>
 <h1>Pipeline Control Center — Styleguide</h1>
-<p>Living reference for buttons, badges, and tokens (#1045). Served by <code>serve.py</code> at <code>/styleguide.html</code>.</p>
+<p>Living reference for buttons, badges, tokens (#1045), and job/config form fields (#993). Served by <code>serve.py</code> at <code>/styleguide.html</code>. The same markup is hidden on the dashboard; it is not a tab.</p>
 
 <h2>Buttons</h2>
 <div class="row">
@@ -63,5 +64,27 @@
 <div class="row"><div class="swatch" style="background:#f59e0b"></div><code>warning #f59e0b</code></div>
 <div class="row"><div class="swatch" style="background:#ef4444"></div><code>danger #ef4444</code></div>
 <p>Chart heights: <code>--chart-h-sm 160px</code>, <code>--chart-h-md 240px</code>, <code>--chart-h-lg 300px</code>.</p>
+
+<h2>Form fields</h2>
+<p>Text and select controls are 44px tall. Each label uses <code>for</code> / <code>id</code> (#993).</p>
+<div id="form-field-styleguide">
+  <div class="field">
+    <label class="field-label" for="ff-job-name">Job name</label>
+    <input class="field-control" type="text" id="ff-job-name" name="job_name" autocomplete="off">
+  </div>
+  <div class="field">
+    <label class="field-label" for="ff-job-profile">Profile</label>
+    <select class="field-control" id="ff-job-profile" name="profile">
+      <option value="core">core</option>
+      <option value="full">full</option>
+    </select>
+  </div>
+  <div class="field">
+    <label class="field-check" for="ff-job-enabled">
+      <input class="field-checkbox" type="checkbox" id="ff-job-enabled" name="enabled">
+      Enabled
+    </label>
+  </div>
+</div>
 </body>
 </html>
