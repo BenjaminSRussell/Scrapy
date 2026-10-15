@@ -36,6 +36,14 @@ TABLE_STAGE3_SUMMARIES = "stage3_summaries"
 # Stage 3 any more. Drop once existing lakes have been compacted forward.
 LEGACY_TABLE_STAGE3_SUMMARIES = "stage4_summaries"
 TABLE_STAGE4_LARGE_DOC_SUMMARIES = "stage4_large_doc_summaries"
+# Other Delta hop tables. Names are owned here (#948): schemas and partitioning
+# are keyed by them, and config.yml delta_lake.tables mirrors the same strings.
+TABLE_JS_SPIDER_QUEUE = "js_spider_queue"
+TABLE_STAGE4_LARGE_DOCS = "stage4_large_docs"
+TABLE_STAGE1_OFFSITE_CANDIDATES = "stage1_offsite_candidates"
+TABLE_METADATA_QUEUE = "metadata_queue"
+TABLE_STAGE3_ANALYTICS = "stage3_analytics"
+TABLE_ENTITY_SUMMARIES = "entity_summaries"
 
 # Document classification thresholds
 MIN_QUALITY_WORD_COUNT = 100

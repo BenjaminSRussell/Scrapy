@@ -187,7 +187,7 @@ def test_process_queue_marks_only_summarised_docs_completed(monkeypatch):
     )
     p.process_queue()
     (t1, summaries, kw1), (t2, queue, kw2) = lake.writes
-    assert t1 == "stage4_summaries" and [r["url"] for r in summaries] == ["https://u.edu/ok"]
+    assert t1 == "stage4_large_doc_summaries" and [r["url"] for r in summaries] == ["https://u.edu/ok"]
     assert kw1 == {"mode": "append", "async_write": False}
     assert t2 == "stage4_large_docs" and kw2 == {"mode": "overwrite", "async_write": False}
     status = {r["url"]: r["status"] for r in queue}

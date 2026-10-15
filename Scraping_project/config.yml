@@ -413,7 +413,8 @@ delta_lake:
     stage2_page_analysis: stage2_page_analysis
     stage3_summaries: stage3_summaries
     stage4_large_docs: stage4_large_docs
-    stage4_summaries: stage4_summaries
+    stage4_summaries: stage4_summaries  # legacy Stage 3 rows (#612); read, not written
+    stage4_large_doc_summaries: stage4_large_doc_summaries  # Stage 4 summary output (#948)
     metadata_queue: metadata_queue  # MetadataExtractionPipeline output (#433)
   # Writes to a table not listed above, in `partitions`, or here are "undeclared"
   # (#433): warn = log once + delta_undeclared_table_writes_total; reject = refuse
@@ -442,37 +443,11 @@ delta_lake:
     metadata_queue: [date]
   date_partition_source_fields: [scraped_at_utc, discovered_at, processed_at, created_at, _ingestion_time]
 
-# ============================================
-# Message Queue Configuration
-# ============================================
-message_queues:
-  # Stage 1 -> Stage 2
-  stage1_to_stage2: stage1_discovered_urls
-
-  # Stage 2 -> Stage 3
-  stage2_to_stage3: stage2_analyzed_pages
-
-  # Stage 2 -> Stage 4 (large docs)
-  stage2_to_stage4: stage2_large_docs
-
-  # JS Render Queue
-  js_render_queue: stage1_js_render_pending
-  js_render_results: stage1_js_render_results
-
-  # Error Queues
-  stage1_errors: stage1_error_queue
-  stage2_errors: stage2_error_queue
-  stage3_errors: stage3_error_queue
-  stage4_errors: stage4_error_queue
-
-  # Queue Persistence Settings
-  persistent_queues:
-    - stage2_large_docs  # Stage 4 queue is persistent
-  transient_queues:
-    - stage1_discovered_urls
-    - stage2_analyzed_pages
-    - stage1_js_render_pending
-    - stage1_js_render_results
+# Stage hops are Delta tables (src/core/pipeline_contract.py), not Redis lists.
+# The old message_queues names (stage1_discovered_urls, stage2_large_docs, ...)
+# were never read or written by workers (#948). The live Redis frontier is
+# js_spider:priority_queue (stage1.use_redis_queue). Putting message_queues
+# back is reported at startup and changes no hop.
 
 # ============================================
 # Logging Configuration

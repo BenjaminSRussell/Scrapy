@@ -123,14 +123,14 @@ def test_update_throughput_metrics_increments_counters(exporter, monkeypatch):
         "stage1_discovery": [{}] * 20,
         "stage2_page_analysis": [{}] * 4,
         "stage3_summaries": [{}] * 2,
-        "stage4_summaries": [{}] * 1,
+        "stage4_large_doc_summaries": [{}] * 1,
     }
 
     exporter.previous_counts = {
         "stage1_discovery": 10,
         "stage2_page_analysis": 1,
         "stage3_summaries": 1,
-        "stage4_summaries": 0,
+        "stage4_large_doc_summaries": 0,
     }
     exporter.last_update_time = 100.0
     monkeypatch.setattr(exporter_module.time, "time", lambda: 110.0)
@@ -145,6 +145,7 @@ def test_update_throughput_metrics_increments_counters(exporter, monkeypatch):
     assert gauges[("urls.processed.per_second", _tags(site, stage="stage1"))] == pytest.approx(1.0)
     assert counters[("urls.processed.total", _tags(site, stage="stage2"))] == 3
     assert gauges[("urls.processed.per_second", _tags(site, stage="stage2"))] == pytest.approx(0.3)
+    assert counters[("urls.processed.total", _tags(site, stage="stage4"))] == 1
 
 def test_update_error_metrics_writes_summary(exporter):
     exporter.delta.tables = {

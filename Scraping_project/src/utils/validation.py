@@ -467,3 +467,8 @@ def validate_startup_config(path: Path | None = None) -> None:
     except yaml.YAMLError as exc:
         raise ConfigValidationError(f"Invalid config.yml:\n  <root>: YAML parse error ({exc})") from exc
     validate_config_document(loaded)
+    # Warn when delta_lake.tables / message_queues drift from the hop table (#948).
+    # A schema error above still fails startup; contract drift does not.
+    from src.core.pipeline_contract import log_contract_drift
+
+    log_contract_drift(loaded)

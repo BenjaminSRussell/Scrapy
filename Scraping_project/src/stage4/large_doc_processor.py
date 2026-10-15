@@ -6,6 +6,7 @@ import httpx
 from bs4 import BeautifulSoup
 from tenacity import retry, retry_if_not_exception_type, stop_after_attempt, wait_exponential
 
+from src.core.constants import TABLE_STAGE4_LARGE_DOC_SUMMARIES
 from src.stage4.pdf_sandbox import PdfQuarantined, extract_pdf_text
 from src.utils.delta import get_delta
 from src.utils.metric_labels import (
@@ -372,7 +373,7 @@ class LargeDocProcessor:
                     failed.append(doc)
 
             if summaries:
-                self.delta.write("stage4_summaries", summaries, mode="append", async_write=False)
+                self.delta.write(TABLE_STAGE4_LARGE_DOC_SUMMARIES, summaries, mode="append", async_write=False)
                 logger.info(f"Saved {len(summaries)} summaries")
 
             # Only documents that produced a summary are "completed"; the rest

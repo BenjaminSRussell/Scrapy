@@ -66,7 +66,12 @@ class LakeDrainer:
     """Manages selective draining of Redis queues."""
 
     def __init__(self, client=None):
-        """Initialize drainer from config.yml ``message_queues`` and ``redis`` (REDIS_* env wins)."""
+        """Initialize drainer from Redis (REDIS_* env wins).
+
+        ``message_queues`` is optional and unused by workers (#948). The shipped
+        config has no such section, so transient/persistent sets are empty and
+        preStop does not delete the live ``js_spider:priority_queue`` frontier.
+        """
         self.config = Config.get_instance()
         mq_config = self.config.get_section("message_queues") or {}
         self.persistent_queues = set(mq_config.get("persistent_queues") or [])
@@ -295,7 +300,7 @@ Examples:
   # ENV=production also needs --i-know-what-im-doing and ALLOW_LAKE_RESET=1.
 
   # Drain specific queue
-  python scripts/drain_lake.py --queue stage1_discovered_urls --confirm
+  python scripts/drain_lake.py --queue js_spider:priority_queue --confirm
 
   # Drain ALL queues including persistent (DANGEROUS!)
   python scripts/drain_lake.py --drain-all --include-persistent --confirm

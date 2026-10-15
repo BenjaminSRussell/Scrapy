@@ -22,30 +22,46 @@ Entry paths are the ones #606 names. They live under `Scraping_project/`
 |---|---|---|---|---|
 | **1 Scout** | `src/stage1/scout_spider.py` (+ experimental deep_dive/js/depth) | seeds, sitemap_parser, future rustmapper | dicts → `stage2_queue` / `js_spider_queue`; Redis seen | Missing `BaseSpider` (#376/#610); SeedManager stub (#607); QueueItemPipeline **not** in ITEM_PIPELINES (#608); compose `src.workers.*` (#142/#434); settings≠config (#151) |
 | **2** | `src/stage2/stage2_worker.py` | `stage2_queue` pending | `stage2_page_analysis`; routes to `stage4_large_docs` | DeltaHelper API (#609); empty queue if Stage 1 never writes |
-| **3** | `src/stage3/stage3_worker.py` | quality `stage2_page_analysis` | writes **`stage4_summaries`** (vs const `stage3_summaries`) | naming (#612); DeltaHelper; #521 #528 |
-| **4** | `src/stage4/stage4_worker.py` | **should** drain `stage4_large_docs` (#611); actually filters stage 2 `is_massive_doc` | `stage4_large_doc_summaries` | PDF queue orphans |
+| **3** | `src/stage3/stage3_worker.py` | quality `stage2_page_analysis`; reads `stage3_summaries` and legacy `stage4_summaries` | writes **`stage3_summaries`** (`delta_lake.tables.stage3_summaries`, #316 #948) | naming (#612) aligned; DeltaHelper; #521 #528 |
+| **4** | `src/stage4/stage4_worker.py` | pending `stage4_large_docs`; unqueued massive `stage2_page_analysis` when analysis fallback is on | `stage4_large_doc_summaries` (queue status is a MERGE) | PDF queue orphans |
 | **Orch** | `src/orchestrator/pipeline_orchestrator.py` | stages 1→2→(3\|4) | PipelineStats | partial success exit (#521) |
 
 ## Flow
 
-The diagram is the flow #606 recorded. It is not a claim that the path runs
-today.
+The diagram matches the running table names (#948). It is not a claim that
+every #606 failure mode below is closed.
 
 ```mermaid
 graph LR
   Seeds --> Scout --> S2Q[stage2_queue] --> S2 --> S2A[stage2_page_analysis]
   Scout --> JSQ[js_spider_queue]
   S2 --> S4Q[stage4_large_docs]
-  S2A --> S3 --> Sum[stage4_summaries]
+  S2A --> S3 --> Sum[stage3_summaries]
   S4Q --> S4 --> LSum[stage4_large_doc_summaries]
   Rust[rustmapper] -.-> Seeds
 ```
 
-Stage 3's arrow lands on `stage4_summaries`, the table #606 says the worker
-writes, not the `stage3_summaries` constant. That split is open gap #612.
-Stage 4's arrow from `stage4_large_docs` is the drain #611 says the worker
-should do. #606 says the worker instead filters stage 2 on `is_massive_doc`,
-so the PDF queue can be left orphaned. Neither gap is fixed here.
+Stage 3 writes `stage3_summaries` (`config.yml` `delta_lake.tables.stage3_summaries`,
+#316, #612, #948). Rows already stored under `stage4_summaries` are still read
+so a pre-#612 lake is not summarized twice. Nothing in the running path writes
+that legacy name. Stage 4 drains pending `stage4_large_docs` and appends
+`stage4_large_doc_summaries`.
+
+## Running contract (#948)
+
+`Scraping_project/src/core/pipeline_contract.py` is the hop table the workers
+check at startup. Unknown `delta_lake.tables` keys and a `message_queues`
+section are warnings. The table below is that module's `hop_table_markdown()`:
+
+| Stage | Module(s) | Reads | Writes | Note |
+|---|---|---|---|---|
+| stage1 | `src.pipelines` | - | `stage2_queue`, `js_spider_queue`, `stage1_offsite_candidates`, `metadata_queue` | Scout items via QueueItemPipeline, offsite candidates, and metadata |
+| stage1-experimental | `src.stage1.experimental.base_spider` | `seed_urls` | `stage1_discovery`, `stage1_errors` | |
+| stage1-js | `src.stage1.experimental.js_spider` | `js_spider_queue` | `js_spider_queue` | closed() rewrites queue status |
+| stage2 | `src.stage2.stage2_worker`, `src.stage2.intelligent_analyzer` | `stage2_queue`, `stage2_errors` | `stage2_page_analysis`, `stage2_errors`, `stage4_large_docs`, `stage2_queue` | analysis and queue status are row-level MERGEs |
+| stage3 | `src.stage3.stage3_worker` | `stage2_page_analysis`, `stage3_summaries`, `stage4_summaries` | `stage3_summaries` | append target is config delta_lake.tables.stage3_summaries; stage4_summaries is read-only |
+| stage4 | `src.stage4.stage4_worker` | `stage4_large_docs`, `stage2_page_analysis`, `stage4_large_doc_summaries` | `stage4_large_doc_summaries`, `stage4_large_docs` | queue status is a row-level MERGE, never an overwrite |
+| stage4-legacy | `src.stage4.large_doc_processor` | `stage4_large_docs` | `stage4_large_doc_summaries`, `stage4_large_docs` | process_queue entry point; the orchestrator uses stage4_worker |
 
 ## Infrastructure
 
