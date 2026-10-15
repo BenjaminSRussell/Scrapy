@@ -719,7 +719,10 @@ Control Center is http://localhost:8080. It does not embed Grafana. Deep-link th
 
 `.github/workflows/cd-release.yml` builds three targets from `Dockerfile` on `v*` tags
 (and on pull requests that touch the image recipe, without pushing): `crawler`,
-`metrics` and `kafka-delta-ingest`. Build one locally with
+`metrics` and `kafka-delta-ingest`. A tag run that publishes also signs each
+manifest digest with keyless cosign and uploads an SPDX SBOM artifact
+`sbom-<image>`. Verification is in [../docs/RELEASING.md](../docs/RELEASING.md).
+Build one locally with
 `docker build --target metrics -t scrapy-metrics .`.
 
 ### Production Deployment

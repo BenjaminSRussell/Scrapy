@@ -33,6 +33,9 @@ jobs:
     permissions:
       contents: read
       packages: write
+      # OIDC token for keyless cosign. Not `attestations: write` (no GitHub
+      # artifact attestation, and not a SLSA provenance statement).
+      id-token: write
     strategy:
       fail-fast: false
       matrix:
@@ -115,6 +118,7 @@ jobs:
           trivyignores: Scraping_project/.trivyignore
 
       - name: Push ${{ matrix.image }} image
+        id: push
         if: env.PUSH == 'true'
         uses: docker/build-push-action@v7
         with:
@@ -126,13 +130,59 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=${{ matrix.image }}
 
+      # GHCR and cosign need a lower-case repository path. GITHUB_REPOSITORY keeps
+      # GitHub's case, so the image refs below use this lower-cased copy. The
+      # certificate identity still uses GITHUB_REPOSITORY, as GitHub reports it.
+      - name: Lowercase image repository for GHCR refs
+        id: image_repo
+        if: env.PUSH == 'true'
+        run: |
+          echo "name=${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+
       # anchore/syft-action does not exist (the job failed at "Set up job");
       # anchore/sbom-action is Anchore's Syft-based SBOM action.
+      # Installer v4.1.2 pinned to a commit (same reason as Trivy). It
+      # installs Cosign v3.0.6, the release that installer was published with.
+      - name: Install Cosign
+        if: env.PUSH == 'true'
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.0.6
+
+      # Keyless GitHub OIDC. No signing key and no signing secret. The
+      # certificate subject is this workflow file at the tag that was pushed.
+      # This signs the image digest only. It is not a SLSA provenance statement.
+      - name: Sign ${{ matrix.image }} image (keyless cosign)
+        if: env.PUSH == 'true'
+        env:
+          DIGEST: ${{ steps.push.outputs.digest }}
+          IMAGE: ${{ matrix.image }}
+          REPO: ${{ steps.image_repo.outputs.name }}
+        run: |
+          case "$DIGEST" in
+            sha256:*) ;;
+            *) echo "push did not report a sha256 digest" >&2; exit 1 ;;
+          esac
+          cosign sign --yes --oidc-provider=github-actions \
+            "ghcr.io/${REPO}/${IMAGE}@${DIGEST}"
+
+      - name: Verify ${{ matrix.image }} image signature
+        if: env.PUSH == 'true'
+        env:
+          DIGEST: ${{ steps.push.outputs.digest }}
+          IMAGE: ${{ matrix.image }}
+          REPO: ${{ steps.image_repo.outputs.name }}
+        run: |
+          cosign verify \
+            "ghcr.io/${REPO}/${IMAGE}@${DIGEST}" \
+            --certificate-identity "https://github.com/${GITHUB_REPOSITORY}/.github/workflows/cd-release.yml@${GITHUB_REF}" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com"
+
       - name: Generate SBOM for ${{ matrix.image }} image
         if: env.PUSH == 'true'
         uses: anchore/sbom-action@v0
         with:
-          image: ghcr.io/${{ github.repository }}/${{ matrix.image }}:${{ github.ref_name }}
+          image: ghcr.io/${{ steps.image_repo.outputs.name }}/${{ matrix.image }}@${{ steps.push.outputs.digest }}
           format: spdx-json
           output-file: sbom-${{ matrix.image }}.spdx.json
           upload-artifact: false
@@ -143,3 +193,4 @@ jobs:
         with:
           name: sbom-${{ matrix.image }}
           path: sbom-${{ matrix.image }}.spdx.json
+          if-no-files-found: error
