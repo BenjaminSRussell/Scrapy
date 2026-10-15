@@ -73,8 +73,8 @@ docker compose --profile ml up -d stage4-worker
 |---------|-----------|
 | Redis | `127.0.0.1:6379` |
 | Ops dashboard | `127.0.0.1:8080` |
-| Prometheus | 9090 |
-| Grafana | 3000 |
+| Prometheus | `127.0.0.1:9090` |
+| Grafana | `127.0.0.1:3000` |
 | Postgres | 5432 |
 | Kafka | `127.0.0.1:9092` |
 | Loki | 3100 |
@@ -83,3 +83,15 @@ docker compose --profile ml up -d stage4-worker
 | Pack Prometheus | `127.0.0.1:9095` |
 | Pack Grafana | `127.0.0.1:3001` |
 | Pack StatsD metrics / UDP | `127.0.0.1:9102` / `127.0.0.1:9125` |
+
+## Reaching Grafana and Prometheus remotely (#202)
+
+Grafana (3000) and Prometheus (9090) publish on loopback only, so the network cannot reach them. On a shared host, forward the ports from your own machine:
+
+```bash
+ssh -N -L 3000:127.0.0.1:3000 -L 9090:127.0.0.1:9090 -L 8080:127.0.0.1:8080 <user>@<host>
+```
+
+Then open http://localhost:3000 (Grafana: user `admin`, password from `GRAFANA_ADMIN_PASSWORD` in `.env`), http://localhost:9090 (Prometheus) and http://localhost:8080 (Control Center). The Control Center's Grafana link opens `localhost:3000` in your browser, so keep the 3000 forward even when you only use the dashboard.
+
+Keep `127.0.0.1` on these entries. Do not change them to `0.0.0.0` or drop the prefix on a shared host. The Grafana `admin` default is for local development only, so set `GRAFANA_ADMIN_PASSWORD` in `.env` first. A dev machine that needs LAN access should override the ports in a local compose file that is not committed, with a warning comment there.

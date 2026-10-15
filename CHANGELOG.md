@@ -70,6 +70,7 @@ renamed to the new version and date (see the release checklist).
 - Kafka messages are keyed by `url_hash`, with an enforceable idempotent producer (#285).
 - Undomainable rows are quarantined instead of landing in a hot `domain=unknown` partition.
 - ASR no longer sends audio to Google by default (`ASR_PROVIDER` opt-in; local whisper).
+- Compose publishes Prometheus (`127.0.0.1:9090`) and Grafana (`127.0.0.1:3000`) on loopback only, not on every interface. Shared hosts reach them through the SSH tunnel in COMPOSE.md (#202).
 
 ### Deprecated
 - `python reseed.py`, `python drain_lake.py`, `python audit_file_counts.py`, and `python monitor_and_trigger_depth.py` at the Scraping_project root. Run `python scripts/<name>.py` from `Scraping_project/` instead. `cli.py` stays the root Python entrypoint (#568).
