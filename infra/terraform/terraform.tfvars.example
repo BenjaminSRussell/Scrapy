@@ -1,0 +1,15 @@
+# Copy to terraform.tfvars only on a machine that will plan. terraform.tfvars
+# is gitignored. Do not put a Redis token or any other secret in this file.
+# Leave allow_apply false. CI never reads a tfvars file.
+
+aws_region       = "us-east-1"
+name_prefix      = "scraping-pipeline"
+lake_bucket_name = "example-scraping-delta-lake"
+
+# object_store_backend = "s3"
+# minio_endpoint       = "http://127.0.0.1:9000"
+
+# redis_node_type = "cache.t4g.small"
+# allow_apply     = false
+# Redis AUTH, when you really apply, comes from the environment:
+#   TF_VAR_redis_auth_token  (not written here)

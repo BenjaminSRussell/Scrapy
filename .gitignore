@@ -251,3 +251,18 @@ Scraping_project/profiles/
 # direnv: commit only Scraping_project/.envrc.example (#783)
 .envrc
 .direnv/
+
+# ====================================
+# Terraform stub (infra/terraform)
+# ====================================
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
