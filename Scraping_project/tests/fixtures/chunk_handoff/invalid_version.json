@@ -1,0 +1,17 @@
+{
+  "chunks": [
+    {
+      "chunk_id": "doc-bad:0",
+      "chunk_index": 0,
+      "end": 11,
+      "schema_version": 2,
+      "source_url": "https://fixture.example/handbook-bad",
+      "source_url_hash": "doc-bad",
+      "start": 0,
+      "text": "Only chunk."
+    }
+  ],
+  "schema_version": 2,
+  "source_url": "https://fixture.example/handbook-bad",
+  "source_url_hash": "doc-bad"
+}

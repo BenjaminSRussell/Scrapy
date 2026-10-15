@@ -1,0 +1,17 @@
+{
+  "chunks": [
+    {
+      "chunk_id": "doc-boundary-empty:0",
+      "chunk_index": 0,
+      "end": 0,
+      "schema_version": 1,
+      "source_url": "https://fixture.example/handbook-boundary-empty",
+      "source_url_hash": "doc-boundary-empty",
+      "start": 0,
+      "text": ""
+    }
+  ],
+  "schema_version": 1,
+  "source_url": "https://fixture.example/handbook-boundary-empty",
+  "source_url_hash": "doc-boundary-empty"
+}

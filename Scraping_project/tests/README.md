@@ -131,6 +131,11 @@ Coverage is collected through `addopts` (`--cov=src --cov-branch`) when you run 
   The same builders are available as fixtures: `make_url_record`, `make_stage2_record`,
   `make_stage3_summary`, `make_stage4_large_doc`, `make_stage4_chunk`. The older
   `sample_url_record` / `sample_stage2_data` fixtures are unchanged.
+- **Stage 3 → Stage 4 chunks (#659):** `tests/fixtures/chunk_handoff/*.json`.
+  `src.stage3.chunk_handoff.serialize_handoff` writes them and
+  `src.stage4.chunk_handoff.begin_stage4_work` reads them. `schema_version`
+  other than `1` is rejected before per-chunk work. `stage4_chunk` above is
+  the in-memory span helper, not this handoff.
 
 ## Flaky tests: quarantine policy (#288)
 

@@ -1,0 +1,37 @@
+{
+  "chunks": [
+    {
+      "chunk_id": "doc-multi:0",
+      "chunk_index": 0,
+      "end": 6,
+      "schema_version": 1,
+      "source_url": "https://fixture.example/handbook-multi",
+      "source_url_hash": "doc-multi",
+      "start": 0,
+      "text": "Alpha."
+    },
+    {
+      "chunk_id": "doc-multi:1",
+      "chunk_index": 1,
+      "end": 9,
+      "schema_version": 1,
+      "source_url": "https://fixture.example/handbook-multi",
+      "source_url_hash": "doc-multi",
+      "start": 4,
+      "text": "Beta."
+    },
+    {
+      "chunk_id": "doc-multi:2",
+      "chunk_index": 2,
+      "end": 13,
+      "schema_version": 1,
+      "source_url": "https://fixture.example/handbook-multi",
+      "source_url_hash": "doc-multi",
+      "start": 7,
+      "text": "Gamma."
+    }
+  ],
+  "schema_version": 1,
+  "source_url": "https://fixture.example/handbook-multi",
+  "source_url_hash": "doc-multi"
+}
