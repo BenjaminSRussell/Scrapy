@@ -172,6 +172,7 @@ Control Center (`dashboard/serve.py`, http://localhost:8080) is the crawl consol
 From `Scraping_project/`, on a clean host:
 
 ```bash
+cd Scraping_project
 docker compose -f docker-compose.observability.yml up -d
 ```
 
