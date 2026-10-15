@@ -457,6 +457,28 @@
         else next.add(level);
         return next;
     }
+    // #971: one log, two windows. Overview is the newest few rows and is never
+    // filtered. The Activity tab is the full ring; pressed chips limit that
+    // window only. levels null means "show this window unfiltered".
+    const OVERVIEW_ACTIVITY_LIMIT = 5;
+    const ACTIVITY_FEEDS = Object.freeze([
+        Object.freeze({ id: 'overview-activity', window: 'overview' }),
+        Object.freeze({ id: 'activity-log', window: 'full' }),
+    ]);
+    function activityFeedPlan(selected, cap) {
+        const full = activityLogCapSize(cap);
+        const pressed = activityLevelSelection(selected);
+        return ACTIVITY_FEEDS.map(feed => ({
+            id: feed.id,
+            maxItems: feed.window === 'overview' ? Math.min(OVERVIEW_ACTIVITY_LIMIT, full) : full,
+            levels: feed.window === 'full' && pressed.length ? pressed.slice() : null,
+        }));
+    }
+    function overviewActivityCaption(limit) {
+        const n = Math.floor(Number(limit));
+        const count = Number.isFinite(n) && n >= 1 ? n : OVERVIEW_ACTIVITY_LIMIT;
+        return `Last ${count} events from the activity log. Level filters are on the Activity tab.`;
+    }
     // #503: on-screen hint text for the digit shortcuts.
     function shortcutHintText(tabCount) {
         const n = Math.min(Math.max(0, Number(tabCount) || 0), 9);
@@ -989,5 +1011,5 @@
         if (!rows.length) return { missing: true, rows: [], empty: SCRAPE_TARGET_EMPTY };
         return { missing: false, rows: rows.slice(0, cap), empty: SCRAPE_TARGET_EMPTY };
     }
-    return { tabKeyTarget, staleState, queueDepthRows, metricsFailureActivity, shortcutHintText, parseMetrics, ratePerMinute, resolveMetricsUrl, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler, stageActivity, stageDrilldown, stageDrilldownKey, doughnutLegendLayout, connectionState, documentTitle, createActivityAnnouncer, metricsUrlProblem, splitLinks, createMetricsFetcher, REFRESH_INTERVAL_CHOICES, parseRefreshInterval, shortcutAction, pickInitialTab, METRIC_UI_MAP, renderMetricNameMap, parseDangerSoundEnabled, dangerSoundDecision, HEALTH_HISTORY_LIMIT, pushPollOutcome, healthHistoryView, COMPARISON_BASELINE_ROLE, PREV_HOUR_AVG_KEYS, readPrevHourAverage, comparisonBaselineSeries, comparisonNote, ACTIVITY_LOG_CAP, capActivityLog, activityStaleNote, restoreActivityLog, topScrapeTargets, SCRAPE_TARGET_EMPTY, ACTIVITY_LEVELS, activityLevelCounts, filterActivityItems, toggleActivityLevel, HISTORY_MAX_POINTS, assertHistoryBound, boundHistoryBuffer, pushHistorySample, enforceHistoryCap };
+    return { tabKeyTarget, staleState, queueDepthRows, metricsFailureActivity, shortcutHintText, parseMetrics, ratePerMinute, resolveMetricsUrl, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler, stageActivity, stageDrilldown, stageDrilldownKey, doughnutLegendLayout, connectionState, documentTitle, createActivityAnnouncer, metricsUrlProblem, splitLinks, createMetricsFetcher, REFRESH_INTERVAL_CHOICES, parseRefreshInterval, shortcutAction, pickInitialTab, METRIC_UI_MAP, renderMetricNameMap, parseDangerSoundEnabled, dangerSoundDecision, HEALTH_HISTORY_LIMIT, pushPollOutcome, healthHistoryView, COMPARISON_BASELINE_ROLE, PREV_HOUR_AVG_KEYS, readPrevHourAverage, comparisonBaselineSeries, comparisonNote, ACTIVITY_LOG_CAP, capActivityLog, activityStaleNote, restoreActivityLog, topScrapeTargets, SCRAPE_TARGET_EMPTY, ACTIVITY_LEVELS, activityLevelCounts, filterActivityItems, toggleActivityLevel, OVERVIEW_ACTIVITY_LIMIT, activityFeedPlan, overviewActivityCaption, HISTORY_MAX_POINTS, assertHistoryBound, boundHistoryBuffer, pushHistorySample, enforceHistoryCap };
 });

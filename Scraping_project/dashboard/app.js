@@ -279,6 +279,8 @@ function escapeHtml(s) {
         .replace(/'/g, '&#39;');
 }
 
+// #971: the only writer of new activity items. Overview and the Activity tab
+// both render this log (see activityFeedPlan).
 function addActivityLogItem(type, message) {
     const timestamp = new Date().toLocaleTimeString();
     activityLog.unshift({ type, message, timestamp });
@@ -364,8 +366,8 @@ function announceActivity(type, message) {
 
 let activityPinned = false;
 document.addEventListener('DOMContentLoaded', () => {
-    ['activity-log', 'overview-activity'].forEach(id => {
-        const el = document.getElementById(id);
+    activityFeedPlan(null).forEach(view => {
+        const el = document.getElementById(view.id);
         if (!el) return;
         el.addEventListener('scroll', () => {
             activityPinned = el.scrollTop + el.clientHeight < el.scrollHeight - 8;
@@ -421,18 +423,21 @@ function renderActivityList(container, { maxItems = HISTORY_MAX_POINTS, levels =
     container.replaceChildren(frag);
 }
 
+function syncOverviewActivityCaption() {
+    const el = document.getElementById('overview-activity-cap');
+    if (!el || typeof overviewActivityCaption !== 'function') return;
+    const text = overviewActivityCaption(OVERVIEW_ACTIVITY_LIMIT);
+    if (el.textContent !== text) el.textContent = text;
+}
+
 function updateActivityLog() {
-
-    const logContainers = [
-        document.getElementById('overview-activity'),
-        document.getElementById('activity-log')
-    ];
-
-    logContainers.forEach(container => {
+    // #971: one plan paints both windows. #1027: chips filter the Activity tab only.
+    syncOverviewActivityCaption();
+    activityFeedPlan(activityLevelFilter).forEach(view => {
+        const container = document.getElementById(view.id);
         if (!container) return;
         if (activityPinned && container.id === "activity-log") return;
-        const maxItems = container.id === 'overview-activity' ? 8 : HISTORY_MAX_POINTS;
-        // #1027: chips filter the Activity tab only. Overview stays the latest mix.
+        const maxItems = view.maxItems;
         const levels = container.id === 'activity-log' ? activityLevelFilter : null;
         renderActivityList(container, { maxItems, levels });
     });
@@ -482,7 +487,8 @@ function persistActivityLog() {
 }
 
 function syncActivityStaleNotes() {
-    ['overview-activity', 'activity-log'].forEach((id) => {
+    activityFeedPlan(null).forEach((view) => {
+        const id = view.id;
         const feed = document.getElementById(id);
         if (!feed || !feed.parentNode) return;
         const noteId = 'activity-stale-note-' + id;

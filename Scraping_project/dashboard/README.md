@@ -13,7 +13,9 @@ console (#910). Opened as a `file://` page (no server), it falls back to
 The activity log keeps its last 50 entries in `sessionStorage` for this browser
 tab (#1029). A reload restores them and shows a note that they came from before
 the reload and may be stale. Closing the tab drops them; Clear drops them
-immediately.
+immediately. Overview Recent Activity is the newest 5 of that same log.
+Level filters (Success, Warning, Danger, Timeout, Info) apply only on the
+Activity tab (#971).
 
 All throughput figures are per minute, computed from the real time between samples (#141).
 Labelled series such as `errors_total{stage="stage1"}` are kept under their full key and
