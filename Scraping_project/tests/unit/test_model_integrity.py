@@ -132,6 +132,69 @@ def test_repo_lock_is_well_formed_and_matches_config():
     assert mi.pinned_revision("nope/nope") is None
 
 
+def _fake_cache(tmp_path: Path, pin: mi.ModelPin, payload: bytes) -> Path:
+    snap = tmp_path / f"models--{pin.repo_id.replace('/', '--')}" / "snapshots" / pin.revision
+    snap.mkdir(parents=True)
+    (snap / pin.weight_file).write_bytes(payload)
+    return tmp_path
+
+
+def test_shipped_config_pin_matches_lock_and_example():
+    import yaml
+
+    from src.utils.validation import validate_config_document
+
+    cfg = yaml.safe_load((ROOT / "config.yml").read_text(encoding="utf-8"))
+    example = yaml.safe_load((ROOT / "config.example.yml").read_text(encoding="utf-8"))
+    validate_config_document(cfg)
+    assert example["models"] == cfg["models"]
+    for stage in ("stage3", "stage4"):
+        pin = mi.load_stage_pin(stage, config=cfg)
+        assert pin.revision == cfg["models"][stage]["revision"]
+        assert pin.sha256 == cfg["models"][stage]["sha256"]
+        assert pin.weight_file.endswith((".bin", ".safetensors"))
+        assert mi.verify_stage_startup(stage, cache=ROOT / "missing-hf-cache").startswith(f"{stage} pin ")
+
+
+def test_startup_fails_when_cached_weights_do_not_match(tmp_path):
+    pin = mi.load_stage_pin("stage3")
+    cache = _fake_cache(tmp_path, pin, b"tampered")
+    with pytest.raises(mi.ModelIntegrityError, match="sha256|size"):
+        mi.verify_stage_startup("stage3", cache=cache)
+
+
+def test_matching_cached_file_verifies_and_tamper_fails(tmp_path):
+    payload = b"weights-ok"
+    digest = hashlib.sha256(payload).hexdigest()
+    model = {
+        "name": "stage4_summarizer",
+        "config_key": "stage4.model_name",
+        "repo_id": "facebook/bart-large-cnn",
+        "revision": REV,
+        "files": {"model.safetensors": {"size": len(payload), "sha256": digest}},
+    }
+    cfg = {"models": {"stage4": {"revision": REV, "sha256": digest}}}
+    pin = mi.load_stage_pin("stage4", config=cfg, lock={"models": [model]})
+    cache = _fake_cache(tmp_path, pin, payload)
+    found = mi.verify_cached_weights(pin, cache=cache)
+    assert found is not None and found.name == "model.safetensors"
+    assert mi.verify_cached_weights(pin, cache=cache) == found  # memoized, still the same file
+    found.write_bytes(b"OTHER-BYTE")  # same length, different bytes
+    with pytest.raises(mi.ModelIntegrityError, match="sha256"):
+        mi.verify_cached_weights(pin, cache=cache)
+
+
+def test_pin_rejects_a_revision_the_lock_does_not_have():
+    lock = mi.load_lock()
+    bad = {"models": {"stage3": {"revision": "a" * 40, "sha256": "b" * 64}}}
+    with pytest.raises(mi.ModelIntegrityError, match="models.lock.json"):
+        mi.load_stage_pin("stage3", config=bad, lock=lock)
+
+
+def test_revision_for_load_skips_a_different_repo():
+    assert mi.revision_for_load("stage4", "some/other-model", cache=ROOT / "missing-hf-cache") is None
+
+
 def test_cli_setup_fails_closed_on_tamper(snapshot, tmp_path):
     d, model, _ = snapshot
     # Point the lock at a cache-only check of a repo that is not cached -> exit 1, clear error.

@@ -344,7 +344,10 @@ def _drain_requested(done: int, total: int) -> bool:
 
 async def run_stage4_worker(shutdown=None):
     from src.utils.graceful_shutdown import run_drain_loop
+    from src.utils.model_integrity import verify_stage_startup
 
+    # Refuse a cached Stage 4 weight file that does not match models.stage4 (#650).
+    logger.info(verify_stage_startup("stage4"))
     logger.info("[STAGE4] Worker starting in continuous mode...")
 
     async def run_once():

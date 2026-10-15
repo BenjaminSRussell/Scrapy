@@ -57,6 +57,8 @@ def summarize_with_heavy_model(
     * Input is truncated to ``SUMMARY_LIMITS["chunk_size"]`` chars at a word
       boundary before it reaches the model.
     * Model missing or failing: the first 500 chars (+ "...") are returned.
+      A pinned weight file that does not match ``models.stage4`` raises
+      ``ModelIntegrityError`` instead of that fallback (#650).
     """
     if not isinstance(text, str):
         raise TypeError(f"text must be str, got {type(text).__name__}")
@@ -70,15 +72,30 @@ def summarize_with_heavy_model(
     if len(text.split()) <= min_length:
         return text
 
+    from src.utils.model_integrity import ModelIntegrityError, confirm_load, revision_for_load
+
     try:
         if summarizer is None:
+            model_name = "facebook/bart-large-cnn"
+            try:
+                from src.core.config import get_config
+
+                configured = get_config().get("stage4.model_name", model_name)
+                if isinstance(configured, str) and configured:
+                    model_name = configured
+            except Exception:
+                logger.warning("stage4.model_name unreadable; using %s", model_name)
+            # Pin check before the transformers import: a bad cached file must
+            # not be reported as "transformers is missing" (#650).
+            revision = revision_for_load("stage4", model_name)
             from transformers import pipeline
 
-            summarizer = pipeline(
-                "summarization",
-                model="facebook/bart-large-cnn",
-                device=-1,
-            )
+            kwargs: dict[str, Any] = {"model": model_name, "device": -1}
+            if revision is not None:
+                kwargs["revision"] = revision
+            summarizer = pipeline("summarization", **kwargs)
+            if revision is not None:
+                confirm_load("stage4", model_name)
 
         text = _truncate_at_word(text, SUMMARY_LIMITS["chunk_size"])
 
@@ -91,6 +108,8 @@ def summarize_with_heavy_model(
 
         return str(summary[0]["summary_text"])
 
+    except ModelIntegrityError:
+        raise
     except ImportError:
         logger.warning("Transformers not installed for summarization")
         return _fallback(text)
