@@ -7,17 +7,22 @@ import threading
 import time
 import xml.etree.ElementTree as ET
 import zlib
+from collections.abc import Iterable, Iterator
 from datetime import datetime, timezone
 from typing import Any
-
-from defusedxml import DefusedXmlException
-from defusedxml.ElementTree import fromstring as safe_fromstring
-from collections.abc import Iterator
 from urllib.parse import urljoin, urlparse
 
 import httpx
+from defusedxml import DefusedXmlException
+from defusedxml.ElementTree import fromstring as safe_fromstring
 
 from src.stage1.discovery_handoff import DiscoveryHandoff
+from src.utils.discovery_allowlist import (
+    allowed_domains_from_config,
+    effective_sitemap_allowlist,
+    record_cross_domain_drop,
+    url_host_allowed,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +57,10 @@ DEFAULT_SITEMAP_LIMITS = {
     "max_sitemaps": 500,
     "max_bytes": 50 * 1024 * 1024,
 }
+
+# Cross-domain redirects and loops are traps, not another host to walk (#940).
+_REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
+_MAX_SITEMAP_REDIRECTS = 5
 
 
 def sitemap_limits(config: Any = None) -> dict[str, int]:
@@ -254,16 +263,26 @@ class SitemapParser:
         max_sitemaps: int | None = None,
         max_bytes: int | None = None,
         watermarks: LastmodWatermarks | None = None,
+        *,
+        allowed_domains: Iterable[str] | None = None,
     ):
         """Walk limits default to config ``stage1.sitemap.*`` (see sitemap_limits).
 
         ``watermarks`` turns on incremental reads (#394): URLs and nested
         sitemaps whose ``<lastmod>`` is not newer than the stored watermark are
         skipped. Watermarks are written only at the end of a walk.
+
+        ``allowed_domains`` is the shared ``stage1.allowed_domains`` list
+        (#940). Nested sitemap locs, page locs, and redirects whose host is
+        outside it are dropped and counted on ``cross_domain_sitemap_dropped``.
+        Omit it to read that list from config. A seed host that is not on the
+        list keeps the walk on the seed host only.
         """
         limits = sitemap_limits()
         self.base_url = base_url
         self.timeout = timeout
+        configured = allowed_domains_from_config() if allowed_domains is None else allowed_domains
+        self.sitemap_allowlist = effective_sitemap_allowlist(base_url, configured)
         self.max_depth = limits["max_depth"] if max_depth is None else max_depth
         self.max_urls = limits["max_urls"] if max_urls is None else max_urls
         self.max_sitemaps = limits["max_sitemaps"] if max_sitemaps is None else max_sitemaps
@@ -276,9 +295,11 @@ class SitemapParser:
             "skipped_cap": 0,
             "skipped_unchanged_urls": 0,
             "skipped_unchanged_sitemaps": 0,
+            "dropped_cross_domain": 0,
         }
         self.visited_sitemaps: set[str] = set()
         self.discovered_urls: set[str] = set()
+        self._dropped_cross_domain: set[str] = set()
         self.watermarks = watermarks
         self._lastmods: dict[str, float | None] = {}
         self._limit_events = 0
@@ -371,6 +392,10 @@ class SitemapParser:
         if sitemap_url in self.visited_sitemaps:
             return False
 
+        if not url_host_allowed(sitemap_url, self.sitemap_allowlist):
+            self._note_cross_domain(sitemap_url, "nested sitemap")
+            return False
+
         if self._urls_full():
             return False
 
@@ -383,7 +408,10 @@ class SitemapParser:
 
         try:
             logger.info(f"Parsing sitemap (depth={depth}): {sitemap_url}")
-            response, content = await self._fetch(client, sitemap_url)
+            fetched = await self._fetch(client, sitemap_url)
+            if fetched is None:
+                return False
+            response, content = fetched
 
             if response.status_code != 200:
                 logger.warning(f"Sitemap returned {response.status_code}: {sitemap_url}")
@@ -474,24 +502,54 @@ class SitemapParser:
             self._hard_errors.append(f"{sitemap_url}: {e}")
         return False
 
-    async def _fetch(self, client: httpx.AsyncClient, url: str) -> tuple[httpx.Response, bytes | None]:
+    def _note_cross_domain(self, url: str, reason: str) -> None:
+        if url in self._dropped_cross_domain:
+            return
+        self._dropped_cross_domain.add(url)
+        self.stats["dropped_cross_domain"] += 1
+        record_cross_domain_drop(1)
+        logger.warning("Dropping cross-domain sitemap trap (%s): %s", reason, url)
+
+    async def _fetch(self, client: httpx.AsyncClient, url: str) -> tuple[httpx.Response, bytes | None] | None:
         """GET ``url``, reading at most ``max_bytes`` of (transport-decoded) body.
 
         Streaming keeps a huge body, or a Content-Encoding: gzip bomb that
         httpx would inflate, from being buffered whole. Returns
         ``(response, None)`` when the body exceeds the cap.
+
+        Redirects are followed only while the next host stays on the shared
+        allowlist, and only up to ``_MAX_SITEMAP_REDIRECTS``. A cross-domain
+        target or a loop returns None (the document is dropped, not parsed).
         """
-        async with client.stream("GET", url) as response:
-            if response.status_code != 200:
-                return response, b""
-            chunks: list[bytes] = []
-            size = 0
-            async for chunk in response.aiter_bytes():
-                size += len(chunk)
-                if size > self.max_bytes:
-                    return response, None
-                chunks.append(chunk)
-            return response, b"".join(chunks)
+        current = url
+        seen: set[str] = set()
+        for _hop in range(_MAX_SITEMAP_REDIRECTS + 1):
+            if current in seen:
+                self._note_cross_domain(current, "redirect loop")
+                return None
+            seen.add(current)
+            if not url_host_allowed(current, self.sitemap_allowlist):
+                self._note_cross_domain(current, "redirect left allowlist")
+                return None
+            async with client.stream("GET", current, follow_redirects=False) as response:
+                if response.status_code in _REDIRECT_STATUSES:
+                    location = response.headers.get("location")
+                    if not location:
+                        return response, b""
+                    current = urljoin(str(response.url), location.strip())
+                    continue
+                if response.status_code != 200:
+                    return response, b""
+                chunks: list[bytes] = []
+                size = 0
+                async for chunk in response.aiter_bytes():
+                    size += len(chunk)
+                    if size > self.max_bytes:
+                        return response, None
+                    chunks.append(chunk)
+                return response, b"".join(chunks)
+        self._note_cross_domain(current, "redirect loop")
+        return None
 
     def _urls_full(self) -> bool:
         return len(self.discovered_urls) >= self.max_urls
@@ -511,6 +569,9 @@ class SitemapParser:
         """Add URLs in document order up to ``max_urls``; returns how many were new."""
         before = len(self.discovered_urls)
         for url in urls:
+            if not url_host_allowed(url, self.sitemap_allowlist):
+                self._note_cross_domain(url, "sitemap loc")
+                continue
             if len(self.discovered_urls) >= self.max_urls:
                 self._limit_hit("urls", f"Sitemap URL cap {self.max_urls} reached; remaining URLs dropped")
                 break
