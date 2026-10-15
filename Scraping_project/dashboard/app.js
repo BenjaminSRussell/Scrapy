@@ -1018,6 +1018,39 @@ async function fetchQueueDepths() {
     }
 }
 
+// #1013: mark once, after the first successful metrics response has painted.
+// Duration is performance.now() (ms since navigation) when User Timing exists,
+// otherwise ms since this script started. Local warm-cache target is <2s.
+let ttfmRecorded = false;
+function noteFirstMeaningfulMetrics() {
+    if (typeof scheduleFirstMeaningfulMark !== 'function' || typeof timeToFirstMeaningful !== 'function') return;
+    const useTiming = typeof performance !== 'undefined' && typeof performance.now === 'function';
+    const scheduled = scheduleFirstMeaningfulMark({
+        already: ttfmRecorded,
+        requestAnimationFrame: (typeof requestAnimationFrame === 'function')
+            ? (fn) => requestAnimationFrame(fn)
+            : null,
+        onPaint() {
+            const durationMs = useTiming ? performance.now() : (Date.now() - startTime);
+            const sample = timeToFirstMeaningful(durationMs);
+            if (!sample) return;
+            try {
+                if (useTiming && typeof performance.mark === 'function') {
+                    performance.mark(sample.name);
+                    if (typeof performance.measure === 'function') {
+                        performance.measure(sample.name, { start: 0, end: sample.durationMs, detail: sample });
+                    }
+                }
+            } catch (_) { /* User Timing is optional */ }
+            if (typeof window !== 'undefined') window.__CC_TTFM__ = sample;
+            if (!sample.withinTarget) {
+                console.info(`Control Center TTFM ${Math.round(sample.durationMs)}ms is over the local warm-cache target of ${sample.targetMs}ms`);
+            }
+        },
+    });
+    if (scheduled) ttfmRecorded = true;
+}
+
 async function fetchMetrics() {
     const main = document.getElementById('main') || document.querySelector('.container');
     if (main) main.setAttribute('aria-busy', 'true');
@@ -1037,6 +1070,7 @@ async function fetchMetrics() {
         renderStale();
         setConnectionStatus('online', metrics['pipeline_running']);
         notePollOutcome(true);
+        noteFirstMeaningfulMetrics();
     } catch (error) {
         if (error && error.superseded) return; // a newer request owns the result (#1031)
         metricsWasDown = true;

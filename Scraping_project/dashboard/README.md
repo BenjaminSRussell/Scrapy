@@ -138,6 +138,15 @@ Sentinels (`unknown`, `rejected`, `-`) are dropped. When no usable series is
 present the card stays on **No scrape-target metric reported.** and does not
 invent seeds. Host text is rendered with `textContent`.
 
+## Time to first meaningful metrics (#1013)
+
+Control Center records **TTFM** once: milliseconds from navigation until the first successful metrics fetch has painted. The hook waits two animation frames after that DOM update (so the numbers are on screen), then stores:
+
+- a User Timing mark and measure named `cc:ttfm` (`performance.getEntriesByName('cc:ttfm')`), measured from `performance.timeOrigin` (`performance.now()`)
+- `window.__CC_TTFM__`: `{ name, durationMs, targetMs, withinTarget }`
+
+**Local target: under 2 seconds (2000ms) on a warm cache.** Warm cache means the dashboard HTML, CSS, and JS are already cached; metrics are still fetched from `/api/metrics`. A sample under 2000ms has `withinTarget: true`. A sample at or over 2000ms does not, and one console info line is logged. This is a local regression guard for the page, not a server SLO. Without `performance.now()`, the duration falls back to time since `app.js` started and no User Timing entries are written.
+
 ## Threat model notes (#1046)
 
 **Activity log XSS.** Activity messages may contain text derived from metrics,
