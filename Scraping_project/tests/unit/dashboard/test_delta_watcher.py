@@ -166,3 +166,32 @@ def test_table_read_for_queries_includes_partition_columns(tmp_path):
     assert set(t.column_names) == {"url", "domain"}
     hit = w.table(["url", "depth"], url="https://example.edu/p3")
     assert hit.to_pylist() == [{"url": "https://example.edu/p3", "depth": 3}]
+
+
+def test_corrupt_new_data_file_marks_the_table_unreadable_but_keeps_readable_rows(tmp_path):
+    path = tmp_path / "t"
+    append(path, rows(0, 10))
+    w = TableWatcher(path, WANTED)
+    w.poll()
+    before = {p for p in path.rglob("*.parquet")}
+    append(path, rows(100, 4))  # two partitions, two new files
+    new_files = sorted({p for p in path.rglob("*.parquet")} - before)
+    assert len(new_files) == 2
+    new_files[0].write_bytes(b"PAR1 this is not parquet PAR1")
+    r = w.poll()
+    assert r.status == "error"
+    assert r.error and r.error.split(":")[0].endswith(("Error", "Invalid", "Exception")), r.error
+    assert len(r.new_rows) == 2  # the readable partition still streams
+    assert r.count == 14          # counts come from stats, not from reading
+    again = w.poll()
+    assert again.status == "error" and again.new_rows == []  # still broken, retried, nothing replayed
+
+
+def test_file_already_corrupt_at_startup_stays_reported(tmp_path):
+    path = tmp_path / "t"
+    append(path, rows(0, 6))
+    next(path.rglob("*.parquet")).write_bytes(b"PAR1 garbage PAR1")
+    w = TableWatcher(path, WANTED)
+    assert w.poll().status == "error"
+    assert w.poll().status == "error"  # not silently "ok" on the next poll
+    assert w.poll().count == 6

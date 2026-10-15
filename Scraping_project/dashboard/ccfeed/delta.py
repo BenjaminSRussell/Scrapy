@@ -63,6 +63,7 @@ class TableWatcher:
         # A table that appears after we started watching streams its rows; one that
         # was already there at startup only seeds the recent list.
         self._seen_missing = False
+        self._bad: dict[str, str] = {}  # data files that exist but could not be read; retried each poll
         self._lock = threading.Lock()
 
     # ---- polling ----
@@ -87,7 +88,7 @@ class TableWatcher:
             else:
                 self._dt.update_incremental()
             version = self._dt.version()
-            if not first and version == self.version:
+            if not first and version == self.version and not self._bad:
                 return self._result([])
             files = self._files()
         except Exception as e:
@@ -100,26 +101,34 @@ class TableWatcher:
         self._count = self._count_rows(files)
         stats_max = max((f.max_ts for f in files.values() if f.max_ts is not None), default=None)
         if first and not self._seen_missing:
-            self.recent_rows = self._seed_recent(files)
+            self.recent_rows, bad = self._seed_recent(files)
+            self._bad = bad
             seen = max((r["_t"] for r in self.recent_rows), default=None)
             self._watermark = _max(stats_max, seen)
-            self._known = set(files)
-            return self._result([])
+            self._known = set(files) - set(bad)
+            return self._result([], bad)
 
-        fresh = [f for key, f in files.items() if key not in self._known
-                 and (f.max_ts is None or self._watermark is None or f.max_ts > self._watermark)]
-        new_rows = [r for r in self._read_rows(fresh)
-                    if self._watermark is None or r["_t"] > self._watermark]
+        fresh = {key: f for key, f in files.items() if key not in self._known
+                 and (key in self._bad or f.max_ts is None or self._watermark is None or f.max_ts > self._watermark)}
+        rows, bad = self._read_rows(fresh)
+        self._bad = bad
+        new_rows = [r for r in rows if self._watermark is None or r["_t"] > self._watermark]
         new_rows.sort(key=lambda r: r["_t"])
         new_rows = new_rows[-self.cap:]
-        self._known = set(files)
-        self._watermark = _max(self._watermark, stats_max,
-                               new_rows[-1]["_t"] if new_rows else None)
+        # Unreadable files stay "unseen" so the next poll retries them, and their stats
+        # don't move the watermark (their rows must still count as new once readable).
+        self._known = set(files) - set(bad)
+        good_max = max((f.max_ts for k, f in files.items() if k not in bad and f.max_ts is not None), default=None)
+        self._watermark = _max(self._watermark, good_max, new_rows[-1]["_t"] if new_rows else None)
         if new_rows:
             self.recent_rows = (list(reversed(new_rows)) + self.recent_rows)[: self.recent]
-        return self._result(new_rows)
+        return self._result(new_rows, bad)
 
-    def _result(self, new_rows: list[dict]) -> WatchResult:
+    def _result(self, new_rows: list[dict], bad: dict[str, str] | None = None) -> WatchResult:
+        if bad:
+            first = next(iter(bad.values()))
+            more = f" (+{len(bad) - 1} more files)" if len(bad) > 1 else ""
+            return WatchResult("error", self._count, self.version, self._watermark, new_rows, error=first + more)
         return WatchResult("ok", self._count, self.version, self._watermark, new_rows)
 
     # ---- add actions ----
@@ -168,13 +177,19 @@ class TableWatcher:
         names = set(pq.read_schema(file_path).names)
         return pq.read_table(file_path, columns=[c for c in columns if c in names])
 
-    def _read_rows(self, files) -> list[dict]:
+    def _read_rows(self, files: dict[str, _File]) -> tuple[list[dict], dict[str, str]]:
+        """Rows from these files, plus {key: error} for files that exist but can't be read."""
         rows: list[dict] = []
-        for f in files:
+        bad: dict[str, str] = {}
+        for key, f in files.items():
             try:
                 table = self._read_file(f.path, self.wanted)
-            except OSError as e:  # vacuumed or compacted away since listing
-                logger.debug("skip unreadable data file %s: %s", f.path, e)
+            except FileNotFoundError as e:  # vacuumed or compacted away since listing
+                logger.debug("skip vanished data file %s: %s", f.path, e)
+                continue
+            except Exception as e:  # corrupt or unreadable: report it, keep the rest
+                logger.warning("unreadable data file %s: %s", f.path, e)
+                bad[key] = f"{type(e).__name__}: {e}"
                 continue
             for name, value in f.partitions.items():
                 if name in self.wanted and name not in table.column_names:
@@ -184,19 +199,19 @@ class TableWatcher:
                 if t is not None:
                     row["_t"] = t
                     rows.append(row)
-        return rows
+        return rows, bad
 
-    def _seed_recent(self, files: dict[str, _File]) -> list[dict]:
-        newest = sorted(files.values(), key=lambda f: f.modified, reverse=True)
-        chosen, total = [], 0
-        for f in newest[:RECENT_FILES_MAX]:
-            chosen.append(f)
+    def _seed_recent(self, files: dict[str, _File]) -> tuple[list[dict], dict[str, str]]:
+        newest = sorted(files.items(), key=lambda kv: kv[1].modified, reverse=True)
+        chosen, total = {}, 0
+        for key, f in newest[:RECENT_FILES_MAX]:
+            chosen[key] = f
             total += f.num_records or 0
             if total >= self.recent:
                 break
-        rows = self._read_rows(chosen)
+        rows, bad = self._read_rows(chosen)
         rows.sort(key=lambda r: r["_t"], reverse=True)
-        return rows[: self.recent]
+        return rows[: self.recent], bad
 
     # ---- queries ----
     def table(self, columns, url: str | None = None) -> pa.Table | None:

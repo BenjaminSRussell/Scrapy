@@ -9,7 +9,7 @@ from pathlib import Path
 import pyarrow as pa
 import pyarrow.compute as pc
 
-from .delta import TableWatcher
+from .delta import TableWatcher, WatchResult
 from .queries import ExploreTree, build_journey, build_stage_detail
 from .stages import (ERROR_COLUMNS, ERRORS_TABLE, STAGE_BY_ID, STAGES, TS_COLUMN, PollResult,
                      StageState, make_error_event, make_event, parse_ts)
@@ -46,9 +46,9 @@ class LiveFeed:
     def poll(self, now: float) -> PollResult:
         stages: dict[str, StageState] = {}
         events: list[dict] = []
-        err = self.errors.poll()
+        err = _safe_poll(self.errors)
         for stage in STAGES:
-            r = self.watchers[stage.id].poll()
+            r = _safe_poll(self.watchers[stage.id])
             stages[stage.id] = StageState(status=r.status, count=r.count, last_write=r.last_write,
                                           version=r.version, error=r.error)
             for row in r.new_rows:
@@ -165,6 +165,15 @@ class LiveFeed:
             tree = ExploreTree(zip(table.column("url").to_pylist(), depth))
             current = self._explore = (w.version, now, tree)
         return current[2].node(path)
+
+
+def _safe_poll(watcher: TableWatcher) -> WatchResult:
+    """One table's failure is that table's status, never the whole poll's."""
+    try:
+        return watcher.poll()
+    except Exception as e:
+        return WatchResult("error", watcher._count, watcher.version, watcher._watermark,
+                           error=f"{type(e).__name__}: {e}")
 
 
 def _epochs(column: pa.ChunkedArray) -> list[float | None]:

@@ -268,3 +268,21 @@ def test_live_feed_delta_service_row_counts_tables(tmp_path):
     assert row["status"] == "ok"
     assert row["data"]["tables_found"] == 5 and row["data"]["tables_total"] == 5
     assert "5/5" in row["detail"]
+
+
+def test_live_feed_isolates_a_failing_table(tmp_path, monkeypatch):
+    now = time.time()
+    make_lake(tmp_path, now)
+    feed = LiveFeed(tmp_path)
+    feed.poll(now)
+
+    def boom():
+        raise RuntimeError("disk on fire")
+
+    monkeypatch.setattr(feed.watchers["analysis"], "poll", boom)
+    write(tmp_path, "stage1_discovery", {"url": ["https://a.edu/fresh"], "domain": ["a.edu"], "depth": [1],
+                                         "status_code": [200], "_ingestion_time": [iso(now + 1)]}, partition=["domain"])
+    res = feed.poll(now + 1)  # must not raise
+    assert res.stages["analysis"].status == "error" and "RuntimeError" in res.stages["analysis"].error
+    assert res.stages["discovery"].status == "ok"
+    assert [e["url"] for e in res.events if not e.get("replay")] == ["https://a.edu/fresh"]
