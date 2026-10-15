@@ -547,6 +547,78 @@
             cursor: pointer;
         }
 
+        /* #1027: level chips. Pressed state is border width plus colour, not colour alone. */
+        .activity-filters {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.4rem;
+            margin: 0 0 0.75rem;
+        }
+
+        .activity-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            font: inherit;
+            font-size: 0.8rem;
+            font-weight: 600;
+            line-height: 1.2;
+            padding: 0.3rem 0.7rem;
+            border-radius: 9999px;
+            border: 1px solid var(--gray-300);
+            background: white;
+            color: var(--gray-800);
+            cursor: pointer;
+        }
+
+        .activity-chip[aria-pressed="true"] {
+            border-width: 2px;
+            font-weight: 700;
+        }
+
+        .activity-chip[data-level="success"][aria-pressed="true"] {
+            border-color: #065f46;
+            background: #d1fae5;
+            color: #065f46;
+        }
+
+        .activity-chip[data-level="warning"][aria-pressed="true"],
+        .activity-chip[data-level="timeout"][aria-pressed="true"] {
+            border-color: #92400e;
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        .activity-chip[data-level="danger"][aria-pressed="true"] {
+            border-color: #991b1b;
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        .activity-chip[data-level="info"][aria-pressed="true"] {
+            border-color: #1e40af;
+            background: #dbeafe;
+            color: #1e40af;
+        }
+
+        .activity-chip-count {
+            min-width: 1.25rem;
+            padding: 0 0.35rem;
+            border-radius: 9999px;
+            background: var(--gray-100);
+            color: var(--gray-800);
+            font-variant-numeric: tabular-nums;
+            text-align: center;
+        }
+
+        .activity-filter-empty {
+            margin: 0 0 0.75rem;
+            font-size: 0.9rem;
+            color: var(--gray-700);
+        }
+
+        .activity-filter-empty[hidden] { display: none; }
+
         .status-indicator {
             display: inline-flex;
             align-items: center;
@@ -701,7 +773,8 @@
             .tab-button,
             .refresh-bar .btn,
             .refresh-bar select,
-            .danger-sound-label {
+            .danger-sound-label,
+            .activity-chip {
                 min-height: 44px;
                 min-width: 44px;
             }
@@ -913,6 +986,7 @@
             .tab-button:focus-visible,
             .btn:focus-visible,
             .stage-card:focus-visible,
+            .activity-chip:focus-visible,
             .skip-to-main:focus {
                 outline: 3px solid Highlight;
                 outline-offset: 2px;
@@ -924,6 +998,15 @@
             }
             .stage-drilldown-link {
                 color: LinkText;
+            }
+            .activity-chip {
+                border: 1px solid CanvasText;
+            }
+            .activity-chip[aria-pressed="true"] {
+                forced-color-adjust: none;
+                background: Highlight;
+                color: HighlightText;
+                border-color: HighlightText;
             }
             .card-badge,
             .status-indicator {
@@ -975,6 +1058,7 @@
         }
         .btn:focus-visible,
         .stage-card:focus-visible,
+        .activity-chip:focus-visible,
         select:focus-visible,
         input:focus-visible,
         a:focus-visible,
@@ -1630,6 +1714,14 @@
                             <button type="button" id="clear-activity" class="btn" aria-label="Clear activity log">Clear</button>
                         </div>
                     </div>
+                    <div class="activity-filters" role="group" aria-label="Filter activity by level">
+                        <button type="button" class="activity-chip" data-level="success" aria-pressed="false">Success <span class="activity-chip-count" data-level-count="success">0</span></button>
+                        <button type="button" class="activity-chip" data-level="warning" aria-pressed="false">Warning <span class="activity-chip-count" data-level-count="warning">0</span></button>
+                        <button type="button" class="activity-chip" data-level="danger" aria-pressed="false">Danger <span class="activity-chip-count" data-level-count="danger">0</span></button>
+                        <button type="button" class="activity-chip" data-level="timeout" aria-pressed="false">Timeout <span class="activity-chip-count" data-level-count="timeout">0</span></button>
+                        <button type="button" class="activity-chip" data-level="info" aria-pressed="false">Info <span class="activity-chip-count" data-level-count="info">0</span></button>
+                    </div>
+                    <p id="activity-filter-empty" class="activity-filter-empty" hidden>No activity at the selected levels.</p>
                     <!-- Rendered by app.js on init; no static seed (#978). -->
                     <div class="activity-feed" id="activity-log" role="log" aria-live="off"></div>
                 </div>

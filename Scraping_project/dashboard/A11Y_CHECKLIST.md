@@ -6,6 +6,7 @@ Use for every dashboard PR:
 - [x] Visible focus indicator on every interactive element — `:focus-visible` rings outside forced-colors too (#343)
 - [ ] Buttons/links have accessible names (text or `aria-label`)
 - [ ] Toggle buttons expose `aria-pressed`; tabs expose `aria-selected`
+  - Activity level chips are toggle buttons (`aria-pressed`). The count is in the button name, and a pressed chip uses a thicker border as well as colour (#1027).
 - [ ] Text contrast ≥ 4.5:1 (3:1 for large text / UI chrome)
 - [ ] Status changes announced via `role="status"` / `aria-live="polite"` (not spammy)
   - Activity items: only the new item is spoken, via the always-present `#activity-announce` region (additions only, identical repeats at most once per 5 min). The visual feeds are `aria-live="off"` because they re-render wholesale (#962).
