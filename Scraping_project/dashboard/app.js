@@ -1239,6 +1239,66 @@ function applyEnvBadge() {
     if (/prod/i.test(env)) el.classList.add('env-prod');
 }
 
+// #999: seed URL is checked in the browser. Submit is disabled exactly while
+// the job API flag is off; the form never POSTs a crawl.
+function syncStartCrawlForm() {
+    if (typeof startCrawlSubmitState !== 'function') return;
+    const seedEl = document.getElementById('start-crawl-seed');
+    const submit = document.getElementById('start-crawl-submit');
+    const errorEl = document.getElementById('start-crawl-seed-error');
+    const note = document.getElementById('start-crawl-api-note');
+    if (!seedEl || !submit) return;
+    const features = (typeof window !== 'undefined' && window.__CC_FEATURES__) || {};
+    const state = startCrawlSubmitState(features, seedEl.value);
+    submit.disabled = state.disabled;
+    if (state.title) submit.setAttribute('title', state.title);
+    else submit.removeAttribute('title');
+    const showError = seedEl.getAttribute('data-touched') === '1' && !state.seed.ok;
+    seedEl.setAttribute('aria-invalid', showError ? 'true' : 'false');
+    if (errorEl) {
+        errorEl.textContent = showError ? state.seed.message : '';
+        errorEl.hidden = !showError;
+    }
+    if (note) {
+        note.textContent = state.api
+            ? 'Job API flag is on. This page still does not start a crawl.'
+            : START_CRAWL_API_TITLE + '.';
+    }
+}
+
+function setupStartCrawlForm() {
+    const form = document.getElementById('start-crawl-form');
+    if (!form || form.getAttribute('data-bound') === '1') return;
+    form.setAttribute('data-bound', '1');
+    const seedEl = document.getElementById('start-crawl-seed');
+    if (seedEl) {
+        seedEl.addEventListener('input', () => {
+            seedEl.setAttribute('data-touched', '1');
+            syncStartCrawlForm();
+        });
+    }
+    form.addEventListener('submit', (event) => {
+        event.preventDefault();
+        if (seedEl) seedEl.setAttribute('data-touched', '1');
+        syncStartCrawlForm();
+        const status = document.getElementById('start-crawl-status');
+        if (!status || typeof startCrawlSubmitState !== 'function') return;
+        const features = window.__CC_FEATURES__ || {};
+        const state = startCrawlSubmitState(features, seedEl ? seedEl.value : '');
+        const submit = document.getElementById('start-crawl-submit');
+        if (!state.api || (submit && submit.disabled)) {
+            status.textContent = '';
+            return;
+        }
+        if (!state.seed.ok) {
+            status.textContent = state.seed.message;
+            return;
+        }
+        status.textContent = 'Not sent. This form does not call the job API.';
+    });
+    syncStartCrawlForm();
+}
+
 function applyFeatureFlags() {
     const f = window.__CC_FEATURES__ || {};
     // Hide jobs tab unless flag on (#1047)
@@ -1250,6 +1310,7 @@ function applyFeatureFlags() {
         document.documentElement.dataset.theme = 'light';
     }
     applyEnvBadge();
+    syncStartCrawlForm();
 }
 
 function applyVersionWatermark() {
@@ -1261,6 +1322,7 @@ function initialize() {
     console.log('Initializing Pipeline Control Center...');
 
     applyFeatureFlags();
+    setupStartCrawlForm();
     applyVersionWatermark();
     setupTabs();
     setupShortcuts();

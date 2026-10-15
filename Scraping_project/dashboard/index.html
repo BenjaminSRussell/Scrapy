@@ -536,7 +536,10 @@
         @media (pointer: coarse) {
             .tab-button,
             .refresh-bar .btn,
-            .refresh-bar select {
+            .refresh-bar select,
+            #start-crawl-submit,
+            .start-crawl-field input,
+            .start-crawl-field select {
                 min-height: 44px;
                 min-width: 44px;
             }
@@ -746,6 +749,11 @@
                 forced-color-adjust: none;
                 background: #ffffff;
             }
+            .start-crawl-field input,
+            .start-crawl-field select,
+            #start-crawl-submit {
+                border: 1px solid CanvasText;
+            }
         }
 
         /* #343: visible keyboard focus everywhere (mouse clicks do not show it).
@@ -756,6 +764,7 @@
         }
         .btn:focus-visible,
         select:focus-visible,
+        input:focus-visible,
         a:focus-visible,
         summary:focus-visible,
         .legend-toggles button:focus-visible,
@@ -836,6 +845,67 @@
         }
         .fetch-error-banner[hidden] { display: none; }
         .btn[aria-busy="true"] { cursor: progress; }
+
+        /* #999: start-crawl stub. Submit stays off until the job API flag. */
+        .start-crawl-card { margin-bottom: 1.5rem; }
+        .start-crawl-note,
+        .start-crawl-status {
+            font-size: 0.85rem;
+            color: var(--gray-700);
+            margin: 0 0 0.75rem;
+        }
+        .start-crawl-status:empty { margin: 0; }
+        .start-crawl-form {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+            max-width: 40rem;
+        }
+        .start-crawl-field {
+            display: flex;
+            flex-direction: column;
+            gap: 0.35rem;
+            min-width: 0;
+        }
+        .start-crawl-field label {
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: var(--gray-800);
+        }
+        .start-crawl-field input,
+        .start-crawl-field select {
+            font: inherit;
+            width: 100%;
+            max-width: 100%;
+            padding: 0.5rem 0.65rem;
+            border: 1px solid var(--gray-300);
+            border-radius: 6px;
+            background: #fff;
+            color: var(--gray-900);
+        }
+        .start-crawl-error {
+            font-size: 0.85rem;
+            color: #991b1b;
+            margin: 0;
+        }
+        .start-crawl-error[hidden] { display: none; }
+        #start-crawl-submit {
+            align-self: flex-start;
+            font: inherit;
+            font-weight: 600;
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            border: 1px solid var(--primary-dark);
+            background: var(--primary);
+            color: #fff;
+            cursor: pointer;
+        }
+        #start-crawl-submit:disabled {
+            background: var(--gray-200);
+            color: var(--gray-700);
+            border-color: var(--gray-300);
+            cursor: not-allowed;
+        }
     </style>
 </head>
 <body>
@@ -895,6 +965,29 @@
 
             <!-- Overview Tab -->
             <div class="tab-content active" id="tab-overview" role="tabpanel" aria-labelledby="tabbtn-overview" tabindex="0">
+                <div class="card start-crawl-card" id="start-crawl-card">
+                    <div class="card-header">
+                        <h2 class="card-title">Start crawl</h2>
+                        <span class="card-badge badge-info">Stub</span>
+                    </div>
+                    <p class="start-crawl-note" id="start-crawl-api-note">Requires job API (#147).</p>
+                    <form id="start-crawl-form" class="start-crawl-form" action="#" method="post" novalidate>
+                        <div class="start-crawl-field">
+                            <label for="start-crawl-seed">Seed URL</label>
+                            <input id="start-crawl-seed" name="seed" type="url" inputmode="url" autocomplete="url" spellcheck="false" placeholder="https://example.edu/" aria-describedby="start-crawl-seed-error start-crawl-api-note" aria-invalid="false">
+                            <p id="start-crawl-seed-error" class="start-crawl-error" hidden></p>
+                        </div>
+                        <div class="start-crawl-field">
+                            <label for="start-crawl-profile">Site profile</label>
+                            <select id="start-crawl-profile" name="profile">
+                                <option value="uconn" selected>uconn (uconn.edu)</option>
+                                <option value="example">example (example.com)</option>
+                            </select>
+                        </div>
+                        <p id="start-crawl-status" class="start-crawl-status" role="status" aria-live="polite"></p>
+                        <button type="submit" id="start-crawl-submit" class="btn" disabled title="Requires job API (#147)" aria-describedby="start-crawl-api-note">Submit</button>
+                    </form>
+                </div>
                 <div class="grid grid-4">
                     <div class="card">
                         <div class="card-header">

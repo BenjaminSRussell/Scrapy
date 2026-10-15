@@ -379,5 +379,35 @@
         const limit = Math.max(1, Number(intervalMs) || 5000) * Math.max(1, Number(factor) || 3);
         return { stale: ageMs > limit, ageMs, limitMs: limit };
     }
-    return { tabKeyTarget, staleState, queueDepthRows, metricsFailureActivity, shortcutHintText, parseMetrics, ratePerMinute, resolveMetricsUrl, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler, stageActivity, doughnutLegendLayout, connectionState, documentTitle, createActivityAnnouncer, metricsUrlProblem, splitLinks, createMetricsFetcher, REFRESH_INTERVAL_CHOICES, parseRefreshInterval, shortcutAction, pickInitialTab };
+    // #999: start-crawl stub. Submit stays disabled until the job API flag
+    // (`__CC_FEATURES__.jobs`, #147) is strictly true. The tooltip string is
+    // the contract for that disabled state.
+    const START_CRAWL_API_TITLE = 'Requires job API (#147)';
+    function jobApiEnabled(features) {
+        return !!(features && features.jobs === true);
+    }
+    function validateSeedUrl(raw) {
+        const value = String(raw == null ? '' : raw).trim();
+        if (!value) return { ok: false, message: 'Enter a seed URL.' };
+        let url;
+        try {
+            url = new URL(value);
+        } catch (e) {
+            return { ok: false, message: 'Enter a valid http(s) URL.' };
+        }
+        if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+            return { ok: false, message: 'Seed URL must use http:// or https://.' };
+        }
+        if (!url.hostname) return { ok: false, message: 'Enter a valid http(s) URL.' };
+        return { ok: true, href: url.href, message: '' };
+    }
+    function startCrawlSubmitState(features, seed) {
+        const seedResult = validateSeedUrl(seed);
+        const api = jobApiEnabled(features);
+        if (!api) {
+            return { disabled: true, title: START_CRAWL_API_TITLE, api: false, seed: seedResult };
+        }
+        return { disabled: false, title: '', api: true, seed: seedResult };
+    }
+    return { tabKeyTarget, staleState, queueDepthRows, metricsFailureActivity, shortcutHintText, parseMetrics, ratePerMinute, resolveMetricsUrl, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler, stageActivity, doughnutLegendLayout, connectionState, documentTitle, createActivityAnnouncer, metricsUrlProblem, splitLinks, createMetricsFetcher, REFRESH_INTERVAL_CHOICES, parseRefreshInterval, shortcutAction, pickInitialTab, START_CRAWL_API_TITLE, jobApiEnabled, validateSeedUrl, startCrawlSubmitState };
 });

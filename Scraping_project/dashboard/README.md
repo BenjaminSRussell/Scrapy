@@ -112,3 +112,9 @@ CORS headers unless `CC_CORS_ORIGINS` is set.
 
 **Feature flags / env.** `window.__CC_FEATURES__` and `__CC_ENV__` are UI hints,
 not authorization. Anything sensitive must be enforced server-side.
+`jobs` (default `false`) is the crawl job API flag (#147). The Overview
+**Start crawl** form (#999) checks the seed URL in the browser (http or https
+only) and keeps Submit disabled, with tooltip `Requires job API (#147)`, until
+`jobs` is strictly `true`. The profile select lists the sample profiles
+`uconn` and `example`. Turning the flag on does not POST a job; this page is
+still a stub and does not start a crawl.
