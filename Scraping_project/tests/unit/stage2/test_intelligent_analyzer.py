@@ -5,6 +5,7 @@ No network, no Redis, no Delta: the HTTP client, lake and thresholds are injecte
 
 from __future__ import annotations
 
+import json
 import sys
 import types
 from types import SimpleNamespace
@@ -12,7 +13,13 @@ from types import SimpleNamespace
 import httpx
 import pytest
 
-from src.stage2.intelligent_analyzer import IntelligentAnalyzer, _is_pdf_link, analyze_url
+from src.stage2.intelligent_analyzer import (
+    IntelligentAnalyzer,
+    _is_pdf_link,
+    _load_scholarly_parser,
+    analyze_url,
+    extract_citations,
+)
 
 TH = SimpleNamespace(min_word_count=50, min_text_to_html_ratio=0.1, massive_doc_threshold=2000)
 
@@ -207,6 +214,143 @@ def test_analyze_url_closes_its_client(monkeypatch):
     monkeypatch.setattr(IntelligentAnalyzer, "close", lambda self: closed.append(True))
     assert analyze_url("https://u.edu/a") == {"url": "https://u.edu/a"}
     assert closed == [True]
+
+
+# --- citations (#651) ---------------------------------------------------------
+
+
+_PUBLICATION_HTML = """
+<html><head>
+  <meta name="citation_doi" content="10.1000/PAGE">
+  <meta name="citation_title" content="Page Paper">
+  <meta name="citation_author" content="Ada Lovelace">
+  <meta name="citation_author" content="Alan Turing">
+  <meta name="citation_journal_title" content="J. Test">
+  <meta name="citation_publication_date" content="2019/05/01">
+</head><body>
+  <p>See https://doi.org/10.1038/nature12373 and doi:10.5555/from-text.</p>
+  <p>Trailing (10.1016/j.cell.2020.01.001).</p>
+  <p>Again 10.1000/PAGE in the abstract.</p>
+</body></html>
+"""
+
+
+def test_doi_detection_from_meta_url_and_prose():
+    cites = extract_citations(_PUBLICATION_HTML)
+    by_doi = {row["doi"].lower(): row for row in cites}
+    assert set(by_doi) == {
+        "10.1000/page",
+        "10.1038/nature12373",
+        "10.5555/from-text",
+        "10.1016/j.cell.2020.01.001",
+    }
+    page = by_doi["10.1000/page"]
+    assert page["source"] == "meta"
+    assert page["doi"] == "10.1000/PAGE"
+    assert page["title"] == "Page Paper"
+    assert page["authors"] == ["Ada Lovelace", "Alan Turing"]
+    assert page["journal"] == "J. Test"
+    assert page["year"] == "2019"
+    encoded = json.dumps(cites)
+    assert encoded.startswith("[") and json.loads(encoded) == cites
+
+
+@pytest.mark.parametrize("raw,doi", [
+    ("10.1000/182", "10.1000/182"),
+    ("doi:10.1000/182", "10.1000/182"),
+    ("https://doi.org/10.1000/182", "10.1000/182"),
+    ("https://dx.doi.org/10.1000/AbC.", "10.1000/AbC"),
+    ("(10.1000/182).", "10.1000/182"),
+    ("before 110.1000/not-a-doi", None),
+    ("10.123/too-short", None),
+])
+def test_doi_detection_shapes(raw, doi):
+    found = [row["doi"] for row in extract_citations(text=raw)]
+    assert found == ([doi] if doi else [])
+
+
+@pytest.mark.parametrize("html,text", [
+    (None, None),
+    ("", ""),
+    ("   ", None),
+    ("<html><body>no identifiers here</body></html>", ""),
+    ("<p>not a doi 10.12/x", ""),
+])
+def test_citation_extraction_is_empty_safe(html, text):
+    assert extract_citations(html, text) == []
+    assert extract_citations(html=object(), text=object()) == []
+
+
+def test_short_and_error_pages_store_an_empty_or_meta_list():
+    empty = make()._analyze_html("https://u.edu/a", "", False)
+    assert empty["citations"] == []
+    missing = make(lambda req: httpx.Response(404)).analyze("https://u.edu/missing")
+    assert missing["citations"] == []
+    binary = make(lambda req: httpx.Response(200, content=b"\x00\x01", headers={"content-type": "application/zip"})) \
+        .analyze("https://u.edu/a.zip")
+    assert binary["citations"] == []
+    short = '<html><head><meta name="citation_doi" content="10.5555/short"></head><body><p>Hi</p></body></html>'
+    analyzed = make()._analyze_html("https://u.edu/p", short, False)
+    assert analyzed["is_low_quality"] is True
+    assert analyzed["citations"] == [{
+        "doi": "10.5555/short",
+        "title": "",
+        "authors": [],
+        "journal": "",
+        "year": "",
+        "raw": "10.5555/short",
+        "source": "meta",
+    }]
+    assert json.loads(json.dumps(analyzed["citations"])) == analyzed["citations"]
+
+
+def test_pdf_text_dois_are_stored(monkeypatch):
+    class Reader:
+        def __init__(self, fp):
+            self.pages = [types.SimpleNamespace(extract_text=lambda: ("word " * 80) + "See 10.5555/pdf.")]
+
+    monkeypatch.setitem(sys.modules, "PyPDF2", types.SimpleNamespace(PdfReader=Reader))
+    result = make()._analyze_pdf("https://u.edu/doc.pdf", b"%PDF", False)
+    assert [row["doi"] for row in result["citations"]] == ["10.5555/pdf"]
+    assert result["citations"][0]["source"] == "doi"
+
+
+def test_scholarly_parser_is_optional(monkeypatch):
+    loaded = _load_scholarly_parser()
+    assert loaded is None or callable(loaded)
+    monkeypatch.setattr("src.stage2.intelligent_analyzer._load_scholarly_parser", lambda: None)
+    assert [row["doi"] for row in extract_citations(text="10.1000/182")] == ["10.1000/182"]
+
+
+def test_optional_scholarly_parser_merges_and_failures_stay_empty_safe(monkeypatch):
+    def parse(text):
+        assert "10.1000/keep" in text
+        return [
+            {"doi": "10.9999/from-parser", "title": "Parsed title", "authors": ["Lin"], "year": 2021, "journal": "Proc"},
+            {"doi": "10.1000/keep", "title": "duplicate of the regex hit"},
+            "no doi in this string",
+            {"title": "", "authors": []},
+            3,
+            None,
+        ]
+
+    monkeypatch.setattr("src.stage2.intelligent_analyzer._load_scholarly_parser", lambda: parse)
+    cites = extract_citations("<p>Keep 10.1000/keep in the page.</p>")
+    by_doi = {row["doi"].lower(): row for row in cites}
+    assert set(by_doi) == {"10.1000/keep", "10.9999/from-parser"}
+    assert by_doi["10.1000/keep"]["source"] == "doi"
+    parsed = by_doi["10.9999/from-parser"]
+    assert parsed["source"] == "scholarly"
+    assert parsed["title"] == "Parsed title" and parsed["authors"] == ["Lin"]
+    assert parsed["year"] == "2021" and parsed["journal"] == "Proc"
+
+    def broken(text):
+        raise RuntimeError("parser down")
+
+    monkeypatch.setattr("src.stage2.intelligent_analyzer._load_scholarly_parser", lambda: broken)
+    assert [row["doi"] for row in extract_citations(text="10.1000/still-here")] == ["10.1000/still-here"]
+    monkeypatch.setattr("src.stage2.intelligent_analyzer._load_scholarly_parser", lambda: (lambda text: None))
+    assert extract_citations(text="no identifiers") == []
 
 
 def test_real_keyword_extraction_short_text_and_limits(monkeypatch):

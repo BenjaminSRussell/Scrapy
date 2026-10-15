@@ -1,3 +1,4 @@
+import importlib
 import logging
 import posixpath
 import re
@@ -12,6 +13,21 @@ from src.utils.delta import get_delta
 
 logger = logging.getLogger(__name__)
 
+# Crossref-style DOI. Suffix punctuation from the surrounding sentence is stripped (#651).
+_DOI_BODY = r"10\.\d{4,9}/[-._;()/:A-Za-z0-9]+"
+_DOI_FIND = re.compile(rf"(?i)(?<![\w.])({_DOI_BODY})")
+_DOI_EXACT = re.compile(rf"(?i)^{_DOI_BODY}$")
+_YEAR_RE = re.compile(r"\b(?:1[6-9]\d{2}|20\d{2})\b")
+_DOI_CLOSER = {")": "(", "]": "[", "}": "{", ">": "<"}
+_SCAN_LIMIT = 500_000
+_PARSER_LIMIT = 20_000
+_MAX_CITATIONS = 100
+_META_DOI = ("citation_doi", "dc.identifier.doi", "prism.doi", "doi", "dc.identifier")
+_META_TITLE = ("citation_title", "dc.title", "prism.title")
+_META_AUTHOR = ("citation_author", "citation_authors", "dc.creator")
+_META_JOURNAL = ("citation_journal_title", "prism.publicationname")
+_META_DATE = ("citation_publication_date", "citation_date", "prism.publicationdate", "dc.date")
+
 def _is_pdf_link(href: str) -> bool:
     """``.pdf`` by path extension, so ``Report.PDF`` and ``a.pdf?dl=1#p2`` count (#221)."""
     try:
@@ -19,6 +35,315 @@ def _is_pdf_link(href: str) -> bool:
     except ValueError:
         return False
     return posixpath.splitext(path)[1].lower() == ".pdf"
+
+
+def _as_text(value: Any) -> str:
+    if isinstance(value, str):
+        return value
+    if isinstance(value, (bytes, bytearray)):
+        return bytes(value).decode("utf-8", errors="replace")
+    return ""
+
+
+def _strip_doi(raw: str) -> str:
+    doi = raw.strip()
+    while doi:
+        last = doi[-1]
+        if last in ".,;:":
+            doi = doi[:-1]
+            continue
+        opener = _DOI_CLOSER.get(last)
+        if opener is not None and doi.count(last) > doi.count(opener):
+            doi = doi[:-1]
+            continue
+        break
+    return doi
+
+
+def _normalize_doi(value: Any) -> str:
+    if not isinstance(value, str):
+        return ""
+    match = _DOI_FIND.search(value.strip())
+    if match is None:
+        return ""
+    doi = _strip_doi(match.group(1))
+    if not doi or len(doi) > 256 or _DOI_EXACT.fullmatch(doi) is None:
+        return ""
+    return doi
+
+
+def _dois_in(blob: str) -> list[str]:
+    if not blob:
+        return []
+    found: list[str] = []
+    for match in _DOI_FIND.finditer(blob[:_SCAN_LIMIT]):
+        doi = _strip_doi(match.group(1))
+        if doi and len(doi) <= 256 and _DOI_EXACT.fullmatch(doi):
+            found.append(doi)
+    return found
+
+
+def _year(value: Any) -> str:
+    if not isinstance(value, str) or not value.strip():
+        return ""
+    match = _YEAR_RE.search(value)
+    return match.group(0) if match else ""
+
+
+def _authors(value: Any) -> list[str]:
+    items: list[Any]
+    if value is None:
+        return []
+    if isinstance(value, str):
+        items = [part.strip() for part in re.split(r"\s*;\s*", value) if part.strip()]
+    elif isinstance(value, (list, tuple)):
+        items = list(value)
+    else:
+        return []
+    names: list[str] = []
+    for item in items:
+        if isinstance(item, str):
+            text = item.strip()
+        elif isinstance(item, dict):
+            named = item.get("name") or item.get("author")
+            if isinstance(named, str) and named.strip():
+                text = named.strip()
+            else:
+                given = item.get("given") or item.get("first") or ""
+                family = item.get("family") or item.get("last") or ""
+                text = f"{given} {family}".strip() if isinstance(given, str) and isinstance(family, str) else ""
+        else:
+            text = ""
+        if text:
+            names.append(text[:300])
+        if len(names) >= 30:
+            break
+    return names
+
+
+def _citation(
+    *,
+    doi: str = "",
+    title: str = "",
+    authors: list[str] | None = None,
+    journal: str = "",
+    year: str = "",
+    raw: str = "",
+    source: str,
+) -> dict[str, Any]:
+    return {
+        "doi": doi,
+        "title": title[:500],
+        "authors": list(authors or []),
+        "journal": journal[:300],
+        "year": year,
+        "raw": raw[:500],
+        "source": source,
+    }
+
+
+def _load_scholarly_parser() -> Any:
+    """Optional citation parser. Missing install is normal; search/network APIs are never called (#651)."""
+    try:
+        module = importlib.import_module("scholarly")
+    except Exception:
+        return None
+    for name in ("parse_citations", "parse_citation"):
+        parser = getattr(module, name, None)
+        if callable(parser):
+            return parser
+    return None
+
+
+def _meta_groups(soup: Any) -> dict[str, list[str]]:
+    grouped: dict[str, list[str]] = {}
+    if soup is None or not hasattr(soup, "find_all"):
+        return grouped
+    try:
+        tags = soup.find_all("meta")
+    except Exception:
+        return grouped
+    for tag in tags:
+        try:
+            key = tag.get("name") or tag.get("property") or tag.get("itemprop") or ""
+            content = tag.get("content")
+        except Exception:
+            continue
+        key_text = str(key).strip().lower()
+        if not key_text or not isinstance(content, str) or not content.strip():
+            continue
+        grouped.setdefault(key_text, []).append(content.strip())
+    return grouped
+
+
+def _first_meta(grouped: dict[str, list[str]], names: tuple[str, ...]) -> str:
+    for name in names:
+        values = grouped.get(name)
+        if values:
+            return values[0]
+    return ""
+
+
+def _all_meta(grouped: dict[str, list[str]], names: tuple[str, ...]) -> list[str]:
+    values: list[str] = []
+    for name in names:
+        values.extend(grouped.get(name) or [])
+    return values
+
+
+def _soup_for(html: str, soup: Any) -> Any:
+    if soup is not None and hasattr(soup, "find_all"):
+        return soup
+    if not html.strip():
+        return None
+    try:
+        return BeautifulSoup(html, "html.parser")
+    except Exception:
+        return None
+
+
+def _parser_text(html: str, text: str, soup: Any) -> str:
+    if text.strip():
+        return re.sub(r"\s+", " ", text).strip()[:_PARSER_LIMIT]
+    if soup is not None:
+        try:
+            visible = soup.get_text(separator=" ", strip=True)
+        except Exception:
+            visible = ""
+        if isinstance(visible, str) and visible.strip():
+            return re.sub(r"\s+", " ", visible).strip()[:_PARSER_LIMIT]
+    if html.strip():
+        rough = re.sub(r"<[^>]+>", " ", html)
+        return re.sub(r"\s+", " ", rough).strip()[:_PARSER_LIMIT]
+    return ""
+
+
+def _coerce_parser_item(item: Any) -> dict[str, Any] | None:
+    if isinstance(item, str):
+        doi = _normalize_doi(item)
+        if not doi:
+            return None
+        return _citation(doi=doi, raw=item.strip(), source="scholarly")
+    if not isinstance(item, dict):
+        return None
+    raw_value = item.get("raw") or item.get("citation") or ""
+    raw = raw_value.strip() if isinstance(raw_value, str) else ""
+    doi = _normalize_doi(item.get("doi") or item.get("DOI") or "") or _normalize_doi(raw)
+    title_value = item.get("title") or item.get("Title") or ""
+    title = title_value.strip() if isinstance(title_value, str) else ""
+    journal_value = item.get("journal") or item.get("container-title") or item.get("venue") or ""
+    journal = journal_value.strip() if isinstance(journal_value, str) else ""
+    authors = _authors(item.get("authors") if item.get("authors") is not None else item.get("author"))
+    year = _year(item.get("year") if isinstance(item.get("year"), str) else None)
+    if not year:
+        dated = item.get("date") or item.get("published") or item.get("year")
+        year = _year(dated if isinstance(dated, str) else str(dated) if isinstance(dated, int) else "")
+    if not any((doi, title, authors, raw)):
+        return None
+    return _citation(doi=doi, title=title, authors=authors, journal=journal, year=year, raw=raw, source="scholarly")
+
+
+def _parser_citations(text: str) -> list[dict[str, Any]]:
+    if not text.strip():
+        return []
+    parser = _load_scholarly_parser()
+    if not callable(parser):
+        return []
+    try:
+        parsed = parser(text)
+    except Exception as exc:
+        logger.warning(f"optional scholarly citation parser failed: {exc}")
+        return []
+    if parsed is None:
+        return []
+    if isinstance(parsed, (dict, str)):
+        parsed = [parsed]
+    if not isinstance(parsed, (list, tuple)):
+        return []
+    rows: list[dict[str, Any]] = []
+    for item in parsed:
+        row = _coerce_parser_item(item)
+        if row is not None:
+            rows.append(row)
+    return rows
+
+
+def _dedupe_key(row: dict[str, Any]) -> tuple[str, str] | None:
+    doi = str(row.get("doi") or "").lower()
+    if doi:
+        return ("doi", doi)
+    title = str(row.get("title") or "").strip().lower()
+    raw = str(row.get("raw") or "").strip().lower()
+    authors = ",".join(str(name).strip().lower() for name in row.get("authors") or [])
+    if not title and not raw and not authors:
+        return None
+    return ("other", f"{title}|{raw}|{authors}")
+
+
+def extract_citations(html: Any = None, text: Any = None, soup: Any = None) -> list[dict[str, Any]]:
+    """Publication citations as a JSON-ready list. Empty or unreadable input is ``[]`` (#651)."""
+    try:
+        return _extract_citations(html, text, soup)
+    except Exception as exc:
+        logger.warning(f"citation extraction failed: {exc}")
+        return []
+
+
+def _extract_citations(html: Any, text: Any, soup: Any) -> list[dict[str, Any]]:
+    html_text = _as_text(html)
+    body_text = _as_text(text)
+    if not html_text.strip() and not body_text.strip() and soup is None:
+        return []
+    parsed_soup = _soup_for(html_text, soup)
+    grouped = _meta_groups(parsed_soup)
+    rows: list[dict[str, Any]] = []
+
+    doi = ""
+    raw_meta = ""
+    for name in _META_DOI:
+        for value in grouped.get(name) or []:
+            doi = _normalize_doi(value)
+            if doi:
+                raw_meta = value
+                break
+        if doi:
+            break
+    title = _first_meta(grouped, _META_TITLE)
+    authors = _authors(_all_meta(grouped, _META_AUTHOR))
+    journal = _first_meta(grouped, _META_JOURNAL)
+    year = _year(_first_meta(grouped, _META_DATE))
+    if doi or ("citation_title" in grouped and title and authors):
+        rows.append(_citation(
+            doi=doi,
+            title=title,
+            authors=authors,
+            journal=journal,
+            year=year,
+            raw=raw_meta,
+            source="meta",
+        ))
+
+    scanned: set[str] = set()
+    for blob in (html_text, body_text):
+        if not blob or blob in scanned:
+            continue
+        scanned.add(blob)
+        for found in _dois_in(blob):
+            rows.append(_citation(doi=found, raw=found, source="doi"))
+
+    rows.extend(_parser_citations(_parser_text(html_text, body_text, parsed_soup)))
+
+    kept: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for row in rows:
+        key = _dedupe_key(row)
+        if key is None or key in seen:
+            continue
+        seen.add(key)
+        kept.append(row)
+        if len(kept) >= _MAX_CITATIONS:
+            break
+    return kept
 
 
 class IntelligentAnalyzer:
@@ -86,6 +411,7 @@ class IntelligentAnalyzer:
 
         hrefs = [str(a["href"]) for a in soup.find_all("a", href=True)]
         pdf_links = [href for href in hrefs if _is_pdf_link(href)]
+        citations = extract_citations(html, text, soup)
 
         return {
             "url": url,
@@ -102,6 +428,7 @@ class IntelligentAnalyzer:
             "keywords": keywords,
             "has_pdf": len(pdf_links) > 0,
             "pdf_links": pdf_links[:10],
+            "citations": citations,
             "quality_score": self._calculate_quality_score(word_count, text_to_html_ratio),
         }
 
@@ -170,6 +497,7 @@ class IntelligentAnalyzer:
             "is_low_quality": is_low_quality,
             "is_massive_doc": is_massive_doc,
             "keywords": keywords,
+            "citations": extract_citations(text=combined_text),
             "quality_score": self._calculate_quality_score(word_count, 1.0),
         }
 
@@ -208,6 +536,7 @@ class IntelligentAnalyzer:
             "is_low_quality": is_low_quality,
             "is_massive_doc": False,
             "keywords": self._extract_keywords(ocr_text, is_heavy) if ocr_text else [],
+            "citations": extract_citations(text=ocr_text) if ocr_text else [],
             "quality_score": self._calculate_quality_score(word_count, 1.0),
         }
 
@@ -221,6 +550,7 @@ class IntelligentAnalyzer:
             "word_count": 0,
             "is_low_quality": True,
             "is_massive_doc": False,
+            "citations": [],
             "quality_score": 0,
         }
 
