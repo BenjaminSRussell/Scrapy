@@ -12,6 +12,8 @@ This is the shared sequence, not a stage-by-stage map. Pipeline meta stays on
 [#606](https://github.com/BenjaminSRussell/Scrapy/issues/606). Whether a cited
 issue is still open is the tracker, not this file:
 <https://github.com/BenjaminSRussell/Scrapy/issues>.
+The live list of open `[P1]`–`[P4]` titles is
+[PUBLIC_ROADMAP.md](PUBLIC_ROADMAP.md), regenerated weekly from that tracker.
 
 ## North star
 
