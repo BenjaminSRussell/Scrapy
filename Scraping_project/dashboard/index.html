@@ -95,6 +95,29 @@
             font-size: 0.875rem;
         }
 
+        /* #947: white on both gradient ends stays >= 4.5:1 (#340). */
+        .topbar-grafana {
+            color: #fff;
+            font-size: 0.875rem;
+            font-weight: 600;
+            text-decoration: underline;
+            text-underline-offset: 0.18em;
+            white-space: nowrap;
+            align-self: center;
+        }
+        .cc-product-note {
+            max-width: 1600px;
+            margin: 0 auto;
+            padding: 0 1.5rem 2.5rem;
+            font-size: 0.875rem;
+            line-height: 1.45;
+            color: var(--gray-800);
+        }
+        .cc-product-note a {
+            color: var(--primary-dark);
+            font-weight: 600;
+        }
+
         .topbar-stats {
             display: flex;
             gap: 2rem;
@@ -1245,9 +1268,10 @@
                     <span class="title-short">Control Center</span>
                     <span id="env-badge" class="env-badge env-local" title="Runtime environment">local</span>
                 </h1>
-                <p class="title-full">UConn Web Scraping Pipeline - Real-time Operations Dashboard</p>
-                <p class="title-short visually-hidden">Pipeline Control Center</p>
+                <p class="title-full">Ops Control Center (port 8080), not Grafana</p>
+                <p class="title-short">Ops Control Center</p>
             </div>
+            <a class="topbar-grafana" id="grafana-analytics-link" href="http://localhost:3000/" target="_blank" rel="noopener noreferrer" aria-describedby="cc-product-note">Analytics: Grafana</a>
             <div class="topbar-stats">
                 <div class="topbar-stat">
                     <div class="topbar-stat-label">Status</div>
@@ -1829,6 +1853,10 @@
             </div>
         </div>
     </main>
+
+    <footer class="cc-product-note">
+        <p id="cc-product-note">This page is the ops Control Center (default <a href="http://127.0.0.1:8080/">http://127.0.0.1:8080</a>). It does not embed Grafana. <a href="http://localhost:3000/">Analytics: Grafana</a> is the monitoring-profile board at <a href="http://localhost:3000/">http://localhost:3000</a> (the Grafana <code>python start.py</code> starts). The observability pack is a second Grafana at <a href="http://127.0.0.1:3001/">http://127.0.0.1:3001</a>, not port 3000 and not this page.</p>
+    </footer>
 
     <script src="features.js"></script>
     <script src="format-utils.js"></script>
