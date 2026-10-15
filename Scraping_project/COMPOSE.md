@@ -11,6 +11,7 @@ One Compose file (`docker-compose.yml`) plus an observability overlay. The obsol
 | `streaming` | Kafka (KRaft, no ZooKeeper). Postgres is also on `core` |
 | `ml`, `full` | `stage4-worker` only (torch / OCR image). Redis is on these profiles too so the worker can start |
 | `observability` | Loki, Jaeger, OpenTelemetry collector in `docker-compose.observability.yml`. Prometheus, Grafana, and StatsD in that file have no profile and start on a bare `up` |
+| `search` | OpenSearch on `127.0.0.1:9200` for the gold-summary index (#687). The exporter stays off until `SEARCH_EXPORT_ENABLED=1` or `--enable` |
 
 All services share `scraper-network`. The overlay is not a second copy of those services inside `docker-compose.yml`.
 
@@ -24,7 +25,7 @@ cp .env.example .env   # then set real passwords before sharing the host
 docker compose --profile core --profile monitoring up -d
 ```
 
-`python start.py` and `make docker-up` enable the same two profiles (`COMPOSE_PROFILES`, default `core,monitoring`). They do not start Stage 4, Kafka or the OTEL overlay.
+`python start.py` and `make docker-up` enable the same two profiles (`COMPOSE_PROFILES`, default `core,monitoring`). They do not start Stage 4, Kafka, OpenSearch (`search`) or the OTEL overlay.
 
 ## Validate config (no containers)
 
@@ -61,6 +62,9 @@ docker compose -f docker-compose.yml -f docker-compose.observability.yml \
 
 # Stage 4 (ML + OCR image). Not started by core.
 docker compose --profile ml up -d stage4-worker
+
+# OpenSearch only. Does not export summaries (that script stays off).
+docker compose --profile search up -d opensearch
 ```
 
 ## Secrets
@@ -77,6 +81,7 @@ docker compose --profile ml up -d stage4-worker
 | Grafana | 3000 |
 | Postgres | 5432 |
 | Kafka | `127.0.0.1:9092` |
+| OpenSearch | `127.0.0.1:9200` (profile `search` only) |
 | Loki | 3100 |
 | Jaeger UI | 16686 |
 | OTLP gRPC/HTTP | 4317 / 4318 |

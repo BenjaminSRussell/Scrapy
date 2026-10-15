@@ -1,0 +1,25 @@
+{
+  "settings": {
+    "number_of_shards": 1,
+    "number_of_replicas": 0
+  },
+  "mappings": {
+    "dynamic": "strict",
+    "properties": {
+      "url": {"type": "keyword"},
+      "url_hash": {"type": "keyword"},
+      "summary": {"type": "text"},
+      "keywords": {"type": "keyword"},
+      "word_count": {"type": "long"},
+      "quality_score": {"type": "float"},
+      "content_type": {"type": "keyword"},
+      "original_size": {"type": "long"},
+      "summary_size": {"type": "long"},
+      "compression_ratio": {"type": "float"},
+      "is_pdf": {"type": "boolean"},
+      "stage": {"type": "keyword"},
+      "source_table": {"type": "keyword"},
+      "summarized_at": {"type": "date"}
+    }
+  }
+}

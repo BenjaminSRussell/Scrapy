@@ -82,6 +82,10 @@ URL scores (not Delta rows) have a separate offline snapshot, `data/exports/scor
 python cli.py scoring-export --urls urls.txt
 ```
 
+## Search index (optional, off by default)
+
+`python scripts/export_gold_summaries.py` can bulk-index `stage3_summaries`, legacy `stage4_summaries`, and `stage4_large_doc_summaries` into OpenSearch or Elasticsearch. It does nothing unless `--enable` or `SEARCH_EXPORT_ENABLED=1`. The mapping is `scripts/search/gold_summaries_mapping.json`. Compose profile `search` is a loopback OpenSearch and is not started with `core` / `monitoring`. See [COMPOSE.md](../../COMPOSE.md).
+
 ## Connecting the Scrapy pipeline to the lake
 
 Spiders and workers don't open tables themselves. They call `src.utils.delta.get_delta()` / `LakehouseManager.get_instance()`, which resolve the lake root as described above. To point a whole run at another lake, set `DELTA_LAKE_PATH` for every process (spiders, workers, exporter). Otherwise the processes write to different directories.

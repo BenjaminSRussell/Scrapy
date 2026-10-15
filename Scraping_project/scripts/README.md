@@ -19,6 +19,7 @@ This directory contains scripts for managing, debugging, and resetting the scrap
 | `restore_backup.sh` | Dry-run restore, or a `/tmp` sample round-trip | `make restore`. `ROUNDTRIP=1` checks a sample. SQL is not loaded |
 | `anomaly_scan.py` | Offline z-score of a metrics fixture | `make anomaly-scan`. Prints an Alertmanager payload and does not POST |
 | `export_scoring_snapshot.py` | Daily URL-score Parquet snapshot | `python scripts/export_scoring_snapshot.py --urls FILE`. No crawl. See `docs/scoring_snapshot.md` (#1103) |
+| `export_gold_summaries.py` | Bulk-index Stage 3 and Stage 4 summaries into OpenSearch or Elasticsearch | Off until `--enable` or `SEARCH_EXPORT_ENABLED=1`. Does not scrape |
 
 > **Destructive operations** (`complete_reset.sh`, `reset_lake.py`, `../cli.py reset`,
 > `reseed.py --clear`, `drain_lake.py` drains) follow one safety policy; see
@@ -68,6 +69,20 @@ Fixtures live in `scripts/fixtures/anomaly/clean_metrics.json` and `scripts/fixt
 ### Alertmanager stub
 
 When the threshold is crossed, the target prints an Alertmanager webhook payload and does not POST it. There is no HTTP client. `ALERTMANAGER_URL`, if set, is not called.
+
+## Gold summary search export (#687)
+
+`scripts/export_gold_summaries.py` reads `stage3_summaries`, the legacy `stage4_summaries` table, and `stage4_large_doc_summaries`, and bulk-indexes them. The index mapping is `scripts/search/gold_summaries_mapping.json` (index `gold-summaries`). It does not scrape, does not write the lake, and does not start Docker.
+
+It is disabled by default. A run with no switch exits 0 and does not open a socket.
+
+```bash
+python scripts/export_gold_summaries.py
+SEARCH_EXPORT_ENABLED=1 python scripts/export_gold_summaries.py --dry-run
+SEARCH_EXPORT_ENABLED=1 python scripts/export_gold_summaries.py
+```
+
+`SEARCH_URL` defaults to `http://127.0.0.1:9200` (OpenSearch or Elasticsearch). Compose profile `search` publishes OpenSearch on `127.0.0.1:9200` and is not part of `core,monitoring`. Bringing that profile up does not run the exporter.
 
 ## Deprecated root paths (#568)
 
@@ -370,6 +385,7 @@ metrics-exporter services run only in the Helm chart):
 | Prometheus | 9090 | http://localhost:9090 (targets: http://localhost:9090/targets) |
 | Redis | 6379 | `localhost:6379` (`REDIS_HOST`/`REDIS_PORT`/`REDIS_PASSWORD`, see README "Redis connection contract") |
 | PostgreSQL | 5432 | postgres://localhost:5432 |
+| OpenSearch | 9200 | http://127.0.0.1:9200 (profile `search` only; not started by default) |
 
 `redis-exporter` (9121) and `postgres-exporter` (9187) are reachable only
 inside the compose network, where Prometheus scrapes them.

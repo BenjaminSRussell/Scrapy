@@ -120,6 +120,10 @@ FLAGS: dict[str, tuple[Any, str]] = {
         False,
         "Reuse a cached Stage 2 HTML body (url_hash + ETag/Last-Modified) and skip the fetch (#478).",
     ),
+    "SEARCH_EXPORT_ENABLED": (
+        False,
+        "Bulk-index Stage 3 and Stage 4 summaries into OpenSearch or Elasticsearch (#687).",
+    ),
 }
 
 
