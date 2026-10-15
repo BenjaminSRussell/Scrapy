@@ -33,7 +33,7 @@ import time
 import urllib.error
 import urllib.request
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 # #735: loopback by default. Containers/LAN must opt in explicitly
 # (CC_HOST=0.0.0.0 or --host 0.0.0.0), which prints a warning.
@@ -233,6 +233,29 @@ def queue_keys(env=None) -> tuple[str, ...]:
     return tuple(k.strip() for k in raw.split(",") if k.strip())
 
 
+# #657: control and audit responses stay same-origin even when CC_CORS_ORIGINS is set.
+CONTROL_API_PATHS = frozenset({"/api/control", "/api/audit"})
+CONTROL_BODY_MAX = 4096
+
+
+def default_audit_log_path() -> Path:
+    return DASHBOARD_DIR.parent / "data" / "operator_audit" / "events.jsonl"
+
+
+def _import_operator_audit():
+    """Load src.control.operator_audit with Scraping_project on sys.path.
+
+    ``python dashboard/serve.py`` puts the dashboard directory on sys.path,
+    not the project root.
+    """
+    root = str(DASHBOARD_DIR.parent)
+    if root not in sys.path:
+        sys.path.insert(0, root)
+    from src.control import operator_audit
+
+    return operator_audit
+
+
 def queue_depths(client, keys) -> list[dict]:
     """Type-aware depth per key (LLEN/ZCARD/SCARD/XLEN/HLEN); a missing key is 0."""
     out = []
@@ -259,6 +282,9 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
     upstream_timeout: float = 4.0
     redis_factory = staticmethod(_redis_from_env)
     queue_keys: tuple[str, ...] | None = None
+    # #657: OperatorAuditLog, set by configure() or by tests.
+    audit_log: object | None = None
+    audit_delta_path: str | None = None
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(self.root), **kwargs)
@@ -274,6 +300,10 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         cls.metrics_upstream = env.get("METRICS_UPSTREAM", DEFAULT_METRICS_UPSTREAM)
         cls.upstream_timeout = _env_float(env, "CC_UPSTREAM_TIMEOUT", 4.0) or 4.0
         cls.queue_keys = queue_keys(env)
+        audit = _import_operator_audit()
+        raw_log = env.get("CC_AUDIT_LOG", "").strip()
+        cls.audit_log = audit.OperatorAuditLog(raw_log or default_audit_log_path())
+        cls.audit_delta_path = env.get("CC_AUDIT_DELTA_PATH", "").strip() or None
 
     def _cfg(self):
         if self.auth is None:
@@ -299,15 +329,19 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
 
     def end_headers(self):
         self._cfg()
-        origin = (self.headers.get("Origin") or "").rstrip("/") if self.headers else ""
-        if "*" in (self.cors_origins or ()):
-            self.send_header("Access-Control-Allow-Origin", "*")
-        elif origin and origin in (self.cors_origins or ()):
-            self.send_header("Access-Control-Allow-Origin", origin)
-            self.send_header("Vary", "Origin")
-        if self.cors_origins:
-            self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
-            self.send_header("Access-Control-Allow-Headers", "Authorization, Content-Type")
+        route = urlsplit(getattr(self, "path", "") or "").path
+        # Audit and control stay same-origin (#657). A page on another origin
+        # must not read who paused a stage or post a control call.
+        if route not in CONTROL_API_PATHS:
+            origin = (self.headers.get("Origin") or "").rstrip("/") if self.headers else ""
+            if "*" in (self.cors_origins or ()):
+                self.send_header("Access-Control-Allow-Origin", "*")
+            elif origin and origin in (self.cors_origins or ()):
+                self.send_header("Access-Control-Allow-Origin", origin)
+                self.send_header("Vary", "Origin")
+            if self.cors_origins:
+                self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
+                self.send_header("Access-Control-Allow-Headers", "Authorization, Content-Type")
         self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
         self.send_header("Content-Security-Policy", self.csp or build_csp({}))
         for name, value in SECURITY_HEADERS.items():
@@ -383,7 +417,96 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             return
         self._send_json(200, {"ok": True, "queues": queues, "checked_at": time.time()})
 
-    API_ROUTES = {"/api/metrics": "_api_metrics", "/api/health": "_api_health", "/api/queues": "_api_queues"}
+    def _read_json_object(self) -> tuple[dict | None, str | None]:
+        raw_len = self.headers.get("Content-Length") if self.headers else None
+        try:
+            length = int(raw_len)  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            return None, "Content-Length required"
+        if length < 0 or length > CONTROL_BODY_MAX:
+            return None, "body too large"
+        try:
+            body = json.loads(self.rfile.read(length).decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            return None, "invalid JSON"
+        if not isinstance(body, dict):
+            return None, "JSON object required"
+        return body, None
+
+    def _control_actor(self, supplied: object) -> str:
+        """Basic-auth user wins; else X-Control-Actor, else JSON actor, else operator."""
+        header = self.headers.get("Authorization") if self.headers else None
+        auth = self.auth
+        if auth and auth.basic and header:
+            scheme, _, value = header.partition(" ")
+            if scheme.lower() == "basic":
+                try:
+                    user, _, _password = base64.b64decode(value.strip(), validate=True).decode("utf-8").partition(":")
+                except (ValueError, UnicodeDecodeError):
+                    user = ""
+                if user and auth._eq(user, auth.basic[0]):
+                    return user
+        proxy = (self.headers.get("X-Control-Actor") or "").strip() if self.headers else ""
+        if proxy:
+            return proxy
+        if isinstance(supplied, str) and supplied.strip():
+            return supplied.strip()
+        return "operator"
+
+    def _api_audit(self) -> None:
+        audit = _import_operator_audit()
+        log = self.audit_log
+        if log is None:
+            self._send_json(503, {"ok": False, "error": "audit log not configured"})
+            return
+        raw = parse_qs(urlsplit(self.path).query).get("limit", [str(audit.DEFAULT_AUDIT_LIMIT)])
+        try:
+            limit = int(raw[0])
+        except (TypeError, ValueError):
+            self._send_json(400, {"ok": False, "error": "limit must be an integer"})
+            return
+        if limit < 1:
+            self._send_json(400, {"ok": False, "error": "limit must be >= 1"})
+            return
+        limit = min(limit, audit.MAX_AUDIT_LIMIT)
+        events = log.read_last(limit)  # type: ignore[attr-defined]
+        self._send_json(200, {"ok": True, "events": events, "limit": limit})
+
+    def _api_control(self) -> None:
+        """Record a control call. Does not start, stop, or pause workers (#148)."""
+        audit = _import_operator_audit()
+        log = self.audit_log
+        if log is None:
+            self._send_json(503, {"ok": False, "error": "audit log not configured"})
+            return
+        body, err = self._read_json_object()
+        if err or body is None:
+            self._send_json(400, {"ok": False, "error": err or "invalid JSON"})
+            return
+        actor = self._control_actor(body.get("actor"))
+        action = body.get("action")
+        job_id = body.get("job_id", "")
+        if job_id is None:
+            job_id = ""
+        if not isinstance(action, str) or not isinstance(job_id, str):
+            self._send_json(400, {"ok": False, "error": "action and job_id must be strings"})
+            return
+        try:
+            event = log.append(actor=actor, action=action, job_id=job_id)  # type: ignore[attr-defined]
+        except audit.AuditError as exc:
+            self._send_json(400, {"ok": False, "error": str(exc)})
+            return
+        payload: dict = {"ok": True, "event": event}
+        if self.audit_delta_path:
+            payload["delta_ok"] = audit.mirror_delta(event, self.audit_delta_path)
+        self._send_json(201, payload)
+
+    API_ROUTES = {
+        "/api/metrics": "_api_metrics",
+        "/api/health": "_api_health",
+        "/api/queues": "_api_queues",
+        "/api/audit": "_api_audit",
+    }
 
     def do_OPTIONS(self):
         self._cfg()
@@ -413,6 +536,15 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         if not self._guard():
             return
         route = urlsplit(self.path).path
+        if route == "/api/control":
+            body = b"Method Not Allowed\n"
+            self.send_response(405)
+            self.send_header("Allow", "POST")
+            self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
         if route in self.API_ROUTES:
             getattr(self, self.API_ROUTES[route])()
             return
@@ -424,6 +556,15 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             self._send_bytes(200, body, 'application/javascript; charset=utf-8')
             return
         return super().do_GET()
+
+    def do_POST(self):
+        if not self._guard():
+            return
+        route = urlsplit(self.path).path
+        if route == "/api/control":
+            self._api_control()
+            return
+        self.send_error(405, "Method Not Allowed")
 
 
 class DashboardServer(socketserver.ThreadingTCPServer):
@@ -493,6 +634,9 @@ def main(argv=None):
     print()
     print(f"📊 Dashboard:  http://{shown}:{port}")
     print(f"📈 Metrics:    /api/metrics -> {DashboardHandler.metrics_upstream}  (METRICS_UPSTREAM)")
+    audit_path = getattr(DashboardHandler.audit_log, "path", None)
+    print(f"Audit log:    /api/audit  (CC_AUDIT_LOG={audit_path})")
+    print("Control:      POST /api/control records actor/action/ts/job_id; it does not start or stop stages")
     print(f"🔐 Auth:       {'on' if DashboardHandler.auth and DashboardHandler.auth.enabled else 'off (CC_AUTH_TOKEN / CC_BASIC_AUTH)'}")
     print("📉 Grafana:    http://localhost:3001 (separate analytics)")
     print()

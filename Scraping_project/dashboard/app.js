@@ -1138,6 +1138,48 @@ async function fetchQueueDepths() {
     }
 }
 
+// #657: last N operator actions from GET /api/audit. Text only; no clear control.
+const AUDIT_URL = '/api/audit?limit=50';
+async function fetchOperatorAudit() {
+    if (typeof window === 'undefined' || !/^https?:$/.test(window.location.protocol)) return;
+    const status = document.getElementById('operator-audit-status');
+    const tbody = document.getElementById('operator-audit');
+    if (!status || !tbody) return;
+    let payload = null;
+    try {
+        const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+        const timer = ctrl ? setTimeout(() => ctrl.abort(), METRICS_TIMEOUT_MS) : null;
+        try {
+            const resp = await fetch(AUDIT_URL, { cache: 'no-store', signal: ctrl ? ctrl.signal : undefined });
+            payload = await resp.json().catch(() => ({ ok: false, error: `HTTP ${resp.status}` }));
+            if (!resp.ok && payload && payload.ok !== false) payload = { ok: false, error: `HTTP ${resp.status}` };
+        } finally {
+            if (timer) clearTimeout(timer);
+        }
+    } catch (error) {
+        payload = { ok: false, error: (error && error.name === 'AbortError') ? 'timed out' : 'request failed' };
+    }
+    tbody.replaceChildren();
+    const events = payload && Array.isArray(payload.events) ? payload.events : [];
+    if (!payload || payload.ok !== true) {
+        status.textContent = 'Audit log unavailable.';
+        return;
+    }
+    status.textContent = events.length
+        ? `Last ${events.length} operator action${events.length === 1 ? '' : 's'}`
+        : 'No operator actions recorded.';
+    for (const ev of events) {
+        const tr = document.createElement('tr');
+        for (const key of ['ts', 'actor', 'action', 'job_id']) {
+            const td = document.createElement('td');
+            const value = ev && ev[key] != null && ev[key] !== '' ? ev[key] : '\u2014';
+            td.textContent = String(value);
+            tr.appendChild(td);
+        }
+        tbody.appendChild(tr);
+    }
+}
+
 async function fetchMetrics() {
     const main = document.getElementById('main') || document.querySelector('.container');
     if (main) main.setAttribute('aria-busy', 'true');
@@ -1681,7 +1723,7 @@ async function fetchAndAnnounce() {
     const before = lastMetricsAt;
     setRefreshBusy(true);
     try {
-        await Promise.all([fetchMetrics(), fetchQueueDepths()]);
+        await Promise.all([fetchMetrics(), fetchQueueDepths(), fetchOperatorAudit()]);
     } finally {
         setRefreshBusy(false);
     }

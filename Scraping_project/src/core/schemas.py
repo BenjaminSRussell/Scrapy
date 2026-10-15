@@ -111,6 +111,15 @@ METADATA_QUEUE_SCHEMA: Final[pa.Schema] = pa.schema([
     ("spider_name", pa.string()),
 ])
 
+# Control Center operator actions (#657). ``ts`` stays ISO-8601 text so a
+# JSONL line and a Delta row carry the same bytes. Append-only.
+OPERATOR_AUDIT_SCHEMA: Final[pa.Schema] = pa.schema([
+    ("actor", pa.string()),
+    ("action", pa.string()),
+    ("ts", pa.string()),
+    ("job_id", pa.string()),
+])
+
 # Performance Metrics Schema
 METRICS_SCHEMA: Final[pa.Schema] = pa.schema([
     ("stage", pa.string()),
@@ -140,6 +149,7 @@ SCHEMA_REGISTRY: Final[Dict[str, pa.Schema]] = {
     "error_log": ERROR_LOG_SCHEMA,
     "metrics": METRICS_SCHEMA,
     "metadata_queue": METADATA_QUEUE_SCHEMA,
+    "operator_audit": OPERATOR_AUDIT_SCHEMA,
 }
 
 

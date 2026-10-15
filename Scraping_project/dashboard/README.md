@@ -60,6 +60,16 @@ node --test Scraping_project/dashboard/tests/   # helper unit tests
   If Redis is down the API returns 503 and the panel says "unavailable"; it never
   shows made-up zeros. Stage 2–4 backlogs are Delta tables / Kafka topics, not Redis
   keys; see the Grafana pipeline-health dashboard for those.
+- Operator audit (#657): `POST /api/control` with `{"action","job_id","actor"}`
+  appends one JSONL event (`actor`, `action`, `ts`, `job_id`). It does **not**
+  start, stop, or pause workers (that is #148); it records the call.
+  `GET /api/audit?limit=50` (max 200) returns the newest events. The Activity
+  tab lists them and has no clear or edit control. Actions are `start`, `stop`,
+  `pause`, `resume`, plus the same verbs with `_stage1` … `_stage4`
+  (`pause_stage2`). `ts` is the server clock. With `CC_BASIC_AUTH`, `actor` is
+  that user. Otherwise the server uses `X-Control-Actor`, then JSON `actor`,
+  then `operator`. These two routes send no CORS headers. Schema:
+  `OPERATOR_AUDIT_SCHEMA` and ADR 0004.
 
 ## Server settings
 
@@ -74,6 +84,8 @@ node --test Scraping_project/dashboard/tests/   # helper unit tests
 | `CC_CORS_ORIGINS` | unset (no CORS headers) | Comma list of exact origins allowed to read responses cross-origin; `*` is for local development only and prints a warning (#189) |
 | `CC_CONNECT_SRC` | unset | Extra http(s) origins allowed in CSP `connect-src` (only for a cross-origin `?metrics=`) (#245) |
 | `CC_RATE_LIMIT` / `CC_RATE_BURST` | `600` / `120` | Per-client token bucket: requests per minute and burst. Excess requests get `429` with `Retry-After`. `CC_RATE_LIMIT=0` disables it (#257) |
+| `CC_AUDIT_LOG` | `Scraping_project/data/operator_audit/events.jsonl` | Append-only JSONL of operator actions (#657) |
+| `CC_AUDIT_DELTA_PATH` | unset (JSONL only) | If set, each accepted control call is also appended to this Delta table |
 
 ## Exposing the dashboard (#189/#455)
 

@@ -1787,6 +1787,26 @@
                     <!-- Rendered by app.js on init; no static seed (#978). -->
                     <div class="activity-feed" id="activity-log" role="log" aria-live="off" aria-describedby="activity-log-cap"></div>
                 </div>
+                <!-- #657: server audit. Read-only; no clear or edit control. -->
+                <div class="card" id="operator-audit-card" style="margin-top: 2rem;">
+                    <div class="card-header" style="flex-wrap:wrap;gap:0.5rem">
+                        <h2 class="card-title" id="operator-audit-title">Operator audit</h2>
+                        <span class="card-badge badge-info">Read-only</span>
+                    </div>
+                    <p class="metric-label">Last operator actions recorded by <code>POST /api/control</code>. This panel cannot change them.</p>
+                    <p class="metric-label" id="operator-audit-status" role="status" aria-live="polite">Waiting for audit log&hellip;</p>
+                    <table class="data-fallback-table" aria-labelledby="operator-audit-title">
+                        <thead>
+                            <tr>
+                                <th scope="col">Time</th>
+                                <th scope="col">Actor</th>
+                                <th scope="col">Action</th>
+                                <th scope="col">Job</th>
+                            </tr>
+                        </thead>
+                        <tbody id="operator-audit"></tbody>
+                    </table>
+                </div>
             </div>
         </div>
 
