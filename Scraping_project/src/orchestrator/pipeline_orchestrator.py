@@ -12,6 +12,7 @@ from scrapy.crawler import CrawlerProcess
 from scrapy.utils.project import get_project_settings
 
 from src.core.constants import LEGACY_TABLE_STAGE3_SUMMARIES, TABLE_STAGE3_SUMMARIES
+from src.core.crawl_profile import CrawlProfile, JobAdmission, admit_job, resolve_crawl_profile
 from src.utils.delta import get_delta
 from src.orchestrator.hop_reconciliation import BARRIER_MODES, alert_kind, count_hops, reconcile
 from src.stage1.js_queue import count_pending, js_spider_enabled
@@ -116,6 +117,8 @@ class PipelineOrchestrator:
         self.delta = get_delta()
         self.stats = PipelineStats()
         self._current_stage: str | None = None
+        # Nested stage calls reuse the reservation taken by the outer run (#672).
+        self._quota_depth = 0
 
     def count_js_queue_pending(self) -> int:
         """Pending rows in Delta ``js_spider_queue`` (missing status = pending)."""
@@ -183,43 +186,53 @@ class PipelineOrchestrator:
         self,
         spider_name: str = "scout",
         url_limit: int | None = None,
+        profile: CrawlProfile | str | None = None,
     ) -> int:
         """Run Stage 1 (URL Discovery) with Scout spider.
 
         Args:
             spider_name: Spider to run (scout, deep_dive, or javascript)
             url_limit: Max items to scrape (None = unlimited)
+            profile: Crawl profile whose quotas this run counts against (#672).
+                None resolves the configured profile. A direct call checks the
+                quota; a call under ``run_full_pipeline`` or ``run_stage_by_name``
+                reuses the reservation those already took.
 
         Returns:
             Number of URLs queued for Stage 2
         """
-        logger.info("=" * 80)
-        logger.info("STAGE 1: URL DISCOVERY")
-        logger.info("=" * 80)
-
-        settings = get_project_settings()
-
-        # Only the memory soft-stop (#539): drain before the OOM killer even here.
-        settings.set('EXTENSIONS', {"src.memory_soft_stop.MemorySoftStop": 530})
-
-        if url_limit:
-            settings.set('CLOSESPIDER_ITEMCOUNT', url_limit)
-
-        settings.set('TWISTED_REACTOR', 'twisted.internet.selectreactor.SelectReactor')
-
-        process = CrawlerProcess(settings)
-        process.crawl(spider_name)
-        process.start()
-
+        admission: JobAdmission | None = None
         try:
-            queue = self.delta.read("stage2_queue")
-            queued_count = len([item for item in queue if item.get('status') == 'pending'])
-            logger.info(f" Stage 1 complete: {queued_count} URLs queued for Stage 2")
-            self.stats.stage1_urls_queued = queued_count
-            return queued_count
-        except Exception as e:
-            logger.warning(f"Could not read stage2_queue: {e}")
-            return 0
+            admission = self._acquire_quota(urls=url_limit, profile=profile)
+            logger.info("=" * 80)
+            logger.info("STAGE 1: URL DISCOVERY")
+            logger.info("=" * 80)
+
+            settings = get_project_settings()
+
+            # Only the memory soft-stop (#539): drain before the OOM killer even here.
+            settings.set('EXTENSIONS', {"src.memory_soft_stop.MemorySoftStop": 530})
+
+            if url_limit:
+                settings.set('CLOSESPIDER_ITEMCOUNT', url_limit)
+
+            settings.set('TWISTED_REACTOR', 'twisted.internet.selectreactor.SelectReactor')
+
+            process = CrawlerProcess(settings)
+            process.crawl(spider_name)
+            process.start()
+
+            try:
+                queue = self.delta.read("stage2_queue")
+                queued_count = len([item for item in queue if item.get('status') == 'pending'])
+                logger.info(f" Stage 1 complete: {queued_count} URLs queued for Stage 2")
+                self.stats.stage1_urls_queued = queued_count
+                return queued_count
+            except Exception as e:
+                logger.warning(f"Could not read stage2_queue: {e}")
+                return 0
+        finally:
+            self._release_quota(admission)
 
     async def run_stage2(
         self,
@@ -343,6 +356,7 @@ class PipelineOrchestrator:
         stage2_concurrent: int = 50,
         stage3_concurrent: int = 20,
         allow_partial: bool = False,
+        profile: CrawlProfile | str | None = None,
     ) -> PipelineStats:
         """Run the complete 4-stage pipeline.
 
@@ -358,6 +372,17 @@ class PipelineOrchestrator:
             stage2_concurrent: Concurrency for Stage 2
             stage3_concurrent: Concurrency for Stage 3
             allow_partial: Return (not raise) on a ``partial_failed`` run
+            profile: Crawl profile whose quotas this run counts against (#672).
+                None resolves the configured profile.
+
+        Quota (#672): before any stage starts, the run reserves one concurrent
+        slot and ``stage1_url_limit`` URLs (None means the request has no URL
+        limit) against that profile. A null cap is uncapped. Over quota raises
+        ``QuotaExceededError`` and does not start a stage, reserve a slot, or
+        spend the day's URLs. That error is not an authorization decision and
+        does not change ``stats`` or ``pipeline_runs_total``. The concurrent
+        slot is released when the run ends; the URL charge stays until the
+        next UTC day.
 
         Abort policy (#684): ``KeyboardInterrupt``, ``SystemExit`` and task
         cancellation end the run with status ``aborted`` (``aborted_stage`` names
@@ -372,23 +397,28 @@ class PipelineOrchestrator:
         Returns:
             The run's PipelineStats, including ``status`` and ``stage_errors``.
         """
-        # Fresh stats per run: counts from an earlier (possibly aborted) run must
-        # not be reported as this run's (#684).
-        self.stats = PipelineStats(start_time=datetime.now(), status="running")
-        self._current_stage = None
+        # Quota before stats: a rejection is not a run (#672). Fresh stats per
+        # admitted run so an earlier (possibly aborted) run is not reported as
+        # this one (#684).
+        admission: JobAdmission | None = None
         try:
-            return await self._run_full_pipeline(
-                stage1_url_limit, stage2_concurrent, stage3_concurrent, allow_partial
-            )
-        except _ABORTS as e:
-            if self.stats.status != "running":
-                raise  # outcome already final (e.g. interrupted while printing stats): keep it
-            stage = self._current_stage or "startup"
-            self.stats.aborted_stage = stage
-            self.stats.stage_errors.setdefault(stage, f"aborted: {type(e).__name__}")
-            self._finish("aborted")
-            raise
+            admission = self._acquire_quota(urls=stage1_url_limit, profile=profile)
+            self.stats = PipelineStats(start_time=datetime.now(), status="running")
+            self._current_stage = None
+            try:
+                return await self._run_full_pipeline(
+                    stage1_url_limit, stage2_concurrent, stage3_concurrent, allow_partial
+                )
+            except _ABORTS as e:
+                if self.stats.status != "running":
+                    raise  # outcome already final (e.g. interrupted while printing stats): keep it
+                stage = self._current_stage or "startup"
+                self.stats.aborted_stage = stage
+                self.stats.stage_errors.setdefault(stage, f"aborted: {type(e).__name__}")
+                self._finish("aborted")
+                raise
         finally:
+            self._release_quota(admission)
             self._current_stage = None
 
     async def _run_full_pipeline(
@@ -542,24 +572,54 @@ class PipelineOrchestrator:
     def run_stage_by_name(
         self,
         stage: Literal["stage1", "stage2", "stage3", "stage4"],
+        *,
+        profile: CrawlProfile | str | None = None,
         **kwargs
     ):
         """Run a specific stage by name.
 
         Args:
             stage: Stage name (stage1, stage2, stage3, or stage4)
+            profile: Crawl profile whose quotas this run counts against (#672).
             **kwargs: Stage-specific arguments
         """
-        if stage == "stage1":
-            return self.run_stage1(**kwargs)
-        elif stage == "stage2":
-            return asyncio.run(self.run_stage2(**kwargs))
-        elif stage == "stage3":
-            return asyncio.run(self.run_stage3(**kwargs))
-        elif stage == "stage4":
-            return asyncio.run(self.run_stage4(**kwargs))
-        else:
+        if stage not in ("stage1", "stage2", "stage3", "stage4"):
             raise ValueError(f"Unknown stage: {stage}")
+        # Only stage 1 admits URLs. None means the request has no URL limit.
+        urls: int | None = kwargs.get("url_limit") if stage == "stage1" else 0
+        admission: JobAdmission | None = None
+        try:
+            admission = self._acquire_quota(urls=urls, profile=profile)
+            if stage == "stage1":
+                return self.run_stage1(**kwargs)
+            elif stage == "stage2":
+                return asyncio.run(self.run_stage2(**kwargs))
+            elif stage == "stage3":
+                return asyncio.run(self.run_stage3(**kwargs))
+            else:
+                return asyncio.run(self.run_stage4(**kwargs))
+        finally:
+            self._release_quota(admission)
+
+    def _acquire_quota(
+        self,
+        *,
+        urls: int | None,
+        profile: CrawlProfile | str | None,
+    ) -> JobAdmission | None:
+        """Reserve this run, or reuse the reservation an outer run already holds."""
+        if self._quota_depth:
+            self._quota_depth += 1
+            return None
+        admission = admit_job(resolve_crawl_profile(profile), urls=urls)
+        self._quota_depth = 1
+        return admission
+
+    def _release_quota(self, admission: JobAdmission | None) -> None:
+        if self._quota_depth:
+            self._quota_depth -= 1
+        if admission is not None:
+            admission.release()
 
     def _print_final_stats(self):
         logger.info("\n" + "=" * 80)

@@ -24,6 +24,8 @@ from pydantic import (
     model_validator,
 )
 
+from src.core.crawl_profile import PROFILE_ID_RE, PROFILE_ID_RULE, CrawlProfileQuotas
+
 logger = logging.getLogger(__name__)
 
 
@@ -408,13 +410,33 @@ class CostControlsSection(BaseModel):
 
 
 class PipelineConfig(BaseModel):
-    """Top-level config.yml. Unknown sections are ignored; redis, kafka, and cost_controls are not."""
+    """Top-level config.yml. Unknown sections are ignored; redis, kafka, cost_controls, and crawl_profiles are not."""
 
     model_config = ConfigDict(extra="allow")
     redis: RedisSection
     kafka: KafkaSection
     postgres: PostgresSection | None = None
     cost_controls: CostControlsSection | None = None
+    crawl_profiles: dict[StrictStr, CrawlProfileQuotas] | None = None
+
+    @field_validator("crawl_profiles", mode="before")
+    @classmethod
+    def _normalize_crawl_profiles(cls, value: object) -> object:
+        """Null block or a null profile is uncapped. Ids match the site-id pattern (#672)."""
+        if value is None:
+            return None
+        if not isinstance(value, dict):
+            raise ValueError("must be a mapping or null")
+        normalized: dict[object, object] = {}
+        for key, item in value.items():
+            if not isinstance(key, str) or PROFILE_ID_RE.fullmatch(key) is None:
+                raise ValueError(f"profile id {key!r} must match {PROFILE_ID_RULE}")
+            if item is None:
+                item = {}
+            if not isinstance(item, dict):
+                raise ValueError(f"profile {key!r} must be a mapping or null")
+            normalized[key] = item
+        return normalized
 
 
 def default_config_path() -> Path:
