@@ -52,3 +52,14 @@ docker images --format 'table {{.Repository}}\t{{.Tag}}\t{{.Size}}' \
 ```
 
 Qualitative expectation only: `core` / `stage3` omit the torch + transformers + easyocr trees (often on the order of a few GB). Paste real `docker images` output before treating AC4 as done.
+
+## Quantized Stage 3 (CPU-only)
+
+`stage3.model_variant` defaults to `full`. Set `quantized` for the CPU int8/gguf
+distill path. That path is an offline stub in `src/stage3/quantized_model.py`.
+It does not import torch, does not download weights, and does not use
+`requirements-stage4.txt` (left unchanged while the pip lock bump is open).
+
+Quality caveat: stage3.model_variant quantized is an int8/gguf distill stub, not the pinned full-precision sshleifer/distilbart-cnn-12-6 checkpoint. The offline stub keeps at most two sentences and can drop entities, numbers, and later context. It is not citation-grade. The default variant full keeps the existing five-sentence extractive summary and also does not load torch.
+
+Image size: the stage3 image installs requirements.txt only and does not install torch or requirements-stage4.txt. models.lock.json pins pytorch_model.bin for sshleifer/distilbart-cnn-12-6 at 1222317369 bytes; that file is not copied into the stage3 image. This quantized option adds no GGUF blob either. A real int8 GGUF of that distill checkpoint is much smaller than the 1.2 GB fp32 bin and would still stay off the lean image until a later pin. No image was rebuilt for this note.

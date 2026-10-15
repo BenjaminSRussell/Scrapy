@@ -257,6 +257,11 @@ stage3:
 
   # Model Settings
   model_name: "sshleifer/distilbart-cnn-12-6"
+  # full (default): extractive summary, no torch. quantized: CPU int8/gguf
+  # distill stub (shorter, not citation-grade). The stage3 image stays on
+  # requirements.txt; it does not install torch or requirements-stage4.txt
+  # and does not add a GGUF file. See docs/OPTIONAL_EXTRAS.md (#652).
+  model_variant: full  # full | quantized
   max_length: 150
   min_length: 50
   device: "cpu"  # or "cuda" for GPU

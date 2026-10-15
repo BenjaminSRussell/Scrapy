@@ -12,7 +12,7 @@ These digests are the ones the Hub itself publishes.
 
 | Entry | Repo | Used by |
 |---|---|---|
-| `stage3_summarizer` | `sshleifer/distilbart-cnn-12-6` | Stage 3 (`stage3.model_name`) |
+| `stage3_summarizer` | `sshleifer/distilbart-cnn-12-6` | Stage 3 (`stage3.model_name`). Not loaded when `stage3.model_variant` is `full` or `quantized`. |
 | `stage4_summarizer` | `facebook/bart-large-cnn` | Stage 4 (`stage4.model_name`) |
 | `stage4_entity_embeddings` | `sentence-transformers/all-MiniLM-L6-v2` | Stage 4 entity summarization |
 
@@ -42,3 +42,11 @@ If that happens, delete the bad snapshot from `~/.cache/huggingface/hub` and rer
 4. Run `python cli.py setup` locally to verify, then commit the lock in its own PR.
 
 To pin a new model or file, add an entry to `models.lock.json` (`name`, `repo_id`, `files`) and run the update script.
+
+## Quantized Stage 3 option (#652)
+
+`stage3.model_variant: quantized` does **not** add a lock entry. The id
+`local-stub://stage3/distilbart-cnn-12-6-q8_0.gguf` is an offline int8/gguf
+name, not a Hub repo, so `cli.py setup` must not download it. The default
+`model_variant: full` is unchanged. Quality caveat and image size:
+[OPTIONAL_EXTRAS.md](OPTIONAL_EXTRAS.md#quantized-stage-3-cpu-only).

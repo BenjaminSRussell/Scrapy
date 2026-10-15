@@ -13,6 +13,13 @@ from src.core.constants import (
     TABLE_STAGE3_SUMMARIES,
 )
 from src.otel_tracing import ensure_crawl_job_id, init_tracing, start_span
+from src.stage3.quantized_model import (
+    VARIANT_FULL,
+    VARIANT_QUANTIZED,
+    configured_variant,
+    log_selected_variant,
+    quantized_offline_summary,
+)
 from src.utils.cost_controls import (
     GPU_MINUTES,
     STATUS_BUDGET_EXHAUSTED,
@@ -205,6 +212,9 @@ class Stage3Worker:
         self.delta = get_delta()
         self.postgres = PostgresManager.get_instance()
         self.SIMILARITY_THRESHOLD = _similarity_threshold()
+        # full: existing extractive cut. quantized: offline int8/gguf stub (#652).
+        self.model_variant = configured_variant()
+        log_selected_variant(self.model_variant)
         self._fingerprints: FingerprintStore | None = None
         self.budget_status: str | None = None
 
@@ -375,12 +385,16 @@ class Stage3Worker:
                 text = doc.get("text_content", "")
                 url_hash = doc.get("url_hash", "")
 
-                max_sentences = SUMMARY_LIMITS["extractive_max_sentences"]
-                sentences = text.split(".")[:max_sentences]
-                summary_body = ". ".join(sentence.strip() for sentence in sentences if sentence.strip())
-                summary = summary_body + "." if summary_body else ""
-                if len(summary) > MAX_SUMMARY_CHARS:
-                    summary = self._fallback_summary(summary, MAX_SUMMARY_CHARS)
+                if getattr(self, "model_variant", VARIANT_FULL) == VARIANT_QUANTIZED:
+                    # Offline stub. Does not load the pinned full-precision weights.
+                    summary = quantized_offline_summary(text, max_chars=MAX_SUMMARY_CHARS)
+                else:
+                    max_sentences = SUMMARY_LIMITS["extractive_max_sentences"]
+                    sentences = text.split(".")[:max_sentences]
+                    summary_body = ". ".join(sentence.strip() for sentence in sentences if sentence.strip())
+                    summary = summary_body + "." if summary_body else ""
+                    if len(summary) > MAX_SUMMARY_CHARS:
+                        summary = self._fallback_summary(summary, MAX_SUMMARY_CHARS)
 
                 return {
                     "url": url,
