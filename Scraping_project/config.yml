@@ -67,6 +67,8 @@ stage1:
   #                           stores discovery_source provenance; both engines may run in parallel.
   #   mutex: per-job site lock discovery_mutex:{job_id}:{site}; one engine discovers at a time.
   # Claim keys are not the crawl seen-set (site:{site_id}:{prefix}:urls, #191).
+  # Stage 1 job mode (sitemap-first) operator copy for degraded rustmapper
+  # discovery: src/stage1/JOB_MODE.md (#941). Not a failure-policy setting.
   discovery:
     mode: shared_dedup  # shared_dedup | mutex
     job_id: default     # scopes claim/mutex keys per pipeline job

@@ -468,6 +468,12 @@
             font-size: 0.8rem;
             color: var(--muted-text);
         }
+        .stage-drilldown-status-token {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+            font-weight: 700;
+            color: var(--gray-800);
+        }
+        #stage-drilldown-job-mode[hidden] { display: none; }
 
         .chart-container {
             position: relative;
@@ -2023,6 +2029,7 @@
                 </div>
                 <p id="stage-drilldown-status" class="stage-drilldown-status">Idle</p>
                 <div id="stage-drilldown-metrics" class="stage-metrics"></div>
+                <div id="stage-drilldown-job-mode" class="stage-drilldown-job-mode" hidden></div>
                 <h3 class="stage-drilldown-links-title">Related</h3>
                 <ul id="stage-drilldown-links" class="stage-drilldown-links"></ul>
                 <p id="stage-drilldown-note" class="stage-drilldown-note">Job and queue links are placeholders until those views exist. Press Escape to close.</p>

@@ -708,6 +708,13 @@ def _normalize_profile_argv(argv: list[str], commands: set[str]) -> list[str]:
     return profile + rest
 
 
+def cmd_stage1_job_mode(_args):
+    """Print Stage 1 job-mode copy for rustmapper degraded discovery (#941). No crawl."""
+    from src.stage1.rustmapper_degraded_copy import format_job_mode_text
+
+    print(format_job_mode_text())
+
+
 def main():
     """Main CLI entry point."""
     parser = argparse.ArgumentParser(
@@ -901,6 +908,22 @@ def main():
     ml_export.add_argument("--topic", default=None, help="Default: $ZSC_LOW_CONF_TOPIC or low_confidence_review")
     ml_export.add_argument("--idle-timeout", type=float, default=5.0, help="Stop after N seconds without messages")
     ml_parser.set_defaults(func=cmd_ml)
+
+    # Stage 1 job mode: operator copy only. Does not crawl (#941).
+    from src.stage1.rustmapper_degraded_copy import format_job_mode_text
+
+    stage1_parser = subparsers.add_parser(
+        "stage1",
+        help="Stage 1 job mode: rustmapper degraded-discovery copy (no crawl)",
+    )
+    stage1_sub = stage1_parser.add_subparsers(dest="stage1_command")
+    job_mode_parser = stage1_sub.add_parser(
+        "job-mode",
+        help="Print status strings and next actions for abort, fallback Python, and resume data-dir",
+        description=format_job_mode_text(),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    job_mode_parser.set_defaults(func=cmd_stage1_job_mode)
 
     # Parse and execute. `--profile` is optional-DIR, so normalize before argparse
     # can swallow the subcommand or reject the flag when it follows the command.

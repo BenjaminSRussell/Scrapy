@@ -1769,7 +1769,59 @@ async function fetchAndAnnounce() {
 
 // #1033: click or Enter/Space on a pipeline stage card opens a side panel
 // with a subset of that stage's metrics and placeholder job/queue links.
+// #941: Stage 1 also shows the sitemap-first job-mode copy (no crawl).
 let stageDrilldownReturnFocus = null;
+
+function appendJobModeRows(host, heading, rows, hintText) {
+    const title = document.createElement('h3');
+    title.className = 'stage-drilldown-links-title';
+    title.textContent = heading;
+    const list = document.createElement('ul');
+    list.className = 'stage-drilldown-links';
+    rows.forEach(row => {
+        const li = document.createElement('li');
+        const status = document.createElement('span');
+        status.className = 'stage-drilldown-status-token';
+        status.textContent = row.status;
+        const hint = document.createElement('p');
+        hint.className = 'stage-drilldown-note';
+        hint.textContent = hintText(row);
+        li.append(status, hint);
+        list.append(li);
+    });
+    host.append(title, list);
+}
+
+function renderStage1JobMode(spec) {
+    const host = document.getElementById('stage-drilldown-job-mode');
+    if (!host) return;
+    host.replaceChildren();
+    const copy = spec && spec.jobMode;
+    if (!copy) {
+        host.hidden = true;
+        return;
+    }
+    host.hidden = false;
+    const title = document.createElement('h3');
+    title.className = 'stage-drilldown-links-title';
+    title.id = 'stage1-job-mode';
+    title.textContent = 'Stage 1 job mode';
+    const intro = document.createElement('p');
+    intro.className = 'stage-drilldown-note';
+    intro.textContent = copy.intro;
+    host.append(title, intro);
+    appendJobModeRows(host, 'Mode status strings', copy.modes, row => row.when + ' Next: ' + row.nextAction);
+    appendJobModeRows(
+        host,
+        'Reason status strings',
+        copy.reasons,
+        row => 'Use mode ' + row.mode + '. Next: ' + row.nextAction
+    );
+    const where = document.createElement('p');
+    where.className = 'stage-drilldown-note';
+    where.textContent = 'Runbook: ' + copy.runbook + '. CLI: python cli.py stage1 job-mode';
+    host.append(where);
+}
 
 function stageDrilldownIsOpen() {
     const root = document.getElementById('stage-drilldown');
@@ -1818,6 +1870,13 @@ function renderStageDrilldown(stage) {
             links.append(li);
         });
     }
+    const note = document.getElementById('stage-drilldown-note');
+    if (note) {
+        note.textContent = spec.jobMode
+            ? 'Job and queue links are placeholders until those views exist. Degraded rustmapper discovery copy is under Stage 1 job mode. Press Escape to close.'
+            : 'Job and queue links are placeholders until those views exist. Press Escape to close.';
+    }
+    renderStage1JobMode(spec);
     root.dataset.stage = String(spec.stage);
     document.querySelectorAll('#tab-pipeline .stage-card').forEach(el => {
         el.setAttribute('aria-expanded', el === card ? 'true' : 'false');

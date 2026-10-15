@@ -646,6 +646,88 @@
             default: return null;
         }
     }
+    // #941: Stage 1 job mode copy. Status strings and next actions must match
+    // src/stage1/rustmapper_degraded_copy.py (and the runbook). No crawl.
+    const RUSTMAPPER_DEGRADED = {
+        intro: 'Stage 1 job mode (sitemap-first) prints one mode status and one reason status when rustmapper discovery degrades. The same words are used in Control Center and the CLI. Choosing the mode at runtime remains issue 587; this is the operator copy only.',
+        runbook: 'Scraping_project/docs/runbooks/rustmapper_discovery_degraded.md',
+        modes: [
+            {
+                status: 'abort',
+                label: 'Abort',
+                when: 'The Stage 1 job stops. An empty or crashed rustmapper run is not a successful discovery and must not seed Stage 2.',
+                nextAction: 'Leave the job failed. Read the reason string on the job. Do not resume, and do not start Python sitemap discovery, unless you switch this job to fallback_python.',
+            },
+            {
+                status: 'fallback_python',
+                label: 'Fallback Python',
+                when: 'Rustmapper is not the seed source for this job. Stage 1 continues with SitemapParser or Scout.',
+                nextAction: 'Confirm the handoff discovery_source is sitemap_parser or scout. A missing rustmapper sitemap.jsonl is not zero Python URLs. If Python is also empty, that is an empty handoff (ack or skip Stage 2), not a rustmapper success.',
+            },
+            {
+                status: 'resume_data_dir',
+                label: 'Resume data-dir',
+                when: 'The same rustmapper data-dir (WAL and sitemap.jsonl) should continue. A new directory is a different crawl.',
+                nextAction: 'Run rustmapper resume --data-dir <that dir> (from source: cargo run --release -- resume --data-dir <dir>). Use the job existing data-dir. Do not delete the WAL. Enqueue only after the handoff status is success.',
+            },
+        ],
+        reasons: [
+            {
+                status: 'install_missing',
+                label: 'Install missing',
+                mode: 'abort',
+                nextAction: 'Install rustmapper, or switch the job to fallback_python. Do not resume a data-dir that was never created.',
+            },
+            {
+                status: 'crawl_empty',
+                label: 'Empty frontier',
+                mode: 'abort',
+                nextAction: 'Do not enqueue. Empty discovery is not success. If sitemap.jsonl has URLs, the job is not empty; check the handoff. Otherwise fix seeds or switch to fallback_python.',
+            },
+            {
+                status: 'timeout_storm',
+                label: 'Timeout storm',
+                mode: 'resume_data_dir',
+                nextAction: 'Prefer sitemap seeding and a shorter timeout (--timeout 5, --seeding-strategy sitemap, per Rust-sitemap troubleshooting), then resume the same data-dir. Use fallback_python if this job cannot wait.',
+            },
+            {
+                status: 'oom',
+                label: 'Out of memory',
+                mode: 'resume_data_dir',
+                nextAction: 'Lower workers (--workers 64 is the Rust-sitemap relief valve) and resume the same data-dir. Do not raise workers first.',
+            },
+            {
+                status: 'crash',
+                label: 'Crash',
+                mode: 'resume_data_dir',
+                nextAction: 'Resume the same data-dir. If resume fails again, abort or switch to fallback_python. Do not start a second data-dir for this job.',
+            },
+            {
+                status: 'sitemap_jsonl_missing',
+                label: 'sitemap.jsonl missing',
+                mode: 'abort',
+                nextAction: 'Abort. fallback_python only when this job mode allows Python discovery. resume_data_dir only when that data-dir already exists.',
+            },
+        ],
+    };
+    function rustmapperDegradedModes() {
+        return {
+            intro: RUSTMAPPER_DEGRADED.intro,
+            runbook: RUSTMAPPER_DEGRADED.runbook,
+            modes: RUSTMAPPER_DEGRADED.modes.map(row => ({
+                status: row.status,
+                label: row.label,
+                when: row.when,
+                nextAction: row.nextAction,
+            })),
+            reasons: RUSTMAPPER_DEGRADED.reasons.map(row => ({
+                status: row.status,
+                label: row.label,
+                mode: row.mode,
+                nextAction: row.nextAction,
+            })),
+        };
+    }
     // #1033: side panel for one pipeline stage. Metrics are a subset of the
     // card (not every line). Job and queue hrefs are fragments only —
     // those views do not exist yet (`placeholder: true`).
@@ -694,6 +776,9 @@
                 { kind: 'jobs', label: `Stage ${spec.stage} jobs`, href: '#jobs', placeholder: true },
                 { kind: 'queue', label: `Stage ${spec.stage} queue`, href: '#queues', placeholder: true },
             ],
+            // #941: only Stage 1 has sitemap-first job-mode copy. Other stages
+            // keep the two placeholder links and nothing else.
+            jobMode: spec.stage === 1 ? rustmapperDegradedModes() : null,
         };
     }
     // Enter/Space activate a stage card; Escape closes the panel. Other keys
@@ -1256,5 +1341,5 @@
         };
     }
 
-    return { tabKeyTarget, staleState, queueDepthRows, metricsFailureActivity, shortcutHintText, parseMetrics, metricSeriesCount, METRICS_FLOOD_DEFAULTS, metricsFloodLimits, advanceMetricsFlood, metricsFloodBannerText, ratePerMinute, resolveMetricsUrl, metricsEndpoint, metricsEndpointLabel, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler, stageActivity, stageDrilldown, stageDrilldownKey, doughnutLegendLayout, connectionState, documentTitle, createActivityAnnouncer, metricsUrlProblem, splitLinks, createMetricsFetcher, REFRESH_INTERVAL_CHOICES, parseRefreshInterval, shortcutAction, pickInitialTab, METRIC_UI_MAP, renderMetricNameMap, parseDangerSoundEnabled, dangerSoundDecision, HEALTH_HISTORY_LIMIT, pushPollOutcome, healthHistoryView, COMPARISON_BASELINE_ROLE, PREV_HOUR_AVG_KEYS, readPrevHourAverage, comparisonBaselineSeries, comparisonNote, ACTIVITY_LOG_CAP, capActivityLog, activityStaleNote, restoreActivityLog, topScrapeTargets, SCRAPE_TARGET_EMPTY, ACTIVITY_LEVELS, activityLevelCounts, filterActivityItems, filterActivityMessages, activityFilterStatus, toggleActivityLevel, HISTORY_MAX_POINTS, assertHistoryBound, boundHistoryBuffer, pushHistorySample, enforceHistoryCap, grafanaHomeUrl, jobStartedPresentation, DEFAULT_ACCENT, parseAccentColor, accentInk, accentBorder, accentCssVars };
+    return { tabKeyTarget, staleState, queueDepthRows, metricsFailureActivity, shortcutHintText, parseMetrics, metricSeriesCount, METRICS_FLOOD_DEFAULTS, metricsFloodLimits, advanceMetricsFlood, metricsFloodBannerText, ratePerMinute, resolveMetricsUrl, metricsEndpoint, metricsEndpointLabel, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler, stageActivity, stageDrilldown, stageDrilldownKey, rustmapperDegradedModes, doughnutLegendLayout, connectionState, documentTitle, createActivityAnnouncer, metricsUrlProblem, splitLinks, createMetricsFetcher, REFRESH_INTERVAL_CHOICES, parseRefreshInterval, shortcutAction, pickInitialTab, METRIC_UI_MAP, renderMetricNameMap, parseDangerSoundEnabled, dangerSoundDecision, HEALTH_HISTORY_LIMIT, pushPollOutcome, healthHistoryView, COMPARISON_BASELINE_ROLE, PREV_HOUR_AVG_KEYS, readPrevHourAverage, comparisonBaselineSeries, comparisonNote, ACTIVITY_LOG_CAP, capActivityLog, activityStaleNote, restoreActivityLog, topScrapeTargets, SCRAPE_TARGET_EMPTY, ACTIVITY_LEVELS, activityLevelCounts, filterActivityItems, filterActivityMessages, activityFilterStatus, toggleActivityLevel, HISTORY_MAX_POINTS, assertHistoryBound, boundHistoryBuffer, pushHistorySample, enforceHistoryCap, grafanaHomeUrl, jobStartedPresentation, DEFAULT_ACCENT, parseAccentColor, accentInk, accentBorder, accentCssVars };
 });

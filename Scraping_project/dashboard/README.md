@@ -51,6 +51,16 @@ python Scraping_project/dashboard/serve.py
 node --test Scraping_project/dashboard/tests/   # helper unit tests
 ```
 
+## Stage 1 job mode (#941)
+
+Pipeline Stages → Stage 1 shows the sitemap-first job mode copy when discovery
+degrades: mode status strings `abort`, `fallback_python`, and `resume_data_dir`,
+plus reason strings and the next action for each. The same text is
+`python cli.py stage1 job-mode`. The runbook is
+`docs/runbooks/rustmapper_discovery_degraded.md`, linked from
+`src/stage1/JOB_MODE.md`. The panel does not start a crawl and does not change
+the failure policy.
+
 - Bind address (#735): `127.0.0.1:8080` by default. Override with `--host/--port` or
   `CC_HOST`/`CC_PORT`. A wildcard bind (`--host 0.0.0.0`, e.g. inside a container) must be
   explicit and prints a warning.

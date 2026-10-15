@@ -15,6 +15,7 @@ renamed to the new version and date (see the release checklist).
 ## [Unreleased]
 
 ### Added
+- Control Center Stage 1 details and `python cli.py stage1 job-mode` list the rustmapper degraded-mode status strings (`abort`, `fallback_python`, `resume_data_dir`) and a next action for each, plus reason strings. Stage 1 job mode links the runbook. No crawl and no failure-policy change (#941).
 - Control Center confirms a job start with one CSS check on Start. `prefers-reduced-motion: reduce` skips the stroke animation and shows the finished check. There is no confetti (#1022).
 - Control Center accent picker (refresh bar) stores a `#rrggbb` choice in `localStorage` (`cc.accent`) and writes `--accent`, `--accent-ink`, and `--accent-border`. Buttons use the accent fill; the active tab underline uses the accent, darkened when it would be under 3:1 on the tab bar (#1017).
 - Stage 1 to stage 2 handoff (`StageQueueHandoff`) keeps the in-memory queue at the Redis high watermark (default 10000, same gate as `QueueBacklog`). Producers block until stage 2 drains to the low watermark instead of buffering an unbounded backlog, and each key is delivered once after the consumer catches up (#703).
