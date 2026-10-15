@@ -488,6 +488,9 @@ kafkaDeltaIngestor:
   config:
     topic: "scraped-items"
     kafkaBootstrap: "kafka:9092"
+    # Ingest group.id. Must match config.yml kafka.consumer.groups.ingest.
+    # Do not set this to groups.dq, groups.replay, or the retired group_id (#624).
+    # A different id starts a new consumer group and re-reads the topic.
     appId: "scrapy-ingestor"
     autoOffsetReset: "earliest"
     allowedLatency: 60

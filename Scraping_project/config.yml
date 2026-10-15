@@ -343,7 +343,14 @@ kafka:
   # application configmap sets it to true.
   require_idempotence: false
   consumer:
+    # Retired shared id (#624). No processor joins this group. Per-role ids
+    # live in `groups` so ingest, DQ, and replay keep independent offsets.
+    # Reusing this id for a role fails config validation.
     group_id: scraping-pipeline
+    groups:
+      ingest: scrapy-ingestor   # kafka-delta-ingest --app-id; Helm appId. Do not change lightly: a new id re-reads the topic.
+      dq: scrapy-dq             # data-quality reader; must not be the ingest group
+      replay: scrapy-replay     # independent re-read; must not be the ingest or DQ group
     auto_offset_reset: earliest  # earliest or latest
     # Commit offsets only after the downstream write is durable (at-least-once).
     # kafka-delta-ingest always commits manually after its Delta commit (#282).

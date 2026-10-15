@@ -91,6 +91,9 @@ groups:
           action: "Immediate investigation required. Check broker logs."
 
       # Warning: High consumer lag
+      # `group` and `topic` come from kafka_consumergroup_lag_max, so ingest, DQ,
+      # and replay each fire on their own group (#624). Thresholds are unchanged.
+      # KafkaConsumerLagSLO stays > 250000.
       - alert: KafkaHighConsumerLag
         expr: max_over_time(kafka_consumergroup_lag_max[5m]) > 10000
         for: 5m

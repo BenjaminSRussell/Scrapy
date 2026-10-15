@@ -600,6 +600,20 @@ Every outbound HTTPS request verifies the server certificate. aiohttp, httpx and
 
 `python -m src.utils.kafka_topics` creates the missing topics with those settings and never alters topics that already exist. `--dry-run` prints the plan without connecting. It reads `KAFKA_BOOTSTRAP_SERVERS` and the `KAFKA_SASL_*` variables. The Helm chart runs the same command as a post-install/upgrade hook Job (`kafka.topicsJob`). Scrapy's `VALIDATION_FAILURES_TOPIC` setting comes from `kafka.topics.validation_failures`.
 
+### Consumer groups (#624)
+
+Incompatible processors do not share a `group.id`. `config.yml` `kafka.consumer.groups` is the map:
+
+| Role | Group id | Who |
+|---|---|---|
+| `ingest` | `scrapy-ingestor` | `kafka-delta-ingest` (`--app-id`, Helm `kafkaDeltaIngestor.config.appId`). Writes the lake. |
+| `dq` | `scrapy-dq` | Data-quality reader. Does not move the ingest cursor. |
+| `replay` | `scrapy-replay` | Independent re-read. Does not move the ingest or DQ cursor. |
+
+`kafka.consumer.group_id` (`scraping-pipeline`) is retired. Config validation rejects a role that reuses it or another role's id. The ingestor also refuses `--app-id` of `scrapy-dq`, `scrapy-replay`, or `scraping-pipeline`. A new ingest id re-reads the topic from `auto.offset.reset` (Helm is `earliest`).
+
+Lag alerts (`KafkaHighConsumerLag`, `KafkaVeryHighConsumerLag`, `KafkaConsumerLagSLO`) keep the recording-rule `group` label, one series per group. The ingestor sets `client.id` to `{group.id}-{pid}` so that label is the real group. `KafkaConsumerLagSLO` stays above 250000 messages. A one-off console consumer must use its own group, not one of the three roles.
+
 **Triage.** Each message on `validation_failures` is one `ValidationFailureRecord` (`src/schemas.py`) in JSON. The fields are `url`, `field_name`, `violation_rule`, `attempted_value`, `error_message`, `spider_name`, `failed_at_utc` and `pipeline_version`. The item itself was dropped. Read the topic with any consumer, for example:
 
 ```bash

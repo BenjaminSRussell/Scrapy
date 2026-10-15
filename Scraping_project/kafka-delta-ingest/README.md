@@ -155,7 +155,7 @@ kafka-delta-ingest ingest scraped-items /app/data/delta_lake/scraped_items \
 | Flag | Description | Default |
 |------|-------------|---------|
 | `--kafka` | Kafka bootstrap servers | localhost:9092 |
-| `--app-id` | Consumer group ID | kafka-delta-ingest |
+| `--app-id` | Consumer group ID (ingest role). Must not be `scrapy-dq`, `scrapy-replay`, or the retired shared id `scraping-pipeline` (#624) | scrapy-ingestor |
 | `--auto-offset-reset` | Offset reset strategy | earliest |
 | `--allowed-latency` | Max seconds before forcing batch write | 300 |
 | `--max-messages-per-batch` | Max messages per batch | 1000 |
