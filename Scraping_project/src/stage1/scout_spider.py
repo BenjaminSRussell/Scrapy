@@ -350,17 +350,23 @@ class ScoutSpider(BaseSpider):
         }
 
     def _queue_for_stage2(self, url: str, parent_url: str, content_hint: str) -> dict:
-        return {
-            "url": url,
-            "parent_url": parent_url,
-            "content_hint": content_hint,
-            "priority": 2 if content_hint == "html" else 1,
-            "status": "pending",
-            "queued_at": datetime.now().isoformat(),
-            "queued_by": "scout",
-            "discovery_source": "scout",
-            "target_stage": "stage2",
-        }
+        from src.otel_tracing import get_crawl_job_id
+        from src.stage1.stage2_url_envelope import publish_stage2_url_record
+
+        # Versioned handoff (#667). Pre-envelope rows are still readable in Stage 2.
+        return publish_stage2_url_record(
+            url=url,
+            crawl_job_id=get_crawl_job_id() or str(self.job_id),
+            job_id=str(self.job_id),
+            parent_url=parent_url,
+            content_hint=content_hint,
+            priority=2 if content_hint == "html" else 1,
+            status="pending",
+            queued_at=datetime.now().isoformat(),
+            queued_by="scout",
+            discovery_source="scout",
+            target_stage="stage2",
+        )
 
     def _discover_and_add_sitemap_urls(self) -> None:
         if not self.start_urls:

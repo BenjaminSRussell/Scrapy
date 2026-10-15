@@ -849,6 +849,11 @@ class Stage2Worker:
             STAGE2_CACHE_HITS.inc()
 
     async def _analyze_url(self, record: dict[str, Any]) -> dict[str, Any]:
+        # Versioned stage1 envelopes fail here; rows with no version pass through (#667).
+        if isinstance(record, dict):
+            from src.stage2.stage2_url_envelope import consume_stage2_url_record
+
+            record = consume_stage2_url_record(record)
         url_value = record.get("url")
         url_hash_value = record.get("url_hash")
 
