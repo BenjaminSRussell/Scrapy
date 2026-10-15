@@ -6,7 +6,7 @@
 #   ml / stage4 — core + requirements-ml.txt + requirements-ocr.txt + poppler-utils
 # Stage 3 is light (datasketch). Stage 4 fails fast without ML+OCR extras.
 
-FROM python:3.11-slim as base
+FROM python:3.14-slim as base
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1 \
