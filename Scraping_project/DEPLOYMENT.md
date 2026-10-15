@@ -134,6 +134,10 @@ http://localhost:9090
 
 `pipeline_estimated_cost_usd` is a cost proxy, not a measured cloud bill. The Scrapy exporter sets it to the scheduled request count for that series times `COST_USD_PER_REQUEST` (default `0.0001` USD per request). Labels include `crawl_job_id` (the spider's `crawl_job_id`, else the OpenTelemetry job id or `CRAWL_JOB_ID`, else `unknown`) and `site_id` (`SITE_ID`, else `TENANT_ID`, else `REDIS_SITE_ID`, else `default`). `site_id` is never a URL, a job id, or a raw host. A value that fails the site-id pattern is `rejected`, and the series is still recorded. The recording rule `pipeline:estimated_cost_usd` sums that proxy by `crawl_job_id` and `site_id`.
 
+### Job energy badge (#949)
+
+`pipeline_estimated_energy_kwh` is a rough estimate: that crawl's wall-clock seconds times `JOB_ENERGY_WATTS` (default `100`). It is not a watt-meter reading, not a carbon inventory, and not a cloud bill. Labels match the cost proxy (`crawl_job_id` and `site_id`, plus the base stage, worker, and domain labels). The Control Center job energy scorecard shows one badge per job and repeats that disclaimer. A missing runtime leaves the badge at "No runtime" and does not invent a figure. This does not read `carbon_scheduling` and does not delay a worker.
+
 ### Health Checks
 
 ```bash

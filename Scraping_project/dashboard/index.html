@@ -256,6 +256,10 @@
             color: #1e40af;
         }
 
+        .badge-energy {
+            text-transform: none;
+        }
+
         .metric-row {
             display: flex;
             justify-content: space-between;
@@ -1404,6 +1408,20 @@
                     <table class="data-fallback-table" id="scrape-targets-table" aria-labelledby="scrape-targets-title" hidden>
                         <thead><tr><th scope="col">Host</th><th scope="col">Value</th></tr></thead>
                         <tbody id="scrape-targets-list"></tbody>
+                    </table>
+                </div>
+
+                <!-- #949: rough kWh from job runtime. Empty until the gauge is scraped. -->
+                <div class="card" id="job-energy-scorecard" style="margin-top: 1.5rem;">
+                    <div class="card-header">
+                        <h2 class="card-title" id="job-energy-title">Job energy</h2>
+                        <span class="card-badge badge-info badge-energy" id="job-energy-badge" title="Rough kWh from runtime. Not a measured reading.">No runtime</span>
+                    </div>
+                    <p class="metric-label" id="job-energy-disclaimer">Rough estimate only: runtime hours times a stated wattage (default 100 W, JOB_ENERGY_WATTS). Not a measured kWh reading, not a carbon inventory, and not a cloud bill.</p>
+                    <p class="metric-label" id="job-energy-empty" role="status">No job runtime reported.</p>
+                    <table class="data-fallback-table" id="job-energy-table" aria-labelledby="job-energy-title" hidden>
+                        <thead><tr><th scope="col">Job</th><th scope="col">Estimate</th></tr></thead>
+                        <tbody id="job-energy-list"></tbody>
                     </table>
                 </div>
             </div>

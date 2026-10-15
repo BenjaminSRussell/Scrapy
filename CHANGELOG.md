@@ -15,6 +15,7 @@ renamed to the new version and date (see the release checklist).
 ## [Unreleased]
 
 ### Added
+- Rough per-job energy badge: crawl runtime times a stated wattage (default 100 W, `JOB_ENERGY_WATTS`) as kWh on the Control Center job energy scorecard. The scorecard states that the figure is not a measured kWh reading, not a carbon inventory, and not a cloud bill (#949).
 - Stage 1 to stage 2 handoff (`StageQueueHandoff`) keeps the in-memory queue at the Redis high watermark (default 10000, same gate as `QueueBacklog`). Producers block until stage 2 drains to the low watermark instead of buffering an unbounded backlog, and each key is delivered once after the consumer catches up (#703).
 - Control Center pauses chart history when a metrics scrape is over 2000 series or 50ms to parse, keeps the numeric KPI counters, and shows a banner. Charts return after 3 calm intervals. Override with `window.CC_METRICS_FLOOD` or `?floodMaxSeries=`, `?floodMaxParseMs=`, and `?floodRecover=` (#690).
 - Control Center Activity tab has level filter chips (Success, Warning, Danger, Timeout, Info). Each chip shows a count and toggles that level in the browser. No chip pressed shows the full log; Danger alone shows errors only. The overview feed is unchanged (#1027).

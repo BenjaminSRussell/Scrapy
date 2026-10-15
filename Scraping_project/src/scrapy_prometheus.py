@@ -20,7 +20,8 @@ from scrapy.crawler import Crawler
 from scrapy.exceptions import DropItem, NotConfigured
 from scrapy.http import Request, Response
 
-from src.utils.metric_labels import SCRAPY_FAMILIES, cost_proxy_labels, labels_for
+from src.utils.job_energy import job_energy_scorecard
+from src.utils.metric_labels import SCRAPY_FAMILIES, cost_proxy_labels, job_energy_labels, labels_for
 
 # FinOps proxy (#545). Not a measured cloud bill: scheduled request count
 # times this many USD. Override with COST_USD_PER_REQUEST (non-negative).
@@ -210,6 +211,13 @@ if PROMETHEUS_AVAILABLE:
         list(SCRAPY_FAMILIES["pipeline_estimated_cost_usd"]),
     )
 
+    # Crawl seconds * JOB_ENERGY_WATTS. Rough only; not a watt meter (#949).
+    ESTIMATED_ENERGY_KWH = Gauge(
+        "pipeline_estimated_energy_kwh",
+        "Rough kWh: crawl seconds times JOB_ENERGY_WATTS (default 100). Not a measured reading or carbon inventory.",
+        list(SCRAPY_FAMILIES["pipeline_estimated_energy_kwh"]),
+    )
+
     # --- Delta Lake Manager Metrics ---
     DELTA_MANAGER_CONTEXT_ENTER_TOTAL = Counter(
         "delta_manager_context_enter_total", "Total number of times a DeltaLakeManager context has been entered."
@@ -247,6 +255,7 @@ else:
     CRAWLER_SUMMARY_SKIPPED = None
     HIDDEN_URLS_FOUND = HIDDEN_URLS_ROUTED = None
     ESTIMATED_COST_USD = None
+    ESTIMATED_ENERGY_KWH = None
     PIPELINE_JS_QUEUE_PENDING = None
 
 
@@ -341,6 +350,7 @@ class PrometheusExtension:
         if started is not None:
             duration = time.time() - started
             labels_for(CRAWL_DURATION, spider=spider.name).set(duration)
+            self._note_job_energy(spider, duration)
             logger.info(f"Spider {spider.name} crawl duration: {duration:.2f} seconds")
 
         if tallies:
@@ -380,6 +390,21 @@ class PrometheusExtension:
 
         labels_for(SPIDER_ERRORS, spider=spider.name, exception_type=exception_type).inc()
         logger.error(f"Spider error in {spider.name}: {exception_type} - {failure.getErrorMessage()}")
+
+    def _note_job_energy(self, spider: Spider, duration: float) -> None:
+        """Record rough kWh from this run's wall clock. Does not invent a figure (#949)."""
+        if not PROMETHEUS_AVAILABLE or ESTIMATED_ENERGY_KWH is None:
+            return
+        labels = job_energy_labels(spider)
+        card = job_energy_scorecard(labels["crawl_job_id"], duration)
+        if card["kwh"] is None:
+            return
+        ESTIMATED_ENERGY_KWH.labels(**labels).set(card["kwh"])
+        logger.info(
+            "Job %s energy badge %s (rough estimate, not measured kWh or carbon)",
+            labels["crawl_job_id"],
+            card["badge"],
+        )
 
     def _note_request_cost(self, spider: Spider) -> None:
         """Record request-count times the stated unit cost. Does not drop the series."""

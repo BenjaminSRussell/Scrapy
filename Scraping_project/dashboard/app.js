@@ -962,6 +962,7 @@ function updateDashboard(metrics) {
 
     if (!metricsFlood.degraded) updateHistoricalData(metrics);
     renderScrapeTargets(metrics);
+    renderJobEnergyScorecard(metrics);
 
     if (metricsFlood.degraded) {
         previousMetrics = {
@@ -1003,6 +1004,41 @@ function renderScrapeTargets(metrics) {
         value.textContent = Number.isFinite(row.value) ? formatNumber(row.value) : '\u2014';
         tr.appendChild(host);
         tr.appendChild(value);
+        list.appendChild(tr);
+    }
+}
+
+// #949: per-job energy badge. Rows are text nodes so a job id cannot become markup.
+function renderJobEnergyScorecard(metrics) {
+    const badge = document.getElementById('job-energy-badge');
+    const empty = document.getElementById('job-energy-empty');
+    const table = document.getElementById('job-energy-table');
+    const list = document.getElementById('job-energy-list');
+    const disclaimer = document.getElementById('job-energy-disclaimer');
+    if (!badge || !empty || !table || !list || typeof jobEnergyScorecard !== 'function') return;
+    const card = jobEnergyScorecard(metrics);
+    if (disclaimer && disclaimer.textContent !== card.disclaimer) disclaimer.textContent = card.disclaimer;
+    badge.textContent = card.badge;
+    list.replaceChildren();
+    if (card.missing) {
+        empty.hidden = false;
+        empty.textContent = card.empty;
+        table.hidden = true;
+        return;
+    }
+    empty.hidden = true;
+    table.hidden = false;
+    for (const row of card.rows) {
+        const tr = document.createElement('tr');
+        const job = document.createElement('td');
+        job.textContent = row.job;
+        const estimate = document.createElement('td');
+        const pill = document.createElement('span');
+        pill.className = 'card-badge badge-info badge-energy';
+        pill.textContent = row.badge;
+        estimate.appendChild(pill);
+        tr.appendChild(job);
+        tr.appendChild(estimate);
         list.appendChild(tr);
     }
 }

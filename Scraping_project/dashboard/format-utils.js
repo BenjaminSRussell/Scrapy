@@ -837,6 +837,15 @@
             ],
         },
         {
+            metric: 'pipeline_estimated_energy_kwh',
+            read: 'Gauge. Crawl seconds times JOB_ENERGY_WATTS (default 100), already in kWh. A missing series leaves the scorecard on No runtime and does not invent a figure. Not a measured reading or a carbon inventory.',
+            fields: [
+                { label: 'Overview · Job energy badge', id: 'job-energy-badge' },
+                { label: 'Overview · Job energy disclaimer', id: 'job-energy-disclaimer' },
+                { label: 'Overview · Job energy rows', id: 'job-energy-list' },
+            ],
+        },
+        {
             metric: '(any series)',
             read: 'Collecting when the scrape parsed at least one sample; Stale when it parsed none; Fetch failed after an error.',
             fields: [
@@ -1118,5 +1127,89 @@
         if (!rows.length) return { missing: true, rows: [], empty: SCRAPE_TARGET_EMPTY };
         return { missing: false, rows: rows.slice(0, cap), empty: SCRAPE_TARGET_EMPTY };
     }
-    return { tabKeyTarget, staleState, queueDepthRows, metricsFailureActivity, shortcutHintText, parseMetrics, metricSeriesCount, METRICS_FLOOD_DEFAULTS, metricsFloodLimits, advanceMetricsFlood, metricsFloodBannerText, ratePerMinute, resolveMetricsUrl, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler, stageActivity, stageDrilldown, stageDrilldownKey, doughnutLegendLayout, connectionState, documentTitle, createActivityAnnouncer, metricsUrlProblem, splitLinks, createMetricsFetcher, REFRESH_INTERVAL_CHOICES, parseRefreshInterval, shortcutAction, pickInitialTab, METRIC_UI_MAP, renderMetricNameMap, parseDangerSoundEnabled, dangerSoundDecision, HEALTH_HISTORY_LIMIT, pushPollOutcome, healthHistoryView, COMPARISON_BASELINE_ROLE, PREV_HOUR_AVG_KEYS, readPrevHourAverage, comparisonBaselineSeries, comparisonNote, ACTIVITY_LOG_CAP, capActivityLog, activityStaleNote, restoreActivityLog, topScrapeTargets, SCRAPE_TARGET_EMPTY, ACTIVITY_LEVELS, activityLevelCounts, filterActivityItems, filterActivityMessages, activityFilterStatus, toggleActivityLevel, HISTORY_MAX_POINTS, assertHistoryBound, boundHistoryBuffer, pushHistorySample, enforceHistoryCap };
+    // #949: rough kWh. The gauge is already kWh (runtime × stated watts).
+    // The object form estimates from seconds with the same 100 W default.
+    const DEFAULT_JOB_WATTS = 100;
+    const JOB_ENERGY_DISCLAIMER = 'Rough estimate only: runtime hours times a stated wattage (default 100 W, JOB_ENERGY_WATTS). Not a measured kWh reading, not a carbon inventory, and not a cloud bill.';
+    const JOB_ENERGY_EMPTY = 'No job runtime reported.';
+    const JOB_ENERGY_BADGE_EMPTY = 'No runtime';
+    function formatEnergyBadge(kwh) {
+        if (typeof kwh !== 'number' || !Number.isFinite(kwh) || kwh < 0) return 'n/a';
+        if (kwh === 0) return '≈ 0 kWh';
+        if (kwh < 0.001) return '≈ <0.001 kWh';
+        if (kwh < 1) return '≈ ' + kwh.toFixed(3) + ' kWh';
+        if (kwh < 100) return '≈ ' + kwh.toFixed(2) + ' kWh';
+        return '≈ ' + kwh.toFixed(0) + ' kWh';
+    }
+    function estimateKwh(runtimeSeconds, watts) {
+        if (typeof runtimeSeconds !== 'number' || !Number.isFinite(runtimeSeconds) || runtimeSeconds < 0) return null;
+        let w = DEFAULT_JOB_WATTS;
+        if (watts != null) {
+            if (typeof watts !== 'number' || !Number.isFinite(watts) || watts < 0) w = DEFAULT_JOB_WATTS;
+            else w = watts;
+        }
+        return w * runtimeSeconds / 3600000;
+    }
+    function energyJobLabel(key, label) {
+        const m = String(key).match(new RegExp('(?:^|[{,])' + label + '="((?:[^"\\\\]|\\\\.)*)"'));
+        if (!m) return null;
+        const value = m[1].replace(/\\(.)/g, '$1').trim();
+        if (!value || value.length > 128 || /[\u0000-\u001f\u007f]/.test(value)) return null;
+        return value;
+    }
+    function rowsFromEnergyJobs(jobs, watts) {
+        const rows = [];
+        for (const job of jobs || []) {
+            if (!job || typeof job !== 'object') continue;
+            const seconds = job.runtime_seconds != null ? job.runtime_seconds : job.runtimeSeconds;
+            const draw = watts != null ? watts : job.watts;
+            const kwh = estimateKwh(seconds, draw);
+            if (kwh == null) continue;
+            const id = String(job.crawl_job_id || job.id || '').trim() || 'unknown';
+            rows.push({ job: id, kwh: kwh, badge: formatEnergyBadge(kwh), runtimeSeconds: seconds });
+        }
+        rows.sort((a, b) => (a.job < b.job ? -1 : a.job > b.job ? 1 : 0));
+        return rows;
+    }
+    function rowsFromEnergyMetrics(metrics) {
+        const totals = new Map();
+        for (const key of Object.keys(metrics || {})) {
+            if (key.indexOf('pipeline_estimated_energy_kwh{') !== 0) continue;
+            const job = energyJobLabel(key, 'crawl_job_id');
+            if (!job) continue;
+            const n = Number(metrics[key]);
+            if (!Number.isFinite(n) || n < 0) continue;
+            totals.set(job, (totals.get(job) || 0) + n);
+        }
+        const rows = [];
+        for (const [job, kwh] of totals) {
+            rows.push({ job: job, kwh: kwh, badge: formatEnergyBadge(kwh), runtimeSeconds: null });
+        }
+        rows.sort((a, b) => (a.job < b.job ? -1 : a.job > b.job ? 1 : 0));
+        return rows;
+    }
+    function jobEnergyScorecard(input, watts) {
+        let rows = [];
+        if (Array.isArray(input)) rows = rowsFromEnergyJobs(input, watts);
+        else if (input && typeof input === 'object' && (Array.isArray(input.jobs) || input.runtime_seconds != null || input.runtimeSeconds != null)) {
+            const jobs = Array.isArray(input.jobs) ? input.jobs : [input];
+            rows = rowsFromEnergyJobs(jobs, watts);
+        } else rows = rowsFromEnergyMetrics(input);
+        let badge = JOB_ENERGY_BADGE_EMPTY;
+        if (rows.length === 1) badge = rows[0].badge;
+        else if (rows.length > 1) {
+            let total = 0;
+            for (const row of rows) total += row.kwh;
+            badge = formatEnergyBadge(total);
+        }
+        return {
+            missing: rows.length === 0,
+            disclaimer: JOB_ENERGY_DISCLAIMER,
+            empty: JOB_ENERGY_EMPTY,
+            badge: badge,
+            rows: rows,
+            watts: DEFAULT_JOB_WATTS,
+        };
+    }
+    return { tabKeyTarget, staleState, queueDepthRows, metricsFailureActivity, shortcutHintText, parseMetrics, metricSeriesCount, METRICS_FLOOD_DEFAULTS, metricsFloodLimits, advanceMetricsFlood, metricsFloodBannerText, ratePerMinute, resolveMetricsUrl, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler, stageActivity, stageDrilldown, stageDrilldownKey, doughnutLegendLayout, connectionState, documentTitle, createActivityAnnouncer, metricsUrlProblem, splitLinks, createMetricsFetcher, REFRESH_INTERVAL_CHOICES, parseRefreshInterval, shortcutAction, pickInitialTab, METRIC_UI_MAP, renderMetricNameMap, parseDangerSoundEnabled, dangerSoundDecision, HEALTH_HISTORY_LIMIT, pushPollOutcome, healthHistoryView, COMPARISON_BASELINE_ROLE, PREV_HOUR_AVG_KEYS, readPrevHourAverage, comparisonBaselineSeries, comparisonNote, ACTIVITY_LOG_CAP, capActivityLog, activityStaleNote, restoreActivityLog, topScrapeTargets, SCRAPE_TARGET_EMPTY, ACTIVITY_LEVELS, activityLevelCounts, filterActivityItems, filterActivityMessages, activityFilterStatus, toggleActivityLevel, HISTORY_MAX_POINTS, assertHistoryBound, boundHistoryBuffer, pushHistorySample, enforceHistoryCap, estimateKwh, formatEnergyBadge, jobEnergyScorecard, JOB_ENERGY_DISCLAIMER, JOB_ENERGY_EMPTY, JOB_ENERGY_BADGE_EMPTY, DEFAULT_JOB_WATTS };
 });

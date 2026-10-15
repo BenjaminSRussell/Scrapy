@@ -28,6 +28,10 @@ label is the spider attribute, else the OpenTelemetry context or
 value is ``rejected`` and the series is still recorded. ``site_id`` is never
 that job id.
 
+``pipeline_estimated_energy_kwh`` (#949) uses that same label set. The value
+is crawl seconds times a stated wattage, not a measured kWh or a carbon
+inventory.
+
 Delta Lake manager lifecycle metrics stay unlabeled in every process. They
 are not part of ``SCRAPY_FAMILIES``. Circuit-breaker and Delta table gauges
 keep the label sets in ``STATSD_FAMILIES`` and do not gain the base set.
@@ -74,6 +78,8 @@ SCRAPY_FAMILIES: dict[str, tuple[str, ...]] = {
     "scrapy_hidden_urls_routed": BASE_LABELS + ("spider", "route"),
     # Request count times COST_USD_PER_REQUEST. Not a measured cloud bill.
     "pipeline_estimated_cost_usd": BASE_LABELS + ("site_id", "crawl_job_id"),
+    # Crawl seconds times JOB_ENERGY_WATTS. Not a measured kWh or carbon inventory.
+    "pipeline_estimated_energy_kwh": BASE_LABELS + ("site_id", "crawl_job_id"),
 }
 
 # #192 series. site_id stays on these and is not a substitute for domain.
@@ -87,6 +93,7 @@ SITE_ID_FAMILIES = frozenset(
         "scrapy_spider_errors",
         "scrapy_new_urls_found_per_minute",
         "pipeline_estimated_cost_usd",
+        "pipeline_estimated_energy_kwh",
     }
 )
 
@@ -200,6 +207,17 @@ def cost_proxy_labels(spider: Any = None) -> dict[str, str]:
     labels = identity_labels()
     labels["crawl_job_id"] = metric_crawl_job_id(spider)
     return {name: labels[name] for name in SCRAPY_FAMILIES["pipeline_estimated_cost_usd"]}
+
+
+def job_energy_labels(spider: Any = None) -> dict[str, str]:
+    """Labels for ``pipeline_estimated_energy_kwh`` (#949).
+
+    Same identity rules as the cost proxy: ``site_id`` is only
+    ``metric_site_id()``, and ``crawl_job_id`` is ``metric_crawl_job_id``.
+    """
+    labels = identity_labels()
+    labels["crawl_job_id"] = metric_crawl_job_id(spider)
+    return {name: labels[name] for name in SCRAPY_FAMILIES["pipeline_estimated_energy_kwh"]}
 
 
 def identity_labels(*, stage: str | None = None, default_stage: str = "stage1") -> dict[str, str]:
