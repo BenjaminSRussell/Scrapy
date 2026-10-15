@@ -81,7 +81,8 @@ def test_enforcing_csp_and_security_headers(make_server):
     csp = headers["content-security-policy"]
     assert "default-src 'self'" in csp
     assert "frame-ancestors 'none'" in csp
-    assert "cdn.jsdelivr.net" in csp
+    assert "script-src 'self';" in csp  # no third-party script origins
+    assert "cdn.jsdelivr.net" not in csp
     assert "Report-Only" not in headers
     assert headers["x-content-type-options"] == "nosniff"
     assert headers["x-frame-options"] == "DENY"

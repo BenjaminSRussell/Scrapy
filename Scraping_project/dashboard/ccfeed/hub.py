@@ -160,6 +160,21 @@ class Hub:
                     "stages": self._stage_dicts(now), "services": list(self._services),
                     "series_point": points, "events": list(events)}
 
+    # ---- on-demand queries (the feed answers; the hub adds its live stage view) ----
+    def stage_detail(self, stage_id: str) -> dict | None:
+        detail = self.feed.stage_detail(stage_id)
+        if detail is None:
+            return None
+        with self._lock:
+            stage = next(s for s in self._stage_dicts(self._generated_at) if s["id"] == stage_id)
+        return {"stage": stage, **detail}
+
+    def url_journey(self, url: str) -> dict | None:
+        return self.feed.url_journey(url)
+
+    def explore(self, path: list[str]) -> dict | None:
+        return self.feed.explore(path)
+
     # ---- subscribers ----
     def subscribe(self) -> Subscription:
         sub = Subscription()
@@ -190,6 +205,7 @@ class Hub:
     def start(self) -> None:
         if self._thread and self._thread.is_alive():
             return
+        self.step()  # synchronously, so no request ever sees an unpolled hub
         self._stop.clear()
         self._thread = threading.Thread(target=self._run, name="ccfeed-hub", daemon=True)
         self._thread.start()
@@ -200,6 +216,7 @@ class Hub:
             self._thread.join(timeout)
 
     def _run(self) -> None:
+        self._stop.wait(self.interval)
         while not self._stop.is_set():
             try:
                 self.step()

@@ -227,6 +227,23 @@ def test_probe_rows_join_feed_services_and_probe_errors_are_contained():
     assert probe_row["status"] == "unknown" and "ConnectionError" in probe_row["detail"]
 
 
+class SlowFeed(FakeFeed):
+    def poll(self, now):
+        import time as _time
+
+        _time.sleep(0.3)  # a background-only first poll would still be sleeping below
+        return super().poll(now)
+
+
+def test_start_polls_once_before_returning():
+    hub = Hub(SlowFeed(), interval=60, clock=Clock())
+    hub.start()
+    try:
+        assert hub.snapshot()["stages"][1]["count"] == 3  # no request ever sees an unpolled hub
+    finally:
+        hub.stop()
+
+
 def test_start_and_stop_run_the_background_loop():
     import time as _time
 
