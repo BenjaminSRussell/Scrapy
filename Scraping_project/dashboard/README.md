@@ -104,6 +104,7 @@ nginx/Traefik with OAuth2 Proxy, or a Kubernetes ingress with an auth annotation
 `CC_CORS_ORIGINS` only if another site really needs to read the API.
 - Contributor styleguide: [`styleguide.html`](styleguide.html)
 - Accessibility checklist for PRs: [`A11Y_CHECKLIST.md`](A11Y_CHECKLIST.md)
+- Manual keyboard-only smoke checklist (run by hand, not part of `node --test`): [`KEYBOARD_SMOKE.md`](KEYBOARD_SMOKE.md)
 
 ## Accent color (#1017)
 
