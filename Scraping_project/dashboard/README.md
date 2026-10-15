@@ -155,6 +155,10 @@ The System tab Settings panel lists every Prometheus series the page reads and t
 
 The Activity log has a **Sound on danger** checkbox. It is unchecked until an operator turns it on, and that choice is stored in `localStorage` under `cc.dangerSound`. When it is on, a new `danger` activity row plays a short tone (Web Audio, no audio file). The same message is not chimed again inside the screen-reader repeat window. Success, warning, info, and timeout rows never play a sound. `prefers-reduced-motion: reduce`, or a `prefers-muted` media preference, keeps the page silent even if the box is checked.
 
+## Leave guard (#973)
+
+The Activity log has a **Confirm before leaving on error** checkbox. It is unchecked until an operator turns it on, and that choice is stored in `localStorage` under `cc.leaveGuard`. When it is on, leaving the tab shows the browser's confirmation dialog while the metrics connection is ERROR (`never` or `offline` in `connectionState()`), or while one of the newest 10 activity rows is a live `danger` item. Rows restored from before a reload do not count. Success, warning, info, and timeout rows do not count on their own. The dialog is the browser's generic leave prompt; the page does not choose the wording.
+
 ## Scrape targets (#1052)
 
 The Overview card **Scrape targets** ranks hosts from the metrics sample already

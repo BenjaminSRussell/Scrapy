@@ -523,6 +523,35 @@
         if (o.announced === false) return { play: false, reason: 'repeat' };
         return { play: true, reason: 'danger' };
     }
+    // #973: confirm-before-leave is opt-in. Missing or unrecognised storage stays off.
+    function parseLeaveGuardEnabled(stored) {
+        return parseDangerSoundEnabled(stored);
+    }
+    // Newest-first activity log. A danger row inside this window is live error
+    // context. Rows restored from before a reload are stale and do not count.
+    const LEAVE_GUARD_RECENT = 10;
+    function leaveGuardStatusIsError(status) {
+        const s = String(status == null ? '' : status).trim();
+        if (s === 'never' || s === 'offline' || s === 'error') return true;
+        return s.indexOf('ERROR') === 0;
+    }
+    function leaveGuardShouldPrompt(opts) {
+        const o = opts || {};
+        if (!parseLeaveGuardEnabled(o.enabled)) return { prompt: false, reason: 'off' };
+        if (leaveGuardStatusIsError(o.status)) return { prompt: true, reason: 'error' };
+        const items = Array.isArray(o.activityLog) ? o.activityLog : [];
+        let windowSize = LEAVE_GUARD_RECENT;
+        if (o.recent != null) {
+            const n = Math.floor(Number(o.recent));
+            windowSize = Number.isFinite(n) && n >= 0 ? n : LEAVE_GUARD_RECENT;
+        }
+        for (let i = 0; i < items.length && i < windowSize; i++) {
+            const item = items[i];
+            if (!item || item.restored) continue;
+            if (String(item.type || '') === 'danger') return { prompt: true, reason: 'danger' };
+        }
+        return { prompt: false, reason: 'clear' };
+    }
     // #767: a timed-out metrics request is its own activity type, not a generic error.
     function metricsFailureActivity(error, timeoutMs) {
         if (error && error.timedOut) {
@@ -1118,5 +1147,5 @@
         if (!rows.length) return { missing: true, rows: [], empty: SCRAPE_TARGET_EMPTY };
         return { missing: false, rows: rows.slice(0, cap), empty: SCRAPE_TARGET_EMPTY };
     }
-    return { tabKeyTarget, staleState, queueDepthRows, metricsFailureActivity, shortcutHintText, parseMetrics, metricSeriesCount, METRICS_FLOOD_DEFAULTS, metricsFloodLimits, advanceMetricsFlood, metricsFloodBannerText, ratePerMinute, resolveMetricsUrl, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler, stageActivity, stageDrilldown, stageDrilldownKey, doughnutLegendLayout, connectionState, documentTitle, createActivityAnnouncer, metricsUrlProblem, splitLinks, createMetricsFetcher, REFRESH_INTERVAL_CHOICES, parseRefreshInterval, shortcutAction, pickInitialTab, METRIC_UI_MAP, renderMetricNameMap, parseDangerSoundEnabled, dangerSoundDecision, HEALTH_HISTORY_LIMIT, pushPollOutcome, healthHistoryView, COMPARISON_BASELINE_ROLE, PREV_HOUR_AVG_KEYS, readPrevHourAverage, comparisonBaselineSeries, comparisonNote, ACTIVITY_LOG_CAP, capActivityLog, activityStaleNote, restoreActivityLog, topScrapeTargets, SCRAPE_TARGET_EMPTY, ACTIVITY_LEVELS, activityLevelCounts, filterActivityItems, filterActivityMessages, activityFilterStatus, toggleActivityLevel, HISTORY_MAX_POINTS, assertHistoryBound, boundHistoryBuffer, pushHistorySample, enforceHistoryCap };
+    return { tabKeyTarget, staleState, queueDepthRows, metricsFailureActivity, shortcutHintText, parseMetrics, metricSeriesCount, METRICS_FLOOD_DEFAULTS, metricsFloodLimits, advanceMetricsFlood, metricsFloodBannerText, ratePerMinute, resolveMetricsUrl, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler, stageActivity, stageDrilldown, stageDrilldownKey, doughnutLegendLayout, connectionState, documentTitle, createActivityAnnouncer, metricsUrlProblem, splitLinks, createMetricsFetcher, REFRESH_INTERVAL_CHOICES, parseRefreshInterval, shortcutAction, pickInitialTab, METRIC_UI_MAP, renderMetricNameMap, parseDangerSoundEnabled, dangerSoundDecision, parseLeaveGuardEnabled, leaveGuardShouldPrompt, LEAVE_GUARD_RECENT, HEALTH_HISTORY_LIMIT, pushPollOutcome, healthHistoryView, COMPARISON_BASELINE_ROLE, PREV_HOUR_AVG_KEYS, readPrevHourAverage, comparisonBaselineSeries, comparisonNote, ACTIVITY_LOG_CAP, capActivityLog, activityStaleNote, restoreActivityLog, topScrapeTargets, SCRAPE_TARGET_EMPTY, ACTIVITY_LEVELS, activityLevelCounts, filterActivityItems, filterActivityMessages, activityFilterStatus, toggleActivityLevel, HISTORY_MAX_POINTS, assertHistoryBound, boundHistoryBuffer, pushHistorySample, enforceHistoryCap };
 });

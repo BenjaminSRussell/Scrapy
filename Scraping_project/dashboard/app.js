@@ -13,6 +13,9 @@ const STORE_INTERVAL_KEY = 'cc.refreshInterval'; // #1015
 const STORE_DANGER_SOUND_KEY = 'cc.dangerSound'; // #1037
 let dangerSoundEnabled = false;
 let dangerAudioCtx = null;
+const STORE_LEAVE_GUARD_KEY = 'cc.leaveGuard'; // #973
+let leaveGuardEnabled = false;
+let connectionStateKey = null;
 const STORE_COMPARE_KEY = 'cc.comparePrevHour'; // #1035
 const ACTIVITY_STORE_KEY = 'cc.activityLog'; // #1029 sessionStorage ring
 let refreshPaused = false;
@@ -1081,6 +1084,7 @@ function notePollOutcome(ok) {
 function setConnectionStatus(kind, pipelineRunning) {
     // kind: 'online' | 'never' | 'offline'
     const state = connectionState(kind, pipelineRunning, consecutiveFetchFailures);
+    connectionStateKey = state.key;
     const sys = document.getElementById('system-status');
     const top = document.getElementById('topbar-status');
     const labels = {
@@ -1509,6 +1513,38 @@ function setupDangerSound() {
     });
 }
 
+// #973: native leave prompt only while opted in and metrics are mid-error,
+// or a recent non-restored danger row is still in the activity log.
+function onLeaveGuard(event) {
+    const decision = leaveGuardShouldPrompt({
+        enabled: leaveGuardEnabled,
+        status: connectionStateKey,
+        activityLog: activityLog,
+    });
+    if (!decision.prompt) return;
+    event.preventDefault();
+    event.returnValue = '';
+}
+
+function setupLeaveGuard() {
+    leaveGuardEnabled = parseLeaveGuardEnabled(storeGet(STORE_LEAVE_GUARD_KEY));
+    const box = document.getElementById('leave-guard-toggle');
+    if (box) {
+        box.checked = leaveGuardEnabled;
+        box.addEventListener('change', () => {
+            leaveGuardEnabled = !!box.checked;
+            storeSet(STORE_LEAVE_GUARD_KEY, leaveGuardEnabled ? '1' : '0');
+            const live = document.getElementById('refresh-status');
+            if (live) {
+                live.textContent = leaveGuardEnabled
+                    ? 'Ask before leaving while metrics are in error'
+                    : 'Leave confirmation off';
+            }
+        });
+    }
+    window.addEventListener('beforeunload', onLeaveGuard);
+}
+
 // #1015: 5/10/30s interval picker, remembered in localStorage.
 function setupIntervalControl() {
     const select = document.getElementById('refresh-interval');
@@ -1891,6 +1927,7 @@ function initialize() {
     setupIntervalControl();
     setupVisibilityPause();
     setupDangerSound();
+    setupLeaveGuard();
     startCountdown();
 
     const pauseBtn = document.getElementById('pause-refresh');
