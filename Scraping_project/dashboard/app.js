@@ -1840,6 +1840,38 @@ function setupStageDrilldown() {
     });
 }
 
+function prefersReducedMotion() {
+    return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+}
+
+// #1022: draw one check on Start after a confirmed job start. Reduced motion
+// shows that check with no stroke animation. This does not launch a crawl
+// and never adds confetti.
+function showJobStarted(root) {
+    const scope = root && root.querySelector ? root : document;
+    const mark = (scope.querySelector && scope.querySelector('.job-started-check'))
+        || document.querySelector('#job-start .job-started-check');
+    if (!mark) return null;
+    const view = jobStartedPresentation(prefersReducedMotion());
+    mark.hidden = false;
+    mark.classList.remove('is-on', 'is-static');
+    if (view.animate) {
+        void mark.getBoundingClientRect();
+        mark.classList.add('is-on');
+    } else {
+        mark.classList.add('is-static');
+    }
+    const live = document.getElementById('job-start-status');
+    if (live) live.textContent = view.label;
+    return view;
+}
+
+function setupJobStarted() {
+    document.addEventListener('cc:job-started', (ev) => {
+        showJobStarted(ev && ev.target);
+    });
+}
+
 function applyEnvBadge() {
     const env = (window.__CC_FEATURES__ && window.__CC_FEATURES__.env) || window.__CC_ENV__ || 'local';
     const el = document.getElementById('env-badge');
@@ -1921,6 +1953,7 @@ function initialize() {
     if (manualBtn) manualBtn.addEventListener('click', requestRefresh);
     const retryBtn = document.getElementById('retry-fetch');
     if (retryBtn) retryBtn.addEventListener('click', requestRefresh);
+    setupJobStarted();
 
     restorePersistedActivityLog(); // #1029: before the fresh init line, so it stays newest
     addActivityLogItem('success', 'Pipeline Control Center initialized');
