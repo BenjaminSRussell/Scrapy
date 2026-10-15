@@ -278,6 +278,15 @@ def cmd_drain(args):
     drain_tables()
 
 
+def cmd_scoring_export(args):
+    """Write a daily URL-scoring Parquet snapshot (#1103). Offline; no crawl and no lake."""
+    from src.common.scoring_snapshot import run_cli
+
+    code = run_cli(args)
+    if code:
+        raise SystemExit(code)
+
+
 def cmd_export(args):
     """Export Delta Lake tables."""
     from src.lakehouse.lakehouse_manager import get_delta_manager
@@ -754,6 +763,16 @@ def main():
     export_parser.add_argument("--output", default="exports", help="Output directory")
     export_parser.add_argument("--format", choices=["csv", "json", "parquet"], default="csv")
     export_parser.set_defaults(func=cmd_export)
+
+    # URL-scoring Parquet snapshot for offline analysis (#1103). No crawl, no lake.
+    from src.common.scoring_snapshot import add_cli_arguments
+
+    scoring_export_parser = subparsers.add_parser(
+        "scoring-export",
+        help="Daily URL-scoring Parquet snapshot (data/exports/scoring_YYYYMMDD.parquet)",
+    )
+    add_cli_arguments(scoring_export_parser)
+    scoring_export_parser.set_defaults(func=cmd_scoring_export)
 
     # Health command
     health_parser = subparsers.add_parser("health", help="Check health")

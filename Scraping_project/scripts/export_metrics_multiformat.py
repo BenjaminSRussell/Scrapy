@@ -1,4 +1,9 @@
 #!/usr/bin/env python3
+"""Export Prometheus metrics to JSON, CSV, Parquet, or Influx line protocol.
+
+This is not the URL-scoring snapshot. Scoring distributions for offline
+analysis are written by scripts/export_scoring_snapshot.py (#1103).
+"""
 
 import argparse
 import json

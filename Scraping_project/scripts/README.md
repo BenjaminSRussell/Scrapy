@@ -18,6 +18,7 @@ This directory contains scripts for managing, debugging, and resetting the scrap
 | `automated_backup.sh` | Dry-run archive of a lake directory and an optional SQL file | `make backup`. Does not run `pg_dump` or start services |
 | `restore_backup.sh` | Dry-run restore, or a `/tmp` sample round-trip | `make restore`. `ROUNDTRIP=1` checks a sample. SQL is not loaded |
 | `anomaly_scan.py` | Offline z-score of a metrics fixture | `make anomaly-scan`. Prints an Alertmanager payload and does not POST |
+| `export_scoring_snapshot.py` | Daily URL-score Parquet snapshot | `python scripts/export_scoring_snapshot.py --urls FILE`. No crawl. See `docs/scoring_snapshot.md` (#1103) |
 
 > **Destructive operations** (`complete_reset.sh`, `reset_lake.py`, `../cli.py reset`,
 > `reseed.py --clear`, `drain_lake.py` drains) follow one safety policy; see

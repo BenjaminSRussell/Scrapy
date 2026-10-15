@@ -76,6 +76,12 @@ print(result)   # {"rows": ..., "files": [...], "size_mb": ...}
 
 `export.batch_size`, `export.max_rows_per_file` and `export.max_bytes_per_file` in `config.yml` set the defaults. If you export a table to Parquet and later want it back as a Delta table, use `deltalake.write_deltalake(path, pandas_or_arrow_table)`.
 
+URL scores (not Delta rows) have a separate offline snapshot, `data/exports/scoring_YYYYMMDD.parquet`. It does not read the lake. Schema and compaction: [scoring snapshots](../../../docs/scoring_snapshot.md).
+
+```bash
+python cli.py scoring-export --urls urls.txt
+```
+
 ## Connecting the Scrapy pipeline to the lake
 
 Spiders and workers don't open tables themselves. They call `src.utils.delta.get_delta()` / `LakehouseManager.get_instance()`, which resolve the lake root as described above. To point a whole run at another lake, set `DELTA_LAKE_PATH` for every process (spiders, workers, exporter). Otherwise the processes write to different directories.
