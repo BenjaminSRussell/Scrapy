@@ -147,6 +147,10 @@ The browser tab title is prefixed with the live state so a background tab still 
 
 The topbar status is derived from the same state (`connectionState()` in `format-utils.js`).
 
+## Connection details (#979)
+
+The refresh bar info button opens a popover with the metrics endpoint the page is polling and the auto-refresh interval (5s by default, or 10s / 30s from the picker). The endpoint is whatever `resolveMetricsUrl` returns right then: `window.CC_METRICS_URL`, else a valid `?metrics=` URL, else `/api/metrics` (or `http://localhost:9090/metrics` when the page is opened as `file://`). Changing that override or the interval updates the popover, including while it is open, and the next poll uses the new endpoint. Escape dismisses it. The icon is decorative; the button name is "Connection details".
+
 ## Metric name map (#1038)
 
 The System tab Settings panel lists every Prometheus series the page reads and the UI field (element id) it fills. The list is `METRIC_UI_MAP` in `format-utils.js`, rendered by `renderMetricNameMap`. `app.js` does not keep a second copy. Session uptime and the last-refresh clock are not series. The Stage 4 overview spark follows `stage3_summaries_created_total` (the same sample buffer as the Stage 3 spark), not `stage4_large_doc_summaries_total`.
