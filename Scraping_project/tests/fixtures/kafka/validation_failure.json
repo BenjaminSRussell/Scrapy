@@ -1,0 +1,10 @@
+{
+  "attempted_value": "-5",
+  "error_message": "Input should be greater than or equal to 0",
+  "failed_at_utc": "2026-10-07T22:35:00.123456",
+  "field_name": "tuition_cost",
+  "pipeline_version": "1.0.0",
+  "spider_name": "scout",
+  "url": "https://admissions.uconn.edu/bad-cost",
+  "violation_rule": "greater_than_equal"
+}

@@ -45,7 +45,7 @@ second). The smoke suite is a quick PR signal, not a replacement for the CI sele
 | `component/`, `contract/` | Component behaviour and data-contract tests (item/record schemas) |
 | `delta/` | Delta Lake read/write against a temp directory |
 | `integration/` | Multi-component flows. Some use Redis/Postgres when reachable |
-| `kafka/` | Kafka producer/consumer tests (`kafka` marker; skipped in PR CI) |
+| `kafka/` | Kafka payload contracts. Golden-shape checks (`test_payload_contract.py`) run offline in PR CI; the produce -> consume round trip (`test_payload_roundtrip.py`) is marked `kafka` and skipped in PR CI |
 | `observability/` | Prometheus config, alert rules and metric-name checks (offline) |
 | `performance/` | Load/stress benchmarks (`performance` + `slow`; `make test-perf`) |
 | `retry/`, `test_*.py` | Retry/circuit breaker, cache, models, Redis smoke |

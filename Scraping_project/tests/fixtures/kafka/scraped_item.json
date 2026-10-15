@@ -1,0 +1,21 @@
+{
+  "category_confidence": null,
+  "category_final": null,
+  "content": "Annual tuition for in-state students.",
+  "entity_id": null,
+  "fees_cost": null,
+  "housing_cost": null,
+  "media_type": "text",
+  "media_url": null,
+  "pipeline_version": "1.0.0",
+  "publication_date": null,
+  "recency_score": null,
+  "scraped_at_utc": "2026-10-07T22:30:00.123456Z",
+  "source_url": "https://admissions.uconn.edu/tuition-and-fees/",
+  "spider_name": "scout",
+  "title": "Tuition and Fees",
+  "total_cost": null,
+  "tuition_cost": null,
+  "url": "https://admissions.uconn.edu/tuition-and-fees/",
+  "validation_status": true
+}
