@@ -1154,6 +1154,11 @@
             .activity-stale-note {
                 border: 1px dashed CanvasText;
             }
+            .metrics-copy-toast {
+                background: Canvas;
+                color: CanvasText;
+                border: 1px solid CanvasText;
+            }
             /* Chart.js paints fixed colours on canvas; keep its light backdrop
                so axis text and series stay legible under a dark system theme. */
             .chart-container canvas {
@@ -1391,6 +1396,29 @@
         }
         .fetch-error-banner[hidden] { display: none; }
         .btn[aria-busy="true"] { cursor: progress; }
+
+        /* #1019: transient confirmation after copying the metrics snapshot. */
+        .metrics-copy-toast {
+            position: fixed;
+            right: 1.25rem;
+            bottom: 5.5rem;
+            z-index: 1100;
+            max-width: min(24rem, calc(100vw - 2rem));
+            padding: 0.65rem 0.9rem;
+            border-radius: 0.5rem;
+            background: #ecfdf5;
+            color: #065f46;
+            border: 1px solid #047857;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.16);
+            font-size: 0.9rem;
+            font-weight: 600;
+        }
+        .metrics-copy-toast.is-error {
+            background: #fee2e2;
+            color: #7f1d1d;
+            border-color: #b91c1c;
+        }
+        .metrics-copy-toast[hidden] { display: none; }
     </style>
 </head>
 <body>
@@ -2011,6 +2039,7 @@
             <span id="job-start-status" class="visually-hidden" role="status" aria-live="polite"></span>
             <button type="button" id="pause-refresh" class="btn" aria-pressed="false" aria-label="Pause auto-refresh">Pause</button>
             <span class="refresh-info" id="cc-version" title="Control Center build">v—</span>
+            <button type="button" id="copy-metrics-json" class="btn" aria-label="Copy last metrics snapshot as JSON">Copy metrics JSON</button>
             <button type="button" id="manual-refresh" class="btn" aria-label="Refresh metrics now">Refresh now</button>
         </div>
         <div id="stage-drilldown-announce" class="visually-hidden" role="status" aria-live="polite" aria-atomic="true"></div>
@@ -2028,6 +2057,7 @@
                 <p id="stage-drilldown-note" class="stage-drilldown-note">Job and queue links are placeholders until those views exist. Press Escape to close.</p>
             </div>
         </div>
+        <div id="metrics-copy-toast" class="metrics-copy-toast" role="status" aria-live="polite" aria-atomic="true" hidden></div>
     </main>
 
     <script src="features.js"></script>
