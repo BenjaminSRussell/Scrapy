@@ -58,6 +58,9 @@ class Hub:
         self._history = {s.id: History(BUCKET_SECONDS, HISTORY_SECONDS // BUCKET_SECONDS) for s in STAGES}
         self._events: deque[dict] = deque(maxlen=EVENTS_KEPT)
         self._services: list[dict] = []
+        self._feed_services: list[dict] = []
+        self._probe_services: list[dict] = []
+        self._probing = False
         self._services_at = float("-inf")
         self._backfilled = False
         self._poll_error: str | None = None
@@ -108,14 +111,26 @@ class Hub:
                     self._history[stage_id].seed(series)
 
     def _refresh_services(self, now: float) -> None:
+        """Feed rows are in-memory and refreshed inline; the network probe (Redis, metrics)
+        runs on its own thread so a blackholed host never stalls polling."""
         if now - self._services_at < self.service_every:
             return
-        rows = _rows_or_unknown("feed", "Data feed", now, lambda: self.feed.services(now))
-        if self.probe is not None:
-            rows += _rows_or_unknown("probe", "Service checks", now, self.probe)
+        feed_rows = _rows_or_unknown("feed", "Data feed", now, lambda: self.feed.services(now))
         with self._lock:
-            self._services = rows
+            self._feed_services = feed_rows
+            self._services = feed_rows + self._probe_services
             self._services_at = now
+            start_probe = self.probe is not None and not self._probing
+            self._probing = self._probing or start_probe
+        if start_probe:
+            threading.Thread(target=self._run_probe, args=(now,), name="ccfeed-probe", daemon=True).start()
+
+    def _run_probe(self, now: float) -> None:
+        rows = _rows_or_unknown("probe", "Service checks", now, self.probe)
+        with self._lock:
+            self._probe_services = rows
+            self._services = self._feed_services + rows
+            self._probing = False
 
     # ---- views ----
     def _stage_dicts(self, now: float) -> list[dict]:

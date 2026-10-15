@@ -221,6 +221,7 @@ def test_probe_rows_join_feed_services_and_probe_errors_are_contained():
 
     hub, feed, clock = make_hub(probe=probe)
     hub.step()
+    assert _wait_for(lambda: len(hub.snapshot()["services"]) == 2)  # the probe runs off-thread
     ids = [s["id"] for s in hub.snapshot()["services"]]
     assert ids[0] == "delta"
     probe_row = hub.snapshot()["services"][-1]
@@ -257,3 +258,30 @@ def test_start_and_stop_run_the_background_loop():
     finally:
         hub.stop()
     assert feed.count >= 6
+
+
+def _wait_for(predicate, timeout=3.0):
+    import time as _time
+
+    deadline = _time.time() + timeout
+    while _time.time() < deadline:
+        if predicate():
+            return True
+        _time.sleep(0.02)
+    return False
+
+
+def test_a_slow_probe_never_delays_polling():
+    """A blackholed Redis takes seconds to time out; ticks must keep flowing meanwhile."""
+    import time as _time
+
+    def slow_probe():
+        _time.sleep(0.6)
+        return [{"id": "redis", "label": "Redis", "status": "down", "detail": "timeout", "checked_at": 0, "data": {}}]
+
+    hub, feed, clock = make_hub(probe=slow_probe)
+    started = _time.perf_counter()
+    hub.step()
+    assert _time.perf_counter() - started < 0.3
+    assert [s["id"] for s in hub.snapshot()["services"]] == ["delta"]  # feed row is immediate
+    assert _wait_for(lambda: [s["id"] for s in hub.snapshot()["services"]] == ["delta", "redis"])
