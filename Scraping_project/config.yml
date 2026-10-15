@@ -376,9 +376,13 @@ delta_lake:
   queue_retention_hours: 168
   queue_gc_interval_minutes: 60  # idle maintenance worker runs GC this often (0 = off)
   queue_gc_archive: true
-  # #632: vacuum retention tiers (hours). Error/quarantine tables keep 30 days of
-  # history for forensics; everything else uses default. Below 168h the delta-rs
-  # retention safety check is disabled for that table, so only lower it on purpose.
+  # #632: retention tiers (hours). `default` is only the vacuum window for tables
+  # that are not named here (silver/gold rows are not deleted; full-lake vacuum
+  # scheduling stays #266). A named table is a quarantine tier: the idle
+  # maintenance worker deletes `date` partitions older than that many hours and
+  # then vacuums the table. 0 keeps every row (forensic hold) and skips vacuum.
+  # Below 168h the delta-rs retention safety check is disabled, so only lower it
+  # on purpose. stage1_errors and stage2_errors keep 30 days.
   table_retention_hours:
     default: 168
     stage1_errors: 720

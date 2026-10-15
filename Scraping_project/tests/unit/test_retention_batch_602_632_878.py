@@ -1,7 +1,7 @@
 """Vacuum preview (#602), retention tiers + DLQ cleanup (#632), offsite promotion state (#878)."""
 
 import time
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 import pyarrow as pa
 import pytest
@@ -98,6 +98,7 @@ def test_idle_maintenance_runs_dlq_and_offsite_gc(manager, monkeypatch):
     ran = []
     monkeypatch.setattr(manager, "gc_all_queues", lambda *a, **k: ran.append("queues"))
     monkeypatch.setattr(manager, "_cleanup_file_dlq", lambda: ran.append("dlq"))
+    monkeypatch.setattr(manager, "gc_quarantine_tables", lambda **k: ran.append("errors"))
     import src.lakehouse.offsite_review as orv
 
     monkeypatch.setattr(orv.OffsiteReview, "gc", lambda self, **k: ran.append("offsite"))
@@ -107,7 +108,90 @@ def test_idle_maintenance_runs_dlq_and_offsite_gc(manager, monkeypatch):
     manager.queue_gc_interval_s = 60
     manager._last_queue_gc = time.monotonic() - manager.queue_gc_interval_s - 1
     manager._maybe_gc_queues()
-    assert ran == ["queues", "dlq", "offsite"]
+    assert ran == ["queues", "dlq", "errors", "offsite"]
+
+
+def _dates(path):
+    return DeltaTable(str(path)).to_pyarrow_table(columns=["date"])["date"].to_pylist()
+
+
+def test_quarantine_gc_drops_old_error_days_and_leaves_silver(manager, monkeypatch):
+    write_deltalake(str(manager.tables["stage1_errors"]), pa.table({
+        "url": ["old", "boundary", "fresh", "undated"],
+        "date": pa.array(["2026-01-01", "2026-09-08", "2026-10-01", None], type=pa.string()),
+    }))
+    write_deltalake(str(manager.tables["stage2_errors"]), pa.table({
+        "url": ["old2", "fresh2"],
+        "date": pa.array(["2026-10-01", "2026-10-07"], type=pa.string()),
+    }))
+    write_deltalake(str(manager.tables["stage2_page_analysis"]), pa.table({
+        "url": ["silver"],
+        "date": pa.array(["2020-01-01"], type=pa.string()),
+    }))
+    vacuumed = []
+    monkeypatch.setattr(
+        manager, "_vacuum_table",
+        lambda table, hours, enforce_retention_duration=True: vacuumed.append(
+            (table, hours, enforce_retention_duration)
+        ),
+    )
+    manager.table_retention_hours = {"default": 168, "stage1_errors": 720, "stage2_errors": 72}
+    now = datetime(2026, 10, 8, 12, 0, tzinfo=UTC)
+
+    preview = {r["table"]: r for r in manager.gc_quarantine_tables(dry_run=True, now=now)}
+    assert preview["stage1_errors"]["matched"] == 1 and preview["stage1_errors"]["deleted"] == 0
+    assert preview["stage1_errors"]["vacuumed"] is False
+    assert preview["stage2_errors"]["matched"] == 1
+    assert _dates(manager.tables["stage1_errors"]) == ["2026-01-01", "2026-09-08", "2026-10-01", None]
+
+    applied = {r["table"]: r for r in manager.gc_quarantine_tables(now=now)}
+    assert applied["stage1_errors"]["deleted"] == 1
+    assert applied["stage1_errors"]["vacuumed"] is True
+    assert _dates(manager.tables["stage1_errors"]) == ["2026-09-08", "2026-10-01", None]
+    # 72h before 2026-10-08 is 2026-10-05, so 2026-10-01 goes and 2026-10-07 stays.
+    assert _dates(manager.tables["stage2_errors"]) == ["2026-10-07"]
+    assert _dates(manager.tables["stage2_page_analysis"]) == ["2020-01-01"]
+    assert ("stage2_page_analysis", 168, True) not in vacuumed
+    assert ("stage1_errors", 720, True) in vacuumed
+    assert ("stage2_errors", 72, False) in vacuumed  # under 168h: safety check off
+
+
+def test_quarantine_gc_hold_and_missing_date_do_not_delete_rows(manager, monkeypatch):
+    write_deltalake(str(manager.tables["stage1_errors"]), pa.table({
+        "url": ["keep"], "date": pa.array(["2020-01-01"], type=pa.string()),
+    }))
+    write_deltalake(str(manager.tables["stage2_errors"]), pa.table({"url": ["nodate"], "error": ["x"]}))
+    vacuumed = []
+    monkeypatch.setattr(
+        manager, "_vacuum_table",
+        lambda table, hours, enforce_retention_duration=True: vacuumed.append(table),
+    )
+    manager.table_retention_hours = {"default": 168, "stage1_errors": 0, "stage2_errors": 720}
+    now = datetime(2026, 10, 8, tzinfo=UTC)
+    by_table = {r["table"]: r for r in manager.gc_quarantine_tables(now=now)}
+    assert by_table["stage1_errors"]["skipped"] == "retention disabled"
+    assert by_table["stage1_errors"]["vacuumed"] is False
+    assert _dates(manager.tables["stage1_errors"]) == ["2020-01-01"]
+    assert by_table["stage2_errors"]["skipped"] == "no date column"
+    assert by_table["stage2_errors"]["deleted"] == 0
+    assert by_table["stage2_errors"]["vacuumed"] is True
+    assert vacuumed == ["stage2_errors"]
+    rows = DeltaTable(str(manager.tables["stage2_errors"])).to_pyarrow_table().to_pylist()
+    assert rows == [{"url": "nodate", "error": "x"}]
+
+
+def test_quarantine_gc_isolates_one_table_failure(manager, monkeypatch):
+    def boom(table, hours, *, dry_run, now):
+        if table == "stage1_errors":
+            raise RuntimeError("disk on fire")
+        return {"table": table, "retention_hours": hours, "matched": 0, "deleted": 0,
+                "vacuumed": False, "skipped": "ok"}
+
+    monkeypatch.setattr(manager, "_gc_one_quarantine_table", boom)
+    manager.table_retention_hours = {"default": 168, "stage1_errors": 720, "stage2_errors": 720}
+    results = manager.gc_quarantine_tables()
+    assert results[0]["skipped"].startswith("error: disk on fire")
+    assert results[1]["table"] == "stage2_errors" and results[1]["skipped"] == "ok"
 
 
 # ---------------------------------------------------------------------- #878
