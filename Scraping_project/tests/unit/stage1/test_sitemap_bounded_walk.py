@@ -193,3 +193,114 @@ def test_discover_sitemaps_sync_end_to_end_respects_the_cap(monkeypatch):
     urls = discover_sitemaps_sync(BASE, timeout=5, watermarks=None)
     assert len(urls) == 50
     assert set(urls) >= {f"{BASE}/a{i}" for i in range(40)}
+
+
+class StatusSite(Site):
+    """Site whose listed paths answer with a fixed non-200 status (#914)."""
+
+    def __init__(self, pages, statuses):
+        super().__init__(pages)
+        self.statuses = statuses
+
+    def handler(self, request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if url in self.statuses:
+            self.fetches[url] += 1
+            return httpx.Response(self.statuses[url])
+        return super().handler(request)
+
+
+def test_failed_child_is_listed_and_its_siblings_are_still_injected():
+    site = StatusSite(
+        {
+            f"{BASE}/sitemap.xml": index(f"{BASE}/ok.xml", f"{BASE}/broken.xml", f"{BASE}/also-ok.xml"),
+            f"{BASE}/ok.xml": urlset(f"{BASE}/a"),
+            f"{BASE}/also-ok.xml": urlset(f"{BASE}/b"),
+        },
+        {f"{BASE}/broken.xml": 500},
+    )
+    parser = site.walk(f"{BASE}/sitemap.xml")
+    assert parser.discovered_urls == {f"{BASE}/a", f"{BASE}/b"}
+    assert parser.failed_sitemaps == {f"{BASE}/broken.xml": "HTTP 500"}
+    assert parser.coverage_pct == pytest.approx(66.7)
+
+
+def test_unparseable_and_missing_children_are_listed_with_reasons():
+    site = Site({
+        f"{BASE}/sitemap.xml": index(f"{BASE}/junk.xml", f"{BASE}/gone.xml", f"{BASE}/ok.xml"),
+        f"{BASE}/junk.xml": b"<urlset><url><loc>",  # truncated XML, served as application/xml
+        f"{BASE}/ok.xml": urlset(f"{BASE}/a"),
+    })
+    parser = site.walk(f"{BASE}/sitemap.xml")
+    assert parser.discovered_urls == {f"{BASE}/a"}
+    assert parser.failed_sitemaps == {f"{BASE}/junk.xml": "XML parse error", f"{BASE}/gone.xml": "HTTP 404"}
+    assert parser.coverage_pct == pytest.approx(33.3)
+
+
+def test_unchanged_child_counts_as_covered_not_failed():
+    class Unchanged:
+        def is_unchanged(self, url, lastmod):
+            return url == f"{BASE}/old.xml"
+
+        def record(self, url, lastmod):
+            pass
+
+        def flush(self):
+            return 0
+
+    site = Site({
+        f"{BASE}/sitemap.xml": index(f"{BASE}/old.xml", f"{BASE}/new.xml"),
+        # old.xml is absent on purpose: it must be skipped, not fetched and failed.
+        f"{BASE}/new.xml": urlset(f"{BASE}/fresh"),
+    })
+    parser = site.walk(f"{BASE}/sitemap.xml", watermarks=Unchanged())
+    assert parser.discovered_urls == {f"{BASE}/fresh"}
+    assert parser.failed_sitemaps == {}
+    assert parser.coverage_pct == 100.0
+    assert site.fetches[f"{BASE}/old.xml"] == 0
+
+
+def test_url_cap_leaves_partly_read_and_unread_children_listed():
+    children = [f"{BASE}/s{i}.xml" for i in range(3)]
+    pages: dict = {f"{BASE}/sitemap.xml": index(*children)}
+    for i, child in enumerate(children):
+        pages[child] = urlset(*(f"{BASE}/s{i}/p{j}" for j in range(1000)))
+    parser = Site(pages).walk(f"{BASE}/sitemap.xml", max_urls=1500)
+    assert parser.failed_sitemaps == {
+        children[1]: "partly read: URL cap reached",
+        children[2]: "not read: URL cap reached",
+    }
+    assert parser.coverage_pct == pytest.approx(33.3)
+
+
+def test_walk_without_a_sitemap_index_has_no_coverage_figure():
+    parser = Site({f"{BASE}/sitemap.xml": urlset(f"{BASE}/only")}).walk(f"{BASE}/sitemap.xml")
+    assert parser.discovered_urls == {f"{BASE}/only"}
+    assert parser.failed_sitemaps == {}
+    assert parser.coverage_pct is None
+
+
+def test_sync_handoff_with_some_children_failed_is_success_with_coverage(monkeypatch):
+    site = StatusSite(
+        {f"{BASE}/sitemap.xml": index(f"{BASE}/ok.xml", f"{BASE}/bad.xml"), f"{BASE}/ok.xml": urlset(f"{BASE}/a")},
+        {f"{BASE}/bad.xml": 500},
+    )
+    real = httpx.AsyncClient
+    monkeypatch.setattr(sp.httpx, "AsyncClient",
+                        lambda **kw: real(transport=httpx.MockTransport(site.handler), **kw))
+    handoff = sp.discover_sitemaps_handoff_sync(BASE, timeout=5, watermarks=None)
+    assert handoff.is_success and handoff.discovered == [f"{BASE}/a"]
+    assert handoff.failed_sitemaps == {f"{BASE}/bad.xml": "HTTP 500"}
+    assert handoff.coverage_pct == 50.0
+
+
+def test_walk_where_every_child_failed_is_failed_not_empty(monkeypatch):
+    site = StatusSite({f"{BASE}/sitemap.xml": index(f"{BASE}/c1.xml", f"{BASE}/c2.xml")}, {f"{BASE}/c1.xml": 503})
+    real = httpx.AsyncClient
+    monkeypatch.setattr(sp.httpx, "AsyncClient",
+                        lambda **kw: real(transport=httpx.MockTransport(site.handler), **kw))
+    handoff = asyncio.run(SitemapParser(BASE, watermarks=None).discover_with_handoff())
+    assert handoff.is_failed and handoff.discovered == []
+    assert handoff.failed_sitemaps == {f"{BASE}/c1.xml": "HTTP 503", f"{BASE}/c2.xml": "HTTP 404"}
+    assert handoff.coverage_pct == 0.0
+    assert "child sitemap(s) not read" in (handoff.error or "")

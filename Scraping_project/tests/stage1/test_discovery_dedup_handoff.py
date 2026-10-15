@@ -28,8 +28,10 @@ from src.stage1.discovery_handoff import (
     checksum_urls,
     consume_rustmapper_handoff,
     ingest_handoff_via_seed_manager,
+    read_handoff_json,
     require_ingestible,
     verify_checksum,
+    write_handoff_json,
 )
 
 
@@ -258,3 +260,73 @@ class TestConfigModes:
 
         dedup = get_discovery_dedup_from_config(FakeConfig())
         assert dedup.mode == DiscoveryDedupMode.MUTEX
+
+
+class TestPartialCoverage:
+    """Partial sitemap coverage stays visible in the handoff, sidecar and ingest result (#914)."""
+
+    def test_partial_success_round_trips_through_sidecar(self, temp_dir: Path):
+        handoff = DiscoveryHandoff.success(
+            ["https://example.edu/a"],
+            discovery_source="sitemap_parser",
+            failed_sitemaps={"https://example.edu/broken.xml": "HTTP 500"},
+            coverage_pct=50.0,
+        )
+        sidecar = temp_dir / "discovery_handoff.json"
+        write_handoff_json(sidecar, handoff)
+        loaded = read_handoff_json(sidecar)
+        assert loaded.failed_sitemaps == {"https://example.edu/broken.xml": "HTTP 500"}
+        assert loaded.coverage_pct == 50.0
+        assert require_ingestible(loaded) == ["https://example.edu/a"]  # parsed URLs still ingested
+
+    def test_sidecar_from_before_coverage_fields_still_loads(self, temp_dir: Path):
+        sidecar = temp_dir / "old.json"
+        sidecar.write_text(
+            json.dumps({"status": "success", "discovered": ["https://example.edu/a"], "discovery_source": "rustmapper"}),
+            encoding="utf-8",
+        )
+        loaded = read_handoff_json(sidecar)
+        assert loaded.failed_sitemaps == {}
+        assert loaded.coverage_pct is None
+
+    def test_ingest_result_reports_coverage(self):
+        seed_mgr = MagicMock()
+        seed_mgr.add_urls_to_seeds.return_value = {"seed_inserted": 1, "uconn_inserted": 0, "stage2_enqueued": 0}
+        handoff = DiscoveryHandoff.success(
+            ["https://example.edu/a"],
+            discovery_source="sitemap_parser",
+            failed_sitemaps={"https://example.edu/broken.xml": "HTTP 404"},
+            coverage_pct=50.0,
+        )
+        result = ingest_handoff_via_seed_manager(
+            seed_mgr,
+            handoff,
+            source_url="https://example.edu/sitemap.xml",
+            enqueue_stage2=False,
+        )
+        assert result["coverage_pct"] == 50.0
+        assert result["failed_sitemap_count"] == 1
+        seed_mgr.add_urls_to_seeds.assert_called_once()
+
+
+class TestScoutHandoffSidecar:
+    def test_sidecar_written_only_when_handoff_path_is_configured(self, temp_dir: Path):
+        from src.stage1.scout_spider import ScoutSpider
+
+        handoff = DiscoveryHandoff.success(
+            ["https://example.edu/a"],
+            discovery_source="sitemap_parser",
+            failed_sitemaps={"https://example.edu/broken.xml": "HTTP 500"},
+            coverage_pct=50.0,
+        )
+        spider = ScoutSpider.__new__(ScoutSpider)  # the sidecar step reads no crawler state
+        spider.discovery_handoff_path = None
+        spider._write_discovery_sidecar(handoff)
+        assert list(temp_dir.iterdir()) == []
+
+        path = temp_dir / "discovery_handoff.json"
+        spider.discovery_handoff_path = str(path)
+        spider._write_discovery_sidecar(handoff)
+        data = json.loads(path.read_text(encoding="utf-8"))
+        assert data["failed_sitemaps"] == {"https://example.edu/broken.xml": "HTTP 500"}
+        assert data["coverage_pct"] == 50.0

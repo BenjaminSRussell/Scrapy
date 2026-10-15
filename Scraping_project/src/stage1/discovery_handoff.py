@@ -36,6 +36,10 @@ class DiscoveryHandoff:
         checksum: sha256 over JSONL body or sorted URL payload
         discovery_source: provenance (sitemap_parser | scout | rustmapper | ...)
         job_id / site: optional coordination metadata
+        failed_sitemaps: child sitemap URL -> why it was not read completely.
+            Non-empty means partial coverage: the parsed URLs are still ingested (#914).
+        coverage_pct: 0-100 share of child sitemaps read (unchanged counts as read);
+            None when no sitemap index was walked.
     """
 
     status: DiscoveryStatus | str
@@ -45,6 +49,8 @@ class DiscoveryHandoff:
     discovery_source: str = "unknown"
     job_id: str | None = None
     site: str | None = None
+    failed_sitemaps: dict[str, str] = field(default_factory=dict)
+    coverage_pct: float | None = None
 
     def __post_init__(self) -> None:
         if isinstance(self.status, str):
@@ -79,6 +85,8 @@ class DiscoveryHandoff:
             discovery_source=data.get("discovery_source", "unknown"),
             job_id=data.get("job_id"),
             site=data.get("site"),
+            failed_sitemaps=dict(data.get("failed_sitemaps") or {}),
+            coverage_pct=data.get("coverage_pct"),
         )
 
     @classmethod
@@ -90,6 +98,8 @@ class DiscoveryHandoff:
         job_id: str | None = None,
         site: str | None = None,
         checksum: str | None = None,
+        failed_sitemaps: dict[str, str] | None = None,
+        coverage_pct: float | None = None,
     ) -> "DiscoveryHandoff":
         url_list = list(urls)
         if not url_list:
@@ -102,6 +112,8 @@ class DiscoveryHandoff:
             discovery_source=discovery_source,
             job_id=job_id,
             site=site,
+            failed_sitemaps=dict(failed_sitemaps or {}),
+            coverage_pct=coverage_pct,
         )
 
     @classmethod
@@ -111,6 +123,7 @@ class DiscoveryHandoff:
         discovery_source: str,
         job_id: str | None = None,
         site: str | None = None,
+        coverage_pct: float | None = None,
     ) -> "DiscoveryHandoff":
         return cls(
             status=DiscoveryStatus.EMPTY,
@@ -120,6 +133,7 @@ class DiscoveryHandoff:
             discovery_source=discovery_source,
             job_id=job_id,
             site=site,
+            coverage_pct=coverage_pct,
         )
 
     @classmethod
@@ -130,6 +144,8 @@ class DiscoveryHandoff:
         discovery_source: str,
         job_id: str | None = None,
         site: str | None = None,
+        failed_sitemaps: dict[str, str] | None = None,
+        coverage_pct: float | None = None,
     ) -> "DiscoveryHandoff":
         return cls(
             status=DiscoveryStatus.FAILED,
@@ -139,6 +155,8 @@ class DiscoveryHandoff:
             discovery_source=discovery_source,
             job_id=job_id,
             site=site,
+            failed_sitemaps=dict(failed_sitemaps or {}),
+            coverage_pct=coverage_pct,
         )
 
 
@@ -310,6 +328,11 @@ def require_ingestible(handoff: DiscoveryHandoff, *, ack_empty: bool = False) ->
     return list(handoff.discovered)
 
 
+def _coverage_fields(handoff: DiscoveryHandoff) -> dict[str, Any]:
+    """Partial-coverage metadata reported with every ingest result (#914)."""
+    return {"coverage_pct": handoff.coverage_pct, "failed_sitemap_count": len(handoff.failed_sitemaps)}
+
+
 def ingest_handoff_via_seed_manager(
     seed_manager: Any,
     handoff: DiscoveryHandoff,
@@ -322,7 +345,7 @@ def ingest_handoff_via_seed_manager(
 ) -> dict[str, Any]:
     """Verify handoff, shared-dedup claim, then SeedManager ingest.
 
-    Returns counts plus handoff status metadata.
+    Returns counts plus handoff status metadata and partial-coverage fields.
     """
     urls = require_ingestible(handoff, ack_empty=ack_empty)
     if not urls:
@@ -335,6 +358,7 @@ def ingest_handoff_via_seed_manager(
             "skipped_dedup": 0,
             "checksum": handoff.checksum,
             "discovery_source": handoff.discovery_source,
+            **_coverage_fields(handoff),
         }
 
     claimed_urls = urls
@@ -357,6 +381,7 @@ def ingest_handoff_via_seed_manager(
             "skipped_dedup": skipped,
             "checksum": handoff.checksum,
             "discovery_source": handoff.discovery_source,
+            **_coverage_fields(handoff),
         }
 
     result = seed_manager.add_urls_to_seeds(
@@ -374,6 +399,7 @@ def ingest_handoff_via_seed_manager(
             "skipped_dedup": skipped,
             "checksum": handoff.checksum,
             "discovery_source": handoff.discovery_source,
+            **_coverage_fields(handoff),
         }
     )
     return result

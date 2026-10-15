@@ -22,6 +22,7 @@ from src.stage1.discovery_handoff import (
     DiscoveryHandoffError,
     DiscoveryStatus,
     ingest_handoff_via_seed_manager,
+    write_handoff_json,
 )
 from src.stage1.js_queue import js_spider_enabled
 from src.stage1.section_noise import SectionNoiseTracker, section_of
@@ -92,6 +93,12 @@ class ScoutSpider(BaseSpider):
             kwargs.get("ack_empty_discovery")
             or config.get("stage1.discovery.ack_empty", False)
             or config.get("stages.stage1.discovery.ack_empty", False)
+        )
+        # #914: optional discovery_handoff.json sidecar, written after each sitemap walk.
+        self.discovery_handoff_path = (
+            config.get("stage1.discovery.handoff_path")
+            or config.get("stages.stage1.discovery.handoff_path")
+            or None
         )
         # #645: with the JS path off nothing drains js_spider_queue, so don't fill it.
         self.enable_js_spider = js_spider_enabled(config)
@@ -387,6 +394,7 @@ class ScoutSpider(BaseSpider):
                 job_id=self.job_id,
             )
             self._last_discovery_handoff = handoff
+            self._write_discovery_sidecar(handoff)
 
             if handoff.status == DiscoveryStatus.FAILED:
                 self.scout_stats["discovery_failures"] += 1
@@ -408,10 +416,16 @@ class ScoutSpider(BaseSpider):
                     )
                 return
 
+            coverage = "n/a" if handoff.coverage_pct is None else f"{handoff.coverage_pct}%"
             logger.info(
                 f"[SCOUT] Sitemap handoff success: {len(handoff.discovered)} URLs "
-                f"checksum={handoff.checksum}"
+                f"checksum={handoff.checksum} coverage={coverage}"
             )
+            if handoff.failed_sitemaps:
+                logger.warning(
+                    f"[SCOUT] Partial sitemap coverage for {base_url}: {len(handoff.failed_sitemaps)} child "
+                    f"sitemap(s) not read; ingesting the {len(handoff.discovered)} parsed URLs anyway"
+                )
             self._ingest_discovery_handoff(handoff, source_url=f"{base_url}/sitemap.xml")
 
         except Exception as e:
@@ -419,6 +433,20 @@ class ScoutSpider(BaseSpider):
             logger.warning(f"[SCOUT] Sitemap discovery failed: {e}")
         finally:
             self.discovery_dedup.release_mutex(site, source)
+
+    def _write_discovery_sidecar(self, handoff) -> None:
+        """Write the handoff to ``stage1.discovery.handoff_path`` when that key is set (#914).
+
+        The sidecar keeps ``failed_sitemaps`` and ``coverage_pct`` after the run.
+        Scout runs in-process under CrawlerProcess and returns nothing to the
+        orchestrator, so the file and the log are the only places this shows up.
+        """
+        if not self.discovery_handoff_path:
+            return
+        try:
+            write_handoff_json(self.discovery_handoff_path, handoff)
+        except OSError as e:
+            logger.warning(f"[SCOUT] Could not write discovery handoff {self.discovery_handoff_path}: {e}")
 
     def _ingest_discovery_handoff(self, handoff, source_url: str) -> None:
         try:

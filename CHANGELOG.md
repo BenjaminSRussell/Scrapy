@@ -56,6 +56,7 @@ renamed to the new version and date (see the release checklist).
 - Grafana scraping-pipeline-health dashboard provisioned in compose and Helm.
 - Release images (crawler, metrics, kafka-delta-ingest) smoke-tested on PRs that touch the image recipe (#449).
 - Repository policies: SECURITY.md, CODE_OF_CONDUCT.md, this changelog, ADRs, devcontainer (#669 #746 #747 #715 #694).
+- Sitemap discovery handoff lists the child sitemaps it could not read (`failed_sitemaps`) and the share it read (`coverage_pct`, 0-100; null without a sitemap index). Parsed URLs are still ingested. Scout writes the handoff to `stage1.discovery.handoff_path` when that key is set (#914).
 
 ### Changed
 - Control Center tabs, health tiles, and the title mark use inline SVG icons (`aria-hidden`) instead of emoji glyphs (#1049).
@@ -91,6 +92,7 @@ renamed to the new version and date (see the release checklist).
 - ASR never leaks temp media files and caps download size (#468).
 - Config reloads that fail to parse keep the previous snapshot live.
 - Control Center: keyboard tabs, landmarks, contrast, focus, reduced motion, a wrapping mobile topbar, and loading, stale, and error states (#153 #155 #332 #340 #341 #343 #349 #351 #352 #362).
+- A sitemap walk whose child sitemaps all failed and that parsed no URLs is `failed`, not `empty`, so Scout reports a discovery failure instead of treating the site as having no URLs (#914).
 
 ### Security
 - Production Helm overlay turns on default-deny NetworkPolicies for Redis, Kafka, Postgres and the scrapers. The delta ingestor may dial Redis, and Grafana may install the Redis datasource plugin over public HTTPS (same private and link-local exclusions as scrape egress; the plugin is not baked into the image). Alertmanager external receivers stay closed. `networkPolicy.breakGlass` is the debug override and must not stay on (#190).

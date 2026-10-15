@@ -236,6 +236,12 @@ def sitemap_incremental_settings(config: Any = None) -> tuple[bool, float]:
     return bool(enabled), max_age
 
 
+def _child_failure_summary(failed: dict[str, str]) -> str:
+    """Error text for a walk that parsed no URLs because child sitemaps failed (#914)."""
+    url, reason = next(iter(failed.items()))
+    return f"{len(failed)} child sitemap(s) not read; first: {url} ({reason})"
+
+
 class SitemapParser:
 
     NAMESPACES = {
@@ -284,6 +290,28 @@ class SitemapParser:
         self._limit_events = 0
         self._hard_errors: list[str] = []
         self._any_success = False
+        # Partial coverage (#914): child sitemaps (depth >= 1) that were not read
+        # completely, and every child an index named (unchanged ones included).
+        self.failed_sitemaps: dict[str, str] = {}
+        self._child_refs: set[str] = set()
+
+    def _note_child_failure(self, sitemap_url: str, depth: int, reason: str) -> None:
+        """Record a child sitemap (depth >= 1) that was not read completely (#914)."""
+        if depth >= 1:
+            self.failed_sitemaps.setdefault(sitemap_url, reason)
+
+    @property
+    def coverage_pct(self) -> float | None:
+        """Share of child sitemaps named by a walked index that were read, 0-100 (#914).
+
+        Children skipped as unchanged by a watermark count as read. None when the
+        walk saw no sitemap index, so there were no children to cover.
+        """
+        total = len(self._child_refs)
+        if total == 0:
+            return None
+        failed = len(self._child_refs.intersection(self.failed_sitemaps))
+        return round(100.0 * (total - failed) / total, 1)
 
     async def discover_all_urls(self) -> list[str]:
         parsed = urlparse(self.base_url)
@@ -333,11 +361,14 @@ class SitemapParser:
                 site=site,
             )
         if urls:
+            # Partial coverage is still a success: the parsed URLs are injected (#914).
             return DiscoveryHandoff.success(
                 urls,
                 discovery_source=discovery_source,
                 job_id=job_id,
                 site=site,
+                failed_sitemaps=dict(self.failed_sitemaps),
+                coverage_pct=self.coverage_pct,
             )
         if self._hard_errors and not self._any_success:
             return DiscoveryHandoff.failed(
@@ -346,10 +377,21 @@ class SitemapParser:
                 job_id=job_id,
                 site=site,
             )
+        if self.failed_sitemaps:
+            # Children were named and none parsed: that is not an empty site (#914).
+            return DiscoveryHandoff.failed(
+                _child_failure_summary(self.failed_sitemaps),
+                discovery_source=discovery_source,
+                job_id=job_id,
+                site=site,
+                failed_sitemaps=dict(self.failed_sitemaps),
+                coverage_pct=self.coverage_pct,
+            )
         return DiscoveryHandoff.empty(
             discovery_source=discovery_source,
             job_id=job_id,
             site=site,
+            coverage_pct=self.coverage_pct,
         )
 
     async def _parse_sitemap_recursive(
@@ -366,17 +408,20 @@ class SitemapParser:
         if depth > self.max_depth:
             self.stats["skipped_depth"] += 1
             self._limit_hit("depth", f"Max sitemap depth {self.max_depth} reached: {sitemap_url}")
+            self._note_child_failure(sitemap_url, depth, "not read: depth limit reached")
             return False
 
         if sitemap_url in self.visited_sitemaps:
             return False
 
         if self._urls_full():
+            self._note_child_failure(sitemap_url, depth, "not read: URL cap reached")
             return False
 
         if len(self.visited_sitemaps) >= self.max_sitemaps:
             self.stats["skipped_cap"] += 1
             self._limit_hit("sitemaps", f"Sitemap fetch cap {self.max_sitemaps} reached; skipping {sitemap_url}")
+            self._note_child_failure(sitemap_url, depth, "not read: fetch cap reached")
             return False
 
         self.visited_sitemaps.add(sitemap_url)
@@ -387,11 +432,13 @@ class SitemapParser:
 
             if response.status_code != 200:
                 logger.warning(f"Sitemap returned {response.status_code}: {sitemap_url}")
+                self._note_child_failure(sitemap_url, depth, f"HTTP {response.status_code}")
                 return False
 
             self._any_success = True
             if content is None:
                 self._limit_hit("bytes", f"Sitemap larger than {self.max_bytes} bytes skipped: {sitemap_url}")
+                self._note_child_failure(sitemap_url, depth, "not read: larger than max_bytes")
                 return False
             if content[:2] == b"\x1f\x8b":
                 # Still gzipped (a .gz file, or httpx left it encoded).
@@ -400,9 +447,11 @@ class SitemapParser:
                     logger.debug(f"Decompressed gzipped sitemap: {sitemap_url}")
                 except SitemapTooLarge:
                     self._limit_hit("bytes", f"Sitemap inflates past {self.max_bytes} bytes; skipped: {sitemap_url}")
+                    self._note_child_failure(sitemap_url, depth, "not read: inflates past max_bytes")
                     return False
                 except (zlib.error, gzip.BadGzipFile, EOFError) as e:
                     logger.warning(f"Failed to decompress sitemap: {sitemap_url} - {e}")
+                    self._note_child_failure(sitemap_url, depth, "gzip decode error")
                     return False
 
             try:
@@ -418,15 +467,18 @@ class SitemapParser:
 
                     complete = True
                     for nested_url in nested_sitemaps:
-                        if self._urls_full():
-                            complete = False
-                            break
                         nested_abs = urljoin(sitemap_url, nested_url)
+                        self._child_refs.add(nested_abs)
                         lastmod = self._lastmods.get(nested_url)
                         if self.watermarks is not None and self.watermarks.is_unchanged(nested_abs, lastmod):
-                            # Nothing in this child changed since the last full read (#394).
+                            # Nothing in this child changed since the last full read (#394); still covered.
                             self.stats["skipped_unchanged_sitemaps"] += 1
                             _count(SITEMAP_UNCHANGED_SKIPS, kind="sitemap")
+                            continue
+                        if self._urls_full():
+                            # Not read: the URL cap is already full. Record each remaining child (#914).
+                            complete = False
+                            self._note_child_failure(nested_abs, depth + 1, "not read: URL cap reached")
                             continue
                         events_before = self._limit_events
                         ok = await self._parse_sitemap_recursive(client, nested_abs, depth + 1)
@@ -448,10 +500,13 @@ class SitemapParser:
                         f"Extracted {len(urls)} URLs from {sitemap_url} ({added} new, "
                         f"{len(urls) - len(fresh)} unchanged since last read)"
                     )
+                    if self._limit_events != events_before:
+                        self._note_child_failure(sitemap_url, depth, "partly read: URL cap reached")
                     return self._limit_events == events_before
 
             except DefusedXmlException as e:
                 logger.warning(f"Rejected unsafe XML in sitemap {sitemap_url}: {e}")
+                self._note_child_failure(sitemap_url, depth, "unsafe XML rejected")
                 return False
             except ET.ParseError as e:
                 content_type = response.headers.get("content-type", "").lower()
@@ -460,18 +515,24 @@ class SitemapParser:
                     try:
                         text_content = content.decode("utf-8")
                         urls = self._extract_from_plain_text(text_content)
+                        events_before = self._limit_events
                         self._add_urls(urls)
+                        if self._limit_events != events_before:
+                            self._note_child_failure(sitemap_url, depth, "partly read: URL cap reached")
                         logger.info(f"Extracted {len(urls)} URLs from plain-text sitemap: {sitemap_url}")
                         return True
                     except Exception as text_error:
                         logger.warning(f"Plain-text parsing also failed for {sitemap_url}: {text_error}")
+                        self._note_child_failure(sitemap_url, depth, "unparseable sitemap")
                 else:
                     logger.warning(f"Failed to parse sitemap XML: {sitemap_url} - {e}")
+                    self._note_child_failure(sitemap_url, depth, "XML parse error")
 
         except Exception as e:
             _count(SITEMAP_FETCHES, kind="error")
             logger.warning(f"Error processing sitemap: {sitemap_url} - {e}")
             self._hard_errors.append(f"{sitemap_url}: {e}")
+            self._note_child_failure(sitemap_url, depth, f"error: {e}"[:200])
         return False
 
     async def _fetch(self, client: httpx.AsyncClient, url: str) -> tuple[httpx.Response, bytes | None]:
@@ -720,6 +781,8 @@ def discover_sitemaps_handoff_sync(
                 discovery_source=discovery_source,
                 job_id=job_id,
                 site=site,
+                failed_sitemaps=dict(parser.failed_sitemaps),
+                coverage_pct=parser.coverage_pct,
             )
         if parser._hard_errors and not parser._any_success:
             return DiscoveryHandoff.failed(
@@ -728,10 +791,20 @@ def discover_sitemaps_handoff_sync(
                 job_id=job_id,
                 site=site,
             )
+        if parser.failed_sitemaps:
+            return DiscoveryHandoff.failed(
+                _child_failure_summary(parser.failed_sitemaps),
+                discovery_source=discovery_source,
+                job_id=job_id,
+                site=site,
+                failed_sitemaps=dict(parser.failed_sitemaps),
+                coverage_pct=parser.coverage_pct,
+            )
         return DiscoveryHandoff.empty(
             discovery_source=discovery_source,
             job_id=job_id,
             site=site,
+            coverage_pct=parser.coverage_pct,
         )
 
     try:
