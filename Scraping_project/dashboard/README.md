@@ -121,6 +121,23 @@ The System tab Settings panel lists every Prometheus series the page reads and t
 
 The Activity log has a **Sound on danger** checkbox. It is unchecked until an operator turns it on, and that choice is stored in `localStorage` under `cc.dangerSound`. When it is on, a new `danger` activity row plays a short tone (Web Audio, no audio file). The same message is not chimed again inside the screen-reader repeat window. Success, warning, info, and timeout rows never play a sound. `prefers-reduced-motion: reduce`, or a `prefers-muted` media preference, keeps the page silent even if the box is checked.
 
+## Scrape targets (#1052)
+
+The Overview card **Scrape targets** ranks hosts from the metrics sample already
+fetched for the rest of the page (`topScrapeTargets` in `format-utils.js`). It
+reads only these families, using a `host` label or else a `domain` label:
+
+`scrape_targets`, `pipeline_scrape_targets`, `seed_hosts`, `urls_by_host`,
+`urls_by_domain` (a `_total` suffix is fine).
+
+The same function accepts an API stub, `{ targets: [{ host, value }] }` or
+`{ hosts: [...] }`, so a later route can supply the list without a second
+parser. It does not call that route and it does not scrape. The configured
+`domain` label on crawl counters is not a request host and is ignored.
+Sentinels (`unknown`, `rejected`, `-`) are dropped. When no usable series is
+present the card stays on **No scrape-target metric reported.** and does not
+invent seeds. Host text is rendered with `textContent`.
+
 ## Threat model notes (#1046)
 
 **Activity log XSS.** Activity messages may contain text derived from metrics,

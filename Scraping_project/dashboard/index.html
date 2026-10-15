@@ -809,6 +809,9 @@
         .metric-map-help { font-size: 0.9rem; color: var(--gray-700); margin: 0.75rem 0; }
         #metric-name-map-table td:first-child { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.85em; }
         #metric-name-map-table ul { margin: 0; padding-left: 1.1rem; }
+        /* #1052: host names can be long; keep the value column visible. */
+        #scrape-targets-list td:first-child { max-width: 36rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        #scrape-targets-list td:last-child { font-variant-numeric: tabular-nums; font-weight: 700; white-space: nowrap; }
         .legend-toggles { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.5rem; }
         .legend-toggles button { font-size: 0.8rem; }
         
@@ -1251,6 +1254,19 @@
                         <!-- Rendered by app.js on init; no static seed (#978). -->
                         <div class="activity-feed" id="overview-activity" aria-live="off"></div>
                     </div>
+                </div>
+
+                <!-- #1052: top scrape-target hosts. Empty until a labelled series
+                     or an API stub lists them; never a made-up seed list. -->
+                <div class="card" id="scrape-targets-card" style="margin-top: 1.5rem;">
+                    <div class="card-header">
+                        <h2 class="card-title" id="scrape-targets-title">Scrape targets</h2>
+                    </div>
+                    <p class="metric-label" id="scrape-targets-empty" role="status">No scrape-target metric reported.</p>
+                    <table class="data-fallback-table" id="scrape-targets-table" aria-labelledby="scrape-targets-title" hidden>
+                        <thead><tr><th scope="col">Host</th><th scope="col">Value</th></tr></thead>
+                        <tbody id="scrape-targets-list"></tbody>
+                    </table>
                 </div>
             </div>
 
