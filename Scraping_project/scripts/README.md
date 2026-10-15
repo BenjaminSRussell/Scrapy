@@ -17,6 +17,7 @@ This directory contains scripts for managing, debugging, and resetting the scrap
 | `monitor_and_trigger_depth.py` | Launch the depth spider when queues are idle | Long-running; needs Redis |
 | `automated_backup.sh` | Dry-run archive of a lake directory and an optional SQL file | `make backup`. Does not run `pg_dump` or start services |
 | `restore_backup.sh` | Dry-run restore, or a `/tmp` sample round-trip | `make restore`. `ROUNDTRIP=1` checks a sample. SQL is not loaded |
+| `delta_replicate.sh` | Dry-run plan for an rclone mirror of the Delta lake root | `make delta-replicate`. Does not call rclone or copy files |
 | `anomaly_scan.py` | Offline z-score of a metrics fixture | `make anomaly-scan`. Prints an Alertmanager payload and does not POST |
 | `export_scoring_snapshot.py` | Daily URL-score Parquet snapshot | `python scripts/export_scoring_snapshot.py --urls FILE`. No crawl. See `docs/scoring_snapshot.md` (#1103) |
 
@@ -38,6 +39,12 @@ Retention is applied by `automated_backup.sh` only. A dry-run lists what would b
 | `RETENTION_COUNT` | `0` | Keep at most this many newest `delta_lake_*.tar.gz` archives, plus the `postgres_*.sql` with the same id. `0` means no count cap. |
 
 `ROUNDTRIP=1 ./scripts/restore_backup.sh` builds a sample lake and SQL file under `/tmp`, backs them up, restores them, and compares the bytes. It does not use the project lake.
+
+## Cross-region Delta mirror (#705)
+
+`make delta-replicate` is a dry-run stub. It prints `rclone sync --dry-run` for the Delta lake root and a concurrent-writer warning. It does not call rclone, read `data/delta_lake`, contact a remote, or copy files. `DRY_RUN=0` is refused.
+
+The chart keeps Delta on one PVC (`deltaLake.persistence`, claim `*-delta-lake`). There is no second region in this repo. A real mirror is an operator `rclone sync` after writers are stopped. See [DEPLOYMENT.md](../DEPLOYMENT.md#cross-region-delta-mirror).
 
 ## Anomaly scan (#501)
 
