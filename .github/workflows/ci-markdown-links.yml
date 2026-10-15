@@ -1,0 +1,43 @@
+name: CI Markdown Links
+
+on:
+  pull_request:
+    paths:
+      - '**/*.md'
+      - 'Scraping_project/scripts/check_links.py'
+      - 'Scraping_project/tests/unit/test_check_links_847.py'
+      - '.github/workflows/ci-markdown-links.yml'
+  push:
+    branches: [ main ]
+    paths:
+      - '**/*.md'
+      - 'Scraping_project/scripts/check_links.py'
+      - 'Scraping_project/tests/unit/test_check_links_847.py'
+      - '.github/workflows/ci-markdown-links.yml'
+
+# Stdlib link check only, no network (http(s) links are not fetched). It runs when Markdown or the
+# checker changes, so deleting a non-Markdown file that a link points at is caught on the next
+# Markdown change. See main.yml for the concurrency rationale.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  markdown-links:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+
+      - name: Check relative links in Markdown files
+        run: python3 Scraping_project/scripts/check_links.py

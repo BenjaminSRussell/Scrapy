@@ -19,6 +19,7 @@ This directory contains scripts for managing, debugging, and resetting the scrap
 | `restore_backup.sh` | Dry-run restore, or a `/tmp` sample round-trip | `make restore`. `ROUNDTRIP=1` checks a sample. SQL is not loaded |
 | `anomaly_scan.py` | Offline z-score of a metrics fixture | `make anomaly-scan`. Prints an Alertmanager payload and does not POST |
 | `export_scoring_snapshot.py` | Daily URL-score Parquet snapshot | `python scripts/export_scoring_snapshot.py --urls FILE`. No crawl. See `docs/scoring_snapshot.md` (#1103) |
+| `check_links.py` | Relative links in tracked Markdown files resolve. http(s) is not fetched unless `--external` | `python3 Scraping_project/scripts/check_links.py` from the repo root. CI: `ci-markdown-links.yml` (#847) |
 
 > **Destructive operations** (`complete_reset.sh`, `reset_lake.py`, `../cli.py reset`,
 > `reseed.py --clear`, `drain_lake.py` drains) follow one safety policy; see
@@ -68,6 +69,12 @@ Fixtures live in `scripts/fixtures/anomaly/clean_metrics.json` and `scripts/fixt
 ### Alertmanager stub
 
 When the threshold is crossed, the target prints an Alertmanager webhook payload and does not POST it. There is no HTTP client. `ALERTMANAGER_URL`, if set, is not called.
+
+## Markdown link check (#847)
+
+`python3 Scraping_project/scripts/check_links.py`, run from the repo root, checks every git-tracked `.md` file. A relative link is broken when its path is not a tracked file or directory, or when it leaves the repository. Anchors and query strings are not checked, and links inside code or HTML comments are ignored. The script exits 1 on a broken link and 2 when `git ls-files` fails. CI runs it in `ci-markdown-links.yml`.
+
+http(s) links are not fetched by default, so the check needs no network. `--external` requests each http(s) link once and reports status 400 and up, or a network error.
 
 ## Deprecated root paths (#568)
 
