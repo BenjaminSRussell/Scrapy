@@ -1,0 +1,8 @@
+{
+  "status": "success",
+  "discovered": [
+    "https://www.example.edu/about"
+  ],
+  "discovery_source": "scout",
+  "engine": "rustmapper-v0"
+}

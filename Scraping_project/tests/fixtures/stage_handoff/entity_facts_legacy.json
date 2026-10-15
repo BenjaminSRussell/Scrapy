@@ -1,0 +1,8 @@
+[
+  {
+    "fact_text": "Legacy fact with an unparseable date.",
+    "source_url": "https://www.example.edu/about",
+    "publication_date": "spring term",
+    "metadata": "nope"
+  }
+]

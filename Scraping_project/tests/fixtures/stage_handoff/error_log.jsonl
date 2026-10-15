@@ -1,0 +1,1 @@
+{"url": "https://www.example.edu/aid", "url_hash": "efd924be9de106b26192b45c38a47c3179abce54fc8dbc66f4e615ae37156f6d", "stage": "stage2", "error_type": "SoftBan", "error_message": "soft_ban:cloudflare", "http_status_code": 403, "retry_count": 1, "is_retryable": false, "severity": "high", "timestamp": "2024-01-20T12:15:00Z", "context": {"signature": "cloudflare"}}

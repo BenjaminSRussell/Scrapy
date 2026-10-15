@@ -1,0 +1,9 @@
+[
+  {
+    "fact_text": "In-state tuition is 18000.",
+    "source_url": "https://www.example.edu/tuition",
+    "publication_date": "2024-01-15T00:00:00Z",
+    "metadata": {"unit": "USD"},
+    "source_references": [{"id": "drop-me"}]
+  }
+]

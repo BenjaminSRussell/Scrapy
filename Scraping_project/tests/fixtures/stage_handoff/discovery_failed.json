@@ -1,0 +1,9 @@
+{
+  "checksum": null,
+  "discovered": [],
+  "discovery_source": "rustmapper",
+  "error": "rustmapper crashed / non-zero exit",
+  "job_id": "job-686",
+  "site": "www.example.edu",
+  "status": "failed"
+}

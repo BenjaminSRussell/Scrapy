@@ -1,0 +1,13 @@
+{
+  "item": {
+    "url": "https://www.example.edu/catalog",
+    "url_hash": "91c4f4cf259d0739",
+    "status": "pending"
+  },
+  "error": {"type": "RuntimeError", "message": "stage4 summary failed"},
+  "stage": "stage4",
+  "context": {},
+  "timestamp": "2024-01-20T16:00:00",
+  "url": "https://www.example.edu/catalog",
+  "url_hash": "91c4f4cf259d0739"
+}

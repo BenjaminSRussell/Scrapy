@@ -1,0 +1,2 @@
+{"url": "https://www.example.edu/catalog", "url_hash": "91C4F4CF259D0739B5E03FCF1CFC94A4F0F71D396372FCBECF0C279C1752D33B", "summary": "A catalog summary long enough.", "original_size": 44, "summary_size": 29, "compression_ratio": 0.659, "processed_at": "2024-01-20T14:00:00Z"}
+{"url": "https://www.example.edu/catalog", "url_hash": "91c4f4cf259d0739b5e03fcf1cfc94a4f0f71d396372fcbecf0c279c1752d33b", "summary": "A catalog summary long enough.", "original_size": 44, "summary_size": 29, "compression_ratio": 0.659, "timestamp": "2024-01-20T14:00:00Z"}

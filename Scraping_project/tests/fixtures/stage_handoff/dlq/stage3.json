@@ -1,0 +1,14 @@
+{
+  "item": {
+    "url": "https://www.example.edu/programs",
+    "url_hash": "a25d8b6fad7002b1ac6877fe8c53d353a909fa669657266c17ae066543253e28",
+    "summary": "This summary is long enough to pass."
+  },
+  "error": {"type": "RuntimeError", "message": "stage3 write failed"},
+  "stage": "stage3",
+  "context": {},
+  "timestamp": "2024-01-20T15:00:00",
+  "retry_count": 0,
+  "url": "https://www.example.edu/programs",
+  "url_hash": "a25d8b6fad7002b1ac6877fe8c53d353a909fa669657266c17ae066543253e28"
+}

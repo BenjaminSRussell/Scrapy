@@ -1,0 +1,14 @@
+{
+  "item": {
+    "url": "https://www.example.edu/tuition",
+    "url_hash": "deb2cb6db4047384",
+    "status": "pending"
+  },
+  "error": {"type": "RuntimeError", "message": "stage2 fetch failed"},
+  "stage": "stage2",
+  "context": {},
+  "timestamp": "2024-01-20T14:00:00",
+  "retry_count": 1,
+  "url": "https://www.example.edu/tuition",
+  "url_hash": "deb2cb6db4047384"
+}

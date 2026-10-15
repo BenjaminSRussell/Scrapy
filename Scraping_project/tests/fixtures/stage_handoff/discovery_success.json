@@ -1,0 +1,13 @@
+{
+  "checksum": "8cd06e3ff4756aa8863800fcbe302b5855195e381625c37befa79f3f6f946d69",
+  "discovered": [
+    "https://www.example.edu/academics",
+    "https://www.example.edu/admissions",
+    "https://www.example.edu/research"
+  ],
+  "discovery_source": "rustmapper",
+  "error": null,
+  "job_id": "job-686",
+  "site": "www.example.edu",
+  "status": "success"
+}

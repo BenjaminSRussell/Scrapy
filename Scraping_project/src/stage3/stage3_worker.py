@@ -243,14 +243,7 @@ class Stage3Worker:
             logger.warning("No documents found in stage2_page_analysis")
             return written
 
-        quality_docs = [
-            doc
-            for doc in all_docs
-            if not doc.get("is_low_quality", True)
-            and not doc.get("is_massive_doc", False)
-            and not doc.get("has_error", False)
-            and doc.get("text_content")
-        ]
+        quality_docs = select_quality_documents(all_docs)
 
         logger.info(f"Found {len(quality_docs)} quality documents to process")
 
@@ -429,6 +422,22 @@ class Stage3Worker:
                 break
 
         return facts if facts else [s.strip() for s in sentences[:3] if s.strip()]
+
+def select_quality_documents(documents: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Stage 2 rows Stage 3 will summarize.
+
+    A missing ``is_low_quality`` counts as low quality, so legacy rows from
+    before that flag are not summarized. Massive docs are Stage 4's input.
+    """
+    return [
+        doc
+        for doc in documents
+        if not doc.get("is_low_quality", True)
+        and not doc.get("is_massive_doc", False)
+        and not doc.get("has_error", False)
+        and doc.get("text_content")
+    ]
+
 
 def _drain_requested(done: int, total: int) -> bool:
     """SIGTERM/SIGINT seen: stop after the batch just written (#325)."""

@@ -1,0 +1,14 @@
+{
+  "item": {
+    "url": "https://www.example.edu/programs",
+    "url_hash": "a25d8b6fad7002b1",
+    "status": "pending"
+  },
+  "error": {"type": "RuntimeError", "message": "stage1 handoff failed"},
+  "stage": "stage1",
+  "context": {},
+  "timestamp": "2024-01-20T13:00:00",
+  "retry_count": 0,
+  "url": "https://www.example.edu/programs",
+  "url_hash": "a25d8b6fad7002b1"
+}

@@ -1,0 +1,4 @@
+{"url": "https://www.example.edu/programs", "url_hash": "a25d8b6fad7002b1", "is_massive_doc": true, "has_error": false, "is_low_quality": false, "content_length": 61, "text_content": "Massive program catalog that never reached the stage 4 queue."}
+{"url": "https://www.example.edu/housing", "url_hash": "375f62777f6609d3", "is_massive_doc": true, "has_error": true, "is_low_quality": false, "content_length": 5, "text_content": "error"}
+{"url": "https://www.example.edu/catalog", "url_hash": "91c4f4cf259d0739", "is_massive_doc": true, "has_error": false, "is_low_quality": false, "content_length": 44, "text_content": "Complete body of the large catalog document."}
+{"url": "https://www.example.edu/aid", "url_hash": "efd924be9de106b2", "is_massive_doc": false, "has_error": false, "is_low_quality": false, "content_length": 80, "text_content": "Financial aid applications open in October. Priority filing ends on March first."}

@@ -1,0 +1,11 @@
+{
+  "checksum": "deadbeef",
+  "discovered": [
+    "https://www.example.edu/academics"
+  ],
+  "discovery_source": "scout",
+  "error": null,
+  "job_id": null,
+  "site": "www.example.edu",
+  "status": "success"
+}
