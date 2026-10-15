@@ -20,6 +20,8 @@ tab (#1029). A reload restores them and shows a note that they came from before
 the reload and may be stale. Closing the tab drops them; Clear drops them
 immediately.
 
+**Copy metrics JSON** on the refresh bar copies the last successfully parsed metrics object (pretty-printed JSON) to the clipboard and shows a toast. Nothing is copied before the first successful fetch (#1019).
+
 All throughput figures are per minute, computed from the real time between samples (#141).
 Line charts plot at most 50 of those samples (LTTB). The raw buffer keeps 200
 so rates and the overview sparklines still see every poll. The activity log

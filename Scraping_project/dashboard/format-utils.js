@@ -1345,5 +1345,31 @@
         return sampled;
     }
 
-    return { tabKeyTarget, staleState, queueDepthRows, metricsFailureActivity, shortcutHintText, parseMetrics, metricSeriesCount, METRICS_FLOOD_DEFAULTS, metricsFloodLimits, advanceMetricsFlood, metricsFloodBannerText, ratePerMinute, resolveMetricsUrl, metricsEndpoint, metricsEndpointLabel, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler, stageActivity, stageDrilldown, stageDrilldownKey, doughnutLegendLayout, connectionState, documentTitle, createActivityAnnouncer, metricsUrlProblem, splitLinks, createMetricsFetcher, REFRESH_INTERVAL_CHOICES, parseRefreshInterval, shortcutAction, pickInitialTab, METRIC_UI_MAP, renderMetricNameMap, parseDangerSoundEnabled, dangerSoundDecision, HEALTH_HISTORY_LIMIT, pushPollOutcome, healthHistoryView, COMPARISON_BASELINE_ROLE, PREV_HOUR_AVG_KEYS, readPrevHourAverage, comparisonBaselineSeries, comparisonNote, ACTIVITY_LOG_CAP, capActivityLog, activityStaleNote, restoreActivityLog, topScrapeTargets, SCRAPE_TARGET_EMPTY, ACTIVITY_LEVELS, activityLevelCounts, filterActivityItems, filterActivityMessages, activityFilterStatus, toggleActivityLevel, HISTORY_MAX_POINTS, HISTORY_RAW_POINTS, assertHistoryBound, boundHistoryBuffer, pushHistorySample, enforceHistoryCap, downsampleIndices, grafanaHomeUrl, jobStartedPresentation, DEFAULT_ACCENT, parseAccentColor, accentInk, accentBorder, accentCssVars };
+    // #1019: clipboard text of the last successfully parsed metrics object.
+    // null means nothing has been parsed yet (do not write "{}").
+    function metricsSnapshotJson(metrics) {
+        if (metrics == null || typeof metrics !== 'object' || Array.isArray(metrics)) return null;
+        return JSON.stringify(metrics, null, 2);
+    }
+    function metricsCopyToast(outcome) {
+        if (outcome === 'copied') return 'Metrics snapshot copied';
+        if (outcome === 'empty') return 'No metrics snapshot to copy yet';
+        return 'Could not copy metrics snapshot';
+    }
+    // writeText(text) resolves after the clipboard write. It is not called
+    // when there is no snapshot.
+    function copyMetricsSnapshot(metrics, writeText) {
+        const text = metricsSnapshotJson(metrics);
+        if (text == null) {
+            return Promise.resolve({ outcome: 'empty', message: metricsCopyToast('empty'), text: null });
+        }
+        if (typeof writeText !== 'function') {
+            return Promise.resolve({ outcome: 'failed', message: metricsCopyToast('failed'), text });
+        }
+        return Promise.resolve()
+            .then(() => writeText(text))
+            .then(() => ({ outcome: 'copied', message: metricsCopyToast('copied'), text }))
+            .catch(() => ({ outcome: 'failed', message: metricsCopyToast('failed'), text }));
+    }
+    return { tabKeyTarget, staleState, queueDepthRows, metricsFailureActivity, shortcutHintText, parseMetrics, metricSeriesCount, METRICS_FLOOD_DEFAULTS, metricsFloodLimits, advanceMetricsFlood, metricsFloodBannerText, ratePerMinute, resolveMetricsUrl, metricsEndpoint, metricsEndpointLabel, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler, stageActivity, stageDrilldown, stageDrilldownKey, doughnutLegendLayout, connectionState, documentTitle, createActivityAnnouncer, metricsUrlProblem, splitLinks, createMetricsFetcher, REFRESH_INTERVAL_CHOICES, parseRefreshInterval, shortcutAction, pickInitialTab, METRIC_UI_MAP, renderMetricNameMap, parseDangerSoundEnabled, dangerSoundDecision, HEALTH_HISTORY_LIMIT, pushPollOutcome, healthHistoryView, COMPARISON_BASELINE_ROLE, PREV_HOUR_AVG_KEYS, readPrevHourAverage, comparisonBaselineSeries, comparisonNote, ACTIVITY_LOG_CAP, capActivityLog, activityStaleNote, restoreActivityLog, topScrapeTargets, SCRAPE_TARGET_EMPTY, ACTIVITY_LEVELS, activityLevelCounts, filterActivityItems, filterActivityMessages, activityFilterStatus, toggleActivityLevel, HISTORY_MAX_POINTS, HISTORY_RAW_POINTS, assertHistoryBound, boundHistoryBuffer, pushHistorySample, enforceHistoryCap, downsampleIndices, grafanaHomeUrl, jobStartedPresentation, DEFAULT_ACCENT, parseAccentColor, accentInk, accentBorder, accentCssVars, metricsSnapshotJson, metricsCopyToast, copyMetricsSnapshot };
 });

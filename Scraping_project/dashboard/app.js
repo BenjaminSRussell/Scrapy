@@ -45,6 +45,8 @@ let historicalData = {
 };
 let previousMetrics = {};
 let previousMetricsAt = 0;  // ms timestamp of previousMetrics (#141)
+let lastParsedMetrics = null; // last successful parseMetrics result (#1019)
+let metricsCopyToastTimer = null;
 let startTime = Date.now();
 let activityLog = [];
 let activityStaleText = null; // #1029 note for entries restored after a reload
@@ -1175,6 +1177,7 @@ async function fetchMetrics() {
         const text = await metricsFetcher.fetchText(METRICS_URL);
         const parseStarted = clockMs();
         const metrics = parseMetrics(text);
+        lastParsedMetrics = metrics;
         const decision = advanceMetricsFlood(metricsFlood, {
             seriesCount: metricSeriesCount(metrics),
             parseMs: clockMs() - parseStarted,
@@ -1222,6 +1225,51 @@ async function fetchMetrics() {
     }
 }
 
+
+function showMetricsCopyToast(message, ok) {
+    const el = document.getElementById('metrics-copy-toast');
+    if (!el) return;
+    el.classList.toggle('is-error', !ok);
+    el.hidden = false;
+    el.textContent = message;
+    if (metricsCopyToastTimer) clearTimeout(metricsCopyToastTimer);
+    metricsCopyToastTimer = setTimeout(() => {
+        el.hidden = true;
+        metricsCopyToastTimer = null;
+    }, 3200);
+}
+
+async function writeClipboardText(text) {
+    if (typeof navigator !== 'undefined' && navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+        try {
+            await navigator.clipboard.writeText(text);
+            return;
+        } catch (_) { /* permission or insecure context; try the fallback */ }
+    }
+    if (typeof document === 'undefined' || typeof document.execCommand !== 'function') {
+        throw new Error('clipboard unavailable');
+    }
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed';
+    ta.style.top = '0';
+    ta.style.left = '-9999px';
+    document.body.appendChild(ta);
+    let ok = false;
+    try {
+        ta.select();
+        ok = document.execCommand('copy');
+    } finally {
+        ta.remove();
+    }
+    if (!ok) throw new Error('clipboard unavailable');
+}
+
+async function copyMetricsSnapshotToClipboard() {
+    const result = await copyMetricsSnapshot(lastParsedMetrics, writeClipboardText);
+    showMetricsCopyToast(result.message, result.outcome === 'copied');
+}
 
 function downloadBlob(filename, mime, text) {
     const blob = new Blob([text], { type: mime });
@@ -2054,6 +2102,8 @@ function initialize() {
     }
     const manualBtn = document.getElementById('manual-refresh');
     if (manualBtn) manualBtn.addEventListener('click', requestRefresh);
+    const copyMetricsBtn = document.getElementById('copy-metrics-json');
+    if (copyMetricsBtn) copyMetricsBtn.addEventListener('click', () => { copyMetricsSnapshotToClipboard(); });
     const retryBtn = document.getElementById('retry-fetch');
     if (retryBtn) retryBtn.addEventListener('click', requestRefresh);
     setupJobStarted();
