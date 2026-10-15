@@ -168,7 +168,7 @@ kafka-delta-ingest ingest scraped-items /app/data/delta_lake/scraped_items \
 - **Manual offset commits.** Auto-commit is **off**. Accepted rows are committed synchronously **only after** their batch has been committed to Delta (`flush_and_commit`).
 - **Failed writes are retried with backoff.** After `--max-write-attempts` failures the process exits non-zero **without committing**. On restart (or rebalance) the uncommitted messages are consumed again, so a failed lake write can never skip messages.
 - **Poison messages are skipped after N deserialize failures (#177).** `poison_action` retries the same payload until `--max-deserialize-failures` (default 3, minimum 1). The next decision copies the bytes to `--dlq-topic` and commits that offset, even when the Delta buffer is empty, so one bad message cannot block the partition. Policy write-up: [`docs/kafka_poison_message_policy.md`](../docs/kafka_poison_message_policy.md). Consumer entrypoint: `async fn ingest`.
-- **Rejected messages go to the dead-letter topic, never dropped (#544).** Each rejection (`empty_payload`, `parse_failed`, `schema_validation_failed`, `missing_required_field`) is produced byte-for-byte to `--dlq-topic` with acks=all and idempotence, keeping its key. Headers: `dlq.reason`, `dlq.error` (≤4000 bytes), `dlq.source.topic`, `dlq.source.partition`, `dlq.source.offset`, `dlq.rejected_at_ms`, `dlq.producer`. If the DLQ produce still fails after `--max-write-attempts` tries, the process exits **without committing**, the same as a failed Delta write. Replay after a schema fix by re-producing DLQ payloads to `dlq.source.topic`. StatsD: `messages.dead_lettered`, `errors.<reason>`, `errors.deserialize_retry`, `errors.dlq_produce_failed`.
+- **Rejected messages go to the dead-letter topic, never dropped (#544).** Each rejection (`empty_payload`, `parse_failed`, `schema_validation_failed`, `missing_required_field`, `unknown_schema_id`) is produced byte-for-byte to `--dlq-topic` with acks=all and idempotence, keeping its key. Headers: `dlq.reason`, `dlq.error` (≤4000 bytes), `dlq.source.topic`, `dlq.source.partition`, `dlq.source.offset`, `dlq.rejected_at_ms`, `dlq.producer`. If the DLQ produce still fails after `--max-write-attempts` tries, the process exits **without committing**, the same as a failed Delta write. Replay after a schema fix by re-producing DLQ payloads to `dlq.source.topic`. StatsD: `messages.dead_lettered`, `errors.<reason>`, `errors.deserialize_retry`, `errors.dlq_produce_failed`.
 - **Offset commit failure after a successful Delta write** is logged (`errors.offset_commit_failed`) and retried with the next batch.
 - **Duplicates, not loss.** A crash between the Delta commit and the offset commit re-delivers that batch. Downstream readers should dedupe on `url` + `scraped_at_utc` if they need exactly-once views.
 
@@ -189,6 +189,8 @@ The default schema for scraped data:
 
 **Required fields are rejected, never defaulted (#531).** A message whose `url`, `scraped_at_utc` or `spider_name` is missing, null, empty or not a string is dropped and counted (`errors.schema_validation_failed`, or `errors.missing_required_field` from the typed row check). It is never written with an empty string. Field-name drift such as `spider` instead of `spider_name` is rejected the same way. The list lives in `REQUIRED_INGEST_FIELDS` in `src/main.rs` and in `src/core/ingest_contract.py` on the Python side. `tests/unit/test_ingest_field_contract.py` fails if the two disagree or if the producer's output stops satisfying them.
 
+**Schema id (#654).** Producers set a `schema_id` header to the published id `1` (subject `scraped-items-value`, `SCRAPED_ITEM_SCHEMA_ID` in `src/schemas.py` and `src/main.rs`). The body stays JSON. A header with any other id is `unknown_schema_id` and is dead-lettered. A missing header is still accepted. The optional Compose `schema-registry` profile is not required for this check.
+
 ## 🔍 Monitoring
 
 ### Metrics
@@ -203,6 +205,7 @@ The application emits StatsD metrics:
 - `errors.deserialize_retry` - Deserialize attempts still under the poison limit (#177)
 - `errors.schema_validation_failed` - Messages failing the JSON schema (dropped)
 - `errors.missing_required_field` - Messages rejected for a missing/empty required field (#531)
+- `errors.unknown_schema_id` - `schema_id` header is not the published scraped-item id (#654)
 - `errors.write_failed` - Delta Lake write errors
 
 ### Logging

@@ -196,3 +196,57 @@ class LowConfidenceRecord(BaseModel):
             }
         }
     }
+
+
+# Kafka Schema Registry stub for scraped-item contracts (#654).
+# This is not the Delta SCHEMA_REGISTRY in src/core/schemas.py. The optional
+# Compose profile `schema-registry` is a Confluent-compatible server; this map
+# is the id the producer publishes and the ingestor accepts without calling it.
+SCRAPED_ITEM_SCHEMA_SUBJECT = "scraped-items-value"
+SCRAPED_ITEM_SCHEMA_ID = 1
+SCHEMA_ID_HEADER = "schema_id"
+# id -> Confluent subject. Stands in for GET /schemas/ids/{id}.
+SCRAPED_ITEM_SCHEMA_REGISTRY: dict[int, str] = {
+    SCRAPED_ITEM_SCHEMA_ID: SCRAPED_ITEM_SCHEMA_SUBJECT,
+}
+
+
+class UnknownSchemaId(ValueError):
+    """A present schema id is not the published scraped-item id."""
+
+
+def _parse_schema_id(schema_id: int | str | bytes) -> int:
+    """Decimal id only. `+1`, whitespace, and non-ascii are not published ids."""
+    if isinstance(schema_id, bool) or not isinstance(schema_id, (int, str, bytes)):
+        raise UnknownSchemaId(f"schema id {schema_id!r} is not published")
+    if isinstance(schema_id, int):
+        return schema_id
+    if isinstance(schema_id, bytes):
+        try:
+            text = schema_id.decode("ascii")
+        except UnicodeDecodeError as exc:
+            raise UnknownSchemaId(f"schema id {schema_id!r} is not published") from exc
+    else:
+        text = schema_id
+    body = text[1:] if text.startswith("-") else text
+    if not body.isascii() or not body.isdigit():
+        raise UnknownSchemaId(f"schema id {schema_id!r} is not published")
+    return int(text)
+
+
+def schema_id_headers(schema_id: int = SCRAPED_ITEM_SCHEMA_ID) -> list[tuple[str, bytes]]:
+    """Header carrying the published JSON schema id for one scraped-item message."""
+    parsed = _parse_schema_id(schema_id)
+    if parsed not in SCRAPED_ITEM_SCHEMA_REGISTRY:
+        raise UnknownSchemaId(f"schema id {parsed} is not published")
+    return [(SCHEMA_ID_HEADER, str(parsed).encode("ascii"))]
+
+
+def accept_schema_id(schema_id: int | str | bytes | None) -> int:
+    """Missing id is a pre-stub message and is accepted. Any other id must be published."""
+    if schema_id is None:
+        return SCRAPED_ITEM_SCHEMA_ID
+    parsed = _parse_schema_id(schema_id)
+    if parsed not in SCRAPED_ITEM_SCHEMA_REGISTRY:
+        raise UnknownSchemaId(f"schema id {parsed} is not published for {SCRAPED_ITEM_SCHEMA_SUBJECT}")
+    return parsed

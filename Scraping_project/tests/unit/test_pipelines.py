@@ -94,7 +94,7 @@ class _Producer:
         self.fail_times = fail_times
         self.produced: list[dict[str, Any]] = []
 
-    def produce(self, topic, key=None, value=None, callback=None):
+    def produce(self, topic, key=None, value=None, callback=None, headers=None):
         if self.fail_times:
             self.fail_times -= 1
             raise BufferError("queue full")
