@@ -38,7 +38,7 @@ python start.py
 
 Grafana: **http://localhost:3000** (user `admin`; the password is `GRAFANA_ADMIN_PASSWORD` from [`.env`](Scraping_project/.env.example), default `admin` for local dev only). Prometheus is on `localhost:9090`.
 
-`--reset-delta` wipes Delta tables and reloads seeds. Stop with `python shutdown.py`. Other domains, seeds, and resuming after a crash: [Running guide](Scraping_project/docs/guides/RUNNING.md). Kubernetes: [k8s/README.md](Scraping_project/k8s/README.md) and [DEPLOYMENT.md](Scraping_project/DEPLOYMENT.md).
+`--reset-delta` wipes Delta tables and reloads seeds. Stop with `python shutdown.py`. Other domains, seeds, and resuming after a crash: [Running guide](Scraping_project/docs/guides/RUNNING.md). Kubernetes: [k8s/README.md](Scraping_project/k8s/README.md) and [DEPLOYMENT.md](Scraping_project/DEPLOYMENT.md). Cloud stub (not applied): [infra/README.md](infra/README.md).
 
 Virtualenv, pins, and the CI test command: [CONTRIBUTING.md](CONTRIBUTING.md). Use `python3.11 -m venv .venv` inside `Scraping_project/`.
 

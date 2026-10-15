@@ -100,6 +100,13 @@ Dev replicaCount is 3 for scrapyApp, 3 for stage2Worker, 2 for stage3Worker and 
 
 Redis, Postgres, ZooKeeper, Kafka, Prometheus, Alertmanager, Grafana, the delta ingestor, the metrics exporter and the four exporters already set requests and limits in `values.yaml`. The kafka-topics Job sets both in its template. Small and prod do not change those.
 
+## Cloud stub (not applied)
+
+Helm and Compose remain the supported installs. `infra/terraform/` declares an
+AWS VPC, an S3 bucket (MinIO is documented, not provisioned), and a single-node
+Redis. It stores no credentials and CI does not apply it. See
+[infra/README.md](../infra/README.md).
+
 ## Configuration
 
 ### Environment Variables
