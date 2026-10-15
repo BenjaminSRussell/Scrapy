@@ -200,6 +200,16 @@ The match count is text in `#activity-filter-status`, not HTML.
 
 A confirmed start (`cc:job-started` on `#job-start`) draws one check on the Start control. There is no confetti. `prefers-reduced-motion: reduce` skips that stroke animation and shows the finished check. Start stays disabled until the job API exists (#147); the control does not launch a crawl.
 
+## Main-thread budget (#1012)
+
+Each metrics poll runs `updateDashboard` on the main thread. The budget is **50ms**. The function records User Timing marks `updateDashboard:start` and `updateDashboard:end` and a measure named `updateDashboard` (visible in the browser Performance panel under User Timing). When that measure is over 50ms the console warns:
+
+```
+[perf] updateDashboard main-thread work 62.4ms exceeds 50ms budget
+```
+
+The warning does not fail the fetch. Metric flashes share one layout read per poll, unchanged chart series are not redrawn, and a chart data table is not rebuilt when its labels, values, and legend visibility are unchanged.
+
 ## Threat model notes (#1046)
 
 **Activity log XSS.** Activity messages may contain text derived from metrics,
