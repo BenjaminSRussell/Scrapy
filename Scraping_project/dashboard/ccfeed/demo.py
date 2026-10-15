@@ -203,7 +203,7 @@ class DemoFeed:
         words = self.rng.randint(9_000, 80_000) if massive else int(self.rng.lognormvariate(6.4, 0.6))
         quality = massive or self.rng.random() < 0.75
         row = {"url": url, "domain": urlsplit(url).hostname, "title": _title(url), "word_count": words,
-               "has_quality_content": quality, "is_massive_doc": massive,
+               "is_low_quality": not quality, "is_massive_doc": massive,
                "quality_score": round(self.rng.uniform(0.55, 0.98) if quality else self.rng.uniform(0.1, 0.5), 3)}
         self._write("analysis", row, t)
         if massive:

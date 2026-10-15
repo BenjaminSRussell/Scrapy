@@ -33,8 +33,8 @@ STAGES: tuple[Stage, ...] = (
           ("url", "domain", "depth", "status_code", "content_size", "requires_js", "is_heavy",
            "urls_found", "parent_url", TS_COLUMN)),
     Stage("analysis", "Analysis", "stage2_page_analysis", "analyzed",
-          ("url", "domain", "title", "word_count", "has_quality_content", "is_massive_doc",
-           "quality_score", TS_COLUMN)),
+          ("url", "domain", "title", "word_count", "is_low_quality", "has_quality_content",
+           "is_massive_doc", "quality_score", TS_COLUMN)),
     Stage("summaries", "Summaries", "stage3_summaries", "summarized",
           ("url", "title", "model", "summary", TS_COLUMN)),
     Stage("large_docs", "Large Docs", "stage4_large_doc_summaries", "large_doc",
@@ -107,9 +107,20 @@ def freshness(last_write: float | None, now: float) -> str:
     return "stale"
 
 
+def is_low_quality(row: dict) -> bool | None:
+    """The current stage-2 writer sets ``is_low_quality``; older tables have ``has_quality_content``."""
+    if row.get("is_low_quality") is not None:
+        return bool(row["is_low_quality"])
+    if row.get("has_quality_content") is not None:
+        return not row["has_quality_content"]
+    return None
+
+
 def routed_to(row: dict) -> str | None:
+    """Where stage 2 sends a page: stage 3 takes quality non-massive pages, stage 4 quality
+    massive ones; low-quality pages go nowhere."""
     massive = row.get("is_massive_doc")
-    if massive is None:
+    if massive is None or is_low_quality(row):
         return None
     return "large_docs" if massive else "summaries"
 

@@ -21,7 +21,7 @@ EXPLORE_REBUILD_EVERY = 30.0
 _DETAIL_COLUMNS = {
     "seeds": ("url",),
     "discovery": ("url", "domain", "depth", "status_code", "requires_js", "content_size"),
-    "analysis": ("is_massive_doc", "word_count", "has_quality_content"),
+    "analysis": ("is_massive_doc", "word_count", "is_low_quality", "has_quality_content"),
     "summaries": ("model",),
     "large_docs": ("compression_ratio", "original_word_count"),
 }

@@ -52,7 +52,8 @@ def test_analysis_detail_splits_routing_and_averages_words():
         {"is_massive_doc": None, "word_count": None, "has_quality_content": None},
     ]
     d = build_stage_detail("analysis", rows, [])
-    assert bars(d, "routing") == [("Summaries", 2), ("Large Docs", 1), ("Not routed", 1)]
+    # the low-quality page is not summarized (stage 3 skips it), so it counts as not routed
+    assert bars(d, "routing") == [("Summaries", 1), ("Large Docs", 1), ("Not routed", 2)]
     s = stats(d, "summary")
     assert s["Mean word count"] == (4400.0, "int")
     assert s["Quality content"] == (pytest.approx(200 / 3), "percent")
@@ -286,3 +287,26 @@ def test_live_feed_isolates_a_failing_table(tmp_path, monkeypatch):
     assert res.stages["analysis"].status == "error" and "RuntimeError" in res.stages["analysis"].error
     assert res.stages["discovery"].status == "ok"
     assert [e["url"] for e in res.events if not e.get("replay")] == ["https://a.edu/fresh"]
+
+
+# ---- the current stage-2 writer's column: is_low_quality (has_quality_content is older data) ----
+
+def test_low_quality_pages_are_routed_nowhere_under_the_current_schema():
+    rows = [
+        {"is_massive_doc": False, "is_low_quality": True, "word_count": 40},
+        {"is_massive_doc": False, "is_low_quality": False, "word_count": 600},
+        {"is_massive_doc": True, "is_low_quality": False, "word_count": 20000},
+        {"is_massive_doc": True, "is_low_quality": True, "word_count": 9000},
+    ]
+    d = build_stage_detail("analysis", rows, [])
+    assert bars(d, "routing") == [("Summaries", 1), ("Large Docs", 1), ("Not routed", 2)]
+    assert stats(d, "summary")["Quality content"] == (50.0, "percent")
+
+
+@pytest.mark.parametrize("massive", [False, True])
+def test_journey_skips_both_outputs_for_a_low_quality_page(massive):
+    j = build_journey("https://a.edu/thin", {"seeds": None, "discovery": {"_t": T},
+                                             "analysis": {"_t": T + 1, "is_massive_doc": massive, "is_low_quality": True},
+                                             "summaries": None, "large_docs": None})
+    for sid in ("summaries", "large_docs"):
+        assert (step(j, sid)["status"], step(j, sid)["note"]) == ("skipped", "Low-quality page"), sid

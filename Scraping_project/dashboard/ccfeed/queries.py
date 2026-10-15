@@ -4,7 +4,7 @@ from __future__ import annotations
 from collections import Counter
 from urllib.parse import urlsplit
 
-from .stages import TS_COLUMN, event_fields, parse_ts, routed_to
+from .stages import TS_COLUMN, event_fields, is_low_quality, parse_ts, routed_to
 
 EXPLORE_CHILDREN = 200
 EXPLORE_URLS = 100
@@ -69,8 +69,9 @@ def build_stage_detail(stage_id: str, rows: list[dict], recent: list[dict]) -> d
                         ("Not routed", routes.get(None, 0))]
             out.append({"id": "routing", "title": "Routing", "kind": "bars",
                         "items": [{"label": k, "value": v} for k, v in labelled if v]})
+        quality = [not low for low in map(is_low_quality, rows) if low is not None]
         stats = _stats([("Mean word count", _mean(_values(rows, "word_count")), "int"),
-                        ("Quality content", _share(_values(rows, "has_quality_content")), "percent")])
+                        ("Quality content", _share(quality), "percent")])
         if stats:
             out.append(stats)
     elif stage_id == "summaries":
@@ -101,6 +102,7 @@ _JOURNEY_FIELDS = {
                   ("Page size", ("content_size",), "bytes"), ("Needs JavaScript", ("requires_js",), "bool"),
                   ("Links found", ("urls_found",), "int")),
     "analysis": (("Title", ("title",), "text"), ("Word count", ("word_count",), "int"),
+                 ("Low quality", ("is_low_quality",), "bool"),
                  ("Quality content", ("has_quality_content",), "bool"),
                  ("Large document", ("is_massive_doc",), "bool")),
     "summaries": (("Model", ("model",), "text"), ("Summary", ("summary",), "text")),
@@ -126,6 +128,7 @@ def build_journey(url: str, found: dict[str, dict | None]) -> dict:
     path = (parts.path or "/") + (f"?{parts.query}" if parts.query else "")
     analysis = found.get("analysis")
     route = routed_to(analysis) if analysis else None
+    low = bool(analysis) and is_low_quality(analysis) is True
     steps = []
     for stage_id in ("seeds", "discovery", "analysis", "summaries", "large_docs"):
         row = found.get(stage_id)
@@ -133,10 +136,10 @@ def build_journey(url: str, found: dict[str, dict | None]) -> dict:
         if not row:
             if stage_id == "seeds":
                 status, note = "skipped", "Not a seed"
+            elif stage_id in ("summaries", "large_docs") and low:
+                status, note = "skipped", "Low-quality page"
             elif stage_id == "summaries" and route == "large_docs":
                 status, note = "skipped", "Routed to Large Docs"
-            elif stage_id == "summaries" and route == "summaries" and analysis.get("has_quality_content") is False:
-                status, note = "skipped", "Low-quality page"
             elif stage_id == "large_docs" and route == "summaries":
                 status, note = "skipped", "Routed to Summaries"
         steps.append({"stage": stage_id, "title": _STEP_TITLES[stage_id], "status": status, "note": note,
