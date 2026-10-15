@@ -23,7 +23,8 @@ let consecutiveFetchFailures = 0;
 // #1030: last HEALTH_HISTORY_LIMIT metrics-poll outcomes (true = success).
 let pollHistory = [];
 // Static <title> captured once; connection state is prefixed onto it (#945).
-const BASE_TITLE = (typeof document !== 'undefined' && document.title) || 'Pipeline Control Center';
+// applySiteBranding() may replace this before the first status update (#951).
+let baseTitle = (typeof document !== 'undefined' && document.title) || 'Pipeline Control Center';
 let chartsHaveSample = false;
 // #690: charts stay paused while a scrape is over the series or parse-time limit.
 let metricsFlood = { degraded: false, calm: 0 };
@@ -1095,7 +1096,7 @@ function setConnectionStatus(kind, pipelineRunning) {
         const span = sys.querySelector('span:last-child');
         if (span) { const __n = labels[kind] || kind; if (span.textContent !== String(__n)) { span.textContent = __n; span.classList.remove('flash'); void span.offsetWidth; span.classList.add('flash'); } else { span.textContent = __n; } }
     }
-    const title = documentTitle(state, BASE_TITLE);
+    const title = documentTitle(state, baseTitle);
     if (document.title !== title) document.title = title;
     if (top) { const __n = state.top; if (top.textContent !== String(__n)) { top.textContent = __n; top.classList.remove('flash'); void top.offsetWidth; top.classList.add('flash'); } else { top.textContent = __n; } }
 }
@@ -1985,7 +1986,26 @@ function applyGrafanaLink() {
     if (shown) shown.textContent = home;
 }
 
+// #951: ?site= wins, then data-site-name from serve.py (CC_SITE_NAME or
+// dashboard/config.json). Neither set: leave the shipped UConn title/subtitle.
+function applySiteBranding() {
+    if (typeof document === 'undefined' || typeof resolveSiteBranding !== 'function' || typeof brandCopy !== 'function') return;
+    const search = (typeof location !== 'undefined' && location && typeof location.search === 'string') ? location.search : '';
+    const root = document.documentElement;
+    const name = resolveSiteBranding({
+        query: search,
+        dataSiteName: root ? (root.getAttribute('data-site-name') || '') : '',
+    });
+    const copy = brandCopy(name);
+    if (!copy) return;
+    const sub = document.querySelector('.topbar-title p.title-full');
+    if (sub) sub.textContent = copy.subtitle;
+    document.title = copy.title;
+    baseTitle = copy.title;
+}
+
 function initialize() {
+    applySiteBranding();
     console.log('Initializing Pipeline Control Center...');
 
     applyFeatureFlags();

@@ -58,6 +58,12 @@ node --test Scraping_project/dashboard/tests/   # helper unit tests
   Missing files, directory listings, dotfiles, `tests/` and source/docs (`serve.py`, `*.md`)
   return a plain 404 that never includes filesystem paths.
 - Version watermark: `CC_VERSION` env or `git describe` via `/version.js`.
+- Institution branding (#951): the shipped page says "UConn Web Scraping Pipeline".
+  Set `CC_SITE_NAME`, or `siteName` in `dashboard/config.json`, or open `?site=`,
+  and the subtitle becomes `{name} Web Scraping Pipeline - Real-time Operations Dashboard`
+  and the tab title becomes `Pipeline Control Center - {name} Scraping`. The name
+  is plain text (max 80 characters; `<` and `>` are ignored). Unset, the HTML is
+  unchanged. `?site=` wins over the server value. `CC_SITE_NAME` wins over the file.
 - Redis queue depths (#401): the System tab polls `/api/queues`, which reads the keys in
   `CC_QUEUE_KEYS` (comma list, default `js_spider:priority_queue`) with the type-aware
   length (`LLEN`/`ZCARD`/`SCARD`/`XLEN`/`HLEN`, so a list matches `redis-cli llen`).
@@ -82,6 +88,7 @@ node --test Scraping_project/dashboard/tests/   # helper unit tests
 | `CC_CONNECT_SRC` | unset | Extra http(s) origins allowed in CSP `connect-src` (only for a cross-origin `?metrics=`) (#245) |
 | `CC_GRAFANA_URL` | `http://localhost:3000/` | Grafana home linked from System Health. Injected on `/version.js`. A `/d/<uid>` path is trimmed back to the base (#1040) |
 | `CC_RATE_LIMIT` / `CC_RATE_BURST` | `600` / `120` | Per-client token bucket: requests per minute and burst. Excess requests get `429` with `Retry-After`. `CC_RATE_LIMIT=0` disables it (#257) |
+| `CC_SITE_NAME` | unset (UConn wording in `index.html`) | Institution token in the tab title and subtitle. Same value as `siteName` in `dashboard/config.json` or `?site=`. `CC_SITE_NAME` wins over the file; `?site=` wins over both (#951) |
 
 ## Exposing the dashboard (#189/#455)
 

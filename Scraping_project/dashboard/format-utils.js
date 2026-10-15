@@ -450,6 +450,49 @@
         const head = state.glyph + ' ' + state.title;
         return base ? head + ' \u00B7 ' + base : head;
     }
+    // #951: the shipped HTML says "UConn". A site token from ?site=, the
+    // data-site-name attribute (serve.py), or nothing (keep that HTML).
+    // Reject markup and control characters; the caller writes textContent only.
+    const SITE_NAME_MAX = 80;
+    function sanitizeSiteName(raw) {
+        if (typeof raw !== 'string') return '';
+        const name = raw.replace(/\s+/g, ' ').trim();
+        if (!name || name.length > SITE_NAME_MAX) return '';
+        for (let i = 0; i < name.length; i++) {
+            const code = name.charCodeAt(i);
+            if (code < 32 || code === 127) return '';
+        }
+        if (name.indexOf('<') !== -1 || name.indexOf('>') !== -1) return '';
+        return name;
+    }
+    function resolveSiteBranding(sources) {
+        const src = sources || {};
+        const search = typeof src.query === 'string' ? src.query : '';
+        const q = search.charAt(0) === '?' ? search.slice(1) : search;
+        let fromQuery = '';
+        if (q) {
+            try {
+                fromQuery = sanitizeSiteName(new URLSearchParams(q).get('site') || '');
+            } catch (e) {
+                fromQuery = '';
+            }
+        }
+        if (fromQuery) return fromQuery;
+        return sanitizeSiteName(src.dataSiteName || '');
+    }
+    // Product name is "{site} Web Scraping Pipeline". Empty input is "do not
+    // touch the page" so the default HTML stays the UConn wording.
+    function brandCopy(siteName) {
+        const name = sanitizeSiteName(siteName);
+        if (!name) return null;
+        const productName = name + ' Web Scraping Pipeline';
+        return {
+            siteName: name,
+            productName: productName,
+            subtitle: productName + ' - Real-time Operations Dashboard',
+            title: 'Pipeline Control Center - ' + name + ' Scraping',
+        };
+    }
     // #962: what (if anything) to say to screen readers for a new activity
     // item. Identical consecutive messages (e.g. "Failed to fetch metrics"
     // every poll during an outage) are spoken once per repeatMs.
@@ -1256,5 +1299,5 @@
         };
     }
 
-    return { tabKeyTarget, staleState, queueDepthRows, metricsFailureActivity, shortcutHintText, parseMetrics, metricSeriesCount, METRICS_FLOOD_DEFAULTS, metricsFloodLimits, advanceMetricsFlood, metricsFloodBannerText, ratePerMinute, resolveMetricsUrl, metricsEndpoint, metricsEndpointLabel, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler, stageActivity, stageDrilldown, stageDrilldownKey, doughnutLegendLayout, connectionState, documentTitle, createActivityAnnouncer, metricsUrlProblem, splitLinks, createMetricsFetcher, REFRESH_INTERVAL_CHOICES, parseRefreshInterval, shortcutAction, pickInitialTab, METRIC_UI_MAP, renderMetricNameMap, parseDangerSoundEnabled, dangerSoundDecision, HEALTH_HISTORY_LIMIT, pushPollOutcome, healthHistoryView, COMPARISON_BASELINE_ROLE, PREV_HOUR_AVG_KEYS, readPrevHourAverage, comparisonBaselineSeries, comparisonNote, ACTIVITY_LOG_CAP, capActivityLog, activityStaleNote, restoreActivityLog, topScrapeTargets, SCRAPE_TARGET_EMPTY, ACTIVITY_LEVELS, activityLevelCounts, filterActivityItems, filterActivityMessages, activityFilterStatus, toggleActivityLevel, HISTORY_MAX_POINTS, assertHistoryBound, boundHistoryBuffer, pushHistorySample, enforceHistoryCap, grafanaHomeUrl, jobStartedPresentation, DEFAULT_ACCENT, parseAccentColor, accentInk, accentBorder, accentCssVars };
+    return { tabKeyTarget, staleState, queueDepthRows, metricsFailureActivity, shortcutHintText, parseMetrics, metricSeriesCount, METRICS_FLOOD_DEFAULTS, metricsFloodLimits, advanceMetricsFlood, metricsFloodBannerText, ratePerMinute, resolveMetricsUrl, metricsEndpoint, metricsEndpointLabel, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler, stageActivity, stageDrilldown, stageDrilldownKey, doughnutLegendLayout, connectionState, documentTitle, createActivityAnnouncer, metricsUrlProblem, splitLinks, createMetricsFetcher, REFRESH_INTERVAL_CHOICES, parseRefreshInterval, shortcutAction, pickInitialTab, METRIC_UI_MAP, renderMetricNameMap, parseDangerSoundEnabled, dangerSoundDecision, HEALTH_HISTORY_LIMIT, pushPollOutcome, healthHistoryView, COMPARISON_BASELINE_ROLE, PREV_HOUR_AVG_KEYS, readPrevHourAverage, comparisonBaselineSeries, comparisonNote, ACTIVITY_LOG_CAP, capActivityLog, activityStaleNote, restoreActivityLog, topScrapeTargets, SCRAPE_TARGET_EMPTY, ACTIVITY_LEVELS, activityLevelCounts, filterActivityItems, filterActivityMessages, activityFilterStatus, toggleActivityLevel, HISTORY_MAX_POINTS, assertHistoryBound, boundHistoryBuffer, pushHistorySample, enforceHistoryCap, grafanaHomeUrl, jobStartedPresentation, DEFAULT_ACCENT, parseAccentColor, accentInk, accentBorder, accentCssVars, sanitizeSiteName, resolveSiteBranding, brandCopy };
 });
