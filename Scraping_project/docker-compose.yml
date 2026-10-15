@@ -3,6 +3,8 @@
 # Observability (Loki / Jaeger / OTEL) is the overlay docker-compose.observability.yml.
 # One command for the lean stack + monitoring (no torch, no Kafka):
 #   docker compose --profile core --profile monitoring up -d
+# Metrics only, no pipeline workers (Redis and Postgres start for the exporters):
+#   docker compose --profile monitoring up -d
 # See COMPOSE.md. Redis contract is REDIS_HOST / REDIS_PORT / REDIS_PASSWORD / REDIS_DB.
 
 services:

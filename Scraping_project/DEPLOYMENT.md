@@ -11,19 +11,42 @@ Production deployment guide for the UConn Scraping Pipeline.
 
 ## Quick Start with Docker Compose
 
+Run these from `Scraping_project/`, where `docker-compose.yml` lives. Every service sits behind a profile, so a bare `docker compose up -d` starts nothing. Name the profiles you want:
+
 ```bash
-# Build and start all services
-docker-compose up -d
+# Build and start the pipeline plus monitoring
+docker compose --profile core --profile monitoring up -d
 
 # View logs
-docker-compose logs -f
+docker compose --profile core --profile monitoring logs -f
 
 # Check service status
-docker-compose ps
+docker compose --profile core --profile monitoring ps
 
 # Stop all services
-docker-compose down
+docker compose --profile core --profile monitoring down
 ```
+
+### Compose profiles
+
+| Profile | Starts |
+|---------|--------|
+| `core` | Redis, Postgres, scraper, stage 1–3 workers (there is no separate `workers` profile) |
+| `monitoring` | Prometheus, Grafana, redis-exporter, postgres-exporter, ops dashboard on `127.0.0.1:8080`. Redis and Postgres too, because the exporters read from them |
+| `streaming` | Kafka (KRaft). Postgres is also on `core` |
+| `ml`, `full` | stage4-worker (ML/OCR image). Redis is also on these profiles |
+
+The Loki / Jaeger / OTEL overlay is `docker-compose.observability.yml`; see [COMPOSE.md](COMPOSE.md).
+
+### Metrics only (existing data)
+
+To run Prometheus and Grafana against the Redis and Postgres data already in their named volumes, without the pipeline:
+
+```bash
+docker compose --profile monitoring up -d
+```
+
+This starts `prometheus`, `grafana`, `redis-exporter`, `postgres-exporter`, `dashboard`, `redis` and `postgres`, and nothing from `core`, `streaming`, `ml` or `full`. The scraper and workers are not running, so their Prometheus targets report down until you add `--profile core`. The first start builds the dashboard image. `docker compose --profile monitoring down` keeps the named volumes unless you add `-v`.
 
 ## Kubernetes Deployment
 
@@ -129,6 +152,8 @@ http://localhost:3000
 # Access Prometheus
 http://localhost:9090
 ```
+
+Metrics only, without the pipeline: see [Metrics only (existing data)](#metrics-only-existing-data).
 
 ### FinOps cost allocation (#545)
 
