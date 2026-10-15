@@ -632,13 +632,19 @@
         if (n === 0) return 'Shortcut: R refresh';
         return `Shortcuts: ${n === 1 ? '1' : '1\u2013' + n} switch tabs \u00b7 R refresh`;
     }
-    // #153: WAI-ARIA tabs keyboard model. Index of the tab to focus/select for
-    // `key` from `index` among `count` tabs (wrapping), or null if not a tab key.
-    function tabKeyTarget(key, index, count) {
+    // #153 / #1026: WAI-ARIA tabs keyboard model. Index of the tab to focus
+    // for `key` from `index` among `count` tabs (wrapping), or null if not a
+    // tab key. When `rtl` is true, horizontal arrows follow the writing
+    // direction (ArrowLeft moves to the next tab).
+    function tabKeyTarget(key, index, count, rtl) {
         const n = Math.floor(Number(count) || 0);
         if (n <= 0) return null;
         const i = Math.min(Math.max(Math.floor(Number(index) || 0), 0), n - 1);
-        switch (key) {
+        let k = key;
+        if (rtl && (k === 'ArrowLeft' || k === 'Left' || k === 'ArrowRight' || k === 'Right')) {
+            k = (k === 'ArrowLeft' || k === 'Left') ? 'ArrowRight' : 'ArrowLeft';
+        }
+        switch (k) {
             case 'ArrowRight': case 'Right': return (i + 1) % n;
             case 'ArrowLeft': case 'Left': return (i - 1 + n) % n;
             case 'Home': return 0;

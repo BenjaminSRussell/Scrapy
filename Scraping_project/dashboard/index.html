@@ -483,28 +483,30 @@
             overflow-y: auto;
         }
 
+        /* #1026: stripe and radius follow the writing direction (dir=rtl). */
         .activity-item {
             padding: 1rem;
-            border-left: 3px solid var(--gray-200);
+            border-inline-start: 3px solid var(--gray-200);
             margin-bottom: 1rem;
             background: var(--gray-50);
-            border-radius: 0 0.25rem 0.25rem 0;
+            border-start-end-radius: 0.25rem;
+            border-end-end-radius: 0.25rem;
         }
 
         .activity-item.success {
-            border-left-color: var(--success);
+            border-inline-start-color: var(--success);
             background: #ecfdf5;
         }
 
         .activity-item.warning {
-            border-left-color: var(--warning);
+            border-inline-start-color: var(--warning);
             background: #fffbeb;
         }
 
         .activity-item.timeout {
-            border-left-color: var(--warning);
+            border-inline-start-color: var(--warning);
             background: #fff7ed;
-            border-left-style: dashed;
+            border-inline-start-style: dashed;
         }
 
         .shortcut-hint {
@@ -518,7 +520,7 @@
         }
 
         .activity-item.danger {
-            border-left-color: var(--danger);
+            border-inline-start-color: var(--danger);
             background: #fef2f2;
         }
 
@@ -541,7 +543,7 @@
         }
 
         .activity-item.restored {
-            border-left-style: dashed;
+            border-inline-start-style: dashed;
         }
 
         .activity-restored-tag {
@@ -938,7 +940,7 @@
         .chart-data-table summary { cursor: pointer; color: var(--muted-text); }
         .table-scroll { overflow-x: auto; max-width: 100%; }
         .data-fallback-table { width: 100%; border-collapse: collapse; margin-top: 0.5rem; }
-        .data-fallback-table th, .data-fallback-table td { border: 1px solid #334155; padding: 0.25rem 0.5rem; text-align: left; vertical-align: top; }
+        .data-fallback-table th, .data-fallback-table td { border: 1px solid #334155; padding: 0.25rem 0.5rem; text-align: start; vertical-align: top; }
         .metric-map-card { margin-top: 2rem; }
         .metric-map-card summary { cursor: pointer; font-weight: 600; color: var(--gray-800); }
         .metric-map-help { font-size: 0.9rem; color: var(--gray-700); margin: 0.75rem 0; }
@@ -963,14 +965,21 @@
             position: relative;
             margin-bottom: 0.5rem;
         }
+        /* #1026: pin the fade to the inline end. `to inline-end` is not used:
+           an unsupported gradient direction would drop the LTR fade too. */
         .tab-buttons-wrap::after {
             content: "";
             pointer-events: none;
             position: absolute;
-            top: 0; right: 0; bottom: 0;
+            top: 0;
+            bottom: 0;
+            inset-inline-end: 0;
             width: 2rem;
             background: linear-gradient(to right, transparent, var(--bg, #0f172a));
             opacity: 0;
+        }
+        [dir="rtl"] .tab-buttons-wrap::after {
+            background: linear-gradient(to left, transparent, var(--bg, #0f172a));
         }
         @media (max-width: 640px) {
             .tab-buttons {
@@ -1023,11 +1032,11 @@
         @media (max-width: 640px) { :root { --chart-height: var(--chart-h-sm); } }
         @media (min-width: 641px) and (max-width: 1024px) { :root { --chart-height: var(--chart-h-md); } }
         .chart-container { height: var(--chart-height); min-height: var(--chart-height); }
-        .env-badge { font-size: 0.7rem; padding: 0.15rem 0.5rem; border-radius: 999px; margin-left: 0.5rem; vertical-align: middle; }
+        .env-badge { font-size: 0.7rem; padding: 0.15rem 0.5rem; border-radius: 999px; margin-inline-start: 0.5rem; vertical-align: middle; }
         .env-badge.env-local { background: #334155; color: #e2e8f0; }
         .env-badge.env-staging { background: #ca8a04; color: #111; }
         .env-badge.env-prod { background: #b91c1c; color: #fff; font-weight: 700; }
-        .milestone-badge { display: inline-block; margin-left: 0.35rem; padding: 0.1rem 0.4rem; border-radius: 0.25rem; background: #14532d; color: #bbf7d0; font-size: 0.75rem; }
+        .milestone-badge { display: inline-block; margin-inline-start: 0.35rem; padding: 0.1rem 0.4rem; border-radius: 0.25rem; background: #14532d; color: #bbf7d0; font-size: 0.75rem; }
     
         /* #1017: buttons follow the accent; text is --accent-ink for contrast. */
         .btn {
@@ -1946,7 +1955,7 @@
                     <div class="card-header" style="flex-wrap:wrap;gap:0.5rem">
                         <h2 class="card-title">Pipeline Activity Log</h2>
                         <span class="card-badge badge-info">Live</span>
-                        <div style="margin-left:auto;display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center">
+                        <div style="margin-inline-start:auto;display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center">
                             <label class="danger-sound-label" for="danger-sound-toggle">
                                 <input type="checkbox" id="danger-sound-toggle" aria-describedby="danger-sound-hint">
                                 Sound on danger

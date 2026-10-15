@@ -1668,15 +1668,16 @@ function setupTabs() {
         });
     });
 
-    // #153: WAI-ARIA tabs pattern. Arrow keys / Home / End move between the
-    // visible tabs and select them (automatic activation); Tab moves into the panel.
+    // #153 / #1026: WAI-ARIA tabs. Arrows / Home / End move between the
+    // visible tabs and select them. In RTL, ArrowLeft is forward.
     const tablist = document.querySelector('[role="tablist"]');
     if (tablist) {
         tablist.addEventListener('keydown', (event) => {
             const tabs = Array.from(tablist.querySelectorAll('[role="tab"]')).filter(t => !t.hidden && t.style.display !== 'none');
             const current = tabs.indexOf(document.activeElement);
             if (current < 0) return;
-            const next = tabKeyTarget(event.key, current, tabs.length);
+            const rtl = getComputedStyle(tablist).direction === 'rtl';
+            const next = tabKeyTarget(event.key, current, tabs.length, rtl);
             if (next === null) return;
             event.preventDefault();
             const target = tabs[next];
