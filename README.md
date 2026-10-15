@@ -197,6 +197,7 @@ The pack scrapes StatsD (`statsd-exporter:9125`, host `127.0.0.1:9125`), the Red
 | 🤝 [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) | Contributor Covenant 2.1 |
 | 📜 [CHANGELOG.md](CHANGELOG.md) | what changed, by release ([releasing](docs/RELEASING.md)) |
 | 🧭 [docs/adr/](docs/adr/README.md) | architecture decision records |
+| 🗺️ [docs/PUBLIC_ROADMAP.md](docs/PUBLIC_ROADMAP.md) | open `[P1]`–`[P4]` issues, refreshed weekly ([build order](docs/ROADMAP.md)) |
 
 MIT License - see [LICENSE](LICENSE).
 

@@ -19,6 +19,7 @@ This directory contains scripts for managing, debugging, and resetting the scrap
 | `restore_backup.sh` | Dry-run restore, or a `/tmp` sample round-trip | `make restore`. `ROUNDTRIP=1` checks a sample. SQL is not loaded |
 | `anomaly_scan.py` | Offline z-score of a metrics fixture | `make anomaly-scan`. Prints an Alertmanager payload and does not POST |
 | `export_scoring_snapshot.py` | Daily URL-score Parquet snapshot | `python scripts/export_scoring_snapshot.py --urls FILE`. No crawl. See `docs/scoring_snapshot.md` (#1103) |
+| `generate_public_roadmap.py` | Rewrite `docs/PUBLIC_ROADMAP.md` from open `[P1]`–`[P4]` issue titles | Weekly CI. Offline: `python scripts/generate_public_roadmap.py --input issues.json` |
 
 > **Destructive operations** (`complete_reset.sh`, `reset_lake.py`, `../cli.py reset`,
 > `reseed.py --clear`, `drain_lake.py` drains) follow one safety policy; see
@@ -68,6 +69,10 @@ Fixtures live in `scripts/fixtures/anomaly/clean_metrics.json` and `scripts/fixt
 ### Alertmanager stub
 
 When the threshold is crossed, the target prints an Alertmanager webhook payload and does not POST it. There is no HTTP client. `ALERTMANAGER_URL`, if set, is not called.
+
+## Public roadmap (#972)
+
+`python scripts/generate_public_roadmap.py` (from `Scraping_project/`) rewrites `docs/PUBLIC_ROADMAP.md` with the open issues whose titles start with `[P1]`, `[P2]`, `[P3]`, or `[P4]`. It does not crawl, start Docker, or read the lake. `--input` is a JSON list and makes no network call. With no `--input`, it reads the GitHub issues API. The same backlog does not rewrite the file. `.github/workflows/ci-public-roadmap.yml` runs that command weekly and publishes only from `main`.
 
 ## Deprecated root paths (#568)
 

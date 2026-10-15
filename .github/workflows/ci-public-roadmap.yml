@@ -1,0 +1,59 @@
+# Weekly refresh of docs/PUBLIC_ROADMAP.md from open [P1]–[P4] issues (#972).
+# A GITHUB_TOKEN push does not start other workflows, so this does not retrigger main.yml.
+name: Public roadmap
+
+on:
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+# See main.yml for the concurrency rationale.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      issues: read
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 20
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+
+      - name: Regenerate the public roadmap
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: python3 Scraping_project/scripts/generate_public_roadmap.py
+
+      - name: Commit the page when the open backlog changed
+        if: github.ref == 'refs/heads/main'
+        run: |
+          set -eu
+          git add -- docs/PUBLIC_ROADMAP.md
+          if git diff --cached --quiet; then
+            echo "public roadmap unchanged"
+            exit 0
+          fi
+          extra=$(git diff --cached --name-only | grep -v '^docs/PUBLIC_ROADMAP.md$' || true)
+          if [ -n "$extra" ]; then
+            echo "refusing to commit unexpected files"
+            exit 1
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Refresh public roadmap from open [P1]-[P4] issues"
+          git fetch origin main
+          git -c core.editor=true rebase origin/main
+          git push origin HEAD:main
