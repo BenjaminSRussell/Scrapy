@@ -243,3 +243,55 @@ def test_service_probe_reports_redis_and_metrics_honestly(serve):
     redis_row = next(r for r in rows if r["id"] == "redis")
     assert redis_row["status"] == "ok"
     assert redis_row["data"]["queues"] == [{"key": "q", "type": "list", "depth": 7}]
+
+
+def test_demo_mode_needs_no_pyarrow_or_deltalake(tmp_path):
+    """The visual CI job installs only Playwright: --demo must run on the standard library."""
+    import subprocess
+    import sys
+
+    code = f"""
+import importlib.util, sys
+for name in ("pyarrow", "deltalake", "redis"):
+    sys.modules[name] = None  # any import of these now raises ImportError
+spec = importlib.util.spec_from_file_location("s", {str(DASH / "serve.py")!r})
+serve = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(serve)
+serve.DashboardHandler.feed_cfg = {{"demo": True, "seed": 1, "interval": 60.0, "delta_path": "/nope"}}
+hub = serve.DashboardHandler.get_hub()
+snap = hub.snapshot()
+hub.stop()
+print(snap["mode"], len(snap["stages"]))
+"""
+    out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=120)
+    assert out.returncode == 0, out.stderr
+    assert out.stdout.split() == ["demo", "5"]
+
+
+def test_main_starts_the_feed_before_serving(serve, monkeypatch):
+    """Backfill and the first poll happen at launch, not on the first visitor's request."""
+    order = []
+
+    class Stop(Exception):
+        pass
+
+    class FakeServer:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def serve_forever(self):
+            order.append("serve")
+            raise Stop
+
+        def shutdown(self):
+            pass
+
+    monkeypatch.setattr(serve, "make_server", lambda host, port, **kw: FakeServer())
+    monkeypatch.setattr(serve.DashboardHandler, "_hub", None)
+    monkeypatch.setattr(serve.DashboardHandler, "hub_factory", staticmethod(lambda: order.append("hub") or object()))
+    with pytest.raises(Stop):
+        serve.main(["--demo", "--port", "8123"])
+    assert order == ["hub", "serve"]

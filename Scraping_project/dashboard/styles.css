@@ -191,7 +191,6 @@ svg { display: block; }
 .main {
   min-width: 0;
   padding-bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom) + 24px);
-  view-transition-name: main;
 }
 
 .layer-content {
@@ -347,21 +346,19 @@ svg { display: block; }
   .sidebar-foot .pill { margin-bottom: 8px; }
 }
 
-/* ---------- view transitions (push / pop / tab) ---------- */
-::view-transition-old(root), ::view-transition-new(root) { animation: none; }
+/* ---------- view transitions (push / pop / tab) ----------
+   The whole viewport slides (as on iOS); the tab bar and sidebar are their own
+   layers, so they stay put. */
+::view-transition-group(tabbar), ::view-transition-group(sidebar) { animation: none; }
+::view-transition-old(tabbar), ::view-transition-old(sidebar) { display: none; }
+::view-transition-new(tabbar), ::view-transition-new(sidebar) { animation: none; }
 @media (prefers-reduced-motion: no-preference) {
-  ::view-transition-group(main) { animation-duration: 0.42s; animation-timing-function: var(--ease-ios); }
-  ::view-transition-old(main), ::view-transition-new(main) {
-    animation-duration: 0.42s;
-    animation-timing-function: var(--ease-ios);
-    mix-blend-mode: normal;
-  }
-  html[data-nav="push"]::view-transition-old(main) { animation-name: cc-under-left; }
-  html[data-nav="push"]::view-transition-new(main) { animation-name: cc-in-right; }
-  html[data-nav="pop"]::view-transition-old(main) { animation-name: cc-out-right; z-index: 2; }
-  html[data-nav="pop"]::view-transition-new(main) { animation-name: cc-under-return; }
-  html[data-nav="tab"]::view-transition-old(main) { animation: cc-fade-out 0.16s ease both; }
-  html[data-nav="tab"]::view-transition-new(main) { animation: cc-fade-in 0.2s ease both; }
+  html[data-nav="push"]::view-transition-old(root) { animation: cc-under-left 0.42s var(--ease-ios) both; }
+  html[data-nav="push"]::view-transition-new(root) { animation: cc-in-right 0.42s var(--ease-ios) both; }
+  html[data-nav="pop"]::view-transition-old(root) { animation: cc-out-right 0.38s var(--ease-ios) both; z-index: 2; }
+  html[data-nav="pop"]::view-transition-new(root) { animation: cc-under-return 0.38s var(--ease-ios) both; }
+  html[data-nav="tab"]::view-transition-old(root) { animation: cc-fade-out 0.16s ease both; }
+  html[data-nav="tab"]::view-transition-new(root) { animation: cc-fade-in 0.2s ease both; }
 }
 @keyframes cc-in-right { from { transform: translateX(100%); box-shadow: -8px 0 24px rgba(0, 0, 0, 0.12); } }
 @keyframes cc-under-left { to { transform: translateX(-30%); opacity: 0.6; } }

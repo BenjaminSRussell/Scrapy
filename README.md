@@ -167,7 +167,7 @@ python start.py --reset-delta
 
 ## Observability
 
-Control Center (`dashboard/serve.py`, http://localhost:8080) is the crawl console. It does not embed Grafana. Grafana is a separate origin, so panels are deep links, not iframes. The System tab on Control Center reads Redis depth from `/api/queues`. Lag, crawl rate, and Delta commits are the pack dashboard.
+Control Center (`dashboard/serve.py`, http://localhost:8080) is the crawl console. It does not embed Grafana. Grafana is a separate origin, so panels are deep links, not iframes. Its Health tab shows live Redis queue depth, and its Pipeline tab is fed by the Delta Lake tables themselves (see [dashboard/README.md](Scraping_project/dashboard/README.md)). Lag, crawl rate, and Delta commits are the pack dashboard.
 
 From `Scraping_project/`, on a clean host:
 

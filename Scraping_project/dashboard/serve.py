@@ -312,13 +312,14 @@ def service_probe(redis_factory, keys, metrics_upstream: str, timeout: float) ->
     return rows
 
 
-def _ccfeed():
-    """Import the feed package lazily: the static server works without pyarrow/deltalake."""
+def _ccfeed(name: str):
+    """Import one feed module lazily. Demo mode needs only the standard library; the
+    live feed brings in pyarrow/deltalake, so it is imported only when used."""
     if str(DASHBOARD_DIR) not in sys.path:
         sys.path.insert(0, str(DASHBOARD_DIR))
-    from ccfeed import demo, hub, live
+    import importlib
 
-    return demo, hub, live
+    return importlib.import_module(f"ccfeed.{name}")
 
 
 def valid_page_url(url: str) -> bool:
@@ -527,18 +528,17 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
 
     @classmethod
     def _default_hub(cls):
-        demo, hub, live = _ccfeed()
         cfg = cls.feed_cfg or feed_settings()
         if cfg["demo"]:
-            feed, probe = demo.DemoFeed(seed=cfg["seed"]), None
+            feed, probe = _ccfeed("demo").DemoFeed(seed=cfg["seed"]), None
         else:
-            feed = live.LiveFeed(cfg["delta_path"])
+            feed = _ccfeed("live").LiveFeed(cfg["delta_path"])
             keys = cls.queue_keys if cls.queue_keys is not None else DEFAULT_QUEUE_KEYS
             upstream = cls.metrics_upstream or DEFAULT_METRICS_UPSTREAM
 
             def probe():
                 return service_probe(cls.redis_factory, keys, upstream, cls.upstream_timeout)
-        instance = hub.Hub(feed, interval=cfg["interval"], probe=probe)
+        instance = _ccfeed("hub").Hub(feed, interval=cfg["interval"], probe=probe)
         instance.start()
         return instance
 
@@ -748,6 +748,8 @@ def main(argv=None):
     print("=" * 80)
     print()
     print(f"📊 Dashboard:  http://{shown}:{port}")
+    cfg = DashboardHandler.feed_cfg
+    print(f"🛰️  Feed:       {'demo (simulated crawl)' if cfg['demo'] else 'live: ' + cfg['delta_path']}")
     print(f"📈 Metrics:    /api/metrics -> {DashboardHandler.metrics_upstream}  (METRICS_UPSTREAM)")
     print(f"🔐 Auth:       {'on' if DashboardHandler.auth and DashboardHandler.auth.enabled else 'off (CC_AUTH_TOKEN / CC_BASIC_AUTH)'}")
     print(f"📉 Grafana:    {DashboardHandler.grafana_url or grafana_base_url()} (separate analytics)")
@@ -766,6 +768,7 @@ def main(argv=None):
 
     with make_server(host, port) as httpd:
         try:
+            DashboardHandler.get_hub()  # backfill and first poll now, not on the first visit
             print(f"✅ Server started on {host or '*'}:{port}")
             httpd.serve_forever()
         except KeyboardInterrupt:

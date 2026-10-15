@@ -301,10 +301,16 @@ services:
     environment:
       - CC_HOST=0.0.0.0
       - CC_PORT=8080
+      # Live feed: the same Delta Lake the workers write (read-only here), Redis
+      # queue depths, and Prometheus as the metrics-upstream health check.
+      - DELTA_LAKE_PATH=/data/delta
+      - REDIS_HOST=redis
+      - METRICS_UPSTREAM=http://prometheus:9090/metrics
     ports:
       - "127.0.0.1:8080:8080"
     volumes:
       - ./dashboard:/app/dashboard:ro
+      - ./data:/data:ro
     networks:
       - scraper-network
 
