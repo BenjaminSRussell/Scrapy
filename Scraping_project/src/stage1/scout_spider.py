@@ -31,7 +31,7 @@ try:
     from src.utils.metric_labels import labels_for
 except Exception:  # prometheus_client missing
     URLS_SKIPPED = None
-    labels_for = None  # type: ignore[assignment]
+    labels_for = None
 
 def _stage1_flag(config, key: str, default: bool) -> bool:
     """Read a boolean ``stage1.<key>`` (falling back to ``stages.stage1.<key>``) (#27)."""

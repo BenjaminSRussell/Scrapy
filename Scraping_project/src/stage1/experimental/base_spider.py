@@ -36,7 +36,7 @@ except ImportError:
     NEW_URLS_FOUND_PER_MINUTE = None
     AVERAGE_FILE_SIZE_BYTES = None
     OFFSITE_LINKS_FOUND = None
-    labels_for = None  # type: ignore[assignment]
+    labels_for = None
     PROMETHEUS_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
