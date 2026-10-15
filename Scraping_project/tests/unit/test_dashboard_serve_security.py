@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import importlib.util
 import json
+import re
 import threading
 import urllib.error
 import urllib.request
@@ -286,12 +287,13 @@ def test_build_csp_extra_connect_src(serve):
     assert "evil" not in csp  # rejected: quote / semicolon
 
 
-def test_features_js_exists_and_index_has_no_inline_script():
+def test_index_has_no_inline_script_style_or_handlers():
+    """The CSP forbids inline script and style; index.html must not need them (#245)."""
     html = (DASH / "index.html").read_text()
-    assert 'src="features.js"' in html
-    assert "<script>" not in html.replace("<script ", "<X ")  # no bare <script> blocks
-    assert (DASH / "features.js").is_file()
-    assert "integrity=" in html and "chart.js@4.4.0" in html
+    assert not re.search(r"<script(?![^>]*\ssrc=)[^>]*>", html), "inline <script> block"
+    assert not re.search(r"\sstyle\s*=", html), "inline style attribute"
+    assert not re.search(r"\son[a-z]+\s*=", html, re.I), "inline event handler"
+    assert "://" not in " ".join(re.findall(r'\ssrc="([^"]+)"', html)), "third-party script"
 
 
 def test_auth_gate_rejects_malformed_basic_env(serve):
@@ -301,9 +303,7 @@ def test_auth_gate_rejects_malformed_basic_env(serve):
 
 # ---- Smoke test of the real dashboard docroot (#271) ----
 def test_real_dashboard_assets_smoke(serve):
-    """GET / and every local script index.html references, with the right Content-Type."""
-    import re
-
+    """GET / plus every script, module import and linked asset of the real docroot, with types."""
     handler = _handler(serve, DASH, {"CC_RATE_LIMIT": "0"})
     httpd = serve.make_server("127.0.0.1", 0, handler=handler, env={})
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
@@ -313,17 +313,34 @@ def test_real_dashboard_assets_smoke(serve):
         assert status == 200 and headers["content-type"].startswith("text/html")
         html = body.decode()
         assert "<title>" in html
-        local_scripts = [s for s in re.findall(r'<script src="([^"]+)"', html) if "://" not in s]
-        assert {"features.js", "format-utils.js", "version.js", "app.js"} <= set(local_scripts)
-        assert 'id="grafana-analytics-link"' in html
-        assert 'href="http://localhost:3000/"' in html
-        for src in local_scripts:
-            status, headers, body = get(f"{base}/{src}")
-            assert status == 200, src
-            assert "javascript" in headers["content-type"], (src, headers["content-type"])
-            assert body.strip(), src
-        status, headers, _ = get(base + "/styleguide.html")
-        assert status == 200 and headers["content-type"].startswith("text/html")
+        scripts = re.findall(r'<script[^>]*\ssrc="([^"]+)"', html)
+        assert set(scripts) == {"version.js", "app/main.js"}
+        # Walk the ES module graph from app/main.js: every relative import must be served as JS.
+        seen, todo = set(), ["app/main.js"]
+        while todo:
+            path = todo.pop()
+            if path in seen:
+                continue
+            seen.add(path)
+            status, headers, body = get(f"{base}/{path}")
+            assert status == 200, path
+            assert "javascript" in headers["content-type"], (path, headers["content-type"])
+            folder = path.rsplit("/", 1)[0]
+            for spec in re.findall(r'(?:from|import)\s*["\'](\.{1,2}/[^"\']+)["\']', body.decode()):
+                parts = (folder + "/" + spec).split("/")
+                stack = []
+                for part in parts:
+                    if part == "..":
+                        stack.pop()
+                    elif part != ".":
+                        stack.append(part)
+                todo.append("/".join(stack))
+        assert {"app/app.js", "vendor/preact.module.js", "vendor/hooks.module.js", "vendor/htm.module.js"} <= seen
+        for href, ctype in (("styles.css", "text/css"), ("manifest.json", "application/json"),
+                            ("icons/icon.svg", "image/svg+xml"), ("icons/apple-touch-icon.png", "image/png")):
+            assert f'href="{href}"' in html, href
+            status, headers, _ = get(f"{base}/{href}")
+            assert status == 200 and headers["content-type"].startswith(ctype), (href, status, headers["content-type"])
     finally:
         httpd.shutdown()
         httpd.server_close()
