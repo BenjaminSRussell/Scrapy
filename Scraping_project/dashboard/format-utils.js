@@ -978,10 +978,17 @@
         return { slots, ok: okCount, fail: failCount, total: windowed.length, limit: n, label, caption };
     }
 
-    // #691: one ring-buffer cap for every client time-series (chart history and
-    // the activity log). Chart.js may draw a shorter window; this bound does
-    // not follow an axis or tick max, so a wider chart cannot grow memory.
+    // #691: default ring for client time-series that do not set rawCap (the
+    // activity log). It does not follow a chart axis. Chart history keeps a
+    // longer raw buffer and still cannot grow without a bound (#1014).
     const HISTORY_MAX_POINTS = 50;
+    const HISTORY_RAW_POINTS = 200;
+    function resolveHistoryCap(max) {
+        if (max == null) return HISTORY_MAX_POINTS;
+        const n = Math.floor(Number(max));
+        if (!Number.isFinite(n) || n < 1) return HISTORY_MAX_POINTS;
+        return n;
+    }
     function historyDebug() {
         return typeof process === 'undefined'
             || !process.env
@@ -1000,9 +1007,10 @@
         return true;
     }
     // drop 'start': oldest-first series (charts). drop 'end': newest-first logs.
-    function boundHistoryBuffer(buffer, drop) {
+    // `max` defaults to HISTORY_MAX_POINTS. Chart stores pass rawCap (#1014).
+    function boundHistoryBuffer(buffer, drop, max) {
         if (!Array.isArray(buffer)) return buffer;
-        const cap = HISTORY_MAX_POINTS;
+        const cap = resolveHistoryCap(max);
         const overflow = buffer.length - cap;
         if (overflow > 0) {
             if (drop === 'end') buffer.splice(cap, overflow);
@@ -1011,15 +1019,16 @@
         assertHistoryBound(buffer.length, cap);
         return buffer;
     }
-    function pushHistorySample(buffer, value) {
+    function pushHistorySample(buffer, value, max) {
         if (!Array.isArray(buffer)) return buffer;
         buffer.push(value);
-        return boundHistoryBuffer(buffer, 'start');
+        return boundHistoryBuffer(buffer, 'start', max);
     }
     function enforceHistoryCap(store, drop) {
         if (!store || typeof store !== 'object') return store;
+        const cap = resolveHistoryCap(store.rawCap);
         for (const key of Object.keys(store)) {
-            if (Array.isArray(store[key])) boundHistoryBuffer(store[key], drop);
+            if (Array.isArray(store[key])) boundHistoryBuffer(store[key], drop, cap);
         }
         return store;
     }
@@ -1256,5 +1265,85 @@
         };
     }
 
-    return { tabKeyTarget, staleState, queueDepthRows, metricsFailureActivity, shortcutHintText, parseMetrics, metricSeriesCount, METRICS_FLOOD_DEFAULTS, metricsFloodLimits, advanceMetricsFlood, metricsFloodBannerText, ratePerMinute, resolveMetricsUrl, metricsEndpoint, metricsEndpointLabel, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler, stageActivity, stageDrilldown, stageDrilldownKey, doughnutLegendLayout, connectionState, documentTitle, createActivityAnnouncer, metricsUrlProblem, splitLinks, createMetricsFetcher, REFRESH_INTERVAL_CHOICES, parseRefreshInterval, shortcutAction, pickInitialTab, METRIC_UI_MAP, renderMetricNameMap, parseDangerSoundEnabled, dangerSoundDecision, HEALTH_HISTORY_LIMIT, pushPollOutcome, healthHistoryView, COMPARISON_BASELINE_ROLE, PREV_HOUR_AVG_KEYS, readPrevHourAverage, comparisonBaselineSeries, comparisonNote, ACTIVITY_LOG_CAP, capActivityLog, activityStaleNote, restoreActivityLog, topScrapeTargets, SCRAPE_TARGET_EMPTY, ACTIVITY_LEVELS, activityLevelCounts, filterActivityItems, filterActivityMessages, activityFilterStatus, toggleActivityLevel, HISTORY_MAX_POINTS, assertHistoryBound, boundHistoryBuffer, pushHistorySample, enforceHistoryCap, grafanaHomeUrl, jobStartedPresentation, DEFAULT_ACCENT, parseAccentColor, accentInk, accentBorder, accentCssVars };
+    // #1014: indices to plot so a line chart stays readable when the raw history
+    // buffer is longer than `maxPoints`. Largest-Triangle-Three-Buckets keeps
+    // the first and last sample and, in each bucket, the point with the largest
+    // triangle on any series (a spike on one line is not averaged away).
+    // `series` is one value array or an array of parallel value arrays.
+    // `xs` is optional numeric x (sample time); otherwise the index is x.
+    function downsampleIndices(series, maxPoints, xs) {
+        const cols = [];
+        if (Array.isArray(series) && series.length && Array.isArray(series[0])) {
+            for (let s = 0; s < series.length; s++) cols.push(series[s]);
+        } else if (Array.isArray(series)) {
+            cols.push(series);
+        }
+        let n = cols.length ? cols[0].length : 0;
+        for (let s = 1; s < cols.length; s++) n = Math.min(n, cols[s].length);
+        if (xs && Array.isArray(xs)) n = Math.min(n, xs.length);
+        const all = [];
+        for (let i = 0; i < n; i++) all.push(i);
+        const max = Math.floor(Number(maxPoints));
+        if (!Number.isFinite(max) || max >= n || n === 0) return all;
+        if (max <= 1) return [n - 1];
+        if (max === 2) return [0, n - 1];
+        const xOf = (i) => {
+            if (!xs) return i;
+            const x = Number(xs[i]);
+            return Number.isFinite(x) ? x : i;
+        };
+        const yOf = (col, i) => {
+            const y = Number(col[i]);
+            return Number.isFinite(y) ? y : 0;
+        };
+        const sampled = [0];
+        const bucketSize = (n - 2) / (max - 2);
+        let a = 0;
+        for (let i = 0; i < max - 2; i++) {
+            const avgStart = Math.floor((i + 1) * bucketSize) + 1;
+            let avgEnd = Math.floor((i + 2) * bucketSize) + 1;
+            if (avgEnd > n) avgEnd = n;
+            let avgX = 0;
+            const avgYs = [];
+            for (let s = 0; s < cols.length; s++) avgYs.push(0);
+            const avgLen = avgEnd - avgStart;
+            if (avgLen <= 0) {
+                avgX = xOf(n - 1);
+                for (let s = 0; s < cols.length; s++) avgYs[s] = yOf(cols[s], n - 1);
+            } else {
+                for (let j = avgStart; j < avgEnd; j++) {
+                    avgX += xOf(j);
+                    for (let s = 0; s < cols.length; s++) avgYs[s] += yOf(cols[s], j);
+                }
+                avgX /= avgLen;
+                for (let s = 0; s < cols.length; s++) avgYs[s] /= avgLen;
+            }
+            const rangeStart = Math.floor(i * bucketSize) + 1;
+            let rangeEnd = Math.floor((i + 1) * bucketSize) + 1;
+            if (rangeEnd > n - 1) rangeEnd = n - 1;
+            if (rangeEnd <= rangeStart) rangeEnd = Math.min(n - 1, rangeStart + 1);
+            const ax = xOf(a);
+            let maxArea = -1;
+            let nextA = rangeStart;
+            for (let j = rangeStart; j < rangeEnd; j++) {
+                const xj = xOf(j);
+                let area = 0;
+                for (let s = 0; s < cols.length; s++) {
+                    const ay = yOf(cols[s], a);
+                    const tri = Math.abs((ax - avgX) * (yOf(cols[s], j) - ay) - (ax - xj) * (avgYs[s] - ay));
+                    if (tri > area) area = tri;
+                }
+                if (area > maxArea) {
+                    maxArea = area;
+                    nextA = j;
+                }
+            }
+            sampled.push(nextA);
+            a = nextA;
+        }
+        sampled.push(n - 1);
+        return sampled;
+    }
+
+    return { tabKeyTarget, staleState, queueDepthRows, metricsFailureActivity, shortcutHintText, parseMetrics, metricSeriesCount, METRICS_FLOOD_DEFAULTS, metricsFloodLimits, advanceMetricsFlood, metricsFloodBannerText, ratePerMinute, resolveMetricsUrl, metricsEndpoint, metricsEndpointLabel, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler, stageActivity, stageDrilldown, stageDrilldownKey, doughnutLegendLayout, connectionState, documentTitle, createActivityAnnouncer, metricsUrlProblem, splitLinks, createMetricsFetcher, REFRESH_INTERVAL_CHOICES, parseRefreshInterval, shortcutAction, pickInitialTab, METRIC_UI_MAP, renderMetricNameMap, parseDangerSoundEnabled, dangerSoundDecision, HEALTH_HISTORY_LIMIT, pushPollOutcome, healthHistoryView, COMPARISON_BASELINE_ROLE, PREV_HOUR_AVG_KEYS, readPrevHourAverage, comparisonBaselineSeries, comparisonNote, ACTIVITY_LOG_CAP, capActivityLog, activityStaleNote, restoreActivityLog, topScrapeTargets, SCRAPE_TARGET_EMPTY, ACTIVITY_LEVELS, activityLevelCounts, filterActivityItems, filterActivityMessages, activityFilterStatus, toggleActivityLevel, HISTORY_MAX_POINTS, HISTORY_RAW_POINTS, assertHistoryBound, boundHistoryBuffer, pushHistorySample, enforceHistoryCap, downsampleIndices, grafanaHomeUrl, jobStartedPresentation, DEFAULT_ACCENT, parseAccentColor, accentInk, accentBorder, accentCssVars };
 });

@@ -21,6 +21,9 @@ the reload and may be stale. Closing the tab drops them; Clear drops them
 immediately.
 
 All throughput figures are per minute, computed from the real time between samples (#141).
+Line charts plot at most 50 of those samples (LTTB). The raw buffer keeps 200
+so rates and the overview sparklines still see every poll. The activity log
+stays on the 50-point ring (#1014).
 Labelled series such as `errors_total{stage="stage1"}` are kept under their full key and
 also summed under the bare name (`errors_total`) unless an unlabelled series of that name
 exists (#365).
