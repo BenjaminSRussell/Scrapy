@@ -521,6 +521,7 @@
             read: 'Counter. Rates are items per minute since the previous sample; the Stage 1 card is active when that rate is above 0. Milestones at 1000, 10000, 100000 and 1000000.',
             fields: [
                 { label: 'Top bar · Total URLs', id: 'topbar-urls' },
+                { label: 'Overview · URLs', id: 'overview-kpi-urls' },
                 { label: 'Overview · URLs Found', id: 'overview-s1-discovered' },
                 { label: 'Pipeline · URLs Discovered', id: 'pipeline-s1-discovered' },
                 { label: 'Performance · URLs discovered chart', id: 'urls-chart' },
@@ -586,7 +587,8 @@
             read: 'Counter. Rates are items per minute; the Stage 3 card is active when that rate is above 0. The Stage 4 overview spark uses this sample history, not stage4_large_doc_summaries_total.',
             fields: [
                 { label: 'Top bar · Summaries', id: 'topbar-summaries' },
-                { label: 'Overview · Summaries', id: 'overview-s3-summaries' },
+                { label: 'Overview · Summaries', id: 'overview-kpi-summaries' },
+                { label: 'Overview · Stage 3 Summaries', id: 'overview-s3-summaries' },
                 { label: 'Pipeline · Summaries Created', id: 'pipeline-s3-summaries' },
                 { label: 'Performance · Summaries produced chart', id: 'summaries-chart' },
                 { label: 'Overview · Stage 3 summaries trend', id: 'spark-overview-s3-summaries' },

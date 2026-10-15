@@ -62,6 +62,7 @@ renamed to the new version and date (see the release checklist).
 - `python reseed.py`, `python drain_lake.py`, `python audit_file_counts.py`, and `python monitor_and_trigger_depth.py` at the Scraping_project root. Run `python scripts/<name>.py` from `Scraping_project/` instead. `cli.py` stays the root Python entrypoint (#568).
 
 ### Fixed
+- Control Center Overview keeps URLs and Summaries on screen at 1280×700 and on medium widths: a compact KPI strip sits above the stage cards, those cards stay four-across from 1000px up, and below that Stage 3 stays on the first row ahead of Stage 2 (#989).
 - Stage 2 replicas jitter the 30s poll (`STAGE2_POLL_JITTER_SECONDS`, default ±15s) and take an exclusive Redis lease (`SET stage2:claim:{url_hash} NX EX`) on each pending URL so two workers do not analyze the same batch. If the lease cannot be acquired, including when Redis is down, the URL is not analyzed (#235).
 - Crawl counters and the StatsD families shared by the metrics exporter and in-process callers now use one label set (`stage`, `worker_id`, `domain`, and the existing `site_id` where it was already present). A value that fails the site-id pattern is `rejected`. Series are not dropped, and there is no numeric site cap (#243).
 - Stage 4 entity updates load stored facts for that entity id, append and dedupe them, and rewrite the summary only when that entity's cluster changed. A new document does not recompute unrelated entities (#474).

@@ -200,6 +200,60 @@
             grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr));
         }
 
+        /* #989: URLs and Summaries sit above the stage cards so a wrap cannot
+           push the product KPIs below a 700px fold. */
+        .overview-kpi {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.35rem 1.5rem;
+            align-items: baseline;
+            margin: 0 0 0.75rem;
+            padding: 0.35rem 0.9rem;
+            background: white;
+            border-radius: 0.5rem;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        }
+
+        .overview-kpi-item {
+            display: flex;
+            align-items: baseline;
+            gap: 0.45rem;
+            min-width: 0;
+        }
+
+        .overview-kpi-label {
+            font-size: 0.75rem;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            color: var(--gray-700);
+        }
+
+        .overview-kpi .metric-value {
+            font-size: 1.15rem;
+        }
+
+        /* #989: auto-fit minmax(250px) becomes 3 columns just under 1200px and
+           drops Stage 4 below the fold. Four tracks still fit here. */
+        @media (min-width: 1000px) {
+            #tab-overview > .grid.grid-4 {
+                grid-template-columns: repeat(4, minmax(0, 1fr));
+            }
+
+            #tab-overview > .grid.grid-4 > .card {
+                min-width: 0;
+            }
+        }
+
+        /* #989: two- and three-column wrap. Stage 3 (Summaries) stays on the
+           first row, ahead of Stage 2. One-column phones keep source order. */
+        @media (min-width: 640px) and (max-width: 999px) {
+            #tab-overview > .grid.grid-4 > .card:nth-child(1) { order: 1; }
+            #tab-overview > .grid.grid-4 > .card:nth-child(2) { order: 3; }
+            #tab-overview > .grid.grid-4 > .card:nth-child(3) { order: 2; }
+            #tab-overview > .grid.grid-4 > .card:nth-child(4) { order: 4; }
+        }
+
         .card {
             background: white;
             border-radius: 0.5rem;
@@ -866,6 +920,7 @@
         @media (forced-colors: active) {
             .card,
             .health-item,
+            .overview-kpi,
             .topbar {
                 border: 1px solid CanvasText;
             }
@@ -1090,6 +1145,16 @@
 
             <!-- Overview Tab -->
             <div class="tab-content active" id="tab-overview" role="tabpanel" aria-labelledby="tabbtn-overview" tabindex="0">
+                <div class="overview-kpi" aria-label="Priority KPIs">
+                    <div class="overview-kpi-item">
+                        <span class="overview-kpi-label" id="overview-kpi-urls-label">URLs</span>
+                        <span class="metric-value" id="overview-kpi-urls" aria-labelledby="overview-kpi-urls-label">0</span>
+                    </div>
+                    <div class="overview-kpi-item">
+                        <span class="overview-kpi-label" id="overview-kpi-summaries-label">Summaries</span>
+                        <span class="metric-value success" id="overview-kpi-summaries" aria-labelledby="overview-kpi-summaries-label">0</span>
+                    </div>
+                </div>
                 <div class="grid grid-4">
                     <div class="card">
                         <div class="card-header">

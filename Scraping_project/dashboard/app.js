@@ -695,6 +695,10 @@ function updateDashboard(metrics) {
     // topbar status is owned by setConnectionStatus (#945)
     setMetricText('topbar-urls', formatNumber(s1Discovered));
     setMetricText('topbar-summaries', formatNumber(s3Summaries));
+    // #989: same counters as the top bar, repeated in the overview strip so
+    // they stay on screen when the stage grid wraps.
+    setMetricText('overview-kpi-urls', formatNumber(s1Discovered));
+    setMetricText('overview-kpi-summaries', formatNumber(s3Summaries));
 
     ['overview', 'pipeline'].forEach(prefix => {
         const elem = document.getElementById(`${prefix}-s1-discovered`);
