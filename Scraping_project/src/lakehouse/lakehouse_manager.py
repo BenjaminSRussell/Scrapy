@@ -787,17 +787,24 @@ class LakehouseManager:
 
     def _maybe_gc_queues(self) -> None:
         """Run gc_all_queues() every queue_gc_interval_minutes while idle (#754)."""
-        if self.queue_gc_interval_s <= 0 or self.queue_retention_hours <= 0:
+        # Interval is the switch. Queue-row GC stays off when its TTL is 0, but
+        # file-DLQ and quarantine-table cleanup still run (#632).
+        if self.queue_gc_interval_s <= 0:
             return
         now = time.monotonic()
         if now - self._last_queue_gc < self.queue_gc_interval_s:
             return
         self._last_queue_gc = now
-        try:
-            self.gc_all_queues(self.queue_retention_hours, archive=self.queue_gc_archive)
-        except Exception as e:
-            logger.error(f"Queue GC failed: {e}", exc_info=True)
+        if self.queue_retention_hours > 0:
+            try:
+                self.gc_all_queues(self.queue_retention_hours, archive=self.queue_gc_archive)
+            except Exception as e:
+                logger.error(f"Queue GC failed: {e}", exc_info=True)
         self._cleanup_file_dlq()
+        try:
+            self.gc_quarantine_tables()
+        except Exception as e:
+            logger.error(f"Quarantine table GC failed: {e}", exc_info=True)
         try:
             from src.lakehouse.offsite_review import OffsiteReview
 
@@ -819,6 +826,104 @@ class LakehouseManager:
         except Exception as e:
             logger.error(f"File DLQ cleanup failed: {e}", exc_info=True)
             return 0
+
+    def gc_quarantine_tables(
+        self,
+        *,
+        dry_run: bool = False,
+        now: datetime | None = None,
+    ) -> list[dict[str, Any]]:
+        """Delete quarantine rows older than their tier, then vacuum that table (#632).
+
+        Only names in ``delta_lake.table_retention_hours`` other than ``default``
+        are touched, so silver and gold rows are not deleted. A full-lake vacuum
+        schedule stays #266. A tier ``<= 0`` keeps every row (forensic hold).
+        Rows are removed by the ``date`` partition (``YYYY-MM-DD``); a row with
+        no ``date`` is kept. ``dry_run`` counts matches and writes nothing.
+        """
+        moment = now or datetime.now(UTC)
+        if moment.tzinfo is None:
+            moment = moment.replace(tzinfo=UTC)
+        results: list[dict[str, Any]] = []
+        for table_name, raw_hours in self.table_retention_hours.items():
+            if table_name == "default":
+                continue
+            hours = int(raw_hours)
+            try:
+                results.append(
+                    self._gc_one_quarantine_table(table_name, hours, dry_run=dry_run, now=moment)
+                )
+            except Exception as e:
+                logger.error(f"Quarantine GC failed for {table_name}: {e}", exc_info=True)
+                results.append({
+                    "table": table_name,
+                    "retention_hours": hours,
+                    "matched": 0,
+                    "deleted": 0,
+                    "vacuumed": False,
+                    "skipped": f"error: {e}",
+                })
+        return results
+
+    def _gc_one_quarantine_table(
+        self,
+        table_name: str,
+        hours: int,
+        *,
+        dry_run: bool,
+        now: datetime,
+    ) -> dict[str, Any]:
+        result: dict[str, Any] = {
+            "table": table_name,
+            "retention_hours": hours,
+            "matched": 0,
+            "deleted": 0,
+            "vacuumed": False,
+            "skipped": None,
+        }
+        if hours <= 0:
+            result["skipped"] = "retention disabled"
+            return result
+        if DeltaTable is None or pa is None:
+            result["skipped"] = "deltalake/pyarrow not installed"
+            return result
+        table_path = Path(self.tables.get(table_name) or (self.base_path / table_name))
+        if not (table_path / "_delta_log").exists():
+            result["skipped"] = "table does not exist"
+            return result
+
+        cutoff = (now - timedelta(hours=hours)).astimezone(UTC).strftime("%Y-%m-%d")
+        dt = DeltaTable(str(table_path))
+        schema = pa.schema(dt.schema().to_arrow())
+        if "date" not in schema.names:
+            result["skipped"] = "no date column"
+        else:
+            ctype = schema.field("date").type
+            if not (pa.types.is_string(ctype) or pa.types.is_large_string(ctype)):
+                result["skipped"] = f"unsupported date type {ctype}"
+            else:
+                import pyarrow.compute as pc
+
+                column = dt.to_pyarrow_table(columns=["date"])["date"]
+                mask = pc.and_(pc.is_valid(column), pc.less(column, pa.scalar(cutoff)))
+                summed = pc.sum(mask.cast(pa.int64())).as_py()
+                result["matched"] = int(summed or 0)
+                if not dry_run and result["matched"]:
+                    predicate = f"date < '{cutoff}'"
+                    holder: dict[str, int] = {"n": result["matched"]}
+
+                    def _delete(table, predicate=predicate, holder=holder):
+                        metrics = table.delete(predicate) or {}
+                        counted = metrics.get("num_deleted_rows")
+                        if counted is not None:
+                            holder["n"] = int(counted or 0)
+
+                    self._maintenance_commit(table_name, "quarantine_gc", _delete)
+                    result["deleted"] = holder["n"]
+        if not dry_run:
+            self._vacuum_table(table_name, hours, enforce_retention_duration=hours >= 168)
+            result["vacuumed"] = True
+        return result
 
     def _process_queue(self):
         # Drain until the shutdown sentinel (#166): batches queued before
