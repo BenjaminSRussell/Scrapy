@@ -1540,7 +1540,42 @@ function visibleTabNames() {
         .map(b => b.getAttribute('data-tab'));
 }
 
-// #952/#1010: 1-5 switch tabs, R refreshes (see shortcutAction in format-utils.js).
+// #952/#1010/#1008: 1-5 switch tabs, R refreshes, ? lists them (format-utils.js).
+function shortcutMapDialog() {
+    return document.getElementById('shortcut-map');
+}
+
+function fillShortcutMap() {
+    const rows = document.getElementById('shortcut-map-rows');
+    if (!rows || typeof shortcutMapEntries !== 'function') return;
+    rows.replaceChildren();
+    for (const entry of shortcutMapEntries(visibleTabNames().length)) {
+        const tr = document.createElement('tr');
+        const keyCell = document.createElement('th');
+        keyCell.scope = 'row';
+        const kbd = document.createElement('kbd');
+        kbd.textContent = entry.keys;
+        keyCell.appendChild(kbd);
+        const actionCell = document.createElement('td');
+        actionCell.textContent = entry.action;
+        tr.append(keyCell, actionCell);
+        rows.appendChild(tr);
+    }
+}
+
+function openShortcutMap() {
+    const dlg = shortcutMapDialog();
+    if (!dlg || dlg.open) return;
+    fillShortcutMap();
+    if (typeof dlg.showModal === 'function') dlg.showModal();
+    else dlg.setAttribute('open', '');
+}
+
+function closeShortcutMap() {
+    const dlg = shortcutMapDialog();
+    if (dlg && dlg.open) dlg.close();
+}
+
 function setupShortcuts() {
     visibleTabNames().forEach((name, i) => {
         const btn = document.querySelector(`.tab-button[data-tab="${name}"]`);
@@ -1550,11 +1585,33 @@ function setupShortcuts() {
     if (manualBtn) manualBtn.setAttribute('aria-keyshortcuts', 'R');
     const hint = document.getElementById('shortcut-hint');
     if (hint) hint.textContent = shortcutHintText(visibleTabNames().length);  // #503
+    const closeBtn = document.getElementById('shortcut-map-close');
+    if (closeBtn) closeBtn.addEventListener('click', closeShortcutMap);
     document.addEventListener('keydown', (event) => {
         // Stage drill-down owns the keyboard while it is open (#1033).
         if (stageDrilldownIsOpen()) return;
         const action = shortcutAction(event, visibleTabNames());
         if (!action) return;
+        const dlg = shortcutMapDialog();
+        if (action.type === 'dismiss') {
+            if (dlg && dlg.open) {
+                event.preventDefault();
+                closeShortcutMap();
+            }
+            return;
+        }
+        if (action.type === 'help') {
+            event.preventDefault();
+            if (event.repeat) return;
+            if (dlg && dlg.open) closeShortcutMap();
+            else openShortcutMap();
+            return;
+        }
+        // The map is modal: tab and refresh keys wait until it is closed.
+        if (dlg && dlg.open) {
+            event.preventDefault();
+            return;
+        }
         event.preventDefault();
         if (action.type === 'tab') {
             activateTab(action.tab, true);

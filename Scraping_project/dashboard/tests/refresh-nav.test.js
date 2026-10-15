@@ -1,12 +1,12 @@
 'use strict';
-// #1031 #1032 #963 #1015 #1010 #952 #1034 #953
+// #1031 #1032 #963 #1015 #1010 #952 #1034 #953 #1008
 const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('node:fs');
 const path = require('node:path');
 const {
     createMetricsFetcher, createRefreshScheduler, parseRefreshInterval,
-    REFRESH_INTERVAL_CHOICES, shortcutAction, pickInitialTab,
+    REFRESH_INTERVAL_CHOICES, shortcutAction, shortcutMapEntries, pickInitialTab,
 } = require('../format-utils.js');
 
 function fakeTimers() {
@@ -129,11 +129,34 @@ test('shortcuts ignore modifiers, form fields, IME and handled events', () => {
     assert.strictEqual(shortcutAction(key('1', { altKey: true }), TABS), null);
     for (const tagName of ['INPUT', 'TEXTAREA', 'SELECT', 'input']) {
         assert.strictEqual(shortcutAction({ key: '1', target: { tagName } }, TABS), null);
+        assert.strictEqual(shortcutAction({ key: '?', target: { tagName } }, TABS), null);
     }
     assert.strictEqual(shortcutAction({ key: 'r', target: { tagName: 'DIV', isContentEditable: true } }, TABS), null);
     assert.strictEqual(shortcutAction(key('1', { isComposing: true }), TABS), null);
     assert.strictEqual(shortcutAction(key('1', { defaultPrevented: true }), TABS), null);
     assert.strictEqual(shortcutAction(key('x'), TABS), null);
+});
+
+test('? opens the shortcut map and Escape dismisses it (#1008)', () => {
+    assert.deepStrictEqual(shortcutAction(key('?'), TABS), { type: 'help' });
+    assert.deepStrictEqual(shortcutAction(key('?', { shiftKey: true }), TABS), { type: 'help' });
+    assert.deepStrictEqual(shortcutAction(key('Escape'), TABS), { type: 'dismiss' });
+    assert.deepStrictEqual(shortcutAction(key('Esc'), TABS), { type: 'dismiss' });
+    assert.strictEqual(shortcutAction(key('?', { ctrlKey: true }), TABS), null);
+    assert.strictEqual(shortcutAction(key('Escape', { altKey: true }), TABS), null);
+    const rows = shortcutMapEntries(5);
+    assert.deepStrictEqual(rows[0], { keys: '1\u20135', action: 'Switch tabs' });
+    assert.ok(rows.some(r => r.keys === 'R' && /refresh/i.test(r.action)));
+    assert.deepStrictEqual(shortcutMapEntries(1)[0], { keys: '1', action: 'Switch tabs' });
+    assert.strictEqual(shortcutMapEntries(0).some(r => r.action === 'Switch tabs'), false);
+    assert.ok(shortcutMapEntries(12).some(r => r.keys === '1\u20139'));
+    assert.match(html, /<dialog id="shortcut-map"/);
+    assert.match(html, /id="shortcut-map-rows"/);
+    assert.match(html, /id="shortcut-map-close"/);
+    assert.match(app, /openShortcutMap\(\)/);
+    assert.match(app, /dlg\.showModal\(\)/);
+    assert.match(app, /closeShortcutMap\(\)/);
+    assert.match(app, /shortcutMapEntries\(visibleTabNames\(\)\.length\)/);
 });
 
 test('initial tab: deep link wins, then remembered, invalid ignored (#1034)', () => {
@@ -183,10 +206,10 @@ test('a timed-out metrics request is logged as its own activity type (#767)', ()
 
 test('digit shortcuts have a small on-screen hint that tracks the visible tabs (#503)', () => {
     const { shortcutHintText } = require('../format-utils.js');
-    assert.strictEqual(shortcutHintText(5), 'Shortcuts: 1\u20135 switch tabs \u00b7 R refresh');
-    assert.strictEqual(shortcutHintText(1), 'Shortcuts: 1 switch tabs \u00b7 R refresh');
-    assert.strictEqual(shortcutHintText(12), 'Shortcuts: 1\u20139 switch tabs \u00b7 R refresh');
-    assert.strictEqual(shortcutHintText(0), 'Shortcut: R refresh');
+    assert.strictEqual(shortcutHintText(5), 'Shortcuts: 1\u20135 switch tabs \u00b7 R refresh \u00b7 ? list');
+    assert.strictEqual(shortcutHintText(1), 'Shortcuts: 1 switch tabs \u00b7 R refresh \u00b7 ? list');
+    assert.strictEqual(shortcutHintText(12), 'Shortcuts: 1\u20139 switch tabs \u00b7 R refresh \u00b7 ? list');
+    assert.strictEqual(shortcutHintText(0), 'Shortcut: R refresh \u00b7 ? list');
     assert.match(html, /<p class="shortcut-hint" id="shortcut-hint">/);
     assert.match(app, /hint\.textContent = shortcutHintText\(visibleTabNames\(\)\.length\)/);
 });
