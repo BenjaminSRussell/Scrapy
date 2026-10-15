@@ -805,6 +805,76 @@
             border-color: var(--primary-dark);
         }
 
+        /* #979: info button + popover for the live metrics endpoint and interval.
+           Opens upward from the sticky refresh bar so it is not clipped by the
+           viewport bottom. */
+        .connection-details {
+            position: relative;
+        }
+        .connection-details-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 2.25rem;
+            height: 2.25rem;
+            padding: 0;
+            border: 1px solid var(--gray-300);
+            border-radius: 999px;
+            background: white;
+            color: var(--gray-800);
+            cursor: pointer;
+        }
+        .connection-details-btn .ui-icon {
+            width: 1.15rem;
+            height: 1.15rem;
+            margin-right: 0;
+        }
+        .connection-details-btn[aria-expanded="true"] {
+            border-color: var(--primary);
+            color: var(--primary-dark);
+        }
+        .connection-details-popover {
+            position: absolute;
+            z-index: 2;
+            left: 0;
+            bottom: calc(100% + 0.5rem);
+            width: max-content;
+            max-width: min(24rem, 80vw);
+            margin: 0;
+            padding: 0.75rem 1rem;
+            background: white;
+            color: var(--gray-900);
+            border: 1px solid var(--gray-300);
+            border-radius: 0.5rem;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+        }
+        .connection-details-popover[hidden] { display: none; }
+        .connection-details-title {
+            margin: 0 0 0.5rem;
+            font-size: 0.75rem;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            color: var(--gray-700);
+        }
+        .connection-details-list { margin: 0; }
+        .connection-details-list div + div { margin-top: 0.5rem; }
+        .connection-details-list dt {
+            font-size: 0.75rem;
+            color: var(--muted-text);
+        }
+        .connection-details-list dd {
+            margin: 0.1rem 0 0;
+            font-size: 0.95rem;
+            font-weight: 700;
+            overflow-wrap: anywhere;
+        }
+        #connection-details-endpoint {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+            font-size: 0.85rem;
+            font-weight: 600;
+        }
+
         @media (max-width: 1024px) {
             .stage-pipeline {
                 grid-template-columns: repeat(2, 1fr);
@@ -1002,10 +1072,15 @@
                 outline: 3px solid Highlight;
                 outline-offset: 2px;
             }
-            .stage-drilldown-panel {
+            .stage-drilldown-panel,
+            .connection-details-popover,
+            .connection-details-btn {
                 border: 2px solid CanvasText;
                 background: Canvas;
                 color: CanvasText;
+            }
+            .connection-details-btn[aria-expanded="true"] {
+                border-color: Highlight;
             }
             .stage-drilldown-link {
                 color: LinkText;
@@ -1747,6 +1822,24 @@
         <div class="refresh-bar">
             <div id="refresh-status" class="visually-hidden" role="status" aria-live="polite" aria-atomic="true"></div>
             <div id="activity-announce" class="visually-hidden" role="log" aria-live="polite" aria-relevant="additions" aria-atomic="false" aria-label="New activity"></div>
+            <div class="connection-details">
+                <button type="button" id="connection-details-btn" class="btn connection-details-btn" aria-expanded="false" aria-haspopup="dialog" aria-controls="connection-details-popover" aria-label="Connection details">
+                    <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 8h.01"/></svg>
+                </button>
+                <div id="connection-details-popover" class="connection-details-popover" role="dialog" aria-labelledby="connection-details-title" aria-describedby="connection-details-list" tabindex="-1" hidden>
+                    <p id="connection-details-title" class="connection-details-title">Connection details</p>
+                    <dl id="connection-details-list" class="connection-details-list">
+                        <div>
+                            <dt>Metrics endpoint</dt>
+                            <dd id="connection-details-endpoint"></dd>
+                        </div>
+                        <div>
+                            <dt>Refresh interval</dt>
+                            <dd id="connection-details-interval">5s</dd>
+                        </div>
+                    </dl>
+                </div>
+            </div>
             <div class="refresh-info">Updated <span id="last-updated-rel">never</span>
                 <span id="stale-badge" class="stale-badge" hidden title="No successful metrics fetch for several refresh intervals">Stale</span> · 
                 Auto-refresh: <span class="refresh-countdown" id="refresh-countdown">5</span> seconds

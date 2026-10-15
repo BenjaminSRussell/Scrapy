@@ -1,11 +1,15 @@
 // Pipeline Control Center - Main Application
 // Real-time monitoring dashboard for UConn scraping pipeline
 
-// #141/#400: window.CC_METRICS_URL, ?metrics=, else same-origin /api/metrics (format-utils.js).
-const METRICS_URL = resolveMetricsUrl(
-    typeof location !== 'undefined' ? location : null,
-    (typeof window !== 'undefined' && window.CC_METRICS_URL) || null
-);
+// #141/#400/#979: re-read on each poll and popover paint. Precedence is
+// window.CC_METRICS_URL, then ?metrics=, else same-origin /api/metrics
+// (format-utils.js). A change is what the next fetch and the popover show.
+function metricsUrl() {
+    return resolveMetricsUrl(
+        typeof location !== 'undefined' ? location : null,
+        (typeof window !== 'undefined' && window.CC_METRICS_URL) || null
+    );
+}
 const REFRESH_INTERVAL = 5000;
 const METRICS_TIMEOUT_MS = 4000; // #1032
 const STORE_TAB_KEY = 'cc.lastTab'; // #1034
@@ -1081,7 +1085,7 @@ async function fetchMetrics() {
         if (!metricsFetcher) {
             metricsFetcher = createMetricsFetcher({ fetch: (u, init) => fetch(u, init), timeoutMs: METRICS_TIMEOUT_MS });
         }
-        const text = await metricsFetcher.fetchText(METRICS_URL);
+        const text = await metricsFetcher.fetchText(metricsUrl());
         const parseStarted = clockMs();
         const metrics = parseMetrics(text);
         const decision = advanceMetricsFlood(metricsFlood, {
@@ -1455,6 +1459,7 @@ function setupIntervalControl() {
         const v = parseRefreshInterval(select.value, REFRESH_INTERVAL);
         refreshScheduler.setInterval(v);
         storeSet(STORE_INTERVAL_KEY, v);
+        renderConnectionDetails();
         renderCountdown();
         const live = document.getElementById('refresh-status');
         if (live) live.textContent = `Auto-refresh every ${v / 1000} seconds`;
@@ -1603,7 +1608,69 @@ function renderCountdown() {
     }
     const rel = document.getElementById('last-updated-rel');
     if (rel) rel.textContent = formatRelative(lastMetricsAt);
+    renderConnectionDetails();
     renderStale();
+}
+
+// #979: info popover. Recomputed from the live endpoint and the scheduler
+// interval so a new CC_METRICS_URL, ?metrics=, or picker value replaces the
+// text instead of leaving the value from page load.
+function renderConnectionDetails() {
+    if (typeof connectionDetails !== 'function') return null;
+    const interval = refreshScheduler ? refreshScheduler.getInterval() : REFRESH_INTERVAL;
+    const view = connectionDetails(metricsUrl(), interval);
+    const endpoint = document.getElementById('connection-details-endpoint');
+    const intervalEl = document.getElementById('connection-details-interval');
+    if (endpoint && endpoint.textContent !== view.endpoint) endpoint.textContent = view.endpoint;
+    if (intervalEl && intervalEl.textContent !== view.intervalLabel) intervalEl.textContent = view.intervalLabel;
+    return view;
+}
+
+function connectionDetailsIsOpen() {
+    const pop = document.getElementById('connection-details-popover');
+    return !!(pop && !pop.hidden);
+}
+
+function setConnectionDetailsOpen(open) {
+    const btn = document.getElementById('connection-details-btn');
+    const pop = document.getElementById('connection-details-popover');
+    if (!btn || !pop) return;
+    const view = open ? renderConnectionDetails() : null;
+    pop.hidden = !open;
+    btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (open) {
+        const live = document.getElementById('refresh-status');
+        if (live && view) {
+            live.textContent = `Metrics endpoint ${view.endpoint}, refresh interval ${view.intervalLabel}`;
+        }
+        pop.focus();
+    } else if (document.activeElement === pop) {
+        btn.focus();
+    }
+}
+
+function setupConnectionDetails() {
+    const btn = document.getElementById('connection-details-btn');
+    const pop = document.getElementById('connection-details-popover');
+    if (!btn || !pop) return;
+    renderConnectionDetails();
+    btn.addEventListener('click', () => {
+        setConnectionDetailsOpen(!connectionDetailsIsOpen());
+    });
+    document.addEventListener('click', (event) => {
+        if (!connectionDetailsIsOpen()) return;
+        const host = event.target && event.target.closest && event.target.closest('.connection-details');
+        if (host) return;
+        setConnectionDetailsOpen(false);
+    });
+    // Capture so Escape dismisses this popover before the stage panel.
+    document.addEventListener('keydown', (event) => {
+        if (event.key !== 'Escape' || !connectionDetailsIsOpen()) return;
+        event.preventDefault();
+        event.stopPropagation();
+        setConnectionDetailsOpen(false);
+        btn.focus();
+    }, true);
 }
 
 function startCountdown() {
@@ -1823,6 +1890,7 @@ function initialize() {
     setupComparisonToggle();
     refreshScheduler = createRefreshScheduler({ interval: REFRESH_INTERVAL, fetch: fetchAndAnnounce });
     setupIntervalControl();
+    setupConnectionDetails();
     setupVisibilityPause();
     setupDangerSound();
     startCountdown();
