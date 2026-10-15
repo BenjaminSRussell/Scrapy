@@ -83,6 +83,8 @@ UPSTREAM_MAX_BYTES = 8 * 1024 * 1024
 # is the only Redis-backed work queue (stage 2-4 queues are Delta tables / Kafka).
 DEFAULT_QUEUE_KEYS = ("js_spider:priority_queue",)
 _LENGTH_OPS = {"list": "llen", "zset": "zcard", "set": "scard", "stream": "xlen", "hash": "hlen"}
+# #635: POST /api/sql body cap. The query itself is also capped in sql_query.py.
+SQL_BODY_MAX = 16 * 1024
 
 
 def grafana_base_url(env=None) -> str:
@@ -343,7 +345,7 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             self.send_header("Access-Control-Allow-Origin", origin)
             self.send_header("Vary", "Origin")
         if self.cors_origins:
-            self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
+            self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
             self.send_header("Access-Control-Allow-Headers", "Authorization, Content-Type")
         self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
         self.send_header("Content-Security-Policy", self.csp or build_csp({}))
@@ -420,7 +422,64 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             return
         self._send_json(200, {"ok": True, "queues": queues, "checked_at": time.time()})
 
-    API_ROUTES = {"/api/metrics": "_api_metrics", "/api/health": "_api_health", "/api/queues": "_api_queues"}
+    def _api_sql(self) -> None:
+        # #635: read-only Delta SQL. Off unless LAKE_SQL_ENABLED. GET does not run SQL.
+        try:
+            mod = _lake_sql_module()
+        except Exception:
+            self._send_json(503, {"ok": False, "error": "lake sql unavailable"})
+            return
+        try:
+            self._send_json(200, mod.status())
+        except Exception:
+            self._send_json(503, {"ok": False, "error": "lake sql unavailable"})
+
+    def _api_sql_post(self) -> None:
+        body, err = self._capped_body(SQL_BODY_MAX)
+        if err is not None:
+            self._send_json(err[0], err[1])
+            return
+        try:
+            mod = _lake_sql_module()
+        except Exception:
+            self._send_json(503, {"ok": False, "error": "lake sql unavailable"})
+            return
+        if not mod.enabled():
+            self._send_json(403, {"ok": False, "error": "disabled"})
+            return
+        try:
+            payload = json.loads(body.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            self._send_json(400, {"ok": False, "error": "invalid JSON"})
+            return
+        if not isinstance(payload, dict) or not isinstance(payload.get("sql"), str):
+            self._send_json(400, {"ok": False, "error": "sql must be a string"})
+            return
+        status, result = mod.run_http(payload["sql"])
+        self._send_json(status, result)
+
+    def _capped_body(self, limit: int) -> tuple[bytes, tuple[int, dict] | None]:
+        raw = self.headers.get("Content-Length")
+        if raw is None:
+            return b"", (400, {"ok": False, "error": "Content-Length required"})
+        try:
+            length = int(raw)
+        except ValueError:
+            return b"", (400, {"ok": False, "error": "invalid Content-Length"})
+        if length < 0 or length > limit:
+            self.close_connection = True
+            return b"", (413, {"ok": False, "error": "body too large"})
+        try:
+            return self.rfile.read(length), None
+        except Exception:
+            return b"", (400, {"ok": False, "error": "could not read body"})
+
+    API_ROUTES = {
+        "/api/metrics": "_api_metrics",
+        "/api/health": "_api_health",
+        "/api/queues": "_api_queues",
+        "/api/sql": "_api_sql",
+    }
 
     def do_OPTIONS(self):
         self._cfg()
@@ -465,6 +524,25 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             self._send_bytes(200, body, 'application/javascript; charset=utf-8')
             return
         return super().do_GET()
+
+    def do_POST(self):
+        if not self._guard():
+            return
+        route = urlsplit(self.path).path
+        if route == "/api/sql":
+            self._api_sql_post()
+            return
+        self.send_error(405, "Method Not Allowed")
+
+
+def _lake_sql_module():
+    """Import the lake SQL helper. ``src`` is not on path when serve.py is the script."""
+    root = str(Path(__file__).resolve().parents[1])
+    if root not in sys.path:
+        sys.path.append(root)
+    from src.lakehouse import sql_query
+
+    return sql_query
 
 
 class DashboardServer(socketserver.ThreadingTCPServer):
@@ -534,6 +612,7 @@ def main(argv=None):
     print()
     print(f"📊 Dashboard:  http://{shown}:{port}")
     print(f"📈 Metrics:    /api/metrics -> {DashboardHandler.metrics_upstream}  (METRICS_UPSTREAM)")
+    print("🔎 Lake SQL:   /api/sql (off unless LAKE_SQL_ENABLED=1)")
     print(f"🔐 Auth:       {'on' if DashboardHandler.auth and DashboardHandler.auth.enabled else 'off (CC_AUTH_TOKEN / CC_BASIC_AUTH)'}")
     print(f"📉 Grafana:    {DashboardHandler.grafana_url or grafana_base_url()} (separate analytics)")
     print()

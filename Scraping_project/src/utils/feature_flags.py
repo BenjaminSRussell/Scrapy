@@ -120,6 +120,10 @@ FLAGS: dict[str, tuple[Any, str]] = {
         False,
         "Reuse a cached Stage 2 HTML body (url_hash + ETag/Last-Modified) and skip the fetch (#478).",
     ),
+    "LAKE_SQL_ENABLED": (
+        False,
+        "Read-only SELECT over Delta tables via optional DuckDB (POST /api/sql) (#635).",
+    ),
 }
 
 
