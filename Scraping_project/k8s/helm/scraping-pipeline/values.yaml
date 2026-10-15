@@ -523,6 +523,24 @@ metricsExporter:
     port: 9100
     interval: 5
 
+  # Optional mTLS on the Prometheus scrape of this exporter (#678).
+  # Off: plain HTTP, which is what docker compose and a default Helm install
+  # use. Compose does not scrape this process (monitoring/prometheus.yml).
+  # On: cert-manager issues a server cert and a Prometheus client cert from
+  # the same internal CA. /metrics then requires that client cert. Kubelet
+  # probes use HTTPS /healthz and do not present a client cert. Do not point
+  # issuerRef at the public Let's Encrypt ingress issuer. See k8s/README.md.
+  mtls:
+    enabled: false
+    issueCerts: true
+    issuerRef:
+      name: ""
+      kind: ClusterIssuer
+      group: cert-manager.io
+    serverSecretName: ""
+    clientSecretName: ""
+    serverName: ""
+
 # ============================================
 # Exporters for Monitoring
 # ============================================

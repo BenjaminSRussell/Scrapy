@@ -45,6 +45,14 @@ data:
       - job_name: 'scraping_pipeline'
         scrape_interval: {{ .Values.prometheus.config.scrapeInterval }}
         scrape_timeout: 3s
+{{ if and .Values.metricsExporter.enabled .Values.metricsExporter.mtls.enabled }}
+        scheme: https
+        tls_config:
+          ca_file: /etc/prometheus-mtls/ca.crt
+          cert_file: /etc/prometheus-mtls/tls.crt
+          key_file: /etc/prometheus-mtls/tls.key
+          server_name: {{ include "scraping-pipeline.metricsExporterMtlsServerName" . | quote }}
+{{ end }}
         static_configs:
           - targets:
               - '{{ $fullname }}-metrics-exporter:{{ .Values.metricsExporter.service.port }}'
@@ -189,12 +197,22 @@ spec:
           mountPath: /etc/prometheus
         - name: data
           mountPath: /prometheus
+{{ if and .Values.metricsExporter.enabled .Values.metricsExporter.mtls.enabled }}
+        - name: metrics-exporter-mtls
+          mountPath: /etc/prometheus-mtls
+          readOnly: true
+{{ end }}
         resources:
           {{- toYaml .Values.prometheus.resources | nindent 10 }}
       volumes:
       - name: config
         configMap:
           name: {{ $fullname }}-prometheus-config
+{{ if and .Values.metricsExporter.enabled .Values.metricsExporter.mtls.enabled }}
+      - name: metrics-exporter-mtls
+        secret:
+          secretName: {{ include "scraping-pipeline.metricsExporterMtlsClientSecret" . }}
+{{ end }}
   volumeClaimTemplates:
   - metadata:
       name: data

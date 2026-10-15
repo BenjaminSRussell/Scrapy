@@ -35,20 +35,35 @@ spec:
           protocol: TCP
         livenessProbe:
           httpGet:
-            path: /metrics
+            path: {{ if .Values.metricsExporter.mtls.enabled }}/healthz{{ else }}/metrics{{ end }}
             port: http
+            {{- if .Values.metricsExporter.mtls.enabled }}
+            scheme: HTTPS
+            {{- end }}
           initialDelaySeconds: 30
           periodSeconds: 10
           timeoutSeconds: 5
           failureThreshold: 3
         readinessProbe:
           httpGet:
-            path: /metrics
+            path: {{ if .Values.metricsExporter.mtls.enabled }}/healthz{{ else }}/metrics{{ end }}
             port: http
+            {{- if .Values.metricsExporter.mtls.enabled }}
+            scheme: HTTPS
+            {{- end }}
           initialDelaySeconds: 15
           periodSeconds: 10
           timeoutSeconds: 5
           failureThreshold: 3
+        {{- if .Values.metricsExporter.mtls.enabled }}
+        env:
+        - name: METRICS_EXPORTER_TLS_CERT
+          value: /etc/metrics-exporter/tls/tls.crt
+        - name: METRICS_EXPORTER_TLS_KEY
+          value: /etc/metrics-exporter/tls/tls.key
+        - name: METRICS_EXPORTER_TLS_CA
+          value: /etc/metrics-exporter/tls/ca.crt
+        {{- end }}
         envFrom:
         - configMapRef:
             name: {{ include "scraping-pipeline.fullname" . }}-app-env
@@ -63,10 +78,20 @@ spec:
         volumeMounts:
         - name: delta-data
           mountPath: /app/data
+        {{- if .Values.metricsExporter.mtls.enabled }}
+        - name: metrics-tls
+          mountPath: /etc/metrics-exporter/tls
+          readOnly: true
+        {{- end }}
       volumes:
       - name: delta-data
         persistentVolumeClaim:
           claimName: {{ include "scraping-pipeline.fullname" . }}-delta-lake
+      {{- if .Values.metricsExporter.mtls.enabled }}
+      - name: metrics-tls
+        secret:
+          secretName: {{ include "scraping-pipeline.metricsExporterMtlsServerSecret" . }}
+      {{- end }}
 ---
 apiVersion: v1
 kind: Service

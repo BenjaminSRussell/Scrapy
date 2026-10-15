@@ -8,6 +8,9 @@
 # The full stack (Kafka, kafka-delta-ingest, statsd-exporter, metrics-exporter,
 # Alertmanager cluster) runs under Helm, which renders its own config:
 #   k8s/helm/scraping-pipeline/templates/prometheus-statefulset.yaml
+# That metrics-exporter scrape is plain HTTP unless metricsExporter.mtls.enabled
+# is set (default false). This compose file stays plain HTTP either way, and
+# it does not scrape the exporter. cert-manager setup: k8s/README.md (#678).
 # Rules are shared, so alerts on Helm-only jobs (e.g. up{job="kafka_jmx"})
 # simply have no series here and stay inactive.
 global:

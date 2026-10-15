@@ -14,6 +14,8 @@ Monitoring has three parts: metrics (Prometheus, shown in Grafana), alerts (Prom
 
 Grafana provisions its datasources and dashboards from `monitoring/grafana_*.yml` and `monitoring/dashboards/`. If a dashboard is empty, check *Status → Targets* in Prometheus first. A target that is `down` means the service isn't running or its port changed.
 
+Docker Compose does not run the metrics exporter, and every job in `monitoring/prometheus.yml` stays plain HTTP. The Helm chart scrapes that exporter over HTTP unless `metricsExporter.mtls.enabled` is true. The flag defaults off, so turning the feature on in a cluster does not change Compose. cert-manager issuer, Certificates, and the Prometheus `tls_config` are in [k8s/README.md](../../k8s/README.md) (#678).
+
 ## Reading the main dashboard
 
 | Row | Panels | Healthy looks like |
