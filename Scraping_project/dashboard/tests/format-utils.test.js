@@ -16,6 +16,12 @@ test('formatNumber thresholds', () => {
     assert.strictEqual(formatNumber(2500000), '2.5M');
 });
 
+test('formatPreciseNumber does not abbreviate (#965)', () => {
+    const { formatPreciseNumber } = require('../format-utils.js');
+    assert.strictEqual(formatPreciseNumber(2500000), '2,500,000');
+    assert.notStrictEqual(formatPreciseNumber(2500000), formatNumber(2500000));
+});
+
 test('formatBytes thresholds', () => {
     assert.strictEqual(formatBytes(512), '512 B');
     assert.strictEqual(formatBytes(2048), '2.00 KB');
