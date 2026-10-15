@@ -62,6 +62,7 @@ renamed to the new version and date (see the release checklist).
 - `python reseed.py`, `python drain_lake.py`, `python audit_file_counts.py`, and `python monitor_and_trigger_depth.py` at the Scraping_project root. Run `python scripts/<name>.py` from `Scraping_project/` instead. `cli.py` stays the root Python entrypoint (#568).
 
 ### Fixed
+- Control Center activity lines are built only by `formatActivity(type, template, params)`. Counts use the shared number formatter (1,500 is shown as 1.5K). `<` and `>` in metric-derived or error text are escaped to `&lt;` and `&gt;` before the line is stored; the feed still renders that text with `textContent` (#984).
 - Control Center keeps the last 50 activity-log entries in `sessionStorage` for this browser tab. A reload restores them and shows a note that they are from before the reload and may be stale. Clear drops the buffer (#1029).
 - Stage 2 replicas jitter the 30s poll (`STAGE2_POLL_JITTER_SECONDS`, default ±15s) and take an exclusive Redis lease (`SET stage2:claim:{url_hash} NX EX`) on each pending URL so two workers do not analyze the same batch. If the lease cannot be acquired, including when Redis is down, the URL is not analyzed (#235).
 - Crawl counters and the StatsD families shared by the metrics exporter and in-process callers now use one label set (`stage`, `worker_id`, `domain`, and the existing `site_id` where it was already present). A value that fails the site-id pattern is `rejected`. Series are not dropped, and there is no numeric site cap (#243).

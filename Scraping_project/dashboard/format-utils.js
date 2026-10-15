@@ -418,13 +418,61 @@
         if (o.announced === false) return { play: false, reason: 'repeat' };
         return { play: true, reason: 'danger' };
     }
+    // #984: activity text is plain text (textContent). `<` and `>` from a
+    // metric or error string are escaped so the stored line cannot be a tag
+    // if it is later copied into HTML. Quotes and `&` stay, so a rejected
+    // ?metrics= value remains readable. A second pass is a no-op.
+    function escapeActivityText(value) {
+        return String(value)
+            .replace(/[\u0000-\u001F\u007F]/g, ' ')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
+    }
+    // Counts use formatNumber. A short non-integer (timeout seconds) keeps
+    // its decimals; NaN and Infinity become 0 rather than "NaN" or an object
+    // string.
+    function safeActivityNumber(num) {
+        if (typeof num !== 'number' || !Number.isFinite(num)) return '0';
+        if (!Number.isInteger(num) && Math.abs(num) < 1000) {
+            const text = String(Math.round(num * 1000) / 1000);
+            return /^-?\d+(\.\d+)?$/.test(text) ? text : '0';
+        }
+        return formatNumber(num);
+    }
+    function formatActivityValue(value) {
+        if (value == null) return '';
+        if (typeof value === 'number') return safeActivityNumber(value);
+        if (typeof value === 'bigint') return safeActivityNumber(Number(value));
+        if (typeof value === 'boolean') return value ? 'true' : 'false';
+        if (typeof value === 'string') return escapeActivityText(value);
+        return '';
+    }
+    // #984: every activity line. `template` is a trusted literal with {name}
+    // holes; only `params` are formatted. Unknown types become info.
+    function formatActivity(type, template, params) {
+        const rawType = typeof type === 'string' ? type : '';
+        const safeType = /^[a-z][a-z0-9-]{0,31}$/.test(rawType) ? rawType : 'info';
+        const tpl = typeof template === 'string' ? template : '';
+        const bag = params && typeof params === 'object' ? params : null;
+        let message = tpl;
+        if (bag) {
+            message = tpl.replace(/\{([A-Za-z_][A-Za-z0-9_]*)\}/g, (full, name) => {
+                if (!Object.prototype.hasOwnProperty.call(bag, name)) return full;
+                return formatActivityValue(bag[name]);
+            });
+        }
+        message = escapeActivityText(message).slice(0, ACTIVITY_LOG_TEXT_MAX);
+        return { type: safeType, message };
+    }
     // #767: a timed-out metrics request is its own activity type, not a generic error.
     function metricsFailureActivity(error, timeoutMs) {
         if (error && error.timedOut) {
             const secs = Math.round((Number(timeoutMs) || 0) / 100) / 10;
-            return { type: 'timeout', message: `Metrics request timed out after ${secs}s and was aborted` };
+            return formatActivity('timeout', 'Metrics request timed out after {secs}s and was aborted', { secs: secs });
         }
-        return { type: 'danger', message: `Failed to fetch metrics: ${error && error.message ? error.message : String(error)}` };
+        const raw = error && error.message ? error.message : String(error);
+        const detail = typeof raw === 'string' ? raw : String(raw);
+        return formatActivity('danger', 'Failed to fetch metrics: {detail}', { detail: detail });
     }
     // #503: on-screen hint text for the digit shortcuts.
     function shortcutHintText(tabCount) {
@@ -822,5 +870,5 @@
         const items = capActivityLog(parsed, cap);
         return { items, staleNote: activityStaleNote(items.length) };
     }
-    return { tabKeyTarget, staleState, queueDepthRows, metricsFailureActivity, shortcutHintText, parseMetrics, ratePerMinute, resolveMetricsUrl, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler, stageActivity, stageDrilldown, stageDrilldownKey, doughnutLegendLayout, connectionState, documentTitle, createActivityAnnouncer, metricsUrlProblem, splitLinks, createMetricsFetcher, REFRESH_INTERVAL_CHOICES, parseRefreshInterval, shortcutAction, pickInitialTab, METRIC_UI_MAP, renderMetricNameMap, parseDangerSoundEnabled, dangerSoundDecision, HEALTH_HISTORY_LIMIT, pushPollOutcome, healthHistoryView, COMPARISON_BASELINE_ROLE, PREV_HOUR_AVG_KEYS, readPrevHourAverage, comparisonBaselineSeries, comparisonNote, ACTIVITY_LOG_CAP, capActivityLog, activityStaleNote, restoreActivityLog };
+    return { tabKeyTarget, staleState, queueDepthRows, metricsFailureActivity, formatActivity, shortcutHintText, parseMetrics, ratePerMinute, resolveMetricsUrl, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler, stageActivity, stageDrilldown, stageDrilldownKey, doughnutLegendLayout, connectionState, documentTitle, createActivityAnnouncer, metricsUrlProblem, splitLinks, createMetricsFetcher, REFRESH_INTERVAL_CHOICES, parseRefreshInterval, shortcutAction, pickInitialTab, METRIC_UI_MAP, renderMetricNameMap, parseDangerSoundEnabled, dangerSoundDecision, HEALTH_HISTORY_LIMIT, pushPollOutcome, healthHistoryView, COMPARISON_BASELINE_ROLE, PREV_HOUR_AVG_KEYS, readPrevHourAverage, comparisonBaselineSeries, comparisonNote, ACTIVITY_LOG_CAP, capActivityLog, activityStaleNote, restoreActivityLog };
 });

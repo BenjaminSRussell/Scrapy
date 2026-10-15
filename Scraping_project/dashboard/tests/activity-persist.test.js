@@ -101,8 +101,9 @@ test('app.js restores sessionStorage before the fresh init line and clear wipes 
     assert.match(src, /activityLog\.length > ACTIVITY_LOG_CAP/);
     const init = src.slice(src.indexOf('function initialize'), src.indexOf("console.log('Dashboard ready!')"));
     const restoreAt = init.indexOf('restorePersistedActivityLog()');
-    const freshAt = init.indexOf("addActivityLogItem('success', 'Pipeline Control Center initialized')");
+    const freshAt = init.indexOf("formatActivity('success', 'Pipeline Control Center initialized')");
     assert.ok(restoreAt >= 0 && freshAt > restoreAt, 'restore runs before the new init entry');
+    assert.ok(init.indexOf('addActivityLogItem(line.type, line.message)', freshAt) > freshAt);
     const clear = src.slice(src.indexOf('function clearActivityLog'), src.indexOf('function detectSignificantChanges'));
     assert.match(clear, /activityLog\.length = 0/);
     assert.match(clear, /persistActivityLog\(\)/);

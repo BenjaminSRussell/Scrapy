@@ -509,27 +509,32 @@ function detectSignificantChanges(metrics) {
 
     if (metrics['stage1_urls_discovered_total'] > prev['stage1_urls_discovered_total']) {
         const newUrls = metrics['stage1_urls_discovered_total'] - prev['stage1_urls_discovered_total'];
-        addActivityLogItem('success', `Stage 1: Discovered ${newUrls} new URL(s)`);
+        const line = formatActivity('success', 'Stage 1: Discovered {count} new URL(s)', { count: newUrls });
+        addActivityLogItem(line.type, line.message);
     }
 
     if (metrics['stage2_pages_analyzed_total'] > prev['stage2_pages_analyzed_total']) {
         const newPages = metrics['stage2_pages_analyzed_total'] - prev['stage2_pages_analyzed_total'];
-        addActivityLogItem('success', `Stage 2: Analyzed ${newPages} new page(s)`);
+        const line = formatActivity('success', 'Stage 2: Analyzed {count} new page(s)', { count: newPages });
+        addActivityLogItem(line.type, line.message);
     }
 
     if (metrics['stage3_summaries_created_total'] > prev['stage3_summaries_created_total']) {
         const newSummaries = metrics['stage3_summaries_created_total'] - prev['stage3_summaries_created_total'];
-        addActivityLogItem('success', `Stage 3: Created ${newSummaries} new summary(ies)`);
+        const line = formatActivity('success', 'Stage 3: Created {count} new summary(ies)', { count: newSummaries });
+        addActivityLogItem(line.type, line.message);
     }
 
     if (metrics['stage4_large_doc_summaries_total'] > prev['stage4_large_doc_summaries_total']) {
         const newLarge = metrics['stage4_large_doc_summaries_total'] - prev['stage4_large_doc_summaries_total'];
-        addActivityLogItem('success', `Stage 4: Processed ${newLarge} large document(s)`);
+        const line = formatActivity('success', 'Stage 4: Processed {count} large document(s)', { count: newLarge });
+        addActivityLogItem(line.type, line.message);
     }
 
     if (metrics['stage3_documents_deduplicated_total'] > prev['stage3_documents_deduplicated_total']) {
         const dedupCount = metrics['stage3_documents_deduplicated_total'] - prev['stage3_documents_deduplicated_total'];
-        addActivityLogItem('warning', `Stage 3: Deduplicated ${dedupCount} document(s)`);
+        const line = formatActivity('warning', 'Stage 3: Deduplicated {count} document(s)', { count: dedupCount });
+        addActivityLogItem(line.type, line.message);
     }
 }
 
@@ -747,7 +752,8 @@ function checkMilestones(metrics) {
                 milestonesHit[id] = true;
                 // Milestones already passed on first load are recorded silently.
                 if (milestonesPrimed) {
-                    addActivityLogItem('success', `Milestone: ${formatNumber(m)} ${label}`);
+                    const line = formatActivity('success', 'Milestone: {count} {label}', { count: m, label: label });
+                    addActivityLogItem(line.type, line.message);
                 }
             }
         }
@@ -760,7 +766,8 @@ function updateDashboard(metrics) {
     if (metricsWasDown) {
         metricsWasDown = false;
         // spoken once via the activity announcer (#962), not a second region
-        addActivityLogItem('success', 'Metrics connection restored');
+        const line = formatActivity('success', 'Metrics connection restored');
+        addActivityLogItem(line.type, line.message);
     }
     const s1Discovered = metrics['stage1_urls_discovered_total'] || 0;
     const s1Queued = metrics['stage1_urls_queued_total'] || 0;
@@ -995,7 +1002,8 @@ async function fetchMetrics() {
         metricsWasDown = true;
         console.error('Error fetching metrics:', error);
         const failure = metricsFailureActivity(error, METRICS_TIMEOUT_MS);
-        addActivityLogItem(failure.type, failure.message);
+        const line = formatActivity(failure.type, '{message}', { message: failure.message });
+        addActivityLogItem(line.type, line.message);
         if (!hasEverSucceeded) finishLoading(true);
         showFetchError(failure.message);
         consecutiveFetchFailures += 1;
@@ -1715,7 +1723,8 @@ function initialize() {
     if (retryBtn) retryBtn.addEventListener('click', requestRefresh);
 
     restorePersistedActivityLog(); // #1029: before the fresh init line, so it stays newest
-    addActivityLogItem('success', 'Pipeline Control Center initialized');
+    const line = formatActivity('success', 'Pipeline Control Center initialized');
+    addActivityLogItem(line.type, line.message);
 
     refreshScheduler.start();
 
@@ -1732,7 +1741,8 @@ function initialize() {
     const metricsProblem = metricsUrlProblem(typeof location !== 'undefined' ? location : null);
     if (metricsProblem) {
         console.error(`[config] ${metricsProblem}`);
-        addActivityLogItem('danger', metricsProblem);
+        const line = formatActivity('danger', '{detail}', { detail: metricsProblem });
+        addActivityLogItem(line.type, line.message);
     }
 
     console.log('Dashboard ready!');
