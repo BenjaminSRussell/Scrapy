@@ -401,6 +401,15 @@ function renderActivityList(container, { maxItems = HISTORY_MAX_POINTS, levels =
     // #1028: case-insensitive message substring. Overview passes query ''.
     const items = filterActivityMessages(capped, query);
     const frag = document.createDocumentFragment();
+    // #961: empty log (cleared or unused) is a placeholder, not a blank panel.
+    // A level filter or a search with no matches leaves the feed empty; those lines explain it.
+    const emptyCopy = !items.length ? activityEmptyCopy(activityLog.length) : null;
+    if (emptyCopy) {
+        const empty = document.createElement('p');
+        empty.className = 'activity-empty';
+        empty.textContent = emptyCopy;
+        frag.appendChild(empty);
+    }
     for (const item of items) {
         const li = document.createElement('li');
         li.className = 'activity-item';
@@ -438,8 +447,9 @@ function syncActivitySearchStatus() {
     const shown = filterActivityMessages(capped, query).length;
     const status = document.getElementById('activity-filter-status');
     const clearBtn = document.getElementById('clear-activity-search');
-    const text = activityFilterStatus(shown, capped.length, query);
-    if (clearBtn) clearBtn.disabled = text === '';
+    // An empty log uses the feed placeholder, not a search-miss line.
+    const text = activityLog.length === 0 ? '' : activityFilterStatus(shown, capped.length, query);
+    if (clearBtn) clearBtn.disabled = String(query).trim() === '';
     if (status) {
         status.textContent = text;
         status.hidden = text === '';
@@ -518,7 +528,8 @@ function syncActivityLevelChips() {
     if (!empty) return;
     const filtering = activityLevelFilter.size > 0;
     const matches = filtering ? filterActivityItems(activityLog, activityLevelFilter).length : activityLog.length;
-    empty.hidden = !filtering || matches > 0;
+    // An empty log uses the feed placeholder, not the filter-miss line.
+    empty.hidden = !filtering || matches > 0 || activityLog.length === 0;
 }
 
 // #1029: sessionStorage can be missing or throw (privacy mode, quota). Never fatal.
