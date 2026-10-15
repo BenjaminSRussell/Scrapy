@@ -1,3 +1,4 @@
+import json
 import logging
 import posixpath
 import re
@@ -12,6 +13,12 @@ from src.utils.delta import get_delta
 
 logger = logging.getLogger(__name__)
 
+# Stub cap so one calendar page cannot blow up the analysis JSON (#648).
+_EVENT_STUB_CAP = 50
+_EVENT_STUB_KEYS = ("source", "name", "start", "end", "url", "location")
+EVENT_EXTRACT_FLAG = "STAGE2_EVENT_EXTRACT_ENABLED"
+
+
 def _is_pdf_link(href: str) -> bool:
     """``.pdf`` by path extension, so ``Report.PDF`` and ``a.pdf?dl=1#p2`` count (#221)."""
     try:
@@ -19,6 +26,253 @@ def _is_pdf_link(href: str) -> bool:
     except ValueError:
         return False
     return posixpath.splitext(path)[1].lower() == ".pdf"
+
+
+def _event_extract_enabled() -> bool:
+    """Experimental. Off unless STAGE2_EVENT_EXTRACT_ENABLED is set (#648)."""
+    from src.utils.feature_flags import get_bool
+
+    return get_bool(EVENT_EXTRACT_FLAG, False)
+
+
+def events_json_field(html: str) -> str | None:
+    """JSON list of event stubs, or None when the flag is off.
+
+    The string is the analysis ``events`` field. Absent microdata is ``[]``.
+    """
+    if not _event_extract_enabled():
+        return None
+    return json.dumps(extract_event_stubs(html), separators=(",", ":"), ensure_ascii=False)
+
+
+def extract_event_stubs(html: str) -> list[dict[str, str]]:
+    """schema.org Event (JSON-LD and microdata) and h-event stubs. Never raises."""
+    if not isinstance(html, str) or not html:
+        return []
+    try:
+        soup = BeautifulSoup(html, "html.parser")
+        rows = _jsonld_event_stubs(soup)
+        rows.extend(_microdata_event_stubs(soup))
+        rows.extend(_h_event_stubs(soup))
+        return _cap_event_stubs(rows)
+    except Exception as exc:
+        logger.warning("event microformat extraction failed: %s", exc)
+        return []
+
+
+def _local_schema_name(token: str) -> str:
+    return token.rsplit("/", 1)[-1].rsplit(":", 1)[-1].strip()
+
+
+def _schema_type_names(value: Any) -> list[str]:
+    if isinstance(value, str):
+        raw = [value]
+    elif isinstance(value, list):
+        raw = [item for item in value if isinstance(item, str)]
+    else:
+        return []
+    return [_local_schema_name(item) for item in raw if item.strip()]
+
+
+def _is_schema_event(value: Any) -> bool:
+    return any(name == "Event" or name.endswith("Event") for name in _schema_type_names(value))
+
+
+def _text_value(value: Any) -> str:
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, bool) or value is None:
+        return ""
+    if isinstance(value, (int, float)):
+        return str(value)
+    if isinstance(value, dict):
+        for key in ("name", "url", "@id"):
+            text = _text_value(value.get(key))
+            if text:
+                return text
+        return ""
+    if isinstance(value, list):
+        parts = [_text_value(item) for item in value]
+        return ", ".join(part for part in parts if part)
+    return ""
+
+
+def _schema_stub(node: dict[str, Any]) -> dict[str, str]:
+    url = _text_value(node.get("url")) or _text_value(node.get("@id"))
+    return {
+        "source": "schema.org",
+        "name": _text_value(node.get("name")),
+        "start": _text_value(node.get("startDate")),
+        "end": _text_value(node.get("endDate")),
+        "url": url,
+        "location": _text_value(node.get("location")),
+    }
+
+
+def _walk_jsonld(node: Any, rows: list[dict[str, str]], depth: int) -> None:
+    if depth > 12 or len(rows) >= _EVENT_STUB_CAP:
+        return
+    if isinstance(node, list):
+        for item in node:
+            _walk_jsonld(item, rows, depth + 1)
+        return
+    if not isinstance(node, dict):
+        return
+    if _is_schema_event(node.get("@type")):
+        rows.append(_schema_stub(node))
+    for key, value in node.items():
+        if key == "@type" or not isinstance(value, (dict, list)):
+            continue
+        _walk_jsonld(value, rows, depth + 1)
+
+
+def _jsonld_event_stubs(soup: BeautifulSoup) -> list[dict[str, str]]:
+    rows: list[dict[str, str]] = []
+    for script in soup.find_all("script"):
+        kind = script.get("type") or ""
+        if isinstance(kind, list):
+            kind = " ".join(str(part) for part in kind)
+        if "ld+json" not in str(kind).lower():
+            continue
+        payload = script.string if script.string is not None else script.get_text()
+        payload = (payload or "").strip()
+        if payload.startswith("<!--"):
+            payload = payload.removeprefix("<!--").removesuffix("-->").strip()
+        if not payload:
+            continue
+        try:
+            data = json.loads(payload)
+        except json.JSONDecodeError:
+            continue
+        _walk_jsonld(data, rows, 0)
+        if len(rows) >= _EVENT_STUB_CAP:
+            break
+    return rows
+
+
+def _attr_tokens(tag: Any, name: str) -> list[str]:
+    raw = tag.get(name)
+    if raw is None or raw is True:
+        return []
+    if isinstance(raw, str):
+        return raw.split()
+    if isinstance(raw, list):
+        return [str(part) for part in raw]
+    return [str(raw)]
+
+
+def _is_h_event(tag: Any) -> bool:
+    return "h-event" in _attr_tokens(tag, "class")
+
+
+def _is_microdata_event(tag: Any) -> bool:
+    return any(_is_schema_event(token) for token in _attr_tokens(tag, "itemtype"))
+
+
+def _inside_nested(root: Any, node: Any, marker: Any) -> bool:
+    """True when an ancestor between ``node`` and ``root`` matches ``marker``."""
+    current = getattr(node, "parent", None)
+    while current is not None and current is not root:
+        if marker(current):
+            return True
+        current = getattr(current, "parent", None)
+    return False
+
+
+def _prop_text(root: Any, prop: str) -> str:
+    for node in root.find_all(True):
+        if prop not in _attr_tokens(node, "itemprop"):
+            continue
+        if _inside_nested(root, node, lambda tag: tag.has_attr("itemscope")):
+            continue
+        if prop == "url" and node.name == "a":
+            href = node.get("href")
+            if isinstance(href, str) and href.strip():
+                return href.strip()
+        if node.name == "time":
+            when = node.get("datetime")
+            if isinstance(when, str) and when.strip():
+                return when.strip()
+        text = node.get_text(" ", strip=True)
+        if text:
+            return text
+    return ""
+
+
+def _microdata_event_stubs(soup: BeautifulSoup) -> list[dict[str, str]]:
+    rows: list[dict[str, str]] = []
+    for tag in soup.find_all(True):
+        if not _is_microdata_event(tag):
+            continue
+        if _inside_nested(tag, tag, _is_microdata_event):
+            continue
+        rows.append(
+            {
+                "source": "schema.org",
+                "name": _prop_text(tag, "name"),
+                "start": _prop_text(tag, "startDate"),
+                "end": _prop_text(tag, "endDate"),
+                "url": _prop_text(tag, "url"),
+                "location": _prop_text(tag, "location"),
+            }
+        )
+    return rows
+
+
+def _mf_text(root: Any, class_name: str) -> str:
+    for node in root.find_all(True):
+        if class_name not in _attr_tokens(node, "class"):
+            continue
+        if _inside_nested(root, node, _is_h_event):
+            continue
+        if class_name.startswith("dt-"):
+            when = node.get("datetime")
+            if isinstance(when, str) and when.strip():
+                return when.strip()
+        if class_name.startswith("u-") and node.name == "a":
+            href = node.get("href")
+            if isinstance(href, str) and href.strip():
+                return href.strip()
+        text = node.get_text(" ", strip=True)
+        if text:
+            return text
+    return ""
+
+
+def _h_event_stubs(soup: BeautifulSoup) -> list[dict[str, str]]:
+    rows: list[dict[str, str]] = []
+    for tag in soup.find_all(True):
+        if not _is_h_event(tag):
+            continue
+        if _inside_nested(tag, tag, _is_h_event):
+            continue
+        rows.append(
+            {
+                "source": "h-event",
+                "name": _mf_text(tag, "p-name"),
+                "start": _mf_text(tag, "dt-start"),
+                "end": _mf_text(tag, "dt-end"),
+                "url": _mf_text(tag, "u-url"),
+                "location": _mf_text(tag, "p-location"),
+            }
+        )
+    return rows
+
+
+def _cap_event_stubs(rows: list[dict[str, str]]) -> list[dict[str, str]]:
+    seen: set[tuple[str, str, str, str]] = set()
+    kept: list[dict[str, str]] = []
+    for row in rows:
+        if not (row.get("name") or row.get("start") or row.get("url")):
+            continue
+        key = (row.get("source", ""), row.get("name", ""), row.get("start", ""), row.get("url", ""))
+        if key in seen:
+            continue
+        seen.add(key)
+        kept.append({name: row.get(name, "") for name in _EVENT_STUB_KEYS})
+        if len(kept) >= _EVENT_STUB_CAP:
+            break
+    return kept
 
 
 class IntelligentAnalyzer:
@@ -87,7 +341,7 @@ class IntelligentAnalyzer:
         hrefs = [str(a["href"]) for a in soup.find_all("a", href=True)]
         pdf_links = [href for href in hrefs if _is_pdf_link(href)]
 
-        return {
+        record = {
             "url": url,
             "has_error": False,
             "is_404": False,
@@ -104,6 +358,11 @@ class IntelligentAnalyzer:
             "pdf_links": pdf_links[:10],
             "quality_score": self._calculate_quality_score(word_count, text_to_html_ratio),
         }
+        # Parsed from the original HTML: script tags are stripped above (#648).
+        events = events_json_field(html)
+        if events is not None:
+            record["events"] = events
+        return record
 
     def _analyze_pdf(self, url: str, pdf_content: bytes, is_heavy: bool) -> dict[str, Any]:
         text_extracted = ""

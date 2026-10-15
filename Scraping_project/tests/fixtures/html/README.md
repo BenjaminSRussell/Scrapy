@@ -14,6 +14,7 @@ def test_something(html_response):
 | `js_heavy.html` | SPA shell: empty `#app-root`, bundled scripts and `fetch()` calls, almost no text |
 | `empty.html` | Blank shell (no text, no links) |
 | `nav_heavy.html` | 30 nav links, a footer of policy links, one content link |
+| `schema_org_event.html` | schema.org Event (JSON-LD and microdata) plus one h-event (#648) |
 
 Keep fixtures small, offline (no external assets that need fetching) and deterministic.
 When a test needs a new page shape, add a file here instead of an inline string.

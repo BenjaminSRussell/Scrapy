@@ -120,6 +120,10 @@ FLAGS: dict[str, tuple[Any, str]] = {
         False,
         "Reuse a cached Stage 2 HTML body (url_hash + ETag/Last-Modified) and skip the fetch (#478).",
     ),
+    "STAGE2_EVENT_EXTRACT_ENABLED": (
+        False,
+        "Store schema.org Event and h-event stub rows in the Stage 2 analysis events JSON field (#648).",
+    ),
 }
 
 

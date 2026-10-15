@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Campus calendar</title>
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "Event",
+        "name": "Fall Open House",
+        "startDate": "2026-10-14T15:00:00-04:00",
+        "endDate": "2026-10-14T17:00:00-04:00",
+        "url": "https://events.example.edu/open-house",
+        "location": {
+          "@type": "Place",
+          "name": "Student Union"
+        }
+      }
+    ]
+  }
+  </script>
+</head>
+<body>
+  <article class="h-event">
+    <h1 class="p-name">Study Night</h1>
+    <time class="dt-start" datetime="2026-10-15T19:00:00-04:00">Oct 15, 7pm</time>
+    <a class="u-url" href="https://events.example.edu/study-night">details</a>
+    <p class="p-location">Library</p>
+  </article>
+  <div itemscope itemtype="https://schema.org/Event">
+    <span itemprop="name">Career Fair</span>
+    <time itemprop="startDate" datetime="2026-11-01T10:00:00-04:00">Nov 1</time>
+    <a itemprop="url" href="https://events.example.edu/career-fair">link</a>
+    <span itemprop="location" itemscope itemtype="https://schema.org/Place">
+      <span itemprop="name">Rome Ballroom</span>
+    </span>
+  </div>
+</body>
+</html>

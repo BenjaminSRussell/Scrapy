@@ -1130,7 +1130,7 @@ class Stage2Worker:
 
         quality_score = self._calculate_quality_score(word_count, text_to_html_ratio)
 
-        return {
+        record = {
             "url": url or "",
             "url_hash": url_hash or "",
             "title": title or "",
@@ -1146,6 +1146,13 @@ class Stage2Worker:
             "has_error": False,
             "processed_at": datetime.now().isoformat(),
         }
+        # Flag-gated. Off leaves the analysis row unchanged (#648).
+        from src.stage2.intelligent_analyzer import events_json_field
+
+        events = events_json_field(html)
+        if events is not None:
+            record["events"] = events
+        return record
 
     async def _extract_keywords_async(self, text: str, is_heavy: bool) -> list[str]:
         if not text or len(text) < 50:
