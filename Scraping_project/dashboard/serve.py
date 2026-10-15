@@ -25,6 +25,7 @@ import http.server
 import json
 import math
 import os
+import re
 import socketserver
 import subprocess
 import sys
@@ -32,6 +33,7 @@ import threading
 import time
 import urllib.error
 import urllib.request
+from html import escape
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
@@ -83,6 +85,11 @@ UPSTREAM_MAX_BYTES = 8 * 1024 * 1024
 # is the only Redis-backed work queue (stage 2-4 queues are Delta tables / Kafka).
 DEFAULT_QUEUE_KEYS = ("js_spider:priority_queue",)
 _LENGTH_OPS = {"list": "llen", "zset": "zcard", "set": "scard", "stream": "xlen", "hash": "hlen"}
+# #951: displayed institution token. Unset keeps the UConn wording in index.html.
+SITE_NAME_MAX = 80
+_BRAND_CONFIG_MAX_BYTES = 4096
+_HTML_OPEN_RE = re.compile(r"<html\b([^>]*)>", re.IGNORECASE)
+_DATA_SITE_ATTR_RE = re.compile(r"\bdata-site-name\s*=", re.IGNORECASE)
 
 
 def grafana_base_url(env=None) -> str:
@@ -258,6 +265,65 @@ def _redis_from_env(env=None):
         return redis.Redis.from_url(env["REDIS_URL"], **opts)
     return redis.Redis(host=env.get("REDIS_HOST", "localhost"), port=int(env.get("REDIS_PORT", 6379)),
                        db=int(env.get("REDIS_DB", 0)), password=env.get("REDIS_PASSWORD") or None, **opts)
+
+
+def sanitize_site_name(raw: object) -> str:
+    """Institution token safe to put in an HTML attribute and a tab title (#951).
+
+    Collapses whitespace (so a newline cannot break the attribute), caps length,
+    and rejects ``<``, ``>``, and other control characters. Empty means "keep
+    the shipped UConn wording".
+    """
+    if not isinstance(raw, str):
+        return ""
+    name = " ".join(raw.split())
+    if not name or len(name) > SITE_NAME_MAX:
+        return ""
+    if any(ord(ch) < 32 or ch == "\x7f" or ch in "<>" for ch in name):
+        return ""
+    return name
+
+
+def site_name_from_config(path: Path) -> str:
+    """``siteName`` from dashboard/config.json. Missing or invalid is empty."""
+    try:
+        if path.stat().st_size > _BRAND_CONFIG_MAX_BYTES:
+            return ""
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, UnicodeError):
+        return ""
+    if not isinstance(data, dict):
+        return ""
+    return sanitize_site_name(data.get("siteName", ""))
+
+
+def resolve_site_name(env=None, config_path: Path | None = None) -> str:
+    """CC_SITE_NAME wins over config.json. Both empty keeps the HTML default."""
+    env = os.environ if env is None else env
+    from_env = sanitize_site_name(env.get("CC_SITE_NAME", ""))
+    if from_env:
+        return from_env
+    if config_path is None:
+        return ""
+    return site_name_from_config(config_path)
+
+
+def inject_data_site_name(page: str, name: str) -> str | None:
+    """Add ``data-site-name`` on the first ``<html>`` tag, or None to serve the file as-is.
+
+    An attribute already in the file is left alone. The value is escaped.
+    """
+    clean = sanitize_site_name(name)
+    if not clean or not isinstance(page, str):
+        return None
+    match = _HTML_OPEN_RE.search(page)
+    if match is None or _DATA_SITE_ATTR_RE.search(match.group(1)):
+        return None
+    escaped = escape(clean, quote=True)
+    attrs = match.group(1)
+    prefix = page[match.start():match.start(1)]
+    new_tag = prefix + attrs + f' data-site-name="{escaped}">'
+    return page[:match.start()] + new_tag + page[match.end():]
 
 
 def queue_keys(env=None) -> tuple[str, ...]:
@@ -441,9 +507,41 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         self.end_headers()
         return False
 
+    def _branded_index(self, route: str) -> bytes | None:
+        """index.html with data-site-name, or None to serve the file unchanged (#951)."""
+        if route not in ("/", "/index.html"):
+            return None
+        name = resolve_site_name(os.environ, Path(self.root) / "config.json")
+        if not name:
+            return None
+        path = Path(self.root) / "index.html"
+        try:
+            page = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError):
+            return None
+        branded = inject_data_site_name(page, name)
+        if branded is None:
+            return None
+        return branded.encode("utf-8")
+
+    def _serve_branded_index(self, route: str) -> bool:
+        body = self._branded_index(route)
+        if body is None:
+            return False
+        if self.command == "HEAD":
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            return True
+        self._send_bytes(200, body, "text/html; charset=utf-8")
+        return True
+
     def do_HEAD(self):
         if not self._guard():
             return
+        if self._serve_branded_index(urlsplit(self.path).path):
+            return None
         return super().do_HEAD()
 
     def do_GET(self):
@@ -453,8 +551,6 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         if route in self.API_ROUTES:
             getattr(self, self.API_ROUTES[route])()
             return
-        if route == '/':
-            self.path = '/index.html'
         if route == '/version.js':
             version = _cc_version()
             grafana = self.grafana_url or grafana_base_url()
@@ -464,6 +560,10 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             ).encode()
             self._send_bytes(200, body, 'application/javascript; charset=utf-8')
             return
+        if self._serve_branded_index(route):
+            return
+        if route == '/':
+            self.path = '/index.html'
         return super().do_GET()
 
 
@@ -533,6 +633,9 @@ def main(argv=None):
     print("=" * 80)
     print()
     print(f"📊 Dashboard:  http://{shown}:{port}")
+    site_name = resolve_site_name(os.environ, DASHBOARD_DIR / "config.json")
+    if site_name:
+        print(f"🏷️  Site:       {site_name} Web Scraping Pipeline  (CC_SITE_NAME / config.json / ?site=)")
     print(f"📈 Metrics:    /api/metrics -> {DashboardHandler.metrics_upstream}  (METRICS_UPSTREAM)")
     print(f"🔐 Auth:       {'on' if DashboardHandler.auth and DashboardHandler.auth.enabled else 'off (CC_AUTH_TOKEN / CC_BASIC_AUTH)'}")
     print(f"📉 Grafana:    {DashboardHandler.grafana_url or grafana_base_url()} (separate analytics)")

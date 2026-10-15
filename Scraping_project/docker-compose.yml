@@ -301,6 +301,8 @@ services:
     environment:
       - CC_HOST=0.0.0.0
       - CC_PORT=8080
+      # Empty keeps the shipped UConn title and subtitle (#951).
+      - CC_SITE_NAME=${CC_SITE_NAME:-}
     ports:
       - "127.0.0.1:8080:8080"
     volumes:
