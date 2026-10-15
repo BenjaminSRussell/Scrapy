@@ -16,6 +16,7 @@ the reload and may be stale. Closing the tab drops them; Clear drops them
 immediately.
 
 All throughput figures are per minute, computed from the real time between samples (#141).
+Counts, rates, byte sizes, uptime, and clocks go through one formatter (`formatNumber` / `formatTime` in `format-utils.js`, #960). In the browser they follow `navigator.language`; the unit words (`URLs/min`, `s ago`) stay in `UNIT_STRINGS` until a later translation. A missing or non-finite value is an em dash, never `NaN` or `Invalid Date`.
 Labelled series such as `errors_total{stage="stage1"}` are kept under their full key and
 also summed under the bare name (`errors_total`) unless an unlabelled series of that name
 exists (#365).

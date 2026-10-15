@@ -50,16 +50,9 @@ let activityLevelFilter = new Set();
 let lastHistoryDayKey = null;
 
 function formatHistoryLabel(d = new Date()) {
-    const dayKey = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
-    const time = d.toLocaleTimeString();
-    if (lastHistoryDayKey !== null && lastHistoryDayKey !== dayKey) {
-        // Include short date when day changes (midnight boundary)
-        const date = d.toLocaleDateString(undefined, { month: '2-digit', day: '2-digit' });
-        lastHistoryDayKey = dayKey;
-        return `${date} ${time}`;
-    }
-    lastHistoryDayKey = dayKey;
-    return time;
+    const stamp = formatHistoryStamp(d, lastHistoryDayKey);
+    lastHistoryDayKey = stamp.dayKey;
+    return stamp.label;
 }
 
 
@@ -111,6 +104,7 @@ function initializeCharts() {
 
 function buildCharts() {
     const chartConfig = {
+        locale: dashboardLocale(),
         responsive: true,
         maintainAspectRatio: false,
         plugins: {
@@ -134,13 +128,13 @@ function buildCharts() {
         data: {
             labels: [],
             datasets: [{
-                label: 'URLs/min',
+                label: UNIT_STRINGS.urlsPerMin,
                 data: [],
                 borderColor: 'rgb(37, 99, 235)',
                 backgroundColor: 'rgba(37, 99, 235, 0.1)',
                 tension: 0.4
             }, {
-                label: 'Pages/min',
+                label: UNIT_STRINGS.pagesPerMin,
                 data: [],
                 borderColor: 'rgb(124, 58, 237)',
                 backgroundColor: 'rgba(124, 58, 237, 0.1)',
@@ -259,17 +253,7 @@ function buildCharts() {
 // parseMetrics / formatNumber / formatBytes come from format-utils.js (#1043)
 
 function getUptime() {
-    const seconds = Math.floor((Date.now() - startTime) / 1000);
-    const hours = Math.floor(seconds / 3600);
-    const minutes = Math.floor((seconds % 3600) / 60);
-    const secs = seconds % 60;
-
-    if (hours > 0) {
-        return `${hours}h ${minutes}m`;
-    } else if (minutes > 0) {
-        return `${minutes}m ${secs}s`;
-    }
-    return `${secs}s`;
+    return formatUptime(Date.now() - startTime);
 }
 
 
@@ -283,7 +267,7 @@ function escapeHtml(s) {
 }
 
 function addActivityLogItem(type, message) {
-    const timestamp = new Date().toLocaleTimeString();
+    const timestamp = formatTime(new Date());
     activityLog.unshift({ type, message, timestamp });
     boundHistoryBuffer(activityLog, 'end');
     if (activityLog.length > ACTIVITY_LOG_CAP) {
@@ -512,7 +496,7 @@ function syncActivityLevelChips() {
     document.querySelectorAll('#tab-activity .activity-chip[data-level]').forEach(btn => {
         const level = btn.getAttribute('data-level');
         const countEl = btn.querySelector('[data-level-count]');
-        if (countEl) countEl.textContent = String(counts[level] || 0);
+        if (countEl) countEl.textContent = formatNumber(counts[level] || 0, undefined, 0);
         btn.setAttribute('aria-pressed', activityLevelFilter.has(level) ? 'true' : 'false');
     });
     const empty = document.getElementById('activity-filter-empty');
@@ -599,34 +583,34 @@ function detectSignificantChanges(metrics) {
 
     if (metrics['stage1_urls_discovered_total'] > prev['stage1_urls_discovered_total']) {
         const newUrls = metrics['stage1_urls_discovered_total'] - prev['stage1_urls_discovered_total'];
-        addActivityLogItem('success', `Stage 1: Discovered ${newUrls} new URL(s)`);
+        addActivityLogItem('success', `Stage 1: Discovered ${formatNumber(newUrls)} new URL(s)`);
     }
 
     if (metrics['stage2_pages_analyzed_total'] > prev['stage2_pages_analyzed_total']) {
         const newPages = metrics['stage2_pages_analyzed_total'] - prev['stage2_pages_analyzed_total'];
-        addActivityLogItem('success', `Stage 2: Analyzed ${newPages} new page(s)`);
+        addActivityLogItem('success', `Stage 2: Analyzed ${formatNumber(newPages)} new page(s)`);
     }
 
     if (metrics['stage3_summaries_created_total'] > prev['stage3_summaries_created_total']) {
         const newSummaries = metrics['stage3_summaries_created_total'] - prev['stage3_summaries_created_total'];
-        addActivityLogItem('success', `Stage 3: Created ${newSummaries} new summary(ies)`);
+        addActivityLogItem('success', `Stage 3: Created ${formatNumber(newSummaries)} new summary(ies)`);
     }
 
     if (metrics['stage4_large_doc_summaries_total'] > prev['stage4_large_doc_summaries_total']) {
         const newLarge = metrics['stage4_large_doc_summaries_total'] - prev['stage4_large_doc_summaries_total'];
-        addActivityLogItem('success', `Stage 4: Processed ${newLarge} large document(s)`);
+        addActivityLogItem('success', `Stage 4: Processed ${formatNumber(newLarge)} large document(s)`);
     }
 
     if (metrics['stage3_documents_deduplicated_total'] > prev['stage3_documents_deduplicated_total']) {
         const dedupCount = metrics['stage3_documents_deduplicated_total'] - prev['stage3_documents_deduplicated_total'];
-        addActivityLogItem('warning', `Stage 3: Deduplicated ${dedupCount} document(s)`);
+        addActivityLogItem('warning', `Stage 3: Deduplicated ${formatNumber(dedupCount)} document(s)`);
     }
 }
 
 function updateHistoricalData(metrics) {
     latestMetrics = metrics || {};
     const now = new Date();
-    const timeLabel = now.toLocaleTimeString();
+    const timeLabel = formatHistoryLabel(now);
 
     // Each series is capped on its own. A short chart-label series must not
     // leave urls, pages, summaries, or sampleTimes free to grow (#691).
@@ -900,24 +884,24 @@ function updateDashboard(metrics) {
         if (elem) { const __n = formatNumber(s4Summaries); if (elem.textContent !== String(__n)) { elem.textContent = __n; elem.classList.remove('flash'); void elem.offsetWidth; elem.classList.add('flash'); } else { elem.textContent = __n; } }
     });
 
-    const compressionRatio = s4Compression > 0 ? (1 / s4Compression).toFixed(0) + 'x' : '0x';
+    const compressionRatio = formatCompression(s4Compression);
     ['overview', 'pipeline'].forEach(prefix => {
         const elem = document.getElementById(`${prefix}-s4-compression`);
         if (elem) { const __n = compressionRatio; if (elem.textContent !== String(__n)) { elem.textContent = __n; elem.classList.remove('flash'); void elem.offsetWidth; elem.classList.add('flash'); } else { elem.textContent = __n; } }
     });
 
     const s3RateElem = document.getElementById('pipeline-s3-rate');
-    if (s3RateElem) { const __n = rates.summaries.toFixed(1) + '/min'; if (s3RateElem.textContent !== String(__n)) { s3RateElem.textContent = __n; s3RateElem.classList.remove('flash'); void s3RateElem.offsetWidth; s3RateElem.classList.add('flash'); } else { s3RateElem.textContent = __n; } }
+    if (s3RateElem) { const __n = formatRate(rates.summaries, 'perMin'); if (s3RateElem.textContent !== String(__n)) { s3RateElem.textContent = __n; s3RateElem.classList.remove('flash'); void s3RateElem.offsetWidth; s3RateElem.classList.add('flash'); } else { s3RateElem.textContent = __n; } }
 
     const s4RateElem = document.getElementById('pipeline-s4-rate');
-    if (s4RateElem) { const __n = rates.largeDocs.toFixed(1) + '/min'; if (s4RateElem.textContent !== String(__n)) { s4RateElem.textContent = __n; s4RateElem.classList.remove('flash'); void s4RateElem.offsetWidth; s4RateElem.classList.add('flash'); } else { s4RateElem.textContent = __n; } }
+    if (s4RateElem) { const __n = formatRate(rates.largeDocs, 'perMin'); if (s4RateElem.textContent !== String(__n)) { s4RateElem.textContent = __n; s4RateElem.classList.remove('flash'); void s4RateElem.offsetWidth; s4RateElem.classList.add('flash'); } else { s4RateElem.textContent = __n; } }
 
     applyStageActivity(rates);
 
-    setMetricText('perf-s1-rate', rates.urls.toFixed(1) + ' URLs/min');
-    setMetricText('perf-s2-rate', rates.pages.toFixed(1) + ' pages/min');
-    setMetricText('perf-s3-rate', rates.summaries.toFixed(1) + ' summaries/min');
-    setMetricText('perf-s4-rate', rates.largeDocs.toFixed(1) + ' docs/min');
+    setMetricText('perf-s1-rate', formatRate(rates.urls, 'urlsPerMin'));
+    setMetricText('perf-s2-rate', formatRate(rates.pages, 'pagesPerMin'));
+    setMetricText('perf-s3-rate', formatRate(rates.summaries, 'summariesPerMin'));
+    setMetricText('perf-s4-rate', formatRate(rates.largeDocs, 'docsPerMin'));
 
     const redisKeys = metrics['pipeline_redis_keys'] || 0;
     const redisMemory = metrics['pipeline_redis_memory_bytes'] || 0;
@@ -939,7 +923,7 @@ function updateDashboard(metrics) {
     setReportedValue('scout-instances',
         'pipeline_scout_instances' in metrics ? metrics['pipeline_scout_instances'] : null);
     const lastRefreshEl = document.getElementById('last-refresh-time');
-    if (lastRefreshEl) lastRefreshEl.textContent = new Date().toLocaleTimeString();
+    if (lastRefreshEl) lastRefreshEl.textContent = formatTime(new Date());
     const uptimeEl = document.getElementById('uptime');
     if (uptimeEl) uptimeEl.textContent = getUptime();
 
@@ -1127,7 +1111,7 @@ async function fetchQueueDepths() {
         status.textContent = error;
         return;
     }
-    status.textContent = rows.length ? `Updated ${new Date().toLocaleTimeString()}` : 'No queue keys configured (CC_QUEUE_KEYS).';
+    status.textContent = rows.length ? `Updated ${formatTime(new Date())}` : 'No queue keys configured (CC_QUEUE_KEYS).';
     for (const row of rows) {
         const tr = document.createElement('tr');
         for (const value of [row.key, row.type, row.depth === null ? '—' : formatNumber(row.depth)]) {
@@ -1245,7 +1229,10 @@ function syncChartDataTable(chart, tableId) {
         body += `<tr><th scope="row">${escapeHtml(labels[i] ?? i)}</th>`;
         for (const ds of datasets) {
             const v = (ds.data || [])[i];
-            body += `<td>${v == null ? '' : escapeHtml(v)}</td>`;
+            const shown = typeof v === 'number'
+                ? formatNumber(v, undefined, Number.isInteger(v) ? 0 : 1)
+                : (v == null ? '' : v);
+            body += `<td>${shown === '' ? '' : escapeHtml(shown)}</td>`;
         }
         body += '</tr>';
     }
@@ -1304,8 +1291,9 @@ function updateOverviewSparklines() {
         const last = values[values.length - 1];
         const delta = last - first;
         const arrow = delta > 0 ? '▲ rising' : delta < 0 ? '▼ falling' : '● flat';
+        const deltaText = formatNumber(Math.abs(delta), undefined, Number.isInteger(delta) ? 0 : 1);
         svg.innerHTML = `<path d="${d}" fill="none" stroke="currentColor" stroke-width="1.5" />`;
-        if (dir) dir.textContent = `Trend: ${arrow} (${delta >= 0 ? '+' : ''}${delta})`;
+        if (dir) dir.textContent = `Trend: ${arrow} (${delta >= 0 ? '+' : '-'}${deltaText})`;
     }
 }
 
@@ -1562,7 +1550,7 @@ function setupIntervalControl() {
         storeSet(STORE_INTERVAL_KEY, v);
         renderCountdown();
         const live = document.getElementById('refresh-status');
-        if (live) live.textContent = `Auto-refresh every ${v / 1000} seconds`;
+        if (live) live.textContent = `Auto-refresh every ${formatNumber(v / 1000, undefined, 0)} seconds`;
     });
 }
 
@@ -1686,12 +1674,8 @@ function requestRefresh() {
     refreshScheduler.refreshNow();
 }
 
-function formatRelative(ts) {
-    if (!ts) return 'never';
-    const sec = Math.max(0, Math.floor((Date.now() - ts) / 1000));
-    if (sec < 60) return sec + 's ago';
-    if (sec < 3600) return Math.floor(sec / 60) + 'm ago';
-    return Math.floor(sec / 3600) + 'h ago';
+function formatRelativeAge(ts) {
+    return formatRelative(ts, Date.now());
 }
 let lastMetricsAt = null;
 let hasEverSucceeded = false;
@@ -1703,11 +1687,11 @@ function renderCountdown() {
     const el = document.getElementById('refresh-countdown');
     if (el) {
         const s = refreshScheduler.secondsRemaining();
-        const text = s === null ? 'paused' : String(s);
+        const text = s === null ? 'paused' : formatNumber(s, undefined, 0);
         if (el.textContent !== text) el.textContent = text;
     }
     const rel = document.getElementById('last-updated-rel');
-    if (rel) rel.textContent = formatRelative(lastMetricsAt);
+    if (rel) rel.textContent = formatRelativeAge(lastMetricsAt);
     renderStale();
 }
 
@@ -1949,9 +1933,39 @@ function applyGrafanaLink() {
     if (shown) shown.textContent = home;
 }
 
+// #960: static HTML is the en-US empty state. Rewrite it through the same
+// formatters so the operator locale applies before the first sample.
+function paintLocalePlaceholders() {
+    const rates = [
+        ['pipeline-s3-rate', 'perMin'],
+        ['pipeline-s4-rate', 'perMin'],
+        ['perf-s1-rate', 'urlsPerMin'],
+        ['perf-s2-rate', 'pagesPerMin'],
+        ['perf-s3-rate', 'summariesPerMin'],
+        ['perf-s4-rate', 'docsPerMin'],
+    ];
+    for (const [id, unit] of rates) {
+        const el = document.getElementById(id);
+        if (el) el.textContent = formatRate(0, unit);
+    }
+    const mem = document.getElementById('redis-memory');
+    if (mem) mem.textContent = formatBytes(0);
+    const up = document.getElementById('uptime');
+    if (up) up.textContent = formatUptime(0);
+    const rel = document.getElementById('last-updated-rel');
+    if (rel) rel.textContent = UNIT_STRINGS.never;
+    for (const id of ['last-update', 'last-refresh-time']) {
+        const el = document.getElementById(id);
+        if (el) el.textContent = UNIT_STRINGS.neverClock;
+    }
+    const countdown = document.getElementById('refresh-countdown');
+    if (countdown) countdown.textContent = formatNumber(REFRESH_INTERVAL / 1000, undefined, 0);
+}
+
 function initialize() {
     console.log('Initializing Pipeline Control Center...');
 
+    paintLocalePlaceholders();
     applyFeatureFlags();
     setupAccentControl();
     applyVersionWatermark();
