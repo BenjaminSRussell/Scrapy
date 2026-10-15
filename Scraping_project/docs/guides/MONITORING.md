@@ -66,7 +66,7 @@ The base labels are `stage`, `worker_id`, and `domain`. `site_id` stays on the s
 
 Series are still recorded when a label is `rejected`. They are not dropped. There is no numeric site cap. No numeric cap was measured.
 
-Scrapy crawl metrics in `src/scrapy_prometheus.py` always include `stage`, `worker_id`, and `domain`, plus the labels they already had (`spider`, and `site_id` on the #192 series, plus `method`, `status_code`, and the other low-cardinality reasons). The Delta Lake manager lifecycle metrics (`delta_manager_*`) stay unlabeled, and they stay unlabeled in every process.
+Scrapy crawl metrics in `src/scrapy_prometheus.py` always include `stage`, `worker_id`, and `domain`, plus the labels they already had (`spider`, and `site_id` on the #192 series, plus `method`, `status_code`, and the other low-cardinality reasons). The Delta Lake manager lifecycle metrics (`delta_manager_*`) and the JS queue gauge `pipeline_js_queue_pending` (#645) stay unlabeled, and they stay unlabeled in every process.
 
 `monitoring/metrics_exporter.py` and `src/common/metrics_manager.py` both emit `urls.processed.total` and `urls.discovered.total`. Both send `stage`, `worker_id`, `domain`, and `site_id`. Queue depth adds `queue`. Error counts add `error_type`. `stage4_http_requests_total` and `stage4_http_failures_total` use that same base set on the Stage 4 worker and on the exporter's zero baseline (`error_type` only on failures). Circuit-breaker series stay `{name, host}` or unlabeled. Delta table gauges stay `{table}`.
 

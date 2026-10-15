@@ -278,8 +278,9 @@ def sample_labels(family: str, **specific: Any) -> dict[str, str]:
 def scrapy_family_errors(metrics: dict[str, tuple[str, ...]]) -> list[str]:
     """Differences between the live registry and ``SCRAPY_FAMILIES``.
 
-    ``delta_manager_*`` must stay unlabeled. Every other family in the
-    registry must be listed, and every listed family must be registered.
+    ``delta_manager_*`` and ``pipeline_js_queue_pending`` (#645) must stay
+    unlabeled. Every other family in the registry must be listed, and every
+    listed family must be registered.
     """
     errors: list[str] = []
     for name, labels in sorted(metrics.items()):
@@ -291,7 +292,7 @@ def scrapy_family_errors(metrics: dict[str, tuple[str, ...]]) -> list[str]:
                 errors.append(f"{name} is missing base labels {BASE_LABELS}")
             if name in SITE_ID_FAMILIES and "site_id" not in labels:
                 errors.append(f"{name} dropped site_id")
-        elif name.startswith("delta_manager"):
+        elif name.startswith("delta_manager") or name == "pipeline_js_queue_pending":
             if tuple(labels) != ():
                 errors.append(f"{name} label set changed: {tuple(labels)}")
         else:
