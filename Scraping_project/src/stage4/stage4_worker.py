@@ -343,8 +343,10 @@ def _drain_requested(done: int, total: int) -> bool:
 
 
 async def run_stage4_worker(shutdown=None):
+    from src.core.pipeline_contract import log_contract_drift
     from src.utils.graceful_shutdown import run_drain_loop
 
+    log_contract_drift()
     logger.info("[STAGE4] Worker starting in continuous mode...")
 
     async def run_once():

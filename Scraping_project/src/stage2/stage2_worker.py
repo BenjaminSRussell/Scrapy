@@ -1467,8 +1467,10 @@ def open_stage2_claim_redis() -> Any:
 
 
 async def run_stage2_worker(shutdown=None):
+    from src.core.pipeline_contract import log_contract_drift
     from src.utils.graceful_shutdown import worker_shutdown
 
+    log_contract_drift()
     logger.info("Stage 2 Worker starting in continuous mode...")
 
     max_concurrent, batch_size = stage_worker_settings(2, 50, 100)

@@ -211,19 +211,26 @@ class Stage3Worker:
     def _processed_hashes(self) -> set:
         """url_hashes Stage 3 has already summarized (#316/#612).
 
-        Stage 3's output table is TABLE_STAGE3_SUMMARIES. Lakes written before
-        #612 hold Stage 3 rows under LEGACY_TABLE_STAGE3_SUMMARIES, so both are
-        read: dropping the legacy read would re-summarize every old document.
-        Each table is optional; a missing one contributes nothing.
+        Stage 3's output table is ``delta_lake.tables.stage3_summaries``
+        (TABLE_STAGE3_SUMMARIES when that key is missing) (#316, #948). Lakes
+        written before #612 hold Stage 3 rows under LEGACY_TABLE_STAGE3_SUMMARIES,
+        so both are read: dropping the legacy read would re-summarize every old
+        document. Each table is optional; a missing one contributes nothing.
         """
         hashes: set = set()
-        for table in (TABLE_STAGE3_SUMMARIES, LEGACY_TABLE_STAGE3_SUMMARIES):
+        for table in (self._summary_table(), LEGACY_TABLE_STAGE3_SUMMARIES):
             try:
                 rows = self.delta.read(table) or []
             except Exception:
                 continue
             hashes.update(r["url_hash"] for r in rows if r.get("url_hash"))
         return hashes
+
+    def _summary_table(self) -> str:
+        """``delta_lake.tables.stage3_summaries``, else TABLE_STAGE3_SUMMARIES (#948)."""
+        from src.core.pipeline_contract import stage3_summary_table
+
+        return stage3_summary_table() or TABLE_STAGE3_SUMMARIES
 
     async def run(self) -> int:
         """Summarize pending quality docs; returns summaries written this run."""
@@ -304,7 +311,7 @@ class Stage3Worker:
             valid_results = [r for r in results if isinstance(r, dict) and not isinstance(r, Exception)]
 
             if valid_results:
-                self.delta.write(TABLE_STAGE3_SUMMARIES, valid_results, mode="append", async_write=False)
+                self.delta.write(self._summary_table(), valid_results, mode="append", async_write=False)
                 written += len(valid_results)
                 logger.info(f"Saved {len(valid_results)} summaries")
 
@@ -441,8 +448,10 @@ def _drain_requested(done: int, total: int) -> bool:
 
 
 async def run_stage3_worker(shutdown=None):
+    from src.core.pipeline_contract import log_contract_drift
     from src.utils.graceful_shutdown import run_drain_loop
 
+    log_contract_drift()
     logger.info("Stage 3 Worker starting in continuous mode...")
 
     max_concurrent, batch_size = stage_worker_settings(3, 20, 50)

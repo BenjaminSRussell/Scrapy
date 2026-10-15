@@ -201,18 +201,19 @@ def drain(monkeypatch):
 def test_drain_lake_imports_and_reads_typed_queues(drain):
     mod, client = drain
     d = mod.LakeDrainer()
-    assert {"stage2_large_docs"} <= d.persistent_queues and "stage1_discovered_urls" in d.transient_queues
-    assert d.redis.get_all_queue_stats() == {"stage1_discovered_urls": 5, "stage2_large_docs": 7}
+    # message_queues was removed (#948): those Redis lists were never worker hops.
+    assert d.persistent_queues == set() and d.transient_queues == set()
+    assert d.redis.get_all_queue_stats() == {}
     assert d.redis.get_queue_size() == 1
-    assert d.drain_targets("all") == [{"queue": "stage1_discovered_urls", "rows": 5, "persistent": False},
-                                      {"queue": "priority_queue", "rows": 1, "persistent": False}]
+    assert d.drain_targets("all") == [{"queue": "priority_queue", "rows": 1, "persistent": False}]
+    assert client.llen("stage1_discovered_urls") == 5 and client.llen("stage2_large_docs") == 7
 
 
 def test_drain_cli_needs_confirm(drain, audit_log, monkeypatch, capsys):
     mod, client = drain
     monkeypatch.setattr(sys, "argv", ["drain_lake.py", "--drain-transient"])
     assert mod.main() == 2 and client.llen("stage1_discovered_urls") == 5
-    assert "stage1_discovered_urls: 5 rows" in capsys.readouterr().out
+    assert "(nothing to remove)" in capsys.readouterr().out
     monkeypatch.setattr(sys, "argv", ["drain_lake.py", "--drain-transient", "--dry-run"])
     assert mod.main() == 0 and client.llen("stage1_discovered_urls") == 5
     monkeypatch.setenv(g.ALLOW_ENV, "1")
@@ -233,7 +234,10 @@ def test_drain_cli_production_refused_without_break_glass(drain, audit_log, monk
 def test_prestop_hook_library_call_is_unguarded(drain):
     mod, client = drain
     mod.LakeDrainer().drain_transient_queues()  # what the Helm preStop hook runs
-    assert not client.exists("stage1_discovered_urls") and client.llen("stage2_large_docs") == 7
+    # No configured transient hop (#948), so preStop must not delete the live
+    # JS frontier or leftover keys from the removed message_queues section.
+    assert client.llen("stage1_discovered_urls") == 5 and client.llen("stage2_large_docs") == 7
+    assert client.zcard(mod.JS_PRIORITY_QUEUE) == 1
 
 
 # --- complete_reset.sh ----------------------------------------------------------------

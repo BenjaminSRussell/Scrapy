@@ -123,14 +123,15 @@ class MetricsExporter:
             "stage3_analytics",
             "stage3_summaries",
             "stage4_large_docs",
-            "stage4_summaries",
+            "stage4_large_doc_summaries",
+            "stage4_summaries",  # legacy Stage 3 name (#612); counted, not Stage 4 throughput
         ]
 
         self._throughput_table_to_stage: dict[str, str] = {
             "stage1_discovery": "stage1",
             "stage2_page_analysis": "stage2",
             "stage3_summaries": "stage3",
-            "stage4_summaries": "stage4",
+            "stage4_large_doc_summaries": "stage4",
         }
         self._tracked_stages: list[str] = sorted(set(self._throughput_table_to_stage.values()))
 
