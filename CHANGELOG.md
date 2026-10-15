@@ -60,6 +60,7 @@ renamed to the new version and date (see the release checklist).
 ### Changed
 - Control Center tabs, health tiles, and the title mark use inline SVG icons (`aria-hidden`) instead of emoji glyphs (#1049).
 - Helm Stage 1–4 sizing: dev stays `values.yaml`, `values-small.yaml` is one replica with HPA off, and `values-prod.yaml` raises worker memory limits so a Kafka lag spike does not OOM the pod. `helm template` fails when an enabled workload omits cpu and memory requests or limits. The delta-ingestor `wait-for-kafka` init container sets both. The sizes are in DEPLOYMENT.md (#1104).
+- Control Center metrics URL resolves as `?metrics=` (http or https), then a URL remembered in this browser, then `window.CC_METRICS_URL`, then the relative `/api/metrics` default. The Status connection popover shows the URL in use (#1020).
 - Production Helm no longer runs the single-replica Redis. `redis.external.host` and `redis.external.port` become `REDIS_HOST` and `REDIS_PORT` (password stays `REDIS_PASSWORD`; do not set `REDIS_URL`). AOF can recover data after the node returns, and it does not keep the queue available during node loss (#216).
 - Seen-URL Redis keys are `site:{site_id}:{prefix}:urls` (for example `site:uconn:seen:urls`). Unscoped `seen:urls` and `scout:urls` are not read; rename them before deploy. `SITE_ID`, else `TENANT_ID`, else `REDIS_SITE_ID`, else `default` (#191).
 - Scrapy and Stage 2 share one retry policy (`retry` in config.yml, otherwise dev vs production defaults). Production uses more attempts; 429 and 503 stay retryable (#215).
@@ -74,8 +75,9 @@ renamed to the new version and date (see the release checklist).
 - `python reseed.py`, `python drain_lake.py`, `python audit_file_counts.py`, and `python monitor_and_trigger_depth.py` at the Scraping_project root. Run `python scripts/<name>.py` from `Scraping_project/` instead. `cli.py` stays the root Python entrypoint (#568).
 
 ### Fixed
+- Control Center line charts plot at most 50 points (LTTB) while the raw chart history keeps 200 samples, so a shorter refresh interval does not turn the series into a solid line. Rates and overview sparklines read the raw buffer. The activity log stays on the 50-point ring (#1014).
 - Control Center keeps the last 50 activity-log entries in `sessionStorage` for this browser tab. A reload restores them and shows a note that they are from before the reload and may be stale. Clear drops the buffer (#1029).
-- Control Center keeps every client time-series (chart history and the activity log) to the last 50 samples with one ring-buffer cap, independent of the chart axis, and cites that cap in the panel help text (#691).
+- Control Center bounds client time-series with a ring-buffer cap independent of the chart axis (50 for the activity log and any store without a raw cap) and cites that cap in the panel help text (#691).
 - Stage 2 replicas jitter the 30s poll (`STAGE2_POLL_JITTER_SECONDS`, default ±15s) and take an exclusive Redis lease (`SET stage2:claim:{url_hash} NX EX`) on each pending URL so two workers do not analyze the same batch. If the lease cannot be acquired, including when Redis is down, the URL is not analyzed (#235).
 - Crawl counters and the StatsD families shared by the metrics exporter and in-process callers now use one label set (`stage`, `worker_id`, `domain`, and the existing `site_id` where it was already present). A value that fails the site-id pattern is `rejected`. Series are not dropped, and there is no numeric site cap (#243).
 - Stage 4 entity updates load stored facts for that entity id, append and dedupe them, and rewrite the summary only when that entity's cluster changed. A new document does not recompute unrelated entities (#474).
