@@ -1,12 +1,16 @@
 # Examples
 
-Stage 4 entity-summarization demos. They are **not** part of the pipeline or of CI.
-Run them from `Scraping_project/` with the project venv active (see
-[CONTRIBUTING.md](../../CONTRIBUTING.md)).
+Optional scripts. They are **not** part of the pipeline image, of CI, or of
+Docker Compose. Run them from `Scraping_project/` with the project venv active
+(see [CONTRIBUTING.md](../../CONTRIBUTING.md)).
+
+## Stage 4 entity summarization
+
+These two demos are **not** part of the pipeline or of CI.
 
 ## Extra dependencies
 
-Both examples need the Stage 4 NLP stack. That install is **optional** and
+Both Stage 4 demos need the Stage 4 NLP stack. That install is **optional** and
 **heavy** (~2 GB of sentence-transformers, transformers, and torch) and is
 **not** in `requirements.txt` or the CI install:
 
@@ -49,3 +53,19 @@ PYTHONPATH=. python examples/stage4/entity_worker_example.py --mode kafka --kafk
 | `kafka` | a reachable Kafka broker (`KAFKA_BOOTSTRAP_SERVERS`) and the input topic (default `final_categorized`); runs until interrupted |
 
 Optional model settings are in `config/entity_summarization.example.yml`.
+
+## `airflow/scraping_pipeline_dag.py`: optional Airflow schedule
+
+An example DAG that runs the existing CLI stages (and one orchestrator call
+for stage 4) from Airflow connections. `airflow/stage_env.py` maps those
+connections onto `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD` and `REDIS_DB`
+(never `REDIS_URL`), plus the optional Postgres and Kafka variables.
+
+It is **not** a Compose service, **not** in `requirements.txt`, and **not**
+started by `python start.py`. The core profile is unchanged. Airflow itself
+is installed only on the scheduler you already run.
+
+Variables, connection ids, and the task commands are documented in
+[airflow/README.md](airflow/README.md). Copy `airflow/scraping_pipeline_dag.py`
+and `airflow/stage_env.py` together onto the Airflow dags path. The DAG is
+not on a schedule until you trigger it.

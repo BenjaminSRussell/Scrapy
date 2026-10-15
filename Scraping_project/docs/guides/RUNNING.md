@@ -30,6 +30,13 @@ python cli.py pipeline --skip-stage1          # or run stages 2-3 once, in order
 python cli.py health                          # row and file counts for every Delta table
 ```
 
+## Schedule the same stages (optional)
+
+`examples/airflow/scraping_pipeline_dag.py` is an Airflow 2.4+ DAG that runs
+those CLI commands (stage 4 is one orchestrator call, off by default). It is
+not a Compose service and not a project dependency. Connections and variables
+are in [examples/airflow/README.md](../../examples/airflow/README.md).
+
 ## Seeds
 
 ```bash
