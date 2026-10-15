@@ -3,12 +3,17 @@
 Static dashboard served by `serve.py` (port 8080). The browser only talks to that
 origin: metrics come from **`/api/metrics`**, which `serve.py` fetches server-side
 from `METRICS_UPSTREAM` (default `http://127.0.0.1:9090/metrics`) (#400). That also
-works when the page is opened via a LAN IP or hostname. Override per page with
-`?metrics=<http(s) url>` or `window.CC_METRICS_URL` (#141). A cross-origin override
-must also be allowed in the CSP with `CC_CONNECT_SRC` (see below). A `?metrics=` value
-that is not http(s) is ignored, and the dashboard says so in the activity log and
-console (#910). Opened as a `file://` page (no server), it falls back to
-`http://localhost:9090/metrics`.
+works when the page is opened via a LAN IP or hostname. Precedence (#1020):
+a `?metrics=<http(s) url>` query, then the URL remembered in this browser
+(`localStorage` key `cc.metricsUrl`), then `window.CC_METRICS_URL` (#141), then
+the relative `/api/metrics` default. A valid `?metrics=` is saved for the next
+visit; "Forget remembered URL" in the Status connection popover clears it and
+drops the query. The popover always shows the URL actually in use. A cross-origin
+override must also be allowed in the CSP with `CC_CONNECT_SRC` (see below). A
+`?metrics=` value that is not http(s) is ignored (it does not fall through to
+the remembered URL), and the dashboard says so in the activity log, the
+popover, and the console (#910). Opened as a `file://` page (no server), the
+default is `http://localhost:9090/metrics`.
 
 The activity log keeps its last 50 entries in `sessionStorage` for this browser
 tab (#1029). A reload restores them and shows a note that they came from before
