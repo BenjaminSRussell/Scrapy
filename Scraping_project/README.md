@@ -675,6 +675,8 @@ Access at `http://localhost:3000` (admin/admin):
 - **Cache Performance**: Hit rates and latency
 - **Error Rates**: Error tracking and alerting
 
+If that home page has no pipeline dashboards, Compose still shows `dashboard/grafana-home.json` (`GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH`). Next step is one click: [Control Center](http://127.0.0.1:8080) or **Dashboards → New → Import** of `monitoring/dashboards/*.json`. Steps: [dashboard/grafana-empty.md](dashboard/grafana-empty.md) (#980).
+
 ### Health Checks
 
 ```bash

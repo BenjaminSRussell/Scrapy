@@ -23,6 +23,8 @@ The provider reads `/var/lib/grafana/dashboards` in both setups. The Helm chart 
 cp monitoring/dashboards/*.json k8s/helm/scraping-pipeline/files/monitoring/dashboards/
 ```
 
+Do not copy `dashboard/grafana-home.json` into this directory. Compose mounts that file at `/etc/grafana/home.json` and points `GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH` at it, so the home page still explains the empty list when this folder did not provision (#980). Steps: [grafana-empty.md](../../dashboard/grafana-empty.md).
+
 The default Prometheus datasource has the fixed uid `prometheus`. That is what the dashboard's `$datasource` variable defaults to.
 
 ## Scraping Pipeline Health

@@ -37,6 +37,8 @@ print_local() {
     echo "  Username: admin"
     echo "  Password: GRAFANA_ADMIN_PASSWORD from .env (default 'admin', local dev only)"
     echo "  Dashboard: ${LOCAL_URL}/d/scraping-pipeline-health"
+    echo "  Empty home: Control Center http://127.0.0.1:8080, or import monitoring/dashboards/*.json"
+    echo "  Doc: dashboard/grafana-empty.md"
     echo ""
 }
 

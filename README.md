@@ -36,7 +36,7 @@ python start.py
 
 `python start.py` needs Docker Compose and a host Python 3.11 or 3.12 only to launch it. It enables the Compose `core` and `monitoring` profiles (Redis, scraper, stage 1–3 workers, Postgres, Prometheus, Grafana) and waits for Postgres. It does not start Stage 4 (`ml` / `full`), Kafka (`streaming`), or the OpenTelemetry overlay. Same profiles as `docker compose --profile core --profile monitoring up -d`. A bare `docker compose up -d` starts nothing, because every service is behind a profile.
 
-Grafana: **http://localhost:3000** (user `admin`; the password is `GRAFANA_ADMIN_PASSWORD` from [`.env`](Scraping_project/.env.example), default `admin` for local dev only). Prometheus is on `localhost:9090`.
+Grafana: **http://localhost:3000** (user `admin`; the password is `GRAFANA_ADMIN_PASSWORD` from [`.env`](Scraping_project/.env.example), default `admin` for local dev only). Prometheus is on `localhost:9090`. If Grafana opens with no pipeline dashboards, the home page and [grafana-empty.md](Scraping_project/dashboard/grafana-empty.md) point at the [Control Center](http://127.0.0.1:8080) and the dashboard import path (#980).
 
 `--reset-delta` wipes Delta tables and reloads seeds. Stop with `python shutdown.py`. Other domains, seeds, and resuming after a crash: [Running guide](Scraping_project/docs/guides/RUNNING.md). Kubernetes: [k8s/README.md](Scraping_project/k8s/README.md) and [DEPLOYMENT.md](Scraping_project/DEPLOYMENT.md).
 

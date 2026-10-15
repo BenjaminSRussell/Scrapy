@@ -273,6 +273,9 @@ services:
       - GF_PLUGINS_PREINSTALL=redis-datasource
       # Read by the PostgreSQL datasource ($__env{POSTGRES_PASSWORD}).
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      # Home page when the org has not picked one, including when dashboard
+      # provisioning loaded nothing (#980).
+      - GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/etc/grafana/home.json
     volumes:
       - grafana-data:/var/lib/grafana
       - ./monitoring/alerting:/etc/grafana/provisioning/alerting
@@ -281,6 +284,9 @@ services:
       - ./monitoring/grafana_datasource.yml:/etc/grafana/provisioning/datasources/datasource.yml:ro
       - ./monitoring/grafana_dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml:ro
       - ./monitoring/dashboards:/var/lib/grafana/dashboards:ro
+      # Not the provisioning provider path. This file is the home page even
+      # if /var/lib/grafana/dashboards is empty (#980).
+      - ./dashboard/grafana-home.json:/etc/grafana/home.json:ro
     networks:
       - scraper-network
     depends_on:
