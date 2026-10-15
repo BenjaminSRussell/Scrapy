@@ -33,7 +33,7 @@ import time
 import urllib.error
 import urllib.request
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 # #735: loopback by default. Containers/LAN must opt in explicitly
 # (CC_HOST=0.0.0.0 or --host 0.0.0.0), which prints a warning.
@@ -71,6 +71,19 @@ SECURITY_HEADERS = {
     "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=(), usb=()",
     "Cross-Origin-Opener-Policy": "same-origin",
 }
+
+# #969: HTML, the generated version script, and /api/* stay uncached. Other CSS/JS/
+# images/fonts are reusable across a refresh. A content hash in the file name
+# (app.a1b2c3d4.js) or ?v= / ?ver= / ?version= / ?hash= is immutable for a year.
+NO_STORE = "no-cache, no-store, must-revalidate"
+SHORT_CACHE = "public, max-age=300"
+IMMUTABLE_CACHE = "public, max-age=31536000, immutable"
+_CACHEABLE_SUFFIXES = frozenset({
+    ".js", ".css", ".map", ".png", ".svg", ".ico", ".jpg", ".jpeg",
+    ".gif", ".webp", ".woff", ".woff2",
+})
+_VERSION_QUERY_KEYS = frozenset({"v", "ver", "version", "hash"})
+_HASH_SPLIT = ".-_"
 
 # #400: Prometheus-format metrics are fetched server-side, so the browser only
 # talks to this origin.
@@ -233,6 +246,46 @@ def queue_keys(env=None) -> tuple[str, ...]:
     return tuple(k.strip() for k in raw.split(",") if k.strip())
 
 
+def _filename_has_hash(name: str) -> bool:
+    """True when a bundler token in the stem is 8+ hex digits (app.a1b2c3d4.js)."""
+    stem = Path(name).stem
+    token: list[str] = []
+    tokens: list[str] = []
+    for ch in stem:
+        if ch in _HASH_SPLIT:
+            if token:
+                tokens.append("".join(token))
+                token = []
+        else:
+            token.append(ch)
+    if token:
+        tokens.append("".join(token))
+    hexdigits = set("0123456789abcdef")
+    return any(len(part) >= 8 and set(part.lower()) <= hexdigits for part in tokens)
+
+
+def _versioned_query(query: str) -> bool:
+    for key, values in parse_qs(query, keep_blank_values=True).items():
+        if key.lower() in _VERSION_QUERY_KEYS and any(v.strip() for v in values):
+            return True
+    return False
+
+
+def cache_control_for(url_path: str) -> str:
+    """Cache-Control for one dashboard URL. Does not apply to error responses."""
+    split = urlsplit(url_path or "/")
+    path = split.path or "/"
+    if path == "/":
+        path = "/index.html"
+    name = path.rsplit("/", 1)[-1]
+    suffix = Path(name).suffix.lower()
+    if path.startswith("/api/") or suffix == ".html" or name == "version.js" or suffix not in _CACHEABLE_SUFFIXES:
+        return NO_STORE
+    if _versioned_query(split.query) or _filename_has_hash(name):
+        return IMMUTABLE_CACHE
+    return SHORT_CACHE
+
+
 def queue_depths(client, keys) -> list[dict]:
     """Type-aware depth per key (LLEN/ZCARD/SCARD/XLEN/HLEN); a missing key is 0."""
     out = []
@@ -297,6 +350,11 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             return None
         return super().send_head()
 
+    def send_response(self, code, message=None):
+        # A 404/401 must not be stored as if it were a fingerprinted asset (#969).
+        self._status_code = int(code)
+        super().send_response(code, message)
+
     def end_headers(self):
         self._cfg()
         origin = (self.headers.get("Origin") or "").rstrip("/") if self.headers else ""
@@ -308,7 +366,12 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         if self.cors_origins:
             self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
             self.send_header("Access-Control-Allow-Headers", "Authorization, Content-Type")
-        self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
+        code = getattr(self, "_status_code", 200)
+        if code >= 400 or getattr(self, "command", "") == "OPTIONS":
+            cache = NO_STORE
+        else:
+            cache = cache_control_for(getattr(self, "path", "/") or "/")
+        self.send_header("Cache-Control", cache)
         self.send_header("Content-Security-Policy", self.csp or build_csp({}))
         for name, value in SECURITY_HEADERS.items():
             self.send_header(name, value)
