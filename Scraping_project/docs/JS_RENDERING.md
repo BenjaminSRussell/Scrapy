@@ -3,6 +3,18 @@
 Settings for the Playwright-backed `javascript` spider (`src/stage1/experimental/js_spider.py`).
 They all live in the `stage1:` block of `config.yml`.
 
+## Browser install (#644)
+
+The Python packages are already in `requirements.txt`. Chromium is not, and default CI does not download it.
+
+| Where | How |
+|---|---|
+| Laptop | `python -m playwright install chromium` (`--with-deps` on a fresh Debian/Ubuntu box). See CONTRIBUTING. |
+| Docker | From `Scraping_project/`: `docker build --target playwright -t scrapy-js:local .`. This stage is not a Compose service and is not published by the release workflow, so `production` / `crawler` stay free of the browser. The image sets `PLAYWRIGHT_BROWSERS_PATH=/ms-playwright`. |
+| CI | Add the `ci:playwright` label to a pull request into `main`, or run **CI JS Playwright** (`workflow_dispatch`, once the workflow file is on `main`). That job runs `python -m playwright install --with-deps chromium` and `tests/unit/stage1/test_js_playwright_browser_644.py` with `PLAYWRIGHT_REQUIRE_BROWSER=1`. Without a browser the test skips; the manual job fails if it skips. Remove and re-add the label to rerun. |
+
+If Chromium dies on startup inside a container, give it more shared memory (`docker run --shm-size=1g`). The GitHub-hosted smoke does not need that.
+
 ## Priority queue bounds (#377)
 
 `JSPriorityQueue` (Redis sorted set `js_spider:priority_queue`) is bounded:

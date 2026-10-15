@@ -27,6 +27,7 @@ make update-deps   # upgrade pins, including ML/OCR locks
 |--------|----------|---------|
 | `base` / `core` / `production` / `crawler` / `stage3` | core only | profile `core` (`scraper`, stage1–3) |
 | `ml` / `stage4` | core + `requirements-ml.txt` + `requirements-ocr.txt` + poppler-utils | profiles `ml` or `full` (`stage4-worker`) |
+| `playwright` | core + Playwright Chromium (not torch) | not in Compose; `docker build --target playwright` ([JS_RENDERING.md](JS_RENDERING.md)) |
 
 ```bash
 docker compose --profile core build

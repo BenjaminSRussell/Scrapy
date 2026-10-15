@@ -1,0 +1,53 @@
+# Opt-in Chromium smoke for the javascript spider (#644).
+# Default CI (main.yml) does not install a browser. This workflow runs only when
+# someone adds the ci:playwright label to a pull request into main, or starts it
+# by hand (workflow_dispatch, after this file is on main). Remove and re-add the
+# label to rerun. It is not on push, and it is not in the release image matrix.
+name: CI JS Playwright
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [ main ]
+    types: [labeled]
+
+# See main.yml for the concurrency rationale. A new label event cancels a
+# superseded run of this workflow; nothing here runs on push to main.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  chromium-smoke:
+    if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'ci:playwright'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: Scraping_project/requirements.txt
+
+      - name: Install dependencies and Playwright Chromium
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r Scraping_project/requirements.txt 'pytest==8.4.2'
+          python -m playwright install --with-deps chromium
+
+      - name: Chromium smoke (must not skip)
+        working-directory: Scraping_project
+        env:
+          OBS_OFFLINE: "1"
+          PLAYWRIGHT_REQUIRE_BROWSER: "1"
+        run: |
+          python -m pytest tests/unit/stage1/test_js_playwright_browser_644.py \
+            -m playwright \
+            -o addopts= \
+            --strict-markers \
+            -q --tb=short

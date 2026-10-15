@@ -71,6 +71,8 @@ Redis/Postgres when they are reachable; CI provides both as service containers.
   python -m playwright install chromium          # add --with-deps on a fresh Debian/Ubuntu box
   ```
 
+  Default CI does not download Chromium. To run that smoke in Actions, add the `ci:playwright` label to a pull request into `main` (remove and re-add the label to rerun), or run **CI JS Playwright** by hand once that workflow is on `main`. The job sets `PLAYWRIGHT_REQUIRE_BROWSER=1`, so a missing browser fails the job instead of skipping. An image that already contains Chromium is `docker build --target playwright` from `Scraping_project/` (not `production`, `crawler`, or Compose). See `Scraping_project/docs/JS_RENDERING.md`.
+
 ## 4b. Editor and dev container
 
 - **VS Code (#363).** `.vscode/launch.json` has debug configs for the current file, the current test file, all unit tests and `cli.py`. `.vscode/tasks.json` has tasks for unit tests, the CI default set, the CI lint gates, the smoke check and `start.py`. All of them run from `Scraping_project/` with `PYTHONPATH=.:src`.

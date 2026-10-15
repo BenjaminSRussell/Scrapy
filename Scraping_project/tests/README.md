@@ -57,7 +57,7 @@ second). The smoke suite is a quick PR signal, not a replacement for the CI sele
 ## Markers (`pytest.ini`, `--strict-markers`)
 
 `unit`, `integration`, `slow`, `redis`, `postgres`, `kafka`, `scrapy`, `stage1`–`stage4`,
-`smoke`, `security`, `performance`, `critical`, `component`, `contract`, `delta`, `flaky`.
+`smoke`, `playwright`, `security`, `performance`, `critical`, `component`, `contract`, `delta`, `flaky`.
 
 - **Skip Kafka:** `-m "not kafka"`. The Kafka suites need a broker and run in their
   own workflow.
@@ -67,6 +67,10 @@ second). The smoke suite is a quick PR signal, not a replacement for the CI sele
   doesn't fail) when no Postgres is reachable.
 - **Load tests:** `performance` and `slow` are excluded from PR CI. Run them with
   `make test-perf` (`pytest tests/performance -m performance`).
+- **Playwright / Chromium:** marked `playwright`. Default CI does not install a browser, so
+  `tests/unit/stage1/test_js_playwright_browser_644.py` skips unless Chromium is already
+  present. It is not part of `make test-smoke`. Deselect with `-m "not playwright"`. The
+  manual label `ci:playwright` installs Chromium and forbids that skip (#644).
 
 ## Environment
 

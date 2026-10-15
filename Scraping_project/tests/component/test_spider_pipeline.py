@@ -81,6 +81,7 @@ class TestJSSpiderComponents:
         # scrapy_playwright is only referenced by dotted-path string in
         # DOWNLOAD_HANDLERS (resolved lazily by Scrapy on first real
         # request), so constructing the spider never needs it installed.
+        # The Chromium smoke is opt-in (#644): test_js_playwright_browser_644.
         from src.stage1.experimental.js_spider import JavaScriptSpider
 
         spider = JavaScriptSpider()

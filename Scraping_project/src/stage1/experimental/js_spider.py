@@ -36,6 +36,8 @@ class JavaScriptSpider(ExperimentalSpiderMixin, scrapy.Spider):
             "https": "scrapy_playwright.handler.ScrapyPlaywrightDownloadHandler",
         },
         "PLAYWRIGHT_BROWSER_TYPE": "chromium",
+        # Chromium is not in the core image. Dockerfile target `playwright`
+        # and the manual ci:playwright workflow install it (#644).
         # #390: configurable blocking, applied from the first subresource (not only after load).
         "PLAYWRIGHT_ABORT_REQUEST": "src.stage1.experimental.playwright_blocking.should_abort_request",
         "PLAYWRIGHT_LAUNCH_OPTIONS": {

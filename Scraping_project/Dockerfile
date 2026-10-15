@@ -4,6 +4,8 @@
 # Targets:
 #   base / core / production / crawler / metrics / stage3 — requirements.txt only (no torch)
 #   ml / stage4 — core + requirements-ml.txt + requirements-ocr.txt + poppler-utils
+#   playwright — base + Playwright Chromium for the javascript spider (#644).
+#     Opt-in only: not a Compose service and not a cd-release image.
 # Stage 3 is light (datasketch). Stage 4 fails fast without ML+OCR extras.
 
 FROM python:3.11-slim as base
@@ -146,3 +148,18 @@ WORKDIR /home/ingest
 # (waits for Kafka when KAFKA_BOOTSTRAP_SERVERS is set, then execs the binary).
 ENTRYPOINT ["/usr/local/bin/kafka-delta-ingest-entrypoint.sh"]
 CMD ["--help"]
+
+
+# Optional javascript-spider image (#644). Not selected by docker-compose.yml and
+# not built by .github/workflows/cd-release.yml, so production/crawler stay
+# browserless. Same install the manual `ci:playwright` workflow runs on the runner:
+#   docker build --target playwright -t scrapy-js:local .
+FROM base as playwright
+USER root
+# Installed as root; uid 1000 (scraper) must be able to launch the browser.
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+RUN DEBIAN_FRONTEND=noninteractive \
+        python -m playwright install --with-deps chromium \
+    && chown -R scraper:scraper /ms-playwright \
+    && rm -rf /var/lib/apt/lists/*
+USER scraper
