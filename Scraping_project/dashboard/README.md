@@ -74,6 +74,8 @@ node --test Scraping_project/dashboard/tests/   # helper unit tests
 | `CC_CORS_ORIGINS` | unset (no CORS headers) | Comma list of exact origins allowed to read responses cross-origin; `*` is for local development only and prints a warning (#189) |
 | `CC_CONNECT_SRC` | unset | Extra http(s) origins allowed in CSP `connect-src` (only for a cross-origin `?metrics=`) (#245) |
 | `CC_RATE_LIMIT` / `CC_RATE_BURST` | `600` / `120` | Per-client token bucket: requests per minute and burst. Excess requests get `429` with `Retry-After`. `CC_RATE_LIMIT=0` disables it (#257) |
+| `CC_ENV` | unset | Dashboard environment. Chaos game-day buttons require exactly `staging`. `ENV` or `APP_ENV` of `production` or `prod` keeps them off even if `CC_ENV=staging` (#967) |
+| `CC_CHAOS_GAMEDAY` | off | `1` / `true` / `yes` / `on` arms the two stubs. Any other value, including a typo, stays off (#967) |
 
 ## Exposing the dashboard (#189/#455)
 
@@ -171,6 +173,20 @@ parser. It does not call that route and it does not scrape. The configured
 Sentinels (`unknown`, `rejected`, `-`) are dropped. When no usable series is
 present the card stays on **No scrape-target metric reported.** and does not
 invent seeds. Host text is rendered with `textContent`.
+
+## Chaos game day (#967)
+
+The System tab card **Chaos game day** productizes the safe half of the chaos scenarios in issue #250 (Redis down, Kafka stalled). It does not run those tests and it does not touch a broker.
+
+| Control | What it does |
+|---|---|
+| Kill Redis (stub) | `POST /api/chaos/gameday` `{"action":"kill-redis"}` records the request. Redis stays up. |
+| Pause Kafka (stub) | Same route, `{"action":"pause-kafka"}`. Kafka stays up. |
+| Postmortem template | [`chaos-gameday-postmortem.txt`](chaos-gameday-postmortem.txt), linked from the card. |
+
+Both buttons are `hidden` and disabled in the page. `GET /api/chaos/gameday` shows them only when `enabled` is true: the effective environment is exactly `staging` and `CC_CHAOS_GAMEDAY` is on. The browser check is a hint. The POST handler applies the same rule and answers `403` otherwise. An unknown action is `400`. Neither path opens a Redis or Kafka client. `effect` is always `none`.
+
+`ENV=production` or `APP_ENV=prod` disables the card even if `CC_ENV` says staging. A flag typo does not arm it.
 
 ## Threat model notes (#1046)
 

@@ -22,6 +22,7 @@ import argparse
 import base64
 import hmac
 import http.server
+import importlib.util
 import json
 import math
 import os
@@ -42,6 +43,20 @@ DEFAULT_PORT = 8080
 PORT = DEFAULT_PORT  # kept for backwards compatibility
 WILDCARD_HOSTS = frozenset({"", "0.0.0.0", "::", "[::]"})
 DASHBOARD_DIR = Path(__file__).parent
+
+
+def _load_chaos_gameday():
+    """Sibling module. Loaded by path so `python serve.py` and test imports agree."""
+    path = Path(__file__).with_name("chaos_gameday.py")
+    spec = importlib.util.spec_from_file_location("cc_chaos_gameday", path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"cannot load {path}")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+chaos_gameday = _load_chaos_gameday()
 # #721: only dashboard assets are served; source, tests, docs and dotfiles are 404.
 ALLOWED_SUFFIXES = frozenset({".html", ".js", ".css", ".map", ".png", ".svg", ".ico", ".jpg", ".jpeg",
                               ".gif", ".webp", ".woff", ".woff2", ".json", ".txt"})
@@ -259,6 +274,8 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
     upstream_timeout: float = 4.0
     redis_factory = staticmethod(_redis_from_env)
     queue_keys: tuple[str, ...] | None = None
+    # #967: snapshot of the env the chaos stubs read. None means the process env.
+    chaos_env: dict | None = None
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(self.root), **kwargs)
@@ -274,6 +291,7 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         cls.metrics_upstream = env.get("METRICS_UPSTREAM", DEFAULT_METRICS_UPSTREAM)
         cls.upstream_timeout = _env_float(env, "CC_UPSTREAM_TIMEOUT", 4.0) or 4.0
         cls.queue_keys = queue_keys(env)
+        cls.chaos_env = env
 
     def _cfg(self):
         if self.auth is None:
@@ -383,7 +401,31 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             return
         self._send_json(200, {"ok": True, "queues": queues, "checked_at": time.time()})
 
-    API_ROUTES = {"/api/metrics": "_api_metrics", "/api/health": "_api_health", "/api/queues": "_api_queues"}
+    def _chaos_env(self):
+        return os.environ if self.chaos_env is None else self.chaos_env
+
+    def _api_chaos_gameday(self) -> None:
+        # Status only. The buttons are stubs and this route never dials Redis.
+        self._send_json(200, chaos_gameday.status(self._chaos_env()))
+
+    def _read_limited_body(self, limit: int = 4096):
+        raw_len = self.headers.get("Content-Length") if self.headers else None
+        if raw_len is None:
+            return b""
+        try:
+            length = int(raw_len)
+        except ValueError:
+            return None
+        if length < 0 or length > limit:
+            return None
+        return self.rfile.read(length)
+
+    API_ROUTES = {
+        "/api/metrics": "_api_metrics",
+        "/api/health": "_api_health",
+        "/api/queues": "_api_queues",
+        "/api/chaos/gameday": "_api_chaos_gameday",
+    }
 
     def do_OPTIONS(self):
         self._cfg()
@@ -424,6 +466,30 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             self._send_bytes(200, body, 'application/javascript; charset=utf-8')
             return
         return super().do_GET()
+
+    def do_POST(self):
+        # #967: the only write is a staging stub. Other paths stay unused.
+        if not self._guard():
+            return
+        body = self._read_limited_body()
+        route = urlsplit(self.path).path
+        if route != "/api/chaos/gameday":
+            self._send_json(404, {"ok": False, "error": "not found", "stub": True, "effect": "none"})
+            return
+        if body is None:
+            self._send_json(400, {"ok": False, "error": "invalid body", "stub": True, "effect": "none"})
+            return
+        try:
+            payload = json.loads(body.decode("utf-8") or "{}")
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            self._send_json(400, {"ok": False, "error": "invalid json", "stub": True, "effect": "none"})
+            return
+        if not isinstance(payload, dict):
+            self._send_json(400, {"ok": False, "error": "invalid json", "stub": True, "effect": "none"})
+            return
+        action = payload.get("action")
+        status, result = chaos_gameday.inject(self._chaos_env(), "" if action is None else str(action))
+        self._send_json(status, result)
 
 
 class DashboardServer(socketserver.ThreadingTCPServer):
@@ -494,6 +560,8 @@ def main(argv=None):
     print(f"📊 Dashboard:  http://{shown}:{port}")
     print(f"📈 Metrics:    /api/metrics -> {DashboardHandler.metrics_upstream}  (METRICS_UPSTREAM)")
     print(f"🔐 Auth:       {'on' if DashboardHandler.auth and DashboardHandler.auth.enabled else 'off (CC_AUTH_TOKEN / CC_BASIC_AUTH)'}")
+    chaos_on = chaos_gameday.enabled(os.environ)
+    print(f"🧪 Chaos:      {'staging stubs armed' if chaos_on else 'off (CC_ENV=staging and CC_CHAOS_GAMEDAY=1)'}")
     print("📉 Grafana:    http://localhost:3001 (separate analytics)")
     print()
     print("Purpose:")

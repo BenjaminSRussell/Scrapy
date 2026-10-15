@@ -1,0 +1,22 @@
+Chaos game-day postmortem
+=========================
+
+Use this after a staging game day. The Control Center buttons "Kill Redis (stub)"
+and "Pause Kafka (stub)" do not stop those services. They only record that an
+operator asked for a safe fault-injection stub (#967, productizing the chaos
+scenarios in #250).
+
+Do not paste secrets, tokens, or customer data.
+
+Date (UTC):
+Environment (must be staging):
+Operator:
+Action exercised: kill-redis | pause-kafka | both | none
+CC_CHAOS_GAMEDAY was on: yes | no
+Did any real Redis or Kafka process stop: no (stubs have no effect)
+
+What we expected:
+What we observed:
+Customer impact: none
+What the reliability suite should assert next:
+Follow-ups:

@@ -1802,6 +1802,45 @@ function applyVersionWatermark() {
     if (el) el.textContent = 'v' + (window.__CC_VERSION__ || 'dev');
 }
 
+function setupChaosGameday() {
+    // #967: the server is the guard. A missing helper must not block the poll.
+    const root = document.getElementById('chaos-gameday');
+    if (!root || typeof ChaosGameday === 'undefined' || typeof fetch !== 'function') return;
+    if (typeof root.querySelectorAll !== 'function') return;
+    const result = document.getElementById('chaos-gameday-result');
+    const endpoint = 'api/chaos/gameday';
+    function paint(status) {
+        try { ChaosGameday.applyChaosPanel(document, status); } catch (_) { /* keep the buttons hidden */ }
+    }
+    fetch(endpoint, { headers: { Accept: 'application/json' } })
+        .then(function (response) { return response.ok ? response.json() : null; })
+        .then(paint)
+        .catch(function () { paint(null); });
+    const buttons = root.querySelectorAll('[data-chaos-action]');
+    for (let i = 0; i < buttons.length; i++) {
+        const btn = buttons[i];
+        btn.addEventListener('click', function () {
+            if (btn.disabled || btn.hidden) return;
+            const action = btn.getAttribute('data-chaos-action');
+            btn.setAttribute('aria-busy', 'true');
+            fetch(endpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+                body: JSON.stringify({ action: action }),
+            })
+                .then(function (response) { return response.json(); })
+                .then(function (body) {
+                    const described = ChaosGameday.describeInjection(body);
+                    if (result) result.textContent = described.text;
+                })
+                .catch(function () {
+                    if (result) result.textContent = ChaosGameday.REFUSED;
+                })
+                .finally(function () { btn.removeAttribute('aria-busy'); });
+        });
+    }
+}
+
 function initialize() {
     console.log('Initializing Pipeline Control Center...');
 
@@ -1825,6 +1864,7 @@ function initialize() {
     setupIntervalControl();
     setupVisibilityPause();
     setupDangerSound();
+    setupChaosGameday();
     startCountdown();
 
     const pauseBtn = document.getElementById('pause-refresh');
