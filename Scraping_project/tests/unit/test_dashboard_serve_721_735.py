@@ -1,6 +1,7 @@
 """Dashboard serve.py: 404s for missing/non-asset paths (#721) and bind host/port (#735)."""
 from __future__ import annotations
 
+import http.client
 import importlib.util
 import threading
 import urllib.error
@@ -68,6 +69,80 @@ def test_source_docs_dotfiles_and_listings_are_not_served(server, path):
     status, _, body = get(base + path)
     assert status == 404
     assert "SECRET" not in body and "TOKEN" not in body and "Directory listing" not in body
+
+
+def test_only_allowlisted_extensions_are_served(server):
+    """#990: unknown paths and non-allowlisted types are 404; static types still load."""
+    base, root = server
+    (root / "icon.svg").write_text("<svg id='ok'/>")
+    (root / "logo.png").write_bytes(b"PNG-ok")
+    (root / "favicon.ico").write_bytes(b"ICO-ok")
+    (root / "app.js.map").write_text('{"file":"app.js"}')
+    (root / "backup.json").write_text('{"token":"SECRETJSON"}')
+    (root / "notes.txt").write_text("SECRETTXT")
+    (root / "photo.jpg").write_bytes(b"SECRETJPG")
+    (root / "font.woff2").write_bytes(b"SECRETWOFF")
+    (root / "dump.sql").write_text("SECRETDUMP")
+    (root / "archive.zip").write_bytes(b"SECRETZIP")
+    (root / "config.yml").write_text("SECRETYML")
+    (root / "secret.bak").write_text("SECRETBAK")
+    (root / "id_rsa").write_text("SECRETRSA")
+    (root / ".secret.html").write_text("SECRETDOTHTML")
+    (root / "sub" / "hidden.txt").write_text("SECRETHIDDEN")
+
+    for path, needle in (
+        ("/icon.svg", "<svg"),
+        ("/logo.png", "PNG-ok"),
+        ("/favicon.ico", "ICO-ok"),
+        ("/app.js.map", '"file"'),
+        ("/app.js?v=1", "console.log"),
+    ):
+        status, ctype, body = get(base + path)
+        assert status == 200, path
+        assert needle in body
+        assert "text/html" not in ctype  # not the 404 page
+
+    secrets = ("SECRETJSON", "SECRETTXT", "SECRETJPG", "SECRETWOFF", "SECRETDUMP",
+               "SECRETZIP", "SECRETYML", "SECRETBAK", "SECRETRSA", "SECRETDOTHTML", "SECRETHIDDEN")
+    for path in (
+        "/backup.json", "/notes.txt", "/photo.jpg", "/font.woff2", "/dump.sql",
+        "/archive.zip", "/config.yml", "/secret.bak", "/id_rsa", "/.secret.html",
+        "/notes.txt?x=.js", "/backup.json?.html", "/sub/", "/sub/hidden.txt",
+        "/no-such.html", "/missing", "/img/missing.png",
+    ):
+        status, _, body = get(base + path)
+        assert status == 404, path
+        assert "Directory listing" not in body
+        assert not any(secret in body for secret in secrets)
+
+    host, port = base.rsplit(":", 1)
+    for path in ("/%2Esecret.html", "/%2Eenv", "/notes.txt%00.html"):
+        conn = http.client.HTTPConnection(host.removeprefix("http://"), int(port), timeout=5)
+        try:
+            conn.request("GET", path)
+            resp = conn.getresponse()
+            body = resp.read().decode()
+            assert resp.status == 404, path
+            assert "SECRETDOTHTML" not in body and "TOKEN" not in body
+        finally:
+            conn.close()
+
+
+def test_is_servable_decodes_before_the_allowlist(serve):
+    check = serve.DashboardHandler._is_servable
+    assert check(None, "/") is True
+    assert check(None, "/app.js?v=1") is True
+    assert check(None, "/icon.SVG") is True
+    assert check(None, "/app.js.map") is True
+    assert check(None, "/logo.png") is True
+    assert check(None, "/backup.json") is False
+    assert check(None, "/notes.txt?.js") is False
+    assert check(None, "/font.woff2") is False
+    assert check(None, "/%2Esecret.html") is False
+    assert check(None, "/%2Eenv") is False
+    assert check(None, "/tests/t.js") is False
+    assert check(None, "/sub/") is False
+    assert check(None, "/notes.txt%00.html") is False
 
 
 def test_existing_assets_still_served(server):
