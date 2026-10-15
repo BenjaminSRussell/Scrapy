@@ -14,6 +14,7 @@ function seriesReadByApp(src) {
     const patterns = [
         /metrics\[\s*['"]([A-Za-z_:][A-Za-z0-9_:]*)['"]\s*\]/g,
         /['"]([A-Za-z_:][A-Za-z0-9_:]*)['"]\s+in\s+metrics/g,
+        /stageMetricReading\(\s*metrics\s*,\s*['"]([A-Za-z_:][A-Za-z0-9_:]*)['"]\s*\)/g,
         /countLabelValues\(\s*metrics\s*,\s*['"]([A-Za-z_:][A-Za-z0-9_:]*)['"]/g,
     ];
     for (const re of patterns) {

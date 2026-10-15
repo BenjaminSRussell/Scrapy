@@ -385,6 +385,46 @@
             color: var(--primary-dark);
         }
 
+        /* #987: missing series ≠ 0. The icon sits with the value, not the label. */
+        .stage-metric-figure {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.25rem;
+        }
+        .stage-metric-warn.ui-icon,
+        .stage-card-warn.ui-icon {
+            width: 0.95em;
+            height: 0.95em;
+            margin-right: 0;
+            color: #92400e;
+            flex: none;
+        }
+        .stage-metric.is-missing .stage-metric-value,
+        .metric-row.is-missing .metric-value {
+            color: #92400e;
+        }
+        .stage-card.is-partial {
+            border-color: #b45309;
+            border-style: dashed;
+        }
+        #tab-overview .grid-4 > .card.is-partial {
+            border: 2px dashed #b45309;
+        }
+        .stage-card-spinner {
+            display: inline-block;
+            width: 0.85rem;
+            height: 0.85rem;
+            margin-right: 0.35rem;
+            border: 2px solid var(--gray-300);
+            border-top-color: var(--primary);
+            border-radius: 50%;
+            vertical-align: -0.1em;
+            animation: stageCardSpin 0.8s linear infinite;
+        }
+        @keyframes stageCardSpin {
+            to { transform: rotate(360deg); }
+        }
+
         /* #1033: stage drill-down. [hidden] must beat display:flex. */
         .stage-drilldown {
             position: fixed;
@@ -913,6 +953,19 @@
             .health-item.unhealthy {
                 border: 3px dashed CanvasText;  /* state without colour */
             }
+            .stage-card.is-partial,
+            #tab-overview .grid-4 > .card.is-partial {
+                border: 2px dashed CanvasText;
+            }
+            .stage-metric.is-missing,
+            .metric-row.is-missing {
+                outline: 1px dashed CanvasText;
+                outline-offset: 2px;
+            }
+            .stage-card-spinner {
+                border-color: CanvasText;
+                border-top-color: Highlight;
+            }
             .data-fallback-table,
             .data-fallback-table th,
             .data-fallback-table td {
@@ -978,6 +1031,7 @@
             .status-dot,
             .metric-value.flash,
             .stage-metric-value.flash,
+            .stage-card-spinner,
             .is-loading {
                 animation: none !important;
             }

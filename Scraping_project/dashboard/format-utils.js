@@ -138,6 +138,30 @@
         }
         return seen.size > 0 ? seen.size : null;
     }
+    // #987: a missing stage series is not a zero. Only a finite number counts
+    // as present, so a key that is absent, null, or NaN stays "not reported"
+    // while a real 0 still displays as 0.
+    function stageMetricReading(metrics, key) {
+        if (!metrics || typeof metrics !== 'object') return { missing: true, value: null };
+        if (!Object.prototype.hasOwnProperty.call(metrics, key)) return { missing: true, value: null };
+        const raw = metrics[key];
+        if (typeof raw !== 'number' || !Number.isFinite(raw)) return { missing: true, value: null };
+        return { missing: false, value: raw };
+    }
+    function stageMetricNumber(reading) {
+        return reading && reading.missing === false ? reading.value : 0;
+    }
+    function stageMetricText(reading, presentText) {
+        if (!reading || reading.missing) return '\u2014';
+        return String(presentText);
+    }
+    // Present 0 stays "0x". Callers must not use this for a missing series;
+    // stageMetricText already substitutes an em dash in that case.
+    function stageCompressionLabel(value) {
+        const n = Number(value);
+        if (!Number.isFinite(n) || n <= 0) return '0x';
+        return (1 / n).toFixed(0) + 'x';
+    }
     // Which pipeline stages are currently doing work (#976). Order matches the
     // four Pipeline-tab stage cards. A stage is active when its per-interval
     // rate is a finite number above `threshold`; missing/NaN rates (series not
@@ -625,7 +649,7 @@
         },
         {
             metric: 'stage4_avg_compression_ratio',
-            read: 'Gauge. Shown as (1/value)x when value is above 0, otherwise 0x.',
+            read: 'Gauge. Shown as (1/value)x when the series is present and above 0, and 0x when it is present and 0. An absent series shows an em dash and a warning, not 0x.',
             fields: [
                 { label: 'Overview · Compression (out÷in)', id: 'overview-s4-compression' },
                 { label: 'Pipeline · Avg Compression', id: 'pipeline-s4-compression' },
@@ -656,7 +680,7 @@
         },
         {
             metric: 'pipeline_scout_instances',
-            read: 'Gauge. An absent series shows an em dash, not zero.',
+            read: 'Gauge. An absent series shows an em dash and a warning icon, not zero. A present 0 still shows 0.',
             fields: [
                 { label: 'Pipeline · Scout Instances', id: 'scout-instances' },
             ],
@@ -777,5 +801,5 @@
             : `Metrics poll history, last ${n} outcomes. ${caption}. Oldest on the left.`;
         return { slots, ok: okCount, fail: failCount, total: windowed.length, limit: n, label, caption };
     }
-    return { tabKeyTarget, staleState, queueDepthRows, metricsFailureActivity, shortcutHintText, parseMetrics, ratePerMinute, resolveMetricsUrl, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler, stageActivity, stageDrilldown, stageDrilldownKey, doughnutLegendLayout, connectionState, documentTitle, createActivityAnnouncer, metricsUrlProblem, splitLinks, createMetricsFetcher, REFRESH_INTERVAL_CHOICES, parseRefreshInterval, shortcutAction, pickInitialTab, METRIC_UI_MAP, renderMetricNameMap, parseDangerSoundEnabled, dangerSoundDecision, HEALTH_HISTORY_LIMIT, pushPollOutcome, healthHistoryView, COMPARISON_BASELINE_ROLE, PREV_HOUR_AVG_KEYS, readPrevHourAverage, comparisonBaselineSeries, comparisonNote };
+    return { tabKeyTarget, staleState, queueDepthRows, metricsFailureActivity, shortcutHintText, parseMetrics, ratePerMinute, resolveMetricsUrl, formatNumber, formatBytes, formatEpochTime, countLabelValues, stageMetricReading, stageMetricNumber, stageMetricText, stageCompressionLabel, createRefreshScheduler, stageActivity, stageDrilldown, stageDrilldownKey, doughnutLegendLayout, connectionState, documentTitle, createActivityAnnouncer, metricsUrlProblem, splitLinks, createMetricsFetcher, REFRESH_INTERVAL_CHOICES, parseRefreshInterval, shortcutAction, pickInitialTab, METRIC_UI_MAP, renderMetricNameMap, parseDangerSoundEnabled, dangerSoundDecision, HEALTH_HISTORY_LIMIT, pushPollOutcome, healthHistoryView, COMPARISON_BASELINE_ROLE, PREV_HOUR_AVG_KEYS, readPrevHourAverage, comparisonBaselineSeries, comparisonNote };
 });

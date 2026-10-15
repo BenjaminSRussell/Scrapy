@@ -672,6 +672,119 @@ function checkMilestones(metrics) {
     milestonesPrimed = true;
 }
 
+// #987: warning triangle for a stage row or card whose series was not exported.
+function warningIcon(extraClass) {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('class', 'ui-icon ' + extraClass);
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('aria-hidden', 'true');
+    svg.setAttribute('focusable', 'false');
+    svg.setAttribute('fill', 'none');
+    svg.setAttribute('stroke', 'currentColor');
+    svg.setAttribute('stroke-width', '2');
+    svg.setAttribute('stroke-linecap', 'round');
+    svg.setAttribute('stroke-linejoin', 'round');
+    const tri = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    tri.setAttribute('d', 'M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z');
+    const stem = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    stem.setAttribute('d', 'M12 9v4');
+    const dot = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    dot.setAttribute('d', 'M12 17h.01');
+    svg.append(tri, stem, dot);
+    return svg;
+}
+
+function ensureStageMetricFigure(el) {
+    const parent = el.parentElement;
+    if (!parent) return null;
+    if (parent.classList.contains('stage-metric-figure')) return parent;
+    const fig = document.createElement('span');
+    fig.className = 'stage-metric-figure';
+    parent.insertBefore(fig, el);
+    fig.appendChild(el);
+    return fig;
+}
+
+function applyStageMetricElement(el, text, missing) {
+    if (!el) return;
+    const next = String(text);
+    if (el.textContent !== next) {
+        el.textContent = next;
+        el.classList.remove('flash');
+        void el.offsetWidth;
+        el.classList.add('flash');
+    }
+    const row = el.closest('.stage-metric, .metric-row');
+    if (row) row.classList.toggle('is-missing', !!missing);
+    el.classList.toggle('is-missing', !!missing);
+    if (missing) {
+        el.title = 'Not reported by the metrics exporter';
+        el.setAttribute('aria-label', 'Not reported');
+    } else {
+        el.removeAttribute('title');
+        el.removeAttribute('aria-label');
+    }
+    const fig = ensureStageMetricFigure(el);
+    if (!fig) return;
+    const icon = fig.querySelector('.stage-metric-warn');
+    if (missing) {
+        if (!icon) fig.insertBefore(warningIcon('stage-metric-warn'), el);
+    } else if (icon) {
+        icon.remove();
+    }
+}
+
+function paintStageMetric(id, reading, presentText) {
+    applyStageMetricElement(
+        document.getElementById(id),
+        stageMetricText(reading, presentText),
+        !!(reading && reading.missing)
+    );
+}
+
+// Spinner while the card's values are still the first-load placeholders, and
+// a dashed card plus title icon once any of its series is missing (#987).
+function syncStageCardStates() {
+    document.querySelectorAll('#tab-pipeline .stage-card, #tab-overview .grid-4 > .card').forEach(card => {
+        const loading = !!card.querySelector('.metric-value.is-loading, .stage-metric-value.is-loading');
+        // Scout instances are often unreported on purpose. That row still shows
+        // its own warning, but it must not mark the whole Stage 1 card partial.
+        const missingRows = card.querySelectorAll('.stage-metric.is-missing, .metric-row.is-missing');
+        const partial = !loading && Array.from(missingRows).some(row => !row.querySelector('#scout-instances'));
+        card.classList.toggle('is-card-loading', loading);
+        card.classList.toggle('is-partial', partial);
+        if (loading) card.setAttribute('aria-busy', 'true');
+        else card.removeAttribute('aria-busy');
+        const title = card.querySelector('.stage-title, .card-title');
+        if (!title) return;
+        let spinner = title.querySelector('.stage-card-spinner');
+        if (loading) {
+            if (!spinner) {
+                spinner = document.createElement('span');
+                spinner.className = 'stage-card-spinner';
+                spinner.setAttribute('aria-hidden', 'true');
+                title.insertBefore(spinner, title.firstChild);
+            }
+        } else if (spinner) {
+            spinner.remove();
+        }
+        const icon = title.querySelector('.stage-card-warn');
+        const note = title.querySelector('.stage-card-missing-note');
+        if (partial) {
+            if (!icon) title.insertBefore(warningIcon('stage-card-warn'), title.firstChild);
+            if (!note) {
+                const span = document.createElement('span');
+                span.className = 'visually-hidden stage-card-missing-note';
+                span.textContent = 'Some metrics were not reported';
+                title.appendChild(span);
+            }
+        } else {
+            if (icon) icon.remove();
+            if (note) note.remove();
+        }
+    });
+}
+
 function updateDashboard(metrics) {
     checkMilestones(metrics);
     if (metricsWasDown) {
@@ -679,77 +792,57 @@ function updateDashboard(metrics) {
         // spoken once via the activity announcer (#962), not a second region
         addActivityLogItem('success', 'Metrics connection restored');
     }
-    const s1Discovered = metrics['stage1_urls_discovered_total'] || 0;
-    const s1Queued = metrics['stage1_urls_queued_total'] || 0;
-    const s2Analyzed = metrics['stage2_pages_analyzed_total'] || 0;
-    const s2Quality = metrics['stage2_quality_docs_total'] || 0;
-    const s2Massive = metrics['stage2_massive_docs_total'] || 0;
-    const s2Words = metrics['stage2_avg_word_count'] || 0;
-    const s3Summaries = metrics['stage3_summaries_created_total'] || 0;
-    const s3Dedup = metrics['stage3_documents_deduplicated_total'] || 0;
-    const s4Summaries = metrics['stage4_large_doc_summaries_total'] || 0;
-    const s4Compression = metrics['stage4_avg_compression_ratio'] || 0;
+    const s1Discovered = stageMetricReading(metrics, 'stage1_urls_discovered_total');
+    const s1Queued = stageMetricReading(metrics, 'stage1_urls_queued_total');
+    const s2Analyzed = stageMetricReading(metrics, 'stage2_pages_analyzed_total');
+    const s2Quality = stageMetricReading(metrics, 'stage2_quality_docs_total');
+    const s2Massive = stageMetricReading(metrics, 'stage2_massive_docs_total');
+    const s2Words = stageMetricReading(metrics, 'stage2_avg_word_count');
+    const s3Summaries = stageMetricReading(metrics, 'stage3_summaries_created_total');
+    const s3Dedup = stageMetricReading(metrics, 'stage3_documents_deduplicated_total');
+    const s4Summaries = stageMetricReading(metrics, 'stage4_large_doc_summaries_total');
+    const s4Compression = stageMetricReading(metrics, 'stage4_avg_compression_ratio');
+    const s1DiscoveredN = stageMetricNumber(s1Discovered);
+    const s2AnalyzedN = stageMetricNumber(s2Analyzed);
+    const s2QualityN = stageMetricNumber(s2Quality);
+    const s2MassiveN = stageMetricNumber(s2Massive);
+    const s3SummariesN = stageMetricNumber(s3Summaries);
+    const s4SummariesN = stageMetricNumber(s4Summaries);
 
     const rates = calculateRates(metrics);
 
     // topbar status is owned by setConnectionStatus (#945)
-    setMetricText('topbar-urls', formatNumber(s1Discovered));
-    setMetricText('topbar-summaries', formatNumber(s3Summaries));
+    setMetricText('topbar-urls', stageMetricText(s1Discovered, formatNumber(s1DiscoveredN)));
+    setMetricText('topbar-summaries', stageMetricText(s3Summaries, formatNumber(s3SummariesN)));
 
-    ['overview', 'pipeline'].forEach(prefix => {
-        const elem = document.getElementById(`${prefix}-s1-discovered`);
-        if (elem) { const __n = formatNumber(s1Discovered); if (elem.textContent !== String(__n)) { elem.textContent = __n; elem.classList.remove('flash'); void elem.offsetWidth; elem.classList.add('flash'); } else { elem.textContent = __n; } }
-    });
-    ['overview', 'pipeline'].forEach(prefix => {
-        const elem = document.getElementById(`${prefix}-s1-queued`);
-        if (elem) { const __n = formatNumber(s1Queued); if (elem.textContent !== String(__n)) { elem.textContent = __n; elem.classList.remove('flash'); void elem.offsetWidth; elem.classList.add('flash'); } else { elem.textContent = __n; } }
-    });
-    ['overview', 'pipeline'].forEach(prefix => {
-        const elem = document.getElementById(`${prefix}-s2-analyzed`);
-        if (elem) { const __n = formatNumber(s2Analyzed); if (elem.textContent !== String(__n)) { elem.textContent = __n; elem.classList.remove('flash'); void elem.offsetWidth; elem.classList.add('flash'); } else { elem.textContent = __n; } }
-    });
-    ['overview', 'pipeline'].forEach(prefix => {
-        const elem = document.getElementById(`${prefix}-s2-quality`);
-        if (elem) { const __n = formatNumber(s2Quality); if (elem.textContent !== String(__n)) { elem.textContent = __n; elem.classList.remove('flash'); void elem.offsetWidth; elem.classList.add('flash'); } else { elem.textContent = __n; } }
-    });
-
-    const s2MassiveElem = document.getElementById('pipeline-s2-massive');
-    if (s2MassiveElem) { const __n = formatNumber(s2Massive); if (s2MassiveElem.textContent !== String(__n)) { s2MassiveElem.textContent = __n; s2MassiveElem.classList.remove('flash'); void s2MassiveElem.offsetWidth; s2MassiveElem.classList.add('flash'); } else { s2MassiveElem.textContent = __n; } }
-
-    const s2WordsElem = document.getElementById('pipeline-s2-words');
-    if (s2WordsElem) { const __n = formatNumber(s2Words); if (s2WordsElem.textContent !== String(__n)) { s2WordsElem.textContent = __n; s2WordsElem.classList.remove('flash'); void s2WordsElem.offsetWidth; s2WordsElem.classList.add('flash'); } else { s2WordsElem.textContent = __n; } }
-
-    ['overview', 'pipeline'].forEach(prefix => {
-        const elem = document.getElementById(`${prefix}-s3-summaries`);
-        if (elem) { const __n = formatNumber(s3Summaries); if (elem.textContent !== String(__n)) { elem.textContent = __n; elem.classList.remove('flash'); void elem.offsetWidth; elem.classList.add('flash'); } else { elem.textContent = __n; } }
-    });
-    ['overview', 'pipeline'].forEach(prefix => {
-        const elem = document.getElementById(`${prefix}-s3-dedup`);
-        if (elem) { const __n = formatNumber(s3Dedup); if (elem.textContent !== String(__n)) { elem.textContent = __n; elem.classList.remove('flash'); void elem.offsetWidth; elem.classList.add('flash'); } else { elem.textContent = __n; } }
-    });
-    ['overview', 'pipeline'].forEach(prefix => {
-        const elem = document.getElementById(`${prefix}-s4-summaries`);
-        if (elem) { const __n = formatNumber(s4Summaries); if (elem.textContent !== String(__n)) { elem.textContent = __n; elem.classList.remove('flash'); void elem.offsetWidth; elem.classList.add('flash'); } else { elem.textContent = __n; } }
-    });
-
-    const compressionRatio = s4Compression > 0 ? (1 / s4Compression).toFixed(0) + 'x' : '0x';
-    ['overview', 'pipeline'].forEach(prefix => {
-        const elem = document.getElementById(`${prefix}-s4-compression`);
-        if (elem) { const __n = compressionRatio; if (elem.textContent !== String(__n)) { elem.textContent = __n; elem.classList.remove('flash'); void elem.offsetWidth; elem.classList.add('flash'); } else { elem.textContent = __n; } }
-    });
-
-    const s3RateElem = document.getElementById('pipeline-s3-rate');
-    if (s3RateElem) { const __n = rates.summaries.toFixed(1) + '/min'; if (s3RateElem.textContent !== String(__n)) { s3RateElem.textContent = __n; s3RateElem.classList.remove('flash'); void s3RateElem.offsetWidth; s3RateElem.classList.add('flash'); } else { s3RateElem.textContent = __n; } }
-
-    const s4RateElem = document.getElementById('pipeline-s4-rate');
-    if (s4RateElem) { const __n = rates.largeDocs.toFixed(1) + '/min'; if (s4RateElem.textContent !== String(__n)) { s4RateElem.textContent = __n; s4RateElem.classList.remove('flash'); void s4RateElem.offsetWidth; s4RateElem.classList.add('flash'); } else { s4RateElem.textContent = __n; } }
+    const stagePairs = [
+        ['s1-discovered', s1Discovered, formatNumber(s1DiscoveredN)],
+        ['s1-queued', s1Queued, formatNumber(stageMetricNumber(s1Queued))],
+        ['s2-analyzed', s2Analyzed, formatNumber(s2AnalyzedN)],
+        ['s2-quality', s2Quality, formatNumber(s2QualityN)],
+        ['s3-summaries', s3Summaries, formatNumber(s3SummariesN)],
+        ['s3-dedup', s3Dedup, formatNumber(stageMetricNumber(s3Dedup))],
+        ['s4-summaries', s4Summaries, formatNumber(s4SummariesN)],
+        ['s4-compression', s4Compression, stageCompressionLabel(s4Compression.value)],
+    ];
+    for (const [suffix, reading, presentText] of stagePairs) {
+        for (const prefix of ['overview', 'pipeline']) {
+            paintStageMetric(`${prefix}-${suffix}`, reading, presentText);
+        }
+    }
+    paintStageMetric('pipeline-s2-massive', s2Massive, formatNumber(s2MassiveN));
+    paintStageMetric('pipeline-s2-words', s2Words, formatNumber(stageMetricNumber(s2Words)));
+    paintStageMetric('pipeline-s3-rate', s3Summaries, rates.summaries.toFixed(1) + '/min');
+    paintStageMetric('pipeline-s4-rate', s4Summaries, rates.largeDocs.toFixed(1) + '/min');
+    const scout = stageMetricReading(metrics, 'pipeline_scout_instances');
+    paintStageMetric('scout-instances', scout, formatNumber(stageMetricNumber(scout)));
 
     applyStageActivity(rates);
 
-    setMetricText('perf-s1-rate', rates.urls.toFixed(1) + ' URLs/min');
-    setMetricText('perf-s2-rate', rates.pages.toFixed(1) + ' pages/min');
-    setMetricText('perf-s3-rate', rates.summaries.toFixed(1) + ' summaries/min');
-    setMetricText('perf-s4-rate', rates.largeDocs.toFixed(1) + ' docs/min');
+    paintStageMetric('perf-s1-rate', s1Discovered, rates.urls.toFixed(1) + ' URLs/min');
+    paintStageMetric('perf-s2-rate', s2Analyzed, rates.pages.toFixed(1) + ' pages/min');
+    paintStageMetric('perf-s3-rate', s3Summaries, rates.summaries.toFixed(1) + ' summaries/min');
+    paintStageMetric('perf-s4-rate', s4Summaries, rates.largeDocs.toFixed(1) + ' docs/min');
 
     const redisKeys = metrics['pipeline_redis_keys'] || 0;
     const redisMemory = metrics['pipeline_redis_memory_bytes'] || 0;
@@ -767,18 +860,16 @@ function updateDashboard(metrics) {
     // #389/#393: these tiles used to be hardcoded (12 tables, 8 scouts). Show
     // a real value when the exporter reports one, otherwise an explicit dash.
     setReportedValue('delta-table-count', countLabelValues(metrics, 'delta_lake_records', 'table'));
-    setReportedValue('scout-instances',
-        'pipeline_scout_instances' in metrics ? metrics['pipeline_scout_instances'] : null);
     document.getElementById('last-refresh-time').textContent = new Date().toLocaleTimeString();
     document.getElementById('uptime').textContent = getUptime();
 
     if (charts.stageProgression) {
-        charts.stageProgression.data.datasets[0].data = [s1Discovered, s2Analyzed, s3Summaries, s4Summaries];
+        charts.stageProgression.data.datasets[0].data = [s1DiscoveredN, s2AnalyzedN, s3SummariesN, s4SummariesN];
         charts.stageProgression.update('none');
     }
 
     if (charts.routing) {
-        charts.routing.data.datasets[0].data = [s2Quality, s2Massive];
+        charts.routing.data.datasets[0].data = [s2QualityN, s2MassiveN];
         charts.routing.update('none');
         syncAllChartTables();
     }
@@ -792,6 +883,7 @@ function updateDashboard(metrics) {
     previousMetrics = { ...metrics };
     previousMetricsAt = Date.now();
     syncStageDrilldownValues();
+    syncStageCardStates();
 }
 
 
@@ -1322,6 +1414,7 @@ function markLoading() {
     });
     const top = document.getElementById('topbar-status');
     if (top) top.textContent = 'Loading…';
+    syncStageCardStates();
 }
 function finishLoading(failed) {
     document.querySelectorAll('.is-loading').forEach(el => {
@@ -1330,6 +1423,7 @@ function finishLoading(failed) {
         // Never fetched: say "unknown" instead of revealing the static 0 / Never.
         if (failed) el.textContent = '\u2014';
     });
+    syncStageCardStates();
 }
 
 // #362: visible error with a Retry control; cleared by the next success.
@@ -1450,8 +1544,12 @@ function renderStageDrilldown(stage) {
             const value = document.createElement('span');
             value.className = 'stage-metric-value';
             value.dataset.metricId = metric.id;
-            value.textContent = src ? src.textContent : '\u2014';
             row.append(label, value);
+            applyStageMetricElement(
+                value,
+                src ? src.textContent : '\u2014',
+                !!(src && src.classList.contains('is-missing'))
+            );
             list.append(row);
         });
     }
@@ -1490,7 +1588,8 @@ function syncStageDrilldownValues() {
     }
     root.querySelectorAll('[data-metric-id]').forEach(el => {
         const src = document.getElementById(el.dataset.metricId);
-        if (src && el.textContent !== src.textContent) el.textContent = src.textContent;
+        if (!src) return;
+        applyStageMetricElement(el, src.textContent, src.classList.contains('is-missing'));
     });
 }
 
