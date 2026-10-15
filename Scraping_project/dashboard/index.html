@@ -536,8 +536,9 @@
             color: var(--gray-900);
         }
 
-        /* #1037: opt-in danger chime. Unchecked in markup (silent by default). */
-        .danger-sound-label {
+        /* #1037 / #973: opt-in activity controls. Unchecked in markup (off by default). */
+        .danger-sound-label,
+        .leave-guard-label {
             display: inline-flex;
             align-items: center;
             gap: 0.35rem;
@@ -811,6 +812,7 @@
             .refresh-bar .btn,
             .refresh-bar select,
             .danger-sound-label,
+            .leave-guard-label,
             .activity-chip,
             .activity-search,
             #clear-activity-search {
@@ -1764,6 +1766,11 @@
                                 Sound on danger
                             </label>
                             <span id="danger-sound-hint" class="visually-hidden">Off by default. Plays a short tone for a new error. Stays silent when reduced motion or a mute preference is set.</span>
+                            <label class="leave-guard-label" for="leave-guard-toggle">
+                                <input type="checkbox" id="leave-guard-toggle" aria-describedby="leave-guard-hint">
+                                Confirm before leaving on error
+                            </label>
+                            <span id="leave-guard-hint" class="visually-hidden">Off by default. When on, the browser asks before leaving this tab while metrics are in error or a recent danger entry is in the activity log.</span>
                             <button type="button" id="export-activity-json" class="btn" aria-label="Export activity log as JSON">Export JSON</button>
                             <button type="button" id="export-activity-csv" class="btn" aria-label="Export activity log as CSV">Export CSV</button>
                             <button type="button" id="clear-activity" class="btn" aria-label="Clear activity log">Clear</button>
