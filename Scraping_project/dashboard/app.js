@@ -1541,6 +1541,9 @@ function visibleTabNames() {
 }
 
 // #952/#1010: 1-5 switch tabs, R refreshes (see shortcutAction in format-utils.js).
+// #556: S starts a job, P pauses or resumes auto-refresh, E and C export the
+// activity log. Each one clicks or calls the same control the mouse uses, and
+// none of them moves focus.
 function setupShortcuts() {
     visibleTabNames().forEach((name, i) => {
         const btn = document.querySelector(`.tab-button[data-tab="${name}"]`);
@@ -1548,6 +1551,10 @@ function setupShortcuts() {
     });
     const manualBtn = document.getElementById('manual-refresh');
     if (manualBtn) manualBtn.setAttribute('aria-keyshortcuts', 'R');
+    for (const [id, key] of [['job-start', 'S'], ['pause-refresh', 'P'], ['export-activity-json', 'E'], ['export-activity-csv', 'C']]) {
+        const el = document.getElementById(id);
+        if (el) el.setAttribute('aria-keyshortcuts', key);
+    }
     const hint = document.getElementById('shortcut-hint');
     if (hint) hint.textContent = shortcutHintText(visibleTabNames().length);  // #503
     document.addEventListener('keydown', (event) => {
@@ -1562,6 +1569,20 @@ function setupShortcuts() {
             if (btn) btn.focus();
         } else if (action.type === 'refresh' && refreshScheduler) {
             requestRefresh();
+        } else if (action.type === 'job-start') {
+            const startBtn = document.getElementById('job-start');
+            const decision = jobStartShortcutDecision(startBtn);
+            if (decision.run) {
+                startBtn.click();
+            } else {
+                const live = document.getElementById('job-start-status');
+                if (live) live.textContent = decision.message;
+            }
+        } else if (action.type === 'pause') {
+            const pauseBtn = document.getElementById('pause-refresh');
+            if (pauseBtn) pauseBtn.click();
+        } else if (action.type === 'export') {
+            exportActivityLog(action.format);
         }
     });
 }

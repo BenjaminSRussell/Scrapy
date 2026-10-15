@@ -520,8 +520,10 @@
         return REFRESH_INTERVAL_CHOICES.includes(v) ? v : fallback;
     }
     // #952/#1010: keyboard shortcuts. Digits 1..N pick the Nth visible tab, R
-    // refreshes. Ignored with modifier keys, during IME composition, or while
-    // typing in a form field / contenteditable.
+    // refreshes. #556: S starts a job (see jobStartShortcutDecision), P pauses or
+    // resumes auto-refresh, E exports the activity log as JSON and C as CSV.
+    // Ignored with modifier keys, during IME composition, or while typing in a
+    // form field / contenteditable.
     function shortcutAction(event, tabNames) {
         if (!event || event.defaultPrevented || event.isComposing) return null;
         if (event.ctrlKey || event.metaKey || event.altKey) return null;
@@ -534,7 +536,22 @@
             return tab ? { type: 'tab', tab } : null;
         }
         if (key === 'r' || key === 'R') return { type: 'refresh' };
+        // Holding a key must not repeat a job start, a pause toggle, or an export.
+        if (event.repeat) return null;
+        const letter = key.toLowerCase();
+        if (letter === 's') return { type: 'job-start' };
+        if (letter === 'p') return { type: 'pause' };
+        if (letter === 'e') return { type: 'export', format: 'json' };
+        if (letter === 'c') return { type: 'export', format: 'csv' };
         return null;
+    }
+    // #556: S runs only while the Start control is enabled, so it is off whenever
+    // the button is (the job API is not connected yet; a future role check will
+    // disable the button the same way). A blocked press returns the sentence to
+    // announce, so a keyboard user hears why nothing ran.
+    function jobStartShortcutDecision(startControl) {
+        if (startControl && !startControl.disabled) return { run: true };
+        return { run: false, message: 'Start is unavailable: it needs the job API (#147).' };
     }
     // #1034: a deep link (?tab= / #tab) wins; otherwise the remembered tab if it
     // still exists; otherwise null (keep the default tab).
@@ -1345,5 +1362,5 @@
         return sampled;
     }
 
-    return { tabKeyTarget, staleState, queueDepthRows, metricsFailureActivity, shortcutHintText, parseMetrics, metricSeriesCount, METRICS_FLOOD_DEFAULTS, metricsFloodLimits, advanceMetricsFlood, metricsFloodBannerText, ratePerMinute, resolveMetricsUrl, metricsEndpoint, metricsEndpointLabel, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler, stageActivity, stageDrilldown, stageDrilldownKey, doughnutLegendLayout, connectionState, documentTitle, createActivityAnnouncer, metricsUrlProblem, splitLinks, createMetricsFetcher, REFRESH_INTERVAL_CHOICES, parseRefreshInterval, shortcutAction, pickInitialTab, METRIC_UI_MAP, renderMetricNameMap, parseDangerSoundEnabled, dangerSoundDecision, HEALTH_HISTORY_LIMIT, pushPollOutcome, healthHistoryView, COMPARISON_BASELINE_ROLE, PREV_HOUR_AVG_KEYS, readPrevHourAverage, comparisonBaselineSeries, comparisonNote, ACTIVITY_LOG_CAP, capActivityLog, activityStaleNote, restoreActivityLog, topScrapeTargets, SCRAPE_TARGET_EMPTY, ACTIVITY_LEVELS, activityLevelCounts, filterActivityItems, filterActivityMessages, activityFilterStatus, toggleActivityLevel, HISTORY_MAX_POINTS, HISTORY_RAW_POINTS, assertHistoryBound, boundHistoryBuffer, pushHistorySample, enforceHistoryCap, downsampleIndices, grafanaHomeUrl, jobStartedPresentation, DEFAULT_ACCENT, parseAccentColor, accentInk, accentBorder, accentCssVars };
+    return { tabKeyTarget, staleState, queueDepthRows, metricsFailureActivity, shortcutHintText, parseMetrics, metricSeriesCount, METRICS_FLOOD_DEFAULTS, metricsFloodLimits, advanceMetricsFlood, metricsFloodBannerText, ratePerMinute, resolveMetricsUrl, metricsEndpoint, metricsEndpointLabel, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler, stageActivity, stageDrilldown, stageDrilldownKey, doughnutLegendLayout, connectionState, documentTitle, createActivityAnnouncer, metricsUrlProblem, splitLinks, createMetricsFetcher, REFRESH_INTERVAL_CHOICES, parseRefreshInterval, shortcutAction, jobStartShortcutDecision, pickInitialTab, METRIC_UI_MAP, renderMetricNameMap, parseDangerSoundEnabled, dangerSoundDecision, HEALTH_HISTORY_LIMIT, pushPollOutcome, healthHistoryView, COMPARISON_BASELINE_ROLE, PREV_HOUR_AVG_KEYS, readPrevHourAverage, comparisonBaselineSeries, comparisonNote, ACTIVITY_LOG_CAP, capActivityLog, activityStaleNote, restoreActivityLog, topScrapeTargets, SCRAPE_TARGET_EMPTY, ACTIVITY_LEVELS, activityLevelCounts, filterActivityItems, filterActivityMessages, activityFilterStatus, toggleActivityLevel, HISTORY_MAX_POINTS, HISTORY_RAW_POINTS, assertHistoryBound, boundHistoryBuffer, pushHistorySample, enforceHistoryCap, downsampleIndices, grafanaHomeUrl, jobStartedPresentation, DEFAULT_ACCENT, parseAccentColor, accentInk, accentBorder, accentCssVars };
 });

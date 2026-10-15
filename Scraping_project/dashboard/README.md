@@ -200,6 +200,23 @@ The match count is text in `#activity-filter-status`, not HTML.
 
 A confirmed start (`cc:job-started` on `#job-start`) draws one check on the Start control. There is no confetti. `prefers-reduced-motion: reduce` skips that stroke animation and shows the finished check. Start stays disabled until the job API exists (#147); the control does not launch a crawl.
 
+## Keyboard shortcuts (#556)
+
+Single keys work anywhere on the page, except while focus is in a text box, a search field, or a select, while the stage details panel is open, and with Ctrl, Cmd, or Alt. The keys for start, pause, and export leave focus where it is, so Tab still reaches every control. Each control names its key in `aria-keyshortcuts`.
+
+| Key | Action | Same as |
+|---|---|---|
+| `1`–`5` | Switch to that visible tab (#952) | the tab button |
+| `R` | Refresh metrics now (#1010) | Refresh now |
+| `P` | Pause or resume auto-refresh (stop and start the live feed) | Pause / Resume |
+| `S` | Start a job | Start. Disabled until the job API exists (#147); the status line says why. |
+| `E` | Export the activity log as JSON | Export JSON |
+| `C` | Export the activity log as CSV | Export CSV |
+
+- **Start (`S`).** Start stays disabled until the job API exists (#147). The dashboard has no role model yet: its auth is a shared-secret gate (`CC_AUTH_TOKEN` or `CC_BASIC_AUTH`), not per-user identity, so a disabled Start is the only gate. A future role check should disable the Start button, and `S` follows it.
+- **Stop a job** has no key, because the dashboard has no job stop control yet. #147 should add that control and its key.
+- Single-letter keys cannot be turned off or remapped yet (WCAG 2.1.4). That is a known gap for a later change.
+
 ## Threat model notes (#1046)
 
 **Activity log XSS.** Activity messages may contain text derived from metrics,

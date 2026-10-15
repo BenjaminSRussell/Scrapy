@@ -15,6 +15,7 @@ renamed to the new version and date (see the release checklist).
 ## [Unreleased]
 
 ### Added
+- Control Center keyboard shortcuts for the job and activity controls: `S` starts a job (only while Start is enabled, which needs the job API, #147), `P` pauses or resumes auto-refresh, `E` exports the activity log as JSON, and `C` as CSV. The keys never move focus and are ignored in form fields and while the stage panel is open. Documented in the dashboard README (#556).
 - Control Center confirms a job start with one CSS check on Start. `prefers-reduced-motion: reduce` skips the stroke animation and shows the finished check. There is no confetti (#1022).
 - Control Center accent picker (refresh bar) stores a `#rrggbb` choice in `localStorage` (`cc.accent`) and writes `--accent`, `--accent-ink`, and `--accent-border`. Buttons use the accent fill; the active tab underline uses the accent, darkened when it would be under 3:1 on the tab bar (#1017).
 - Stage 1 to stage 2 handoff (`StageQueueHandoff`) keeps the in-memory queue at the Redis high watermark (default 10000, same gate as `QueueBacklog`). Producers block until stage 2 drains to the low watermark instead of buffering an unbounded backlog, and each key is delivered once after the consumer catches up (#703).
