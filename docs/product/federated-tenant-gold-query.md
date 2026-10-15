@@ -24,7 +24,8 @@ The lake is one root. `DELTA_LAKE_PATH` wins when set; otherwise
 how to read it are in the
 [data usage guide](../../Scraping_project/docs/guides/DATA_USAGE.md).
 `LakehouseManager` (`Scraping_project/src/lakehouse/lakehouse_manager.py`)
-is the writer. There is no second root per tenant.
+is the writer. There is no second root per tenant unless
+`delta_lake.tenant_path_prefix` is turned on. That flag defaults to false.
 
 Medallion layering is not in the tree. Bronze, silver, and gold names appear
 as a later roadmap item in [docs/ROADMAP.md](../ROADMAP.md) and as open work
@@ -34,19 +35,20 @@ raw append, silver = validated/typed, gold = aggregates). Stage tables
 and the rest on the [stage map](../STAGE_MAP.md)) are not a gold layer.
 This design does not relabel them as gold.
 
-Per-tenant path prefixes are also open, not shipped.
-[#671](https://github.com/BenjaminSRussell/Scrapy/issues/671) proposes an
-optional `base_path/{tenant_id}/...` layout behind a flag, with today's
-single root kept as the default. [#670](https://github.com/BenjaminSRussell/Scrapy/issues/670)
+An optional `base_path/{tenant_id}/...` layout is shipped behind
+`delta_lake.tenant_path_prefix` ([#671](https://github.com/BenjaminSRussell/Scrapy/issues/671),
+[ADR-0004](../adr/0004-per-tenant-delta-prefix.md)). The default is still one
+root and one set of tables. [#670](https://github.com/BenjaminSRussell/Scrapy/issues/670)
 proposes a nullable `tenant_id` column (default `default`) on lake rows.
-Neither is present. A `tenant_id` filter on the current flat lake is not
+That column is not present. A `tenant_id` filter on the flat lake is not
 federation and is not a substitute for it.
 
 What does exist is a site/tenant id on Redis seen-sets
 ([Redis capacity](../../Scraping_project/docs/REDIS_CAPACITY.md)): the id is
 the argument, else `SITE_ID`, else `TENANT_ID`, else `REDIS_SITE_ID`, else
-`default`. Two profiles that share an id share a set. That id is not a lake
-path and not an authorization grant.
+`default`. Two profiles that share an id share a set. When the Delta prefix
+flag is on, that same id (with no argument) is the directory segment. It is
+not an authorization grant.
 [ADR-0001](../adr/0001-config-yml-is-canonical.md) says per-tenant
 configuration, if it is needed later, would be layered files, not more
 environment variables. This stub does not add those files.
@@ -54,12 +56,14 @@ environment variables. This stub does not add those files.
 ## Gold lake, for this query
 
 A tenant gold lake is the curated (gold) tables for one tenant, under that
-tenant's own lake prefix, once [#303](https://github.com/BenjaminSRussell/Scrapy/issues/303)
-and [#671](https://github.com/BenjaminSRussell/Scrapy/issues/671) exist.
+tenant's own lake prefix. The prefix flag from
+[#671](https://github.com/BenjaminSRussell/Scrapy/issues/671) can name the
+directory. Gold tables still do not exist until
+[#303](https://github.com/BenjaminSRussell/Scrapy/issues/303) lands.
 
-Until both land, the federated query has nothing it is allowed to open. It
-must not scan the shared `delta_lake.base_path`, bronze, silver, queues, or
-quarantine tables in their place.
+Until gold exists, the federated query has nothing it is allowed to open. It
+must not scan the shared `delta_lake.base_path`, a tenant prefix of stage
+tables, bronze, silver, queues, or quarantine tables in their place.
 
 Rules the later layout has to satisfy for this query to be well-defined:
 
@@ -200,7 +204,7 @@ return another tenant's rows through this query.
 
 - [#770](https://github.com/BenjaminSRussell/Scrapy/issues/770) — this stub.
 - [#303](https://github.com/BenjaminSRussell/Scrapy/issues/303) — bronze / silver / gold layering. Gold is undefined until that lands.
-- [#671](https://github.com/BenjaminSRussell/Scrapy/issues/671) — per-tenant Delta prefix. Federation reads that layout; it does not create it.
+- [#671](https://github.com/BenjaminSRussell/Scrapy/issues/671) — per-tenant Delta prefix (opt-in, default off). Federation may read that layout later; it does not create gold tables.
 - [#670](https://github.com/BenjaminSRussell/Scrapy/issues/670) — `tenant_id` column on lake tables.
 - [#637](https://github.com/BenjaminSRussell/Scrapy/issues/637) — `org_id` on jobs and profiles. Not an ACL grant.
 - [#672](https://github.com/BenjaminSRussell/Scrapy/issues/672) — tenant quotas. Not an ACL.

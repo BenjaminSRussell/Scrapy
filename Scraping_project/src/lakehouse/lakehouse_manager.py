@@ -632,20 +632,85 @@ class _ExportSink:
             self._stream.close()
 
 
+# #671: optional {root}/{tenant_id} layout. Off unless the flag is set, so
+# existing tables stay at {root}/{table}. Applied only to a root this process
+# resolved itself. An explicit constructor path is already final.
+_PREFIX_ON = frozenset({"1", "true", "yes", "on"})
+_PREFIX_OFF = frozenset({"0", "false", "no", "off"})
+
+
+def _prefix_flag(value: Any) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int) and not isinstance(value, bool) and value in (0, 1):
+        return bool(value)
+    text = str(value).strip().lower()
+    if text in _PREFIX_ON:
+        return True
+    if text in _PREFIX_OFF:
+        return False
+    raise ValueError(
+        "delta_lake.tenant_path_prefix must be true or false "
+        f"(env DELTA_TENANT_PATH_PREFIX), got {value!r}"
+    )
+
+
+def tenant_path_prefix_enabled(config: Any | None = None) -> bool:
+    """True when tables should live under ``{root}/{tenant_id}`` (#671)."""
+    raw = os.getenv("DELTA_TENANT_PATH_PREFIX")
+    if raw is not None and raw.strip() != "":
+        return _prefix_flag(raw)
+    if config is None:
+        config = Config.get_instance()
+    return _prefix_flag(config.get("delta_lake.tenant_path_prefix", False))
+
+
+def resolve_delta_tenant_id() -> str:
+    """Directory segment for the prefix. Same id Redis seen-sets use (#191)."""
+    from src.utils.redis import resolve_site_id
+
+    try:
+        return resolve_site_id()
+    except ValueError as exc:
+        raise ValueError(
+            f"{exc} Refusing to use it as a Delta directory name (#671)."
+        ) from exc
+
+
+def tenant_lake_layout(root: str | Path, config: Any | None = None) -> tuple[Path, str | None]:
+    """``(directory, tenant id)``. The id is None when the prefix flag is off."""
+    path = Path(root)
+    if not tenant_path_prefix_enabled(config):
+        return path, None
+    tenant = resolve_delta_tenant_id()
+    return path / tenant, tenant
+
+
 class LakehouseManager:
 
     def __init__(self, base_path: str | None = None, start_workers: bool = True):
 
         config = Config.get_instance()
 
+        self.tenant_id: str | None = None
         if base_path is None:
             # Same contract as DeltaHelper (src/utils/delta.py): DELTA_LAKE_PATH
             # wins so compose/k8s workers and the metrics exporter share a lake.
-            base_path = os.getenv("DELTA_LAKE_PATH") or config.get(
+            # #671: that resolved root may gain a /{tenant_id} segment. A caller
+            # that passes base_path already chose the directory.
+            root = os.getenv("DELTA_LAKE_PATH") or config.get(
                 "delta_lake.base_path", "./data/delta_lake"
             )
+            lake_dir, self.tenant_id = tenant_lake_layout(root, config)
+            base_path = str(lake_dir)
         self.base_path = Path(base_path)
         self.base_path.mkdir(parents=True, exist_ok=True)
+        if self.tenant_id is not None:
+            logger.info(
+                f"Delta tenant path prefix on; lake root is {self.base_path} (tenant {self.tenant_id})"
+            )
         # #818: "strict" quarantines rows with uncastable values; "coerce"
         # nulls the bad value (nullable columns) and keeps the row.
         self.cast_mode = str(config.get("delta_lake.cast_mode", "strict")).lower()
