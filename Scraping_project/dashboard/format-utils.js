@@ -989,5 +989,33 @@
         if (!rows.length) return { missing: true, rows: [], empty: SCRAPE_TARGET_EMPTY };
         return { missing: false, rows: rows.slice(0, cap), empty: SCRAPE_TARGET_EMPTY };
     }
-    return { tabKeyTarget, staleState, queueDepthRows, metricsFailureActivity, shortcutHintText, parseMetrics, ratePerMinute, resolveMetricsUrl, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler, stageActivity, stageDrilldown, stageDrilldownKey, doughnutLegendLayout, connectionState, documentTitle, createActivityAnnouncer, metricsUrlProblem, splitLinks, createMetricsFetcher, REFRESH_INTERVAL_CHOICES, parseRefreshInterval, shortcutAction, pickInitialTab, METRIC_UI_MAP, renderMetricNameMap, parseDangerSoundEnabled, dangerSoundDecision, HEALTH_HISTORY_LIMIT, pushPollOutcome, healthHistoryView, COMPARISON_BASELINE_ROLE, PREV_HOUR_AVG_KEYS, readPrevHourAverage, comparisonBaselineSeries, comparisonNote, ACTIVITY_LOG_CAP, capActivityLog, activityStaleNote, restoreActivityLog, topScrapeTargets, SCRAPE_TARGET_EMPTY, ACTIVITY_LEVELS, activityLevelCounts, filterActivityItems, toggleActivityLevel, HISTORY_MAX_POINTS, assertHistoryBound, boundHistoryBuffer, pushHistorySample, enforceHistoryCap };
+    // #1013: time to first meaningful metrics. Local warm-cache budget is
+    // under 2s from navigation to the first successful metrics paint.
+    const TTFM_MARK = 'cc:ttfm';
+    const TTFM_TARGET_MS = 2000;
+    function timeToFirstMeaningful(durationMs) {
+        if (typeof durationMs !== 'number' || !Number.isFinite(durationMs) || durationMs < 0) return null;
+        return {
+            name: TTFM_MARK,
+            durationMs: durationMs,
+            targetMs: TTFM_TARGET_MS,
+            withinTarget: durationMs < TTFM_TARGET_MS,
+        };
+    }
+    // Schedules `onPaint` once, after the next paint (two animation frames).
+    // With no requestAnimationFrame, runs it immediately. `already` skips so
+    // only the first successful fetch is measured.
+    function scheduleFirstMeaningfulMark(opts) {
+        const o = opts || {};
+        if (o.already) return false;
+        if (typeof o.onPaint !== 'function') return false;
+        const raf = o.requestAnimationFrame;
+        if (typeof raf !== 'function') {
+            o.onPaint();
+            return true;
+        }
+        raf(() => { raf(() => { o.onPaint(); }); });
+        return true;
+    }
+    return { tabKeyTarget, staleState, queueDepthRows, metricsFailureActivity, shortcutHintText, parseMetrics, ratePerMinute, resolveMetricsUrl, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler, stageActivity, stageDrilldown, stageDrilldownKey, doughnutLegendLayout, connectionState, documentTitle, createActivityAnnouncer, metricsUrlProblem, splitLinks, createMetricsFetcher, REFRESH_INTERVAL_CHOICES, parseRefreshInterval, shortcutAction, pickInitialTab, METRIC_UI_MAP, renderMetricNameMap, parseDangerSoundEnabled, dangerSoundDecision, HEALTH_HISTORY_LIMIT, pushPollOutcome, healthHistoryView, COMPARISON_BASELINE_ROLE, PREV_HOUR_AVG_KEYS, readPrevHourAverage, comparisonBaselineSeries, comparisonNote, ACTIVITY_LOG_CAP, capActivityLog, activityStaleNote, restoreActivityLog, topScrapeTargets, SCRAPE_TARGET_EMPTY, ACTIVITY_LEVELS, activityLevelCounts, filterActivityItems, toggleActivityLevel, HISTORY_MAX_POINTS, assertHistoryBound, boundHistoryBuffer, pushHistorySample, enforceHistoryCap, TTFM_MARK, TTFM_TARGET_MS, timeToFirstMeaningful, scheduleFirstMeaningfulMark };
 });
