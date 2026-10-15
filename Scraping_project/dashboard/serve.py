@@ -33,7 +33,7 @@ import time
 import urllib.error
 import urllib.request
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import unquote, urlsplit
 
 # #735: loopback by default. Containers/LAN must opt in explicitly
 # (CC_HOST=0.0.0.0 or --host 0.0.0.0), which prints a warning.
@@ -42,9 +42,9 @@ DEFAULT_PORT = 8080
 PORT = DEFAULT_PORT  # kept for backwards compatibility
 WILDCARD_HOSTS = frozenset({"", "0.0.0.0", "::", "[::]"})
 DASHBOARD_DIR = Path(__file__).parent
-# #721: only dashboard assets are served; source, tests, docs and dotfiles are 404.
-ALLOWED_SUFFIXES = frozenset({".html", ".js", ".css", ".map", ".png", ".svg", ".ico", ".jpg", ".jpeg",
-                              ".gif", ".webp", ".woff", ".woff2", ".json", ".txt"})
+# #721/#990: only these static types are served. Backups, docs, source, and
+# other extensions are 404 so a guessed path cannot read them.
+ALLOWED_SUFFIXES = frozenset({".html", ".js", ".css", ".svg", ".png", ".ico", ".map"})
 DENIED_DIRS = frozenset({"tests", "__pycache__", "node_modules"})
 
 # #245: enforcing CSP. index.html has no inline <script> (feature flags live in
@@ -279,14 +279,22 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         if self.auth is None:
             type(self).configure()
 
-    def list_directory(self, path):  # noqa: ARG002 - no directory listings (#721)
+    def list_directory(self, path):  # noqa: ARG002 - no directory listings (#721/#990)
         self.send_error(404, "Not Found")
         return None
 
     def _is_servable(self, url_path: str) -> bool:
-        parts = [p for p in url_path.split("?", 1)[0].split("#", 1)[0].split("/") if p]
+        # Decode first so %2Esecret.html is still a dotfile (#990).
+        raw = url_path.split("?", 1)[0].split("#", 1)[0]
+        try:
+            decoded = unquote(raw, errors="strict")
+        except UnicodeDecodeError:
+            return False
+        if "\x00" in decoded:
+            return False
+        parts = [p for p in decoded.split("/") if p]
         if not parts:
-            return True
+            return True  # "/" is rewritten to /index.html
         if any(p.startswith(".") or p in DENIED_DIRS for p in parts):
             return False
         return Path(parts[-1]).suffix.lower() in ALLOWED_SUFFIXES

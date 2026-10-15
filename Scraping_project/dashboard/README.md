@@ -49,9 +49,10 @@ node --test Scraping_project/dashboard/tests/   # helper unit tests
 - Bind address (#735): `127.0.0.1:8080` by default. Override with `--host/--port` or
   `CC_HOST`/`CC_PORT`. A wildcard bind (`--host 0.0.0.0`, e.g. inside a container) must be
   explicit and prints a warning.
-- Only dashboard assets are served (#721): `.html/.js/.css/images/fonts/.json/.map/.txt`.
-  Missing files, directory listings, dotfiles, `tests/` and source/docs (`serve.py`, `*.md`)
-  return a plain 404 that never includes filesystem paths.
+- Only these static types are served (#721, #990): `.html`, `.js`, `.css`, `.svg`, `.png`, `.ico`, `.map`.
+  Other extensions (including `.json`, `.txt`, fonts, images outside that list, and backups),
+  missing files, directory listings, dotfiles, `tests/`, and source/docs (`serve.py`, `*.md`)
+  return a plain 404 that never includes filesystem paths. A percent-encoded leading dot is still a dotfile.
 - Version watermark: `CC_VERSION` env or `git describe` via `/version.js`.
 - Redis queue depths (#401): the System tab polls `/api/queues`, which reads the keys in
   `CC_QUEUE_KEYS` (comma list, default `js_spider:priority_queue`) with the type-aware

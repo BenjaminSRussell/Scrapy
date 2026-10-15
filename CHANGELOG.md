@@ -87,6 +87,7 @@ renamed to the new version and date (see the release checklist).
 - Control Center: keyboard tabs, landmarks, contrast, focus, reduced motion, a wrapping mobile topbar, and loading, stale, and error states (#153 #155 #332 #340 #341 #343 #349 #351 #352 #362).
 
 ### Security
+- Control Center `serve.py` serves only `.html`, `.js`, `.css`, `.svg`, `.png`, `.ico`, and `.map`, and still does not list directories. Guessed backups and secrets (`.json`, `.txt`, other extensions, dotfiles, including a percent-encoded leading dot) return 404 (#990).
 - Production Helm overlay turns on default-deny NetworkPolicies for Redis, Kafka, Postgres and the scrapers. The delta ingestor may dial Redis, and Grafana may install the Redis datasource plugin over public HTTPS (same private and link-local exclusions as scrape egress; the plugin is not baked into the image). Alertmanager external receivers stay closed. `networkPolicy.breakGlass` is the debug override and must not stay on (#190).
 - Compose reads the Postgres superuser password from `POSTGRES_PASSWORD` (local default `postgres`), and SECURITY.md covers secret handling and rotation (#482).
 - `cli.py setup` downloads the revisions pinned in `models.lock.json` and fails closed on a missing file, a size mismatch, or a digest mismatch (#486).
