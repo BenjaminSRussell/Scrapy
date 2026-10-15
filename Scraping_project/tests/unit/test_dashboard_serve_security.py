@@ -358,3 +358,51 @@ def test_version_js_embeds_configured_grafana_home(make_server):
     text = get(base + "/version.js")[2].decode()
     assert 'window.__CC_GRAFANA_URL__ = "http://localhost:3000/";' in text
     assert "javascript:" not in text
+
+
+# ---- Build label and API build check (#907) ----
+def test_api_version_reports_this_build(make_server, monkeypatch):
+    monkeypatch.setenv("CC_VERSION", "1c8ec90")
+    base, _ = make_server({"CC_RATE_LIMIT": "0"})
+    status, headers, body = get(base + "/api/version")
+    assert status == 200 and "application/json" in headers["content-type"]
+    assert json.loads(body) == {"ok": True, "version": "1c8ec90"}
+    assert b"window.__CC_VERSION__ = '1c8ec90';" in get(base + "/version.js")[2]
+
+
+def test_cc_version_env_then_cached_git_then_dev(serve, monkeypatch):
+    monkeypatch.setenv("CC_VERSION", "rel-9")
+    assert serve._cc_version() == "rel-9"
+    monkeypatch.delenv("CC_VERSION")
+    calls = []
+
+    class Done:
+        returncode = 0
+        stdout = "abc1234-dirty\n"
+
+    def fake_git(*args, **kwargs):
+        calls.append(args)
+        return Done()
+
+    serve._git_describe.cache_clear()
+    monkeypatch.setattr(serve.subprocess, "run", fake_git)
+    try:
+        assert serve._cc_version() == "abc1234-dirty"
+        assert serve._cc_version() == "abc1234-dirty"
+        assert len(calls) == 1  # /api/version is polled on every refresh: git runs once per process
+    finally:
+        serve._git_describe.cache_clear()
+
+
+def test_cc_version_is_dev_without_env_or_git(serve, monkeypatch):
+    monkeypatch.delenv("CC_VERSION", raising=False)
+
+    def no_git(*args, **kwargs):
+        raise FileNotFoundError("git")
+
+    serve._git_describe.cache_clear()
+    monkeypatch.setattr(serve.subprocess, "run", no_git)
+    try:
+        assert serve._cc_version() == "dev"
+    finally:
+        serve._git_describe.cache_clear()

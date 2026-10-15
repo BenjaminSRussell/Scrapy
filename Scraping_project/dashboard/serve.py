@@ -20,6 +20,7 @@ Grafana Purpose (Different):
 
 import argparse
 import base64
+import functools
 import hmac
 import http.server
 import json
@@ -420,7 +421,12 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             return
         self._send_json(200, {"ok": True, "queues": queues, "checked_at": time.time()})
 
-    API_ROUTES = {"/api/metrics": "_api_metrics", "/api/health": "_api_health", "/api/queues": "_api_queues"}
+    def _api_version(self) -> None:
+        # #907: the build this API runs; app.js compares it with the page's own build (window.__CC_VERSION__).
+        self._send_json(200, {"ok": True, "version": _cc_version()})
+
+    API_ROUTES = {"/api/metrics": "_api_metrics", "/api/health": "_api_health", "/api/queues": "_api_queues",
+                  "/api/version": "_api_version"}
 
     def do_OPTIONS(self):
         self._cfg()
@@ -474,11 +480,9 @@ class DashboardServer(socketserver.ThreadingTCPServer):
     allow_reuse_address = True
 
 
-def _cc_version() -> str:
-    """CC_VERSION env, else `git describe --always --dirty`, else 'dev' (#1041)."""
-    env = os.environ.get('CC_VERSION')
-    if env:
-        return env
+@functools.lru_cache(maxsize=1)
+def _git_describe() -> str | None:
+    """`git describe --always --dirty` for this checkout, or None. Cached for the process: /api/version is polled."""
     try:
         out = subprocess.run(
             ['git', 'describe', '--always', '--dirty'],
@@ -488,7 +492,15 @@ def _cc_version() -> str:
             return out.stdout.strip()
     except Exception:
         pass
-    return 'dev'
+    return None
+
+
+def _cc_version() -> str:
+    """CC_VERSION env, else `git describe --always --dirty`, else 'dev' (#1041, #907)."""
+    env = os.environ.get('CC_VERSION')
+    if env:
+        return env
+    return _git_describe() or 'dev'
 
 def resolve_bind(host: str | None = None, port: int | str | None = None, env=None) -> tuple[str, int]:
     """--host/--port, else CC_HOST/CC_PORT, else 127.0.0.1:8080 (#735)."""

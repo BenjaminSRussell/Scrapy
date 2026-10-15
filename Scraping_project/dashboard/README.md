@@ -60,7 +60,11 @@ node --test Scraping_project/dashboard/tests/   # helper unit tests
 - Only dashboard assets are served (#721): `.html/.js/.css/images/fonts/.json/.map/.txt`.
   Missing files, directory listings, dotfiles, `tests/` and source/docs (`serve.py`, `*.md`)
   return a plain 404 that never includes filesystem paths.
-- Version watermark: `CC_VERSION` env or `git describe` via `/version.js`.
+- Build footer (#907): the footer shows this build, from the `CC_VERSION` env or `git describe`
+  (served on `/version.js`). With neither set it reads `dev · unreleased`. The page re-reads the
+  API's build from **`/api/version`** on every refresh. When the two differ (for example after a
+  rollout while the page is still open), the footer reads `build mismatch` and the activity log
+  records it. Reload the page to load the new build.
 - Redis queue depths (#401): the System tab polls `/api/queues`, which reads the keys in
   `CC_QUEUE_KEYS` (comma list, default `js_spider:priority_queue`) with the type-aware
   length (`LLEN`/`ZCARD`/`SCARD`/`XLEN`/`HLEN`, so a list matches `redis-cli llen`).
@@ -84,6 +88,7 @@ node --test Scraping_project/dashboard/tests/   # helper unit tests
 | `CC_CORS_ORIGINS` | unset (no CORS headers) | Comma list of exact origins allowed to read responses cross-origin; `*` is for local development only and prints a warning (#189) |
 | `CC_CONNECT_SRC` | unset | Extra http(s) origins allowed in CSP `connect-src` (only for a cross-origin `?metrics=`) (#245) |
 | `CC_GRAFANA_URL` | `http://localhost:3000/` | Grafana home linked from System Health. Injected on `/version.js`. A `/d/<uid>` path is trimmed back to the base (#1040) |
+| `CC_VERSION` | unset (`git describe`, else `dev`) | Build shown in the footer and reported by `/api/version`. Set it where the image or deploy has no `.git` (#907) |
 | `CC_RATE_LIMIT` / `CC_RATE_BURST` | `600` / `120` | Per-client token bucket: requests per minute and burst. Excess requests get `429` with `Retry-After`. `CC_RATE_LIMIT=0` disables it (#257) |
 
 ## Exposing the dashboard (#189/#455)

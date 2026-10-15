@@ -1782,7 +1782,7 @@ async function fetchAndAnnounce() {
     const before = lastMetricsAt;
     setRefreshBusy(true);
     try {
-        await Promise.all([fetchMetrics(), fetchQueueDepths()]);
+        await Promise.all([fetchMetrics(), fetchQueueDepths(), fetchApiVersion()]);
     } finally {
         setRefreshBusy(false);
     }
@@ -1995,9 +1995,36 @@ function applyFeatureFlags() {
     applyEnvBadge();
 }
 
-function applyVersionWatermark() {
+// #907: footer build label. window.__CC_VERSION__ is this page's build (version.js); the
+// API's build comes from /api/version on every refresh, and a mismatch is flagged in the footer.
+let apiBuildVersion;          // undefined until the API has reported a version
+let buildMismatchShown = false;
+
+function renderBuildLabel() {
     const el = document.getElementById('cc-version');
-    if (el) el.textContent = 'v' + (window.__CC_VERSION__ || 'dev');
+    if (!el) return;
+    const status = versionStatus(window.__CC_VERSION__, apiBuildVersion);
+    el.textContent = status.label;
+    el.title = status.title;
+    el.classList.toggle('version-mismatch', status.mismatch);
+    if (status.mismatch && !buildMismatchShown) addActivityLogItem('danger', status.title);
+    buildMismatchShown = status.mismatch;
+}
+
+async function fetchApiVersion() {
+    if (typeof window === 'undefined' || !/^https?:$/.test(window.location.protocol)) return;
+    const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const timer = ctrl ? setTimeout(() => ctrl.abort(), METRICS_TIMEOUT_MS) : null;
+    try {
+        const resp = await fetch('/api/version', { cache: 'no-store', signal: ctrl ? ctrl.signal : undefined });
+        const payload = await resp.json();
+        if (payload && typeof payload.version === 'string') apiBuildVersion = payload.version;
+    } catch (_) {
+        return; // an older, slow or unreachable API reports no version; the metrics and queue panels show that
+    } finally {
+        if (timer) clearTimeout(timer);
+    }
+    renderBuildLabel();
 }
 
 /** System Health card: Grafana home from CC_GRAFANA_URL (#1040). */
@@ -2015,7 +2042,7 @@ function initialize() {
 
     applyFeatureFlags();
     setupAccentControl();
-    applyVersionWatermark();
+    renderBuildLabel();
     // #1038: Settings panel. A missing helper must not block the metrics poll.
     if (typeof renderMetricNameMap === 'function') {
         renderMetricNameMap(document.getElementById('metric-name-map-body'), document);
