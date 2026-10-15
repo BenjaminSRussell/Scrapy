@@ -338,6 +338,7 @@ Stage 1 obeys robots.txt by default (#186). `ROBOTSTXT_OBEY` is on in `src/setti
 - **Missing robots.txt** (404) or a fetch error allows everything, matching Scrapy's behaviour.
 - **Retry-After** (#188). On a 429 or 503 with `Retry-After` (seconds or an HTTP date), `RetryAfterMiddleware` (priority 560, so it runs ahead of Scrapy's RetryMiddleware) raises that host's download delay to the wait, capped at `RETRY_AFTER_MAX_DELAY` (120s). The retry and every other request to the host wait at least that long, and the old delay is restored afterwards. Waits are counted in `scrapy_retry_after_waits_total{spider}` and `scrapy_retry_after_seconds_total{spider}`.
 - **Opting out** is only for sites you own: `ROBOTSTXT_OBEY=false`, `scrapy.robotstxt_obey: false`, or `stage1.spiders.<name>.robotstxt_obey: false`.
+- **rustmapper `ignore_robots`** (#938) defaults to false and is not that opt-out. Stage 1 keeps `ROBOTSTXT_OBEY` on unless the operator dual-confirms: rustmapper's flag plus Stage 1 confirm, a reason, and the phrase `IGNORE ROBOTS`, via `python cli.py robots confirm` or Control Center `/robots-confirm.html`. The decision is appended to the ignore-robots audit log. Set `IGNORE_ROBOTS_DECISION_FILE` to the file from `--decision-file` before a crawl if that confirm should turn obedience off. `ALLOW_IGNORE_ROBOTS=1` is required for `--yes`.
 
 ### Rate limits and per-domain concurrency
 

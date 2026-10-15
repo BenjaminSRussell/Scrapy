@@ -343,7 +343,7 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             self.send_header("Access-Control-Allow-Origin", origin)
             self.send_header("Vary", "Origin")
         if self.cors_origins:
-            self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
+            self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
             self.send_header("Access-Control-Allow-Headers", "Authorization, Content-Type")
         self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
         self.send_header("Content-Security-Policy", self.csp or build_csp({}))
@@ -420,7 +420,49 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             return
         self._send_json(200, {"ok": True, "queues": queues, "checked_at": time.time()})
 
-    API_ROUTES = {"/api/metrics": "_api_metrics", "/api/health": "_api_health", "/api/queues": "_api_queues"}
+    def _api_ignore_robots(self) -> None:
+        """POST body: rustmapper + Stage1 confirm. Writes the audit log (#938)."""
+        length_raw = self.headers.get("Content-Length", "0") if self.headers else "0"
+        try:
+            length = int(length_raw or 0)
+        except ValueError:
+            self._send_json(400, {"ok": False, "error": "invalid content length"})
+            return
+        if length < 0 or length > 8192:
+            self._send_json(413, {"ok": False, "error": "body too large"})
+            return
+        raw = self.rfile.read(length) if length else b""
+        try:
+            payload = json.loads(raw.decode("utf-8") or "{}")
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            self._send_json(400, {"ok": False, "error": "invalid json"})
+            return
+        if not isinstance(payload, dict):
+            self._send_json(400, {"ok": False, "error": "json object required"})
+            return
+        root = Path(__file__).resolve().parents[1]
+        if str(root) not in sys.path:
+            sys.path.insert(0, str(root))
+        from src.stage1.ignore_robots import decide
+
+        actor = payload.get("actor")
+        decision = decide(
+            rustmapper_ignore_robots=payload.get("rustmapper_ignore_robots", False),
+            stage1_confirm=payload.get("stage1_confirm", False),
+            typed=str(payload.get("typed") or ""),
+            reason=str(payload.get("reason") or ""),
+            assume_yes=False,
+            source="ui",
+            actor=actor if isinstance(actor, str) else None,
+        )
+        self._send_json(200, {"ok": True, **decision.to_dict()})
+
+    API_ROUTES = {
+        "/api/metrics": "_api_metrics",
+        "/api/health": "_api_health",
+        "/api/queues": "_api_queues",
+        "/api/stage1/ignore-robots": "_api_ignore_robots",
+    }
 
     def do_OPTIONS(self):
         self._cfg()
@@ -446,10 +488,22 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             return
         return super().do_HEAD()
 
+    def do_POST(self):
+        if not self._guard():
+            return
+        route = urlsplit(self.path).path
+        if route == "/api/stage1/ignore-robots":
+            self._api_ignore_robots()
+            return
+        self.send_error(404, "Not Found")
+
     def do_GET(self):
         if not self._guard():
             return
         route = urlsplit(self.path).path
+        if route == "/api/stage1/ignore-robots":
+            self._send_json(405, {"ok": False, "error": "POST required"})
+            return
         if route in self.API_ROUTES:
             getattr(self, self.API_ROUTES[route])()
             return

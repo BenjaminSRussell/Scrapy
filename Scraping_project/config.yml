@@ -73,6 +73,9 @@ stage1:
     claim_ttl_seconds: 604800  # 7 days
     ack_empty: false    # when true, empty handoff skips Stage2 without warning
     rustmapper_enabled: false  # when true, consume rustmapper sitemap.jsonl handoff
+    # rustmapper ignore_robots defaults false and is not copied into
+    # ROBOTSTXT_OBEY. Ignoring robots needs Stage1 CLI/UI dual confirm (#938).
+    rustmapper_ignore_robots: false
     handoff_path: null  # optional path to discovery_handoff.json sidecar
     jsonl_path: null    # optional path to rustmapper sitemap.jsonl
   enable_depth_mode: true  # Switch to depth spider when idle

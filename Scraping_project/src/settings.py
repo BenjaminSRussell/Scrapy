@@ -14,6 +14,7 @@ from typing import Any, Optional
 
 from src.core.config import Config, get_config
 from src.core.tls_policy import downloader_context_factory
+from src.stage1.ignore_robots import apply_project_robotstxt_obey
 from src.stage1.middlewares.fetch_policy_middleware import DEFAULT_LARGE_DOC_EXTENSIONS
 from src.stage1.middlewares.proxy_rotation_middleware import MIDDLEWARE_PRIORITY as PROXY_ROTATION_PRIORITY
 from src.stage1.middlewares.proxy_rotation_middleware import proxy_settings_from_sources
@@ -141,9 +142,17 @@ USER_AGENT = _scrapy_config.get("user_agent", "UConn-Discovery-Crawler/1.0")
 # RobotsTxtMiddleware is swapped for PoliteRobotsTxtMiddleware (adds metrics and
 # Crawl-delay, capped at ROBOTS_MAX_CRAWL_DELAY). Opt out only for sites you own:
 # ROBOTSTXT_OBEY=false or scrapy.robotstxt_obey: false.
-ROBOTSTXT_OBEY = str(os.getenv("ROBOTSTXT_OBEY", _scrapy_config.get("robotstxt_obey", True))).strip().lower() not in {
+# rustmapper ignore_robots is not that opt-out (#938): it stays obeyed unless a
+# Stage 1 dual-confirm decision file is present.
+_EXPLICIT_ROBOTSTXT_OBEY = str(os.getenv("ROBOTSTXT_OBEY", _scrapy_config.get("robotstxt_obey", True))).strip().lower() not in {
     "0", "false", "no", "off"
 }
+ROBOTSTXT_OBEY = apply_project_robotstxt_obey(
+    _EXPLICIT_ROBOTSTXT_OBEY,
+    rustmapper_ignore_robots=os.getenv("RUSTMAPPER_IGNORE_ROBOTS"),
+    config_ignore_robots=get_config().get("stage1.discovery.rustmapper_ignore_robots", False),
+    env=os.environ,
+)
 ROBOTS_MAX_CRAWL_DELAY = float(os.getenv("ROBOTS_MAX_CRAWL_DELAY", _scrapy_config.get("robots_max_crawl_delay", 60)))
 DOWNLOADER_MIDDLEWARES = _scrapy_config.get(
     "downloader_middlewares",

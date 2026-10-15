@@ -36,6 +36,9 @@ class DiscoveryHandoff:
         checksum: sha256 over JSONL body or sorted URL payload
         discovery_source: provenance (sitemap_parser | scout | rustmapper | ...)
         job_id / site: optional coordination metadata
+        ignore_robots_requested: rustmapper asked to skip robots.txt. Default
+            false. This does not change Stage 1 ``ROBOTSTXT_OBEY``; that needs
+            a dual confirm (#938).
     """
 
     status: DiscoveryStatus | str
@@ -45,6 +48,7 @@ class DiscoveryHandoff:
     discovery_source: str = "unknown"
     job_id: str | None = None
     site: str | None = None
+    ignore_robots_requested: bool = False
 
     def __post_init__(self) -> None:
         if isinstance(self.status, str):
@@ -79,6 +83,7 @@ class DiscoveryHandoff:
             discovery_source=data.get("discovery_source", "unknown"),
             job_id=data.get("job_id"),
             site=data.get("site"),
+            ignore_robots_requested=_ignore_robots_flag(data),
         )
 
     @classmethod
@@ -140,6 +145,27 @@ class DiscoveryHandoff:
             job_id=job_id,
             site=site,
         )
+
+
+def _ignore_robots_flag(data: dict[str, Any]) -> bool:
+    """Sidecar flag. Missing or unrecognized values stay false (#938)."""
+    from src.stage1.ignore_robots import as_bool
+
+    if "ignore_robots_requested" in data:
+        return as_bool(data.get("ignore_robots_requested"), default=False)
+    return as_bool(data.get("ignore_robots"), default=False)
+
+
+def _jsonl_ignore_robots(path: Path) -> bool:
+    from src.stage1.ignore_robots import ignore_robots_requested_in_jsonl
+
+    if not path.is_file():
+        return False
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return False
+    return ignore_robots_requested_in_jsonl(text)
 
 
 def checksum_urls(urls: Iterable[str]) -> str:
@@ -219,47 +245,59 @@ def consume_rustmapper_handoff(
     - Empty JSONL with no failure -> EMPTY (needs ack/skip Stage2).
     - Non-empty JSONL -> SUCCESS with file checksum (+ URL payload checksum).
     """
+    path = Path(jsonl_path)
+    requested = _jsonl_ignore_robots(path)
+
     if forced_failed:
-        return DiscoveryHandoff.failed(
+        failed = DiscoveryHandoff.failed(
             failure_error or "rustmapper crashed / non-zero exit",
             discovery_source=discovery_source,
             job_id=job_id,
             site=site,
         )
+        failed.ignore_robots_requested = requested
+        return failed
 
     if handoff_path is not None and Path(handoff_path).exists():
         existing = read_handoff_json(handoff_path)
+        existing.ignore_robots_requested = bool(existing.ignore_robots_requested) or requested
         if existing.is_failed:
             existing.discovery_source = existing.discovery_source or discovery_source
             return existing
         if existing.is_empty:
             return existing
+        requested = bool(existing.ignore_robots_requested)
 
-    path = Path(jsonl_path)
     if not path.exists():
-        return DiscoveryHandoff.failed(
+        missing = DiscoveryHandoff.failed(
             f"sitemap.jsonl missing: {path}",
             discovery_source=discovery_source,
             job_id=job_id,
             site=site,
         )
+        missing.ignore_robots_requested = requested
+        return missing
 
     try:
         urls, file_checksum = load_sitemap_jsonl(path)
     except Exception as exc:
-        return DiscoveryHandoff.failed(
+        broken = DiscoveryHandoff.failed(
             f"failed to read sitemap.jsonl: {exc}",
             discovery_source=discovery_source,
             job_id=job_id,
             site=site,
         )
+        broken.ignore_robots_requested = requested
+        return broken
 
     if not urls:
-        return DiscoveryHandoff.empty(
+        empty = DiscoveryHandoff.empty(
             discovery_source=discovery_source,
             job_id=job_id,
             site=site,
         )
+        empty.ignore_robots_requested = requested
+        return empty
 
     handoff = DiscoveryHandoff.success(
         urls,
@@ -268,6 +306,7 @@ def consume_rustmapper_handoff(
         site=site,
         checksum=checksum_urls(urls),
     )
+    handoff.ignore_robots_requested = requested
     logger.info(
         "rustmapper handoff success: %d urls payload_checksum=%s file_checksum=%s",
         len(urls),

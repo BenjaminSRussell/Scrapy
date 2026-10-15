@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Stage 1 robots confirmation</title>
+    <style>
+        body { font-family: sans-serif; max-width: 40rem; margin: 2rem auto; line-height: 1.4; }
+        label { display: block; margin: 0.75rem 0; }
+        button:disabled { opacity: 0.5; }
+        #robots-result { white-space: pre-wrap; }
+    </style>
+</head>
+<body>
+    <h1>Stage 1 robots confirmation</h1>
+    <p>
+        Stage 1 obeys robots.txt by default. rustmapper <code>ignore_robots</code>
+        stays off and is not inherited. Ignoring robots requires both checkboxes,
+        a reason, and the phrase <strong>IGNORE ROBOTS</strong>. The server writes
+        an audit log entry.
+    </p>
+    <label>
+        <input id="rustmapper-ignore" type="checkbox">
+        rustmapper set ignore_robots (default off)
+    </label>
+    <label>
+        <input id="stage1-confirm" type="checkbox">
+        Stage 1 confirms ignoring robots.txt
+    </label>
+    <label>
+        Reason
+        <input id="robots-reason" type="text" autocomplete="off" size="48">
+    </label>
+    <label>
+        Type IGNORE ROBOTS
+        <input id="robots-typed" type="text" autocomplete="off" size="48">
+    </label>
+    <p>
+        <button id="robots-submit" type="button" disabled>Record decision</button>
+    </p>
+    <p id="robots-result" role="status"></p>
+    <script src="robots-confirm.js"></script>
+</body>
+</html>
