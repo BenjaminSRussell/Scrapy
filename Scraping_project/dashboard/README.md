@@ -147,6 +147,12 @@ The browser tab title is prefixed with the live state so a background tab still 
 
 The topbar status is derived from the same state (`connectionState()` in `format-utils.js`).
 
+## Action toasts (#994)
+
+`showToast(type, msg)` in `app.js` raises a short notification (success, warning, danger, info, timeout). At most three are visible; the oldest is dropped. Each one dismisses itself after a few seconds, and hovering or focusing it pauses that timer. The stack (`#toast-stack`) is a polite live region outside the tabs, so a screen reader hears the new toast and not the whole list. Messages are text only.
+
+Metrics fetch failures, a recovery after a failure, and a manual Refresh (button, Retry, or R) use it. A background poll that succeeds still announces once via `#refresh-status` and does not toast. Crawl job start/stop controls are not on this page yet; they should call `showToast` when they land.
+
 ## Metric name map (#1038)
 
 The System tab Settings panel lists every Prometheus series the page reads and the UI field (element id) it fills. The list is `METRIC_UI_MAP` in `format-utils.js`, rendered by `renderMetricNameMap`. `app.js` does not keep a second copy. Session uptime and the last-refresh clock are not series. The Stage 4 overview spark follows `stage3_summaries_created_total` (the same sample buffer as the Stage 3 spark), not `stage4_large_doc_summaries_total`.

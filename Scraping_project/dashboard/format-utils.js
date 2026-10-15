@@ -1094,5 +1094,116 @@
         if (!rows.length) return { missing: true, rows: [], empty: SCRAPE_TARGET_EMPTY };
         return { missing: false, rows: rows.slice(0, cap), empty: SCRAPE_TARGET_EMPTY };
     }
-    return { tabKeyTarget, staleState, queueDepthRows, metricsFailureActivity, shortcutHintText, parseMetrics, metricSeriesCount, METRICS_FLOOD_DEFAULTS, metricsFloodLimits, advanceMetricsFlood, metricsFloodBannerText, ratePerMinute, resolveMetricsUrl, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler, stageActivity, stageDrilldown, stageDrilldownKey, doughnutLegendLayout, connectionState, documentTitle, createActivityAnnouncer, metricsUrlProblem, splitLinks, createMetricsFetcher, REFRESH_INTERVAL_CHOICES, parseRefreshInterval, shortcutAction, pickInitialTab, METRIC_UI_MAP, renderMetricNameMap, parseDangerSoundEnabled, dangerSoundDecision, HEALTH_HISTORY_LIMIT, pushPollOutcome, healthHistoryView, COMPARISON_BASELINE_ROLE, PREV_HOUR_AVG_KEYS, readPrevHourAverage, comparisonBaselineSeries, comparisonNote, ACTIVITY_LOG_CAP, capActivityLog, activityStaleNote, restoreActivityLog, topScrapeTargets, SCRAPE_TARGET_EMPTY, ACTIVITY_LEVELS, activityLevelCounts, filterActivityItems, toggleActivityLevel, HISTORY_MAX_POINTS, assertHistoryBound, boundHistoryBuffer, pushHistorySample, enforceHistoryCap };
+    // #994: toast stack. Max `limit` (default 3), auto-dismiss, pause/resume
+    // so a hover can hold one open. Identical visible text refreshes the
+    // timer instead of stacking a copy. `tag` lets a caller drop one group
+    // (fetch errors) without touching other toasts.
+    function createToastStack(opts) {
+        const o = opts || {};
+        const limit = Math.max(1, Math.floor(Number(o.limit == null ? 3 : o.limit)) || 3);
+        const dismissMs = Math.max(0, Number(o.dismissMs == null ? 5000 : o.dismissMs) || 0);
+        const now = o.now || (() => Date.now());
+        const setT = o.setTimeout || ((fn, ms) => setTimeout(fn, ms));
+        const clearT = o.clearTimeout || ((id) => clearTimeout(id));
+        let seq = 0;
+        const items = [];
+
+        function normalizeType(type) {
+            const t = String(type || '').toLowerCase();
+            if (t === 'error') return 'danger';
+            if (ACTIVITY_SPOKEN_TYPE[t]) return t;
+            return 'info';
+        }
+        function snapshot() {
+            return items.map(it => ({
+                id: it.id, type: it.type, label: it.label, message: it.message, tag: it.tag,
+            }));
+        }
+        function drop(id) {
+            const i = items.findIndex(it => it.id === id);
+            if (i < 0) return null;
+            const [it] = items.splice(i, 1);
+            if (it.timer != null) {
+                clearT(it.timer);
+                it.timer = null;
+            }
+            return it;
+        }
+        function arm(it) {
+            if (it.timer != null) clearT(it.timer);
+            it.paused = false;
+            it.deadline = now() + it.remaining;
+            it.timer = setT(() => {
+                it.timer = null;
+                if (!drop(it.id)) return;
+                if (o.onChange) o.onChange(snapshot(), { type: 'dismiss', id: it.id });
+            }, it.remaining);
+        }
+        function show(type, message, meta) {
+            const msg = String(message == null ? '' : message).replace(/\s+/g, ' ').trim();
+            if (!msg) return null;
+            const kind = normalizeType(type);
+            const label = ACTIVITY_SPOKEN_TYPE[kind] || 'Info';
+            const tag = meta && meta.tag ? String(meta.tag) : '';
+            const existing = items.find(it => it.type === kind && it.message === msg);
+            if (existing) {
+                existing.remaining = dismissMs;
+                existing.tag = tag || existing.tag;
+                if (!existing.paused) arm(existing);
+                return { id: existing.id, announced: false, text: null, removed: [], items: snapshot() };
+            }
+            const it = {
+                id: ++seq, type: kind, label, message: msg, tag,
+                remaining: dismissMs, timer: null, deadline: 0, paused: false,
+            };
+            items.push(it);
+            const removed = [];
+            while (items.length > limit) {
+                const old = items[0];
+                drop(old.id);
+                removed.push(old.id);
+            }
+            arm(it);
+            return { id: it.id, announced: true, text: label + ': ' + msg, removed, items: snapshot() };
+        }
+        function pause(id) {
+            const it = items.find(x => x.id === id);
+            if (!it || it.paused) return false;
+            it.paused = true;
+            if (it.timer != null) {
+                clearT(it.timer);
+                it.timer = null;
+                it.remaining = Math.max(0, it.deadline - now());
+            }
+            return true;
+        }
+        function resume(id) {
+            const it = items.find(x => x.id === id);
+            if (!it || !it.paused) return false;
+            if (it.remaining <= 0) {
+                drop(id);
+                if (o.onChange) o.onChange(snapshot(), { type: 'dismiss', id });
+                return true;
+            }
+            arm(it);
+            return true;
+        }
+        function dismiss(id) {
+            if (!drop(id)) return false;
+            if (o.onChange) o.onChange(snapshot(), { type: 'dismiss', id });
+            return true;
+        }
+        function dismissTag(tag) {
+            const key = String(tag || '');
+            if (!key) return 0;
+            const ids = items.filter(it => it.tag === key).map(it => it.id);
+            if (!ids.length) return 0;
+            ids.forEach(drop);
+            if (o.onChange) o.onChange(snapshot(), { type: 'dismiss', tag: key });
+            return ids.length;
+        }
+        return { show, pause, resume, dismiss, dismissTag, items: snapshot };
+    }
+
+    return { tabKeyTarget, staleState, queueDepthRows, metricsFailureActivity, shortcutHintText, parseMetrics, metricSeriesCount, METRICS_FLOOD_DEFAULTS, metricsFloodLimits, advanceMetricsFlood, metricsFloodBannerText, ratePerMinute, resolveMetricsUrl, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler, stageActivity, stageDrilldown, stageDrilldownKey, doughnutLegendLayout, connectionState, documentTitle, createActivityAnnouncer, metricsUrlProblem, splitLinks, createMetricsFetcher, REFRESH_INTERVAL_CHOICES, parseRefreshInterval, shortcutAction, pickInitialTab, METRIC_UI_MAP, renderMetricNameMap, parseDangerSoundEnabled, dangerSoundDecision, HEALTH_HISTORY_LIMIT, pushPollOutcome, healthHistoryView, COMPARISON_BASELINE_ROLE, PREV_HOUR_AVG_KEYS, readPrevHourAverage, comparisonBaselineSeries, comparisonNote, ACTIVITY_LOG_CAP, capActivityLog, activityStaleNote, restoreActivityLog, topScrapeTargets, SCRAPE_TARGET_EMPTY, ACTIVITY_LEVELS, activityLevelCounts, filterActivityItems, toggleActivityLevel, HISTORY_MAX_POINTS, assertHistoryBound, boundHistoryBuffer, pushHistorySample, enforceHistoryCap, createToastStack };
 });

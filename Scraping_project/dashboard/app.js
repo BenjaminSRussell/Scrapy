@@ -18,6 +18,8 @@ const ACTIVITY_STORE_KEY = 'cc.activityLog'; // #1029 sessionStorage ring
 let refreshPaused = false;
 let metricsFetcher = null;
 let metricsWasDown = false;
+let restoredThisFetch = false;
+let pendingManualRefresh = false;
 let consecutiveFetchFailures = 0;
 // #1030: last HEALTH_HISTORY_LIMIT metrics-poll outcomes (true = success).
 let pollHistory = [];
@@ -281,7 +283,7 @@ function escapeHtml(s) {
         .replace(/'/g, '&#39;');
 }
 
-function addActivityLogItem(type, message) {
+function addActivityLogItem(type, message, opts) {
     const timestamp = new Date().toLocaleTimeString();
     activityLog.unshift({ type, message, timestamp });
     boundHistoryBuffer(activityLog, 'end');
@@ -291,7 +293,9 @@ function addActivityLogItem(type, message) {
 
     persistActivityLog();
     updateActivityLog();
-    announceActivity(type, message);
+    // A toast for the same event is the polite announcement (#994). The log
+    // still records the line; it must not be spoken a second time.
+    if (!opts || opts.announce !== false) announceActivity(type, message);
 }
 
 // #962: the visual feeds are re-rendered wholesale (and live in hidden tabs),
@@ -526,6 +530,72 @@ function clearActivityLog() {
     persistActivityLog();
     syncActivityStaleNotes();
     updateActivityLog();
+}
+
+// #994: transient feedback for fetch actions. Job start/stop (#411) is not in
+// the dashboard yet; those controls should call showToast(type, msg) too.
+const TOAST_LIMIT = 3;
+const TOAST_DISMISS_MS = 5000;
+let toastStack = null;
+
+function ensureToastStack() {
+    if (!toastStack) {
+        toastStack = createToastStack({
+            limit: TOAST_LIMIT,
+            dismissMs: TOAST_DISMISS_MS,
+            onChange: () => renderToasts(),
+        });
+    }
+    return toastStack;
+}
+
+function renderToasts() {
+    const stackEl = document.getElementById('toast-stack');
+    if (!stackEl || !toastStack) return;
+    const live = toastStack.items();
+    const keep = new Set(live.map(it => String(it.id)));
+    Array.from(stackEl.children).forEach(node => {
+        if (!keep.has(node.getAttribute('data-toast-id'))) node.remove();
+    });
+    for (const it of live) {
+        if (stackEl.querySelector(`[data-toast-id="${it.id}"]`)) continue;
+        const node = document.createElement('div');
+        node.className = 'toast toast-' + it.type;
+        node.setAttribute('data-toast-id', String(it.id));
+        const labelEl = document.createElement('span');
+        labelEl.className = 'toast-label';
+        labelEl.textContent = it.label;
+        const msgEl = document.createElement('p');
+        msgEl.className = 'toast-message';
+        msgEl.textContent = it.message;
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'btn toast-dismiss';
+        btn.setAttribute('aria-label', 'Dismiss notification');
+        btn.textContent = 'Dismiss';
+        btn.addEventListener('click', () => toastStack.dismiss(it.id));
+        node.addEventListener('mouseenter', () => toastStack.pause(it.id));
+        node.addEventListener('mouseleave', () => toastStack.resume(it.id));
+        node.addEventListener('focusin', () => toastStack.pause(it.id));
+        node.addEventListener('focusout', (event) => {
+            if (!node.contains(event.relatedTarget)) toastStack.resume(it.id);
+        });
+        node.append(labelEl, msgEl, btn);
+        stackEl.appendChild(node);
+    }
+}
+
+function showToast(type, msg, opts) {
+    const stack = ensureToastStack();
+    const result = stack.show(type, msg, { tag: opts && opts.tag });
+    if (!result) return null;
+    renderToasts();
+    return result.id;
+}
+
+function dismissFetchToasts() {
+    if (!toastStack) return;
+    toastStack.dismissTag('fetch');
 }
 
 function detectSignificantChanges(metrics) {
@@ -778,8 +848,10 @@ function updateDashboard(metrics) {
     checkMilestones(metrics);
     if (metricsWasDown) {
         metricsWasDown = false;
-        // spoken once via the activity announcer (#962), not a second region
-        addActivityLogItem('success', 'Metrics connection restored');
+        restoredThisFetch = true;
+        // Spoken by the toast region, not activity-announce as well (#994).
+        addActivityLogItem('success', 'Metrics connection restored', { announce: false });
+        showToast('success', 'Metrics connection restored');
     }
     const s1Discovered = metrics['stage1_urls_discovered_total'] || 0;
     const s1Queued = metrics['stage1_urls_queued_total'] || 0;
@@ -1089,6 +1161,7 @@ async function fetchMetrics() {
             parseMs: clockMs() - parseStarted,
         }, readMetricsFloodLimits());
         applyMetricsFlood(decision);
+        dismissFetchToasts();
         updateDashboard(metrics);
         hasEverSucceeded = true;
         lastMetricsAt = Date.now();
@@ -1103,7 +1176,8 @@ async function fetchMetrics() {
         metricsWasDown = true;
         console.error('Error fetching metrics:', error);
         const failure = metricsFailureActivity(error, METRICS_TIMEOUT_MS);
-        addActivityLogItem(failure.type, failure.message);
+        addActivityLogItem(failure.type, failure.message, { announce: false });
+        showToast(failure.type, failure.message, { tag: 'fetch' });
         if (!hasEverSucceeded) finishLoading(true);
         showFetchError(failure.message);
         consecutiveFetchFailures += 1;
@@ -1578,6 +1652,7 @@ function setRefreshBusy(busy) {
 }
 function requestRefresh() {
     if (!refreshScheduler || refreshScheduler.isFetching()) return;
+    pendingManualRefresh = true;
     refreshScheduler.refreshNow();
 }
 
@@ -1613,6 +1688,8 @@ function startCountdown() {
 
 // One aria announcement per completed successful fetch (#1093).
 async function fetchAndAnnounce() {
+    const manual = pendingManualRefresh;
+    pendingManualRefresh = false;
     const before = lastMetricsAt;
     setRefreshBusy(true);
     try {
@@ -1620,8 +1697,17 @@ async function fetchAndAnnounce() {
     } finally {
         setRefreshBusy(false);
     }
+    const ok = lastMetricsAt !== before;
     const live = document.getElementById('refresh-status');
-    if (live && lastMetricsAt !== before) live.textContent = 'Metrics refreshed';
+    // Manual refresh: the toast is the polite announcement. Auto success keeps
+    // #1093 (one "Metrics refreshed" in #refresh-status). Recovery already
+    // toasted "Metrics connection restored", so it is not spoken twice.
+    if (manual && ok && !restoredThisFetch) {
+        showToast('success', 'Metrics refreshed');
+    } else if (live && ok && !restoredThisFetch) {
+        live.textContent = 'Metrics refreshed';
+    }
+    restoredThisFetch = false;
     renderCountdown();
 }
 
@@ -1863,7 +1949,8 @@ function initialize() {
     const metricsProblem = metricsUrlProblem(typeof location !== 'undefined' ? location : null);
     if (metricsProblem) {
         console.error(`[config] ${metricsProblem}`);
-        addActivityLogItem('danger', metricsProblem);
+        addActivityLogItem('danger', metricsProblem, { announce: false });
+        showToast('danger', metricsProblem);
     }
 
     console.log('Dashboard ready!');
