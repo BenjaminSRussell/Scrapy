@@ -1769,7 +1769,25 @@ function renderCountdown() {
     }
     const rel = document.getElementById('last-updated-rel');
     if (rel) rel.textContent = formatRelative(lastMetricsAt);
+    renderFooterSuccess();
     renderStale();
+}
+
+// #970: absolute time of the last successful metrics fetch. Failures leave
+// lastMetricsAt alone, so this stays on the previous success (or Never).
+function renderFooterSuccess() {
+    const ok = document.getElementById('cc-footer-last-success');
+    if (!ok) return;
+    if (!lastMetricsAt) {
+        if (ok.textContent !== 'Never') ok.textContent = 'Never';
+        ok.removeAttribute('datetime');
+        return;
+    }
+    const d = new Date(lastMetricsAt);
+    const text = d.toLocaleTimeString();
+    if (ok.textContent !== text) ok.textContent = text;
+    const iso = d.toISOString();
+    if (ok.getAttribute('datetime') !== iso) ok.setAttribute('datetime', iso);
 }
 
 function startCountdown() {
@@ -1996,8 +2014,12 @@ function applyFeatureFlags() {
 }
 
 function applyVersionWatermark() {
-    const el = document.getElementById('cc-version');
-    if (el) el.textContent = 'v' + (window.__CC_VERSION__ || 'dev');
+    // /version.js (serve.py) sets __CC_VERSION__ from CC_VERSION or git describe.
+    const label = 'v' + (window.__CC_VERSION__ || 'dev');
+    ['cc-version', 'cc-footer-version'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = label;
+    });
 }
 
 /** System Health card: Grafana home from CC_GRAFANA_URL (#1040). */
