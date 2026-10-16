@@ -831,7 +831,9 @@
             .activity-chip,
             .activity-search,
             #clear-activity-search,
-            .refresh-bar .accent-color {
+            .refresh-bar .accent-color,
+            .job-drawer .btn,
+            .job-drawer-launch .btn {
                 min-height: 44px;
                 min-width: 44px;
             }
@@ -1154,6 +1156,11 @@
             .activity-stale-note {
                 border: 1px dashed CanvasText;
             }
+            .job-drawer {
+                border: 1px solid CanvasText;
+                background: Canvas;
+                color: CanvasText;
+            }
             /* Chart.js paints fixed colours on canvas; keep its light backdrop
                so axis text and series stay legible under a dark system theme. */
             .chart-container canvas {
@@ -1391,6 +1398,125 @@
         }
         .fetch-error-banner[hidden] { display: none; }
         .btn[aria-busy="true"] { cursor: progress; }
+
+        /* #998: job detail stub. A modal <dialog> pinned to the right edge.
+           Width never exceeds the viewport, so 360px phones do not scroll sideways. */
+        .job-drawer-launch {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.5rem 1rem;
+            margin: 0 0 1rem;
+        }
+        .job-drawer-launch-note {
+            margin: 0;
+            font-size: 0.875rem;
+            color: var(--muted-text);
+        }
+        .job-drawer-launch .btn,
+        .job-drawer .btn {
+            font: inherit;
+            font-size: 0.875rem;
+            font-weight: 600;
+            padding: 0.45rem 0.9rem;
+            border-radius: 0.375rem;
+            border: 1px solid var(--gray-300);
+            background: #fff;
+            color: var(--gray-900);
+            cursor: pointer;
+        }
+        .job-drawer-launch .btn {
+            background: var(--primary);
+            border-color: var(--primary-dark);
+            color: #fff;
+        }
+        .job-drawer .btn:disabled {
+            color: var(--gray-700);
+            background: var(--gray-100);
+            border-color: var(--gray-300);
+            cursor: not-allowed;
+        }
+        .job-drawer {
+            position: fixed;
+            top: 0;
+            right: 0;
+            bottom: 0;
+            left: auto;
+            z-index: 1100;
+            width: min(100%, 24rem);
+            max-width: 100%;
+            height: 100%;
+            max-height: 100%;
+            margin: 0;
+            padding: 0;
+            border: 0;
+            border-left: 1px solid var(--gray-300);
+            background: #fff;
+            color: var(--gray-900);
+            box-shadow: -8px 0 24px rgba(17, 24, 39, 0.18);
+        }
+        .job-drawer::backdrop {
+            background: rgba(17, 24, 39, 0.45);
+        }
+        .job-drawer-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+            padding: 1rem 1.25rem;
+            border-bottom: 1px solid var(--gray-200);
+        }
+        .job-drawer-title {
+            margin: 0;
+            font-size: 1.125rem;
+            font-weight: 700;
+        }
+        .job-drawer-body {
+            overflow: auto;
+            padding: 0.25rem 1.25rem 1.5rem;
+        }
+        .job-drawer-note {
+            margin: 0.75rem 0 0;
+            color: var(--muted-text);
+            font-size: 0.875rem;
+        }
+        .job-drawer-section {
+            margin-top: 1.25rem;
+        }
+        .job-drawer-section h3 {
+            margin: 0 0 0.5rem;
+            font-size: 0.8rem;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            color: var(--gray-700);
+        }
+        .job-fields {
+            margin: 0;
+        }
+        .job-field {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-between;
+            gap: 0.25rem 1rem;
+            padding: 0.4rem 0;
+            border-bottom: 1px solid var(--gray-200);
+        }
+        .job-field dt {
+            font-weight: 600;
+            color: var(--gray-800);
+        }
+        .job-field dd {
+            margin: 0;
+            color: var(--muted-text);
+        }
+        .job-drawer-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            margin-top: 0.75rem;
+        }
     </style>
 </head>
 <body>
@@ -1449,6 +1575,10 @@
         </div>
         <div id="metrics-flood-banner" class="metrics-flood-banner" role="status" aria-live="off" hidden>
             <span id="metrics-flood-text">Metrics flood: charts paused. Showing summary counters only.</span>
+        </div>
+        <div class="job-drawer-launch">
+            <p class="job-drawer-launch-note" id="job-drawer-launch-note">Job detail is a placeholder until a crawl job is selected.</p>
+            <button type="button" id="open-job-detail" class="btn" aria-haspopup="dialog" aria-controls="job-detail-drawer" aria-expanded="false" aria-describedby="job-drawer-launch-note">Job details</button>
         </div>
         <div class="tabs">
             <nav class="tab-buttons-wrap" aria-label="Dashboard sections"><div class="tab-buttons" role="tablist" aria-label="Dashboard sections">
@@ -2029,6 +2159,81 @@
             </div>
         </div>
     </main>
+
+    <!-- #998: shell only. The jobs list (#996) will open this later; no jobs API yet. -->
+    <dialog id="job-detail-drawer" class="job-drawer" role="dialog" aria-modal="true" aria-labelledby="job-detail-title">
+        <div class="job-drawer-header">
+            <h2 id="job-detail-title" class="job-drawer-title">Job details</h2>
+            <button type="button" class="btn" id="job-detail-close" data-drawer-initial="true" aria-label="Close job details">Close</button>
+        </div>
+        <div class="job-drawer-body">
+            <p class="job-drawer-note" id="job-detail-placeholder-note">Placeholder fields. No job is loaded and nothing here calls the jobs API.</p>
+
+            <section class="job-drawer-section" aria-labelledby="job-detail-status-heading">
+                <h3 id="job-detail-status-heading">Status</h3>
+                <dl class="job-fields">
+                    <div class="job-field">
+                        <dt id="job-field-state-label">State</dt>
+                        <dd class="job-placeholder">Placeholder</dd>
+                    </div>
+                    <div class="job-field">
+                        <dt id="job-field-stage-label">Stage</dt>
+                        <dd class="job-placeholder">Placeholder</dd>
+                    </div>
+                    <div class="job-field">
+                        <dt id="job-field-progress-label">Progress</dt>
+                        <dd class="job-placeholder">Placeholder</dd>
+                    </div>
+                </dl>
+            </section>
+
+            <section class="job-drawer-section" aria-labelledby="job-detail-profile-heading">
+                <h3 id="job-detail-profile-heading">Profile</h3>
+                <dl class="job-fields">
+                    <div class="job-field">
+                        <dt id="job-field-profile-label">Profile name</dt>
+                        <dd class="job-placeholder">Placeholder</dd>
+                    </div>
+                    <div class="job-field">
+                        <dt id="job-field-spider-label">Spider</dt>
+                        <dd class="job-placeholder">Placeholder</dd>
+                    </div>
+                    <div class="job-field">
+                        <dt id="job-field-seed-label">Seed URL</dt>
+                        <dd class="job-placeholder">Placeholder</dd>
+                    </div>
+                </dl>
+            </section>
+
+            <section class="job-drawer-section" aria-labelledby="job-detail-timestamps-heading">
+                <h3 id="job-detail-timestamps-heading">Timestamps</h3>
+                <dl class="job-fields">
+                    <div class="job-field">
+                        <dt id="job-field-created-label">Created</dt>
+                        <dd class="job-placeholder">Placeholder</dd>
+                    </div>
+                    <div class="job-field">
+                        <dt id="job-field-started-label">Started</dt>
+                        <dd class="job-placeholder">Placeholder</dd>
+                    </div>
+                    <div class="job-field">
+                        <dt id="job-field-finished-label">Finished</dt>
+                        <dd class="job-placeholder">Placeholder</dd>
+                    </div>
+                </dl>
+            </section>
+
+            <section class="job-drawer-section" aria-labelledby="job-detail-actions-heading">
+                <h3 id="job-detail-actions-heading">Actions</h3>
+                <p class="job-drawer-note" id="job-detail-actions-note">Placeholder. These controls do not start, stop, or retry a crawl.</p>
+                <div class="job-drawer-actions">
+                    <button type="button" class="btn" disabled aria-describedby="job-detail-actions-note">Pause</button>
+                    <button type="button" class="btn" disabled aria-describedby="job-detail-actions-note">Stop</button>
+                    <button type="button" class="btn" disabled aria-describedby="job-detail-actions-note">Retry</button>
+                </div>
+            </section>
+        </div>
+    </dialog>
 
     <script src="features.js"></script>
     <script src="format-utils.js"></script>
