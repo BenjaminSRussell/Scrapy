@@ -27,7 +27,19 @@ Work through these in order:
 
 ## This directory
 
-The `*-report.txt` files are point-in-time local Trivy reports for the third-party service images (redis, kafka, zookeeper, postgres, prometheus) used by docker-compose. They are reference material only, and CI does not regenerate them.
+The `*-report.txt` files are point-in-time local Trivy reports for the third-party service images (redis, kafka, zookeeper, postgres, prometheus) used by docker-compose and the Helm chart. They are reference material only, and CI does not regenerate them.
+
+### Report dates
+
+Trivy's text output records no scan time, so git dates these reports. All five were last changed in commit `4489059` on 2025-10-15, so each scan ran on or before that day. Treat them as a snapshot from that date, not as the current CVE state. The table compares each scanned image with the pin in the repo as of 2026-10-16.
+
+| Report | Image scanned | Pin in the repo |
+|---|---|---|
+| `redis-report.txt` | `redis:7.4.2-alpine3.21` | docker-compose: `redis:7-alpine` |
+| `postgres-report.txt` | `postgres:16.6-alpine3.21` | docker-compose: `postgres:16-alpine` |
+| `prometheus-report.txt` | Prometheus binaries (image tag not recorded) | docker-compose: `prom/prometheus:v3.2.1` |
+| `kafka-report.txt` | `confluentinc/cp-kafka:7.6.0` | Helm: `cp-kafka:7.9.1`; docker-compose: `apache/kafka:3.9.1` |
+| `zookeeper-report.txt` | `confluentinc/cp-zookeeper:7.6.0` | Helm: `cp-zookeeper:7.9.1`; docker-compose has no ZooKeeper |
 
 To refresh one locally:
 
