@@ -210,6 +210,13 @@ if PROMETHEUS_AVAILABLE:
         list(SCRAPY_FAMILIES["pipeline_estimated_cost_usd"]),
     )
 
+    # Stage 1 sitemap discovery runs by backend: rustmapper handoff, Python sitemap walk, or its fallback (#593).
+    STAGE1_DISCOVERY_BACKEND = Counter(
+        "stage1_discovery_backend",
+        "Stage 1 sitemap discovery runs by backend (rustmapper, python_sitemap, python_sitemap_fallback) (#593)",
+        list(SCRAPY_FAMILIES["stage1_discovery_backend"]),
+    )
+
     # --- Delta Lake Manager Metrics ---
     DELTA_MANAGER_CONTEXT_ENTER_TOTAL = Counter(
         "delta_manager_context_enter_total", "Total number of times a DeltaLakeManager context has been entered."
@@ -247,6 +254,7 @@ else:
     CRAWLER_SUMMARY_SKIPPED = None
     HIDDEN_URLS_FOUND = HIDDEN_URLS_ROUTED = None
     ESTIMATED_COST_USD = None
+    STAGE1_DISCOVERY_BACKEND = None
     PIPELINE_JS_QUEUE_PENDING = None
 
 

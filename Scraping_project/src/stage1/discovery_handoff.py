@@ -317,10 +317,15 @@ def ingest_handoff_via_seed_manager(
     source_url: str,
     dedup: Any | None = None,
     ack_empty: bool = False,
-    write_uconn_urls: bool = True,
+    write_domain_urls: bool | None = None,
     enqueue_stage2: bool = True,
 ) -> dict[str, Any]:
     """Verify handoff, shared-dedup claim, then SeedManager ingest.
+
+    ``write_domain_urls=None`` (the default) lets the SeedManager's config
+    (``stage1.write_domain_urls``, #317) decide whether the domain side table
+    is written. The previous default forced the UConn table for every handoff,
+    rustmapper included (#593).
 
     Returns counts plus handoff status metadata.
     """
@@ -363,7 +368,7 @@ def ingest_handoff_via_seed_manager(
         urls=claimed_urls,
         source_url=source_url,
         source_spider=handoff.discovery_source,
-        write_uconn_urls=write_uconn_urls,
+        write_domain_urls=write_domain_urls,
         enqueue_stage2=enqueue_stage2,
     )
     result = dict(result)

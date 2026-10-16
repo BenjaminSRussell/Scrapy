@@ -19,19 +19,29 @@ from src.stage1.sitemap_parser import discover_sitemaps_handoff_sync
 from src.stage1.discovery_dedup import DiscoveryDedup, get_discovery_dedup_from_config
 from src.stage1.discovery_handoff import (
     DiscoveryEmptyNeedsAck,
+    DiscoveryHandoff,
     DiscoveryHandoffError,
     DiscoveryStatus,
+    consume_rustmapper_handoff,
     ingest_handoff_via_seed_manager,
 )
 from src.stage1.js_queue import js_spider_enabled
 from src.stage1.section_noise import SectionNoiseTracker, section_of
 
 try:
-    from src.scrapy_prometheus import URLS_SKIPPED
+    from src.scrapy_prometheus import STAGE1_DISCOVERY_BACKEND, URLS_SKIPPED
     from src.utils.metric_labels import labels_for
 except Exception:  # prometheus_client missing
     URLS_SKIPPED = None
+    STAGE1_DISCOVERY_BACKEND = None
     labels_for = None  # type: ignore[assignment]
+
+# Sitemap discovery backends (#593). Exactly one runs per Stage 1 start; the
+# Python walk runs as a fallback only after a FAILED rustmapper handoff. These
+# are the ``backend`` label values of ``stage1_discovery_backend_total``.
+BACKEND_RUSTMAPPER = "rustmapper"
+BACKEND_PYTHON_SITEMAP = "python_sitemap"
+BACKEND_PYTHON_FALLBACK = "python_sitemap_fallback"
 
 def _stage1_flag(config, key: str, default: bool) -> bool:
     """Read a boolean ``stage1.<key>`` (falling back to ``stages.stage1.<key>``) (#27)."""
@@ -43,6 +53,15 @@ def _stage1_flag(config, key: str, default: bool) -> bool:
             return value.strip().lower() in ("1", "true", "yes", "on")
         return bool(value)
     return default
+
+
+def _stage1_path(config, key: str) -> str | None:
+    """A non-empty ``stage1.<key>`` string (or ``stages.stage1.<key>``), else None (#593)."""
+    for prefix in ("stage1", "stages.stage1"):
+        value = config.get(f"{prefix}.{key}")
+        if value is not None and str(value).strip():
+            return str(value).strip()
+    return None
 
 
 def get_delta_manager(*args, **kwargs):
@@ -93,6 +112,13 @@ class ScoutSpider(BaseSpider):
             or config.get("stage1.discovery.ack_empty", False)
             or config.get("stages.stage1.discovery.ack_empty", False)
         )
+        # #593: rustmapper's sitemap.jsonl handoff is the discovery backend when
+        # enabled. The Python sitemap walk then runs only as the fallback.
+        self.rustmapper_enabled = _stage1_flag(config, "discovery.rustmapper_enabled", False)
+        self.rustmapper_fallback = _stage1_flag(config, "discovery.rustmapper_fallback", True)
+        self.rustmapper_jsonl_path = _stage1_path(config, "discovery.jsonl_path")
+        self.rustmapper_handoff_path = _stage1_path(config, "discovery.handoff_path")
+        self.discovery_backend = BACKEND_RUSTMAPPER if self.rustmapper_enabled else BACKEND_PYTHON_SITEMAP
         # #645: with the JS path off nothing drains js_spider_queue, so don't fill it.
         self.enable_js_spider = js_spider_enabled(config)
 
@@ -105,6 +131,10 @@ class ScoutSpider(BaseSpider):
         logger.info(f"[SCOUT] Aggressive collection mode: {self.aggressive_collection}")
         logger.info(
             f"[SCOUT] Discovery dedup mode={self.discovery_dedup.mode.value} job_id={self.job_id}"
+        )
+        logger.info(
+            f"[SCOUT] Sitemap discovery backend={self.discovery_backend} "
+            f"rustmapper_fallback={self.rustmapper_fallback}"
         )
 
         if self.parse_sitemaps and hasattr(self, "start_urls") and self.start_urls:
@@ -363,11 +393,92 @@ class ScoutSpider(BaseSpider):
         }
 
     def _discover_and_add_sitemap_urls(self) -> None:
+        """Run the one sitemap discovery backend for this site (#593).
+
+        rustmapper when ``stage1.discovery.rustmapper_enabled`` is on, else the
+        Python sitemap walk. The Python walk runs after a rustmapper handoff
+        FAILED only when ``stage1.discovery.rustmapper_fallback`` is on. An
+        EMPTY handoff is a result, not a failure, so it never falls back.
+        """
         if not self.start_urls:
             return
 
         base_url = self.start_urls[0]
+        if self.discovery_backend == BACKEND_RUSTMAPPER:
+            failed = self._discover_via_rustmapper(base_url)
+            if not (failed and self.rustmapper_fallback):
+                return
+            logger.warning(
+                f"[SCOUT] rustmapper handoff failed for {base_url}; running the Python sitemap fallback (#593)"
+            )
+            self._discover_via_python_sitemap(base_url, backend=BACKEND_PYTHON_FALLBACK)
+            return
+
+        self._discover_via_python_sitemap(base_url, backend=BACKEND_PYTHON_SITEMAP)
+
+    def _discover_via_rustmapper(self, base_url: str) -> bool:
+        """Consume the rustmapper ``sitemap.jsonl`` handoff (#593).
+
+        Returns True only when the handoff FAILED, so the caller may run the
+        fallback. Success, empty, a mutex held by another engine, and an
+        ingest error all return False, and the Python walk does not start.
+        """
         site = urlparse(base_url).netloc
+        source = BACKEND_RUSTMAPPER
+        if not self.discovery_dedup.acquire_mutex(site, source):
+            logger.info(
+                f"[SCOUT] Discovery mutex held for {site}; skipping rustmapper handoff "
+                f"(another engine owns this job/site)"
+            )
+            return False
+
+        try:
+            handoff = self._rustmapper_handoff(site)
+            self._last_discovery_handoff = handoff
+            self._count_discovery_backend(BACKEND_RUSTMAPPER)
+            if handoff.is_success:
+                logger.warning(
+                    f"[SCOUT] Python sitemap parser is deprecated for {site}: rustmapper handoff "
+                    f"succeeded with {len(handoff.discovered)} URLs, so the Python sitemap walk is skipped (#593)"
+                )
+            self._apply_discovery_handoff(handoff, base_url)
+            return handoff.is_failed
+        except Exception as e:
+            self.scout_stats["discovery_failures"] += 1
+            logger.warning(f"[SCOUT] rustmapper handoff ingest failed: {e}")
+            return False
+        finally:
+            self.discovery_dedup.release_mutex(site, source)
+
+    def _rustmapper_handoff(self, site: str) -> DiscoveryHandoff:
+        """Build the rustmapper handoff from config. Unset or unreadable inputs are FAILED, never EMPTY."""
+        if not self.rustmapper_jsonl_path:
+            return DiscoveryHandoff.failed(
+                "stage1.discovery.jsonl_path is not set",
+                discovery_source=BACKEND_RUSTMAPPER,
+                job_id=self.job_id,
+                site=site,
+            )
+        try:
+            return consume_rustmapper_handoff(
+                self.rustmapper_jsonl_path,
+                self.rustmapper_handoff_path,
+                discovery_source=BACKEND_RUSTMAPPER,
+                job_id=self.job_id,
+                site=site,
+            )
+        except Exception as e:  # e.g. a corrupt handoff_path sidecar
+            return DiscoveryHandoff.failed(
+                f"rustmapper handoff unreadable: {e}",
+                discovery_source=BACKEND_RUSTMAPPER,
+                job_id=self.job_id,
+                site=site,
+            )
+
+    def _discover_via_python_sitemap(self, base_url: str, *, backend: str) -> None:
+        """Python sitemap walk: the default backend, or the fallback after a FAILED rustmapper handoff."""
+        site = urlparse(base_url).netloc
+        # Provenance value stays "sitemap_parser": seed rows and dedup claims already store it (#593).
         source = "sitemap_parser"
 
         if not self.discovery_dedup.acquire_mutex(site, source):
@@ -378,7 +489,8 @@ class ScoutSpider(BaseSpider):
             return
 
         try:
-            logger.info(f"[SCOUT] Discovering sitemap URLs from {base_url}")
+            logger.info(f"[SCOUT] Discovering sitemap URLs from {base_url} (backend={backend})")
+            self._count_discovery_backend(backend)
 
             handoff = discover_sitemaps_handoff_sync(
                 base_url,
@@ -387,32 +499,7 @@ class ScoutSpider(BaseSpider):
                 job_id=self.job_id,
             )
             self._last_discovery_handoff = handoff
-
-            if handoff.status == DiscoveryStatus.FAILED:
-                self.scout_stats["discovery_failures"] += 1
-                logger.error(
-                    f"[SCOUT] Sitemap discovery FAILED (abort Stage2 ingest): {handoff.error}"
-                )
-                return
-
-            if handoff.status == DiscoveryStatus.EMPTY:
-                if self.ack_empty_discovery:
-                    self.scout_stats["discovery_empty_acks"] += 1
-                    logger.info(
-                        f"[SCOUT] Empty sitemap handoff for {base_url} — acked; skipping Stage2 seed"
-                    )
-                else:
-                    logger.warning(
-                        f"[SCOUT] Empty sitemap handoff for {base_url} — needs ack/skip Stage2 "
-                        f"(set stage1.discovery.ack_empty=true to acknowledge)"
-                    )
-                return
-
-            logger.info(
-                f"[SCOUT] Sitemap handoff success: {len(handoff.discovered)} URLs "
-                f"checksum={handoff.checksum}"
-            )
-            self._ingest_discovery_handoff(handoff, source_url=f"{base_url}/sitemap.xml")
+            self._apply_discovery_handoff(handoff, base_url)
 
         except Exception as e:
             self.scout_stats["discovery_failures"] += 1
@@ -420,15 +507,48 @@ class ScoutSpider(BaseSpider):
         finally:
             self.discovery_dedup.release_mutex(site, source)
 
+    def _apply_discovery_handoff(self, handoff, base_url: str) -> None:
+        """FAILED aborts Stage2 ingest, EMPTY needs an ack, SUCCESS is ingested (both backends)."""
+        if handoff.status == DiscoveryStatus.FAILED:
+            self.scout_stats["discovery_failures"] += 1
+            logger.error(
+                f"[SCOUT] Sitemap discovery FAILED ({handoff.discovery_source}; abort Stage2 ingest): {handoff.error}"
+            )
+            return
+
+        if handoff.status == DiscoveryStatus.EMPTY:
+            if self.ack_empty_discovery:
+                self.scout_stats["discovery_empty_acks"] += 1
+                logger.info(
+                    f"[SCOUT] Empty sitemap handoff for {base_url} — acked; skipping Stage2 seed"
+                )
+            else:
+                logger.warning(
+                    f"[SCOUT] Empty sitemap handoff for {base_url} — needs ack/skip Stage2 "
+                    f"(set stage1.discovery.ack_empty=true to acknowledge)"
+                )
+            return
+
+        logger.info(
+            f"[SCOUT] Sitemap handoff success ({handoff.discovery_source}): {len(handoff.discovered)} URLs "
+            f"checksum={handoff.checksum}"
+        )
+        self._ingest_discovery_handoff(handoff, source_url=f"{base_url}/sitemap.xml")
+
+    def _count_discovery_backend(self, backend: str) -> None:
+        """One ``stage1_discovery_backend_total`` increment per discovery run that actually starts (#593)."""
+        if STAGE1_DISCOVERY_BACKEND is not None and labels_for is not None:
+            labels_for(STAGE1_DISCOVERY_BACKEND, spider=self.name, backend=backend).inc()
+
     def _ingest_discovery_handoff(self, handoff, source_url: str) -> None:
         try:
+            # No domain-table flag here: stage1.write_domain_urls decides (#593, #317).
             result = ingest_handoff_via_seed_manager(
                 self.seed_manager,
                 handoff,
                 source_url=source_url,
                 dedup=self.discovery_dedup,
                 ack_empty=self.ack_empty_discovery,
-                write_uconn_urls=True,
                 enqueue_stage2=False,
             )
             self.scout_stats["urls_added_to_seeds"] += result.get("seed_inserted", 0)

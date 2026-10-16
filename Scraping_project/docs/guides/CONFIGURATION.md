@@ -44,6 +44,27 @@ The YAML file comments every key in detail. A few keys are documented in the fil
 
 Some optional features keep their own example files. For instance, `config/entity_summarization.example.yml` is used by the entity summarizer.
 
+## Sitemap discovery backend: rustmapper handoff (#593)
+
+Stage 1 runs one sitemap discovery backend per start. The switch is `stage1.discovery.rustmapper_enabled`, which is `false` in `config.yml`.
+
+| Key (`stage1.discovery.*`) | Default | Meaning |
+|---|---|---|
+| `rustmapper_enabled` | `false` | `false`: the Python sitemap walk runs (`python_sitemap`). `true`: rustmapper's `sitemap.jsonl` handoff is the backend, and the Python walk is skipped. |
+| `jsonl_path` | `null` | rustmapper's `sitemap.jsonl`. Unset while `rustmapper_enabled` is true is a FAILED handoff. |
+| `handoff_path` | `null` | Optional `discovery_handoff.json` sidecar. A FAILED or EMPTY sidecar is honoured. An unreadable sidecar is a FAILED handoff. |
+| `rustmapper_fallback` | `true` | When a rustmapper handoff FAILS, run the Python walk (`python_sitemap_fallback`). An EMPTY handoff never falls back. An empty site still needs `ack_empty`, as before. |
+
+This repo does not start rustmapper. `jsonl_path` must point at a `sitemap.jsonl` that something else writes (#562).
+
+Migrating a deployment:
+
+1. Nothing changes until `rustmapper_enabled` is `true`. To switch, set `jsonl_path` to rustmapper's output, set `rustmapper_enabled: true`, then restart Scout. The switch is read when the spider starts.
+2. Watch `stage1_discovery_backend_total` by `backend`. `rustmapper` counts handoff runs. `python_sitemap_fallback` means rustmapper failed and the Python walk ran instead. A sustained rise means the handoff is broken.
+3. Provenance: seed rows (`source_spider`) and dedup claims record `rustmapper` for the handoff and `sitemap_parser` for the Python walk. The Python value is unchanged, so existing rows and claim keys still match.
+4. The sitemap ingest no longer forces the UConn domain table (`uconn_urls`). It follows `stage1.write_domain_urls`, which the bundled UConn profile keeps on. A profile that relied on the forced write must set `stage1.write_domain_urls: true` and `stage1.domain_urls_table`.
+5. A successful rustmapper handoff logs `Python sitemap parser is deprecated for <site>` at WARNING, once per Scout start.
+
 ## Environment variables
 
 These are the variables the code actually reads (`grep -rn "getenv" src cli.py start.py`):

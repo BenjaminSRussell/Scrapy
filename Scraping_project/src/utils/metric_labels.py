@@ -72,6 +72,8 @@ SCRAPY_FAMILIES: dict[str, tuple[str, ...]] = {
     "scrapy_crawler_summary_skipped": BASE_LABELS + ("spider", "reason"),
     "scrapy_hidden_urls_found": BASE_LABELS + ("spider", "category"),
     "scrapy_hidden_urls_routed": BASE_LABELS + ("spider", "route"),
+    # Stage 1 sitemap discovery runs by backend (#593): rustmapper | python_sitemap | python_sitemap_fallback.
+    "stage1_discovery_backend": BASE_LABELS + ("spider", "backend"),
     # Request count times COST_USD_PER_REQUEST. Not a measured cloud bill.
     "pipeline_estimated_cost_usd": BASE_LABELS + ("site_id", "crawl_job_id"),
 }

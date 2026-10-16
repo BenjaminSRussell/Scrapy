@@ -56,6 +56,7 @@ renamed to the new version and date (see the release checklist).
 - Grafana scraping-pipeline-health dashboard provisioned in compose and Helm.
 - Release images (crawler, metrics, kafka-delta-ingest) smoke-tested on PRs that touch the image recipe (#449).
 - Repository policies: SECURITY.md, CODE_OF_CONDUCT.md, this changelog, ADRs, devcontainer (#669 #746 #747 #715 #694).
+- Stage 1 `stage1_discovery_backend_total{backend}` counts sitemap discovery runs by backend: `rustmapper`, `python_sitemap`, or `python_sitemap_fallback` (#593).
 
 ### Changed
 - Control Center tabs, health tiles, and the title mark use inline SVG icons (`aria-hidden`) instead of emoji glyphs (#1049).
@@ -70,6 +71,8 @@ renamed to the new version and date (see the release checklist).
 - Kafka messages are keyed by `url_hash`, with an enforceable idempotent producer (#285).
 - Undomainable rows are quarantined instead of landing in a hot `domain=unknown` partition.
 - ASR no longer sends audio to Google by default (`ASR_PROVIDER` opt-in; local whisper).
+- With `stage1.discovery.rustmapper_enabled: true`, rustmapper's `sitemap.jsonl` handoff is the sitemap discovery backend and the Python sitemap walk is skipped. The walk runs only after a FAILED handoff, when `stage1.discovery.rustmapper_fallback` (default on) is set. Empty handoffs never fall back (#593).
+- Sitemap ingest no longer forces the UConn domain table. It follows `stage1.write_domain_urls`, which the bundled UConn profile keeps on; other profiles that relied on the forced write must set it (#593).
 
 ### Deprecated
 - `python reseed.py`, `python drain_lake.py`, `python audit_file_counts.py`, and `python monitor_and_trigger_depth.py` at the Scraping_project root. Run `python scripts/<name>.py` from `Scraping_project/` instead. `cli.py` stays the root Python entrypoint (#568).

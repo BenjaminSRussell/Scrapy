@@ -72,6 +72,10 @@ Scrapy crawl metrics in `src/scrapy_prometheus.py` always include `stage`, `work
 
 The tuples are `SCRAPY_FAMILIES` and `STATSD_FAMILIES` in `src/utils/metric_labels.py`. A test fails if a family is registered or emitted with a different set. `redis_queue_length` is still the queue-depth series. `Stage2SuccessSLO` stays 0.99 over 24h, `QueueBacklog` still fires above 10000, and `KafkaConsumerLagSLO` still fires above 250000.
 
+## Sitemap discovery backend (#593)
+
+`stage1_discovery_backend_total` is a counter with the base labels plus `spider` and `backend`. One increment is recorded each time a discovery backend starts. `backend` is `rustmapper` (the handoff), `python_sitemap` (the default Python walk), or `python_sitemap_fallback` (the Python walk after a FAILED rustmapper handoff). Config and migration steps are in [CONFIGURATION.md](CONFIGURATION.md#sitemap-discovery-backend-rustmapper-handoff-593).
+
 ## Per-job notice preferences (#487)
 
 Prometheus expressions are unchanged. `monitoring/alerts.yml` is not a rule file and is not recreated. `Stage2SuccessSLO` has no `bool` modifier: a breach value is the ratio under 0.99, not 1. `QueueBacklog` stays `redis_queue_length > 10000`. `KafkaConsumerLagSLO` stays above 250000. There is no fourth SLO, and `redis_queue_length` is not renamed.

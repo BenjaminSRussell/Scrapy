@@ -72,7 +72,12 @@ stage1:
     job_id: default     # scopes claim/mutex keys per pipeline job
     claim_ttl_seconds: 604800  # 7 days
     ack_empty: false    # when true, empty handoff skips Stage2 without warning
+    # #593: rustmapper_enabled picks the sitemap discovery backend. true = rustmapper's
+    # sitemap.jsonl handoff replaces the Python sitemap walk. false = the Python walk (default).
     rustmapper_enabled: false  # when true, consume rustmapper sitemap.jsonl handoff
+    # The Python walk runs as the fallback only when the rustmapper handoff FAILS (crash,
+    # missing or unreadable JSONL, jsonl_path unset). An EMPTY handoff never falls back.
+    rustmapper_fallback: true
     handoff_path: null  # optional path to discovery_handoff.json sidecar
     jsonl_path: null    # optional path to rustmapper sitemap.jsonl
   enable_depth_mode: true  # Switch to depth spider when idle
