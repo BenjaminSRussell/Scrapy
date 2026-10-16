@@ -19,3 +19,4 @@ Use for every dashboard PR:
 - [x] Landmarks (`header`, `nav`, `main`) and an h1 → h2 heading outline (#332)
 - [x] Decorative icons are inline SVG with `aria-hidden`; tabs, health tiles, and the title mark do not use emoji glyphs (#1049)
 - [x] Loading, stale and error states are text, not just colour or zeros (#351, #352, #362)
+- [x] Job detail drawer is a modal dialog with a name, labelled placeholder fields, and keyboard dismiss that returns focus to the opener (#998)

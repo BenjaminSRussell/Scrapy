@@ -1553,6 +1553,8 @@ function setupShortcuts() {
     document.addEventListener('keydown', (event) => {
         // Stage drill-down owns the keyboard while it is open (#1033).
         if (stageDrilldownIsOpen()) return;
+        const jobDrawer = document.getElementById('job-detail-drawer');
+        if (jobDrawer && jobDrawer.open) return; // #998: modal owns the keyboard
         const action = shortcutAction(event, visibleTabNames());
         if (!action) return;
         event.preventDefault();
@@ -2010,6 +2012,56 @@ function applyGrafanaLink() {
     if (shown) shown.textContent = home;
 }
 
+// #998: job detail drawer stub. Placeholders only — no jobs API, no crawl control.
+function setupJobDetailDrawer() {
+    const dialog = document.getElementById('job-detail-drawer');
+    const openBtn = document.getElementById('open-job-detail');
+    const closeBtn = document.getElementById('job-detail-close');
+    if (!dialog || !openBtn || typeof dialog.showModal !== 'function') return;
+    let opener = null;
+
+    function closeDrawer() {
+        if (!dialog.open) return;
+        dialog.close();
+    }
+
+    function openDrawer() {
+        if (dialog.open) return;
+        if (typeof closeStageDrilldown === 'function' && stageDrilldownIsOpen()) closeStageDrilldown();
+        opener = openBtn;
+        try {
+            dialog.showModal();
+        } catch (_) {
+            opener = null;
+            return;
+        }
+        openBtn.setAttribute('aria-expanded', 'true');
+        const initial = dialog.querySelector('[data-drawer-initial]') || closeBtn;
+        if (initial && typeof initial.focus === 'function') initial.focus();
+    }
+
+    openBtn.addEventListener('click', openDrawer);
+    if (closeBtn) closeBtn.addEventListener('click', closeDrawer);
+    dialog.addEventListener('click', (event) => {
+        if (event.target === dialog) closeDrawer();
+    });
+    dialog.addEventListener('keydown', (event) => {
+        if (event.key !== 'Escape' && event.key !== 'Esc') return;
+        event.preventDefault();
+        closeDrawer();
+    });
+    dialog.addEventListener('close', () => {
+        openBtn.setAttribute('aria-expanded', 'false');
+        const back = opener && typeof opener.focus === 'function' ? opener : openBtn;
+        opener = null;
+        // After the UA restores its own focus, put it back on the opener.
+        setTimeout(() => {
+            if (back && typeof back.focus === 'function') back.focus();
+        }, 0);
+    });
+    openBtn.setAttribute('aria-expanded', 'false');
+}
+
 function initialize() {
     console.log('Initializing Pipeline Control Center...');
 
@@ -2026,6 +2078,7 @@ function initialize() {
     setupTabs();
     setupActivitySearch();
     setupStageDrilldown();
+    setupJobDetailDrawer();
     setupShortcuts();
     const initialTab = pickInitialTab(tabFromLocation(), storeGet(STORE_TAB_KEY), visibleTabNames());
     if (initialTab) activateTab(initialTab, false);

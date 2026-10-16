@@ -200,6 +200,10 @@ The match count is text in `#activity-filter-status`, not HTML.
 
 A confirmed start (`cc:job-started` on `#job-start`) draws one check on the Start control. There is no confetti. `prefers-reduced-motion: reduce` skips that stroke animation and shows the finished check. Start stays disabled until the job API exists (#147); the control does not launch a crawl.
 
+## Job detail drawer (#998)
+
+**Job details** (above the tabs) opens a right-side drawer. Status, Profile, Timestamps, and Actions are labeled placeholders only: nothing calls a jobs API, and Pause / Stop / Retry do not start or stop a crawl. Escape, Close, or a click on the backdrop dismisses it and returns focus to the button that opened it. The jobs list (#996) is a separate stub and is not wired up yet. Opening this drawer closes the stage drill-down panel if that panel is open.
+
 ## Threat model notes (#1046)
 
 **Activity log XSS.** Activity messages may contain text derived from metrics,
