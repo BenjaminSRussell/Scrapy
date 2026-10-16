@@ -159,6 +159,9 @@ python scripts/reseed.py
 # Add one seed URL
 python cli.py seeds add https://www.example.org/ --note "why" --actor me
 
+# Ballpark crawl minutes and relative cost units before a start. Non-billing; placeholder rates (docs/product/580-crawl-cost-estimator.md)
+python -m src.common.crawl_estimate --urls 10000 --mix scout=0.8,javascript=0.2
+
 # Reset Delta tables and reload seeds
 python start.py --reset-delta
 ```
