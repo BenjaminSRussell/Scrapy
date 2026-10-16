@@ -61,6 +61,7 @@ node --test Scraping_project/dashboard/tests/   # helper unit tests
   Missing files, directory listings, dotfiles, `tests/` and source/docs (`serve.py`, `*.md`)
   return a plain 404 that never includes filesystem paths.
 - Version watermark: `CC_VERSION` env or `git describe` via `/version.js`.
+- Footer (#970): the same version string, the clock time of the last successful metrics fetch (stays put when a poll fails), and links to raw metrics (`http://127.0.0.1:9090/metrics`) and Compose Grafana (`http://127.0.0.1:3000/`). It is a row of the refresh bar, so it is on every tab. The observability-pack Grafana remains `http://127.0.0.1:3001` (see below).
 - Redis queue depths (#401): the System tab polls `/api/queues`, which reads the keys in
   `CC_QUEUE_KEYS` (comma list, default `js_spider:priority_queue`) with the type-aware
   length (`LLEN`/`ZCARD`/`SCARD`/`XLEN`/`HLEN`, so a list matches `redis-cli llen`).

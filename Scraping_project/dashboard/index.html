@@ -58,10 +58,10 @@
             100% { background: transparent; }
         }
         html {
-            scroll-padding-bottom: 80px;
+            scroll-padding-bottom: 150px;
         }
         .container {
-            padding-bottom: 88px;
+            padding-bottom: 160px;
         }
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
@@ -822,6 +822,31 @@
             color: var(--gray-700);
         }
 
+        /* #970: operator footer. A full row of the sticky refresh bar, which
+           sits outside every tab panel, so it stays on screen on all tabs. */
+        .cc-footer {
+            flex: 1 0 100%;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.35rem 1rem;
+            align-items: center;
+            margin: 0;
+            padding-top: 0.55rem;
+            border-top: 1px solid var(--gray-200);
+            font-size: 0.9rem;
+            color: var(--gray-700);
+        }
+        .cc-footer-links {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.75rem;
+            margin-left: auto;
+        }
+        .cc-footer a {
+            color: var(--primary-dark);
+            font-weight: 600;
+        }
+
         /* #953: >=44px touch targets wherever the pointer is coarse (phones/tablets). */
         @media (pointer: coarse) {
             .tab-button,
@@ -831,7 +856,8 @@
             .activity-chip,
             .activity-search,
             #clear-activity-search,
-            .refresh-bar .accent-color {
+            .refresh-bar .accent-color,
+            .cc-footer a {
                 min-height: 44px;
                 min-width: 44px;
             }
@@ -1153,6 +1179,12 @@
             }
             .activity-stale-note {
                 border: 1px dashed CanvasText;
+            }
+            .cc-footer {
+                border-top: 1px solid CanvasText;
+            }
+            .cc-footer a {
+                color: LinkText;
             }
             /* Chart.js paints fixed colours on canvas; keep its light backdrop
                so axis text and series stay legible under a dark system theme. */
@@ -2012,6 +2044,14 @@
             <button type="button" id="pause-refresh" class="btn" aria-pressed="false" aria-label="Pause auto-refresh">Pause</button>
             <span class="refresh-info" id="cc-version" title="Control Center build">v—</span>
             <button type="button" id="manual-refresh" class="btn" aria-label="Refresh metrics now">Refresh now</button>
+            <footer class="cc-footer" id="cc-footer">
+                <span id="cc-footer-version" title="Control Center version and build (CC_VERSION or git describe)">v—</span>
+                <span>Last success: <time id="cc-footer-last-success">Never</time></span>
+                <nav class="cc-footer-links" aria-label="Metrics and Grafana">
+                    <a id="cc-footer-metrics" href="http://127.0.0.1:9090/metrics" target="_blank" rel="noopener noreferrer">Metrics<span class="visually-hidden"> (opens in a new tab)</span></a>
+                    <a id="cc-footer-grafana" href="http://127.0.0.1:3000/" target="_blank" rel="noopener noreferrer">Grafana<span class="visually-hidden"> (opens in a new tab)</span></a>
+                </nav>
+            </footer>
         </div>
         <div id="stage-drilldown-announce" class="visually-hidden" role="status" aria-live="polite" aria-atomic="true"></div>
         <div id="stage-drilldown" class="stage-drilldown" hidden>

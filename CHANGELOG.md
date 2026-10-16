@@ -56,6 +56,7 @@ renamed to the new version and date (see the release checklist).
 - Grafana scraping-pipeline-health dashboard provisioned in compose and Helm.
 - Release images (crawler, metrics, kafka-delta-ingest) smoke-tested on PRs that touch the image recipe (#449).
 - Repository policies: SECURITY.md, CODE_OF_CONDUCT.md, this changelog, ADRs, devcontainer (#669 #746 #747 #715 #694).
+- Control Center footer shows the build (`CC_VERSION` or `git describe`), the time of the last successful metrics fetch, and links to raw metrics (`http://127.0.0.1:9090/metrics`) and local Grafana (`http://127.0.0.1:3000/`). It sits in the refresh bar so it stays visible on every tab (#970).
 
 ### Changed
 - Control Center tabs, health tiles, and the title mark use inline SVG icons (`aria-hidden`) instead of emoji glyphs (#1049).
