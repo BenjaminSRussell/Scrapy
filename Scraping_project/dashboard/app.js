@@ -1973,6 +1973,39 @@ function setupJobStarted() {
     });
 }
 
+// #426: the browser cannot POST to the webhook (CORS), so the test goes through
+// serve.py, which holds ALERT_WEBHOOK_URL and sends it.
+const ALERT_TEST_URL = '/api/alerts/test';
+
+async function sendAlertTest() {
+    const btn = document.getElementById('alert-test-send');
+    const out = document.getElementById('alert-test-status');
+    if (!btn || !out) return;
+    btn.disabled = true;
+    out.textContent = 'Sending test notification…';
+    try {
+        const resp = await fetch(ALERT_TEST_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: '{}',
+            cache: 'no-store',
+        });
+        const body = await resp.json().catch(() => ({}));
+        out.textContent = resp.ok && body.ok
+            ? 'Test notification delivered.'
+            : `Test notification not sent: ${body.error || 'HTTP ' + resp.status}`;
+    } catch (_) {
+        out.textContent = 'Test notification not sent: the Control Center could not reach the server.';
+    } finally {
+        btn.disabled = false;
+    }
+}
+
+function setupAlertTest() {
+    const btn = document.getElementById('alert-test-send');
+    if (btn) btn.addEventListener('click', sendAlertTest);
+}
+
 function applyEnvBadge() {
     const env = (window.__CC_FEATURES__ && window.__CC_FEATURES__.env) || window.__CC_ENV__ || 'local';
     const el = document.getElementById('env-badge');
@@ -2057,6 +2090,7 @@ function initialize() {
     const retryBtn = document.getElementById('retry-fetch');
     if (retryBtn) retryBtn.addEventListener('click', requestRefresh);
     setupJobStarted();
+    setupAlertTest();
 
     restorePersistedActivityLog(); // #1029: before the fresh init line, so it stays newest
     addActivityLogItem('success', 'Pipeline Control Center initialized');

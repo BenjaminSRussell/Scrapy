@@ -1938,6 +1938,18 @@
                     </p>
                     <p class="metric-label" id="grafana-analytics-base">http://localhost:3000/</p>
                 </div>
+
+                <!-- #426: failed and stalled jobs post to ALERT_WEBHOOK_URL on the server. -->
+                <div class="card" id="job-alerts-card" style="margin-top: 2rem;">
+                    <div class="card-header">
+                        <h2 class="card-title">Job alerts</h2>
+                    </div>
+                    <p class="metric-label">A failed or stalled job posts to the webhook set in ALERT_WEBHOOK_URL (or alerts.webhook_url in config.yml). The URL is read on the server and is not shown here.</p>
+                    <p>
+                        <button type="button" id="alert-test-send" class="btn">Send test notification</button>
+                    </p>
+                    <p id="alert-test-status" class="metric-label" role="status" aria-live="polite"></p>
+                </div>
             </div>
 
             <!-- Activity Log Tab -->
