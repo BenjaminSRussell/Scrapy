@@ -294,6 +294,30 @@
             return Number.isFinite(v) && v > threshold;
         });
     }
+    // #412: live job progress strip. Counters come from the same sample as the
+    // stage cards. A series that is not exported is null ("not reported"), never 0,
+    // and no metrics at all is the empty state.
+    const JOB_PROGRESS_STAGES = [
+        { key: 'stage1', label: 'URLs discovered', metric: 'stage1_urls_discovered_total', rate: 'urls' },
+        { key: 'stage2', label: 'Pages analyzed', metric: 'stage2_pages_analyzed_total', rate: 'pages' },
+        { key: 'stage3', label: 'Summaries', metric: 'stage3_summaries_created_total', rate: 'summaries' },
+        { key: 'stage4', label: 'Large-doc summaries', metric: 'stage4_large_doc_summaries_total', rate: 'largeDocs' },
+    ];
+    function jobProgress(metrics, rates) {
+        const m = metrics || {};
+        const finite = v => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+        const stages = JOB_PROGRESS_STAGES.map(s => ({
+            key: s.key,
+            label: s.label,
+            total: finite(m[s.metric]),
+            perMinute: finite(rates && rates[s.rate]),
+        }));
+        const reported = stages.some(s => s.total !== null);
+        const queueDepth = finite(m['redis_queue_length']);
+        const moving = stages.some(s => s.perMinute > 0);
+        const state = !reported ? 'empty' : (moving || m['pipeline_running'] === 1) ? 'running' : 'idle';
+        return { state, stages, queueDepth, urlsPerMinute: stages[0].perMinute };
+    }
     // Doughnut legend layout by canvas width (#977): beside the ring when the
     // card is wide (a doughnut leaves horizontal space unused), compact labels
     // underneath when narrow so the legend never clips or eats the ring.
@@ -1345,5 +1369,5 @@
         return sampled;
     }
 
-    return { tabKeyTarget, staleState, queueDepthRows, metricsFailureActivity, shortcutHintText, parseMetrics, metricSeriesCount, METRICS_FLOOD_DEFAULTS, metricsFloodLimits, advanceMetricsFlood, metricsFloodBannerText, ratePerMinute, resolveMetricsUrl, metricsEndpoint, metricsEndpointLabel, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler, stageActivity, stageDrilldown, stageDrilldownKey, doughnutLegendLayout, connectionState, documentTitle, createActivityAnnouncer, metricsUrlProblem, splitLinks, createMetricsFetcher, REFRESH_INTERVAL_CHOICES, parseRefreshInterval, shortcutAction, pickInitialTab, METRIC_UI_MAP, renderMetricNameMap, parseDangerSoundEnabled, dangerSoundDecision, HEALTH_HISTORY_LIMIT, pushPollOutcome, healthHistoryView, COMPARISON_BASELINE_ROLE, PREV_HOUR_AVG_KEYS, readPrevHourAverage, comparisonBaselineSeries, comparisonNote, ACTIVITY_LOG_CAP, capActivityLog, activityStaleNote, restoreActivityLog, topScrapeTargets, SCRAPE_TARGET_EMPTY, ACTIVITY_LEVELS, activityLevelCounts, filterActivityItems, filterActivityMessages, activityFilterStatus, toggleActivityLevel, HISTORY_MAX_POINTS, HISTORY_RAW_POINTS, assertHistoryBound, boundHistoryBuffer, pushHistorySample, enforceHistoryCap, downsampleIndices, grafanaHomeUrl, jobStartedPresentation, DEFAULT_ACCENT, parseAccentColor, accentInk, accentBorder, accentCssVars };
+    return { tabKeyTarget, staleState, queueDepthRows, metricsFailureActivity, shortcutHintText, parseMetrics, metricSeriesCount, METRICS_FLOOD_DEFAULTS, metricsFloodLimits, advanceMetricsFlood, metricsFloodBannerText, ratePerMinute, resolveMetricsUrl, metricsEndpoint, metricsEndpointLabel, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler, stageActivity, jobProgress, stageDrilldown,stageDrilldownKey, doughnutLegendLayout, connectionState, documentTitle, createActivityAnnouncer, metricsUrlProblem, splitLinks, createMetricsFetcher, REFRESH_INTERVAL_CHOICES, parseRefreshInterval, shortcutAction, pickInitialTab, METRIC_UI_MAP, renderMetricNameMap, parseDangerSoundEnabled, dangerSoundDecision, HEALTH_HISTORY_LIMIT, pushPollOutcome, healthHistoryView, COMPARISON_BASELINE_ROLE, PREV_HOUR_AVG_KEYS, readPrevHourAverage, comparisonBaselineSeries, comparisonNote, ACTIVITY_LOG_CAP, capActivityLog, activityStaleNote, restoreActivityLog, topScrapeTargets, SCRAPE_TARGET_EMPTY, ACTIVITY_LEVELS, activityLevelCounts, filterActivityItems, filterActivityMessages, activityFilterStatus, toggleActivityLevel, HISTORY_MAX_POINTS, HISTORY_RAW_POINTS, assertHistoryBound, boundHistoryBuffer, pushHistorySample, enforceHistoryCap, downsampleIndices, grafanaHomeUrl, jobStartedPresentation, DEFAULT_ACCENT, parseAccentColor, accentInk, accentBorder, accentCssVars };
 });

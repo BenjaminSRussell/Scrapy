@@ -290,6 +290,21 @@
             margin-top: 0.75rem;
         }
 
+        /* #412: job progress strip. Wraps to fewer columns on narrow screens. */
+        .job-progress-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+            gap: 0 1.5rem;
+        }
+        .job-progress[data-state="empty"] #job-progress-badge {
+            background: var(--gray-200);
+            color: var(--gray-700);
+        }
+        .job-progress[data-state="running"] #job-progress-badge {
+            background: var(--success);
+            color: #fff;
+        }
+
         .metric-value {
             font-variant-numeric: tabular-nums;
             overflow: hidden;
@@ -1462,6 +1477,23 @@
 
             <!-- Overview Tab -->
             <div class="tab-content active" id="tab-overview" role="tabpanel" aria-labelledby="tabbtn-overview" tabindex="0">
+                <!-- #412: live job progress strip, refreshed on every metrics poll. Empty state shows dashes, never zeros. -->
+                <section class="card job-progress" id="job-progress" data-state="empty" aria-labelledby="job-progress-title" style="margin-bottom: 2rem;">
+                    <div class="card-header">
+                        <h2 class="card-title" id="job-progress-title">Job progress</h2>
+                        <span class="card-badge" id="job-progress-badge">Waiting</span>
+                    </div>
+                    <p class="metric-label" id="job-progress-status" role="status" aria-live="polite">Metrics not reported yet. Values appear once the exporter reports this job.</p>
+                    <div class="job-progress-grid">
+                        <div class="metric-row"><span class="metric-label">URLs / min</span><span class="metric-value" id="job-progress-urls-min">&mdash;</span></div>
+                        <div class="metric-row"><span class="metric-label">Queue depth (Redis)</span><span class="metric-value" id="job-progress-queue">&mdash;</span></div>
+                        <div class="metric-row"><span class="metric-label">Stage 1 &middot; URLs discovered</span><span class="metric-value" id="job-progress-stage1">&mdash;</span></div>
+                        <div class="metric-row"><span class="metric-label">Stage 2 &middot; Pages analyzed</span><span class="metric-value" id="job-progress-stage2">&mdash;</span></div>
+                        <div class="metric-row"><span class="metric-label">Stage 3 &middot; Summaries</span><span class="metric-value" id="job-progress-stage3">&mdash;</span></div>
+                        <div class="metric-row"><span class="metric-label">Stage 4 &middot; Large-doc summaries</span><span class="metric-value" id="job-progress-stage4">&mdash;</span></div>
+                    </div>
+                    <p class="metric-label"><a id="job-progress-grafana" class="grafana-link" href="http://localhost:3000/" target="_blank" rel="noopener noreferrer">Deep dive in Grafana<span class="visually-hidden"> (opens in a new tab)</span></a></p>
+                </section>
                 <div class="grid grid-4">
                     <div class="card">
                         <div class="card-header">

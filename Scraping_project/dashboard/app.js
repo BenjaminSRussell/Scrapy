@@ -865,6 +865,28 @@ function checkMilestones(metrics) {
     milestonesPrimed = true;
 }
 
+// #412: job progress strip. Dashes until a series is reported; no zeros are invented.
+function renderJobProgress(metrics, rates) {
+    const root = document.getElementById('job-progress');
+    if (!root) return;
+    const p = jobProgress(metrics, rates);
+    const fmt = v => (v === null ? '—' : formatNumber(v));
+    root.dataset.state = p.state;
+    const badge = document.getElementById('job-progress-badge');
+    const labels = { empty: 'Waiting', running: 'Running', idle: 'Idle' };
+    if (badge) badge.textContent = labels[p.state];
+    const status = document.getElementById('job-progress-status');
+    if (status) {
+        status.textContent = p.state === 'empty'
+            ? 'Metrics not reported yet. Values appear once the exporter reports this job.'
+            : p.state === 'running' ? 'Job running. Refreshes with each metrics poll.' : 'No active throughput in the last sample.';
+    }
+    const set = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
+    set('job-progress-urls-min', fmt(p.state === 'empty' ? null : p.urlsPerMinute));
+    set('job-progress-queue', fmt(p.queueDepth));
+    p.stages.forEach((s, i) => set(`job-progress-stage${i + 1}`, fmt(s.total)));
+}
+
 function updateDashboard(metrics) {
     checkMilestones(metrics);
     if (metricsWasDown) {
@@ -884,6 +906,7 @@ function updateDashboard(metrics) {
     const s4Compression = metrics['stage4_avg_compression_ratio'] || 0;
 
     const rates = calculateRates(metrics);
+    renderJobProgress(metrics, rates);
 
     // topbar status is owned by setConnectionStatus (#945)
     setMetricText('topbar-urls', formatNumber(s1Discovered));
@@ -1211,6 +1234,7 @@ async function fetchMetrics() {
             const v = el.querySelector('.health-value');
             if (v) v.textContent = 'Unreachable';
         });
+        renderJobProgress(null, null);
         const delta = document.getElementById('delta-tables');
         if (delta) delta.textContent = '—';
         if (typeof setHealthTile === 'function') {
@@ -2008,6 +2032,9 @@ function applyGrafanaLink() {
     link.href = home;
     const shown = document.getElementById('grafana-analytics-base');
     if (shown) shown.textContent = home;
+    // #412: the job progress strip links to the same Grafana home.
+    const jobLink = document.getElementById('job-progress-grafana');
+    if (jobLink) jobLink.href = home;
 }
 
 function initialize() {
