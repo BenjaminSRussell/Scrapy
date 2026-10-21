@@ -305,6 +305,17 @@ cost_controls:
   stage4_max_ocr_pages_per_day: null    # Stage 4 OCR pages
 
 # ============================================
+# Large seed load preflight (#453)
+# ============================================
+# `reset` and `scripts/load_seeds.py` show the new-URL count and the Redis queue
+# depth before writing. Above warn_threshold new URLs they ask to load all,
+# load a random sample of sample_size, or stop. --yes loads all; --sample N
+# loads N.
+seed_load:
+  warn_threshold: 10000
+  sample_size: 1000
+
+# ============================================
 # Kafka Configuration
 # ============================================
 kafka:

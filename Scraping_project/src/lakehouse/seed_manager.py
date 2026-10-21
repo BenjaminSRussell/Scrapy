@@ -132,6 +132,20 @@ def _connect_depth_client() -> Any | None:
         return None
 
 
+def read_seed_queue_depth() -> int | None:
+    """ZCARD of the JS priority queue for the seed preflight (#453), or None when unreadable."""
+    if _offline_suite():
+        return None
+    client = _connect_depth_client()
+    if client is None:
+        return None
+    try:
+        return int(client.zcard(SEED_REDIS_DEPTH_KEY))
+    except Exception as exc:
+        logger.warning("[SeedManager] Redis depth read failed (%s)", exc)
+        return None
+
+
 def default_url_hasher(url: str) -> str:
     """SHA256[:16] of the canonical URL (#728), same as every other stage."""
     return url_hash(url)
