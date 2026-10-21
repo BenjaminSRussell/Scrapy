@@ -114,6 +114,14 @@ stage1:
   # images; override per domain (host + subdomains, most specific wins). Never blocks "document".
   js_blocked_resource_types: [image, stylesheet, font, media]
   js_blocked_resource_types_by_domain: {}
+  # #460: JS spider budget. Preset sets concurrency defaults: default | low_memory.
+  # js_max_concurrent_pages caps live Playwright pages (env PLAYWRIGHT_MAX_CONCURRENT_PAGES wins).
+  # Memory estimate = pages x js_estimated_mb_per_page (a configured guess, not a measurement).
+  # Startup logs a warning when the estimate exceeds js_memory_warning_mb. Docs: docs/JS_RENDERING.md.
+  js_spider_preset: default
+  js_max_concurrent_pages: null  # null = preset default (4 contexts x 8 pages)
+  js_estimated_mb_per_page: 100
+  js_memory_warning_mb: 4096
 
   # Circuit Breaker Settings
   circuit_breaker_enabled: true

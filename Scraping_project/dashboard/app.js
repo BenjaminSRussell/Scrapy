@@ -1973,6 +1973,35 @@ function setupJobStarted() {
     });
 }
 
+// #460: estimate the JS render budget from the operator's inputs. Nothing is
+// saved or sent; the spider reads config.yml / env at its own startup.
+function renderJsBudget() {
+    const preset = document.getElementById('js-budget-preset');
+    const pages = document.getElementById('js-budget-pages');
+    const mb = document.getElementById('js-budget-mb');
+    const result = document.getElementById('js-budget-result');
+    const snippet = document.getElementById('js-budget-snippet');
+    if (!preset || !pages || !mb || !result) return null;
+    const view = jsRenderBudget(preset.value, pages.value, mb.value);
+    result.textContent = view.message;
+    result.classList.toggle('is-warning', view.over);
+    if (snippet) snippet.textContent = view.snippet;
+    return view;
+}
+
+function setupJsBudget() {
+    const preset = document.getElementById('js-budget-preset');
+    const pages = document.getElementById('js-budget-pages');
+    if (!preset || !pages) return;
+    preset.addEventListener('change', () => {
+        pages.value = String(JS_PRESET_PAGES[preset.value] || JS_PRESET_PAGES.default);
+        renderJsBudget();
+    });
+    pages.addEventListener('input', renderJsBudget);
+    document.getElementById('js-budget-mb').addEventListener('input', renderJsBudget);
+    renderJsBudget();
+}
+
 function applyEnvBadge() {
     const env = (window.__CC_FEATURES__ && window.__CC_FEATURES__.env) || window.__CC_ENV__ || 'local';
     const el = document.getElementById('env-badge');
@@ -2057,6 +2086,7 @@ function initialize() {
     const retryBtn = document.getElementById('retry-fetch');
     if (retryBtn) retryBtn.addEventListener('click', requestRefresh);
     setupJobStarted();
+    setupJsBudget();
 
     restorePersistedActivityLog(); // #1029: before the fresh init line, so it stays newest
     addActivityLogItem('success', 'Pipeline Control Center initialized');

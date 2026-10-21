@@ -1165,6 +1165,17 @@
             }
         }
 
+        /* #460: JS render budget form. Labels and fields stack on narrow screens. */
+        .js-budget-form {
+            display: grid;
+            grid-template-columns: max-content minmax(8rem, 14rem);
+            gap: 0.5rem 1rem;
+            align-items: center;
+        }
+        .js-budget-result.is-warning { font-weight: 600; }
+        @media (max-width: 640px) {
+            .js-budget-form { grid-template-columns: 1fr; }
+        }
         /* #1022: job-started success is a single check drawn once. No particles. */
         .job-start {
             display: inline-flex;
@@ -1810,6 +1821,27 @@
 
             <!-- System Health Tab -->
             <div class="tab-content" id="tab-system" role="tabpanel" aria-labelledby="tabbtn-system" tabindex="0">
+                <!-- #460: estimate only. It does not change the running spider; apply the values in config.yml or the environment. -->
+                <div class="card js-budget-card" style="margin-bottom: 2rem;" id="js-budget-card">
+                    <div class="card-header">
+                        <h2 class="card-title" id="js-budget-title">JavaScript render budget</h2>
+                    </div>
+                    <p class="comparison-note">Estimate only. Changing these fields does not change the running spider. To apply a budget, set <code>stage1.js_spider_preset</code> and <code>stage1.js_max_concurrent_pages</code> in config.yml, or <code>PLAYWRIGHT_MAX_CONCURRENT_PAGES</code> in the environment, then restart the javascript spider.</p>
+                    <div class="js-budget-form">
+                        <label for="js-budget-preset">Preset</label>
+                        <select id="js-budget-preset" aria-describedby="js-budget-result">
+                            <option value="default" selected>default</option>
+                            <option value="low_memory">low_memory</option>
+                        </select>
+                        <label for="js-budget-pages">Max concurrent Playwright pages</label>
+                        <input type="number" id="js-budget-pages" min="1" max="500" step="1" value="32" aria-describedby="js-budget-result">
+                        <label for="js-budget-mb">Estimated MB per page</label>
+                        <input type="number" id="js-budget-mb" min="1" step="1" value="100" aria-describedby="js-budget-result">
+                    </div>
+                    <p id="js-budget-result" class="js-budget-result" role="status" aria-live="polite"></p>
+                    <p><code id="js-budget-snippet"></code></p>
+                    <p><a href="https://github.com/BenjaminSRussell/Scrapy/blob/main/Scraping_project/docs/JS_RENDERING.md#presets-and-memory-budget" rel="noopener">JS spider memory notes and benchmarks status</a></p>
+                </div>
                 <div class="card" style="margin-bottom: 2rem;">
                     <div class="card-header">
                         <h2 class="card-title">System Status</h2>
