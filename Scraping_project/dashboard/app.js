@@ -1718,6 +1718,31 @@ function hideFetchError() {
     if (banner && !banner.hidden) banner.hidden = true;
 }
 
+// #446: copy the diagnose command shown under the error. If the clipboard is
+// unavailable or refuses, the status line says so and repeats the command.
+function setupCopyDiagnose() {
+    const btn = document.getElementById('copy-diagnose');
+    if (!btn) return;
+    btn.addEventListener('click', async () => {
+        const command = (document.getElementById('diagnose-command') || {}).textContent || '';
+        const status = document.getElementById('copy-diagnose-status');
+        let copied = false;
+        try {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                await navigator.clipboard.writeText(command.trim());
+                copied = true;
+            }
+        } catch (_) {
+            copied = false;
+        }
+        if (status) {
+            status.textContent = copied
+                ? 'Diagnose command copied.'
+                : `Could not copy. Run this instead: ${command.trim()}`;
+        }
+    });
+}
+
 // #351: Stale badge once the last good sample is older than 3 refresh intervals.
 let staleShown = false;
 function renderStale() {
@@ -2056,6 +2081,7 @@ function initialize() {
     if (manualBtn) manualBtn.addEventListener('click', requestRefresh);
     const retryBtn = document.getElementById('retry-fetch');
     if (retryBtn) retryBtn.addEventListener('click', requestRefresh);
+    setupCopyDiagnose();
     setupJobStarted();
 
     restorePersistedActivityLog(); // #1029: before the fresh init line, so it stays newest

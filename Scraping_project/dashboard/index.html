@@ -1390,6 +1390,25 @@
             border: 1px solid #b91c1c;
         }
         .fetch-error-banner[hidden] { display: none; }
+        /* #446: runbook links and copy button under the error. */
+        .fetch-error-runbook {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem 1rem;
+            align-items: center;
+        }
+        .fetch-error-links {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.25rem 0.75rem;
+            margin: 0;
+            padding: 0;
+            list-style: none;
+        }
+        .fetch-error-command {
+            font-size: 0.875em;
+            word-break: break-all;
+        }
         .btn[aria-busy="true"] { cursor: progress; }
     </style>
 </head>
@@ -1446,6 +1465,19 @@
         <div id="fetch-error-banner" class="fetch-error-banner" role="alert" hidden>
             <span id="fetch-error-text">Could not load metrics.</span>
             <button type="button" id="retry-fetch" class="btn" aria-label="Retry loading metrics now">Retry</button>
+            <!-- #446: runbook links and the diagnose command. Repo Markdown is not served by serve.py, so links go to GitHub. -->
+            <div class="fetch-error-runbook">
+                <nav aria-label="Troubleshooting runbooks">
+                    <ul class="fetch-error-links">
+                        <li><a href="https://github.com/BenjaminSRussell/Scrapy/blob/main/Scraping_project/README.md#troubleshooting" target="_blank" rel="noopener noreferrer">Troubleshooting<span class="visually-hidden"> (opens in a new tab)</span></a></li>
+                        <li><a href="https://github.com/BenjaminSRussell/Scrapy/blob/main/Scraping_project/scripts/README.md#3-reset_grafana_complete.sh" target="_blank" rel="noopener noreferrer">Reset Grafana<span class="visually-hidden"> (opens in a new tab)</span></a></li>
+                        <li><a href="https://github.com/BenjaminSRussell/Scrapy/blob/main/Scraping_project/docs/guides/RUNNING.md#start-everything-docker-compose" target="_blank" rel="noopener noreferrer">Reset Delta tables<span class="visually-hidden"> (opens in a new tab)</span></a></li>
+                    </ul>
+                </nav>
+                <code id="diagnose-command" class="fetch-error-command">./Scraping_project/scripts/diagnose_issues.sh</code>
+                <button type="button" id="copy-diagnose" class="btn" aria-describedby="copy-diagnose-status">Copy diagnose command</button>
+                <span id="copy-diagnose-status" class="visually-hidden" role="status" aria-live="polite"></span>
+            </div>
         </div>
         <div id="metrics-flood-banner" class="metrics-flood-banner" role="status" aria-live="off" hidden>
             <span id="metrics-flood-text">Metrics flood: charts paused. Showing summary counters only.</span>
