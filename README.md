@@ -159,6 +159,12 @@ python scripts/reseed.py
 # Add one seed URL
 python cli.py seeds add https://www.example.org/ --note "why" --actor me
 
+# Named seed sets: create, import a CSV under data/raw/, list (URL count, last used), delete
+python cli.py seeds set create admissions https://admissions.example.org/ https://apply.example.org/
+python cli.py seeds set import admissions data/raw/admissions.csv
+python cli.py seeds set list
+python cli.py scrapy --spiders scout --seed-set admissions
+
 # Reset Delta tables and reload seeds
 python start.py --reset-delta
 ```

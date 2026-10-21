@@ -137,8 +137,32 @@ def cmd_scrapy(args):
     # Run
     if not _gate_experimental_spiders(args.spiders, getattr(args, "experimental", False)):
         sys.exit(2)
+    if getattr(args, "seed_set", None):
+        _attach_seed_set(args.seed_set)
     runner = ScrapyRunner(args.spiders)
     runner.start()
+
+
+def _seed_sets_registry():
+    from src.common.seed_sets import SeedSetRegistry
+
+    return SeedSetRegistry(Path(__file__).parent / "data" / "ops" / "seed_sets.json")
+
+
+def _attach_seed_set(name):
+    """Seed the lake from a named seed set for this job and stamp its last-used time (#431)."""
+    from src.lakehouse import SeedManager, get_lakehouse_manager
+
+    registry = _seed_sets_registry()
+    try:
+        seed_set = registry.get(name)
+    except KeyError as exc:
+        raise SystemExit(str(exc))
+    result = SeedManager(get_lakehouse_manager()).add_urls_to_seeds(
+        seed_set.urls, source_url=f"seed_set:{name}", source_spider="seed_set"
+    )
+    registry.mark_used(name)
+    logger.info(f"Attached seed set {name} ({seed_set.url_count} URL(s)): {result}")
 
 
 def cmd_deep_dive(args):
@@ -604,6 +628,28 @@ def cmd_offsite(args):
         print(review.gc(dry_run=args.dry_run))
 
 
+def cmd_seed_set(args):
+    """Named seed sets (#431): create, import from a data/raw CSV, list, delete."""
+    registry = _seed_sets_registry()
+    try:
+        if args.seed_set_command == "list":
+            rows = registry.list_sets()
+            for s in rows:
+                print(f"{s.name}  {s.url_count} URL(s)  last_used={s.last_used_at or 'never'}  source={s.source}")
+            print(f"{len(rows)} seed set(s)")
+        elif args.seed_set_command == "create":
+            seed_set, rejected = registry.create(args.name, args.urls)
+            print(f"created {seed_set.name} ({seed_set.url_count} URL(s), {rejected} rejected)")
+        elif args.seed_set_command == "import":
+            seed_set, rejected = registry.import_csv(args.name, args.csv)
+            print(f"imported {seed_set.name} ({seed_set.url_count} URL(s), {rejected} rejected)")
+        elif args.seed_set_command == "delete":
+            seed_set = registry.delete(args.name)
+            print(f"deleted {seed_set.name} ({seed_set.url_count} URL(s))")
+    except (KeyError, ValueError, FileNotFoundError) as exc:
+        raise SystemExit(str(exc))
+
+
 def cmd_seeds(args):
     """List/add/disable seed URLs with append-only audit log."""
     from src.common.seed_ops import SeedRegistry
@@ -726,6 +772,9 @@ def main():
     # Scrapy command
     scrapy_parser = subparsers.add_parser("scrapy", help="Run Scrapy spiders")
     scrapy_parser.add_argument("--spiders", nargs="+", help="Spider names")
+    scrapy_parser.add_argument(
+        "--seed-set", metavar="NAME", help="Seed this run from a named seed set (see `seeds set list`) (#431)"
+    )
     scrapy_parser.add_argument(
         "--experimental", action="store_true",
         help="Allow experimental spiders (javascript, deep_dive, depth); see src/stage1/experimental/README.md",
@@ -892,6 +941,22 @@ def main():
     seeds_audit = seeds_sub.add_parser("audit", help="Show recent audit log rows")
     seeds_audit.add_argument("--limit", type=int, default=50)
     seeds_audit.set_defaults(func=cmd_seeds)
+    seed_set_parser = seeds_sub.add_parser("set", help="Named, reusable seed sets (#431)")
+    seed_set_sub = seed_set_parser.add_subparsers(dest="seed_set_command", required=True)
+    seed_set_sub.add_parser("list", help="List seed sets with URL count and last-used time").set_defaults(
+        func=cmd_seed_set
+    )
+    seed_set_create = seed_set_sub.add_parser("create", help="Create a seed set from URLs")
+    seed_set_create.add_argument("name")
+    seed_set_create.add_argument("urls", nargs="+")
+    seed_set_create.set_defaults(func=cmd_seed_set)
+    seed_set_import = seed_set_sub.add_parser("import", help="Create a seed set from a CSV under data/raw/")
+    seed_set_import.add_argument("name")
+    seed_set_import.add_argument("csv", help="Path to a CSV under data/raw/ (one URL per line)")
+    seed_set_import.set_defaults(func=cmd_seed_set)
+    seed_set_delete = seed_set_sub.add_parser("delete", help="Delete a seed set")
+    seed_set_delete.add_argument("name")
+    seed_set_delete.set_defaults(func=cmd_seed_set)
 
     ml_parser = subparsers.add_parser("ml", help="ML service operations")
     ml_sub = ml_parser.add_subparsers(dest="ml_command", required=True)
