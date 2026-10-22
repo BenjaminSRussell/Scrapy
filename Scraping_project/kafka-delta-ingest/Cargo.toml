@@ -12,7 +12,7 @@ rdkafka = { version = "0.39", features = ["cmake-build", "ssl", "sasl", "zstd"] 
 deltalake = { version = "0.29", features = ["datafusion"] }
 
 # Arrow - Explicit version matching deltalake
-arrow = "56"
+arrow = "60"
 
 # Time handling - Latest stable
 chrono = "0.4"
