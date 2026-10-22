@@ -2022,6 +2022,39 @@ function setupJobStarted() {
     });
 }
 
+// #426: the browser cannot POST to the webhook (CORS), so the test goes through
+// serve.py, which holds the webhook URL env var and sends it.
+const ALERT_TEST_URL = '/api/alerts/test';
+
+async function sendAlertTest() {
+    const btn = document.getElementById('alert-test-send');
+    const out = document.getElementById('alert-test-status');
+    if (!btn || !out) return;
+    btn.disabled = true;
+    out.textContent = 'Sending test notification…';
+    try {
+        const resp = await fetch(ALERT_TEST_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: '{}',
+            cache: 'no-store',
+        });
+        const body = await resp.json().catch(() => ({}));
+        out.textContent = resp.ok && body.ok
+            ? 'Test notification delivered.'
+            : `Test notification not sent: ${body.error || 'HTTP ' + resp.status}`;
+    } catch (_) {
+        out.textContent = 'Test notification not sent: the Control Center could not reach the server.';
+    } finally {
+        btn.disabled = false;
+    }
+}
+
+function setupAlertTest() {
+    const btn = document.getElementById('alert-test-send');
+    if (btn) btn.addEventListener('click', sendAlertTest);
+}
+
 // #460: estimate the JS render budget from the operator's inputs. Nothing is
 // saved or sent; the spider reads config.yml / env at its own startup.
 function renderJsBudget() {
@@ -2222,6 +2255,7 @@ function initialize() {
     if (retryBtn) retryBtn.addEventListener('click', requestRefresh);
     setupCopyDiagnose();
     setupJobStarted();
+    setupAlertTest();
     setupJsBudget();
 
     restorePersistedActivityLog(); // #1029: before the fresh init line, so it stays newest

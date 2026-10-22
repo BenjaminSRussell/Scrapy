@@ -33,6 +33,7 @@ import threading
 import time
 import urllib.error
 import urllib.request
+from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
@@ -103,6 +104,24 @@ def grafana_base_url(env=None) -> str:
     env = os.environ if env is None else env
     raw = (env.get("CC_GRAFANA_URL") or "").strip()
     return _clean_grafana_url(raw) or DEFAULT_GRAFANA_URL
+
+
+def alert_webhook_url(env=None) -> str | None:
+    """ALERT_WEBHOOK_URL when it is an http(s) URL with no userinfo, else None (#426)."""
+    env = os.environ if env is None else env
+    raw = (env.get("ALERT_WEBHOOK_URL") or "").strip()
+    if not raw or any(c.isspace() or ord(c) < 32 for c in raw):
+        return None
+    try:
+        parts = urlsplit(raw)
+        _ = parts.port
+    except ValueError:
+        return None
+    if parts.scheme not in ("http", "https") or not parts.hostname:
+        return None
+    if parts.username is not None or parts.password is not None:
+        return None
+    return raw
 
 
 def _clean_grafana_url(raw: str) -> str:
@@ -304,6 +323,7 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
     redis_factory = staticmethod(_redis_from_env)
     queue_keys: tuple[str, ...] | None = None
     grafana_url: str | None = None
+    alert_webhook: str | None = None
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(self.root), **kwargs)
@@ -320,6 +340,7 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         cls.upstream_timeout = _env_float(env, "CC_UPSTREAM_TIMEOUT", 4.0) or 4.0
         cls.queue_keys = queue_keys(env)
         cls.grafana_url = grafana_base_url(env)
+        cls.alert_webhook = alert_webhook_url(env)
 
     def _cfg(self):
         if self.auth is None:
@@ -352,7 +373,7 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             self.send_header("Access-Control-Allow-Origin", origin)
             self.send_header("Vary", "Origin")
         if self.cors_origins:
-            self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
+            self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
             self.send_header("Access-Control-Allow-Headers", "Authorization, Content-Type")
         self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
         self.send_header("Content-Security-Policy", self.csp or build_csp({}))
@@ -428,6 +449,38 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             self._send_json(503, {"ok": False, "error": f"redis unavailable: {type(e).__name__}"})
             return
         self._send_json(200, {"ok": True, "queues": queues, "checked_at": time.time()})
+
+    def _api_alert_test(self) -> None:
+        # #426: a JSON content type is required. A cross-site form post cannot set it
+        # without a CORS preflight, so it cannot fire this request.
+        if not (self.headers.get("Content-Type") or "").lower().startswith("application/json"):
+            self._send_json(415, {"ok": False, "error": "send Content-Type: application/json"})
+            return
+        if not self.alert_webhook:
+            self._send_json(409, {"ok": False, "error": "no webhook URL configured (ALERT_WEBHOOK_URL)"})
+            return
+        payload = {
+            "event": "job.test",
+            "job": "test-notification",
+            "stage": "none",
+            "last_error": None,
+            "sent_at": datetime.now().astimezone().isoformat(),
+            "text": "Test notification from the Pipeline Control Center",
+        }
+        request = urllib.request.Request(
+            self.alert_webhook,
+            data=json.dumps(payload).encode("utf-8"),
+            method="POST",
+            headers={"Content-Type": "application/json"},
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=self.upstream_timeout) as response:
+                status = response.status
+        except Exception as e:  # DNS, refused, timeout, HTTP error status: report the class only
+            self._send_json(502, {"ok": False, "error": f"webhook unavailable: {type(e).__name__}"})
+            return
+        delivered = 200 <= status < 300
+        self._send_json(200 if delivered else 502, {"ok": delivered, "status": status})
 
     API_ROUTES = {"/api/metrics": "_api_metrics", "/api/health": "_api_health", "/api/queues": "_api_queues",
                   "/api/first-run": "_api_first_run"}
@@ -519,7 +572,8 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
                 failed.append({"url": url, "error": (done.stderr or "").strip()[-200:] or f"exit {done.returncode}"})
         self._send_json(200 if not failed else 207, {"ok": not failed, "added": added, "failed": failed})
 
-    POST_ROUTES = {"/api/first-run/complete": "_api_first_run_complete",
+    POST_ROUTES = {"/api/alerts/test": "_api_alert_test",
+                   "/api/first-run/complete": "_api_first_run_complete",
                    "/api/first-run/sample-seeds": "_api_first_run_sample_seeds"}
 
     def do_OPTIONS(self):

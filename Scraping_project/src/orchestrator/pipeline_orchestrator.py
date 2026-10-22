@@ -14,6 +14,7 @@ from scrapy.utils.project import get_project_settings
 from src.core.config import PipelineRunSettings, pipeline_run_settings
 from src.core.constants import LEGACY_TABLE_STAGE3_SUMMARIES, TABLE_STAGE3_SUMMARIES
 from src.utils.delta import get_delta
+from src.utils.job_alerts import notify_job
 from src.orchestrator.hop_reconciliation import BARRIER_MODES, alert_kind, count_hops, reconcile
 from src.stage1.js_queue import count_pending, js_spider_enabled
 from src.stage2.stage2_worker import Stage2Worker
@@ -539,6 +540,9 @@ class PipelineOrchestrator:
             PIPELINE_RUNS.labels(status=status).inc()
         if status != "complete":
             logger.error(f"Pipeline run {status}: {self.stats.stage_errors}")
+        if status in ("failed", "partial_failed") and self.stats.stage_errors:
+            stage, error = list(self.stats.stage_errors.items())[-1]
+            notify_job("fail", "pipeline", stage=stage, last_error=error)
 
     def run_stage_by_name(
         self,
