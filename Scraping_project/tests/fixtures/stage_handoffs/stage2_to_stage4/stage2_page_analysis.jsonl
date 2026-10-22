@@ -1,0 +1,6 @@
+{"url": "https://www.uconn.edu/annual-report/", "url_hash": "h-annual", "is_massive_doc": true, "has_error": false, "content_length": 250000, "text_content": "Annual report opening text"}
+{"url": "https://www.uconn.edu/strategic-plan/", "url_hash": "h-plan", "is_massive_doc": true, "has_error": true, "error_message": "timeout", "content_length": 0}
+{"url": "https://www.uconn.edu/senate-minutes/", "url_hash": "h-senate", "is_massive_doc": true, "has_error": false, "content_length": 400000}
+{"url": "https://www.uconn.edu/news/", "url_hash": "h-news", "is_massive_doc": false, "has_error": false, "content_length": 1200}
+{"url": "https://www.uconn.edu/pre-routing-report/", "url_hash": "h-pre-routing", "has_error": false, "content_length": 300000}
+{"url_hash": "h-no-url", "is_massive_doc": true, "has_error": false, "content_length": 300000}

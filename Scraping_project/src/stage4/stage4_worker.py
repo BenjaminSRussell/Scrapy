@@ -10,6 +10,7 @@ from src.stage4.pdf_sandbox import PdfQuarantined
 from src.utils.cost_controls import GPU_MINUTES, OCR_PAGES, ensure_budget, ocr_pages_for, stop_for_budget
 from src.utils.delta import get_delta
 from src.utils.optional_deps import require_stage4_deps
+from src.utils.ssrf import SSRFBlocked
 
 logger = logging.getLogger(__name__)
 
@@ -186,6 +187,11 @@ class Stage4Worker:
                 logger.warning(f"[STAGE4] Quarantined {url}: {e}")
                 if from_queue:
                     quarantined[url] = e.reason
+                continue
+            except SSRFBlocked as e:  # #1514: a redirect hop or DNS answer is non-public; policy, never retried
+                logger.warning(f"[STAGE4] SSRF guard blocked {url}: {e.reason}")
+                if from_queue:
+                    quarantined[url] = f"ssrf_blocked:{e.reason}"
                 continue
             except Exception as e:  # transient: stays pending, retried next run
                 logger.error(f"[STAGE4] Failed to process {url}: {e}")

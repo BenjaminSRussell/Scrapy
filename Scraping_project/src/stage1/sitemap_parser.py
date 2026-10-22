@@ -18,6 +18,13 @@ from urllib.parse import urljoin, urlparse
 import httpx
 
 from src.stage1.discovery_handoff import DiscoveryHandoff
+from src.utils.ssrf import (
+    SSRFBlocked,
+    async_httpx_request_guard,
+    count_blocked,
+    host_allowlisted,
+    ssrf_block_reason,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -301,7 +308,9 @@ class SitemapParser:
         ]
 
         headers = {"User-Agent": "SitemapParser/1.0 (compatible; web crawler)"}
-        async with httpx.AsyncClient(timeout=self.timeout, headers=headers) as client:
+        # #1514: redirect hops go through the SSRF guard too, not only the sitemap URL itself.
+        hooks = {"request": [async_httpx_request_guard("stage1_sitemap")]}
+        async with httpx.AsyncClient(timeout=self.timeout, headers=headers, event_hooks=hooks) as client:
             for sitemap_url in sitemap_urls:
                 await self._parse_sitemap_recursive(client, sitemap_url, depth=0)
 
@@ -377,6 +386,13 @@ class SitemapParser:
         if len(self.visited_sitemaps) >= self.max_sitemaps:
             self.stats["skipped_cap"] += 1
             self._limit_hit("sitemaps", f"Sitemap fetch cap {self.max_sitemaps} reached; skipping {sitemap_url}")
+            return False
+
+        # #1514: the nested <loc> is untrusted XML. Refuse it before any request.
+        refusal = self._refusal_reason(sitemap_url)
+        if refusal is not None:
+            count_blocked("stage1_sitemap", refusal)
+            logger.warning(f"Refusing sitemap {sitemap_url}: {refusal}")
             return False
 
         self.visited_sitemaps.add(sitemap_url)
@@ -468,11 +484,29 @@ class SitemapParser:
                 else:
                     logger.warning(f"Failed to parse sitemap XML: {sitemap_url} - {e}")
 
+        except SSRFBlocked as e:  # #1514: a redirect hop refused by the request hook (already counted)
+            logger.warning(f"Refusing sitemap {sitemap_url}: {e.reason}")
         except Exception as e:
             _count(SITEMAP_FETCHES, kind="error")
             logger.warning(f"Error processing sitemap: {sitemap_url} - {e}")
             self._hard_errors.append(f"{sitemap_url}: {e}")
         return False
+
+    def _refusal_reason(self, sitemap_url: str) -> str | None:
+        """Why this sitemap URL must not be fetched (#1514), else None.
+
+        The SSRF guard runs first (scheme, credentials, non-public IPs, internal
+        names, DNS answers). Then the sitemaps.org rule that a sitemap's children
+        stay on the site's own host, unless ``SSRF_ALLOWED_HOSTS`` names the host.
+        """
+        reason = ssrf_block_reason(sitemap_url, resolve=True)
+        if reason is not None:
+            return reason
+        host = (urlparse(sitemap_url).hostname or "").rstrip(".").lower()
+        site = (urlparse(self.base_url).hostname or "").rstrip(".").lower()
+        if host != site and not host_allowlisted(host):
+            return "off_site_host"
+        return None
 
     async def _fetch(self, client: httpx.AsyncClient, url: str) -> tuple[httpx.Response, bytes | None]:
         """GET ``url``, reading at most ``max_bytes`` of (transport-decoded) body.

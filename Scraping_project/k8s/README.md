@@ -17,15 +17,25 @@ It keeps probe parity with the chart (#181):
 # 1. Create namespace
 kubectl create namespace scraping-pipeline
 
-# 2. Create secrets
+# 2. Create secrets (the chart reads these keys; see templates/secrets.yaml)
+#    Use a URL-safe password: it is embedded in the DATA_SOURCE_NAME/DATABASE_URL values.
+#    The host in those URLs is <release>-postgresql, so it assumes the release name below.
+PG_PASSWORD='YOUR_PASSWORD'
 kubectl create secret generic postgres-credentials \
-  --from-literal=password='YOUR_PASSWORD' \
+  --from-literal=password="$PG_PASSWORD" \
+  --from-literal=POSTGRES_PASSWORD="$PG_PASSWORD" \
+  --from-literal=DB_PASSWORD="$PG_PASSWORD" \
+  --from-literal=DATA_SOURCE_NAME="postgresql://postgres:$PG_PASSWORD@scraping-pipeline-postgresql:5432/scraping_pipeline?sslmode=disable" \
+  --from-literal=DATABASE_URL="postgresql://postgres:$PG_PASSWORD@scraping-pipeline-postgresql:5432/scraping_pipeline" \
   -n scraping-pipeline
-
 
 kubectl create secret generic grafana-credentials \
   --from-literal=admin-user='admin' \
   --from-literal=admin-password='YOUR_PASSWORD' \
+  -n scraping-pipeline
+
+kubectl create secret generic redis-credentials \
+  --from-literal=REDIS_PASSWORD='YOUR_REDIS_PASSWORD' \
   -n scraping-pipeline
 
 # 3. Customize values

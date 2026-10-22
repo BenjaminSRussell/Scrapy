@@ -11,8 +11,10 @@ from typing import Literal
 from scrapy.crawler import CrawlerProcess
 from scrapy.utils.project import get_project_settings
 
+from src.core.config import PipelineRunSettings, pipeline_run_settings
 from src.core.constants import LEGACY_TABLE_STAGE3_SUMMARIES, TABLE_STAGE3_SUMMARIES
 from src.utils.delta import get_delta
+from src.utils.job_alerts import notify_job
 from src.orchestrator.hop_reconciliation import BARRIER_MODES, alert_kind, count_hops, reconcile
 from src.stage1.js_queue import count_pending, js_spider_enabled
 from src.stage2.stage2_worker import Stage2Worker
@@ -538,6 +540,9 @@ class PipelineOrchestrator:
             PIPELINE_RUNS.labels(status=status).inc()
         if status != "complete":
             logger.error(f"Pipeline run {status}: {self.stats.stage_errors}")
+        if status in ("failed", "partial_failed") and self.stats.stage_errors:
+            stage, error = list(self.stats.stage_errors.items())[-1]
+            notify_job("fail", "pipeline", stage=stage, last_error=error)
 
     def run_stage_by_name(
         self,
@@ -586,18 +591,19 @@ class PipelineOrchestrator:
         logger.info(f" Total summaries created: {self.stats.stage3_summaries_created + self.stats.stage4_large_summaries}")
         logger.info("=" * 80 + "\n")
 
-async def main():
+async def main(settings: PipelineRunSettings | None = None):
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
     )
 
+    settings = settings or pipeline_run_settings()
     orchestrator = PipelineOrchestrator()
 
     await orchestrator.run_full_pipeline(
-        stage1_url_limit=50,
-        stage2_concurrent=10,
-        stage3_concurrent=5,
+        stage1_url_limit=settings.stage1_url_limit,
+        stage2_concurrent=settings.stage2_concurrent,
+        stage3_concurrent=settings.stage3_concurrent,
     )
 
 if __name__ == "__main__":

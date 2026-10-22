@@ -252,4 +252,5 @@ def test_stage2_redirect_into_metadata_is_not_followed(monkeypatch):
     row, urls = asyncio.run(scenario())
     assert row["error_message"] == "ssrf_blocked:ip_link_local"
     assert hits == ["/start"]
-    assert len(urls) == 1 and urls[0].endswith("/start")  # 169.254.169.254 never requested
+    page_urls = [u for u in urls if not u.endswith("/robots.txt")]  # Stage 2 also reads robots.txt (#1629)
+    assert len(page_urls) == 1 and page_urls[0].endswith("/start")  # 169.254.169.254 never requested

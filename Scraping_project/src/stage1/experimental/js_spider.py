@@ -1,7 +1,6 @@
 """Enhanced JavaScript spider with priority queue and aggressive async processing."""
 
 import logging
-import os
 from collections.abc import AsyncGenerator, Iterator
 from datetime import datetime
 from typing import Any
@@ -11,6 +10,12 @@ import scrapy
 from scrapy.http import Response
 
 from src.core.config import get_config
+from src.stage1.experimental.js_budget import (
+    DEFAULT_MB_PER_PAGE,
+    DEFAULT_MEMORY_WARNING_MB,
+    memory_warning,
+    resolve_js_budget,
+)
 from src.stage1.experimental.playwright_guard import PageLedger
 from src.stage1.experimental.gate import ExperimentalSpiderMixin
 from src.utils.url_canon import url_hash
@@ -23,6 +28,9 @@ from src.stage1.experimental.playwright_blocking import get_policy as get_blocki
 from src.lakehouse import SeedManager
 
 logger = logging.getLogger(__name__)
+
+# #460: preset + operator page cap, resolved once at import (env > config.yml > preset).
+JS_BUDGET = resolve_js_budget(get_config())
 
 
 class JavaScriptSpider(ExperimentalSpiderMixin, scrapy.Spider):
@@ -44,11 +52,11 @@ class JavaScriptSpider(ExperimentalSpiderMixin, scrapy.Spider):
         },
         # #452: hard caps enforced by scrapy-playwright (semaphores). When
         # saturated, new renders wait instead of spawning more Chromium state.
-        "PLAYWRIGHT_MAX_CONTEXTS": int(os.getenv("PLAYWRIGHT_MAX_CONTEXTS", "4")),
-        "PLAYWRIGHT_MAX_PAGES_PER_CONTEXT": int(os.getenv("PLAYWRIGHT_MAX_PAGES_PER_CONTEXT", "8")),
+        "PLAYWRIGHT_MAX_CONTEXTS": JS_BUDGET.max_contexts,
+        "PLAYWRIGHT_MAX_PAGES_PER_CONTEXT": JS_BUDGET.max_pages_per_context,
         "PLAYWRIGHT_DEFAULT_NAVIGATION_TIMEOUT": 30000,
-        "CONCURRENT_REQUESTS": 20,
-        "CONCURRENT_REQUESTS_PER_DOMAIN": 10,
+        "CONCURRENT_REQUESTS": JS_BUDGET.concurrent_requests,
+        "CONCURRENT_REQUESTS_PER_DOMAIN": JS_BUDGET.concurrent_requests_per_domain,
         "DOWNLOAD_TIMEOUT": 60,
         "MEMUSAGE_LIMIT_MB": 12288,
         "MEMUSAGE_WARNING_MB": 10240,
@@ -94,6 +102,12 @@ class JavaScriptSpider(ExperimentalSpiderMixin, scrapy.Spider):
             f"Priority queue: {queue_stats.get('total_size', 0)} | "
             f"Total pages to render: {len(self.start_urls) + queue_stats.get('total_size', 0)}"
         )
+
+        estimate_per_page = float(self.config.get("stage1.js_estimated_mb_per_page", DEFAULT_MB_PER_PAGE))
+        warn_mb = float(self.config.get("stage1.js_memory_warning_mb", DEFAULT_MEMORY_WARNING_MB))
+        warning = memory_warning(JS_BUDGET.max_pages, estimate_per_page, warn_mb)
+        if warning:
+            logger.warning(f"[JS_SPIDER] {warning} Lower stage1.js_max_concurrent_pages or use preset low_memory.")
 
     def _load_js_queue(self) -> list[str]:
         try:

@@ -22,6 +22,21 @@ postgres:
   password: null  # Set via environment variable or here
 
 # ============================================
+# Full-pipeline run (src/main.py, compose `scraper`)
+# ============================================
+# Env overrides: PIPELINE_MODE, STAGE1_URL_LIMIT, STAGE2_CONCURRENCY,
+# STAGE3_CONCURRENCY, PIPELINE_LOOP_INTERVAL_SECONDS.
+#   once     - one pipeline pass, exit 0 on success (compose restarts only on failure)
+#   loop     - repeat a pass every loop_interval_seconds; a failed pass is logged and retried
+#   disabled - exit 0 without running anything
+pipeline:
+  mode: once
+  stage1_url_limit: 50        # URLs Stage 1 discovers per pass
+  stage2_concurrency: 10      # Stage 2 concurrent fetches
+  stage3_concurrency: 5       # Stage 3 concurrent summarizations
+  loop_interval_seconds: 3600 # Pause between passes in loop mode
+
+# ============================================
 # Stage 1: Discovery Settings
 # ============================================
 stage1:
@@ -114,6 +129,14 @@ stage1:
   # images; override per domain (host + subdomains, most specific wins). Never blocks "document".
   js_blocked_resource_types: [image, stylesheet, font, media]
   js_blocked_resource_types_by_domain: {}
+  # #460: JS spider budget. Preset sets concurrency defaults: default | low_memory.
+  # js_max_concurrent_pages caps live Playwright pages (env PLAYWRIGHT_MAX_CONCURRENT_PAGES wins).
+  # Memory estimate = pages x js_estimated_mb_per_page (a configured guess, not a measurement).
+  # Startup logs a warning when the estimate exceeds js_memory_warning_mb. Docs: docs/JS_RENDERING.md.
+  js_spider_preset: default
+  js_max_concurrent_pages: null  # null = preset default (4 contexts x 8 pages)
+  js_estimated_mb_per_page: 100
+  js_memory_warning_mb: 4096
 
   # Circuit Breaker Settings
   circuit_breaker_enabled: true
@@ -305,6 +328,17 @@ cost_controls:
   stage4_max_ocr_pages_per_day: null    # Stage 4 OCR pages
 
 # ============================================
+# Large seed load preflight (#453)
+# ============================================
+# `reset` and `scripts/load_seeds.py` show the new-URL count and the Redis queue
+# depth before writing. Above warn_threshold new URLs they ask to load all,
+# load a random sample of sample_size, or stop. --yes loads all; --sample N
+# loads N.
+seed_load:
+  warn_threshold: 10000
+  sample_size: 1000
+
+# ============================================
 # Kafka Configuration
 # ============================================
 kafka:
@@ -384,6 +418,11 @@ delta_lake:
     stage1_errors: 720
     stage2_errors: 720
   dlq_retention_days: 30  # file DLQ entries removed by the idle maintenance worker (0 = keep)
+  # #561: writers refuse new batches (no retry, no spill) when the lake volume has
+  # less than this free space or free inodes, and readiness fails the same way.
+  # Keep the DeltaVolumeLow alert threshold (monitoring/alerting_rules.yml) above these.
+  disk_min_free_percent: 5
+  disk_min_free_inodes_percent: 5
   # #878: offsite candidate sightings: pending ones older than this are dropped,
   # rejected ones this long after review; accepted rows are kept (audit trail).
   offsite_pending_retention_days: 30

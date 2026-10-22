@@ -357,7 +357,7 @@ scrapyApp:
       memory: 256Mi
 
   env:
-    SCOUT_INSTANCES: "8"
+    SCOUT_INSTANCES: "1"  # one scout per pod; scale with replicaCount/HPA (#1617)
     SCRAPY_SETTINGS_MODULE: "src.settings"
     ENV: "production"
 

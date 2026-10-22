@@ -89,6 +89,16 @@ Missing keys keep those defaults, which is today's notices: fail on, success off
 
 The window is half-open on the local clock. `[22, 7)` is 22:00 through 06:59 and wraps midnight. `[9, 17)` is 09:00 through 16:59. `null`, an empty list, or `start == end` is no window. A naive datetime is already local. An aware datetime is converted to the machine's local zone before the hour is read.
 
+## Job failure webhook (#426)
+
+Set `ALERT_WEBHOOK_URL` to an `http(s)` URL with no credentials. The pipeline reads it from the environment first, then from `alerts.webhook_url` in config.yml. `alerts.stall_minutes` sets the stall threshold and defaults to 30.
+
+- **Fail.** A pipeline run that ends `failed` or `partial_failed` posts `job.failed` with the job name, the last failing stage, and a one-line error snippet. The job name is `pipeline` for now, because the tree has no named-job model.
+- **Stall.** `is_stalled()` in `src/utils/job_alerts.py` is the check. Nothing calls it on a timer yet, so no stall notice is sent.
+- **Test.** The Control Center's Job alerts card sends `job.test` through `POST /api/alerts/test`. The server reads `ALERT_WEBHOOK_URL` and returns 409 when it is unset. The browser cannot reach the webhook directly because of CORS, so the request goes through `serve.py`. The route requires `Content-Type: application/json`, which blocks cross-site form posts.
+
+Per-job toggles from #487 apply to these notices. A muted fail or stall posts nothing. Sending never raises, and a failed send is logged and does not stop the run.
+
 ## Stage 4 speech-to-text (#1101)
 
 `STAGE4_ASR_ENABLED` defaults off. When it is on, Stage 4 reads local audio and text fixtures only. It does not download remote media (that stays on the crawl pipeline, `ASR_ENABLED`).
