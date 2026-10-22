@@ -16,6 +16,7 @@ from deltalake import DeltaTable
 
 from src.core.config import get_config, stage2_quality_thresholds, stage_worker_settings
 from src.core.constants import TABLE_STAGE2_ERRORS
+from src.core.url_record_envelope import UrlRecordEnvelopeError, validate_url_record_envelope
 from src.utils.delta import get_delta
 from src.utils.ssrf import SSRFBlocked, count_blocked, safe_resolver, ssrf_block_reason, ssrf_error_from
 from src.utils.soft_ban import DomainBackoff, SoftBanDetector, count_deferred, count_soft_ban, domain_of
@@ -256,6 +257,22 @@ class TransientHTTPError(Exception):
         self.retry_after = retry_after
 
 
+def _accept_queue_envelope(row: dict[str, Any]) -> bool:
+    """Stage 1 -> 2 envelope gate (#667). Rejected rows stay pending for a fixed consumer.
+
+    Rows with no ``envelope_version`` predate the contract (or come from SeedManager)
+    and pass through unchanged.
+    """
+    if row.get("envelope_version") is None:
+        return True
+    try:
+        validate_url_record_envelope(row)
+    except UrlRecordEnvelopeError as e:
+        logger.error(f"[STAGE2] Skipping stage2_queue row {row.get('url')!r}: {e}")
+        return False
+    return True
+
+
 def _is_terminal_error(row: dict[str, Any]) -> bool:
     """Errors that retrying cannot fix: bad URLs and 4xx other than 408/429."""
     if row.get("error_message") == "invalid_url":
@@ -471,7 +488,9 @@ class Stage2Worker:
             _record_queue_state(0)
             return counts
 
-        pending = [item for item in all_queue_items if item.get("status") == "pending"]
+        pending = [
+            item for item in all_queue_items if item.get("status") == "pending" and _accept_queue_envelope(item)
+        ]
         _record_queue_state(len(pending))
 
         logger.info(f"[STAGE2] Found {len(pending)} pending URLs to analyze (out of {len(all_queue_items)} total)")

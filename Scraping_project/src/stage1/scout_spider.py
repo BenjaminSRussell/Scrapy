@@ -13,7 +13,9 @@ from src.stage1.middlewares.spider_config import get_spider_settings
 from src.utils.delta import get_delta
 from src.stage1.processors.url_extractor import URLExtractor
 from src.stage1.processors.url_processor import should_follow_url
+from src.core.url_record_envelope import URL_RECORD_ENVELOPE_VERSION
 from src.lakehouse import SeedManager
+from src.otel_tracing import ensure_crawl_job_id
 from src.stage1.base_spider import BaseSpider
 from src.stage1.sitemap_parser import discover_sitemaps_handoff_sync
 from src.stage1.discovery_dedup import DiscoveryDedup, get_discovery_dedup_from_config
@@ -351,6 +353,8 @@ class ScoutSpider(BaseSpider):
 
     def _queue_for_stage2(self, url: str, parent_url: str, content_hint: str) -> dict:
         return {
+            "envelope_version": URL_RECORD_ENVELOPE_VERSION,
+            "crawl_job_id": ensure_crawl_job_id(),
             "url": url,
             "parent_url": parent_url,
             "content_hint": content_hint,
