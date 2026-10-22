@@ -159,7 +159,8 @@ try:  # in-request HTTP retries and per-host circuit breaker (#158)
     STAGE2_HTTP_FETCHES = _HCounter(
         "stage2_http_fetches_total",
         "Stage 2 URL fetches by outcome: first_try, recovered (succeeded after a retry), "
-        "exhausted (transient failure on every attempt) or circuit_open (host breaker open; URL deferred).",
+        "exhausted (transient failure on every attempt), deferred (backoff too long to sleep; queue retries) "
+        "or circuit_open (host breaker open; URL deferred).",
         ["outcome"],
     )
     STAGE2_HTTP_RETRIES = _HCounter(
@@ -170,6 +171,16 @@ try:  # in-request HTTP retries and per-host circuit breaker (#158)
 except Exception:
     STAGE2_HTTP_FETCHES = None
     STAGE2_HTTP_RETRIES = None
+
+try:  # time spent sleeping between in-request retries (#1517)
+    from prometheus_client import Counter as _BCounter
+
+    STAGE2_BACKOFF_SLEEP_SECONDS: Any = _BCounter(
+        "stage2_backoff_sleep_seconds",
+        "Seconds Stage 2 spent sleeping between in-request HTTP retries (slots released).",
+    )
+except Exception:
+    STAGE2_BACKOFF_SLEEP_SECONDS = None
 
 try:
     from prometheus_client import Counter as _OCounter
@@ -240,6 +251,9 @@ ROBOTS_MAX_BYTES = 512 * 1024  # a larger robots.txt is treated as missing (allo
 DEFAULT_STAGE2_HTTP_ATTEMPTS = 3
 DEFAULT_STAGE2_HTTP_BACKOFF_BASE = 0.5
 DEFAULT_STAGE2_HTTP_BACKOFF_MAX = 8.0
+# Backoffs longer than this are not slept in-request: the URL is returned as a
+# retryable error and the queue retries it later (#1517).
+DEFAULT_STAGE2_IN_REQUEST_BACKOFF_MAX = 5.0
 DEFAULT_STAGE2_BREAKER_FAILURES = 5
 DEFAULT_STAGE2_BREAKER_RECOVERY = 60
 
@@ -370,6 +384,9 @@ class Stage2Worker:
         self.http_attempts = _env_number("STAGE2_HTTP_ATTEMPTS", policy.attempts, 1, int)
         self.http_backoff_base = _env_number("STAGE2_HTTP_BACKOFF_BASE", policy.backoff_base, 0.0)
         self.http_backoff_max = _env_number("STAGE2_HTTP_BACKOFF_MAX", policy.backoff_max, 0.0)
+        self.in_request_backoff_max = _env_number(
+            "STAGE2_IN_REQUEST_BACKOFF_MAX", DEFAULT_STAGE2_IN_REQUEST_BACKOFF_MAX, 0.0
+        )
         self.breaker_failures = _env_number("STAGE2_BREAKER_FAILURES", DEFAULT_STAGE2_BREAKER_FAILURES, 1, int)
         self.breaker_recovery = _env_number("STAGE2_BREAKER_RECOVERY", DEFAULT_STAGE2_BREAKER_RECOVERY, 0, int)
         self._host_breakers: dict[str, CircuitBreaker] = {}
@@ -1011,6 +1028,8 @@ class Stage2Worker:
 
         Retried: timeouts, connection/payload errors and TRANSIENT_HTTP_STATUSES.
         Not retried: soft bans (quarantine + domain backoff), other 4xx, non-network errors.
+        Short backoffs sleep with the slots released; a backoff over
+        ``in_request_backoff_max`` returns a retryable error for the queue (#1517).
         Exhausting every attempt counts one failure on the host's circuit breaker.
         """
         attempts = max(1, int(getattr(self, "http_attempts", DEFAULT_STAGE2_HTTP_ATTEMPTS)))
@@ -1045,19 +1064,47 @@ class Stage2Worker:
 
             if attempt < attempts:
                 delay = self._retry_delay(attempt, retry_after)
+                if delay > getattr(self, "in_request_backoff_max", DEFAULT_STAGE2_IN_REQUEST_BACKOFF_MAX):
+                    # Too long to hold a slot for: hand the URL to the queue (#1517).
+                    logger.info(
+                        f"[STAGE2] Transient {reason} for {url[:80]} (attempt {attempt}/{attempts}); "
+                        f"deferring {delay:.2f}s backoff to queue retry"
+                    )
+                    breaker.record_failure()
+                    self._count_fetch("deferred")
+                    return self._error_record(url, url_hash, code, message)
                 logger.info(
                     f"[STAGE2] Transient {reason} for {url[:80]} (attempt {attempt}/{attempts}); "
                     f"retrying in {delay:.2f}s"
                 )
                 if STAGE2_HTTP_RETRIES is not None:
                     STAGE2_HTTP_RETRIES.labels(reason=reason).inc()
-                await asyncio.sleep(delay)
+                if STAGE2_BACKOFF_SLEEP_SECONDS is not None:
+                    STAGE2_BACKOFF_SLEEP_SECONDS.inc(delay)
+                async with self._slots_released(domain):
+                    await asyncio.sleep(delay)
 
         breaker.record_failure()
         self._count_fetch("exhausted")
         logger.warning(f"[STAGE2] {url[:80]} failed after {attempts} attempt(s): {message} (code={code})")
         self._log_error_to_postgres(url, exc_type, f"{exc_text} after {attempts} attempt(s)")
         return self._error_record(url, url_hash, code, message)
+
+    @asynccontextmanager
+    async def _slots_released(self, domain: str):
+        """Give back the host slot and global semaphore while a backoff sleeps (#1517).
+
+        _analyze_url takes the host slot, then the global semaphore; they are
+        re-taken in that same order so the sleeping URL rejoins the queue fairly.
+        """
+        host_slot = self._host_slot(domain)
+        self.semaphore.release()
+        host_slot.release()
+        try:
+            yield
+        finally:
+            await host_slot.acquire()
+            await self.semaphore.acquire()
 
     async def _fetch_once(
         self, session: aiohttp.ClientSession, url: str, url_hash: str, is_heavy: bool, domain: str
