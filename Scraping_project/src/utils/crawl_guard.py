@@ -18,7 +18,14 @@ consult one ``CrawlGuard`` before every download:
 
 Config (``config.yml`` ``crawl_safety.*``; all optional): ``kill_switch_check_secs``,
 ``max_requests_per_day``, ``max_bytes_per_day``, ``per_crawl_max_requests``,
-``per_crawl_max_bytes``.
+``per_crawl_max_bytes``, ``on_error`` (``closed`` by default, or ``open``), and
+``max_stale_secs``.
+
+Redis failures (#1530). With ``on_error=closed`` a worker that cannot read the
+kill switch blocks once its last good read is older than ``max_stale_secs``, and
+a failed budget read blocks. Charges that fail are buffered and reapplied on the
+next refresh. A budget block is re-read every check interval and immediately when
+the UTC day rolls over, so it clears without a restart.
 """
 
 from __future__ import annotations
@@ -40,6 +47,7 @@ BUDGET_PREFIX = "crawl:budget"
 DAY_TTL_SECS = 2 * 86400
 CRAWL_TTL_SECS = 14 * 86400
 TRUTHY = ("1", "true", "yes", "on")
+ON_ERROR_MODES = ("closed", "open")
 
 try:
     from prometheus_client import Counter, Gauge
@@ -49,7 +57,7 @@ try:
         "crawl_guard_blocked_total", "Downloads refused by the crawl guard", ["stage", "reason"]
     )
     CRAWL_GUARD_ERRORS: Any = Counter(
-        "crawl_guard_redis_errors_total", "Crawl guard Redis reads/writes that failed (last known state kept)"
+        "crawl_guard_redis_errors_total", "Crawl guard Redis reads/writes that failed (fail-closed or charge buffered)"
     )
 except Exception:  # prometheus_client missing or already registered
     KILL_SWITCH_ENGAGED = CRAWL_GUARD_BLOCKED = CRAWL_GUARD_ERRORS = None
@@ -85,12 +93,19 @@ class KillSwitch:
         client: Any = None,
         check_secs: float = 5.0,
         clock: Callable[[], float] = time.monotonic,
+        on_error: str = "closed",
+        max_stale_secs: float = 30.0,
     ):
+        if on_error not in ON_ERROR_MODES:
+            raise ValueError(f"crawl_safety.on_error must be one of {ON_ERROR_MODES}, got {on_error!r}")
         self._client_obj = client
         self.check_secs = check_secs
+        self.on_error = on_error
+        self.max_stale_secs = max_stale_secs
         self._clock = clock
         self._state = SwitchState()
         self._checked_at: float | None = None
+        self._read_at: float | None = None
 
     @property
     def client(self) -> Any:
@@ -113,14 +128,21 @@ class KillSwitch:
                 actor=data.get("actor", ""),
                 at=data.get("at", ""),
             )
-        except Exception as e:  # keep the last known state; don't flap on a blip
-            logger.warning(f"[CRAWL_GUARD] kill switch read failed, keeping last state ({self._state.engaged}): {e}")
+            self._read_at = now
+        except Exception as e:
+            logger.warning(f"[CRAWL_GUARD] kill switch read failed (on_error={self.on_error}): {e}")
             if CRAWL_GUARD_ERRORS is not None:
                 CRAWL_GUARD_ERRORS.inc()
+            # Fail closed once the last good read is too old to trust. Until then keep it (no flapping on a blip).
+            if self.on_error == "closed" and not self._read_recently(now):
+                self._state = SwitchState(engaged=True, reason="kill switch unreadable; failing closed", source="error")
         self._checked_at = now
         if KILL_SWITCH_ENGAGED is not None:
             KILL_SWITCH_ENGAGED.set(1 if self._state.engaged else 0)
         return self._state
+
+    def _read_recently(self, now: float) -> bool:
+        return self._read_at is not None and now - self._read_at < self.max_stale_secs
 
     def engaged(self) -> bool:
         return self.state().engaged
@@ -191,8 +213,8 @@ class CrawlBudget:
     def enabled(self) -> bool:
         return any(self.caps.values())
 
-    def _keys(self) -> dict[str, tuple[str, int]]:
-        day = self._day()
+    def _keys(self, day: str | None = None) -> dict[str, tuple[str, int]]:
+        day = day or self._day()
         keys = {
             "daily_requests": (f"{BUDGET_PREFIX}:global:{day}:requests", DAY_TTL_SECS),
             "daily_bytes": (f"{BUDGET_PREFIX}:global:{day}:bytes", DAY_TTL_SECS),
@@ -219,11 +241,11 @@ class CrawlBudget:
             return None
         return self._over(self.usage())
 
-    def charge(self, requests: int = 0, nbytes: int = 0) -> str | None:
-        """Add usage; return the first exhausted cap name, if any."""
+    def charge(self, requests: int = 0, nbytes: int = 0, day: str | None = None) -> str | None:
+        """Add usage; return the first exhausted cap name, if any. ``day`` charges an earlier day's counters."""
         if not self.enabled or (not requests and not nbytes):
             return None
-        keys = self._keys()
+        keys = self._keys(day)
         amounts = {
             "daily_requests": requests, "daily_bytes": nbytes,
             "crawl_requests": requests, "crawl_bytes": nbytes,
@@ -250,6 +272,8 @@ class CrawlGuard:
         self._clock = clock
         self._budget_reason: str | None = None
         self._budget_checked: float | None = None
+        self._budget_day: str | None = None
+        self._pending: dict[str, list[int]] = {}  # day -> [requests, nbytes] charges Redis has not accepted yet
 
     @classmethod
     def from_config(cls, config: Any = None, client: Any = None, crawl_id: str | None = None) -> "CrawlGuard":
@@ -268,7 +292,12 @@ class CrawlGuard:
                 return default
 
         crawl_id = crawl_id if crawl_id is not None else (os.environ.get("CRAWL_JOB_ID") or None)
-        switch = KillSwitch(client=client, check_secs=float(opt("kill_switch_check_secs", 5.0)))
+        switch = KillSwitch(
+            client=client,
+            check_secs=float(opt("kill_switch_check_secs", 5.0)),
+            on_error=str(opt("on_error", "closed")).strip().lower(),
+            max_stale_secs=float(opt("max_stale_secs", 30.0)),
+        )
         budget = CrawlBudget(
             client=client,
             max_requests_per_day=opt("max_requests_per_day", 0),
@@ -286,32 +315,57 @@ class CrawlGuard:
             reason = "kill_switch"
         elif self.budget.enabled:
             now = self._clock()
-            if self._budget_reason is None and (
-                self._budget_checked is None or now - self._budget_checked >= self.switch.check_secs
+            day = self.budget._day()
+            # Re-read on every check interval, and at once when the day rolls over, so a spent budget clears.
+            if (
+                day != self._budget_day
+                or self._budget_checked is None
+                or now - self._budget_checked >= self.switch.check_secs
             ):
-                try:
-                    self._budget_reason = self.budget.exhausted()
-                except Exception as e:
-                    logger.warning(f"[CRAWL_GUARD] budget read failed: {e}")
-                    if CRAWL_GUARD_ERRORS is not None:
-                        CRAWL_GUARD_ERRORS.inc()
+                self._refresh_budget()
                 self._budget_checked = now
+                self._budget_day = day
             if self._budget_reason:
                 reason = f"budget:{self._budget_reason}"
         if reason and CRAWL_GUARD_BLOCKED is not None:
             CRAWL_GUARD_BLOCKED.labels(stage=stage or "unknown", reason=reason.split(":")[0]).inc()
         return reason
 
-    def charge(self, requests: int = 0, nbytes: int = 0) -> str | None:
+    def _refresh_budget(self) -> None:
+        self._flush_pending()
         try:
-            over = self.budget.charge(requests=requests, nbytes=nbytes)
+            self._budget_reason = self.budget.exhausted()
         except Exception as e:
-            logger.warning(f"[CRAWL_GUARD] budget charge failed: {e}")
+            logger.warning(f"[CRAWL_GUARD] budget read failed (on_error={self.switch.on_error}): {e}")
             if CRAWL_GUARD_ERRORS is not None:
                 CRAWL_GUARD_ERRORS.inc()
+            if self.switch.on_error == "closed":
+                self._budget_reason = "redis_unavailable"
+
+    def charge(self, requests: int = 0, nbytes: int = 0) -> str | None:
+        if not self.budget.enabled or (not requests and not nbytes):
             return None
+        entry = self._pending.setdefault(self.budget._day(), [0, 0])
+        entry[0] += requests
+        entry[1] += nbytes
+        over = self._flush_pending()
         if over:
             self._budget_reason = over
+        return over
+
+    def _flush_pending(self) -> str | None:
+        """Write buffered charges, oldest day first. Stops at the first failure and keeps the rest for next time."""
+        over = None
+        for day in sorted(self._pending):
+            requests, nbytes = self._pending[day]
+            try:
+                over = self.budget.charge(requests=requests, nbytes=nbytes, day=day) or over
+            except Exception as e:
+                logger.warning(f"[CRAWL_GUARD] budget charge failed, buffering {requests} requests / {nbytes} bytes: {e}")
+                if CRAWL_GUARD_ERRORS is not None:
+                    CRAWL_GUARD_ERRORS.inc()
+                break
+            del self._pending[day]
         return over
 
     def status(self) -> dict[str, Any]:
