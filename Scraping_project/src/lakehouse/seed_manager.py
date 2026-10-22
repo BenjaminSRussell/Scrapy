@@ -22,6 +22,7 @@ All writes are idempotent via merge_into using url_hash as merge key.
 
 import logging
 import os
+import time
 import warnings
 from collections.abc import Callable, Iterable
 from typing import Any
@@ -41,15 +42,30 @@ logger = logging.getLogger(__name__)
 SEED_REDIS_DEPTH_KEY = "js_spider:priority_queue"
 SEED_DEPTH_CONFIG_KEY = "seed_enqueue_depth_threshold"
 
+# Redis memory circuit (#569). used_memory / maxmemory at or above this ratio closes
+# the same gate as depth: seed writes are skipped and bulk reseed pauses chunk by chunk.
+# A server with no maxmemory has no ceiling to watch and never trips it.
+SEED_REDIS_MEMORY_WATERMARK = 0.85
+
 try:
     from prometheus_client import Counter as _SeedCounter
 
     SEED_ENQUEUE_THROTTLED: Any = _SeedCounter(
         "seed_enqueue_throttled_total",
-        "Seed URLs skipped because Redis queue depth was above the high watermark or could not be read.",
+        "Seed URLs skipped because Redis queue depth or memory was above its watermark or could not be read.",
+    )
+    SEED_RESEED_URLS: Any = _SeedCounter(
+        "seed_reseed_urls_total",
+        "URLs submitted by bulk reseed chunks that passed the Redis gate. Rate is the reseed rate.",
+    )
+    SEED_RESEED_REJECTED_CHUNKS: Any = _SeedCounter(
+        "seed_reseed_rejected_chunks_total",
+        "Bulk reseed chunks not written because the Redis depth or memory gate was closed.",
     )
 except Exception:  # prometheus_client missing or metric already registered
     SEED_ENQUEUE_THROTTLED = None
+    SEED_RESEED_URLS = None
+    SEED_RESEED_REJECTED_CHUNKS = None
 
 
 def _config_get(config: Any, key: str) -> Any:
@@ -241,6 +257,7 @@ class SeedManager:
         domain_urls_table: str | None = None,
         config: Any = None,
         redis_client: Any = None,
+        memory_watermark: float = SEED_REDIS_MEMORY_WATERMARK,
     ):
         """
         Initialize SeedManager.
@@ -258,7 +275,11 @@ class SeedManager:
             redis_client: Client used to read queue depth before enqueue.
                 When omitted, production connects with REDIS_HOST / REDIS_PORT /
                 REDIS_PASSWORD / REDIS_DB. Tests pass a fake client.
+            memory_watermark: used_memory / maxmemory ratio that closes the
+                Redis gate (default ``SEED_REDIS_MEMORY_WATERMARK``).
         """
+        if not 0 < memory_watermark <= 1:
+            raise ValueError(f"memory_watermark must be in (0, 1], got {memory_watermark!r}")
         # Scout / get_delta() pass DeltaHelper; historic API took LakehouseManager.
         if hasattr(lakehouse, "merge_into"):
             self.lakehouse = lakehouse
@@ -276,12 +297,13 @@ class SeedManager:
         )
         self.domain_urls_table = domain_urls_table or policy["domain_urls_table"]
         self.redis_client = redis_client
+        self.memory_watermark = float(memory_watermark)
         self._config = config
         self._depth_client: Any = None
         self._depth_probed = False
 
-    def _redis_depth(self) -> int | None:
-        """ZCARD of the JS priority queue, or None when depth cannot be read."""
+    def _gate_client(self) -> Any | None:
+        """The injected client, else one connected lazily. None when offline or unreachable."""
         client = self.redis_client
         if client is None:
             if _offline_suite():
@@ -290,6 +312,11 @@ class SeedManager:
                 self._depth_probed = True
                 self._depth_client = _connect_depth_client()
             client = self._depth_client
+        return client
+
+    def _redis_depth(self) -> int | None:
+        """ZCARD of the JS priority queue, or None when depth cannot be read."""
+        client = self._gate_client()
         if client is None:
             return None
         try:
@@ -298,21 +325,84 @@ class SeedManager:
             logger.warning("[SeedManager] Redis depth read failed (%s); skipping enqueue", exc)
             return None
 
-    def _depth_blocks_enqueue(self) -> bool:
+    def _redis_memory_ratio(self) -> float | None:
+        """used_memory / maxmemory: 0.0 when Redis sets no maxmemory, None when unreadable."""
+        client = self._gate_client()
+        if client is None:
+            return None
+        try:
+            info = client.info("memory")
+            maxmemory = int(info.get("maxmemory", 0))
+            if maxmemory <= 0:
+                return 0.0
+            return int(info["used_memory"]) / maxmemory
+        except Exception as exc:
+            logger.warning("[SeedManager] Redis memory read failed (%s); skipping enqueue", exc)
+            return None
+
+    def _gate_blocks_enqueue(self) -> bool:
         # Unit tests that do not inject a client run under OBS_OFFLINE and never
-        # read Redis. That is not a depth of 0. A missing or failed client in
-        # any other case is unknown depth and must not enqueue.
+        # read Redis. That is not a depth or memory of 0. A missing or failed client in
+        # any other case is unknown state and must not enqueue.
         if self.redis_client is None and _offline_suite():
             return False
         depth = self._redis_depth()
         if depth is None:
             return True
         # Strictly above the high watermark, matching admit_enqueue (depth > high).
-        return depth > seed_enqueue_threshold(self._config)
+        if depth > seed_enqueue_threshold(self._config):
+            return True
+        ratio = self._redis_memory_ratio()
+        if ratio is None:
+            return True
+        return ratio >= self.memory_watermark
 
     def in_allowed_domains(self, url: str) -> bool:
         """True if ``url``'s host is an allowed domain or a subdomain of one."""
         return host_in_domains(urlparse(url).hostname or "", self.allowed_domains)
+
+    def _prepare_urls(self, urls: Iterable[str], source_spider: str = "") -> tuple[dict[str, str], int]:
+        """Validate, canonicalize (#728), and dedupe by url_hash (#255).
+
+        Returns ``({url_hash: canonical_url}, rejected_count)``. Rejects use a stable
+        reason code (ftp:, javascript:, blanks, host-less, >2 KB).
+        """
+        from src.utils.validation import url_rejection_reason
+
+        rejected: dict[str, int] = {}
+        by_hash: dict[str, str] = {}
+        for raw in urls:
+            candidate = raw.strip() if isinstance(raw, str) else raw
+            reason = url_rejection_reason(candidate)
+            if reason is not None:
+                rejected[reason] = rejected.get(reason, 0) + 1
+                continue
+            canonical = canonical_or_raw(candidate)
+            # Two spellings with one hash would be two source rows for one MERGE key (#255).
+            by_hash.setdefault(self.url_hasher(canonical), canonical)
+        n_rejected = sum(rejected.values())
+        if n_rejected:
+            logger.warning(f"[SeedManager] Rejected {n_rejected} invalid seed URL(s) from {source_spider}: {rejected}")
+        return by_hash, n_rejected
+
+    def estimate_seed_load(self, urls: Iterable[str], batch_size: int = 1000) -> dict[str, Any]:
+        """Dry run: what seeding ``urls`` would add. Writes nothing.
+
+        ``projected_queue_depth`` is the current JS priority queue depth plus the
+        valid unique URLs (None when depth is unreadable). ``would_block`` is the
+        Redis depth/memory gate as it stands now.
+        """
+        by_hash, n_rejected = self._prepare_urls(urls)
+        valid = len(by_hash)
+        depth = self._redis_depth()
+        return {
+            "valid_urls": valid,
+            "rejected": n_rejected,
+            "chunks": -(-valid // batch_size) if batch_size > 0 else 0,
+            "current_queue_depth": depth,
+            "projected_queue_depth": None if depth is None else depth + valid,
+            "would_block": self._gate_blocks_enqueue(),
+        }
 
     def add_urls_to_seeds(
         self,
@@ -339,8 +429,8 @@ class SeedManager:
             write_uconn_urls: Deprecated alias of ``write_domain_urls``.
             enqueue_stage2: If True, also enqueue to stage2_queue with status=pending (default: False)
 
-        When Redis depth is above the high watermark, or the depth cannot be
-        read, no seed, domain, or stage2 row is written and
+        When Redis depth is above the high watermark, Redis memory is at or above
+        ``memory_watermark``, or either cannot be read, no seed, domain, or stage2 row is written and
         ``seed_enqueue_throttled_total`` increments by the number of URLs
         skipped. At or under the watermark, writes proceed. A missing client
         is not treated as depth 0.
@@ -421,16 +511,15 @@ class SeedManager:
             return {"seed_inserted": 0, "domain_inserted": 0, "uconn_inserted": 0, "stage2_enqueued": 0,
                     "rejected": n_rejected}
 
-        # Before enqueue: read Redis depth. Above the high watermark, or unknown, skip.
-        if self._depth_blocks_enqueue():
+        # Before enqueue: read Redis depth and memory. Above a watermark, or unknown, skip.
+        if self._gate_blocks_enqueue():
             skipped = len(by_hash)
             if SEED_ENQUEUE_THROTTLED is not None:
                 SEED_ENQUEUE_THROTTLED.inc(skipped)
             logger.warning(
-                "[SeedManager] Skipping enqueue of %s URL(s) from %s; Redis depth unavailable or above %s",
+                "[SeedManager] Skipping enqueue of %s URL(s) from %s; Redis depth or memory unavailable or over watermark",
                 skipped,
                 source_spider,
-                seed_enqueue_threshold(self._config),
             )
             return {
                 "seed_inserted": 0,
@@ -529,14 +618,21 @@ class SeedManager:
         urls: list[str],
         source_spider: str = "manual",
         batch_size: int = 1000,
+        max_urls_per_second: float | None = None,
     ) -> dict[str, int]:
         """
         Bulk seed URLs from a list (e.g., from sitemap or CSV).
+
+        Chunks are checked against the Redis gate before each write. A chunk that
+        hits the gate is rejected and counted in ``rejected_chunks``; re-run the
+        reseed once depth or memory drops. Nothing is retried in place.
 
         Args:
             urls: List of URLs to seed
             source_spider: Spider name to attribute (default: "manual")
             batch_size: Batch size for writes (default: 1000)
+            max_urls_per_second: Pace chunks to about this many URLs per second
+                (default: unpaced). Each chunk sleeps for the rest of its share.
 
         Returns:
             Aggregated counts dictionary
@@ -547,18 +643,37 @@ class SeedManager:
             "uconn_inserted": 0,
             "stage2_enqueued": 0,
             "rejected": 0,
+            "rejected_chunks": 0,
         }
 
         for i in range(0, len(urls), batch_size):
             batch = urls[i : i + batch_size]
+            if self._gate_blocks_enqueue():
+                total_results["rejected_chunks"] += 1
+                if SEED_RESEED_REJECTED_CHUNKS is not None:
+                    SEED_RESEED_REJECTED_CHUNKS.inc()
+                logger.warning(
+                    "[SeedManager] Rejected reseed chunk at offset %s from %s; Redis depth or memory over watermark",
+                    i,
+                    source_spider,
+                )
+                continue
+
+            started = time.monotonic()
             result = self.add_urls_to_seeds(
                 urls=batch,
                 source_url="bulk_import",
                 source_spider=source_spider,
                 enqueue_stage2=False,  # Bulk imports typically don't enqueue for Stage 2
             )
+            if SEED_RESEED_URLS is not None:
+                SEED_RESEED_URLS.inc(len(batch))
             for key in total_results:
                 total_results[key] += result.get(key, 0)
+
+            if max_urls_per_second:
+                budget = len(batch) / max_urls_per_second
+                time.sleep(max(0.0, budget - (time.monotonic() - started)))
 
         logger.info(f"[SeedManager] Bulk seeded {len(urls)} URLs: {total_results}")
         return total_results
