@@ -22,6 +22,21 @@ postgres:
   password: null  # Set via environment variable or here
 
 # ============================================
+# Full-pipeline run (src/main.py, compose `scraper`)
+# ============================================
+# Env overrides: PIPELINE_MODE, STAGE1_URL_LIMIT, STAGE2_CONCURRENCY,
+# STAGE3_CONCURRENCY, PIPELINE_LOOP_INTERVAL_SECONDS.
+#   once     - one pipeline pass, exit 0 on success (compose restarts only on failure)
+#   loop     - repeat a pass every loop_interval_seconds; a failed pass is logged and retried
+#   disabled - exit 0 without running anything
+pipeline:
+  mode: once
+  stage1_url_limit: 50        # URLs Stage 1 discovers per pass
+  stage2_concurrency: 10      # Stage 2 concurrent fetches
+  stage3_concurrency: 5       # Stage 3 concurrent summarizations
+  loop_interval_seconds: 3600 # Pause between passes in loop mode
+
+# ============================================
 # Stage 1: Discovery Settings
 # ============================================
 stage1:

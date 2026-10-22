@@ -73,7 +73,7 @@ cd Scrapy/Scraping_project
 python start.py
 ```
 
-`python start.py` sets Compose profiles `core` and `monitoring` (Redis, scraper, stage 1–3 workers, Postgres, Prometheus, Grafana) and waits for Postgres. It does not start Stage 4 (profiles `ml` / `full`), Kafka (`streaming`), or the OpenTelemetry overlay. The equivalent Compose command is in [COMPOSE.md](COMPOSE.md): `docker compose --profile core --profile monitoring up -d`. Add `--reset-delta` to wipe Delta tables and reload seeds. Stop with `python shutdown.py`.
+`python start.py` sets Compose profiles `core` and `monitoring` (Redis, scraper running one pipeline pass, stage 2–3 workers, Postgres, Prometheus, Grafana) and waits for Postgres. It does not start Stage 4 (profiles `ml` / `full`), Kafka (`streaming`), or the OpenTelemetry overlay. The equivalent Compose command is in [COMPOSE.md](COMPOSE.md): `docker compose --profile core --profile monitoring up -d`. Add `--reset-delta` to wipe Delta tables and reload seeds. Stop with `python shutdown.py`.
 
 Grafana is at http://localhost:3000 (user `admin`; password is `GRAFANA_ADMIN_PASSWORD` in `.env`, default `admin` for local dev only). Full detail, other domains, and resuming after a crash: [Running guide](docs/guides/RUNNING.md).
 

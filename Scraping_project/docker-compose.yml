@@ -1,19 +1,23 @@
 # Docker Compose configuration for UConn Scraping Pipeline
-# Profiles (#145): core | monitoring | streaming, plus ml | full for Stage 4 (#144).
+# Profiles (#145): core | monitoring | streaming, plus ml | full for Stage 4 (#144),
+# and stage1-continuous for the opt-in stage1-worker (not started by core).
 # Observability (Loki / Jaeger / OTEL) is the overlay docker-compose.observability.yml.
 # One command for the lean stack + monitoring (no torch, no Kafka):
 #   docker compose --profile core --profile monitoring up -d
 # See COMPOSE.md. Redis contract is REDIS_HOST / REDIS_PORT / REDIS_PASSWORD / REDIS_DB.
 
 services:
-  # Main scraping application
+  # Main scraping application: the one Stage 1 owner under `core`. Runs one
+  # full pipeline pass (PIPELINE_MODE=once) and exits 0. `on-failure` retries a
+  # crashed or failed pass without re-running a completed one. Empty values fall
+  # through to config.yml `pipeline.*`. See COMPOSE.md and docs/guides/RUNNING.md.
   scraper:
     profiles: ["core"]
     build:
       context: .
       target: production
     container_name: uconn-scraper
-    restart: unless-stopped
+    restart: on-failure
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
@@ -21,6 +25,10 @@ services:
       - DELTA_LAKE_PATH=/data/delta
       - LOG_LEVEL=INFO
       - WORKERS=4
+      - PIPELINE_MODE=${PIPELINE_MODE:-}
+      - STAGE1_URL_LIMIT=${STAGE1_URL_LIMIT:-}
+      - STAGE2_CONCURRENCY=${STAGE2_CONCURRENCY:-}
+      - STAGE3_CONCURRENCY=${STAGE3_CONCURRENCY:-}
     volumes:
       - ./data:/data
       - ./logs:/app/logs
@@ -38,8 +46,9 @@ services:
           memory: 2G
 
   # Redis for caching and queue management
+  # stage1-continuous is listed so the opt-in stage1-worker's depends_on resolves.
   redis:
-    profiles: ["core", "monitoring", "ml", "full"]
+    profiles: ["core", "monitoring", "ml", "full", "stage1-continuous"]
     image: redis:7-alpine
     container_name: uconn-redis
     restart: unless-stopped
@@ -97,14 +106,17 @@ services:
       timeout: 3s
       retries: 3
 
-  # Stage 1: URL Discovery Worker
+  # Stage 1: URL Discovery Worker. Not in `core`: `scraper` owns Stage 1 there
+  # (one pass per start). Opt in with `--profile stage1-continuous` only if you
+  # want this uncapped scout run instead; it is a single pass, so restart on
+  # failure only.
   stage1-worker:
-    profiles: ["core"]
+    profiles: ["stage1-continuous"]
     build:
       context: .
       target: production
     container_name: stage1-worker
-    restart: unless-stopped
+    restart: on-failure
     command: python -m src.workers.stage1_worker
     environment:
       - REDIS_HOST=redis

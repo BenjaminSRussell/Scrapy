@@ -11,6 +11,7 @@ from typing import Literal
 from scrapy.crawler import CrawlerProcess
 from scrapy.utils.project import get_project_settings
 
+from src.core.config import PipelineRunSettings, pipeline_run_settings
 from src.core.constants import LEGACY_TABLE_STAGE3_SUMMARIES, TABLE_STAGE3_SUMMARIES
 from src.utils.delta import get_delta
 from src.orchestrator.hop_reconciliation import BARRIER_MODES, alert_kind, count_hops, reconcile
@@ -586,18 +587,19 @@ class PipelineOrchestrator:
         logger.info(f" Total summaries created: {self.stats.stage3_summaries_created + self.stats.stage4_large_summaries}")
         logger.info("=" * 80 + "\n")
 
-async def main():
+async def main(settings: PipelineRunSettings | None = None):
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
     )
 
+    settings = settings or pipeline_run_settings()
     orchestrator = PipelineOrchestrator()
 
     await orchestrator.run_full_pipeline(
-        stage1_url_limit=50,
-        stage2_concurrent=10,
-        stage3_concurrent=5,
+        stage1_url_limit=settings.stage1_url_limit,
+        stage2_concurrent=settings.stage2_concurrent,
+        stage3_concurrent=settings.stage3_concurrent,
     )
 
 if __name__ == "__main__":

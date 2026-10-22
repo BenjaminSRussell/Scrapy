@@ -16,7 +16,23 @@ python start.py                  # core + monitoring profiles, then waits for Po
 python start.py --reset-delta    # also reset the Delta tables and reload seeds from the seed CSV
 ```
 
-Compose profiles (#145) are `core` (redis, scraper, stage 1–3 workers, Postgres), `monitoring` (Prometheus, Grafana, exporters, ops dashboard on port 8080), `streaming` (Kafka; Postgres is also on `core`) and `observability` (Loki / Jaeger / OTEL, overlay file). `stage4-worker` stays on profiles `ml` and `full` (ML/OCR image, #144), not `core`. `python start.py` enables `core` and `monitoring` only, so it does not start Stage 4, Kafka or the OTEL overlay. Start Stage 4 with `docker compose --profile ml up -d stage4-worker`. The same command shape with `--profile streaming` or `--profile observability` (and `-f docker-compose.observability.yml` for the overlay) opts into the rest. That overlay file also starts the unprofiled Prometheus/Grafana pack (`127.0.0.1:9095` and `:3001`); `docker compose -f docker-compose.observability.yml up -d` starts the pack without the app. See [COMPOSE.md](../../COMPOSE.md). To stop everything, run `python shutdown.py`. On SIGTERM, `LakehouseManager` drains its Delta write queue before the process exits. For Kubernetes (`python start.py --env k8s --stage …`), see [DEPLOYMENT.md](../../DEPLOYMENT.md).
+Compose profiles (#145) are `core` (redis, scraper, stage 2–3 workers, Postgres), `monitoring` (Prometheus, Grafana, exporters, ops dashboard on port 8080), `streaming` (Kafka; Postgres is also on `core`) and `observability` (Loki / Jaeger / OTEL, overlay file). `stage4-worker` stays on profiles `ml` and `full` (ML/OCR image, #144), not `core`. `python start.py` enables `core` and `monitoring` only, so it does not start Stage 4, Kafka or the OTEL overlay. Start Stage 4 with `docker compose --profile ml up -d stage4-worker`. The same command shape with `--profile streaming` or `--profile observability` (and `-f docker-compose.observability.yml` for the overlay) opts into the rest. That overlay file also starts the unprofiled Prometheus/Grafana pack (`127.0.0.1:9095` and `:3001`); `docker compose -f docker-compose.observability.yml up -d` starts the pack without the app. See [COMPOSE.md](../../COMPOSE.md). To stop everything, run `python shutdown.py`. On SIGTERM, `LakehouseManager` drains its Delta write queue before the process exits. For Kubernetes (`python start.py --env k8s --stage …`), see [DEPLOYMENT.md](../../DEPLOYMENT.md).
+
+### What `scraper` does and how to size it
+
+`scraper` runs `python -m src.main`, which makes one full pipeline pass (Stage 1 discovery, then the Stage 2–4 handoff) and exits 0. It is the only Stage 1 owner under `core`. Compose restarts it only on failure (`restart: on-failure`), so a finished pass stays stopped. `stage1-worker` is opt-in (`--profile stage1-continuous`) and is an alternative to `scraper`, not an addition.
+
+Pass settings come from env, then `config.yml` `pipeline.*`, then the defaults below. Set them in `.env` or on the command line:
+
+| Env | `config.yml` key | Default | Meaning |
+|-----|------------------|---------|---------|
+| `PIPELINE_MODE` | `pipeline.mode` | `once` | `once` (one pass, exit 0), `loop` (repeat every interval, a failed pass is retried), `disabled` (exit 0 without running) |
+| `STAGE1_URL_LIMIT` | `pipeline.stage1_url_limit` | `50` | URLs Stage 1 discovers per pass |
+| `STAGE2_CONCURRENCY` | `pipeline.stage2_concurrency` | `10` | Concurrent Stage 2 fetches |
+| `STAGE3_CONCURRENCY` | `pipeline.stage3_concurrency` | `5` | Concurrent Stage 3 summarizations |
+| `PIPELINE_LOOP_INTERVAL_SECONDS` | `pipeline.loop_interval_seconds` | `3600` | Pause between passes in `loop` mode |
+
+Each pass is capped at `STAGE1_URL_LIMIT` discovered URLs, so the default is a small demo-sized run. For a real crawl, raise the limit or use `loop` mode, and size `STAGE2_CONCURRENCY` against the `scraper` CPU and memory limits in `docker-compose.yml`. An unknown `PIPELINE_MODE` makes the container fail at startup.
 
 ## Run the stages yourself (no Compose)
 

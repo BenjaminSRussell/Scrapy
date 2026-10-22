@@ -381,6 +381,57 @@ def stage_worker_settings(
     return concurrent, batch_size
 
 
+PIPELINE_MODES = ("once", "loop", "disabled")
+
+
+@dataclass(frozen=True)
+class PipelineRunSettings:
+    """How ``src.main`` runs the full pipeline (compose ``scraper``)."""
+
+    mode: str
+    stage1_url_limit: int
+    stage2_concurrent: int
+    stage3_concurrent: int
+    loop_interval_seconds: int
+
+
+def pipeline_run_settings(config: Optional[Config] = None) -> PipelineRunSettings:
+    """Resolve the ``pipeline.*`` run settings.
+
+    Precedence: env (``PIPELINE_MODE``, ``STAGE1_URL_LIMIT``, ``STAGE2_CONCURRENCY``,
+    ``STAGE3_CONCURRENCY``, ``PIPELINE_LOOP_INTERVAL_SECONDS``) > config.yml
+    ``pipeline.*`` > built-in defaults. Invalid numbers fall through to the next
+    source. An unknown mode raises ``ValueError`` so a typo fails at startup.
+    """
+    cfg = config if config is not None else get_config()
+    mode = str(os.getenv("PIPELINE_MODE") or cfg.get("pipeline.mode") or "once").strip().lower()
+    if mode not in PIPELINE_MODES:
+        raise ValueError(f"PIPELINE_MODE must be one of {', '.join(PIPELINE_MODES)}; got {mode!r}")
+    return PipelineRunSettings(
+        mode=mode,
+        stage1_url_limit=(
+            _positive_int(os.getenv("STAGE1_URL_LIMIT"))
+            or _positive_int(cfg.get("pipeline.stage1_url_limit"))
+            or 50
+        ),
+        stage2_concurrent=(
+            _positive_int(os.getenv("STAGE2_CONCURRENCY"))
+            or _positive_int(cfg.get("pipeline.stage2_concurrency"))
+            or 10
+        ),
+        stage3_concurrent=(
+            _positive_int(os.getenv("STAGE3_CONCURRENCY"))
+            or _positive_int(cfg.get("pipeline.stage3_concurrency"))
+            or 5
+        ),
+        loop_interval_seconds=(
+            _positive_int(os.getenv("PIPELINE_LOOP_INTERVAL_SECONDS"))
+            or _positive_int(cfg.get("pipeline.loop_interval_seconds"))
+            or 3600
+        ),
+    )
+
+
 @dataclass(frozen=True)
 class Stage2Thresholds:
     """Stage 2 page-quality gates (#329)."""
