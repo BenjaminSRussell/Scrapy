@@ -539,6 +539,21 @@ groups:
           impact: "High - Discovery stalled while the seen store is unavailable"
           action: "Check RedisDown and RedisPoolExhausted; do not set REDIS_SEEN_FAIL_MODE=open in production"
 
+      # Crawl guard cannot read or write its Redis state (#1530). With
+      # crawl_safety.on_error=closed, downloads stop while reads fail, so this
+      # is a stalled crawl, not a silent one.
+      - alert: CrawlGuardRedisErrors
+        expr: sum(increase(crawl_guard_redis_errors_total[5m])) > 0
+        for: 5m
+        labels:
+          severity: warning
+          component: crawler
+        annotations:
+          summary: "Crawl guard cannot reach Redis"
+          description: "{{ $value }} crawl guard Redis operations failed in 5m. Kill-switch reads fail closed past crawl_safety.max_stale_secs, and budget charges are buffered until Redis recovers."
+          impact: "High - Crawling is blocked (fail-closed) or budget counts are lagging"
+          action: "Check RedisDown and RedisPoolExhausted; confirm the kill switch state with the CLI once Redis is back. Do not set crawl_safety.on_error=open in production."
+
       # Critical: PostgreSQL is down
       - alert: PostgresDown
         expr: up{job="postgres"} == 0
