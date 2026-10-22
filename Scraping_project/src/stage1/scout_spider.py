@@ -1,12 +1,16 @@
 """Scout spider focused on fast URL discovery."""
 
 import logging
+import time
 from collections.abc import Iterable, Iterator
 from datetime import datetime
+from typing import Any
 from urllib.parse import urlparse
 
 import scrapy
 from scrapy.http import HtmlResponse, Response
+from twisted.internet import task, threads
+from twisted.internet.defer import Deferred
 
 from src.stage1.content_policy import classify_response, count_skipped
 from src.stage1.middlewares.spider_config import get_spider_settings
@@ -33,6 +37,21 @@ except Exception:  # prometheus_client missing
     URLS_SKIPPED = None
     labels_for = None  # type: ignore[assignment]
 
+try:  # batched seed MERGEs off the reactor thread (#1644)
+    from prometheus_client import Counter as _ScoutCounter
+    from prometheus_client import Histogram as _ScoutHistogram
+
+    SCOUT_SEED_MERGE_SECONDS: Any = _ScoutHistogram(
+        "scout_seed_merge_seconds",
+        "Wall time of one batched scout seed MERGE (seed_urls and domain table), run off the reactor thread.",
+    )
+    SCOUT_SEED_MERGE_ROWS: Any = _ScoutCounter(
+        "scout_seed_merge_rows_total",
+        "Seed rows handed to a batched scout seed MERGE.",
+    )
+except Exception:  # prometheus_client missing or metric already registered
+    SCOUT_SEED_MERGE_SECONDS = SCOUT_SEED_MERGE_ROWS = None
+
 def _stage1_flag(config, key: str, default: bool) -> bool:
     """Read a boolean ``stage1.<key>`` (falling back to ``stages.stage1.<key>``) (#27)."""
     for prefix in ("stage1", "stages.stage1"):
@@ -58,6 +77,11 @@ class ScoutSpider(BaseSpider):
     name = "scout"
 
     custom_settings = get_spider_settings("scout")
+
+    # Seed rows are merged in batches: one MERGE per this many rows or seconds,
+    # never per page (#1644).
+    seed_batch_max_rows = 500
+    seed_batch_max_age = 30.0
 
     # NOTE: Static asset filtering is now handled by src.common.url_processor.should_follow_url()
 
@@ -97,6 +121,10 @@ class ScoutSpider(BaseSpider):
         self.enable_js_spider = js_spider_enabled(config)
 
         self.seed_manager = SeedManager(self.delta)
+        self._seed_pending: list[tuple[str, str]] = []
+        self._seed_pending_since: float | None = None
+        self._seed_flush_in_flight: Deferred | None = None
+        self._seed_timer: task.LoopingCall | None = None
         self.discovery_dedup = self._init_discovery_dedup(config)
 
         logger.info(f"[SCOUT] Initialized with allowed_domains={self.allowed_domains}")
@@ -244,7 +272,7 @@ class ScoutSpider(BaseSpider):
         noise.record_page(section, html_links, low_links)
 
         if urls_to_add_to_seeds and self.expand_seeds:
-            self._add_urls_to_seeds(urls_to_add_to_seeds, response.url)
+            self._queue_seed_urls(urls_to_add_to_seeds, response.url)
             self.scout_stats["urls_added_to_seeds"] += len(urls_to_add_to_seeds)
 
         total_discovered = sum(self.scout_stats.values())
@@ -445,25 +473,78 @@ class ScoutSpider(BaseSpider):
         except DiscoveryEmptyNeedsAck as e:
             logger.warning(f"[SCOUT] {e}")
 
-    def _add_urls_to_seeds(self, urls: list[str], source_url: str) -> None:
+    def _queue_seed_urls(self, urls: list[str], source_url: str) -> None:
+        """Buffer seed rows for the next batched MERGE. No I/O, so parse() never blocks (#1644)."""
         if not urls:
             return
+        if not self._seed_pending:
+            self._seed_pending_since = time.monotonic()
+            self._start_seed_timer()
+        self._seed_pending.extend((url, source_url) for url in urls)
+        self._flush_seeds_if_due()
 
+    def _seed_batch_due(self) -> bool:
+        if not self._seed_pending:
+            return False
+        if len(self._seed_pending) >= self.seed_batch_max_rows:
+            return True
+        return time.monotonic() - self._seed_pending_since >= self.seed_batch_max_age
+
+    def _flush_seeds_if_due(self) -> None:
+        # One MERGE in flight at a time; rows keep buffering behind it.
+        if self._seed_flush_in_flight is None and self._seed_batch_due():
+            self._flush_seeds()
+
+    def _flush_seeds(self) -> None:
+        batch, self._seed_pending = self._seed_pending, []
+        self._seed_pending_since = None
+        deferred = threads.deferToThread(self._merge_seed_batch, batch)
+        self._seed_flush_in_flight = deferred
+        deferred.addBoth(self._seed_flush_done)
+
+    def _seed_flush_done(self, _result: Any) -> None:
+        self._seed_flush_in_flight = None
+        self._flush_seeds_if_due()
+
+    def _merge_seed_batch(self, pairs: list[tuple[str, str]]) -> None:
+        """Runs on a thread-pool thread: one seed MERGE for the whole batch (#1644)."""
+        started = time.perf_counter()
         try:
-            result = self.seed_manager.add_urls_to_seeds(
-                urls=urls,
-                source_url=source_url,
-                source_spider=self.name,
-                enqueue_stage2=False,
-            )
+            result = self.seed_manager.add_seed_pairs(pairs, source_spider=self.name, enqueue_stage2=False)
 
             logger.info(
-                f"[SCOUT] SeedManager results: seeds={result['seed_inserted']}, "
+                f"[SCOUT] SeedManager results: rows={len(pairs)}, seeds={result['seed_inserted']}, "
                 f"domain={result.get('domain_inserted', result.get('uconn_inserted', 0))}"
             )
 
         except Exception as e:
             logger.error(f"[SCOUT] Failed to add URLs via SeedManager: {e}", exc_info=True)
+        finally:
+            if SCOUT_SEED_MERGE_SECONDS is not None:
+                SCOUT_SEED_MERGE_SECONDS.observe(time.perf_counter() - started)
+            if SCOUT_SEED_MERGE_ROWS is not None:
+                SCOUT_SEED_MERGE_ROWS.inc(len(pairs))
+
+    def _drain_seed_batches(self) -> Deferred | None:
+        """Write everything still buffered; the returned Deferred fires once it has landed."""
+        if self._seed_flush_in_flight is None and self._seed_pending:
+            self._flush_seeds()
+        in_flight = self._seed_flush_in_flight
+        if in_flight is None:
+            return None
+        return in_flight.addCallback(lambda _: self._drain_seed_batches())
+
+    def _start_seed_timer(self) -> None:
+        # Age-based flush for idle crawls: parse() only runs when a page arrives.
+        if self._seed_timer is not None:
+            return
+        self._seed_timer = task.LoopingCall(self._flush_seeds_if_due)
+        self._seed_timer.start(max(0.05, self.seed_batch_max_age / 2), now=False)
+
+    def _stop_seed_timer(self) -> None:
+        loop, self._seed_timer = self._seed_timer, None
+        if loop is not None and loop.running:
+            loop.stop()
 
     def _log_scout_stats(self):
         logger.info(
@@ -482,3 +563,6 @@ class ScoutSpider(BaseSpider):
         logger.info(f"[SCOUT] Spider closing: {reason}")
 
         super().closed(reason)
+        self._stop_seed_timer()
+        # Scrapy waits on a Deferred returned from a spider_closed handler.
+        return self._drain_seed_batches()

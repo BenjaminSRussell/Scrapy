@@ -124,15 +124,15 @@ def test_scout_lets_config_decide():
     calls = []
 
     class FakeSeeds:
-        def add_urls_to_seeds(self, **kwargs):
+        def add_seed_pairs(self, pairs, **kwargs):
             calls.append(kwargs)
             return {"seed_inserted": 1, "domain_inserted": 0, "uconn_inserted": 0, "stage2_enqueued": 0}
 
     spider = ScoutSpider.__new__(ScoutSpider)
     spider.seed_manager = FakeSeeds()
-    spider._add_urls_to_seeds(["https://example.org/a"], source_url="https://example.org/")
+    spider._merge_seed_batch([("https://example.org/a", "https://example.org/")])
     assert calls and "write_uconn_urls" not in calls[0] and "write_domain_urls" not in calls[0]
-    assert "write_uconn_urls" not in inspect.getsource(ScoutSpider._add_urls_to_seeds)
+    assert "write_uconn_urls" not in inspect.getsource(ScoutSpider._merge_seed_batch)
 
 
 def test_policy_without_config_is_off():
