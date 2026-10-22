@@ -29,6 +29,10 @@ REQUIRED_TOOLS = {
 }
 
 LOCAL_GRAFANA_URL = "http://localhost:3000"
+# Ops dashboard published by the Compose `dashboard` service (CC_PORT=8080).
+LOCAL_CONTROL_CENTER_URL = "http://localhost:8080"
+# #404: same flag path as dashboard/serve.py FIRST_RUN_FLAG; written when the wizard finishes.
+FIRST_RUN_FLAG = Path(__file__).resolve().parent / "data" / "config" / "first_run.json"
 LOCAL_PROMETHEUS_URLS: list[str] = [
     "http://localhost:9090",
 ]
@@ -414,6 +418,15 @@ def start_local(args: argparse.Namespace) -> None:
     print(f"   - Restart a service:    {dc} restart <service-name>")
     print("   - View resource usage:  docker stats")
     print("=" * 70 + "\n")
+    print_first_run_hint()
+
+
+def print_first_run_hint(flag: Path = FIRST_RUN_FLAG) -> None:
+    """#404: point a new operator at the Control Center wizard until it is finished."""
+    if flag.exists():
+        return
+    print(f"🧭 First run: open the Control Center at {LOCAL_CONTROL_CENTER_URL} to check services,")
+    print("   load sample seeds and finish the setup wizard (shown once).\n")
 
 
 def prompt_prerequisites() -> None:

@@ -76,122 +76,102 @@ def _gate_experimental_spiders(names, opt_in: bool) -> bool:
     return False
 
 
-def cmd_scrapy(args):
-    """Run Scrapy spiders using CrawlerRunner (Docker entrypoint)."""
+def _run_spiders(spider_names) -> int:
+    """Crawl the named spiders in one reactor and return the process exit code (#1559).
+
+    0: every crawl finished, or stopped on a closespider_* limit.
+    1: a crawl raised, logged an ERROR, ended on another finish_reason, or was interrupted.
+    2: a spider name is not registered. Checked before the reactor starts, so it never hangs.
+    """
     from scrapy.crawler import CrawlerRunner
+    from scrapy.spiderloader import SpiderLoader
     from scrapy.utils.log import configure_logging
     from scrapy.utils.project import get_project_settings
     from twisted.internet import defer, reactor
 
-    class ScrapyRunner:
-        """Orchestrates Scrapy spiders."""
+    settings = get_project_settings()
+    configure_logging(settings)
 
-        def __init__(self, spider_names):
-            self.settings = get_project_settings()
-            configure_logging(self.settings)
-            self.runner = CrawlerRunner(self.settings)
-            self.spider_names = spider_names or ["scout"]
-            self.shutdown_requested = False
+    available = SpiderLoader.from_settings(settings).list()
+    unknown = [name for name in spider_names if name not in available]
+    if unknown:
+        print(
+            f"Unknown spider(s): {', '.join(unknown)}. Available: {', '.join(sorted(available))}",
+            file=sys.stderr,
+        )
+        return 2
 
-            logger.info(f"Spiders to run: {', '.join(self.spider_names)}")
+    logger.info(f"Spiders to run: {', '.join(spider_names)}")
+    runner = CrawlerRunner(settings)
+    failures = []
+    finished = []
 
-        def setup_signal_handlers(self):
-            """Set up graceful shutdown."""
+    def signal_handler(signum, frame):
+        logger.info(f"Received {signal.Signals(signum).name}, shutting down...")
+        if reactor.running:
+            reactor.callFromThread(reactor.stop)
 
-            def signal_handler(signum, frame):
-                sig_name = signal.Signals(signum).name
-                logger.info(f"Received {sig_name}, shutting down...")
-                self.shutdown_requested = True
-                if reactor.running:
-                    reactor.callFromThread(reactor.stop)
+    signal.signal(signal.SIGTERM, signal_handler)
+    signal.signal(signal.SIGINT, signal_handler)
 
-            signal.signal(signal.SIGTERM, signal_handler)
-            signal.signal(signal.SIGINT, signal_handler)
+    @defer.inlineCallbacks
+    def crawl_all():
+        crawlers = [runner.create_crawler(name) for name in spider_names]
+        logger.info("Starting spiders...")
+        # consumeErrors keeps a failed crawl from being logged as an unhandled error; it is read below.
+        results = yield defer.DeferredList([runner.crawl(c) for c in crawlers], consumeErrors=True)
+        for crawler, (ok, value) in zip(crawlers, results):
+            name = crawler.spidercls.name
+            reason = crawler.stats.get_value("finish_reason")
+            # Scrapy logs a spider whose start_requests raises as ERROR and still finishes, so count ERRORs too.
+            errors = crawler.stats.get_value("log_count/ERROR", 0)
+            if not ok:
+                failures.append(name)
+                logger.error(f"Spider {name} raised: {value.getErrorMessage()}")
+            elif errors:
+                failures.append(name)
+                logger.error(f"Spider {name} logged {errors} error(s) (finish_reason={reason})")
+            elif reason != "finished" and not str(reason).startswith("closespider_"):
+                failures.append(name)
+                logger.error(f"Spider {name} ended with finish_reason={reason}")
+            else:
+                logger.info(f"Spider {name} completed (finish_reason={reason})")
 
-        @defer.inlineCallbacks
-        def run_spiders(self):
-            """Run spiders in parallel."""
-            logger.info("Starting spiders...")
-            try:
-                deferreds = []
-                for spider_name in self.spider_names:
-                    if self.shutdown_requested:
-                        break
-                    logger.info(f"Scheduling: {spider_name}")
-                    deferreds.append(self.runner.crawl(spider_name))
+    def on_error(failure):
+        failures.append("startup")
+        logger.error(f"Crawl failed: {failure.getErrorMessage()}")
 
-                if deferreds:
-                    yield defer.DeferredList(deferreds)
-                logger.info("All spiders completed")
-            finally:
-                if reactor.running:
-                    reactor.stop()
+    def stop_reactor(_):
+        finished.append(True)
+        if reactor.running:
+            reactor.stop()
 
-        def start(self):
-            """Start runner and reactor."""
-            self.setup_signal_handlers()
-            deferred = self.run_spiders()
-            deferred.addErrback(lambda f: logger.error(f"Failed: {f}"))
-            reactor.run()
+    # callWhenRunning, not a direct call: the crawl is scheduled inside the reactor, and stop_reactor always runs.
+    reactor.callWhenRunning(lambda: crawl_all().addErrback(on_error).addBoth(stop_reactor))
+    reactor.run()
 
-    # Run
+    if not finished:
+        logger.error("Crawl interrupted before all spiders finished")
+        return 1
+    if failures:
+        logger.error(f"Failed spider(s): {', '.join(failures)}")
+        return 1
+    logger.info("All spiders completed")
+    return 0
+
+
+def cmd_scrapy(args):
+    """Run Scrapy spiders using CrawlerRunner (Docker entrypoint)."""
     if not _gate_experimental_spiders(args.spiders, getattr(args, "experimental", False)):
         sys.exit(2)
-    runner = ScrapyRunner(args.spiders)
-    runner.start()
+    sys.exit(_run_spiders(args.spiders or ["scout"]))
 
 
 def cmd_deep_dive(args):
     """Run the deep dive spider for thorough, respectful crawling."""
-    from scrapy.crawler import CrawlerRunner
-    from scrapy.utils.log import configure_logging
-    from scrapy.utils.project import get_project_settings
-    from twisted.internet import defer, reactor
-
-    class ScrapyRunner:
-        """Orchestrates Scrapy spiders."""
-
-        def __init__(self):
-            self.settings = get_project_settings()
-            configure_logging(self.settings)
-            self.runner = CrawlerRunner(self.settings)
-            self.shutdown_requested = False
-
-        def setup_signal_handlers(self):
-            """Set up graceful shutdown."""
-
-            def signal_handler(signum, frame):
-                sig_name = signal.Signals(signum).name
-                logger.info(f"Received {sig_name}, shutting down...")
-                self.shutdown_requested = True
-                if reactor.running:
-                    reactor.callFromThread(reactor.stop)
-
-            signal.signal(signal.SIGTERM, signal_handler)
-            signal.signal(signal.SIGINT, signal_handler)
-
-        @defer.inlineCallbacks
-        def run_spider(self):
-            """Run deep dive spider."""
-            logger.info("Starting deep dive spider...")
-            try:
-                yield self.runner.crawl("deep_dive")
-                logger.info("Deep dive spider completed")
-            finally:
-                if reactor.running:
-                    reactor.stop()
-
-        def start(self):
-            """Start runner and reactor."""
-            self.setup_signal_handlers()
-            deferred = self.run_spider()
-            deferred.addErrback(lambda f: logger.error(f"Failed: {f}"))
-            reactor.run()
-
     if not _gate_experimental_spiders(["deep_dive"], getattr(args, "experimental", False)):
         sys.exit(2)
-    runner = ScrapyRunner()
-    runner.start()
+    sys.exit(_run_spiders(["deep_dive"]))
 
 
 # ============================================================================
@@ -356,7 +336,35 @@ def cmd_reset(args):
 
     from src.core.constants import DELTA_LAKE
     from src.lakehouse.lakehouse_manager import get_delta_manager
-    from src.utils.destructive_guard import guarded_lake_wipe
+    from src.lakehouse.seed_preflight import confirm_seed_load, select_seeds
+    from src.utils.destructive_guard import guard_flags, guarded_lake_wipe
+
+    # Read the seed CSV before the wipe so the large-load check can run first (#453).
+    csv_path = Path(__file__).parent / "data" / "raw" / "uconn_urls.csv"
+    if not csv_path.exists():
+        logger.error(f"Seed file not found: {csv_path}")
+        return
+
+    logger.info(f"Loading seed URLs from: {csv_path}")
+    df = pd.read_csv(csv_path, header=None, names=["url"])
+
+    # Add url_hash column
+    df["url_hash"] = df["url"].apply(lambda url: hashlib.sha256(url.encode("utf-8")).hexdigest())
+    df["added_at"] = pd.Timestamp.now().isoformat()
+
+    seed_records = df.to_dict("records")
+    flags = guard_flags(args)
+    if flags["confirm"]:
+        # Preflight before the wipe: a declined or non-interactive large load leaves the lake untouched.
+        keep = confirm_seed_load(
+            len(seed_records),
+            sample=getattr(args, "sample", None),
+            assume_yes=flags["assume_yes"],
+            interactive=sys.stdin.isatty(),
+        )
+        if keep is None:
+            sys.exit(1)
+        seed_records = select_seeds(seed_records, keep)
 
     logger.info("🔥 RESETTING DELTA LAKE...")
     # Dry-run unless --confirm; dual confirmation; production break-glass; audited (#522, #573, #576).
@@ -371,19 +379,6 @@ def cmd_reset(args):
     logger.info("✅ Delta Lake structure recreated")
 
     # Re-seed from CSV
-    csv_path = Path(__file__).parent / "data" / "raw" / "uconn_urls.csv"
-    if not csv_path.exists():
-        logger.error(f"Seed file not found: {csv_path}")
-        return
-
-    logger.info(f"Loading seed URLs from: {csv_path}")
-    df = pd.read_csv(csv_path, header=None, names=["url"])
-
-    # Add url_hash column
-    df["url_hash"] = df["url"].apply(lambda url: hashlib.sha256(url.encode("utf-8")).hexdigest())
-    df["added_at"] = pd.Timestamp.now().isoformat()
-
-    seed_records = df.to_dict("records")
     logger.info(f"Seeding {len(seed_records)} URLs...")
 
     manager.write("seed_urls", seed_records, mode="overwrite", async_write=False)
@@ -794,6 +789,10 @@ def main():
 
     add_guard_arguments(reset_parser)
     add_backup_argument(reset_parser)
+    reset_parser.add_argument(
+        "--sample", type=int, default=None, metavar="N",
+        help="Seed only N random URLs from the CSV (skips the large-load prompt, #453)",
+    )
     reset_parser.set_defaults(func=cmd_reset)
 
     # Clean command

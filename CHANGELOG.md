@@ -58,6 +58,7 @@ renamed to the new version and date (see the release checklist).
 - Repository policies: SECURITY.md, CODE_OF_CONDUCT.md, this changelog, ADRs, devcontainer (#669 #746 #747 #715 #694).
 
 ### Changed
+- Scout seed rows are buffered and merged in batches (at most one `seed_urls` and domain MERGE per 500 rows or 30 s), run on a thread-pool thread. `parse()` no longer runs a Delta MERGE or Redis call on the reactor. `scout_seed_merge_seconds` and `scout_seed_merge_rows_total` are exported (#1644).
 - Control Center tabs, health tiles, and the title mark use inline SVG icons (`aria-hidden`) instead of emoji glyphs (#1049).
 - Helm Stage 1–4 sizing: dev stays `values.yaml`, `values-small.yaml` is one replica with HPA off, and `values-prod.yaml` raises worker memory limits so a Kafka lag spike does not OOM the pod. `helm template` fails when an enabled workload omits cpu and memory requests or limits. The delta-ingestor `wait-for-kafka` init container sets both. The sizes are in DEPLOYMENT.md (#1104).
 - Control Center metrics URL resolves as `?metrics=` (http or https), then a URL remembered in this browser, then `window.CC_METRICS_URL`, then the relative `/api/metrics` default. The Status connection popover shows the URL in use (#1020).

@@ -1225,6 +1225,34 @@
             confetti: false
         };
     }
+    // #460: JS render budget estimate. Mirrors stage1.js_spider_preset and the
+    // stage1.js_* memory keys in config.yml (contexts per preset, MB per page, warning).
+    // The estimate is pages x MB per page. It is a guess, not a measurement.
+    const JS_PRESET_CONTEXTS = { default: 4, low_memory: 2 };
+    const JS_PRESET_PAGES = { default: 32, low_memory: 4 };
+    // Blank or non-numeric input falls back to the preset's default page cap.
+    function jsBudgetSplit(preset, totalPages) {
+        const maxContexts = JS_PRESET_CONTEXTS[preset] || JS_PRESET_CONTEXTS.default;
+        const parsed = Math.floor(Number(totalPages));
+        const total = parsed >= 1 ? parsed : (JS_PRESET_PAGES[preset] || JS_PRESET_PAGES.default);
+        const contexts = Math.min(maxContexts, total);
+        return { total, contexts, pagesPerContext: Math.max(1, Math.floor(total / contexts)) };
+    }
+    function jsRenderBudget(preset, totalPages, mbPerPage, warnMb) {
+        const split = jsBudgetSplit(preset, totalPages);
+        const pages = split.contexts * split.pagesPerContext;
+        const perPage = Number(mbPerPage) > 0 ? Number(mbPerPage) : 100;
+        const limitMb = Number(warnMb) > 0 ? Number(warnMb) : 4096;
+        const estimateMb = pages * perPage;
+        const over = estimateMb > limitMb;
+        const estimateText = Math.round(estimateMb).toLocaleString('en-US');
+        const limitText = Math.round(limitMb).toLocaleString('en-US');
+        const message = over
+            ? `Warning: estimated ${estimateText} MB for ${pages} pages is over the ${limitText} MB limit. Lower the page cap or use low_memory.`
+            : `Estimated ${estimateText} MB for ${pages} pages, within the ${limitText} MB limit.`;
+        const snippet = `PLAYWRIGHT_MAX_CONCURRENT_PAGES=${split.total}`;
+        return { pages, contexts: split.contexts, pagesPerContext: split.pagesPerContext, estimateMb, limitMb, over, message, snippet };
+    }
     // #1017: custom accent. Only #rrggbb is accepted so a stored value cannot
     // be written into a CSS variable as anything other than a color.
     const DEFAULT_ACCENT = '#2563eb';
@@ -1369,5 +1397,5 @@
         return sampled;
     }
 
-    return { tabKeyTarget, staleState, queueDepthRows, metricsFailureActivity, shortcutHintText, parseMetrics, metricSeriesCount, METRICS_FLOOD_DEFAULTS, metricsFloodLimits, advanceMetricsFlood, metricsFloodBannerText, ratePerMinute, resolveMetricsUrl, metricsEndpoint, metricsEndpointLabel, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler, stageActivity, jobProgress, stageDrilldown,stageDrilldownKey, doughnutLegendLayout, connectionState, documentTitle, createActivityAnnouncer, metricsUrlProblem, splitLinks, createMetricsFetcher, REFRESH_INTERVAL_CHOICES, parseRefreshInterval, shortcutAction, pickInitialTab, METRIC_UI_MAP, renderMetricNameMap, parseDangerSoundEnabled, dangerSoundDecision, HEALTH_HISTORY_LIMIT, pushPollOutcome, healthHistoryView, COMPARISON_BASELINE_ROLE, PREV_HOUR_AVG_KEYS, readPrevHourAverage, comparisonBaselineSeries, comparisonNote, ACTIVITY_LOG_CAP, capActivityLog, activityStaleNote, restoreActivityLog, topScrapeTargets, SCRAPE_TARGET_EMPTY, ACTIVITY_LEVELS, activityLevelCounts, filterActivityItems, filterActivityMessages, activityFilterStatus, toggleActivityLevel, HISTORY_MAX_POINTS, HISTORY_RAW_POINTS, assertHistoryBound, boundHistoryBuffer, pushHistorySample, enforceHistoryCap, downsampleIndices, grafanaHomeUrl, jobStartedPresentation, DEFAULT_ACCENT, parseAccentColor, accentInk, accentBorder, accentCssVars };
+    return { tabKeyTarget, staleState, queueDepthRows, metricsFailureActivity, shortcutHintText, parseMetrics, metricSeriesCount, METRICS_FLOOD_DEFAULTS, metricsFloodLimits, advanceMetricsFlood, metricsFloodBannerText, ratePerMinute, resolveMetricsUrl, metricsEndpoint, metricsEndpointLabel, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler, stageActivity, jobProgress, stageDrilldown, stageDrilldownKey, doughnutLegendLayout, connectionState, documentTitle, createActivityAnnouncer, metricsUrlProblem, splitLinks, createMetricsFetcher, REFRESH_INTERVAL_CHOICES, parseRefreshInterval, shortcutAction, pickInitialTab, METRIC_UI_MAP, renderMetricNameMap, parseDangerSoundEnabled, dangerSoundDecision, HEALTH_HISTORY_LIMIT, pushPollOutcome, healthHistoryView, COMPARISON_BASELINE_ROLE, PREV_HOUR_AVG_KEYS, readPrevHourAverage, comparisonBaselineSeries, comparisonNote, ACTIVITY_LOG_CAP, capActivityLog, activityStaleNote, restoreActivityLog, topScrapeTargets, SCRAPE_TARGET_EMPTY, ACTIVITY_LEVELS, activityLevelCounts, filterActivityItems, filterActivityMessages, activityFilterStatus, toggleActivityLevel, HISTORY_MAX_POINTS, HISTORY_RAW_POINTS, assertHistoryBound, boundHistoryBuffer, pushHistorySample, enforceHistoryCap, downsampleIndices, grafanaHomeUrl, jobStartedPresentation, JS_PRESET_PAGES, jsBudgetSplit, jsRenderBudget, DEFAULT_ACCENT, parseAccentColor, accentInk, accentBorder, accentCssVars };
 });

@@ -50,3 +50,32 @@ fetched everything.
 - Blocking `image`/`media`/`font` is almost always safe for link discovery and cuts bandwidth and render time sharply.
 - Blocking `stylesheet` is cheap, but it can hide content on sites that reveal text or trigger lazy loading through CSS (e.g. `display:none` until a class is added, or infinite scroll that depends on layout height). Override those domains.
 - Blocking `script`, `xhr` or `fetch` usually defeats the point of rendering. Only do it for a domain where you know the content is server-rendered.
+
+## Presets and memory budget (#460)
+
+The `javascript` spider keeps one Chromium page per in-flight render. Memory grows with the number of
+live pages, so the budget is set by the page cap, not by the queue length.
+
+| Key (`stage1:` in `config.yml`) | Default | Effect |
+|---|---|---|
+| `js_spider_preset` | `default` | `default`: 20 requests, 10 per domain, 4 contexts x 8 pages. `low_memory`: 4 requests, 2 per domain, 2 contexts x 2 pages. |
+| `js_max_concurrent_pages` | `null` | Caps live Playwright pages. Split into contexts (up to the preset's count) and pages per context, so the product never exceeds the cap. `null` keeps the preset's own split. |
+| `js_estimated_mb_per_page` | `100` | Per-page figure for the memory estimate. A configured guess, not a measurement. |
+| `js_memory_warning_mb` | `4096` | At startup the spider logs a warning when pages x MB per page is above this. |
+
+Environment overrides: `PLAYWRIGHT_MAX_CONCURRENT_PAGES` takes the place of `js_max_concurrent_pages`. Without it,
+`PLAYWRIGHT_MAX_CONTEXTS` and `PLAYWRIGHT_MAX_PAGES_PER_CONTEXT` still override the preset's fields one at a time.
+
+```yaml
+stage1:
+  js_spider_preset: low_memory
+  js_max_concurrent_pages: 6   # 2 contexts x 3 pages
+```
+
+The Control Center System tab has a "JavaScript render budget" card. It computes the same split and estimate from
+the values you type, and shows the `PLAYWRIGHT_MAX_CONCURRENT_PAGES` line to apply. It does not save anything or
+change the running spider.
+
+**Benchmarks status.** This repository has no measured JS spider benchmark yet. The "about 4 GB" and "up to 12 GB"
+figures in the experimental gate (`src/stage1/experimental/gate.py`) are prerequisites, not measurements. Measure
+RSS per page on your host, then set `js_estimated_mb_per_page` to that number.

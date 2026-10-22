@@ -129,7 +129,7 @@ The Helm chart is the supported install (`DEPLOYMENT.md`). Its current defaults 
 
 HPA in `templates/scrapy-hpa.yaml` scales on CPU and memory utilization. It does not scale on `redis_queue_length`. `QueueBacklog` tells a person to scale the consuming stage or look for a stall. Raising replicas does not raise Redis `maxmemory`. One Redis (chart replica 1, or the single external primary) holds every seen-set and the JS queue.
 
-`scrapyApp.env.SCOUT_INSTANCES` is `"8"`. That is a configured env value, not a measured replica requirement.
+`scrapyApp.env.SCOUT_INSTANCES` is `"1"` (was `"8"` before #1617). It is a configured env value, not a measured replica requirement.
 
 ## Delta growth per day
 
