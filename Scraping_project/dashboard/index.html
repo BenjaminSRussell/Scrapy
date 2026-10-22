@@ -435,6 +435,12 @@
             gap: 0.75rem;
         }
         .stage-drilldown-header .card-title { margin: 0; }
+        /* #404: first-run wizard */
+        .first-run-checks { list-style: none; padding: 0; margin: 0 0 12px; }
+        .first-run-check { padding: 4px 0; }
+        .first-run-check.down strong { text-decoration: underline; }
+        .first-run-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+        .first-run-wizard[hidden] { display: none; }
         #stage-drilldown-close {
             min-height: 44px;
             min-width: 44px;
@@ -1493,6 +1499,19 @@
         <div id="metrics-flood-banner" class="metrics-flood-banner" role="status" aria-live="off" hidden>
             <span id="metrics-flood-text">Metrics flood: charts paused. Showing summary counters only.</span>
         </div>
+        <!-- #404: first-run wizard. app.js shows it only until the server records completion. -->
+        <section id="first-run-wizard" class="card first-run-wizard" aria-labelledby="first-run-title" hidden>
+            <h2 class="card-title" id="first-run-title">Set up the Control Center</h2>
+            <p>Confirm the services are up, load sample seeds, then open Grafana for analytics.</p>
+            <ul id="first-run-checks" class="first-run-checks" aria-live="polite"></ul>
+            <div class="first-run-actions">
+                <button type="button" class="btn" id="first-run-recheck">Re-check services</button>
+                <button type="button" class="btn" id="first-run-load-seeds">Load sample seeds</button>
+                <a class="btn" id="first-run-grafana" href="http://localhost:3000/" target="_blank" rel="noopener noreferrer">Open Grafana</a>
+                <button type="button" class="btn" id="first-run-finish">Finish setup</button>
+            </div>
+            <p id="first-run-status" class="first-run-status" role="status"></p>
+        </section>
         <div class="tabs">
             <nav class="tab-buttons-wrap" aria-label="Dashboard sections"><div class="tab-buttons" role="tablist" aria-label="Dashboard sections">
                 <button type="button" class="tab-button active" data-tab="overview" role="tab" id="tabbtn-overview" aria-controls="tab-overview" aria-selected="true" tabindex="0"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18M7 16v-5M12 16V8M17 16v-3"/></svg> Overview</button>

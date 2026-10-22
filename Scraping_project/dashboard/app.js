@@ -2064,6 +2064,88 @@ function applyGrafanaLink() {
     if (shown) shown.textContent = home;
 }
 
+/** #404: first-run checklist. Built with textContent only; service details are untrusted text. */
+function renderFirstRunChecks(checks) {
+    const list = document.getElementById('first-run-checks');
+    if (!list) return;
+    list.replaceChildren(...checks.map(check => {
+        const item = document.createElement('li');
+        item.className = check.ok ? 'first-run-check ok' : 'first-run-check down';
+        const name = document.createElement('strong');
+        name.textContent = check.name;
+        const state = document.createElement('span');
+        state.textContent = check.ok ? ' healthy' : ' not reachable';
+        const detail = document.createElement('small');
+        detail.textContent = ` (${check.detail || 'no detail'})`;
+        item.append(name, state, detail);
+        return item;
+    }));
+}
+
+function setFirstRunStatus(text) {
+    const status = document.getElementById('first-run-status');
+    if (status) status.textContent = text;
+}
+
+async function refreshFirstRunChecks() {
+    try {
+        const res = await fetch('/api/first-run', { cache: 'no-store' });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const state = await res.json();
+        renderFirstRunChecks(state.checks || []);
+        return state;
+    } catch (err) {
+        setFirstRunStatus(`Could not check services: ${err.message}`);
+        return null;
+    }
+}
+
+async function postFirstRun(path) {
+    const res = await fetch(path, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{}',
+    });
+    return { status: res.status, body: await res.json().catch(() => ({})) };
+}
+
+/** #404: wizard shows once; completion is recorded server-side under data/config/. */
+async function setupFirstRunWizard() {
+    const wizard = document.getElementById('first-run-wizard');
+    if (!wizard) return;
+    const state = await refreshFirstRunChecks();
+    if (!state || state.completed) return;
+    wizard.hidden = false;
+    const grafana = document.getElementById('first-run-grafana');
+    if (grafana) grafana.href = grafanaHomeUrl(window.__CC_GRAFANA_URL__);
+
+    document.getElementById('first-run-recheck').addEventListener('click', () => {
+        setFirstRunStatus('Checking services...');
+        refreshFirstRunChecks().then(() => setFirstRunStatus(''));
+    });
+    document.getElementById('first-run-load-seeds').addEventListener('click', async () => {
+        setFirstRunStatus('Loading sample seeds...');
+        try {
+            const { body } = await postFirstRun('/api/first-run/sample-seeds');
+            setFirstRunStatus(body.failed && body.failed.length
+                ? `Loaded ${body.added || 0} sample seeds; ${body.failed.length} failed.`
+                : `Loaded ${body.added || 0} sample seeds.`);
+        } catch (err) {
+            setFirstRunStatus(`Sample seed load failed: ${err.message}`);
+        }
+    });
+    document.getElementById('first-run-finish').addEventListener('click', async () => {
+        try {
+            const { status } = await postFirstRun('/api/first-run/complete');
+            if (status !== 200) throw new Error(`HTTP ${status}`);
+            wizard.hidden = true;
+            addActivityLogItem('success', 'First-run setup complete');
+        } catch (err) {
+            setFirstRunStatus(`Could not save setup state: ${err.message}`);
+        }
+    });
+}
+
 function initialize() {
     console.log('Initializing Pipeline Control Center...');
 
@@ -2076,6 +2158,7 @@ function initialize() {
     }
     renderHealthHistory();
     applyGrafanaLink();
+    setupFirstRunWizard();
     renderConnectionPopover();
     setupTabs();
     setupActivitySearch();
