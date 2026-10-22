@@ -1,0 +1,15 @@
+{
+  "checksum": null,
+  "discovered": [
+    "https://www.uconn.edu/",
+    "https://www.uconn.edu/academics/",
+    "https://www.uconn.edu/admissions/",
+    "https://www.uconn.edu/news/",
+    "https://www.uconn.edu/research/"
+  ],
+  "discovery_source": "rustmapper",
+  "error": null,
+  "job_id": "job-686",
+  "site": "https://www.uconn.edu/",
+  "status": "success"
+}

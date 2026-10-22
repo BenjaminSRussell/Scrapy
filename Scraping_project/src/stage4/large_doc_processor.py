@@ -8,11 +8,13 @@ from tenacity import retry, retry_if_not_exception_type, stop_after_attempt, wai
 
 from src.stage4.pdf_sandbox import PdfQuarantined, extract_pdf_text
 from src.utils.delta import get_delta
+from src.utils.http_identity import HttpPolicy
 from src.utils.metric_labels import (
     STAGE4_HTTP_FAILURE_LABELS,
     STAGE4_HTTP_REQUEST_LABELS,
     labels_for,
 )
+from src.utils.ssrf import SSRFBlocked, httpx_request_guard
 
 # Stage 4 HTTP metrics. These were imported from monitoring.metrics_exporter,
 # which never defined them (it reports via StatsD), so the import always failed
@@ -93,9 +95,11 @@ class LargeDocProcessor:
         validate_chunking(self.CHUNK_SIZE, self.OVERLAP)
 
         self.http_client = httpx.Client(
-            headers={"User-Agent": "MyScraper/1.0 (Educational Research Bot)"},
+            headers=HttpPolicy.from_settings().headers(),  # #1629: the configured User-Agent, not a hard-coded one
             timeout=httpx.Timeout(30.0),
             follow_redirects=True,
+            # #1514: every hop, redirects included, passes the SSRF guard before connecting.
+            event_hooks={"request": [httpx_request_guard("stage4")]},
         )
 
     def __del__(self):
@@ -121,10 +125,11 @@ class LargeDocProcessor:
             raise
 
     # A quarantined PDF (#445) is deterministic: retrying would just OOM/time out again.
+    # An SSRF refusal (#1514) is policy, not a transient failure: never retried either.
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=2, max=10),
-        retry=retry_if_not_exception_type(PdfQuarantined),
+        retry=retry_if_not_exception_type((PdfQuarantined, SSRFBlocked)),
     )
     def _fetch_content(self, url: str, is_pdf: bool = False) -> tuple[str, str]:
         try:
@@ -168,7 +173,7 @@ class LargeDocProcessor:
                 logger.warning(f"Unsupported content type: {content_type} for {url}")
                 return "", "unknown"
 
-        except PdfQuarantined:
+        except (PdfQuarantined, SSRFBlocked):
             raise
         except httpx.HTTPStatusError as e:
             if PROMETHEUS_AVAILABLE and stage4_http_failures_total:

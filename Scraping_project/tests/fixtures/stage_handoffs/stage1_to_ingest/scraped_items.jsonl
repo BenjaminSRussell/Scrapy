@@ -1,0 +1,8 @@
+{"url": "https://www.uconn.edu/admissions/", "scraped_at_utc": "2026-10-07T12:00:00Z", "spider_name": "scout", "title": "Admissions", "content": "Apply to UConn.", "pipeline_version": "1.0"}
+{"url": "https://www.uconn.edu/news/", "scraped_at_utc": "2026-10-07T12:00:01Z", "spider_name": "sitemap_parser"}
+{"url": "https://www.uconn.edu/academics/", "scraped_at_utc": "2026-10-07T12:00:02Z", "spider": "scout", "title": "Academics"}
+{"url": "", "scraped_at_utc": "2026-10-07T12:00:03Z", "spider_name": "scout"}
+{"url": "https://www.uconn.edu/research/", "scraped_at_utc": 1791374403, "spider_name": "scout"}
+{"url": "https://www.uconn.edu/library/", "scraped_at_utc": "2026-10-07T12:00:05Z", "spider_name": "   "}
+{"url": null, "scraped_at_utc": "2026-10-07T12:00:06Z", "spider_name": ""}
+{"url": "https://www.uconn.edu/broken", "scraped_at_utc": "2026-10-07T12:00:07Z", "spider_name": "scout"

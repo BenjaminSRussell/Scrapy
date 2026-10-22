@@ -25,6 +25,7 @@ import http.server
 import json
 import math
 import os
+import socket
 import socketserver
 import subprocess
 import sys
@@ -32,6 +33,7 @@ import threading
 import time
 import urllib.error
 import urllib.request
+from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
@@ -83,6 +85,14 @@ UPSTREAM_MAX_BYTES = 8 * 1024 * 1024
 # is the only Redis-backed work queue (stage 2-4 queues are Delta tables / Kafka).
 DEFAULT_QUEUE_KEYS = ("js_spider:priority_queue",)
 _LENGTH_OPS = {"list": "llen", "zset": "zcard", "set": "scard", "stream": "xlen", "hash": "hlen"}
+# #404: first-run wizard. The completion flag sits under data/config/ so it survives
+# restarts; start.py reads the same path to decide whether to point operators here.
+FIRST_RUN_FLAG = DASHBOARD_DIR.parent / "data" / "config" / "first_run.json"
+SAMPLE_SEED_FILE = DASHBOARD_DIR.parent / "data" / "raw" / "uconn_urls.csv"
+CLI_PATH = DASHBOARD_DIR.parent / "cli.py"
+SAMPLE_SEED_COUNT = 5
+SAMPLE_SEED_TIMEOUT = 120
+DEFAULT_PROMETHEUS_HEALTH_URL = "http://127.0.0.1:9090/-/healthy"
 
 
 def grafana_base_url(env=None) -> str:
@@ -94,6 +104,24 @@ def grafana_base_url(env=None) -> str:
     env = os.environ if env is None else env
     raw = (env.get("CC_GRAFANA_URL") or "").strip()
     return _clean_grafana_url(raw) or DEFAULT_GRAFANA_URL
+
+
+def alert_webhook_url(env=None) -> str | None:
+    """ALERT_WEBHOOK_URL when it is an http(s) URL with no userinfo, else None (#426)."""
+    env = os.environ if env is None else env
+    raw = (env.get("ALERT_WEBHOOK_URL") or "").strip()
+    if not raw or any(c.isspace() or ord(c) < 32 for c in raw):
+        return None
+    try:
+        parts = urlsplit(raw)
+        _ = parts.port
+    except ValueError:
+        return None
+    if parts.scheme not in ("http", "https") or not parts.hostname:
+        return None
+    if parts.username is not None or parts.password is not None:
+        return None
+    return raw
 
 
 def _clean_grafana_url(raw: str) -> str:
@@ -295,6 +323,7 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
     redis_factory = staticmethod(_redis_from_env)
     queue_keys: tuple[str, ...] | None = None
     grafana_url: str | None = None
+    alert_webhook: str | None = None
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(self.root), **kwargs)
@@ -311,6 +340,7 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         cls.upstream_timeout = _env_float(env, "CC_UPSTREAM_TIMEOUT", 4.0) or 4.0
         cls.queue_keys = queue_keys(env)
         cls.grafana_url = grafana_base_url(env)
+        cls.alert_webhook = alert_webhook_url(env)
 
     def _cfg(self):
         if self.auth is None:
@@ -343,7 +373,7 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             self.send_header("Access-Control-Allow-Origin", origin)
             self.send_header("Vary", "Origin")
         if self.cors_origins:
-            self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
+            self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
             self.send_header("Access-Control-Allow-Headers", "Authorization, Content-Type")
         self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
         self.send_header("Content-Security-Policy", self.csp or build_csp({}))
@@ -420,7 +450,131 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             return
         self._send_json(200, {"ok": True, "queues": queues, "checked_at": time.time()})
 
-    API_ROUTES = {"/api/metrics": "_api_metrics", "/api/health": "_api_health", "/api/queues": "_api_queues"}
+    def _api_alert_test(self) -> None:
+        # #426: a JSON content type is required. A cross-site form post cannot set it
+        # without a CORS preflight, so it cannot fire this request.
+        if not (self.headers.get("Content-Type") or "").lower().startswith("application/json"):
+            self._send_json(415, {"ok": False, "error": "send Content-Type: application/json"})
+            return
+        if not self.alert_webhook:
+            self._send_json(409, {"ok": False, "error": "no webhook URL configured (ALERT_WEBHOOK_URL)"})
+            return
+        payload = {
+            "event": "job.test",
+            "job": "test-notification",
+            "stage": "none",
+            "last_error": None,
+            "sent_at": datetime.now().astimezone().isoformat(),
+            "text": "Test notification from the Pipeline Control Center",
+        }
+        request = urllib.request.Request(
+            self.alert_webhook,
+            data=json.dumps(payload).encode("utf-8"),
+            method="POST",
+            headers={"Content-Type": "application/json"},
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=self.upstream_timeout) as response:
+                status = response.status
+        except Exception as e:  # DNS, refused, timeout, HTTP error status: report the class only
+            self._send_json(502, {"ok": False, "error": f"webhook unavailable: {type(e).__name__}"})
+            return
+        delivered = 200 <= status < 300
+        self._send_json(200 if delivered else 502, {"ok": delivered, "status": status})
+
+    API_ROUTES = {"/api/metrics": "_api_metrics", "/api/health": "_api_health", "/api/queues": "_api_queues",
+                  "/api/first-run": "_api_first_run"}
+
+    # #404: first-run wizard state and actions.
+    first_run_flag = FIRST_RUN_FLAG
+    seed_file = SAMPLE_SEED_FILE
+    cli_path = CLI_PATH
+
+    @staticmethod
+    def _probe_http(url: str) -> tuple[bool, str]:
+        try:
+            with urllib.request.urlopen(url, timeout=2) as resp:  # noqa: S310 - operator-configured URL
+                return 200 <= resp.status < 300, f"HTTP {resp.status}"
+        except (OSError, ValueError) as e:
+            return False, type(e).__name__
+
+    def _first_run_checks(self) -> list[dict]:
+        checks = []
+        try:
+            self.redis_factory().ping()
+            checks.append({"name": "redis", "ok": True, "detail": "PING ok"})
+        except Exception as e:  # missing package, refused, auth: report, never raise
+            checks.append({"name": "redis", "ok": False, "detail": type(e).__name__})
+        host = os.environ.get("POSTGRES_HOST", "localhost")
+        try:
+            port = int(os.environ.get("POSTGRES_PORT", 5432))
+            with socket.create_connection((host, port), timeout=2):
+                checks.append({"name": "postgres", "ok": True, "detail": f"{host}:{port} accepting connections"})
+        except (OSError, ValueError) as e:
+            checks.append({"name": "postgres", "ok": False, "detail": type(e).__name__})
+        data_dir = DASHBOARD_DIR.parent / "data"
+        writable = data_dir.is_dir() and os.access(data_dir, os.W_OK)
+        checks.append({"name": "delta", "ok": writable,
+                       "detail": "data/ writable" if writable else "data/ missing or read-only"})
+        grafana = self.grafana_url or grafana_base_url()
+        ok, detail = self._probe_http(grafana.rstrip("/") + "/api/health")
+        checks.append({"name": "grafana", "ok": ok, "detail": detail})
+        prom = os.environ.get("PROMETHEUS_HEALTH_URL", DEFAULT_PROMETHEUS_HEALTH_URL)
+        ok, detail = self._probe_http(prom)
+        checks.append({"name": "prometheus", "ok": ok, "detail": detail})
+        return checks
+
+    def _api_first_run(self) -> None:
+        self._send_json(200, {
+            "ok": True,
+            "completed": self.first_run_flag.exists(),
+            "checks": self._first_run_checks(),
+            "sample_seed_count": SAMPLE_SEED_COUNT,
+        })
+
+    def _require_json_post(self) -> bool:
+        # A JSON Content-Type is not a "simple" request, so a cross-site page cannot
+        # trigger these POSTs without a CORS preflight that the origin check denies.
+        if (self.headers.get("Content-Type") or "").split(";")[0].strip() != "application/json":
+            self._send_json(415, {"ok": False, "error": "Content-Type must be application/json"})
+            return False
+        return True
+
+    def _api_first_run_complete(self) -> None:
+        if not self._require_json_post():
+            return
+        self.first_run_flag.parent.mkdir(parents=True, exist_ok=True)
+        self.first_run_flag.write_text(json.dumps({"completed_at": time.time()}) + "\n", encoding="utf-8")
+        self._send_json(200, {"ok": True, "completed": True})
+
+    def _api_first_run_sample_seeds(self) -> None:
+        if not self._require_json_post():
+            return
+        try:
+            urls = [line.strip() for line in self.seed_file.read_text(encoding="utf-8").splitlines()]
+        except OSError as e:
+            self._send_json(500, {"ok": False, "error": f"seed file unreadable: {type(e).__name__}"})
+            return
+        sample = [u for u in urls if u.startswith(("http://", "https://"))][:SAMPLE_SEED_COUNT]
+        added, failed = 0, []
+        for url in sample:
+            # Same path as `python cli.py seeds add`; argv is a list, never a shell string.
+            cmd = [sys.executable, str(self.cli_path), "seeds", "add", url,
+                   "--note", "first-run sample", "--actor", "first-run"]
+            try:
+                done = subprocess.run(cmd, capture_output=True, text=True, timeout=SAMPLE_SEED_TIMEOUT, check=False)
+            except (OSError, subprocess.SubprocessError) as e:
+                failed.append({"url": url, "error": type(e).__name__})
+                continue
+            if done.returncode == 0:
+                added += 1
+            else:
+                failed.append({"url": url, "error": (done.stderr or "").strip()[-200:] or f"exit {done.returncode}"})
+        self._send_json(200 if not failed else 207, {"ok": not failed, "added": added, "failed": failed})
+
+    POST_ROUTES = {"/api/alerts/test": "_api_alert_test",
+                   "/api/first-run/complete": "_api_first_run_complete",
+                   "/api/first-run/sample-seeds": "_api_first_run_sample_seeds"}
 
     def do_OPTIONS(self):
         self._cfg()
@@ -445,6 +599,15 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         if not self._guard():
             return
         return super().do_HEAD()
+
+    def do_POST(self):
+        if not self._guard():
+            return
+        route = urlsplit(self.path).path
+        if route in self.POST_ROUTES:
+            getattr(self, self.POST_ROUTES[route])()
+            return
+        self.send_error(404, "Not Found")
 
     def do_GET(self):
         if not self._guard():

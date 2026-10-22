@@ -75,7 +75,8 @@ spec:
             command:
             - /bin/sh
             - -c
-            - python -c "import os,socket; socket.create_connection((os.environ.get('POSTGRES_HOST','localhost'), int(os.environ.get('POSTGRES_PORT','5432'))), 5)"
+            # #561: a full lake volume fails readiness (pod leaves rotation, is not restarted)
+            - python -c "import os,socket; socket.create_connection((os.environ.get('POSTGRES_HOST','localhost'), int(os.environ.get('POSTGRES_PORT','5432'))), 5)" && python -m src.utils.probe ready-disk
           initialDelaySeconds: 30
           periodSeconds: 10
           timeoutSeconds: 5
@@ -175,7 +176,8 @@ spec:
             command:
             - /bin/sh
             - -c
-            - python -c "import os,socket; socket.create_connection((os.environ.get('POSTGRES_HOST','localhost'), int(os.environ.get('POSTGRES_PORT','5432'))), 5)"
+            # #561: a full lake volume fails readiness (pod leaves rotation, is not restarted)
+            - python -c "import os,socket; socket.create_connection((os.environ.get('POSTGRES_HOST','localhost'), int(os.environ.get('POSTGRES_PORT','5432'))), 5)" && python -m src.utils.probe ready-disk
           initialDelaySeconds: 30
           periodSeconds: 10
           timeoutSeconds: 5
@@ -276,7 +278,8 @@ spec:
             command:
             - /bin/sh
             - -c
-            - python -c "import os,socket; socket.create_connection((os.environ.get('POSTGRES_HOST','localhost'), int(os.environ.get('POSTGRES_PORT','5432'))), 5)"
+            # #561: a full lake volume fails readiness (pod leaves rotation, is not restarted)
+            - python -c "import os,socket; socket.create_connection((os.environ.get('POSTGRES_HOST','localhost'), int(os.environ.get('POSTGRES_PORT','5432'))), 5)" && python -m src.utils.probe ready-disk
           initialDelaySeconds: 30
           periodSeconds: 10
           timeoutSeconds: 5

@@ -6,7 +6,8 @@ One Compose file (`docker-compose.yml`) plus an observability overlay. The obsol
 
 | Profile | Services |
 |---------|----------|
-| `core` | redis, scraper, stage1–stage3 workers, Postgres (least-privilege `scrapy_app` role) |
+| `core` | redis, scraper (the one Stage 1 owner; one pipeline pass, then exits 0), stage2–stage3 workers, Postgres (least-privilege `scrapy_app` role) |
+| `stage1-continuous` | stage1-worker only: an uncapped Scout run. Not started by `core`. Use it instead of `scraper`, not with it, or Stage 1 runs twice |
 | `monitoring` | Prometheus, Grafana, redis-exporter, postgres-exporter, ops dashboard (`dashboard/serve.py` on `127.0.0.1:8080`). Redis and Postgres are on this profile too, because the exporters depend on them |
 | `streaming` | Kafka (KRaft, no ZooKeeper). Postgres is also on `core` |
 | `ml`, `full` | `stage4-worker` only (torch / OCR image). Redis is on these profiles too so the worker can start |

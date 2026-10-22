@@ -6,6 +6,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.lakehouse.lakehouse_manager import get_delta_manager
+from src.lakehouse.seed_preflight import confirm_seed_load, select_seeds
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -13,7 +14,7 @@ logger = logging.getLogger(__name__)
 def _hash_url(url: str) -> str:
     return hashlib.sha256(url.encode("utf-8")).hexdigest()
 
-def load_seeds():
+def load_seeds(sample: int | None = None, assume_yes: bool = False):
     seed_file_path = Path(__file__).parent.parent / "data" / "raw" / "uconn_urls.csv"
 
     try:
@@ -84,6 +85,12 @@ def load_seeds():
 
     if new_urls:
         logger.info(f"Found {len(new_urls)} new URLs to add ({duplicate_count} duplicates skipped).")
+        keep = confirm_seed_load(
+            len(new_urls), sample=sample, assume_yes=assume_yes, interactive=sys.stdin.isatty()
+        )
+        if keep is None:
+            sys.exit(1)
+        new_urls = select_seeds(new_urls, keep)
         try:
             delta_manager.write("seed_urls", new_urls, mode="append", async_write=False)
             logger.info(
@@ -98,4 +105,10 @@ def load_seeds():
             logger.warning("No valid seed URLs found in the seed file.")
 
 if __name__ == "__main__":
-    load_seeds()
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Append UConn seed URLs from data/raw/uconn_urls.csv")
+    parser.add_argument("--yes", "-y", action="store_true", help="Load all new URLs without the large-load prompt (#453)")
+    parser.add_argument("--sample", type=int, default=None, metavar="N", help="Load only N random new URLs (#453)")
+    cli_args = parser.parse_args()
+    load_seeds(sample=cli_args.sample, assume_yes=cli_args.yes)
