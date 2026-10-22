@@ -8,6 +8,7 @@ Usage (exit code 0 = healthy, 1 = unhealthy)::
 
     python -m src.utils.probe alive <cmdline-substring>
     python -m src.utils.probe ready-redis            # REDIS_HOST / REDIS_PORT
+    python -m src.utils.probe ready-disk             # lake volume watermarks (#561)
     python -m src.utils.probe ready-tcp <host> <port>
     python -m src.utils.probe container              # Docker HEALTHCHECK (#542)
 
@@ -80,6 +81,25 @@ def redis_ready(timeout: float = 3.0) -> bool:
     return reply.startswith(b"+PONG") or reply.startswith(b"-NOAUTH")
 
 
+def disk_ready(path: str | None = None) -> tuple[bool, str]:
+    """Lake volume is above its free-space and inode watermarks (#561).
+
+    Readiness, not liveness: a full disk should take the pod out of rotation
+    until space is reclaimed, not restart it. The same watermarks gate writes.
+    """
+    from src.core.config import get_config
+    from src.utils.disk_guard import check_volume
+
+    config = get_config()
+    lake = path or os.getenv("DELTA_LAKE_PATH") or config.get("delta_lake.base_path", "./data/delta_lake")
+    status = check_volume(
+        lake,
+        float(config.get("delta_lake.disk_min_free_percent", 5)),
+        float(config.get("delta_lake.disk_min_free_inodes_percent", 5)),
+    )
+    return status.shortfall is None, status.shortfall or "ok"
+
+
 def pid1_running(proc: Path = PROC) -> bool:
     """PID 1 exists and is not a zombie/dead (``/proc/1/stat`` state field)."""
     try:
@@ -110,6 +130,10 @@ def main(argv: list[str] | None = None) -> int:
         ok = process_alive(args[1])
     elif args == ["ready-redis"]:
         ok = redis_ready()
+    elif args == ["ready-disk"]:
+        ok, why = disk_ready()
+        if not ok:
+            print(f"not ready: {why}", file=sys.stderr)
     elif len(args) == 3 and args[0] == "ready-tcp":
         ok = tcp_ready(args[1], int(args[2]))
     elif args == ["container"]:

@@ -865,6 +865,28 @@ function checkMilestones(metrics) {
     milestonesPrimed = true;
 }
 
+// #412: job progress strip. Dashes until a series is reported; no zeros are invented.
+function renderJobProgress(metrics, rates) {
+    const root = document.getElementById('job-progress');
+    if (!root) return;
+    const p = jobProgress(metrics, rates);
+    const fmt = v => (v === null ? '—' : formatNumber(v));
+    root.dataset.state = p.state;
+    const badge = document.getElementById('job-progress-badge');
+    const labels = { empty: 'Waiting', running: 'Running', idle: 'Idle' };
+    if (badge) badge.textContent = labels[p.state];
+    const status = document.getElementById('job-progress-status');
+    if (status) {
+        status.textContent = p.state === 'empty'
+            ? 'Metrics not reported yet. Values appear once the exporter reports this job.'
+            : p.state === 'running' ? 'Job running. Refreshes with each metrics poll.' : 'No active throughput in the last sample.';
+    }
+    const set = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
+    set('job-progress-urls-min', fmt(p.state === 'empty' ? null : p.urlsPerMinute));
+    set('job-progress-queue', fmt(p.queueDepth));
+    p.stages.forEach((s, i) => set(`job-progress-stage${i + 1}`, fmt(s.total)));
+}
+
 function updateDashboard(metrics) {
     checkMilestones(metrics);
     if (metricsWasDown) {
@@ -884,6 +906,7 @@ function updateDashboard(metrics) {
     const s4Compression = metrics['stage4_avg_compression_ratio'] || 0;
 
     const rates = calculateRates(metrics);
+    renderJobProgress(metrics, rates);
 
     // topbar status is owned by setConnectionStatus (#945)
     setMetricText('topbar-urls', formatNumber(s1Discovered));
@@ -1211,6 +1234,7 @@ async function fetchMetrics() {
             const v = el.querySelector('.health-value');
             if (v) v.textContent = 'Unreachable';
         });
+        renderJobProgress(null, null);
         const delta = document.getElementById('delta-tables');
         if (delta) delta.textContent = '—';
         if (typeof setHealthTile === 'function') {
@@ -1718,6 +1742,31 @@ function hideFetchError() {
     if (banner && !banner.hidden) banner.hidden = true;
 }
 
+// #446: copy the diagnose command shown under the error. If the clipboard is
+// unavailable or refuses, the status line says so and repeats the command.
+function setupCopyDiagnose() {
+    const btn = document.getElementById('copy-diagnose');
+    if (!btn) return;
+    btn.addEventListener('click', async () => {
+        const command = (document.getElementById('diagnose-command') || {}).textContent || '';
+        const status = document.getElementById('copy-diagnose-status');
+        let copied = false;
+        try {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                await navigator.clipboard.writeText(command.trim());
+                copied = true;
+            }
+        } catch (_) {
+            copied = false;
+        }
+        if (status) {
+            status.textContent = copied
+                ? 'Diagnose command copied.'
+                : `Could not copy. Run this instead: ${command.trim()}`;
+        }
+    });
+}
+
 // #351: Stale badge once the last good sample is older than 3 refresh intervals.
 let staleShown = false;
 function renderStale() {
@@ -1974,7 +2023,7 @@ function setupJobStarted() {
 }
 
 // #426: the browser cannot POST to the webhook (CORS), so the test goes through
-// serve.py, which holds ALERT_WEBHOOK_URL and sends it.
+// serve.py, which holds the webhook URL env var and sends it.
 const ALERT_TEST_URL = '/api/alerts/test';
 
 async function sendAlertTest() {
@@ -2004,6 +2053,35 @@ async function sendAlertTest() {
 function setupAlertTest() {
     const btn = document.getElementById('alert-test-send');
     if (btn) btn.addEventListener('click', sendAlertTest);
+}
+
+// #460: estimate the JS render budget from the operator's inputs. Nothing is
+// saved or sent; the spider reads config.yml / env at its own startup.
+function renderJsBudget() {
+    const preset = document.getElementById('js-budget-preset');
+    const pages = document.getElementById('js-budget-pages');
+    const mb = document.getElementById('js-budget-mb');
+    const result = document.getElementById('js-budget-result');
+    const snippet = document.getElementById('js-budget-snippet');
+    if (!preset || !pages || !mb || !result) return null;
+    const view = jsRenderBudget(preset.value, pages.value, mb.value);
+    result.textContent = view.message;
+    result.classList.toggle('is-warning', view.over);
+    if (snippet) snippet.textContent = view.snippet;
+    return view;
+}
+
+function setupJsBudget() {
+    const preset = document.getElementById('js-budget-preset');
+    const pages = document.getElementById('js-budget-pages');
+    if (!preset || !pages) return;
+    preset.addEventListener('change', () => {
+        pages.value = String(JS_PRESET_PAGES[preset.value] || JS_PRESET_PAGES.default);
+        renderJsBudget();
+    });
+    pages.addEventListener('input', renderJsBudget);
+    document.getElementById('js-budget-mb').addEventListener('input', renderJsBudget);
+    renderJsBudget();
 }
 
 function applyEnvBadge() {
@@ -2041,6 +2119,91 @@ function applyGrafanaLink() {
     link.href = home;
     const shown = document.getElementById('grafana-analytics-base');
     if (shown) shown.textContent = home;
+    // #412: the job progress strip links to the same Grafana home.
+    const jobLink = document.getElementById('job-progress-grafana');
+    if (jobLink) jobLink.href = home;
+}
+
+/** #404: first-run checklist. Built with textContent only; service details are untrusted text. */
+function renderFirstRunChecks(checks) {
+    const list = document.getElementById('first-run-checks');
+    if (!list) return;
+    list.replaceChildren(...checks.map(check => {
+        const item = document.createElement('li');
+        item.className = check.ok ? 'first-run-check ok' : 'first-run-check down';
+        const name = document.createElement('strong');
+        name.textContent = check.name;
+        const state = document.createElement('span');
+        state.textContent = check.ok ? ' healthy' : ' not reachable';
+        const detail = document.createElement('small');
+        detail.textContent = ` (${check.detail || 'no detail'})`;
+        item.append(name, state, detail);
+        return item;
+    }));
+}
+
+function setFirstRunStatus(text) {
+    const status = document.getElementById('first-run-status');
+    if (status) status.textContent = text;
+}
+
+async function refreshFirstRunChecks() {
+    try {
+        const res = await fetch('/api/first-run', { cache: 'no-store' });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const state = await res.json();
+        renderFirstRunChecks(state.checks || []);
+        return state;
+    } catch (err) {
+        setFirstRunStatus(`Could not check services: ${err.message}`);
+        return null;
+    }
+}
+
+async function postFirstRun(path) {
+    const res = await fetch(path, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{}',
+    });
+    return { status: res.status, body: await res.json().catch(() => ({})) };
+}
+
+/** #404: wizard shows once; completion is recorded server-side under data/config/. */
+async function setupFirstRunWizard() {
+    const wizard = document.getElementById('first-run-wizard');
+    if (!wizard) return;
+    const state = await refreshFirstRunChecks();
+    if (!state || state.completed) return;
+    wizard.hidden = false;
+    const grafana = document.getElementById('first-run-grafana');
+    if (grafana) grafana.href = grafanaHomeUrl(window.__CC_GRAFANA_URL__);
+
+    document.getElementById('first-run-recheck').addEventListener('click', () => {
+        setFirstRunStatus('Checking services...');
+        refreshFirstRunChecks().then(() => setFirstRunStatus(''));
+    });
+    document.getElementById('first-run-load-seeds').addEventListener('click', async () => {
+        setFirstRunStatus('Loading sample seeds...');
+        try {
+            const { body } = await postFirstRun('/api/first-run/sample-seeds');
+            setFirstRunStatus(body.failed && body.failed.length
+                ? `Loaded ${body.added || 0} sample seeds; ${body.failed.length} failed.`
+                : `Loaded ${body.added || 0} sample seeds.`);
+        } catch (err) {
+            setFirstRunStatus(`Sample seed load failed: ${err.message}`);
+        }
+    });
+    document.getElementById('first-run-finish').addEventListener('click', async () => {
+        try {
+            const { status } = await postFirstRun('/api/first-run/complete');
+            if (status !== 200) throw new Error(`HTTP ${status}`);
+            wizard.hidden = true;
+            addActivityLogItem('success', 'First-run setup complete');
+        } catch (err) {
+            setFirstRunStatus(`Could not save setup state: ${err.message}`);
+        }
+    });
 }
 
 function initialize() {
@@ -2055,6 +2218,7 @@ function initialize() {
     }
     renderHealthHistory();
     applyGrafanaLink();
+    setupFirstRunWizard();
     renderConnectionPopover();
     setupTabs();
     setupActivitySearch();
@@ -2089,8 +2253,10 @@ function initialize() {
     if (manualBtn) manualBtn.addEventListener('click', requestRefresh);
     const retryBtn = document.getElementById('retry-fetch');
     if (retryBtn) retryBtn.addEventListener('click', requestRefresh);
+    setupCopyDiagnose();
     setupJobStarted();
     setupAlertTest();
+    setupJsBudget();
 
     restorePersistedActivityLog(); // #1029: before the fresh init line, so it stays newest
     addActivityLogItem('success', 'Pipeline Control Center initialized');

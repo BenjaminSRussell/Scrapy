@@ -73,7 +73,7 @@ cd Scrapy/Scraping_project
 python start.py
 ```
 
-`python start.py` sets Compose profiles `core` and `monitoring` (Redis, scraper, stage 1–3 workers, Postgres, Prometheus, Grafana) and waits for Postgres. It does not start Stage 4 (profiles `ml` / `full`), Kafka (`streaming`), or the OpenTelemetry overlay. The equivalent Compose command is in [COMPOSE.md](COMPOSE.md): `docker compose --profile core --profile monitoring up -d`. Add `--reset-delta` to wipe Delta tables and reload seeds. Stop with `python shutdown.py`.
+`python start.py` sets Compose profiles `core` and `monitoring` (Redis, scraper running one pipeline pass, stage 2–3 workers, Postgres, Prometheus, Grafana) and waits for Postgres. It does not start Stage 4 (profiles `ml` / `full`), Kafka (`streaming`), or the OpenTelemetry overlay. The equivalent Compose command is in [COMPOSE.md](COMPOSE.md): `docker compose --profile core --profile monitoring up -d`. Add `--reset-delta` to wipe Delta tables and reload seeds. Stop with `python shutdown.py`.
 
 Grafana is at http://localhost:3000 (user `admin`; password is `GRAFANA_ADMIN_PASSWORD` in `.env`, default `admin` for local dev only). Full detail, other domains, and resuming after a crash: [Running guide](docs/guides/RUNNING.md).
 
@@ -338,6 +338,9 @@ Stage 1 obeys robots.txt by default (#186). `ROBOTSTXT_OBEY` is on in `src/setti
 - **Missing robots.txt** (404) or a fetch error allows everything, matching Scrapy's behaviour.
 - **Retry-After** (#188). On a 429 or 503 with `Retry-After` (seconds or an HTTP date), `RetryAfterMiddleware` (priority 560, so it runs ahead of Scrapy's RetryMiddleware) raises that host's download delay to the wait, capped at `RETRY_AFTER_MAX_DELAY` (120s). The retry and every other request to the host wait at least that long, and the old delay is restored afterwards. Waits are counted in `scrapy_retry_after_waits_total{spider}` and `scrapy_retry_after_seconds_total{spider}`.
 - **Opting out** is only for sites you own: `ROBOTSTXT_OBEY=false`, `scrapy.robotstxt_obey: false`, or `stage1.spiders.<name>.robotstxt_obey: false`.
+- **Stage 2** applies the same policy (#1629, `src/utils/robots_gate.py`). It fetches robots.txt once per host, drops Disallowed URLs before any cache lookup or request, and ends them as `robots_disallowed` (terminal, not retried) counted in `stage2_robots_disallowed_total`. Crawl-delay spaces Stage 2 requests to a host, capped at `ROBOTS_MAX_CRAWL_DELAY`. `ROBOTSTXT_OBEY=false` turns the Stage 2 gate off as it does for Stage 1.
+- **Stage 4** (large documents) sends the same User-Agent but does not yet check robots.txt or use the proxy pool.
+- **Identity.** Stages 1, 2 and 4 all send `scrapy.user_agent` / `USER_AGENT` (default `UConn-Discovery-Crawler/1.0`) on every request. Stage 2 and Stage 4 read it through `src/utils/http_identity.py`.
 
 ### Rate limits and per-domain concurrency
 
@@ -364,6 +367,7 @@ Stage 1 does not use a proxy unless you configure one (#198). `ProxyRotationMidd
 - **Rotation.** Requests round-robin through healthy proxies. HTTP 407, HTTP 429, or a download timeout quarantines that proxy and retries on the next healthy one. Credentials in the proxy URL are sent to the proxy but never logged or used as a metric label.
 - **No healthy proxy.** The download is dropped (`IgnoreRequest`) instead of going out from the crawler's own IP. It resumes when a quarantine expires.
 - **Metrics.** `scrapy_proxy_failures_total{spider,reason}` and crawl stats `proxy_rotation/failures`. `scrapy_proxy_quarantined{spider}` is how many proxies are in quarantine.
+- **Stage 2** (#1629) uses the same pool and settings. Each attempt takes the next healthy proxy, and a 407, 429 or timeout quarantines it. With every proxy quarantined, the URL is deferred and not fetched directly. Stage 4 does not use the pool yet.
 
 ### Soft-ban / captcha guard
 

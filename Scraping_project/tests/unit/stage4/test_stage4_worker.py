@@ -145,6 +145,21 @@ def test_write_failure_acks_nothing():
     assert delta.tables[QUEUE_TABLE][0]["status"] == "pending"
 
 
+def test_ssrf_refusal_quarantines_the_row_with_its_reason():  # #1514
+    from src.utils.ssrf import SSRFBlocked
+
+    class BlockingProcessor(FakeProcessor):
+        def _fetch_content(self, url: str, is_pdf: bool = False):
+            raise SSRFBlocked(url, "ip_loopback")
+
+    rec = Recorder()
+    proc = BlockingProcessor(rec, texts={}, summaries={})
+    delta = FakeDelta(rec, [_row("https://evil.test/report.pdf")])
+    assert asyncio.run(_worker(rec, proc, delta)._run_traced()) == 0
+    assert delta.tables[QUEUE_TABLE][0]["status"] == "quarantined:ssrf_blocked:ip_loopback"
+    assert all(c[0] != "write" for c in rec.calls)
+
+
 def test_queue_merge_failure_is_logged_not_raised(caplog):
     rec = Recorder()
     proc = FakeProcessor(rec, texts={"https://a/": "x" * 100}, summaries={"https://a/": "s"})

@@ -89,6 +89,79 @@ def test_redis_blip_keeps_last_known_state(r):
     assert sw.engaged() is True  # does not silently resume crawling
 
 
+def _boom(*args, **kwargs):
+    raise ConnectionError("redis down")
+
+
+def test_read_failure_blocks_when_closed_and_never_read(r):
+    sw = cg.KillSwitch(client=r, check_secs=0, on_error="closed")
+    r.hgetall = _boom
+    guard = cg.CrawlGuard(sw, cg.CrawlBudget(client=r))
+    assert guard.block_reason("stage2") == "kill_switch"
+
+
+def test_read_failure_fails_open_when_configured(r):
+    sw = cg.KillSwitch(client=r, check_secs=0, on_error="open")
+    r.hgetall = _boom
+    assert sw.engaged() is False
+
+
+def test_closed_mode_trusts_last_good_read_only_for_max_stale_secs(r):
+    clock = _Clock()
+    sw = cg.KillSwitch(client=r, check_secs=1, clock=clock, on_error="closed", max_stale_secs=5)
+    assert sw.engaged() is False  # last good read at t=0
+    r.hgetall = _boom
+    clock.t = 4
+    assert sw.engaged() is False  # still within max_stale_secs
+    clock.t = 6
+    assert sw.engaged() is True  # stale: fail closed
+    assert sw.state().source == "error"
+
+
+def test_invalid_on_error_is_rejected(r):
+    with pytest.raises(ValueError):
+        cg.KillSwitch(client=r, on_error="maybe")
+
+
+def test_budget_read_failure_blocks_when_closed(r):
+    guard = cg.CrawlGuard(cg.KillSwitch(client=r, check_secs=0), cg.CrawlBudget(client=r, max_requests_per_day=5))
+    r.mget = _boom
+    assert guard.block_reason("stage1") == "budget:redis_unavailable"
+
+
+def test_budget_block_clears_after_day_rollover_without_restart(r):
+    day = {"v": "20261020"}
+    clock = _Clock()
+    budget = cg.CrawlBudget(client=r, max_requests_per_day=1, day=lambda: day["v"])
+    guard = cg.CrawlGuard(cg.KillSwitch(client=r, check_secs=60, clock=clock), budget, clock=clock)
+    guard.charge(requests=1)
+    assert guard.block_reason("stage1") == "budget:daily_requests"
+    day["v"] = "20261021"  # rollover, no check interval elapsed
+    assert guard.block_reason("stage1") is None
+
+
+def test_failed_charges_are_reapplied_after_redis_recovers(r):
+    day = {"v": "20261020"}
+    real_pipeline = r.pipeline
+    down = [True]
+
+    def flaky_pipeline(*a, **k):
+        if down[0]:
+            raise ConnectionError("redis down")
+        return real_pipeline(*a, **k)
+
+    r.pipeline = flaky_pipeline
+    budget = cg.CrawlBudget(client=r, max_requests_per_day=2, day=lambda: day["v"])
+    guard = cg.CrawlGuard(cg.KillSwitch(client=r, check_secs=0), budget)
+    assert guard.charge(requests=1) is None
+    assert guard.charge(requests=1) is None  # both buffered, nothing written
+    assert r.get(f"{cg.BUDGET_PREFIX}:global:20261020:requests") is None
+
+    down[0] = False
+    assert guard.block_reason("stage1") == "budget:daily_requests"
+    assert budget.usage()["daily_requests"] == 2  # applied once, not doubled
+
+
 def test_daily_and_per_crawl_budgets(r):
     b = cg.CrawlBudget(client=r, max_requests_per_day=3, crawl_id="job1", per_crawl_max_bytes=1000)
     assert b.charge(requests=1, nbytes=100) is None

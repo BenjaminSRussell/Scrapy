@@ -26,6 +26,7 @@ import ipaddress
 import os
 import re
 import socket
+from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlsplit
 
@@ -288,3 +289,42 @@ def guarded_get(
         return response
     count_blocked(stage, "too_many_redirects")
     raise SSRFBlocked(current, "too_many_redirects")
+
+
+# --- #1514: httpx clients ------------------------------------------------------
+#
+# httpx runs ``request`` event hooks before every hop it sends, redirects
+# included, so one hook guards the initial URL and each Location: target
+# without the caller looping by hand. Stage 4 (sync) and the sitemap walker
+# (async) install these on their clients.
+
+
+def _check_hop(url: str, stage: str) -> None:
+    reason = ssrf_block_reason(url, resolve=True)
+    if reason is not None:
+        count_blocked(stage, reason)
+        raise SSRFBlocked(url, reason)
+
+
+def httpx_request_guard(stage: str) -> Callable[[Any], None]:
+    """Sync httpx ``event_hooks={"request": [...]}`` entry: refuses a blocked hop before it connects."""
+
+    def hook(request: Any) -> None:
+        _check_hop(str(request.url), stage)
+
+    return hook
+
+
+def async_httpx_request_guard(stage: str) -> Callable[[Any], Awaitable[None]]:
+    """Async twin of :func:`httpx_request_guard` for ``httpx.AsyncClient``."""
+
+    async def hook(request: Any) -> None:
+        _check_hop(str(request.url), stage)
+
+    return hook
+
+
+def host_allowlisted(host: str, allowed_hosts: str | None = None) -> bool:
+    """True when ``host`` (or its IP) is named in ``SSRF_ALLOWED_HOSTS``."""
+    name = host.rstrip(".").lower()
+    return _is_allowed(name, parse_ip_host(name), _allowlist(allowed_hosts))

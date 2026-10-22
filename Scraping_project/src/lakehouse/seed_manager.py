@@ -132,6 +132,20 @@ def _connect_depth_client() -> Any | None:
         return None
 
 
+def read_seed_queue_depth() -> int | None:
+    """ZCARD of the JS priority queue for the seed preflight (#453), or None when unreadable."""
+    if _offline_suite():
+        return None
+    client = _connect_depth_client()
+    if client is None:
+        return None
+    try:
+        return int(client.zcard(SEED_REDIS_DEPTH_KEY))
+    except Exception as exc:
+        logger.warning("[SeedManager] Redis depth read failed (%s)", exc)
+        return None
+
+
 def default_url_hasher(url: str) -> str:
     """SHA256[:16] of the canonical URL (#728), same as every other stage."""
     return url_hash(url)
@@ -359,6 +373,29 @@ class SeedManager:
             )
             if write_domain_urls is None:
                 write_domain_urls = write_uconn_urls
+        return self.add_seed_pairs(
+            ((url, source_url) for url in urls),
+            source_spider,
+            write_domain_urls=write_domain_urls,
+            enqueue_stage2=enqueue_stage2,
+        )
+
+    def add_seed_pairs(
+        self,
+        pairs: Iterable[tuple[str, str]],
+        source_spider: str,
+        *,
+        write_domain_urls: bool | None = None,
+        enqueue_stage2: bool = False,
+    ) -> dict[str, int]:
+        """
+        Like ``add_urls_to_seeds`` but each URL carries its own parent.
+
+        ``pairs`` is ``(url, source_url)``. Every row is written by one MERGE per
+        table, so a batch of N pages costs one seed MERGE, not N. Dedup and the
+        depth gate behave the same as ``add_urls_to_seeds``; the first source
+        seen for a url_hash wins.
+        """
         write_domain = self.write_domain_urls if write_domain_urls is None else bool(write_domain_urls)
 
         # Reject non-crawlable seeds (ftp:, javascript:, blanks, host-less, >2 KB)
@@ -368,15 +405,15 @@ class SeedManager:
         from src.utils.validation import url_rejection_reason
 
         rejected: dict[str, int] = {}
-        by_hash: dict[str, str] = {}
-        for raw in urls:
+        by_hash: dict[str, tuple[str, str]] = {}
+        for raw, source_url in pairs:
             candidate = raw.strip() if isinstance(raw, str) else raw
             reason = url_rejection_reason(candidate)
             if reason is not None:
                 rejected[reason] = rejected.get(reason, 0) + 1
                 continue
             canonical = canonical_or_raw(candidate)
-            by_hash.setdefault(self.url_hasher(canonical), canonical)
+            by_hash.setdefault(self.url_hasher(canonical), (canonical, source_url))
         n_rejected = sum(rejected.values())
         if n_rejected:
             logger.warning(f"[SeedManager] Rejected {n_rejected} invalid seed URL(s) from {source_spider}: {rejected}")
@@ -407,7 +444,7 @@ class SeedManager:
 
         # Prepare base records
         rows = []
-        for h, url in by_hash.items():
+        for h, (url, source_url) in by_hash.items():
             rows.append(
                 {
                     "url": url,
