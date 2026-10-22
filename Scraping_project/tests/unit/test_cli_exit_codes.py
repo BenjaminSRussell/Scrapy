@@ -1,5 +1,6 @@
 """cli.py / start.py exit codes, help and bad arguments (#297). No live services."""
 
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -117,3 +118,55 @@ def test_start_reports_missing_tools_without_touching_docker(tmp_path):
         res = _proc("start.py", "--env", env_name, env={"PATH": str(tmp_path)})
         assert res.returncode == 1
         assert "Missing required tooling" in res.stderr and tools in res.stderr
+
+
+# --- cli.py scrapy exit codes (#1559). The reactor cannot restart in-process, so each run is a subprocess. ---
+
+DUMMY_SPIDERS = '''
+import scrapy
+
+
+class RaisesSpider(scrapy.Spider):
+    name = "raises"
+
+    def start_requests(self):
+        raise RuntimeError("boom from start_requests")
+        yield  # pragma: no cover
+
+
+class EmptySpider(scrapy.Spider):
+    name = "empty"
+
+    def start_requests(self):
+        return iter(())
+'''
+
+
+@pytest.fixture
+def dummy_project(tmp_path):
+    pkg = tmp_path / "dummy_1559"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("")
+    (pkg / "spiders.py").write_text(DUMMY_SPIDERS)
+    (pkg / "settings.py").write_text('SPIDER_MODULES = ["dummy_1559.spiders"]\nNEWSPIDER_MODULE = "dummy_1559.spiders"\n')
+    return {"PYTHONPATH": str(tmp_path), "SCRAPY_SETTINGS_MODULE": "dummy_1559.settings"}
+
+
+def _scrapy_env(dummy_project):
+    return {**os.environ, **dummy_project}
+
+
+def test_unknown_spider_exits_2_and_lists_available(dummy_project):
+    res = _proc("cli.py", "scrapy", "--spiders", "nosuchspider", env=_scrapy_env(dummy_project))
+    assert res.returncode == 2
+    assert "nosuchspider" in res.stderr and "empty" in res.stderr and "raises" in res.stderr
+
+
+def test_spider_raising_in_start_requests_exits_1(dummy_project):
+    res = _proc("cli.py", "scrapy", "--spiders", "raises", env=_scrapy_env(dummy_project))
+    assert res.returncode == 1
+
+
+def test_clean_finished_crawl_exits_0(dummy_project):
+    res = _proc("cli.py", "scrapy", "--spiders", "empty", env=_scrapy_env(dummy_project))
+    assert res.returncode == 0

@@ -206,6 +206,9 @@ yarn-error.log*
 !Scraping_project/scripts/fixtures/anomaly/*.json
 # Cross-repo Delta contracts (#1099). Hand-written schemas, not generated data.
 !docs/contracts/*.json
+# Recorded stage-handoff replay inputs (#686). Hand-written, not generated data.
+!Scraping_project/tests/fixtures/**/*.json
+!Scraping_project/tests/fixtures/**/*.jsonl
 
 # ====================================
 # Jupyter Notebook

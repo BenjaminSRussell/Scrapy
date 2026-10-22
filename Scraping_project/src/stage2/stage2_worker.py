@@ -17,7 +17,10 @@ from deltalake import DeltaTable
 from src.core.config import get_config, stage2_quality_thresholds, stage_worker_settings
 from src.core.constants import TABLE_STAGE2_ERRORS
 from src.core.url_record_envelope import UrlRecordEnvelopeError, validate_url_record_envelope
+from src.stage1.middlewares.proxy_rotation_middleware import PROXY_FAILURE_STATUSES
 from src.utils.delta import get_delta
+from src.utils.http_identity import EgressProxies, HttpPolicy, NoHealthyProxy
+from src.utils.robots_gate import RobotsGate
 from src.utils.ssrf import SSRFBlocked, count_blocked, safe_resolver, ssrf_block_reason, ssrf_error_from
 from src.utils.soft_ban import DomainBackoff, SoftBanDetector, count_deferred, count_soft_ban, domain_of
 from src.utils.postgres import get_postgres_manager
@@ -37,6 +40,16 @@ try:  # accepted vs quarantined Stage 2 rows (#331)
     )
 except Exception:  # prometheus_client missing or metric already registered
     STAGE2_ROWS = None
+
+try:  # URLs refused by robots.txt Disallow (#1629); Stage 1 counts its own separately
+    from prometheus_client import Counter as _RobotsCounter
+
+    STAGE2_ROBOTS_DISALLOWED = _RobotsCounter(
+        "stage2_robots_disallowed_total",
+        "Stage 2 URLs ended as robots_disallowed because robots.txt disallows them.",
+    )
+except Exception:
+    STAGE2_ROBOTS_DISALLOWED = None
 
 try:  # exceptions escaping _analyze_url inside gather (#214)
     from prometheus_client import Counter as _Counter
@@ -147,7 +160,8 @@ try:  # in-request HTTP retries and per-host circuit breaker (#158)
     STAGE2_HTTP_FETCHES = _HCounter(
         "stage2_http_fetches_total",
         "Stage 2 URL fetches by outcome: first_try, recovered (succeeded after a retry), "
-        "exhausted (transient failure on every attempt) or circuit_open (host breaker open; URL deferred).",
+        "exhausted (transient failure on every attempt), deferred (backoff too long to sleep; queue retries) "
+        "or circuit_open (host breaker open; URL deferred).",
         ["outcome"],
     )
     STAGE2_HTTP_RETRIES = _HCounter(
@@ -158,6 +172,16 @@ try:  # in-request HTTP retries and per-host circuit breaker (#158)
 except Exception:
     STAGE2_HTTP_FETCHES = None
     STAGE2_HTTP_RETRIES = None
+
+try:  # time spent sleeping between in-request retries (#1517)
+    from prometheus_client import Counter as _BCounter
+
+    STAGE2_BACKOFF_SLEEP_SECONDS: Any = _BCounter(
+        "stage2_backoff_sleep_seconds",
+        "Seconds Stage 2 spent sleeping between in-request HTTP retries (slots released).",
+    )
+except Exception:
+    STAGE2_BACKOFF_SLEEP_SECONDS = None
 
 try:
     from prometheus_client import Counter as _OCounter
@@ -224,9 +248,13 @@ SOFT_BAN_PREFIX = "soft_ban:"
 # signal (#582) handled by quarantine + DomainBackoff, and retried by the queue.
 # The shared policy (#215) includes 429; _fetch_once still skips it in-request.
 TRANSIENT_HTTP_STATUSES = frozenset({408, 500, 502, 503, 504})
+ROBOTS_MAX_BYTES = 512 * 1024  # a larger robots.txt is treated as missing (allow-all) (#1629)
 DEFAULT_STAGE2_HTTP_ATTEMPTS = 3
 DEFAULT_STAGE2_HTTP_BACKOFF_BASE = 0.5
 DEFAULT_STAGE2_HTTP_BACKOFF_MAX = 8.0
+# Backoffs longer than this are not slept in-request: the URL is returned as a
+# retryable error and the queue retries it later (#1517).
+DEFAULT_STAGE2_IN_REQUEST_BACKOFF_MAX = 5.0
 DEFAULT_STAGE2_BREAKER_FAILURES = 5
 DEFAULT_STAGE2_BREAKER_RECOVERY = 60
 
@@ -275,7 +303,7 @@ def _accept_queue_envelope(row: dict[str, Any]) -> bool:
 
 def _is_terminal_error(row: dict[str, Any]) -> bool:
     """Errors that retrying cannot fix: bad URLs and 4xx other than 408/429."""
-    if row.get("error_message") == "invalid_url":
+    if row.get("error_message") in ("invalid_url", "robots_disallowed"):  # robots: a refusal, not a failure (#1629)
         return True
     if str(row.get("error_message") or "").startswith("ssrf_blocked:"):
         return True  # policy refusal (#682): retrying cannot make it safe
@@ -373,6 +401,9 @@ class Stage2Worker:
         self.http_attempts = _env_number("STAGE2_HTTP_ATTEMPTS", policy.attempts, 1, int)
         self.http_backoff_base = _env_number("STAGE2_HTTP_BACKOFF_BASE", policy.backoff_base, 0.0)
         self.http_backoff_max = _env_number("STAGE2_HTTP_BACKOFF_MAX", policy.backoff_max, 0.0)
+        self.in_request_backoff_max = _env_number(
+            "STAGE2_IN_REQUEST_BACKOFF_MAX", DEFAULT_STAGE2_IN_REQUEST_BACKOFF_MAX, 0.0
+        )
         self.breaker_failures = _env_number("STAGE2_BREAKER_FAILURES", DEFAULT_STAGE2_BREAKER_FAILURES, 1, int)
         self.breaker_recovery = _env_number("STAGE2_BREAKER_RECOVERY", DEFAULT_STAGE2_BREAKER_RECOVERY, 0, int)
         self._host_breakers: dict[str, CircuitBreaker] = {}
@@ -447,7 +478,34 @@ class Stage2Worker:
             ttl_dns_cache=300,
             resolver=safe_resolver("stage2"),  # #450: refuse non-public DNS answers at connect time
         )
-        return aiohttp.ClientSession(connector=connector, timeout=aiohttp.ClientTimeout(total=30))
+        return aiohttp.ClientSession(
+            connector=connector,
+            timeout=aiohttp.ClientTimeout(total=30),
+            headers=self._http_policy().headers(),  # #1629: the configured User-Agent, not aiohttp's default
+        )
+
+    def _http_policy(self) -> HttpPolicy:
+        """Stage 1's USER_AGENT / ROBOTSTXT_OBEY / PROXY_* policy, resolved once per worker."""
+        policy = getattr(self, "_policy", None)
+        if policy is None:
+            policy = self._policy = HttpPolicy.from_settings()
+        return policy
+
+    def _egress(self) -> EgressProxies:
+        egress = getattr(self, "_egress_pool", None)
+        if egress is None:
+            egress = self._egress_pool = EgressProxies(self._http_policy())
+        return egress
+
+    def _robots_gate(self) -> RobotsGate:
+        """robots.txt cache for this run (reset with the session, so each run re-reads robots)."""
+        gate = getattr(self, "_robots_obj", None)
+        if gate is None:
+            policy = self._http_policy()
+            gate = self._robots_obj = RobotsGate(
+                policy.user_agent, self._fetch_robots, max_crawl_delay=policy.robots_max_crawl_delay
+            )
+        return gate
 
     @asynccontextmanager
     async def _http_session(self):
@@ -455,6 +513,7 @@ class Stage2Worker:
         session = self._new_session()
         self._session = session
         self._host_slots = {}  # semaphores bind to the running loop; fresh per run
+        self._robots_obj = None
         try:
             yield session
         finally:
@@ -764,7 +823,47 @@ class Stage2Worker:
     MAX_REDIRECTS = 10
     REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
 
-    async def _get_guarded(self, session: Any, url: str) -> Any:
+    async def _robots_decision(self, url: str) -> tuple[bool, float]:
+        """(allowed, Crawl-delay) for ``url``. ROBOTSTXT_OBEY=false lets everything through (#1629)."""
+        if not self._http_policy().robotstxt_obey:
+            return True, 0.0
+        return await self._robots_gate().check(url)
+
+    async def _fetch_robots(self, robots_url: str) -> bytes | None:
+        """robots.txt body, or None when it is missing or unreadable (allow-all, as in Scrapy).
+
+        NoHealthyProxy propagates: a robots.txt we cannot fetch defers the URL, it does not allow it."""
+        proxy = self._egress().pick()
+        owns_session = getattr(self, "_session", None) is None  # direct callers outside run()
+        session = self._new_session() if owns_session else self._session
+        try:
+            response = await self._get_guarded(session, robots_url, proxy)
+            async with response:
+                if response.status in PROXY_FAILURE_STATUSES:
+                    self._egress().quarantine(proxy)
+                if not 200 <= response.status < 300:
+                    return None
+                return await self._read_bounded(response, ROBOTS_MAX_BYTES)
+        except SSRFBlocked:
+            return None
+        except TimeoutError:
+            self._egress().quarantine(proxy)
+            logger.info(f"[STAGE2] robots.txt timed out: {robots_url[:80]}; allowing")
+            return None
+        except aiohttp.ClientError as e:
+            logger.info(f"[STAGE2] robots.txt unreachable ({type(e).__name__}): {robots_url[:80]}; allowing")
+            return None
+        finally:
+            if owns_session:
+                await session.close()
+
+    async def _pace_host(self, domain: str, delay: float) -> None:
+        """Hold this request until the host's Crawl-delay window opens (#1629)."""
+        wait = self._robots_gate().reserve(domain, delay)
+        if wait > 0:
+            await asyncio.sleep(wait)
+
+    async def _get_guarded(self, session: Any, url: str, proxy: str | None = None) -> Any:
         """GET following redirects by hand so every hop passes the SSRF guard
         *before* a connection is made (#682). aiohttp's own
         ``allow_redirects=True`` would follow a public URL into 169.254.169.254
@@ -774,7 +873,7 @@ class Stage2Worker:
             reason = ssrf_block_reason(current)
             if reason is not None:
                 raise SSRFBlocked(current, reason)
-            response = await session.get(current, allow_redirects=False)
+            response = await session.get(current, allow_redirects=False, proxy=proxy)
             location = response.headers.get("Location")
             if response.status in self.REDIRECT_STATUSES and location:
                 response.release()
@@ -902,6 +1001,13 @@ class Stage2Worker:
                 self._count_fetch("circuit_open")
                 return {"url": url, "url_hash": url_hash, "_deferred": True}
             try:
+                allowed, crawl_delay = await self._robots_decision(url)  # #1629: before any cache or fetch
+                if not allowed:
+                    if STAGE2_ROBOTS_DISALLOWED is not None:
+                        STAGE2_ROBOTS_DISALLOWED.inc()
+                    return self._error_record(url, url_hash, 0, "robots_disallowed")
+                if crawl_delay > 0:
+                    await self._pace_host(domain, crawl_delay)
                 cached_html = self._cached_html(url_hash)
                 if cached_html is not None:
                     # Stored ETag / Last-Modified still identify this body (#478).
@@ -916,6 +1022,9 @@ class Stage2Worker:
                 finally:
                     if owns_session:
                         await session.close()
+            except NoHealthyProxy:  # every egress proxy quarantined: defer, never fetch direct (#1629)
+                count_deferred("stage2")
+                return {"url": url, "url_hash": url_hash, "_deferred": True}
             except aiohttp.ClientError as e:  # non-transient client errors fail fast
                 error_type = f"ClientError: {type(e).__name__}"
                 self._log_error_to_postgres(url, error_type, str(e))
@@ -938,6 +1047,8 @@ class Stage2Worker:
 
         Retried: timeouts, connection/payload errors and TRANSIENT_HTTP_STATUSES.
         Not retried: soft bans (quarantine + domain backoff), other 4xx, non-network errors.
+        Short backoffs sleep with the slots released; a backoff over
+        ``in_request_backoff_max`` returns a retryable error for the queue (#1517).
         Exhausting every attempt counts one failure on the host's circuit breaker.
         """
         attempts = max(1, int(getattr(self, "http_attempts", DEFAULT_STAGE2_HTTP_ATTEMPTS)))
@@ -972,13 +1083,25 @@ class Stage2Worker:
 
             if attempt < attempts:
                 delay = self._retry_delay(attempt, retry_after)
+                if delay > getattr(self, "in_request_backoff_max", DEFAULT_STAGE2_IN_REQUEST_BACKOFF_MAX):
+                    # Too long to hold a slot for: hand the URL to the queue (#1517).
+                    logger.info(
+                        f"[STAGE2] Transient {reason} for {url[:80]} (attempt {attempt}/{attempts}); "
+                        f"deferring {delay:.2f}s backoff to queue retry"
+                    )
+                    breaker.record_failure()
+                    self._count_fetch("deferred")
+                    return self._error_record(url, url_hash, code, message)
                 logger.info(
                     f"[STAGE2] Transient {reason} for {url[:80]} (attempt {attempt}/{attempts}); "
                     f"retrying in {delay:.2f}s"
                 )
                 if STAGE2_HTTP_RETRIES is not None:
                     STAGE2_HTTP_RETRIES.labels(reason=reason).inc()
-                await asyncio.sleep(delay)
+                if STAGE2_BACKOFF_SLEEP_SECONDS is not None:
+                    STAGE2_BACKOFF_SLEEP_SECONDS.inc(delay)
+                async with self._slots_released(domain):
+                    await asyncio.sleep(delay)
 
         breaker.record_failure()
         self._count_fetch("exhausted")
@@ -986,12 +1109,35 @@ class Stage2Worker:
         self._log_error_to_postgres(url, exc_type, f"{exc_text} after {attempts} attempt(s)")
         return self._error_record(url, url_hash, code, message)
 
+    @asynccontextmanager
+    async def _slots_released(self, domain: str):
+        """Give back the host slot and global semaphore while a backoff sleeps (#1517).
+
+        _analyze_url takes the host slot, then the global semaphore; they are
+        re-taken in that same order so the sleeping URL rejoins the queue fairly.
+        """
+        host_slot = self._host_slot(domain)
+        self.semaphore.release()
+        host_slot.release()
+        try:
+            yield
+        finally:
+            await host_slot.acquire()
+            await self.semaphore.acquire()
+
     async def _fetch_once(
         self, session: aiohttp.ClientSession, url: str, url_hash: str, is_heavy: bool, domain: str
     ) -> dict[str, Any]:
         """One GET. Raises TransientHTTPError / TimeoutError / ClientError for the retry loop."""
-        response = await self._get_guarded(session, url)  # #682: every hop SSRF-checked
+        proxy = self._egress().pick()  # #1629: NoHealthyProxy defers the URL; a retry picks the next proxy
+        try:
+            response = await self._get_guarded(session, url, proxy)  # #682: every hop SSRF-checked
+        except TimeoutError:
+            self._egress().quarantine(proxy)
+            raise
         async with response:
+            if response.status in PROXY_FAILURE_STATUSES:
+                self._egress().quarantine(proxy)
             if response.status >= 400:
                 body = ""
                 if response.status in (403, 503):

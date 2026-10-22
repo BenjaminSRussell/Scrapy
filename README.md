@@ -34,7 +34,7 @@ cd Scraping_project
 python start.py
 ```
 
-`python start.py` needs Docker Compose and a host Python 3.11 or 3.12 only to launch it. It enables the Compose `core` and `monitoring` profiles (Redis, scraper, stage 1–3 workers, Postgres, Prometheus, Grafana) and waits for Postgres. It does not start Stage 4 (`ml` / `full`), Kafka (`streaming`), or the OpenTelemetry overlay. Same profiles as `docker compose --profile core --profile monitoring up -d`. A bare `docker compose up -d` starts nothing, because every service is behind a profile.
+`python start.py` needs Docker Compose and a host Python 3.11 or 3.12 only to launch it. It enables the Compose `core` and `monitoring` profiles (Redis, scraper running one pipeline pass, stage 2–3 workers, Postgres, Prometheus, Grafana) and waits for Postgres. It does not start Stage 4 (`ml` / `full`), Kafka (`streaming`), or the OpenTelemetry overlay. Same profiles as `docker compose --profile core --profile monitoring up -d`. A bare `docker compose up -d` starts nothing, because every service is behind a profile.
 
 Grafana: **http://localhost:3000** (user `admin`; the password is `GRAFANA_ADMIN_PASSWORD` from [`.env`](Scraping_project/.env.example), default `admin` for local dev only). Prometheus is on `localhost:9090`.
 
@@ -158,6 +158,12 @@ python scripts/reseed.py
 
 # Add one seed URL
 python cli.py seeds add https://www.example.org/ --note "why" --actor me
+
+# Named seed sets: create, import a CSV under data/raw/, list (URL count, last used), delete
+python cli.py seeds set create admissions https://admissions.example.org/ https://apply.example.org/
+python cli.py seeds set import admissions data/raw/admissions.csv
+python cli.py seeds set list
+python cli.py scrapy --spiders scout --seed-set admissions
 
 # Reset Delta tables and reload seeds
 python start.py --reset-delta
