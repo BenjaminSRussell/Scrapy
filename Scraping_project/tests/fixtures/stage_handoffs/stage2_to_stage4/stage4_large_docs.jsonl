@@ -1,0 +1,7 @@
+{"url": "https://www.uconn.edu/annual-report/", "url_hash": "h-annual", "status": "pending", "is_pdf": false, "queued_at": "2026-10-07T12:00:00", "content_length": 18, "text_content": "Full document body"}
+{"url": "https://www.uconn.edu/annual-report/", "url_hash": "h-annual", "status": "pending", "is_pdf": false, "queued_at": "2026-10-07T12:05:00", "content_length": 18, "text_content": "Full document body"}
+{"url": "https://www.uconn.edu/budget.pdf", "url_hash": "h-budget", "status": "done", "is_pdf": true, "queued_at": "2026-10-07T12:00:00", "content_length": 5000}
+{"url": "https://www.uconn.edu/legacy-doc/", "url_hash": "h-legacy", "queued_at": "2026-10-07T12:00:00", "content_length": 18, "text_content": "Full document body"}
+{"url_hash": "h-orphan", "status": "pending", "queued_at": "2026-10-07T12:00:00"}
+{"url": "https://www.uconn.edu/senate-minutes/", "url_hash": "h-senate", "status": "pending", "is_pdf": false, "queued_at": "2026-10-07T12:00:00", "content_length": 5000, "text_content": "Senate minutes opening"}
+{"url": "https://www.uconn.edu/already-summarized/", "url_hash": "h-done-elsewhere", "status": "pending", "is_pdf": false, "queued_at": "2026-10-07T12:00:00", "content_length": 18, "text_content": "Full document body"}

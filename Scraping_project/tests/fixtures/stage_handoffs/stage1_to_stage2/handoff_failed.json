@@ -1,0 +1,9 @@
+{
+  "checksum": null,
+  "discovered": [],
+  "discovery_source": "rustmapper",
+  "error": "rustmapper exited with status 137 (killed)",
+  "job_id": "job-686",
+  "site": "https://www.uconn.edu/",
+  "status": "failed"
+}
