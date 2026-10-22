@@ -8,6 +8,7 @@ from tenacity import retry, retry_if_not_exception_type, stop_after_attempt, wai
 
 from src.stage4.pdf_sandbox import PdfQuarantined, extract_pdf_text
 from src.utils.delta import get_delta
+from src.utils.http_identity import HttpPolicy
 from src.utils.metric_labels import (
     STAGE4_HTTP_FAILURE_LABELS,
     STAGE4_HTTP_REQUEST_LABELS,
@@ -93,7 +94,7 @@ class LargeDocProcessor:
         validate_chunking(self.CHUNK_SIZE, self.OVERLAP)
 
         self.http_client = httpx.Client(
-            headers={"User-Agent": "MyScraper/1.0 (Educational Research Bot)"},
+            headers=HttpPolicy.from_settings().headers(),  # #1629: the configured User-Agent, not a hard-coded one
             timeout=httpx.Timeout(30.0),
             follow_redirects=True,
         )
