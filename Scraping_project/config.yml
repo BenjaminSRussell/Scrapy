@@ -164,6 +164,17 @@ stage1:
     - staff
   priority_penalty_keywords: []  # REMOVED - we want everything now
 
+  # URL allow/block (#633). YAML is the baseline. Redis sets url_policy:block
+  # and url_policy:allow are re-read every reload_seconds (cli.py url-policy)
+  # so a path can be emergency-blocked without a redeploy. Empty allow means
+  # no allowlist (block rules only). A block rule always wins. Rule shapes:
+  # glob (*), URL prefix (has ://), path prefix (starts with /), host/path
+  # (example.edu/secret), or host (example.edu and its subdomains).
+  url_policy:
+    reload_seconds: 5
+    allow: []
+    block: []
+
   # Adapt to noisy sections (#26): once a section (host/first-path-segment)
   # has produced min_pages pages whose follow-able links are at least
   # low_value_ratio low-confidence (traps: dated archives, calendar/sort/filter
