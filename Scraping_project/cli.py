@@ -336,7 +336,35 @@ def cmd_reset(args):
 
     from src.core.constants import DELTA_LAKE
     from src.lakehouse.lakehouse_manager import get_delta_manager
-    from src.utils.destructive_guard import guarded_lake_wipe
+    from src.lakehouse.seed_preflight import confirm_seed_load, select_seeds
+    from src.utils.destructive_guard import guard_flags, guarded_lake_wipe
+
+    # Read the seed CSV before the wipe so the large-load check can run first (#453).
+    csv_path = Path(__file__).parent / "data" / "raw" / "uconn_urls.csv"
+    if not csv_path.exists():
+        logger.error(f"Seed file not found: {csv_path}")
+        return
+
+    logger.info(f"Loading seed URLs from: {csv_path}")
+    df = pd.read_csv(csv_path, header=None, names=["url"])
+
+    # Add url_hash column
+    df["url_hash"] = df["url"].apply(lambda url: hashlib.sha256(url.encode("utf-8")).hexdigest())
+    df["added_at"] = pd.Timestamp.now().isoformat()
+
+    seed_records = df.to_dict("records")
+    flags = guard_flags(args)
+    if flags["confirm"]:
+        # Preflight before the wipe: a declined or non-interactive large load leaves the lake untouched.
+        keep = confirm_seed_load(
+            len(seed_records),
+            sample=getattr(args, "sample", None),
+            assume_yes=flags["assume_yes"],
+            interactive=sys.stdin.isatty(),
+        )
+        if keep is None:
+            sys.exit(1)
+        seed_records = select_seeds(seed_records, keep)
 
     logger.info("🔥 RESETTING DELTA LAKE...")
     # Dry-run unless --confirm; dual confirmation; production break-glass; audited (#522, #573, #576).
@@ -351,19 +379,6 @@ def cmd_reset(args):
     logger.info("✅ Delta Lake structure recreated")
 
     # Re-seed from CSV
-    csv_path = Path(__file__).parent / "data" / "raw" / "uconn_urls.csv"
-    if not csv_path.exists():
-        logger.error(f"Seed file not found: {csv_path}")
-        return
-
-    logger.info(f"Loading seed URLs from: {csv_path}")
-    df = pd.read_csv(csv_path, header=None, names=["url"])
-
-    # Add url_hash column
-    df["url_hash"] = df["url"].apply(lambda url: hashlib.sha256(url.encode("utf-8")).hexdigest())
-    df["added_at"] = pd.Timestamp.now().isoformat()
-
-    seed_records = df.to_dict("records")
     logger.info(f"Seeding {len(seed_records)} URLs...")
 
     manager.write("seed_urls", seed_records, mode="overwrite", async_write=False)
@@ -774,6 +789,10 @@ def main():
 
     add_guard_arguments(reset_parser)
     add_backup_argument(reset_parser)
+    reset_parser.add_argument(
+        "--sample", type=int, default=None, metavar="N",
+        help="Seed only N random URLs from the CSV (skips the large-load prompt, #453)",
+    )
     reset_parser.set_defaults(func=cmd_reset)
 
     # Clean command
