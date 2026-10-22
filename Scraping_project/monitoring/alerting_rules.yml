@@ -414,6 +414,34 @@ groups:
           impact: "Low - Rows are kept in quarantine but missing from the table"
           action: "Inspect domain_quarantine (url, row_json) to find the spider or extractor producing them"
 
+      # #561: the lake volume is filling. Fires while there is still room to
+      # reclaim space, before the 5% write watermark refuses batches.
+      - alert: DeltaVolumeLow
+        expr: min(lakehouse_volume_free_percent) < 10 or min(lakehouse_volume_free_inodes_percent) < 10
+        for: 5m
+        labels:
+          severity: warning
+          component: delta
+        annotations:
+          summary: "Lake volume is below 10% free space or inodes"
+          description: "Free space is {{ $value }}% on the lake volume. Writes are refused below delta_lake.disk_min_free_percent (5% by default)."
+          impact: "Medium - Writes will be refused soon; reclaim space before it becomes a SEV1"
+          action: "Follow docs/runbooks/disk_exhaustion.md: find the largest consumers, rotate logs, vacuum, then resume"
+
+      # #561: writers are refusing batches for low disk. Data is not being
+      # written; the batch is not retried or spilled, so this is SEV1.
+      - alert: DeltaVolumeWritesRefused
+        expr: sum by (table) (increase(delta_write_failures_total{outcome="refused"}[10m])) > 0
+        for: 2m
+        labels:
+          severity: critical
+          component: delta
+        annotations:
+          summary: "Delta writes for {{ $labels.table }} are refused: lake volume below watermark"
+          description: "Writes to {{ $labels.table }} were refused for low disk space in the last 10m ({{ $value }} batches)."
+          impact: "High - New data is not reaching the lake; refused batches are not retried or spilled"
+          action: "SEV1: follow docs/runbooks/disk_exhaustion.md (reclaim, rotate logs, resume)"
+
   # ============================================
   # Stage 2 queue state (#220)
   # ============================================
