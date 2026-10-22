@@ -19,6 +19,7 @@ from src.scrapy_prometheus import (
     DELTA_MANAGER_SHUTDOWN_DURATION_SECONDS,
     DELTA_MANAGER_SHUTDOWN_TOTAL,
 )
+from src.utils.disk_guard import VolumeStatus, check_volume
 
 try:
     import pyarrow as pa
@@ -90,7 +91,7 @@ try:  # async write durability (#225) and queue backpressure (#167)
 
     DELTA_WRITE_FAILURES = _WCounter(
         "delta_write_failures_total",
-        "Failed Delta write attempts, by table and outcome (retry|spilled).",
+        "Failed Delta write attempts, by table and outcome (retry|spilled|refused).",
         ["table", "outcome"],
     )
     DELTA_WRITE_QUEUE_FULL = _WCounter(
@@ -103,6 +104,18 @@ try:  # async write durability (#225) and queue backpressure (#167)
     )
 except Exception:
     DELTA_WRITE_FAILURES = DELTA_WRITE_QUEUE_FULL = DELTA_WRITE_QUEUE_DEPTH = None
+
+try:  # lake volume watermarks (#561): the DeltaVolumeLow alert reads these
+    from prometheus_client import Gauge as _VGauge
+
+    DELTA_VOLUME_FREE_PERCENT = _VGauge(
+        "lakehouse_volume_free_percent", "Free space (percent of blocks) on the lake volume, for non-root users."
+    )
+    DELTA_VOLUME_FREE_INODES_PERCENT = _VGauge(
+        "lakehouse_volume_free_inodes_percent", "Free inodes (percent) on the lake volume, for non-root users."
+    )
+except Exception:
+    DELTA_VOLUME_FREE_PERCENT = DELTA_VOLUME_FREE_INODES_PERCENT = None
 
 try:  # Delta log checkpoints (#274)
     from prometheus_client import Counter as _CCounter
@@ -700,6 +713,9 @@ class LakehouseManager:
         # #225: async writes retry this many times (exponential backoff), then spill.
         self.write_retries = max(1, int(config.get("delta_lake.write_retries", 3)))
         self.write_retry_backoff = float(config.get("delta_lake.write_retry_backoff_seconds", 0.5))
+        # #561: refuse writes below these free-space / free-inode percentages.
+        self.disk_min_free_percent = float(config.get("delta_lake.disk_min_free_percent", 5))
+        self.disk_min_free_inodes_percent = float(config.get("delta_lake.disk_min_free_inodes_percent", 5))
         self.spill_path = self.base_path / SPILL_DIR_NAME
         # #274: delta-rs writes a log checkpoint every N commits, where N is the
         # table property delta.checkpointInterval. Keep it in sync with config.
@@ -780,6 +796,7 @@ class LakehouseManager:
                     self.maintenance_queue.task_done()
 
             except queue.Empty:
+                self._volume_status()  # keep the volume gauges fresh while idle (#561)
                 self._maybe_gc_queues()
                 continue
             except Exception as e:
@@ -873,6 +890,24 @@ class LakehouseManager:
     def _handle_writer_exception(self, e: Exception, table_name: str):
         logger.error(f"Write failed for {table_name}: {e}", exc_info=True)
 
+    def _volume_status(self) -> VolumeStatus:
+        """Lake volume free space, exported to the gauges the alert reads (#561)."""
+        status = check_volume(self.base_path, self.disk_min_free_percent, self.disk_min_free_inodes_percent)
+        if DELTA_VOLUME_FREE_PERCENT is not None:
+            DELTA_VOLUME_FREE_PERCENT.set(status.free_percent)
+            DELTA_VOLUME_FREE_INODES_PERCENT.set(status.free_inodes_percent)
+        return status
+
+    def _refuse_for_disk(self, table_name: str, rows: int) -> bool:
+        """True when the lake volume is below its watermark: the batch must not be written (#561)."""
+        status = self._volume_status()
+        if status.shortfall is None:
+            return False
+        logger.error(f"[DISK] refusing {rows} rows for {table_name}: {status.shortfall}")
+        if DELTA_WRITE_FAILURES is not None:
+            DELTA_WRITE_FAILURES.labels(table=table_name, outcome="refused").inc()
+        return True
+
     def _write_with_retry(
         self,
         table_name: str,
@@ -883,8 +918,11 @@ class LakehouseManager:
 
         Returns True if written. A batch is never dropped without a record:
         once retries are exhausted it is written to ``_write_spill/`` as JSONL
-        (replay with ``replay_spilled_writes()``).
+        (replay with ``replay_spilled_writes()``). A batch refused for low disk
+        (#561) is neither retried nor spilled: the spill needs the same full volume.
         """
+        if self._refuse_for_disk(table_name, len(data)):
+            return False
         for attempt in range(1, self.write_retries + 1):
             try:
                 written = self._write_sync(table_name, data, mode)
@@ -980,6 +1018,8 @@ class LakehouseManager:
         """Write synchronously. Returns False if the write failed (logged, not raised)."""
         if not data:
             return True
+        if self._refuse_for_disk(table_name, len(data)):  # fail closed below the watermark (#561)
+            return False
         with self._table_lock(table_name):
             return self._write_sync_locked(table_name, data, mode, schema_overwrite=schema_overwrite)
 
@@ -1364,6 +1404,10 @@ class LakehouseManager:
             logger.debug(f"Shutdown in progress; writing {len(data)} rows for {table_name} synchronously")
             return self._write_sync(table_name, data, mode)
         if async_write:
+            # Refuse before queueing: a batch queued now would fail later in the worker,
+            # and the caller would already have been told it was accepted (#561).
+            if self._refuse_for_disk(table_name, len(data)):
+                return False
             try:
                 self.write_queue.put((table_name, data, mode), timeout=self.queue_put_timeout)
             except queue.Full:

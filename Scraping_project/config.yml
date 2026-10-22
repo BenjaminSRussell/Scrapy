@@ -399,6 +399,11 @@ delta_lake:
     stage1_errors: 720
     stage2_errors: 720
   dlq_retention_days: 30  # file DLQ entries removed by the idle maintenance worker (0 = keep)
+  # #561: writers refuse new batches (no retry, no spill) when the lake volume has
+  # less than this free space or free inodes, and readiness fails the same way.
+  # Keep the DeltaVolumeLow alert threshold (monitoring/alerting_rules.yml) above these.
+  disk_min_free_percent: 5
+  disk_min_free_inodes_percent: 5
   # #878: offsite candidate sightings: pending ones older than this are dropped,
   # rejected ones this long after review; accepted rows are kept (audit trail).
   offsite_pending_retention_days: 30
