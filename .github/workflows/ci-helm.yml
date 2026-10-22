@@ -7,6 +7,7 @@ on:
       - "Scraping_project/DEPLOYMENT.md"
       - "Scraping_project/k8s/README.md"
       - "Scraping_project/tests/unit/test_helm_resources_1104.py"
+      - "Scraping_project/tests/unit/test_helm_secrets_1567.py"
       - ".github/workflows/ci-helm.yml"
   push:
     branches: [main]
@@ -15,6 +16,7 @@ on:
       - "Scraping_project/DEPLOYMENT.md"
       - "Scraping_project/k8s/README.md"
       - "Scraping_project/tests/unit/test_helm_resources_1104.py"
+      - "Scraping_project/tests/unit/test_helm_secrets_1567.py"
       - ".github/workflows/ci-helm.yml"
 
 concurrency:
@@ -50,4 +52,5 @@ jobs:
         run: |
           helm version
           python3 -m pytest tests/unit/test_helm_resources_1104.py \
+            tests/unit/test_helm_secrets_1567.py \
             -o addopts= -p no:cacheprovider --noconftest -q --tb=short
