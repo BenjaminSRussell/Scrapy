@@ -30,6 +30,16 @@ python cli.py pipeline --skip-stage1          # or run stages 2-3 once, in order
 python cli.py health                          # row and file counts for every Delta table
 ```
 
+### Exit codes for `cli.py scrapy` and `cli.py deep_dive`
+
+| Exit | Meaning |
+|------|---------|
+| `0` | Every spider finished, or stopped on a `closespider_*` limit. |
+| `1` | A spider raised, logged an `ERROR` line, or ended on any other finish reason. An interrupted run (SIGTERM/SIGINT) also exits `1`. |
+| `2` | An unknown spider name (the available spiders are printed to stderr), or an experimental spider without `--experimental`. |
+
+CI, cron and Kubernetes Jobs can rely on these codes to tell a failed crawl from a good one (#1559).
+
 ## Seeds
 
 ```bash
