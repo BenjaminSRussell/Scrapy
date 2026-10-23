@@ -33,6 +33,7 @@ OPTIONAL_URL_RECORD_FIELDS: dict[str, type] = {
     "content_hint": str,
     "priority": int,
     "discovery_source": str,
+    "discovery_method": str,
     "target_stage": str,
 }
 

@@ -73,7 +73,7 @@ def test_missing_required_field_is_rejected(field):
 
 @pytest.mark.parametrize(
     ("field", "bad_value"),
-    [("url", 42), ("url", "   "), ("status", None), ("crawl_job_id", ""), ("priority", "2")],
+    [("url", 42), ("url", "   "), ("status", None), ("crawl_job_id", ""), ("priority", "2"), ("discovery_method", 3)],
 )
 def test_wrong_type_or_blank_value_is_rejected(field, bad_value):
     record = copy.deepcopy(_fixture_records()[0])
@@ -87,6 +87,14 @@ def test_optional_fields_accept_null_and_unknown_fields_are_ignored():
     assert records[1]["parent_url"] is None
     assert "x_future_field" in records[1]
     validate_url_record_envelope(records[1])
+
+
+def test_discovery_method_optional_field_accepts_str_and_null():
+    record = copy.deepcopy(_fixture_records()[0])
+    record["discovery_method"] = "json_ld"
+    validate_url_record_envelope(record)
+    record["discovery_method"] = None
+    validate_url_record_envelope(record)
 
 
 @pytest.mark.parametrize("version", [2, 0, "1", None])

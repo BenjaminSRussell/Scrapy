@@ -66,11 +66,14 @@ class DeepDiveSpider(ExperimentalSpiderMixin, BaseSpider):
             if self.record_offsite:
                 yield self._create_offsite_item(response, url)
 
-        all_hidden_urls = []
-        for urls in hidden_urls.values():
-            all_hidden_urls.extend(urls)
+        # Keep each URL's extractor category as discovery_method provenance
+        # (#378); first category wins when a URL lands in several buckets.
+        url_category: dict[str, str] = {}
+        for category, urls in hidden_urls.items():
+            for url in urls:
+                url_category.setdefault(url, category)
 
-        all_hidden_urls = list(set(all_hidden_urls))
+        all_hidden_urls = list(url_category)
 
         if all_hidden_urls:
             logger.info(f"[DEPTH] Found {len(all_hidden_urls)} hidden URLs from {response.url[:80]}")
@@ -105,11 +108,11 @@ class DeepDiveSpider(ExperimentalSpiderMixin, BaseSpider):
                     continue
 
                 if assessment.recommended_spider == "js":
-                    yield self._queue_for_js_spider(url, response.url, assessment)
+                    yield self._queue_for_js_spider(url, response.url, assessment, url_category[url])
                     self.depth_stats["routed_to_js"] += 1
                     self._route("js")
                 else:
-                    yield self._queue_for_depth_crawl(url, response.url, assessment, depth)
+                    yield self._queue_for_depth_crawl(url, response.url, assessment, depth, url_category[url])
                     self._route("depth_crawl")
 
         total_hidden = sum(self.depth_stats.values())
@@ -120,17 +123,18 @@ class DeepDiveSpider(ExperimentalSpiderMixin, BaseSpider):
         if HIDDEN_URLS_ROUTED is not None:
             labels_for(HIDDEN_URLS_ROUTED, spider=self.name, route=route).inc()
 
-    def _queue_for_js_spider(self, url: str, parent_url: str, assessment: Any) -> dict:
+    def _queue_for_js_spider(self, url: str, parent_url: str, assessment: Any, discovery_method: str) -> dict:
         return {
             "url": url,
             "parent_url": parent_url,
             "priority": min(assessment.value_score, 100),
             "value_score": assessment.value_score,
             "discovery_source": "depth_spider",
+            "discovery_method": discovery_method,
             "target_spider": "javascript",
         }
 
-    def _queue_for_depth_crawl(self, url: str, parent_url: str, assessment: Any, depth: int) -> Request:
+    def _queue_for_depth_crawl(self, url: str, parent_url: str, assessment: Any, depth: int, discovery_method: str) -> Request:
         import scrapy
 
         return scrapy.Request(
@@ -141,6 +145,8 @@ class DeepDiveSpider(ExperimentalSpiderMixin, BaseSpider):
                 "depth": depth + 1,
                 "parent_url": parent_url,
                 "value_score": assessment.value_score,
+                "discovery_source": "depth_spider",
+                "discovery_method": discovery_method,
             },
             priority=min(assessment.value_score // 10, 10),
             dont_filter=False,

@@ -130,3 +130,24 @@ def test_category_and_route_metrics(spider):
     dup_before = _sample("scrapy_hidden_urls_routed_total", spider="deep_dive", route="duplicate")
     _parse(spider)  # same page again: everything already claimed
     assert _sample("scrapy_hidden_urls_routed_total", spider="deep_dive", route="duplicate") > dup_before
+
+
+KNOWN_CATEGORIES = {"data_attributes", "json_ld", "javascript", "iframes", "meta_refresh", "sitemaps", "api_endpoints"}
+
+
+def test_queued_hidden_urls_carry_discovery_provenance(spider):
+    out = _parse(spider)
+    records = {}
+    for o in out:
+        if isinstance(o, scrapy.Request):
+            records[o.url] = (o.meta.get("discovery_source"), o.meta.get("discovery_method"))
+        elif isinstance(o, dict) and "target_spider" in o:
+            records[o["url"]] = (o.get("discovery_source"), o.get("discovery_method"))
+
+    assert records  # crawlable hidden URLs were queued via both paths
+    assert {source for source, _ in records.values()} == {"depth_spider"}
+    methods = {method for _, method in records.values()}
+    assert None not in methods
+    assert methods <= KNOWN_CATEGORIES
+    # confirmed queued by test_deep_dive_never_queues_offsite_hidden_urls
+    assert records["https://calendar.uconn.edu/embed"] == ("depth_spider", "iframes")

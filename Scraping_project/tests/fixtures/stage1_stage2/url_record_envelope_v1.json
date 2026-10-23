@@ -1,0 +1,24 @@
+[
+  {
+    "envelope_version": 1,
+    "url": "https://uconn.edu/admissions",
+    "url_hash": "h-admissions",
+    "status": "pending",
+    "queued_by": "scout",
+    "crawl_job_id": "job-fixture-1",
+    "parent_url": "https://uconn.edu/",
+    "priority": 50,
+    "discovery_source": "scout",
+    "target_stage": "stage2"
+  },
+  {
+    "envelope_version": 1,
+    "url": "https://uconn.edu/about",
+    "url_hash": "h-about",
+    "status": "pending",
+    "queued_by": "scout",
+    "crawl_job_id": "job-fixture-1",
+    "parent_url": null,
+    "x_future_field": "ignored by consumers"
+  }
+]
