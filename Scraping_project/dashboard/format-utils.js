@@ -294,6 +294,40 @@
             return Number.isFinite(v) && v > threshold;
         });
     }
+    // #384: badge state for the four Overview stage cards, derived from the
+    // live sample instead of hardcoded text. Order matches the stage cards.
+    // 'running' when the stage's per-interval rate is positive or work is
+    // queued behind it, 'standby' when the rate is ~0 with an empty queue,
+    // 'unknown' when the exporter has not reported the stage's counter series
+    // (never invent a state; the fetch-failure path repaints them as Unknown).
+    const STAGE_BADGE_DEFS = [
+        { metric: 'stage1_urls_discovered_total', rate: 'urls', counters: ['stage1_urls_queued_total'], queues: ['priority_queue'] },
+        { metric: 'stage2_pages_analyzed_total', rate: 'pages', counters: [], queues: ['stage2_queue'] },
+        { metric: 'stage3_summaries_created_total', rate: 'summaries', counters: [], queues: ['stage3_queue'] },
+        { metric: 'stage4_large_doc_summaries_total', rate: 'largeDocs', counters: [], queues: ['stage4_queue'] },
+    ];
+    function stageQueueBacklog(metrics, queueNames) {
+        let total = 0;
+        for (const key of Object.keys(metrics || {})) {
+            const m = key.match(/^redis_queue_length\{.*\bqueue="([^"]+)"/);
+            if (m && queueNames.includes(m[1])) {
+                const v = Number(metrics[key]);
+                if (Number.isFinite(v) && v > 0) total += v;
+            }
+        }
+        return total;
+    }
+    function stageBadgeStates(metrics, rates) {
+        const m = metrics || {};
+        return STAGE_BADGE_DEFS.map(def => {
+            if (!Number.isFinite(Number(m[def.metric]))) return 'unknown';
+            const rate = Number(rates && rates[def.rate]);
+            if (Number.isFinite(rate) && rate > 0) return 'running';
+            const backlog = def.counters.reduce((sum, k) => sum + (Number(m[k]) || 0), 0)
+                + stageQueueBacklog(m, def.queues);
+            return backlog > 0 ? 'running' : 'standby';
+        });
+    }
     // #412: live job progress strip. Counters come from the same sample as the
     // stage cards. A series that is not exported is null ("not reported"), never 0,
     // and no metrics at all is the empty state.
@@ -1397,5 +1431,5 @@
         return sampled;
     }
 
-    return { tabKeyTarget, staleState, queueDepthRows, metricsFailureActivity, shortcutHintText, parseMetrics, metricSeriesCount, METRICS_FLOOD_DEFAULTS, metricsFloodLimits, advanceMetricsFlood, metricsFloodBannerText, ratePerMinute, resolveMetricsUrl, metricsEndpoint, metricsEndpointLabel, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler, stageActivity, jobProgress, stageDrilldown, stageDrilldownKey, doughnutLegendLayout, connectionState, documentTitle, createActivityAnnouncer, metricsUrlProblem, splitLinks, createMetricsFetcher, REFRESH_INTERVAL_CHOICES, parseRefreshInterval, shortcutAction, pickInitialTab, METRIC_UI_MAP, renderMetricNameMap, parseDangerSoundEnabled, dangerSoundDecision, HEALTH_HISTORY_LIMIT, pushPollOutcome, healthHistoryView, COMPARISON_BASELINE_ROLE, PREV_HOUR_AVG_KEYS, readPrevHourAverage, comparisonBaselineSeries, comparisonNote, ACTIVITY_LOG_CAP, capActivityLog, activityStaleNote, restoreActivityLog, topScrapeTargets, SCRAPE_TARGET_EMPTY, ACTIVITY_LEVELS, activityLevelCounts, filterActivityItems, filterActivityMessages, activityFilterStatus, toggleActivityLevel, HISTORY_MAX_POINTS, HISTORY_RAW_POINTS, assertHistoryBound, boundHistoryBuffer, pushHistorySample, enforceHistoryCap, downsampleIndices, grafanaHomeUrl, jobStartedPresentation, JS_PRESET_PAGES, jsBudgetSplit, jsRenderBudget, DEFAULT_ACCENT, parseAccentColor, accentInk, accentBorder, accentCssVars };
+    return { tabKeyTarget, staleState, queueDepthRows, metricsFailureActivity, shortcutHintText, parseMetrics, metricSeriesCount, METRICS_FLOOD_DEFAULTS, metricsFloodLimits, advanceMetricsFlood, metricsFloodBannerText, ratePerMinute, resolveMetricsUrl, metricsEndpoint, metricsEndpointLabel, formatNumber, formatBytes, formatEpochTime, countLabelValues, createRefreshScheduler, stageActivity, stageBadgeStates, jobProgress, stageDrilldown, stageDrilldownKey, doughnutLegendLayout, connectionState, documentTitle, createActivityAnnouncer, metricsUrlProblem, splitLinks, createMetricsFetcher, REFRESH_INTERVAL_CHOICES, parseRefreshInterval, shortcutAction, pickInitialTab, METRIC_UI_MAP, renderMetricNameMap, parseDangerSoundEnabled, dangerSoundDecision, HEALTH_HISTORY_LIMIT, pushPollOutcome, healthHistoryView, COMPARISON_BASELINE_ROLE, PREV_HOUR_AVG_KEYS, readPrevHourAverage, comparisonBaselineSeries, comparisonNote, ACTIVITY_LOG_CAP, capActivityLog, activityStaleNote, restoreActivityLog, topScrapeTargets, SCRAPE_TARGET_EMPTY, ACTIVITY_LEVELS, activityLevelCounts, filterActivityItems, filterActivityMessages, activityFilterStatus, toggleActivityLevel, HISTORY_MAX_POINTS, HISTORY_RAW_POINTS, assertHistoryBound, boundHistoryBuffer, pushHistorySample, enforceHistoryCap, downsampleIndices, grafanaHomeUrl, jobStartedPresentation, JS_PRESET_PAGES, jsBudgetSplit, jsRenderBudget, DEFAULT_ACCENT, parseAccentColor, accentInk, accentBorder, accentCssVars };
 });

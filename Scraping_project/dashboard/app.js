@@ -790,6 +790,26 @@ function applyStageActivity(rates) {
     });
 }
 
+// #384: Overview stage-card badges and the System Health stage rows track the
+// live sample: Running when the stage moved work in the last interval (or has
+// a queue backlog), Standby when idle with an empty queue, Unknown when the
+// stage's counter is not exported. The fetch-failure path repaints both as
+// Unknown/danger.
+const STAGE_BADGE_LABELS = { running: 'Running', standby: 'Standby', unknown: 'Unknown' };
+const STAGE_BADGE_CLASSES = { running: 'badge-success', standby: 'badge-info', unknown: 'badge-danger' };
+function applyStageBadges(metrics, rates) {
+    const states = stageBadgeStates(metrics, rates);
+    states.forEach((state, i) => {
+        const badge = document.getElementById(`overview-s${i + 1}-badge`);
+        if (badge) {
+            badge.textContent = STAGE_BADGE_LABELS[state];
+            badge.classList.remove('badge-info', 'badge-success', 'badge-danger');
+            badge.classList.add(STAGE_BADGE_CLASSES[state]);
+        }
+        setHealthTile(`stage${i + 1}-health`, `Stage ${i + 1}`, state !== 'unknown', STAGE_BADGE_LABELS[state]);
+    });
+}
+
 function calculateRates(metrics, now = Date.now()) {
     // #141: all rates are per minute, from the actual time since the last sample.
     const prev = previousMetrics;
@@ -961,6 +981,7 @@ function updateDashboard(metrics) {
     if (s4RateElem) { const __n = rates.largeDocs.toFixed(1) + '/min'; if (s4RateElem.textContent !== String(__n)) { s4RateElem.textContent = __n; s4RateElem.classList.remove('flash'); void s4RateElem.offsetWidth; s4RateElem.classList.add('flash'); } else { s4RateElem.textContent = __n; } }
 
     applyStageActivity(rates);
+    applyStageBadges(metrics, rates);
 
     setMetricText('perf-s1-rate', rates.urls.toFixed(1) + ' URLs/min');
     setMetricText('perf-s2-rate', rates.pages.toFixed(1) + ' pages/min');
@@ -1240,6 +1261,8 @@ async function fetchMetrics() {
         if (typeof setHealthTile === 'function') {
             setHealthTile('metrics-health', 'Metrics', false, 'Fetch failed');
             setHealthTile('redis-health', 'Redis', false, 'Unknown');
+            // #384: stage rows are live too; a failed fetch means Unknown.
+            for (let i = 1; i <= 4; i++) setHealthTile(`stage${i}-health`, `Stage ${i}`, false, 'Unknown');
         }
     } finally {
         if (main) main.setAttribute('aria-busy', 'false');
