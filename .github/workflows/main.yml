@@ -3,8 +3,20 @@ name: CI/CD Pipeline
 on:
   push:
     branches: [ main ]  # pushes run on main only; feature branches run via pull_request
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - 'Scraping_project/docs/**'
+      - 'Scraping_project/dashboard/**'   # covered by CI Dashboard
+      - 'Scraping_project/k8s/**'         # covered by Helm chart
   pull_request:
     branches: [ main ]
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - 'Scraping_project/docs/**'
+      - 'Scraping_project/dashboard/**'   # covered by CI Dashboard
+      - 'Scraping_project/k8s/**'         # covered by Helm chart
 
 # Actions starvation (Oct 2026): with no concurrency, every push to main and every PR
 # update queued a full run, and main's later jobs re-entered the back of the shared
