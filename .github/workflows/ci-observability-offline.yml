@@ -2,6 +2,13 @@ name: Observability (offline)
 
 on:
   pull_request:
+    # Only changes that can affect the metrics/alert code under test.
+    paths:
+      - "Scraping_project/src/**"
+      - "Scraping_project/monitoring/**"
+      - "Scraping_project/tests/observability/**"
+      - "Scraping_project/dev-requirements.txt"
+      - ".github/workflows/ci-observability-offline.yml"
 
 # See main.yml for the concurrency rationale.
 concurrency:
