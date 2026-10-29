@@ -35,7 +35,7 @@ jobs:
         run: python Scraping_project/dashboard/overview_screenshot.py --out Scraping_project/dashboard/visual/overview.png
       - name: Upload Overview screenshot
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: dashboard-overview-screenshot
           path: Scraping_project/dashboard/visual/overview.png

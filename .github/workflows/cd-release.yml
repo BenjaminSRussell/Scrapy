@@ -139,7 +139,7 @@ jobs:
 
       - name: Upload ${{ matrix.image }} SBOM
         if: env.PUSH == 'true'
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: sbom-${{ matrix.image }}
           path: sbom-${{ matrix.image }}.spdx.json
