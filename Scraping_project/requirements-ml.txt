@@ -110,7 +110,7 @@ pyyaml==6.0.3
     # via
     #   huggingface-hub
     #   transformers
-regex==2025.9.18
+regex==2026.9.29
     # via transformers
 rich==15.0.0
     # via typer
@@ -124,7 +124,7 @@ scipy==1.16.2
     # via
     #   scikit-learn
     #   sentence-transformers
-sentence-transformers==6.1.0
+sentence-transformers==6.2.0
     # via -r requirements-ml.in
 shellingham==1.5.4
     # via typer
@@ -132,7 +132,7 @@ sympy==1.14.0
     # via torch
 threadpoolctl==3.7.0
     # via scikit-learn
-tokenizers==0.22.2
+tokenizers==0.23.3
     # via
     #   sentence-transformers
     #   transformers
@@ -145,7 +145,7 @@ tqdm==4.70.1
     #   huggingface-hub
     #   sentence-transformers
     #   transformers
-transformers==5.3.0
+transformers==5.20.2
     # via
     #   -r requirements-ml.in
     #   sentence-transformers
