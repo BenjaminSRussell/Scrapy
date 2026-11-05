@@ -24,8 +24,8 @@ isort>=5.13.0
 flake8>=7.0.0
 mypy>=1.13.0
 types-defusedxml>=0.7.0.20260504
-types-PyYAML>=6.0.12.20260906
-types-requests>=2.33.0.20261006,<2.34  # match requests 2.32.x
+types-PyYAML>=6.0.12.20261030
+types-requests>=2.33.0.20261030,<2.34  # match requests 2.32.x
 ruff>=0.9.0
 pre-commit>=4.7.0  # `make install-dev` runs `pre-commit install` (#358)
 
