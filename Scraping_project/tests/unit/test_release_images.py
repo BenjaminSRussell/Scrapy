@@ -52,6 +52,90 @@ def test_cd_actions_are_real():
     assert "anchore/sbom-action" in uses
 
 
+def test_release_signs_digest_with_keyless_cosign_and_uploads_sbom():
+    """#689: tag pushes sign the pushed digest and upload a Syft SPDX SBOM of it."""
+    perms = CD_JOB["permissions"]
+    assert set(perms) == {"contents", "packages", "id-token"}
+    assert perms["contents"] == "read"
+    assert perms["packages"] == "write"
+    assert perms["id-token"] == "write"
+
+    text = (REPO / ".github" / "workflows" / "cd-release.yml").read_text(encoding="utf-8")
+    for banned in ("COSIGN_PRIVATE_KEY", "COSIGN_PASSWORD", "cosign.key", "--key"):
+        assert banned not in text, banned
+
+    steps = CD_JOB["steps"]
+    names = [s.get("name", "") for s in steps]
+
+    def at(prefix: str) -> int:
+        return next(i for i, name in enumerate(names) if name.startswith(prefix))
+
+    order = [at(p) for p in (
+        "Push ", "Install Cosign", "Sign ", "Verify ", "Generate SBOM", "Upload ")]
+    assert order == sorted(order)
+
+    installer = steps[at("Install Cosign")]
+    pin = installer["uses"].split("@", 1)[1]
+    assert re.fullmatch(r"[0-9a-f]{40}", pin), pin
+    assert installer["with"]["cosign-release"] == "v3.0.6"
+    gated = ("Install Cosign", "Sign ", "Verify ", "Generate SBOM", "Upload ")
+    for prefix in gated:
+        assert steps[at(prefix)].get("if") == "env.PUSH == 'true'", prefix
+
+    # GHCR and cosign reject upper-case repository paths (GITHUB_REPOSITORY is mixed case).
+    lower = steps[at("Lowercase ")]
+    assert "${GITHUB_REPOSITORY,,}" in lower["run"] and "GITHUB_OUTPUT" in lower["run"]
+    assert steps[at("Sign ")]["env"]["REPO"] == "${{ steps.image_repo.outputs.name }}"
+
+    sign = steps[at("Sign ")]["run"]
+    assert "cosign sign --yes" in sign
+    assert "@${DIGEST}" in sign
+    assert "sha256:" in sign
+    assert "${REPO}/${IMAGE}@${DIGEST}" in sign
+
+    verify = steps[at("Verify ")]["run"]
+    assert "cosign verify" in verify
+    assert "cd-release.yml@${GITHUB_REF}" in verify
+    assert "https://token.actions.githubusercontent.com" in verify
+    assert "--certificate-identity" in verify
+    assert "--certificate-oidc-issuer" in verify
+    assert "${REPO}/${IMAGE}@${DIGEST}" in verify
+
+    sbom = next(s for s in steps if "anchore/sbom-action" in s.get("uses", ""))
+    image = sbom["with"]["image"]
+    assert image.endswith("@${{ steps.push.outputs.digest }}")
+    assert "steps.image_repo.outputs.name" in image
+    assert "github.repository" not in image
+    assert "github.ref_name" not in image
+    assert sbom["with"]["format"] == "spdx-json"
+    assert sbom["with"]["upload-artifact"] is False
+
+    upload = steps[at("Upload ")]
+    assert upload["with"]["name"] == "sbom-${{ matrix.image }}"
+    assert upload["with"]["path"].endswith(".spdx.json")
+    assert upload["with"]["if-no-files-found"] == "error"
+    assert steps[at("Push ")].get("id") == "push"
+
+
+def test_releasing_docs_verify_signature_and_do_not_claim_slsa():
+    releasing = (REPO / "docs" / "RELEASING.md").read_text(encoding="utf-8")
+    assert "cosign verify" in releasing
+    assert "--certificate-oidc-issuer" in releasing
+    assert "https://token.actions.githubusercontent.com" in releasing
+    assert "sbom-<image>" in releasing
+    assert "ghcr.io/benjaminsrussell/scrapy/crawler@sha256:DIGEST" in releasing
+    assert "not a SLSA provenance statement" in releasing
+    assert "Build L" not in releasing
+
+    note = (REPO / "docs" / "security" / "slsa-provenance.md").read_text(encoding="utf-8")
+    assert "**No SLSA level is claimed.**" in note
+    assert "- [x]" not in note
+    assert "keyless cosign" in note
+    adr = (REPO / "docs" / "adr" / "0004-keyless-cosign-for-release-images.md").read_text(encoding="utf-8")
+    assert "no cosign private key" in adr.lower() or "must not hold a" in adr
+    assert "Proposed" in adr
+
+
 def test_cd_runs_on_prs_touching_the_image_recipe():
     triggers = CD[True]  # PyYAML parses the `on:` key as boolean True
     paths = triggers["pull_request"]["paths"]

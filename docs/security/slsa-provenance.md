@@ -25,9 +25,9 @@ The recommended predicate is
 
 | Image | Dockerfile target | Registry name |
 | --- | --- | --- |
-| `crawler` | `crawler` | `ghcr.io/BenjaminSRussell/Scrapy/crawler` |
-| `metrics` | `metrics` | `ghcr.io/BenjaminSRussell/Scrapy/metrics` |
-| `kafka-delta-ingest` | `kafka-delta-ingest` | `ghcr.io/BenjaminSRussell/Scrapy/kafka-delta-ingest` |
+| `crawler` | `crawler` | `ghcr.io/benjaminsrussell/scrapy/crawler` |
+| `metrics` | `metrics` | `ghcr.io/benjaminsrussell/scrapy/metrics` |
+| `kafka-delta-ingest` | `kafka-delta-ingest` | `ghcr.io/benjaminsrussell/scrapy/kafka-delta-ingest` |
 
 Targets are defined in [`Scraping_project/Dockerfile`](../../Scraping_project/Dockerfile).
 The workflow's matrix is the list above, not the other Dockerfile stages
@@ -74,25 +74,31 @@ touches the image recipe or this workflow, and on `workflow_dispatch`.
 | Behavior | Where |
 | --- | --- |
 | One job, `build-and-push`, matrix of `kafka-delta-ingest`, `crawler`, `metrics`. Runner is `ubuntu-latest`. | job `build-and-push` |
-| Token permissions are `contents: read` and `packages: write`. No `id-token: write`. No `attestations: write`. | job `permissions` |
+| Token permissions are `contents: read`, `packages: write`, and `id-token: write`. `id-token` is only so keyless cosign can request a GitHub OIDC token. There is no `attestations: write`. | job `permissions` |
 | A push happens only when the event is `push` (the tag trigger) and `secrets.GHCR_PAT` is non-empty. Pull requests and `workflow_dispatch` do not push. | env `PUSH` |
 | Registry login uses that PAT against `ghcr.io`, and only when `PUSH` is true. | step "Log in to GitHub Container Registry" |
 | First build loads `local/<image>:ci` into the Docker engine (`load: true`, `push: false`) and writes a GitHub Actions cache (`type=gha`, `mode=max`, scope = image name). | step "Build … image (load locally)" |
 | Smoke test runs that local tag. | step "Smoke test …" |
 | Trivy fails the job on fixable CRITICAL findings, using the local tag, before any push. The action is pinned to commit `ed142fd0673e97e23eac54620cfb913e5ce36c25`. Suppressions are [`Scraping_project/.trivyignore`](../../Scraping_project/.trivyignore). | step "Trivy scan …"; [scan notes](../../Scraping_project/trivy-reports/README.md) |
 | Second build pushes `ghcr.io/<repo>/<image>` with tags from `docker/metadata-action` (the git tag, the commit SHA, and `latest` only when the event is on the default branch). Same GHA cache scope, read-only on this step. `provenance` is not set. `sbom` is not set. | step "Push … image" |
-| After a push, Syft writes an SPDX JSON SBOM for the **tag** `ghcr.io/<repo>/<image>:<git ref name>`, not a digest, and uploads it as a workflow artifact named `sbom-<image>`. | steps "Generate SBOM …" and "Upload … SBOM" |
+| After a push, keyless cosign (`cosign sign --yes --oidc-provider=github-actions`, no `--key`) signs `ghcr.io/<repo>/<image>@<digest the push step reported>`. The same job runs `cosign verify` with certificate identity `https://github.com/<repository>/.github/workflows/cd-release.yml@<github.ref>` and issuer `https://token.actions.githubusercontent.com`. The signature is stored with the digest in GHCR and in the public Rekor log. It is an image signature, not a SLSA Provenance statement. | steps "Install Cosign", "Sign … image (keyless cosign)", "Verify … image signature" |
+| After that verify, Syft (`anchore/sbom-action`) writes an SPDX JSON SBOM for the same digest, not the git tag, and uploads it as a workflow artifact named `sbom-<image>`. The upload fails the job if the file is missing. | steps "Generate SBOM …" and "Upload … SBOM" |
 | Tag runs are not cancelled. A new push to a pull request cancels the previous pull-request run. | `concurrency` |
 
 Other actions in this file are floating major tags: `actions/checkout@v7`,
 `docker/setup-buildx-action@v4`, `docker/login-action@v4`,
 `docker/metadata-action@v6`, `docker/build-push-action@v7`,
-`anchore/sbom-action@v0`, `actions/upload-artifact@v6`. Checkout does not set
-`persist-credentials: false`.
+`anchore/sbom-action@v0`, `actions/upload-artifact@v6`.
+`sigstore/cosign-installer` is pinned to commit
+`6f9f17788090df1f26f669e9d70d6ae9567deba6` (v4.1.2) and installs Cosign
+`v3.0.6`. Checkout does not set `persist-credentials: false`.
 
-There is no `cosign` step, no `actions/attest-build-provenance` step, and no
+There is a keyless cosign image-sign step. There is no
+`actions/attest-build-provenance` step and no
 `slsa-framework/slsa-github-generator` call in any workflow under
 [`.github/workflows/`](../../.github/workflows/cd-release.yml).
+The cosign step does not sign a SLSA predicate. It does not close the
+provenance gaps below.
 
 The push step does not opt out of BuildKit provenance. `docker/build-push-action`
 v4 and later, including the v7 tag used here, requests a BuildKit provenance
@@ -100,8 +106,9 @@ attestation when `provenance` is unset, the exporter is not `load` into the
 Docker engine, and `BUILDX_NO_DEFAULT_ATTESTATIONS` is unset. On a public
 repository that default is `mode=max`. This repository is public. The load
 step does not get that attestation, because `load: true` disables it. The
-workflow never reads the attestation back, never requires it, and never
-records a digest. That default is unsigned builder metadata about the second
+workflow never reads that BuildKit attestation back and never requires it.
+The push step's digest output is used only for the image signature and the
+SBOM. That default is unsigned builder metadata about the second
 build. It is not accepted as any SLSA level. No release has been published to
 inspect (see [SECURITY.md](../../SECURITY.md): version `0.1.0`, no stable
 release yet), so this note does not describe a manifest that was actually
@@ -137,7 +144,9 @@ These do not publish release artifacts:
 
 [`.github/release.yml`](../../.github/release.yml) only groups generated
 release notes. It does not attach attestations.
-[RELEASING.md](../RELEASING.md) does not mention provenance.
+[RELEASING.md](../RELEASING.md) documents the keyless image signature and the
+SBOM artifact. It states that the signature is not a provenance statement.
+It does not describe a SLSA Provenance predicate or a builder id.
 
 ## Gap checklist
 
@@ -147,7 +156,7 @@ Mapped to the v1.2 Build requirements. Every item is open.
 
 - [ ] **Choose a build platform that can reach Build L3.** The producer has to
   adopt a builder that generates unforgeable signed provenance. The current
-  job is a tenant workflow on `ubuntu-latest` with no attestation step.
+  job is a tenant workflow on `ubuntu-latest` with no SLSA provenance step.
   Candidates to evaluate at implementation time, not selected here: GitHub
   artifact attestations (`actions/attest-build-provenance`) on GitHub-hosted
   runners, or the SLSA GitHub generator container workflow. Whichever is
@@ -156,8 +165,9 @@ Mapped to the v1.2 Build requirements. Every item is open.
 - [ ] **Keep one consistent build definition.** Verifiers need a stable
   expectation of how a release image is built. Today the recipe is
   `cd-release.yml` plus `Scraping_project/Dockerfile`, but almost every
-  action is a floating tag (listed above). Only Trivy is pinned to a commit,
-  because those tags were force-pushed. A moving action tag changes the
+  action is a floating tag (listed above). Trivy is pinned to a commit
+  because those tags were force-pushed. The Cosign installer is pinned to
+  a commit so its tag cannot move either. A moving action tag changes the
   build with no commit in this repo. Base images are moving tags too:
   `python:3.11-slim`, `rust:1-slim-bookworm`, and `debian:bookworm-slim`.
   Language deps are locked
@@ -180,9 +190,10 @@ authenticity bar. This repo still does not meet L1, for the reasons below.
 Do not mark L1 met off the BuildKit default described above.
 
 - [ ] **Emit a SLSA Provenance v1 statement whose subject is the pushed
-  manifest digest.** There is no such step. Permissions do not include
-  `id-token: write` or `attestations: write`, which GitHub attestation
-  actions need.
+  manifest digest.** There is no such step. The job has `id-token: write`
+  so keyless cosign can obtain an OIDC token for the image signature. It
+  does not have `attestations: write`, which GitHub attestation actions
+  need, and no step emits a SLSA Provenance v1 statement.
 - [ ] **Attest the image that was actually gated.** Smoke and Trivy run
   against `local/<image>:ci` from the first build. The push step builds
   again. Those are two BuildKit invocations. Provenance for the second
@@ -198,29 +209,30 @@ Do not mark L1 met off the BuildKit default described above.
   stays. `mode=max` can record more of the build than a reviewer intends,
   including material captured from the network fetch. Do not flip it to
   `mode=max` in order to claim a level.
-- [ ] **Name subjects by digest, never only by tag.** The SBOM step already
-  shows the hazard: it pulls
-  `ghcr.io/<repo>/<image>:${{ github.ref_name }}`. A tag can move. The
-  provenance subject has to be the digest the push reports.
+- [ ] **Name subjects by digest, never only by tag.** The SBOM and the
+  cosign signature both use the digest the push step reports
+  (`steps.push.outputs.digest`). A tag can still move. The provenance
+  subject, which does not exist yet, has to be that same digest.
 - [ ] **Publish path and retention.** Provenance is only meaningful for an
   image that was pushed. Push depends on a tag event and a non-empty
-  `GHCR_PAT`. There is no GitHub Release to attach anything to yet. The
-  SPDX file is a workflow artifact (`actions/upload-artifact`), with that
-  action's default retention, and the SBOM action is told
-  `upload-artifact: false`. It is not an OCI referrer on GHCR and not a
-  release asset.
+  `GHCR_PAT`. No GitHub release has been published yet. The SPDX file is a
+  workflow artifact (`actions/upload-artifact`), with that action's default
+  retention, and the SBOM action is told `upload-artifact: false`. The
+  release checklist tells a person to attach that file when they create the
+  release. The workflow does not create the release, and the SBOM is not an
+  OCI referrer on GHCR.
 
 ### SBOM and vulnerability scanning are not provenance
 
 - [ ] **Keep the SBOM, and do not call it provenance.** Syft SPDX JSON
   describes packages found in an image. SLSA provenance describes the
   builder, the build steps, and the top-level inputs of a specific digest.
-  The file is also generated from the tag after the second build, so it may
-  not match the image Trivy scanned. A later change should bind the SBOM to
-  the same digest as the provenance and keep it where consumers can fetch it
-  after the Actions artifact expires. `sbom:` is unset on both
-  `docker/build-push-action` steps, so BuildKit is not attaching an SBOM
-  attestation either.
+  The file is generated from the pushed digest, which is the second build,
+  so it may not match the image Trivy scanned. It is still not provenance.
+  Consumers can fetch it from the Actions artifact until that artifact
+  expires, and the release checklist says to attach it to the GitHub
+  release. It is not an OCI referrer and not attached by BuildKit.
+  `sbom:` is unset on both `docker/build-push-action` steps.
 - [ ] **Keep the Trivy gate, and do not call it provenance.** Failing the
   job on a fixable CRITICAL CVE is a vulnerability control. It says nothing
   about which source or builder produced the image. The gate is documented
@@ -235,15 +247,20 @@ equivalent authenticity mechanism is allowed. There is no minimum strength
 at L2 beyond deterring someone who would have to bypass a control on
 purpose.
 
-- [ ] **Have the platform sign the statement.** No step signs provenance.
-  `GHCR_PAT` authorizes a push to GHCR. It is not a signature over how the
-  image was built, and it is not held by a provenance control plane.
-- [ ] **Give verifiers a trust anchor.** Publish the expected source
-  (`https://github.com/BenjaminSRussell/Scrapy`), workflow path
-  (`.github/workflows/cd-release.yml`), builder id, and the three image
-  names. [RELEASING.md](../RELEASING.md) does not say how to check an
-  image. Add that when an attestation exists. Do not invent the check
-  before the attestation exists.
+- [ ] **Have the platform sign the statement.** Keyless cosign signs the
+  image digest from a step in this job. That certificate is an image
+  signature, not a SLSA Provenance predicate, and the tenant step chooses
+  the bytes. `GHCR_PAT` authorizes a push to GHCR. It is not a signature
+  over how the image was built, and it is not held by a provenance control
+  plane.
+- [ ] **Give verifiers a trust anchor.** [RELEASING.md](../RELEASING.md) now
+  says how to check the image signature: source
+  `https://github.com/BenjaminSRussell/Scrapy`, workflow path
+  `.github/workflows/cd-release.yml`, issuer
+  `https://token.actions.githubusercontent.com`, and the three image names
+  by digest. That is the image-signature check. It is not a SLSA builder id,
+  because no provenance statement exists. Do not treat the cosign identity
+  as a SLSA level.
 - [ ] **Do not treat "it ran on GitHub" as L2.** `runs-on: ubuntu-latest`
   means the compute is hosted, which L2 also requires. Hosted compute
   without a platform-generated signature is not Build L2.
@@ -260,8 +277,10 @@ best-effort; hermeticity is not required.
   any other signing secret, mounted from Actions secrets into these steps
   would fail the unforgeable requirement. The key has to stay in the
   platform's control plane (for example a GitHub attestation identity).
-  There is no cosign use in the tree today; the gap is the missing
-  control-plane signature, not a bad key already checked in.
+  Cosign is used keyless for the image digest. No signing key and no key
+  password are in the job. That meets the "no key in the job" constraint
+  for the image signature. The gap that remains is the missing
+  control-plane signature over a SLSA Provenance statement.
 - [ ] **Separate the registry credential from the provenance trust root.**
   The job that runs the Dockerfile also receives `GHCR_PAT` when it pushes.
   A long-lived PAT that a build step can read is a poor publish credential
@@ -315,8 +334,9 @@ signature over the wrong bytes does not help:
    statement where a consumer can fetch it for as long as the image exists.
 3. Pin the actions that define the build, drop unused credentials, and
    settle the GHA cache question.
-4. Write the verifier expectations next to the release steps in
-   `docs/RELEASING.md`. This note does not edit that file.
+4. Image-signature verification now lives in `docs/RELEASING.md`.
+   Provenance verifier expectations are still unwritten, because there is
+   no provenance statement.
 5. Only then revisit whether the chosen platform's documented isolation
    supports calling the result Build L3. Until that review, the level
    remains a target, not a label on the images.
@@ -331,5 +351,6 @@ signature over the wrong bytes does not help:
   those levels are scored here.
 - Signing or attesting the wheel deploy path, the Helm chart, or local
   `docker compose` builds.
-- Editing `cd-release.yml` in the same change as this note. The checklist
-  is the design; the workflow edit is separate work.
+- Editing this note in order to claim a SLSA level. A workflow change that
+  adds an image signature must update the facts above and must leave the
+  level claim at "none".

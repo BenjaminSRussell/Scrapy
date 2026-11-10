@@ -25,3 +25,4 @@ a storage or messaging technology, cross-stage delivery semantics.
 | [0001](0001-config-yml-is-canonical.md) | `Scraping_project/config.yml` is the canonical configuration | Accepted |
 | [0002](0002-edge-fetch-workers-post-to-kafka.md) | Edge fetch workers post to Kafka | Proposed |
 | [0003](0003-delta-schema-registry.md) | Cross-repo Delta contracts live in `docs/contracts` | Proposed |
+| [0004](0004-keyless-cosign-for-release-images.md) | Release images are signed with keyless cosign | Proposed |
