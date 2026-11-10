@@ -50,6 +50,11 @@ ingress:
 # Default-deny for Redis, Kafka, Postgres and the scrapers (#190).
 # Break-glass (debug only; do not leave on): --set networkPolicy.breakGlass=true
 # kubectl port-forward is not blocked by NetworkPolicy.
+# Crawl egress stays the coarse public TCP/80 and TCP/443 rule. Tighten it
+# with networkPolicy.profileAllowlist after allowedDomains are resolved to
+# IPv4 CIDRs (#677). NetworkPolicy cannot match a DNS name. The rendered
+# policy annotation scraping-pipeline/break-glass=true matches only a pod
+# labeled scraping-pipeline/network-break-glass=true.
 networkPolicy:
   enabled: true
   breakGlass: false

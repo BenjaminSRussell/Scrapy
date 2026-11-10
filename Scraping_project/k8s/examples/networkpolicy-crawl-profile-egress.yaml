@@ -1,0 +1,93 @@
+# Example only. Helm does not install this file.
+# Replace 203.0.113.0/24 before any apply. That range is TEST-NET-3 (RFC 5737),
+# the same documentation range values-prod.yaml uses for external Redis.
+# It is not a UConn address and it is not a default in values.yaml.
+#
+# The bundled crawl profile allowed domain is uconn.edu (config.yml
+# stage1.allowed_domains). A NetworkPolicy cannot match that name.
+# DNS egress is separate and still required:
+#   - UDP/TCP 53 to kube-dns (k8s-app=kube-dns in kube-system) only.
+#   - External resolvers (for example 8.8.8.8) are not allowed.
+#   - After the name resolves, the TCP/80 or TCP/443 connection must hit an
+#     egress CIDR below or default-deny drops it.
+#   - Opening port 53 does not open port 80 or 443.
+#   - CDN and subdomain answers change. uconn.edu in the app also matches
+#     subdomains; list every address those names return.
+#   - IPv6 (AAAA) is not in this allowlist.
+#   - An egress proxy (stage1.proxy.urls) must be listed too. The proxy's
+#     addresses are not the origin's addresses.
+# Generate the same shape from the chart with networkPolicy.enabled=true and
+# networkPolicy.profileAllowlist=true once real CIDRs are set. An empty CIDR
+# list fails the render.
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: example-allow-dns
+  annotations:
+    scraping-pipeline/break-glass: "false"
+    scraping-pipeline/dns-egress: "UDP/TCP 53 to kube-dns; names are not selectors"
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: example-scrape-profile-egress
+  annotations:
+    scraping-pipeline/break-glass: "false"
+    scraping-pipeline/profile-allowlist: "true"
+    scraping-pipeline/profile-uconn-domains: uconn.edu
+    scraping-pipeline/dns-egress: "UDP/TCP 53 to kube-dns is required; allowedDomains are not selectors"
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app.kubernetes.io/component
+        operator: In
+        values:
+          - scrapy
+          - stage2
+          - stage3
+          - stage4
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 203.0.113.0/24
+      ports:
+        - protocol: TCP
+          port: 80
+        - protocol: TCP
+          port: 443
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: example-break-glass-egress
+  annotations:
+    scraping-pipeline/break-glass: "true"
+    scraping-pipeline/break-glass-doc: "kubectl label pod POD scraping-pipeline/network-break-glass=true --overwrite; remove the label when finished"
+spec:
+  podSelector:
+    matchLabels:
+      scraping-pipeline/network-break-glass: "true"
+  policyTypes:
+    - Egress
+  egress:
+    - {}

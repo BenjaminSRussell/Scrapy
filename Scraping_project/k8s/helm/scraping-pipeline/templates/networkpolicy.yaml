@@ -395,12 +395,25 @@ spec:
 ---
 # Public crawl only. Private and link-local CIDRs stay closed so this cannot
 # reach Redis/Kafka/Postgres or cloud metadata (#190).
+# profileAllowlist replaces that coarse 0.0.0.0/0 rule with crawlProfiles
+# egressCIDRs (#677). allowedDomains are annotations, not selectors:
+# NetworkPolicy cannot match a DNS name. Pods still need the allow-dns rule
+# (UDP/TCP 53 to kube-dns) before any of these CIDRs are reachable by name.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: {{ $fullname }}-scrape-egress
   labels:
     {{- include "scraping-pipeline.labels" . | nindent 4 }}
+  annotations:
+    scraping-pipeline/break-glass: "false"
+    scraping-pipeline/profile-allowlist: {{ .Values.networkPolicy.profileAllowlist | quote }}
+    scraping-pipeline/dns-egress: "UDP/TCP 53 to kube-dns is required; allowedDomains are not selectors"
+{{ range $p := .Values.networkPolicy.crawlProfiles | default (list) }}
+{{- if and $p.name $p.allowedDomains }}
+    scraping-pipeline/profile-{{ $p.name }}-domains: {{ join "," $p.allowedDomains | quote }}
+{{- end }}
+{{ end }}
 spec:
   podSelector:
     matchExpressions:
@@ -414,6 +427,21 @@ spec:
   policyTypes:
   - Egress
   egress:
+{{- if .Values.networkPolicy.profileAllowlist }}
+{{- $cidrText := include "scraping-pipeline.crawlProfileEgressCIDRs" . }}
+{{- if $cidrText }}
+  - to:
+{{- range splitList "\n" $cidrText }}
+    - ipBlock:
+        cidr: {{ . | quote }}
+{{- end }}
+    ports:
+    - protocol: TCP
+      port: 80
+    - protocol: TCP
+      port: 443
+{{- end }}
+{{- else }}
   - to:
     - ipBlock:
         cidr: 0.0.0.0/0
@@ -426,6 +454,7 @@ spec:
       port: 80
     - protocol: TCP
       port: 443
+{{- end }}
 ---
 # Grafana preinstalls redis-datasource (GF_PLUGINS_PREINSTALL on the stock
 # grafana/grafana image; the plugin is not baked in). HTTPS only, with the
@@ -605,4 +634,26 @@ spec:
     - protocol: TCP
       port: {{ .Values.grafana.service.port }}
 {{- end }}
+---
+# #677: break-glass egress for one pod. The annotation is the marker.
+# No Deployment sets the label. An operator adds it for a short debug
+# window and removes it after. networkPolicy.breakGlass is wider: it
+# renders no NetworkPolicy at all (#190). port-forward does not need either.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $fullname }}-break-glass-egress
+  labels:
+    {{- include "scraping-pipeline.labels" . | nindent 4 }}
+  annotations:
+    scraping-pipeline/break-glass: "true"
+    scraping-pipeline/break-glass-doc: "kubectl label pod POD scraping-pipeline/network-break-glass=true --overwrite; remove the label when finished"
+spec:
+  podSelector:
+    matchLabels:
+      scraping-pipeline/network-break-glass: "true"
+  policyTypes:
+  - Egress
+  egress:
+  - {}
 {{- end }}
