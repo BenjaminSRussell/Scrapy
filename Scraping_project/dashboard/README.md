@@ -200,6 +200,29 @@ The match count is text in `#activity-filter-status`, not HTML.
 
 A confirmed start (`cc:job-started` on `#job-start`) draws one check on the Start control. There is no confetti. `prefers-reduced-motion: reduce` skips that stroke animation and shows the finished check. Start stays disabled until the job API exists (#147); the control does not launch a crawl.
 
+## RTL layout stub (#1026)
+
+The UI is English-only. Topbar and tab chrome use logical properties
+(`margin-inline-start`, `inset-inline-end`, `border-inline-start`,
+`text-align: start`) so a right-to-left writing direction does not pin
+badges, the tab overflow fade, activity actions, or metric tables to the
+physical left. Flex rows (topbar stats, metric rows, tab buttons) already
+follow `direction`.
+
+Smoke test, with the dashboard open:
+
+```js
+document.documentElement.dir = 'rtl'
+```
+
+Then check:
+
+- Topbar: title, env badge, and Status / Total URLs / Summaries stay readable. The badge keeps its gap on the inline-start side. Below 1024px the stats wrap under the title instead of disappearing.
+- Tabs: all five tabs stay clickable. ArrowLeft moves to the next tab and ArrowRight to the previous (WAI-ARIA for RTL). Home and End still jump to the first and last tab. On a narrow viewport the overflow fade sits on the inline-end edge.
+- Metrics: label/value rows and fallback tables stay aligned to the writing direction. Activity export actions sit at the inline-end; the activity stripe stays on the inline-start edge.
+
+Set `document.documentElement.dir = 'ltr'` (or remove the attribute) to restore the normal layout. This is not a translation.
+
 ## Threat model notes (#1046)
 
 **Activity log XSS.** Activity messages may contain text derived from metrics,
