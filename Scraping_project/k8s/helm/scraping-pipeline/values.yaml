@@ -11,6 +11,10 @@ global:
   imagePullSecrets: []
   storageClass: ""
 
+# One ResourceQuota in the release namespace (templates/resourcequota.yaml).
+# A tenant gets its own namespace and release; see values-tenant.example.yaml
+# for a sized quota plus a LimitRange. LimitRange stays off unless that
+# overlay (or limitRange.enabled) is set (#676).
 namespaceQuota:
   enabled: true
   hard:
