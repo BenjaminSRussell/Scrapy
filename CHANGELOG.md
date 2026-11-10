@@ -15,6 +15,7 @@ renamed to the new version and date (see the release checklist).
 ## [Unreleased]
 
 ### Added
+- Customer-success health per org: `0.4 * activity + 0.6 * success_rate` from metering `pages_crawled` and finished job-history rows. Full activity is 100 pages or 4 finished jobs. No finished jobs leaves the score unset. Grafana dashboard `org-customer-health` is the admin view. `OrgCustomerHealthLow` warns under 0.5 for 30m and is not an SLO (#966).
 - Control Center confirms a job start with one CSS check on Start. `prefers-reduced-motion: reduce` skips the stroke animation and shows the finished check. There is no confetti (#1022).
 - Control Center accent picker (refresh bar) stores a `#rrggbb` choice in `localStorage` (`cc.accent`) and writes `--accent`, `--accent-ink`, and `--accent-border`. Buttons use the accent fill; the active tab underline uses the accent, darkened when it would be under 3:1 on the tab bar (#1017).
 - Stage 1 to stage 2 handoff (`StageQueueHandoff`) keeps the in-memory queue at the Redis high watermark (default 10000, same gate as `QueueBacklog`). Producers block until stage 2 drains to the low watermark instead of buffering an unbounded backlog, and each key is delivered once after the consumer catches up (#703).

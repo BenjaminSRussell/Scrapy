@@ -6,6 +6,7 @@ Every `*.json` file in this directory is provisioned into Grafana automatically 
 |---|---|
 | `scraping_pipeline_health.json` | `scraping-pipeline-health`, http://localhost:3000/d/scraping-pipeline-health |
 | `pipeline_slos.json` | `pipeline-slos`, http://localhost:3000/d/pipeline-slos |
+| `org_customer_health.json` | `org-customer-health`, http://localhost:3000/d/org-customer-health |
 | `ops_lag_depth_commits.json` | `ops-lag-depth-commits`, pack http://127.0.0.1:3001/d/ops-lag-depth-commits (same uid on :3000) |
 | `unified_dashboard.json` | Off-site discovery panels (legacy) |
 
