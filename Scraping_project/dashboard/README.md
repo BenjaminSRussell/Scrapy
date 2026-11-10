@@ -200,6 +200,28 @@ The match count is text in `#activity-filter-status`, not HTML.
 
 A confirmed start (`cc:job-started` on `#job-start`) draws one check on the Start control. There is no confetti. `prefers-reduced-motion: reduce` skips that stroke animation and shows the finished check. Start stays disabled until the job API exists (#147); the control does not launch a crawl.
 
+## Job history table (#1023)
+
+`job-table.css` / `job-table.js` are the sortable table the Jobs tab will use.
+The Jobs tab itself stays hidden unless `window.__CC_FEATURES__.jobs` is on (#1047);
+this component does not invent rows. Specimens are on `/styleguide.html`.
+
+- Sticky header: wrap the table in `.job-history-scroll` (`thead th` is `position: sticky`).
+- Zebra striping is optional. Add `job-history-table--zebra` on the `<table>`; omit it for a plain table.
+- Sort controls are `<button type="button" class="job-history-sort">` inside `<th scope="col">`, not a clickable header cell. The header sets `aria-sort` to `ascending`, `descending`, or `none`.
+- Empty state: when there are no rows the header stays and one cell reads "No job history yet."
+
+Keyboard (also listed on the styleguide):
+
+| Key | Action |
+|---|---|
+| Tab / Shift+Tab | Move to a column sort button |
+| Enter or Space | Cycle that column: ascending, then descending, then unsorted |
+| Arrow Left / Arrow Right | Move focus between sort buttons. Does not change the sort and does not wrap |
+| Home / End | Focus the first or last sort button |
+
+The button's accessible name includes the column and the next action. Arrow keys only move focus.
+
 ## Threat model notes (#1046)
 
 **Activity log XSS.** Activity messages may contain text derived from metrics,

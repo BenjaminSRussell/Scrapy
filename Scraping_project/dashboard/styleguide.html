@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <title>Control Center Styleguide</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="job-table.css">
 <style>
   body { font-family: system-ui, sans-serif; background: #0f172a; color: #e2e8f0; padding: 2rem; }
   h1, h2 { margin-top: 1.5rem; }
@@ -29,7 +30,7 @@
 </head>
 <body>
 <h1>Pipeline Control Center — Styleguide</h1>
-<p>Living reference for buttons, badges, and tokens (#1045). Served by <code>serve.py</code> at <code>/styleguide.html</code>.</p>
+<p>Living reference for buttons, badges, tokens (#1045), and the job-history table (#1023). Served by <code>serve.py</code> at <code>/styleguide.html</code>.</p>
 
 <h2>Buttons</h2>
 <div class="row">
@@ -66,5 +67,107 @@
 <div class="row"><div class="swatch" style="background:#f59e0b"></div><code>warning #f59e0b</code></div>
 <div class="row"><div class="swatch" style="background:#ef4444"></div><code>danger #ef4444</code></div>
 <p>Chart heights: <code>--chart-h-sm 160px</code>, <code>--chart-h-md 240px</code>, <code>--chart-h-lg 300px</code>.</p>
+
+<h2>Job history table (#1023)</h2>
+<p>For the future Jobs tab. The header sticks inside <code>.job-history-scroll</code>. Add <code>job-history-table--zebra</code> for optional row striping; omit it for a plain table. Each sortable column is a <code>&lt;button type="button"&gt;</code> inside <code>&lt;th scope="col"&gt;</code>, not a clickable header cell. <code>aria-sort</code> on the header is <code>ascending</code>, <code>descending</code>, or <code>none</code>.</p>
+<h3>Keyboard</h3>
+<ul>
+  <li><kbd>Tab</kbd> / <kbd>Shift+Tab</kbd> — move to a column sort button.</li>
+  <li><kbd>Enter</kbd> or <kbd>Space</kbd> — cycle that column: ascending, then descending, then unsorted.</li>
+  <li><kbd>Arrow Left</kbd> / <kbd>Arrow Right</kbd> — move focus between sort buttons. Does not change the sort and does not wrap.</li>
+  <li><kbd>Home</kbd> / <kbd>End</kbd> — focus the first or last sort button.</li>
+</ul>
+<p>Sample rows below are styleguide fixtures, not a live job API. The second table is the empty state.</p>
+
+<div class="job-history-scroll job-history-scroll--short" data-job-table>
+  <table class="job-history-table job-history-table--zebra">
+    <caption>Sample job history</caption>
+    <thead>
+      <tr>
+        <th scope="col" aria-sort="none">
+          <button type="button" class="job-history-sort" data-sort-key="id" data-label="Job">
+            <span class="job-history-sort-label">Job</span>
+            <span class="job-history-sort-ind" aria-hidden="true">↕</span>
+          </button>
+        </th>
+        <th scope="col" aria-sort="none">
+          <button type="button" class="job-history-sort" data-sort-key="status" data-label="Status">
+            <span class="job-history-sort-label">Status</span>
+            <span class="job-history-sort-ind" aria-hidden="true">↕</span>
+          </button>
+        </th>
+        <th scope="col" aria-sort="none">
+          <button type="button" class="job-history-sort" data-sort-key="started" data-label="Started">
+            <span class="job-history-sort-label">Started</span>
+            <span class="job-history-sort-ind" aria-hidden="true">↕</span>
+          </button>
+        </th>
+        <th scope="col" aria-sort="none">
+          <button type="button" class="job-history-sort" data-sort-key="urls" data-label="URLs">
+            <span class="job-history-sort-label">URLs</span>
+            <span class="job-history-sort-ind" aria-hidden="true">↕</span>
+          </button>
+        </th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr data-job-row data-id="example-b" data-status="running" data-started="2026-03-02T00:00:00Z" data-urls="10">
+        <td>example-b</td><td>running</td><td>2026-03-02T00:00:00Z</td><td>10</td>
+      </tr>
+      <tr data-job-row data-id="example-a" data-status="failed" data-started="2026-03-01T00:00:00Z" data-urls="2">
+        <td>example-a</td><td>failed</td><td>2026-03-01T00:00:00Z</td><td>2</td>
+      </tr>
+      <tr data-job-row data-id="example-c" data-status="succeeded" data-started="2026-03-04T00:00:00Z" data-urls="40">
+        <td>example-c</td><td>succeeded</td><td>2026-03-04T00:00:00Z</td><td>40</td>
+      </tr>
+      <tr data-job-row data-id="example-d" data-status="succeeded" data-started="2026-03-03T00:00:00Z" data-urls="8">
+        <td>example-d</td><td>succeeded</td><td>2026-03-03T00:00:00Z</td><td>8</td>
+      </tr>
+      <tr data-job-row data-id="example-e" data-status="running" data-started="2026-03-05T00:00:00Z" data-urls="">
+        <td>example-e</td><td>running</td><td>2026-03-05T00:00:00Z</td><td></td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="job-history-scroll" data-job-table>
+  <table class="job-history-table" id="job-history-empty" data-empty-message="No job history yet.">
+    <caption>Job history</caption>
+    <thead>
+      <tr>
+        <th scope="col" aria-sort="none">
+          <button type="button" class="job-history-sort" data-sort-key="id" data-label="Job">
+            <span class="job-history-sort-label">Job</span>
+            <span class="job-history-sort-ind" aria-hidden="true">↕</span>
+          </button>
+        </th>
+        <th scope="col" aria-sort="none">
+          <button type="button" class="job-history-sort" data-sort-key="status" data-label="Status">
+            <span class="job-history-sort-label">Status</span>
+            <span class="job-history-sort-ind" aria-hidden="true">↕</span>
+          </button>
+        </th>
+        <th scope="col" aria-sort="none">
+          <button type="button" class="job-history-sort" data-sort-key="started" data-label="Started">
+            <span class="job-history-sort-label">Started</span>
+            <span class="job-history-sort-ind" aria-hidden="true">↕</span>
+          </button>
+        </th>
+        <th scope="col" aria-sort="none">
+          <button type="button" class="job-history-sort" data-sort-key="urls" data-label="URLs">
+            <span class="job-history-sort-label">URLs</span>
+            <span class="job-history-sort-ind" aria-hidden="true">↕</span>
+          </button>
+        </th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr class="job-history-empty">
+        <td colspan="4">No job history yet.</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+<script src="job-table.js"></script>
 </body>
 </html>

@@ -1,0 +1,115 @@
+/* Job history table (#1023).
+   Sticky header inside .job-history-scroll. Zebra is opt-in via
+   .job-history-table--zebra. Sort controls are buttons in the header cells. */
+
+.job-history-scroll {
+    overflow: auto;
+    max-height: 24rem;
+    max-width: 100%;
+    border: 1px solid var(--gray-300, #d1d5db);
+    border-radius: 0.375rem;
+    background: #fff;
+}
+
+.job-history-scroll--short {
+    max-height: 8.5rem;
+}
+
+.job-history-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 0.9rem;
+    background: #fff;
+    color: var(--gray-900, #111827);
+}
+
+.job-history-table caption {
+    caption-side: top;
+    text-align: left;
+    font-weight: 600;
+    padding: 0.5rem 0.75rem;
+}
+
+.job-history-table th,
+.job-history-table td {
+    text-align: left;
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid var(--gray-200, #e5e7eb);
+    vertical-align: middle;
+}
+
+.job-history-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--gray-50, #f9fafb);
+    font-weight: 600;
+    box-shadow: inset 0 -1px 0 var(--gray-300, #d1d5db);
+}
+
+.job-history-sort {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font: inherit;
+    font-weight: 600;
+    color: inherit;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 0.25rem;
+    padding: 0.25rem 0.35rem;
+    cursor: pointer;
+}
+
+.job-history-sort:hover {
+    background: var(--gray-100, #f3f4f6);
+}
+
+.job-history-sort:focus-visible {
+    outline: 3px solid var(--primary-dark, #1e40af);
+    outline-offset: 2px;
+}
+
+.job-history-sort-ind {
+    font-size: 0.75rem;
+    min-width: 1em;
+    text-align: center;
+}
+
+/* Optional. Omit the class for a plain table. */
+.job-history-table--zebra tbody tr:nth-child(even) {
+    background: var(--gray-50, #f9fafb);
+}
+
+.job-history-table--zebra tbody tr.job-history-empty {
+    background: transparent;
+}
+
+.job-history-empty td {
+    text-align: center;
+    color: var(--muted-text, #475569);
+    padding: 1.25rem 0.75rem;
+}
+
+@media (pointer: coarse) {
+    .job-history-sort {
+        min-height: 44px;
+        min-width: 44px;
+    }
+}
+
+@media (forced-colors: active) {
+    .job-history-scroll,
+    .job-history-table th,
+    .job-history-table td {
+        border: 1px solid CanvasText;
+    }
+    .job-history-table thead th {
+        background: Canvas;
+        color: CanvasText;
+    }
+    .job-history-sort:focus-visible {
+        outline: 3px solid Highlight;
+    }
+}
