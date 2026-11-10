@@ -16,6 +16,6 @@ Use for every dashboard PR:
 - [x] Respects `prefers-reduced-motion` — hover lift, pulse, flash, loading shimmer, the shared `.skeleton` block (static gray, no pulse), and the job-started check off (#341, #1025, #1022). The optional danger chime stays silent under reduced motion and under a mute preference, and is off until opted in (#1037).
 - [x] Works at 360px width without horizontal page scroll — checked at 360/375/768/1024 on every tab; topbar stats wrap instead of hiding (#155)
 - [x] Forced-colors / Windows High Contrast: cards, tabs, active stage and status stay distinguishable via borders and system colours (`@media (forced-colors: active)`, #982)
-- [x] Landmarks (`header`, `nav`, `main`) and an h1 → h2 heading outline (#332)
+- [x] Landmarks (`header`, `nav`, `main`, `footer`) and an h1 → h2 heading outline (#332). The operator footer lives in the refresh bar, outside the tab panels, so it stays visible on every tab (#970).
 - [x] Decorative icons are inline SVG with `aria-hidden`; tabs, health tiles, and the title mark do not use emoji glyphs (#1049)
 - [x] Loading, stale and error states are text, not just colour or zeros (#351, #352, #362)
