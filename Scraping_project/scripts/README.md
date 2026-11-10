@@ -419,6 +419,38 @@ kubectl logs -l app.kubernetes.io/component=grafana -f
 
 ---
 
+## Monitoring image pins (#626)
+
+Compose Grafana is `grafana/grafana:11.6.1`. That string is `grafana.image.repository` plus `grafana.image.tag` in `k8s/helm/scraping-pipeline/values.yaml`. `docker-compose.observability.yml` service `ops-grafana` uses the same image. Never set these to `latest`.
+
+Sibling monitoring images are release pins too:
+
+| Service | Compose image | Helm |
+|---|---|---|
+| `prometheus` and `ops-prometheus` | `prom/prometheus:v3.2.1` | `prometheus.image.tag` `v3.2.1` (same repository) |
+| `statsd-exporter` | `prom/statsd-exporter:v0.28.0` | `exporters.statsd.image.tag` |
+| `redis-exporter` | `oliver006/redis_exporter:v1.62.0` | chart tag differs (`v1.67.0-alpine`); do not switch Compose to `latest` |
+| `postgres-exporter` | `prometheuscommunity/postgres-exporter:v0.15.0` | chart image differs (`quay.io/prometheuscommunity/postgres-exporter:v0.18.1`); same rule |
+
+`redis:7-alpine` and `postgres:16-alpine` are not part of this pin.
+
+### Upgrade
+
+1. Pick a Grafana release tag such as `11.6.1`. Never `latest`, and never an empty tag.
+2. Set that exact tag in `docker-compose.yml` (`grafana`), `docker-compose.observability.yml` (`ops-grafana`), and `grafana.image.tag` in `k8s/helm/scraping-pipeline/values.yaml`.
+3. If you still apply `k8s/grafana-standalone.yaml`, set its `grafana/grafana` tag in the same change. Helm does not render that file.
+4. To bump a sibling, edit its Compose `image:` line. When the repository matches the chart, set the same tag on the Helm `image.tag`. Leave Redis and Postgres alone unless that bump is the change you mean to make.
+5. From `Scraping_project/`, refresh those images and recreate only the named containers. `--no-deps` does not start Redis, Postgres, or the crawler:
+
+```bash
+docker compose --profile monitoring pull grafana prometheus redis-exporter postgres-exporter
+docker compose --profile monitoring up -d --no-deps grafana prometheus redis-exporter postgres-exporter
+```
+
+`docker compose pull` stays on the committed tag. A `latest` tag would move on the next pull.
+
+---
+
 ## Maintenance Best Practices
 
 1. **Regular Diagnostics**: Run `diagnose_issues.sh` weekly
@@ -428,11 +460,7 @@ kubectl logs -l app.kubernetes.io/component=grafana -f
    - `.env` file
    - `monitoring/` configs
    - Grafana dashboards (export from UI)
-5. **Updates**: Keep Docker images updated:
-   ```bash
-   docker-compose pull
-   docker-compose up -d
-   ```
+5. **Updates**: Monitoring images are release pins. Do not move them to `latest`. See [Monitoring image pins](#monitoring-image-pins-626).
 
 ---
 
@@ -554,7 +582,7 @@ For issues or questions:
 ## Version Info
 
 - Scripts version: 1.0.0
-- Docker Compose file: latest
+- Docker Compose monitoring images: pinned (see Monitoring image pins)
 - Helm chart: 1.0.0
 - Last updated: 2025-10-13
 
