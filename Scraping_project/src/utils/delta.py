@@ -48,15 +48,27 @@ class DeltaHelper:
             base_path: Base path for Delta Lake storage. Defaults to the
                 DELTA_LAKE_PATH env var, then config ``delta_lake.base_path``,
                 then ./data/delta_lake (same order as LakehouseManager).
+                When ``delta_lake.tenant_path_prefix`` is on, that resolved
+                root gains a ``/{tenant_id}`` segment (#671). An explicit
+                path is not prefixed again.
             shared: Delegate to the process-wide ``LakehouseManager``
                 singleton (what ``get_delta()`` does) instead of a private one.
         """
+        supplied = base_path is not None and str(base_path).strip() != ""
         if base_path is None:
             base_path = os.getenv("DELTA_LAKE_PATH")
         if not base_path:
             from src.core.config import get_config
 
             base_path = get_config().get("delta_lake.base_path", "./data/delta_lake")
+
+        if not supplied:
+            from src.core.config import Config
+            from src.lakehouse.lakehouse_manager import tenant_lake_layout
+
+            # Same flag read as LakehouseManager (Config singleton, not a
+            # second copy). Explicit base_path stays the directory given.
+            base_path, _tenant = tenant_lake_layout(base_path, Config.get_instance())
 
         self.base_path = Path(base_path)
         self.base_path.mkdir(parents=True, exist_ok=True)

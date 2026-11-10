@@ -106,7 +106,7 @@ Redis, Postgres, ZooKeeper, Kafka, Prometheus, Alertmanager, Grafana, the delta 
 
 - `REDIS_HOST` - Redis server hostname
 - `REDIS_PORT` - Redis server port (default: 6379)
-- `DELTA_LAKE_PATH` - Path to Delta Lake storage. Read by both `get_delta()` (DeltaHelper) and `LakehouseManager` (including the metrics exporter); it takes precedence over config.yml `delta_lake.base_path`. Compose/k8s use `/data/delta`, which compose mounts from host `./data/delta`. Local runs without the env var use `./data/delta_lake`.
+- `DELTA_LAKE_PATH` - Path to Delta Lake storage. Read by both `get_delta()` (DeltaHelper) and `LakehouseManager` (including the metrics exporter); it takes precedence over config.yml `delta_lake.base_path`. Compose/k8s use `/data/delta`, which compose mounts from host `./data/delta`. Local runs without the env var use `./data/delta_lake`. `delta_lake.tenant_path_prefix` (default false; `DELTA_TENANT_PATH_PREFIX` overrides) can place that resolved root under `{path}/{tenant_id}/`. It does not move existing tables and does not resize the Delta PVCs. Upgrade steps and PVC sizing are in `docs/guides/DATA_USAGE.md` and `docs/REDIS_CAPACITY.md` (#671).
 - `LOG_LEVEL` - Logging level (DEBUG, INFO, WARNING, ERROR)
 - `WORKERS` - Number of concurrent workers
 - `CONCURRENCY` - Concurrency per worker

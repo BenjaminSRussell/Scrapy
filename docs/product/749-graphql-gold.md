@@ -224,8 +224,8 @@ implementation has to meet. Until they are met, the API stays disabled.
 8. **Grant changes apply to the next call.** This draft does not define how
    fast a revocation reaches a call that has already been authorized.
 
-A tenant layout, if [#671](https://github.com/BenjaminSRussell/Scrapy/issues/671)
-lands later, does not replace these grants. This draft does not count
+The opt-in tenant prefix ([#671](https://github.com/BenjaminSRussell/Scrapy/issues/671))
+does not replace these grants. This draft does not count
 tenants and does not add a tenant argument to `Query`. The federated stub
 covers cross-tenant search. This schema does not.
 
