@@ -300,7 +300,7 @@ def test_auth_gate_rejects_malformed_basic_env(serve):
 
 # ---- Smoke test of the real dashboard docroot (#271) ----
 def test_real_dashboard_assets_smoke(serve):
-    """GET / and every local script index.html references, with the right Content-Type."""
+    """GET /, local scripts, and the tab icon, each with the right Content-Type."""
     import re
 
     handler = _handler(serve, DASH, {"CC_RATE_LIMIT": "0"})
@@ -321,7 +321,14 @@ def test_real_dashboard_assets_smoke(serve):
             assert status == 200, src
             assert "javascript" in headers["content-type"], (src, headers["content-type"])
             assert body.strip(), src
-        status, headers, _ = get(base + "/styleguide.html")
+        icons = re.findall(r'<link rel="icon" href="([^"]+)" type="image/svg\+xml"', html)
+        assert icons == ["favicon.svg"]
+        status, headers, body = get(base + "/favicon.svg")
+        assert status == 200
+        assert headers["content-type"].startswith("image/svg+xml"), headers["content-type"]
+        assert b"<svg" in body and b"#2563eb" in body
+        status, headers, guide = get(base + "/styleguide.html")
+        assert b'rel="icon" href="favicon.svg"' in guide
         assert status == 200 and headers["content-type"].startswith("text/html")
     finally:
         httpd.shutdown()

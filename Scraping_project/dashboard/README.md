@@ -1,6 +1,8 @@
 # Pipeline Control Center dashboard
 
-Static dashboard served by `serve.py` (port 8080). The browser only talks to that
+Static dashboard served by `serve.py` (port 8080). The browser tab icon is
+`favicon.svg` (the title-mark spider on the blue-to-purple tile) so the tab is
+distinct from Grafana and Prometheus (#944). The browser only talks to that
 origin: metrics come from **`/api/metrics`**, which `serve.py` fetches server-side
 from `METRICS_UPSTREAM` (default `http://127.0.0.1:9090/metrics`) (#400). That also
 works when the page is opened via a LAN IP or hostname. Precedence (#1020):
