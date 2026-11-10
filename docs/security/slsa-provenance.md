@@ -134,6 +134,9 @@ These do not publish release artifacts:
   the alert-rule tests.
 - [`ci-observability-offline.yml`](../../.github/workflows/ci-observability-offline.yml)
   runs an offline observability test on pull requests.
+- [`ci-terraform.yml`](../../.github/workflows/ci-terraform.yml) runs
+  `terraform fmt` and `terraform validate` on the infra stub. It does not
+  plan or apply, and it does not publish.
 
 [`.github/release.yml`](../../.github/release.yml) only groups generated
 release notes. It does not attach attestations.
@@ -300,8 +303,8 @@ best-effort; hermeticity is not required.
   Dockerfile stages are likewise uncovered.
 - [ ] **CI workflows need no release attestation.** `ci-compose.yml`,
   `ci-dashboard.yml`, `ci-kafka-alerts.yml`,
-  `ci-observability-offline.yml`, and `package-smoke` do not publish. No
-  provenance gap is filed against them beyond that.
+  `ci-observability-offline.yml`, `ci-terraform.yml`, and `package-smoke`
+  do not publish. No provenance gap is filed against them beyond that.
 
 ## Order to close the gaps
 
