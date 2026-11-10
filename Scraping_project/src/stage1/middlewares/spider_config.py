@@ -104,6 +104,7 @@ def get_spider_settings(spider_name: str) -> dict:
         "DOWNLOAD_WARNSIZE": 5242880,
         # #582: drop captcha/challenge responses; back off a domain on a spike.
         # #186/#188: robots.txt Disallow + Crawl-delay (replaces Scrapy's middleware).
+        # #939: rustmapper handoff crawl_delay_seconds, applied before robots.txt is fetched.
         "ROBOTSTXT_OBEY": bool(spider_config.get("robotstxt_obey", True)),
         "ROBOTS_MAX_CRAWL_DELAY": float(spider_config.get("robots_max_crawl_delay", 60)),
         "DOWNLOADER_MIDDLEWARES": {
@@ -114,6 +115,7 @@ def get_spider_settings(spider_name: str) -> dict:
             # Runs before robots (100) so internal hosts never get a robots.txt fetch.
             "src.stage1.middlewares.ssrf_middleware.SSRFGuardMiddleware": 50,
             "scrapy.downloadermiddlewares.robotstxt.RobotsTxtMiddleware": None,
+            "src.stage1.middlewares.host_politeness_middleware.DiscoveredCrawlDelayMiddleware": 90,
             "src.stage1.middlewares.robots_middleware.PoliteRobotsTxtMiddleware": 100,
             "src.stage1.middlewares.soft_ban_middleware.SoftBanMiddleware": 540,
             # Before RetryMiddleware (550) on the response path: wait Retry-After.

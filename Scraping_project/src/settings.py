@@ -71,6 +71,9 @@ def derive_scrapy_config(config: Optional[Config] = None) -> dict[str, Any]:
         "proxy_list": cfg.get("stage1.proxy.urls"),
         "proxy_quarantine_seconds": cfg.get("stage1.proxy.quarantine_seconds"),
         "proxy_max_rotations": cfg.get("stage1.proxy.max_rotations"),
+        # #939: rustmapper handoff paths. Null stays unset so the delay map is empty.
+        "discovery_handoff_path": cfg.get("stage1.discovery.handoff_path"),
+        "discovery_jsonl_path": cfg.get("stage1.discovery.jsonl_path"),
     }
     for key, value in bridges.items():
         if key not in scrapy and value is not None:
@@ -145,10 +148,20 @@ ROBOTSTXT_OBEY = str(os.getenv("ROBOTSTXT_OBEY", _scrapy_config.get("robotstxt_o
     "0", "false", "no", "off"
 }
 ROBOTS_MAX_CRAWL_DELAY = float(os.getenv("ROBOTS_MAX_CRAWL_DELAY", _scrapy_config.get("robots_max_crawl_delay", 60)))
+# #939: optional host → Crawl-Delay seconds. Empty means DOWNLOAD_DELAY.
+# DISCOVERY_* point at the rustmapper sidecar / sitemap.jsonl when set.
+DISCOVERED_CRAWL_DELAYS = _scrapy_config.get("discovered_crawl_delays") or {}
+DISCOVERY_HANDOFF_PATH = os.getenv(
+    "DISCOVERY_HANDOFF_PATH", _scrapy_config.get("discovery_handoff_path") or ""
+)
+DISCOVERY_JSONL_PATH = os.getenv(
+    "DISCOVERY_JSONL_PATH", _scrapy_config.get("discovery_jsonl_path") or ""
+)
 DOWNLOADER_MIDDLEWARES = _scrapy_config.get(
     "downloader_middlewares",
     {
         "scrapy.downloadermiddlewares.robotstxt.RobotsTxtMiddleware": None,
+        "src.stage1.middlewares.host_politeness_middleware.DiscoveredCrawlDelayMiddleware": 90,
         "src.stage1.middlewares.robots_middleware.PoliteRobotsTxtMiddleware": 100,
         "src.stage1.middlewares.retry_after_middleware.RetryAfterMiddleware": 560,  # #188
     },
@@ -157,6 +170,10 @@ DOWNLOADER_MIDDLEWARES = _scrapy_config.get(
 # (set it to None there to opt out explicitly; SSRF_GUARD_ENABLED=0 also works).
 DOWNLOADER_MIDDLEWARES = dict(DOWNLOADER_MIDDLEWARES)
 DOWNLOADER_MIDDLEWARES.setdefault("src.stage1.middlewares.ssrf_middleware.SSRFGuardMiddleware", 50)
+DOWNLOADER_MIDDLEWARES.setdefault(
+    "src.stage1.middlewares.host_politeness_middleware.DiscoveredCrawlDelayMiddleware",
+    90,
+)
 RETRY_AFTER_MAX_DELAY = float(os.getenv("RETRY_AFTER_MAX_DELAY", _scrapy_config.get("retry_after_max_delay", 120)))
 
 CONCURRENT_REQUESTS = _scrapy_config.get("concurrent_requests", 64)

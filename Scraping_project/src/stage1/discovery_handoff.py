@@ -13,6 +13,7 @@ from dataclasses import asdict, dataclass, field
 from enum import Enum
 from pathlib import Path
 from typing import Any, Iterable
+from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +37,14 @@ class DiscoveryHandoff:
         checksum: sha256 over JSONL body or sorted URL payload
         discovery_source: provenance (sitemap_parser | scout | rustmapper | ...)
         job_id / site: optional coordination metadata
+        crawl_delay_seconds: optional host → robots.txt Crawl-Delay seconds
+            written by rustmapper after discovery (#939). Canonical JSON is an
+            object, ``{"example.edu": 5.0}``. A list of
+            ``{"host", "crawl_delay_seconds"}`` objects is accepted on read.
+            Hosts are lowercase hostnames (no port, no trailing dot). A missing
+            key, a missing host, null, or a non-positive value means that host
+            keeps the configured Stage 1 download delay. Scout applies
+            ``max(configured, discovered)`` capped at ``ROBOTS_MAX_CRAWL_DELAY``.
     """
 
     status: DiscoveryStatus | str
@@ -45,10 +54,12 @@ class DiscoveryHandoff:
     discovery_source: str = "unknown"
     job_id: str | None = None
     site: str | None = None
+    crawl_delay_seconds: dict[str, float] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if isinstance(self.status, str):
             self.status = DiscoveryStatus(self.status)
+        self.crawl_delay_seconds = normalize_crawl_delay_map(self.crawl_delay_seconds)
         if self.checksum is None and self.discovered:
             self.checksum = checksum_urls(self.discovered)
 
@@ -79,6 +90,7 @@ class DiscoveryHandoff:
             discovery_source=data.get("discovery_source", "unknown"),
             job_id=data.get("job_id"),
             site=data.get("site"),
+            crawl_delay_seconds=data.get("crawl_delay_seconds") or {},
         )
 
     @classmethod
@@ -90,10 +102,16 @@ class DiscoveryHandoff:
         job_id: str | None = None,
         site: str | None = None,
         checksum: str | None = None,
+        crawl_delay_seconds: dict[str, float] | None = None,
     ) -> "DiscoveryHandoff":
         url_list = list(urls)
         if not url_list:
-            return cls.empty(discovery_source=discovery_source, job_id=job_id, site=site)
+            return cls.empty(
+                discovery_source=discovery_source,
+                job_id=job_id,
+                site=site,
+                crawl_delay_seconds=crawl_delay_seconds,
+            )
         return cls(
             status=DiscoveryStatus.SUCCESS,
             discovered=url_list,
@@ -102,6 +120,7 @@ class DiscoveryHandoff:
             discovery_source=discovery_source,
             job_id=job_id,
             site=site,
+            crawl_delay_seconds=crawl_delay_seconds or {},
         )
 
     @classmethod
@@ -111,6 +130,7 @@ class DiscoveryHandoff:
         discovery_source: str,
         job_id: str | None = None,
         site: str | None = None,
+        crawl_delay_seconds: dict[str, float] | None = None,
     ) -> "DiscoveryHandoff":
         return cls(
             status=DiscoveryStatus.EMPTY,
@@ -120,6 +140,7 @@ class DiscoveryHandoff:
             discovery_source=discovery_source,
             job_id=job_id,
             site=site,
+            crawl_delay_seconds=crawl_delay_seconds or {},
         )
 
     @classmethod
@@ -130,6 +151,7 @@ class DiscoveryHandoff:
         discovery_source: str,
         job_id: str | None = None,
         site: str | None = None,
+        crawl_delay_seconds: dict[str, float] | None = None,
     ) -> "DiscoveryHandoff":
         return cls(
             status=DiscoveryStatus.FAILED,
@@ -139,6 +161,7 @@ class DiscoveryHandoff:
             discovery_source=discovery_source,
             job_id=job_id,
             site=site,
+            crawl_delay_seconds=crawl_delay_seconds or {},
         )
 
 
@@ -164,6 +187,164 @@ def verify_checksum(urls: Iterable[str], expected: str | None) -> bool:
     if not expected:
         return False
     return checksum_urls(urls) == expected
+
+
+def normalize_host_key(value: Any) -> str | None:
+    """Lowercase hostname for a crawl-delay map key. None when it is not a host."""
+    if value is None or isinstance(value, bool):
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    if "://" in text:
+        host = urlparse(text).hostname
+    else:
+        text = text.split("/")[0]
+        if "@" in text:
+            text = text.rsplit("@", 1)[-1]
+        if text.startswith("[") and "]" in text:
+            host = text[1 : text.index("]")]
+        elif text.count(":") == 1:
+            host = text.split(":", 1)[0]
+        else:
+            host = text
+    if not host:
+        return None
+    host = host.strip().lower().rstrip(".")
+    if not host:
+        return None
+    try:
+        host = host.encode("idna").decode("ascii")
+    except (UnicodeError, UnicodeDecodeError):
+        return None
+    return host or None
+
+
+def _coerce_delay_seconds(value: Any) -> float | None:
+    """Positive finite seconds, or None (caller keeps the config default)."""
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return None
+        value = text
+    try:
+        delay = float(value)
+    except (TypeError, ValueError):
+        return None
+    if delay != delay or delay in (float("inf"), float("-inf")) or delay <= 0:
+        return None
+    return delay
+
+
+def normalize_crawl_delay_map(raw: Any) -> dict[str, float]:
+    """Host → Crawl-Delay seconds. Invalid rows are dropped, not fatal.
+
+    Accepts ``{"example.edu": 5}`` or ``[{"host": "example.edu", "crawl_delay_seconds": 5}]``.
+    A missing map, a missing host, or a non-positive delay is omitted so Stage 1
+    uses the configured download delay for that host. Duplicate hosts keep the
+    larger delay.
+    """
+    items: list[tuple[Any, Any]] = []
+    if raw is None:
+        return {}
+    if isinstance(raw, dict):
+        items = list(raw.items())
+    elif isinstance(raw, list):
+        for entry in raw:
+            if not isinstance(entry, dict):
+                continue
+            host = entry.get("host") or entry.get("netloc")
+            delay = entry.get("crawl_delay_seconds")
+            items.append((host, delay))
+    else:
+        return {}
+    out: dict[str, float] = {}
+    for host, delay in items:
+        key = normalize_host_key(host)
+        seconds = _coerce_delay_seconds(delay)
+        if key is None or seconds is None:
+            continue
+        prev = out.get(key)
+        if prev is None or seconds > prev:
+            out[key] = seconds
+    return out
+
+
+def merge_crawl_delay_maps(*maps: Any) -> dict[str, float]:
+    """Union of crawl-delay maps. The same host keeps the larger delay."""
+    merged: dict[str, float] = {}
+    for raw in maps:
+        for host, delay in normalize_crawl_delay_map(raw).items():
+            prev = merged.get(host)
+            if prev is None or delay > prev:
+                merged[host] = delay
+    return merged
+
+
+def crawl_delays_from_jsonl_bytes(raw: bytes) -> dict[str, float]:
+    """``crawl_delay_seconds`` from rustmapper sitemap.jsonl objects.
+
+    A line may be a URL record (``url`` / ``loc`` plus the delay) or a host
+    record (``host`` plus the delay). Lines without the field are ignored.
+    """
+    found: dict[str, float] = {}
+    text = raw.decode("utf-8", errors="replace")
+    for line in text.splitlines():
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            obj = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(obj, dict) or "crawl_delay_seconds" not in obj:
+            continue
+        host = obj.get("host") or obj.get("netloc") or obj.get("url") or obj.get("loc")
+        found = merge_crawl_delay_maps(found, {host: obj.get("crawl_delay_seconds")})
+    return found
+
+
+def load_discovered_crawl_delays(
+    *,
+    handoff_path: str | Path | None = None,
+    jsonl_path: str | Path | None = None,
+) -> dict[str, float]:
+    """Read ``crawl_delay_seconds`` from a handoff sidecar and/or sitemap JSONL.
+
+    Missing paths and unreadable files yield an empty map (config default).
+    """
+    delays: dict[str, float] = {}
+    if handoff_path:
+        path = Path(handoff_path)
+        try:
+            if path.is_file():
+                data = json.loads(path.read_text(encoding="utf-8"))
+                raw = data.get("crawl_delay_seconds") if isinstance(data, dict) else None
+                delays = merge_crawl_delay_maps(delays, raw)
+        except (OSError, json.JSONDecodeError, UnicodeError, TypeError, ValueError):
+            logger.warning("discovery handoff crawl_delay_seconds unreadable: %s", path)
+    if jsonl_path:
+        path = Path(jsonl_path)
+        try:
+            if path.is_file():
+                delays = merge_crawl_delay_maps(delays, crawl_delays_from_jsonl_bytes(path.read_bytes()))
+        except (OSError, UnicodeError, TypeError, ValueError):
+            logger.warning("sitemap jsonl crawl_delay_seconds unreadable: %s", path)
+    return delays
+
+
+def _delays_for_consume(jsonl_path: str | Path, sidecar_delays: dict[str, float]) -> dict[str, float]:
+    """Sidecar delays plus any ``crawl_delay_seconds`` rows in sitemap.jsonl."""
+    extra: dict[str, float] = {}
+    path = Path(jsonl_path)
+    if path.is_file():
+        try:
+            extra = crawl_delays_from_jsonl_bytes(path.read_bytes())
+        except (OSError, UnicodeError, TypeError, ValueError):
+            extra = {}
+    return merge_crawl_delay_maps(sidecar_delays, extra)
 
 
 def write_handoff_json(path: str | Path, handoff: DiscoveryHandoff) -> None:
@@ -218,6 +399,7 @@ def consume_rustmapper_handoff(
     - If ``forced_failed`` or handoff JSON says failed -> FAILED (never EMPTY).
     - Empty JSONL with no failure -> EMPTY (needs ack/skip Stage2).
     - Non-empty JSONL -> SUCCESS with file checksum (+ URL payload checksum).
+    - ``crawl_delay_seconds`` on the sidecar and on JSONL objects is kept (#939).
     """
     if forced_failed:
         return DiscoveryHandoff.failed(
@@ -227,12 +409,13 @@ def consume_rustmapper_handoff(
             site=site,
         )
 
+    sidecar_delays: dict[str, float] = {}
     if handoff_path is not None and Path(handoff_path).exists():
         existing = read_handoff_json(handoff_path)
-        if existing.is_failed:
+        sidecar_delays = dict(existing.crawl_delay_seconds)
+        if existing.is_failed or existing.is_empty:
             existing.discovery_source = existing.discovery_source or discovery_source
-            return existing
-        if existing.is_empty:
+            existing.crawl_delay_seconds = _delays_for_consume(jsonl_path, sidecar_delays)
             return existing
 
     path = Path(jsonl_path)
@@ -242,6 +425,7 @@ def consume_rustmapper_handoff(
             discovery_source=discovery_source,
             job_id=job_id,
             site=site,
+            crawl_delay_seconds=sidecar_delays,
         )
 
     try:
@@ -252,13 +436,16 @@ def consume_rustmapper_handoff(
             discovery_source=discovery_source,
             job_id=job_id,
             site=site,
+            crawl_delay_seconds=sidecar_delays,
         )
 
+    delays = _delays_for_consume(path, sidecar_delays)
     if not urls:
         return DiscoveryHandoff.empty(
             discovery_source=discovery_source,
             job_id=job_id,
             site=site,
+            crawl_delay_seconds=delays,
         )
 
     handoff = DiscoveryHandoff.success(
@@ -267,6 +454,7 @@ def consume_rustmapper_handoff(
         job_id=job_id,
         site=site,
         checksum=checksum_urls(urls),
+        crawl_delay_seconds=delays,
     )
     logger.info(
         "rustmapper handoff success: %d urls payload_checksum=%s file_checksum=%s",
