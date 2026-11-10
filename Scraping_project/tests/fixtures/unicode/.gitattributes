@@ -1,0 +1,4 @@
+# Raw response bytes. Do not transcode or rewrite newlines.
+windows1252_declared.html -text
+malformed_utf8.html -text
+utf8_mixed.html text eol=lf
