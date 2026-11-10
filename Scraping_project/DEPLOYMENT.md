@@ -295,6 +295,45 @@ docker-compose exec redis redis-cli CONFIG SET appendonly yes
 docker cp uconn-redis:/data/dump.rdb ./backup/
 ```
 
+### Cross-region Delta mirror
+
+The Helm chart stores Delta on one PVC (`deltaLake.persistence`, default
+500Gi, `ReadWriteMany`, claim `*-delta-lake`). That is a single region.
+This repository does not create a second bucket, a VolumeSnapshot schedule,
+or a live rclone job.
+
+The lake root is `DELTA_LAKE_PATH` when that is set, otherwise
+`delta_lake.base_path` (`./data/delta_lake`). Mirror that directory, not one
+table. On the Helm claim the directory is `delta_lake/` at the volume root:
+workers mount the claim at `/app/data` (lake `/app/data/delta_lake`) and
+kafka-delta-ingest mounts the same claim at `/delta` (it writes the table
+`/delta/delta_lake/scraped_data`). Compose overrides the root to `/data/delta`
+inside the container (`./data/delta` on the host).
+
+`make delta-replicate` (or `./scripts/delta_replicate.sh`) prints an
+`rclone sync --dry-run` plan. It does not call rclone, read the lake, or
+contact a remote. `DRY_RUN=0` is refused. The default destination
+`dr:delta-lake` is a placeholder name, not a configured remote. Set
+`LAKE_SRC` and `RCLONE_DEST` to change the printed paths. Do not put
+credentials in either variable; configure the remote with `rclone config`.
+
+**Concurrent writers.** Scrapy, the stage workers, `LakehouseManager`, and
+kafka-delta-ingest commit to this lake. Stop them and let the write queue
+drain before a real copy. A sync taken while a commit is in flight can pair
+a new `_delta_log` entry with data files that were not copied, or the
+reverse. `rclone sync` also deletes destination files the source no longer
+has, so a vacuum shows up as deletions on the replica. This target does not
+check that writers are stopped.
+
+After writers are stopped, an operator (not Make) can run:
+
+```bash
+rclone sync /path/to/delta_lake remote:bucket/delta-lake
+```
+
+Restore is the reverse sync onto an empty lake, still with writers stopped.
+This is a file mirror, not Delta shallow clone or change-data capture.
+
 ## Maintenance
 
 ### Log Rotation
