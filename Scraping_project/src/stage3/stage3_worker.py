@@ -442,7 +442,10 @@ def _drain_requested(done: int, total: int) -> bool:
 
 async def run_stage3_worker(shutdown=None):
     from src.utils.graceful_shutdown import run_drain_loop
+    from src.utils.model_integrity import verify_stage_startup
 
+    # Refuse a cached Stage 3 weight file that does not match models.stage3 (#650).
+    logger.info(verify_stage_startup("stage3"))
     logger.info("Stage 3 Worker starting in continuous mode...")
 
     max_concurrent, batch_size = stage_worker_settings(3, 20, 50)

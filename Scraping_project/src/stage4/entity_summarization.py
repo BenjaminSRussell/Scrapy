@@ -396,16 +396,25 @@ class AbstractiveSummarizer:
 
     def _get_summarizer(self):
         if self._summarizer is None:
+            from src.utils.model_integrity import ModelIntegrityError, confirm_load, revision_for_load
+
+            # Same Stage 4 pin as summarization.py. Check it before importing
+            # transformers so a bad cache is not reported as a missing library (#650).
+            revision = revision_for_load("stage4", self.model_name)
             try:
                 from transformers import pipeline
 
                 logger.info(f"Loading summarization model: {self.model_name}")
-                self._summarizer = pipeline(
-                    "summarization",
-                    model=self.model_name,
-                    device=self.device,
-                )
+                kwargs: dict[str, Any] = {"model": self.model_name, "device": self.device}
+                if revision is not None:
+                    kwargs["revision"] = revision
+                self._summarizer = pipeline("summarization", **kwargs)
+                if revision is not None:
+                    confirm_load("stage4", self.model_name)
                 logger.info(" Summarization model loaded successfully")
+            except ModelIntegrityError:
+                self._summarizer = None
+                raise
             except ImportError as e:
                 raise ImportError(
                     "transformers is required for AbstractiveSummarizer. "
