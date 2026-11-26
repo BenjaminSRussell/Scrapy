@@ -95,7 +95,7 @@ pypdf2==3.0.1
     # via -r requirements-ocr.in
 python-bidi==0.6.11
     # via easyocr
-pyyaml==6.0.3
+pyyaml==6.0.4
     # via easyocr
 scikit-image==0.26.0
     # via easyocr
